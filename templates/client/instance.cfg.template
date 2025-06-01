@@ -1,0 +1,22 @@
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+[General]
+ConfigVersion=1.2
+ExportAuthor={{AUTHOR}}
+MaxMemAlloc=8192
+MinMemAlloc=512
+PermGen=256
+name={{NAME}}
+iconKey=p4f_icon_sm
+AutoUpdate=false
+ManagedPack=true
+OverrideCommands=true
+PreLaunchCommand="$INST_JAVA" -jar packwiz-installer-bootstrap.jar pack/pack.toml

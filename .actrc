@@ -1,0 +1,11 @@
+# Use ubuntu images that include more tools
+-P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest
+
+# Reuse Docker containers for faster subsequent runs
+--reuse
+
+# Set default event for push testing
+--eventpath .github/act-events/push.json
+
+# Enable action offline mode for faster runs
+--action-offline-mode

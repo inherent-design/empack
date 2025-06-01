@@ -1,0 +1,58 @@
+name: Validate Pack
+
+on:
+  pull_request:
+    paths:
+      - 'pack/**'
+      - '.github/workflows/validate.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate Modpack
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install packwiz
+        run: go install github.com/packwiz/packwiz@latest
+
+      - name: Install tomlq
+        run: |
+          curl -L -o tq https://github.com/cryptaliagy/tomlq/releases/latest/download/tq-linux-amd64
+          chmod +x tq
+          sudo mv tq /usr/local/bin/
+
+      - name: Install mrpack-install
+        run: |
+          curl -L -o mrpack-install https://github.com/nothub/mrpack-install/releases/latest/download/mrpack-install-linux
+          chmod +x mrpack-install
+          sudo mv mrpack-install /usr/local/bin/
+
+      - name: Check empack requirements
+        run: empack requirements
+
+      - name: Validate pack files
+        run: |
+          echo "Validating modpack structure..."
+          if [ ! -f "pack/pack.toml" ]; then
+            echo "❌ pack/pack.toml not found"
+            exit 1
+          fi
+          echo "✅ Basic validation complete"
+
+      - name: Test build
+        run: empack mrpack

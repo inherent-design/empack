@@ -1,0 +1,41 @@
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+⚠️  Could not load pack info for template processing
+allow-flight=true
+allow-nether=true
+broadcast-console-to-ops=false
+broadcast-rcon-to-ops=false
+difficulty=normal
+enable-command-block=true
+enable-jmx-monitoring=false
+enable-query=true
+enable-rcon=true
+enable-status=true
+enforce-secure-profile=true
+entity-broadcast-range-percentage=100
+function-permission-level=2
+gamemode=survival
+generate-structures=true
+generator-settings={}
+hardcore=false
+initial-disabled-packs=
+level-type=minecraft\:normal
+max-players=8
+max-tick-time=60000
+max-world-size=29999984
+motd=§7{{NAME}}-§8v{{VERSION}}§r
+network-compression-threshold=256
+pvp=true
+simulation-distance=12
+spawn-animals=true
+spawn-monsters=true
+spawn-npcs=true
+spawn-protection=0
+view-distance=20

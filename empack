@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+#=============================================================================
+# EMPACK - Standalone Minecraft Modpack Development Tool
+#=============================================================================
+# 
+# Main entry point for the empack build system and development environment.
+# This script bootstraps the application and delegates to the modular
+# component system.
+#
+# Usage: empack [command] [args...]
+#
+#=============================================================================
+
+# Determine script location and set up module path
+readonly EMPACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load core module which handles all other module loading
+if [ -f "$EMPACK_ROOT/lib/core.sh" ]; then
+    source "$EMPACK_ROOT/lib/core.sh"
+else
+    echo "❌ Fatal: Cannot find core module at $EMPACK_ROOT/lib/core.sh" >&2
+    exit 1
+fi
+
+# Initialize the application
+empack_init
+
+# Parse arguments and route to appropriate command handler
+empack_main "$@"
