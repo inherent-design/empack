@@ -118,6 +118,65 @@ check_git() {
     echo "$status|git|$version|$(IFS='|'; echo "${recommendations[*]}")"
 }
 
+# Check jq installation for robust JSON parsing
+check_jq() {
+    local status="❌"
+    local version="not found"
+    local recommendations=()
+    local resolved_path=""
+    
+    # Use enhanced dependency resolution
+    resolved_path=$(find_dependency jq)
+    if [ $? -eq 0 ]; then
+        version=$("$resolved_path" --version 2>/dev/null | head -n 1 || echo "unknown")
+        status="✅"
+        log_debug "Found jq at: $resolved_path"
+    else
+        recommendations+=("Download from: https://github.com/jqlang/jq/releases/latest")
+        recommendations+=("Rename binary to 'jq' and make executable")
+        recommendations+=("Add to PATH or place in modpack directory")
+        recommendations+=("Platform binaries: jq-linux64, jq-macos-amd64, jq-windows-amd64.exe")
+    fi
+    
+    echo "$status|jq|$version|$(IFS='|'; echo "${recommendations[*]}")"
+}
+
+# Check xq installation for robust XML parsing
+check_xq() {
+    local status="❌"
+    local version="not found"
+    local recommendations=()
+    local resolved_path=""
+    
+    # Use enhanced dependency resolution
+    resolved_path=$(find_dependency xq)
+    if [ $? -eq 0 ]; then
+        version=$("$resolved_path" --version 2>/dev/null | head -n 1 || echo "unknown")
+        status="✅"
+        log_debug "Found xq at: $resolved_path"
+    else
+        # Provide installation guidance similar to packwiz (Go-based tool)
+        if command_exists go; then
+            recommendations+=("Install via Go: go install github.com/sibprogrammer/xq@latest")
+        fi
+        recommendations+=("Download from: https://github.com/sibprogrammer/xq/releases/latest")
+        recommendations+=("Extract binary to PATH or place in modpack directory")
+        recommendations+=("Platform binaries: xq_darwin_amd64, xq_linux_amd64, xq_windows_amd64.exe")
+    fi
+    
+    echo "$status|xq|$version|$(IFS='|'; echo "${recommendations[*]}")"
+}
+
+# Helper function to check if jq is available for API functions
+jq_available() {
+    find_dependency jq >/dev/null 2>&1
+}
+
+# Helper function to check if xq is available for XML parsing
+xq_available() {
+    find_dependency xq >/dev/null 2>&1
+}
+
 # Parse a dependency check result
 parse_dep_check() {
     local result="$1"
@@ -200,10 +259,12 @@ requirements_command() {
     local tomlq_check=$(check_tomlq)
     local mrpack_check=$(check_mrpack_install)
     local java_check=$(check_java)
+    local jq_check=$(check_jq)
+    local xq_check=$(check_xq)
     local git_check=$(check_git)
     
     # Display results
-    display_dep_results "$packwiz_check" "$tomlq_check" "$mrpack_check" "$java_check" "$git_check"
+    display_dep_results "$packwiz_check" "$tomlq_check" "$mrpack_check" "$java_check" "$jq_check" "$xq_check" "$git_check"
 }
 
 # Validate dependencies required for build operations
@@ -261,5 +322,5 @@ quick_dependency_check() {
 }
 
 # Export dependency functions
-export -f check_packwiz check_tomlq check_mrpack_install check_java check_git
+export -f check_packwiz check_tomlq check_mrpack_install check_java check_jq check_xq check_git jq_available xq_available
 export -f requirements_command validate_build_dependencies quick_dependency_check

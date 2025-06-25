@@ -27,6 +27,53 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Enhanced dependency resolution: PATH -> CWD -> modpack directory
+find_dependency() {
+    local cmd="$1"
+    local path=""
+    
+    # 1. Check PATH first (standard system installation)
+    if command_exists "$cmd"; then
+        path=$(command -v "$cmd")
+        echo "$path"
+        return 0
+    fi
+    
+    # 2. Check current working directory
+    if [ -x "./$cmd" ]; then
+        path="$(pwd)/$cmd"
+        echo "$path"
+        return 0
+    fi
+    
+    # 3. Check modpack directory (for --modpack-directory isolation)
+    if [ -n "${EMPACK_TARGET_DIR:-}" ] && [ "$EMPACK_TARGET_DIR" != "." ]; then
+        if [ -x "$EMPACK_TARGET_DIR/$cmd" ]; then
+            path="$EMPACK_TARGET_DIR/$cmd"
+            echo "$path"
+            return 0
+        fi
+    fi
+    
+    # Not found in any location
+    return 1
+}
+
+# Get resolved dependency path (for display/debugging)
+resolve_dependency_path() {
+    local cmd="$1"
+    local path
+    
+    path=$(find_dependency "$cmd")
+    if [ $? -eq 0 ]; then
+        echo "$path"
+        return 0
+    else
+        echo "not found"
+        return 1
+    fi
+}
+
 # Get command version using various common patterns
 get_command_version() {
     local cmd="$1"
@@ -172,9 +219,26 @@ get_minecraft_latest_stable() {
         return 1
     fi
     
+    local manifest_json
+    manifest_json=$(curl -s "https://launchermeta.mojang.com/mc/game/version_manifest.json" 2>/dev/null)
+    
+    if [ -z "$manifest_json" ]; then
+        echo "1.21.4"  # Fallback
+        return 1
+    fi
+    
+    # Use jq for robust JSON parsing (hard dependency)
     local latest_release
-    latest_release=$(curl -s "https://launchermeta.mojang.com/mc/game/version_manifest.json" 2>/dev/null | \
-                    grep -o '"release":"[^"]*"' | head -1 | cut -d'"' -f4)
+    local jq_path
+    jq_path=$(find_dependency jq)
+    
+    if [ $? -ne 0 ] || [ -z "$jq_path" ]; then
+        echo "1.21.4"  # Fallback
+        log_error "jq not found - required for API parsing"
+        return 1
+    fi
+    
+    latest_release=$(echo "$manifest_json" | "$jq_path" -r '.latest.release' 2>/dev/null)
     
     if [ -n "$latest_release" ]; then
         echo "$latest_release"
@@ -185,7 +249,7 @@ get_minecraft_latest_stable() {
     fi
 }
 
-# Fetch NeoForge versions (stable and latest)
+# Fetch NeoForge versions (stable and latest) 
 get_neoforge_versions() {
     if ! command_exists curl; then
         echo "21.1.174"  # Stable fallback
@@ -202,16 +266,26 @@ get_neoforge_versions() {
         return 1
     fi
     
-    # Extract all versions and find stable (non-beta) and latest
+    # Use xq for robust XML parsing (hard dependency)
+    local stable_version latest_version
+    local xq_path
+    xq_path=$(find_dependency xq)
+    
+    if [ $? -ne 0 ] || [ -z "$xq_path" ]; then
+        echo "21.1.174"  # Fallback
+        echo "21.1.174"  # Fallback
+        log_error "xq not found - required for XML parsing"
+        return 1
+    fi
+    
+    # Extract all versions using xq, then filter for stable/latest
     local all_versions
-    all_versions=$(echo "$maven_xml" | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' | sort -V -r)
+    all_versions=$(echo "$maven_xml" | "$xq_path" -r '.metadata.versioning.versions.version[]' 2>/dev/null | sort -V -r)
     
     # Latest stable (first non-beta version)
-    local stable_version
     stable_version=$(echo "$all_versions" | grep -v -i "beta\|alpha\|rc" | head -1)
     
     # Latest overall (first version)
-    local latest_version
     latest_version=$(echo "$all_versions" | head -1)
     
     echo "${stable_version:-21.1.174}"
@@ -235,13 +309,20 @@ get_fabric_versions() {
         return 1
     fi
     
-    # Extract stable version (stable=true)
-    local stable_version
-    stable_version=$(echo "$fabric_json" | grep -B 2 -A 2 '"stable":true' | grep '"version"' | head -1 | sed 's/.*"version":"\([^"]*\)".*/\1/')
+    # Use jq for robust JSON parsing (hard dependency)
+    local stable_version latest_version
+    local jq_path
+    jq_path=$(find_dependency jq)
     
-    # Extract latest version (first entry)
-    local latest_version
-    latest_version=$(echo "$fabric_json" | grep '"version"' | head -1 | sed 's/.*"version":"\([^"]*\)".*/\1/')
+    if [ $? -ne 0 ] || [ -z "$jq_path" ]; then
+        echo "0.16.14"  # Fallback
+        echo "0.16.14"  # Fallback
+        log_error "jq not found - required for API parsing"
+        return 1
+    fi
+    
+    stable_version=$(echo "$fabric_json" | "$jq_path" -r '.[] | select(.stable == true) | .version' 2>/dev/null | head -1)
+    latest_version=$(echo "$fabric_json" | "$jq_path" -r '.[0].version' 2>/dev/null)
     
     echo "${stable_version:-0.16.14}"
     echo "${latest_version:-0.16.14}"
@@ -264,16 +345,26 @@ get_quilt_versions() {
         return 1
     fi
     
-    # Extract all versions and find stable (non-beta) and latest
+    # Use jq for robust JSON parsing (hard dependency)
+    local stable_version latest_version
+    local jq_path
+    jq_path=$(find_dependency jq)
+    
+    if [ $? -ne 0 ] || [ -z "$jq_path" ]; then
+        echo "0.27.0"   # Fallback
+        echo "0.27.0"   # Fallback
+        log_error "jq not found - required for API parsing"
+        return 1
+    fi
+    
+    # Get all versions, then filter for stable (non-beta) and latest
     local all_versions
-    all_versions=$(echo "$quilt_json" | grep '"version"' | sed 's/.*"version":"\([^"]*\)".*/\1/')
+    all_versions=$(echo "$quilt_json" | "$jq_path" -r '.[].version' 2>/dev/null)
     
     # Latest stable (first non-beta version)
-    local stable_version
     stable_version=$(echo "$all_versions" | grep -v -i "beta\|alpha\|rc" | head -1)
     
     # Latest overall (first version)
-    local latest_version
     latest_version=$(echo "$all_versions" | head -1)
     
     echo "${stable_version:-0.27.0}"
@@ -292,8 +383,34 @@ version_greater_than() {
     [ "$greater" = "$v1" ] && [ "$v1" != "$v2" ]
 }
 
+# Execute a command or function in the pack directory with proper error handling
+run_in_pack() {
+    local pack_dir="$EMPACK_TARGET_DIR/pack"
+    
+    # Ensure pack directory exists
+    if [ ! -d "$pack_dir" ]; then
+        log_error "Pack directory not found: $pack_dir"
+        return 1
+    fi
+    
+    # Change to pack directory
+    pushd "$pack_dir" > /dev/null || {
+        log_error "Failed to enter pack directory: $pack_dir"
+        return 1
+    }
+    
+    # Execute the command/function with all arguments
+    "$@"
+    local exit_code=$?
+    
+    # Always return to original directory
+    popd > /dev/null
+    
+    return $exit_code
+}
+
 # Export utility functions
-export -f ensure_directory command_exists get_command_version download_file
+export -f ensure_directory command_exists find_dependency resolve_dependency_path get_command_version download_file
 export -f file_recently_modified create_temp_directory cleanup_temp_directory
-export -f find_command extract_archive is_git_repository
+export -f find_command extract_archive is_git_repository run_in_pack
 export -f get_minecraft_latest_stable get_neoforge_versions get_fabric_versions get_quilt_versions version_greater_than

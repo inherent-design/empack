@@ -132,12 +132,13 @@ prompt_modloader_selection() {
         return 0
     fi
     
-    echo "🚀 Choose your modloader:"
-    echo "  1. NeoForge (recommended for most modpacks)"
-    echo "  2. Fabric (performance and client mods)"
-    echo "  3. Quilt (experimental features)"
-    echo "  4. Vanilla (pure Minecraft)"
-    echo
+    # Send prompts to stderr to avoid capturing them
+    echo "🚀 Choose your modloader:" >&2
+    echo "  1. NeoForge (recommended for most modpacks)" >&2
+    echo "  2. Fabric (performance and client mods)" >&2
+    echo "  3. Quilt (experimental features)" >&2
+    echo "  4. Vanilla (pure Minecraft)" >&2
+    echo >&2
     
     while true; do
         read -p "Selection [1]: " -r selection
@@ -210,18 +211,19 @@ prompt_version_selection() {
         return 0
     fi
     
-    echo
-    echo "🔧 $modloader version options:"
-    echo "  1. $stable_version (stable) ← recommended"
+    # Send prompts to stderr to avoid capturing them
+    echo >&2
+    echo "🔧 $modloader version options:" >&2
+    echo "  1. $stable_version (stable) ← recommended" >&2
     
     # Only show latest option if it's newer than stable
     if version_greater_than "$latest_version" "$stable_version"; then
-        echo "  2. $latest_version (latest)"
-        echo "  3. Custom version"
+        echo "  2. $latest_version (latest)" >&2
+        echo "  3. Custom version" >&2
     else
-        echo "  2. Custom version"
+        echo "  2. Custom version" >&2
     fi
-    echo
+    echo >&2
     
     while true; do
         read -p "Selection [1]: " -r selection
@@ -397,20 +399,14 @@ run_packwiz_init() {
     log_info "Initializing modpack with smart defaults..."
     log_debug "packwiz init flags: ${init_flags[*]}"
     
-    # Change to target directory for packwiz init
-    local original_dir=$(pwd)
-    cd "$EMPACK_TARGET_DIR" || {
-        log_error "Failed to change to target directory: $EMPACK_TARGET_DIR"
-        return 1
-    }
+    # Create pack directory and run packwiz init inside it
+    ensure_directory "$EMPACK_TARGET_DIR/pack"
     
-    if packwiz init "${init_flags[@]}"; then
+    if run_in_pack packwiz init "${init_flags[@]}"; then
         log_success "Packwiz initialization complete"
-        cd "$original_dir"
         return 0
     else
         log_error "Packwiz initialization failed"
-        cd "$original_dir"
         return 1
     fi
 }
@@ -424,8 +420,8 @@ validate_initialization() {
         return 0
     fi
     
-    # Attempt to build mrpack as validation
-    if build_mrpack_impl >/dev/null 2>&1; then
+    # Attempt to build mrpack as validation from pack directory
+    if run_in_pack build_mrpack_impl >/dev/null 2>&1; then
         log_success "✅ Initialization validated successfully!"
         return 0
     else

@@ -54,7 +54,7 @@ refresh_pack() {
         return 0
     fi
     
-    local pack_file="pack/pack.toml"
+    local pack_file="pack.toml"
     
     if [ ! -f "$pack_file" ]; then
         log_error "Pack file not found: $pack_file"
@@ -192,7 +192,7 @@ build_mrpack_impl() {
     
     local pack_name=$(get_pack_info name)
     local pack_version=$(get_pack_info version)
-    local pack_file="pack/pack.toml"
+    local pack_file="pack.toml"
     local output_file="dist/${pack_name}-v${pack_version}.mrpack"
     
     # Remove existing mrpack file
@@ -314,7 +314,7 @@ build_client_full_impl() {
     refresh_pack
     
     local dist_dir="dist/client-full"
-    local pack_file="pack/pack.toml"
+    local pack_file="pack.toml"
     
     # Use packwiz installer to download everything
     log_info "Downloading all mods and resources..."
@@ -347,7 +347,7 @@ build_server_full_impl() {
     local dist_dir="dist/server-full"
     local pack_fabric_version=$(get_pack_info fabric_version)
     local pack_mc_version=$(get_pack_info mc_version)
-    local pack_file="pack/pack.toml"
+    local pack_file="pack.toml"
     
     # Process templates
     process_build_templates "templates/server" "$dist_dir"

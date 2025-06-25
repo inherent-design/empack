@@ -25,8 +25,5 @@ else
     exit 1
 fi
 
-# Initialize the application
-empack_init
-
 # Parse arguments and route to appropriate command handler
 empack_main "$@"

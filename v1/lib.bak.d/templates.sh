@@ -67,10 +67,10 @@ load_pack_info() {
         return 0
     fi
     
-    local pack_file="pack/pack.toml"
+    local pack_file="pack.toml"
     
     if [ ! -f "$pack_file" ]; then
-        log_error "Pack file not found: $pack_file"
+        log_debug "Pack file not found: $pack_file (not available yet)"
         return 1
     fi
     
@@ -118,9 +118,9 @@ process_template_variables() {
     
     # Load pack info if we need to process variables
     if ! load_pack_info; then
-        log_warning "Could not load pack info for template processing"
+        log_debug "Pack info not available yet - skipping variable processing"
         echo "$content"
-        return 1
+        return 0
     fi
     
     # Perform variable substitution
