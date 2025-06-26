@@ -1,5 +1,4 @@
 use crate::core::primitives::*;
-use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -137,7 +136,7 @@ static GLOBAL_CONFIG: OnceLock<AppConfig> = OnceLock::new();
 impl AppConfig {
     /// Load configuration with proper precedence:
     /// defaults -> .env file -> environment variables -> CLI args
-    pub fn load() -> Result<Self> {
+    pub fn load() -> Result<Self, ConfigError> {
         use dotenvy::from_filename;
         use envy::from_env;
 
@@ -151,14 +150,17 @@ impl AppConfig {
             if let Err(e) = from_filename(env_file) {
                 // Only warn if file exists but can't be read (not if file doesn't exist)
                 if !e.to_string().contains("not found") && !e.to_string().contains("No such file") {
-                    return Err(anyhow::anyhow!("Failed to load {} file: {}", env_file, e));
+                    return Err(ConfigError::EnvFileError {
+                        file: env_file.to_string(),
+                        source: e,
+                    });
                 }
             }
         }
 
         // 3. Handle standard environment variables (override empack config if set)
         let env_config = from_env::<CommonEnvConfig>()
-            .with_context(|| "Failed to parse standard environment variables (NO_COLOR, FORCE_COLOR, CLICOLOR, CI)")?;
+            .map_err(|e| ConfigError::EnvironmentParsingFailed { source: e })?;
         
         // Apply color environment variables with proper precedence:
         // CLICOLOR=0 < NO_COLOR < FORCE_COLOR (most historically universal)
@@ -233,10 +235,10 @@ impl AppConfig {
     }
 
     /// Initialize global configuration (call once in main)
-    pub fn init_global(config: AppConfig) -> Result<()> {
+    pub fn init_global(config: AppConfig) -> Result<(), ConfigError> {
         GLOBAL_CONFIG
             .set(config)
-            .map_err(|_| anyhow::anyhow!("Global config already initialized"))
+            .map_err(|_| ConfigError::AlreadyInitialized)
     }
 
     /// Get global configuration reference
@@ -288,11 +290,10 @@ impl AppConfig {
     }
 
     /// Validate the final configuration
-    fn validate(&mut self) -> Result<()> {
+    fn validate(&mut self) -> Result<(), ConfigError> {
         // Resolve working directory (simple fallback only)
         if self.workdir.is_none() {
-            self.workdir =
-                Some(std::env::current_dir().context("Failed to get current directory")?);
+            self.workdir = Some(std::env::current_dir().map_err(|e| ConfigError::CurrentDirError { source: e })?);
         }
 
         Ok(())
