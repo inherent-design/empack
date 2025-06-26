@@ -117,6 +117,7 @@ dist/server-full/.*
 dist/*.zip
 dist/*.mrpack
 
+# Environment configuration
 .env*
 
 # End of Custom

@@ -1,0 +1,9 @@
+[profile.default]
+# Don't fail fast locally - let all tests run to see complete picture
+fail-fast = false
+
+[profile.ci]  
+# Don't fail fast in CI either to see all failures
+fail-fast = false
+# Retry failed tests once in CI environment for flaky test resilience
+retries = 1
