@@ -49,3 +49,16 @@ This provides clarity for debugging without noise from development artifacts.
 ### **The Goal**
 
 Production logging should be **intentional and permanent** - either tracing program flow (`trace`) or reporting problems (`error`). Everything else is temporary development scaffolding that should be cleaned up.
+
+### **Commit Style Guidelines**
+
+**Subject Line:**
+- Maximum 50 characters
+- Format: `type: description` (lowercase after colon, no period)
+- Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+
+**Body Format:**
+- Bullet points describing staged changes
+- Start each bullet with lowercase (except proper nouns)
+- Focus on what changed, not why
+- No summary paragraphs, footers, or AI attribution
