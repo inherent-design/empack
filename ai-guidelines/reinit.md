@@ -28,7 +28,7 @@ fd -e rs . src/ -t f --newer init.md # Rust files newer than init.md
 fd -e toml -e yml -e yaml . -t f    # Config files that might have changed
 
 # Code quality and functionality
-cargo test --quiet                  # Current test status
+RUSTFLAGS="-A warnings" cargo nextest run  # Current test status (clean output)
 cargo clippy --quiet                # Code quality check
 ```
 

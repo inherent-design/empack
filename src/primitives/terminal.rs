@@ -12,15 +12,15 @@ use super::shared::impl_fromstr_for_value_enum;
 #[serde(rename_all = "kebab-case")]
 pub enum TerminalCapsDetectIntent {
     /// Let module detect
-    /// alias: auto, automatic, detect, default
+    #[value(alias = "automatic", alias = "detect", alias = "default")]
     Auto,
 
     /// Explicitly enable (useful in non-interactive)
-    /// alias: always, force, on
+    #[value(alias = "force", alias = "on")]
     Always,
 
     /// Explicitly disable (also useful in non-interactive)
-    /// alias: never, off
+    #[value(alias = "off")]
     Never,
 }
 
