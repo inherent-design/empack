@@ -591,7 +591,7 @@ fn detect_cpu_cores() -> Result<u32, PlatformError> {
 
 #[cfg(target_family = "windows")]
 fn detect_memory_info_windows() -> Result<(u64, u64), PlatformError> {
-    use windows_sys::Win32::Foundation::BOOL;
+    use windows_core::BOOL;
     use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
     
     let mut memory_status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
