@@ -597,7 +597,7 @@ fn detect_memory_info_windows() -> Result<(u64, u64), PlatformError> {
     let mut memory_status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
     memory_status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
     
-    let result: BOOL = unsafe { GlobalMemoryStatusEx(&mut memory_status) };
+    let result: BOOL = unsafe { BOOL(GlobalMemoryStatusEx(&mut memory_status)) };
     
     if result == 0 {
         return Err(PlatformError::SystemCallFailed {
