@@ -10,6 +10,14 @@ use shared::impl_fromstr_for_value_enum;
 pub mod terminal;
 pub use terminal::*;
 
+// Import and re-export platform primitives
+pub mod platform;
+pub use platform::*;
+
+// Import and re-export networking primitives
+pub mod networking;
+pub use networking::*;
+
 /// Available log output streams
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]

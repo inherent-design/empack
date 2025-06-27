@@ -23,16 +23,22 @@ impl Logger {
         // Create indicatif layer for progress bars
         let indicatif_layer = IndicatifLayer::new();
 
-        // Configure environment filter for log levels
+        // Configure environment filter for log levels with empack-focused filtering
         let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
             let level_str = match config.level {
                 LogLevel::Error => "error",
-                LogLevel::Warning => "warn",
+                LogLevel::Warning => "warn", 
                 LogLevel::Info => "info",
                 LogLevel::Debug => "debug",
                 LogLevel::Trace => "trace",
             };
-            EnvFilter::new(level_str)
+            
+            // Default filter: empack logs at specified level, external crates at warn level
+            // This prevents noisy hyper_util, reqwest, etc. logs unless explicitly enabled
+            let filter_str = format!("empack={},hyper_util=warn,reqwest=warn,h2=warn,tower=warn,tokio=warn,mio=warn,want=warn,{}", 
+                level_str, level_str);
+            
+            EnvFilter::new(filter_str)
         });
 
         // Configure terminal-aware formatting with output selection

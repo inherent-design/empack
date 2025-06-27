@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 // FIXME: create a memoize map to lazy evaluate and hold the runtime values
-const DEFAULT_LOG_LEVEL: &str = "2";
+const DEFAULT_LOG_LEVEL: &str = "0"; // Error-only logging by default
 const DEFAULT_LOG_FORMAT: &str = "text";
 const DEFAULT_NET_TIMEOUT: &str = "30";
 const DEFAULT_CPU_PARALLELS: &str = "2";
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AppConfig::default();
-        assert_eq!(config.log_level, 2);
+        assert_eq!(config.log_level, 0); // Updated to match new default
         assert_eq!(config.net_timeout, 30);
         assert_eq!(config.color, TerminalCapsDetectIntent::Auto);
     }

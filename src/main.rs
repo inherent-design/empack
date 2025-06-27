@@ -6,14 +6,17 @@ mod empack;
 mod networking;
 mod platform;
 
-use primitives::{TerminalColorCaps, LoggerConfig, LogContext};
+use primitives::{TerminalColorCaps, LoggerConfig, LogContext, TerminalPrimitives, from_terminal_capabilities};
 use application::AppConfig;
 use terminal::{TerminalCapabilities, DimensionSource};
 use logger::Logger;
+use platform::SystemResources;
+use networking::{NetworkingManager, NetworkingConfig};
 use anyhow::Result;
 use std::io::Write;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // 1. Load application configuration
     let config = AppConfig::load()?;
     
@@ -28,19 +31,23 @@ fn main() -> Result<()> {
     AppConfig::init_global(config.clone())?;
     
     // Now use structured logging throughout
-    logger.info("🚀 Empack Core System Test starting", None);
+    logger.info("Empack core system test starting", None);
     
     // Log configuration details
-    logger.info("📄 Configuration loaded successfully", Some(LogContext::new("config_load")));
+    logger.info("Configuration loaded successfully", Some(LogContext::new("config_load")));
     logger.debug(&format!("Config details: {:#?}", config), None);
     
     // Log terminal capabilities with context
     let terminal_context = LogContext::new("terminal_detection");
-    logger.info("🎨 Terminal capabilities detected", Some(terminal_context));
+    logger.info("Terminal capabilities detected", Some(terminal_context));
+    
+    // Create terminal primitives based on detected capabilities
+    let basic_caps = from_terminal_capabilities(&terminal_caps);
+    let terminal_primitives = TerminalPrimitives::new(&basic_caps);
     
     // Ensure terminal state is completely clean before any output
     if terminal_caps.is_tty {
-        print!("\x1b[0m\x1b[?25h\x1b[49m\x1b[39m");
+        print!("{}", terminal_primitives.reset);
         std::io::stdout().flush().ok();
     }
     
@@ -60,36 +67,36 @@ fn main() -> Result<()> {
              });
     println!("   • TTY: {}", terminal_caps.is_tty);
     
-    logger.info("✅ Global config initialized", None);
+    logger.info("Global config initialized", None);
     
     // Display hello world in highest detected format
-    logger.info("🌈 Demonstrating terminal color capabilities", None);
+    logger.info("Demonstrating terminal color capabilities", None);
     
     // Only use ANSI if we're in a proper TTY to avoid shell corruption
     if terminal_caps.is_tty && terminal_caps.color != TerminalColorCaps::None {
         match terminal_caps.color {
             TerminalColorCaps::TrueColor => {
-                // 24-bit RGB color
-                print!("\x1b[38;2;255;100;50mHello from TrueColor! 🎨\x1b[0m\n");
-                print!("\x1b[38;2;50;255;100mTerminal supports 24-bit RGB!\x1b[0m\n");
+                // 24-bit RGB color using terminal primitives
+                println!("{}Hello from TrueColor! 🎨{}", terminal_primitives.red, terminal_primitives.reset);
+                println!("{}Terminal supports 24-bit RGB!{}", terminal_primitives.green, terminal_primitives.reset);
                 logger.debug("Using TrueColor (24-bit RGB) terminal output", None);
             },
             TerminalColorCaps::Ansi256 => {
-                // 256 color palette
-                print!("\x1b[38;5;196mHello from 256-color! 🎭\x1b[0m\n");
-                print!("\x1b[38;5;46mTerminal supports 8-bit color!\x1b[0m\n");
+                // 256 color palette using terminal primitives
+                println!("{}Hello from 256-color! 🎭{}", terminal_primitives.error, terminal_primitives.reset);
+                println!("{}Terminal supports 8-bit color!{}", terminal_primitives.success, terminal_primitives.reset);
                 logger.debug("Using 256-color terminal output", None);
             },
             TerminalColorCaps::Ansi16 => {
-                // Basic 16 colors
-                print!("\x1b[31mHello from Standard color! 🔴\x1b[0m\n");
-                print!("\x1b[32mTerminal supports basic 16 colors!\x1b[0m\n");
+                // Basic 16 colors using terminal primitives
+                println!("{}Hello from Standard color! 🔴{}", terminal_primitives.red, terminal_primitives.reset);
+                println!("{}Terminal supports basic 16 colors!{}", terminal_primitives.green, terminal_primitives.reset);
                 logger.debug("Using 16-color terminal output", None);
             },
             TerminalColorCaps::None => unreachable!(), // Already checked above
         }
-        // Ensure we're completely reset
-        print!("\x1b[0m");
+        // Ensure we're completely reset using primitives
+        print!("{}", terminal_primitives.reset);
         std::io::stdout().flush().ok();
     } else {
         // Plain text fallback for non-TTY or no color support
@@ -98,8 +105,66 @@ fn main() -> Result<()> {
         logger.debug("Using plain text output (no TTY or color support)", None);
     }
     
-    logger.info("✨ Core system test completed successfully!", None);
-    logger.debug("All systems validated: config → terminal → logger → main", None);
+    // Test platform detection
+    logger.info("Testing platform detection capabilities", None);
+    let resources = SystemResources::detect()?;
+    println!("🖥️  Platform resources detected:");
+    println!("   • CPU cores: {}", resources.cpu_cores);
+    println!("   • Memory pressure: {:.2}%", resources.memory_pressure * 100.0);
+    println!("   • Total memory: {:.1} GB", resources.total_memory as f64 / (1024.0 * 1024.0 * 1024.0));
+    println!("   • Available memory: {:.1} GB", resources.available_memory as f64 / (1024.0 * 1024.0 * 1024.0));
+    println!("   • Optimal jobs: {}", resources.calculate_optimal_jobs(None));
+    
+    // Test networking with safe HTTP endpoint
+    logger.info("Testing networking manager initialization", None);
+    let networking_config = NetworkingConfig {
+        max_jobs: Some(2), // Keep it light for testing
+        timeout_seconds: 10,
+        trace_requests: true,
+    };
+    
+    let networking_manager = NetworkingManager::new(networking_config).await?;
+    println!("🌐 Networking manager initialized:");
+    println!("   • Optimal concurrent jobs: {}", networking_manager.optimal_jobs());
+    
+    // Test with safe HTTP endpoints (httpbin.org is designed for testing)
+    logger.info("Testing HTTP client with safe endpoints", None);
+    let test_urls = vec![
+        "https://httpbin.org/uuid".to_string(),
+        "https://httpbin.org/json".to_string(),
+    ];
+    
+    // Simple resolver function for testing
+    let test_resolver = |client: reqwest::Client, url: String| async move {
+        let response = client
+            .get(&url)
+            .header("User-Agent", "empack/0.1.0-test")
+            .send()
+            .await?;
+        
+        if !response.status().is_success() {
+            return Err(networking::NetworkingError::RequestFailed {
+                source: response.error_for_status().unwrap_err(),
+            });
+        }
+        
+        let body = response.text().await?;
+        
+        Ok::<String, networking::NetworkingError>(format!("Success: {} chars", body.len()))
+    };
+    
+    let results = networking_manager.resolve_mods(test_urls, test_resolver).await?;
+    
+    println!("📡 HTTP test results:");
+    for (i, result) in results.iter().enumerate() {
+        match result {
+            Ok(response) => println!("   • Test {}: {}", i + 1, response),
+            Err(e) => println!("   • Test {}: Error - {}", i + 1, e),
+        }
+    }
+    
+    logger.info("Core system test completed successfully", None);
+    logger.debug("All systems validated: config → terminal → logger → platform → networking → main", None);
     
     Ok(())
 }
