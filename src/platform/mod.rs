@@ -599,7 +599,7 @@ fn detect_memory_info_windows() -> Result<(u64, u64), PlatformError> {
     
     let result: BOOL = unsafe { BOOL(GlobalMemoryStatusEx(&mut memory_status)) };
     
-    if result == 0 {
+    if result == false {
         return Err(PlatformError::SystemCallFailed {
             call: "GlobalMemoryStatusEx".to_string(),
             reason: "Failed to get memory status".to_string(),
