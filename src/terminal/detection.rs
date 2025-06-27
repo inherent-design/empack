@@ -354,11 +354,29 @@ pub(crate) fn detect_unicode_capabilities(
 
     #[cfg(windows)]
     {
-        // Windows: assume UTF-8 support on Windows 10+
-        if supports_extended_unicode(env_config) {
-            return Ok(TerminalUnicodeCaps::ExtendedUnicode);
+        // Windows: Check code pages for UTF-8 support (65001)
+        use windows_sys::Win32::Globalization::{GetACP, GetOEMCP};
+        use windows_sys::Win32::System::Console::{GetConsoleCP, GetConsoleOutputCP};
+        
+        unsafe {
+            let acp = GetACP();
+            let oemp = GetOEMCP(); 
+            let console_cp = GetConsoleCP();
+            let console_output_cp = GetConsoleOutputCP();
+            
+            // Check if any code page is UTF-8 (65001)
+            let is_utf8 = acp == 65001 || oemp == 65001 || console_cp == 65001 || console_output_cp == 65001;
+            
+            if is_utf8 {
+                if supports_extended_unicode(env_config) {
+                    return Ok(TerminalUnicodeCaps::ExtendedUnicode);
+                }
+                return Ok(TerminalUnicodeCaps::BasicUnicode);
+            }
         }
-        return Ok(TerminalUnicodeCaps::BasicUnicode);
+        
+        // No UTF-8 code pages detected, return Ascii
+        return Ok(TerminalUnicodeCaps::Ascii);
     }
 
     Ok(TerminalUnicodeCaps::Ascii)
