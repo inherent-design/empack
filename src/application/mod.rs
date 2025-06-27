@@ -1,4 +1,4 @@
-use crate::core::primitives::*;
+use crate::primitives::*;
 use clap::Parser;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -56,7 +56,7 @@ pub struct AppConfig {
     pub workdir: Option<PathBuf>,
 
     /// Number of parallel API requests
-    #[arg(short, long, env ="EMPACK_CPU_JOBS", default_value = DEFAULT_CPU_PARALLELS)]
+    #[arg(short = 'j', long, env ="EMPACK_CPU_JOBS", default_value = DEFAULT_CPU_PARALLELS)]
     #[serde(default = "default_cpu_parallels")]
     pub cpu_jobs: usize,
 
@@ -81,17 +81,17 @@ pub struct AppConfig {
     pub curseforge_api_client_key: Option<String>,
 
     /// Verbosity level (0=error, 1=warn, 2=info, 3=debug, 4=trace)
-    #[arg(short, long, env="EMPACK_LOG_LEVEL", default_value = DEFAULT_LOG_LEVEL)]
+    #[arg(long, env="EMPACK_LOG_LEVEL", default_value = DEFAULT_LOG_LEVEL)]
     #[serde(default = "default_log_level")]
     pub log_level: u8,
 
     /// Output format (text, json, yaml)
-    #[arg(short, long, env="EMPACK_LOG_FORMAT", default_value = DEFAULT_LOG_FORMAT)]
+    #[arg(long, env="EMPACK_LOG_FORMAT", default_value = DEFAULT_LOG_FORMAT)]
     #[serde(default = "default_log_format")]
     pub log_format: LogFormat,
 
     /// Log output stream (stderr, stdout)
-    #[arg(short, long, env="EMPACK_LOG_OUTPUT", default_value = DEFAULT_LOG_OUTPUT)]
+    #[arg(long, env="EMPACK_LOG_OUTPUT", default_value = DEFAULT_LOG_OUTPUT)]
     #[serde(default = "default_log_output")]
     pub log_output: LogOutput,
 
@@ -161,24 +161,24 @@ impl AppConfig {
         // 3. Handle standard environment variables (override empack config if set)
         let env_config = from_env::<CommonEnvConfig>()
             .map_err(|e| ConfigError::EnvironmentParsingFailed { source: e })?;
-        
+
         // Apply color environment variables with proper precedence:
         // CLICOLOR=0 < NO_COLOR < FORCE_COLOR (most historically universal)
-        
+
         // 1. CLICOLOR=0 (BSD/macOS standard - disable color)
         if let Some(clicolor) = &env_config.clicolor {
             if clicolor == "0" {
                 config.color = TerminalCapsDetectIntent::Never;
             }
         }
-        
+
         // 2. NO_COLOR (universal standard - any non-empty value disables color)
         if let Some(no_color) = &env_config.no_color {
             if !no_color.is_empty() {
                 config.color = TerminalCapsDetectIntent::Never;
             }
         }
-        
+
         // 3. FORCE_COLOR (Node.js/modern standard - highest precedence)
         if let Some(force_color) = &env_config.force_color {
             match force_color.as_str() {
@@ -187,7 +187,7 @@ impl AppConfig {
                 _ => {} // Invalid values ignored
             }
         }
-        
+
         // 4. CI detection (disable interactive features)
         if env_config.ci.is_some() {
             config.color = TerminalCapsDetectIntent::Never;
@@ -293,7 +293,9 @@ impl AppConfig {
     fn validate(&mut self) -> Result<(), ConfigError> {
         // Resolve working directory (simple fallback only)
         if self.workdir.is_none() {
-            self.workdir = Some(std::env::current_dir().map_err(|e| ConfigError::CurrentDirError { source: e })?);
+            self.workdir = Some(
+                std::env::current_dir().map_err(|e| ConfigError::CurrentDirError { source: e })?,
+            );
         }
 
         Ok(())
@@ -343,11 +345,13 @@ mod tests {
     #[test]
     fn test_no_color_environment_variable() {
         clean_test_env();
-        unsafe { env::set_var("NO_COLOR", "1"); }
-        
+        unsafe {
+            env::set_var("NO_COLOR", "1");
+        }
+
         let env_config: CommonEnvConfig = envy::from_env().unwrap();
         assert_eq!(env_config.no_color, Some("1".to_string()));
-        
+
         // Test that NO_COLOR disables color
         let mut config = AppConfig::default();
         if let Some(no_color) = &env_config.no_color {
@@ -356,18 +360,20 @@ mod tests {
             }
         }
         assert_eq!(config.color, TerminalCapsDetectIntent::Never);
-        
+
         clean_test_env();
     }
 
     #[test]
     fn test_force_color_environment_variable() {
         clean_test_env();
-        unsafe { env::set_var("FORCE_COLOR", "1"); }
-        
+        unsafe {
+            env::set_var("FORCE_COLOR", "1");
+        }
+
         let env_config: CommonEnvConfig = envy::from_env().unwrap();
         assert_eq!(env_config.force_color, Some("1".to_string()));
-        
+
         // Test that FORCE_COLOR=1 enables color
         let mut config = AppConfig::default();
         if let Some(force_color) = &env_config.force_color {
@@ -378,18 +384,20 @@ mod tests {
             }
         }
         assert_eq!(config.color, TerminalCapsDetectIntent::Always);
-        
+
         clean_test_env();
     }
 
     #[test]
     fn test_force_color_false_disables_color() {
         clean_test_env();
-        unsafe { env::set_var("FORCE_COLOR", "0"); }
-        
+        unsafe {
+            env::set_var("FORCE_COLOR", "0");
+        }
+
         let env_config: CommonEnvConfig = envy::from_env().unwrap();
         assert_eq!(env_config.force_color, Some("0".to_string()));
-        
+
         let mut config = AppConfig::default();
         if let Some(force_color) = &env_config.force_color {
             match force_color.as_str() {
@@ -399,18 +407,20 @@ mod tests {
             }
         }
         assert_eq!(config.color, TerminalCapsDetectIntent::Never);
-        
+
         clean_test_env();
     }
 
     #[test]
     fn test_clicolor_environment_variable() {
         clean_test_env();
-        unsafe { env::set_var("CLICOLOR", "0"); }
-        
+        unsafe {
+            env::set_var("CLICOLOR", "0");
+        }
+
         let env_config: CommonEnvConfig = envy::from_env().unwrap();
         assert_eq!(env_config.clicolor, Some("0".to_string()));
-        
+
         // Test that CLICOLOR=0 disables color
         let mut config = AppConfig::default();
         if let Some(clicolor) = &env_config.clicolor {
@@ -419,42 +429,44 @@ mod tests {
             }
         }
         assert_eq!(config.color, TerminalCapsDetectIntent::Never);
-        
+
         clean_test_env();
     }
 
     #[test]
     fn test_ci_environment_variable() {
         clean_test_env();
-        unsafe { env::set_var("CI", "true"); }
-        
+        unsafe {
+            env::set_var("CI", "true");
+        }
+
         let env_config: CommonEnvConfig = envy::from_env().unwrap();
         assert_eq!(env_config.ci, Some("true".to_string()));
-        
+
         // Test that CI disables color
         let mut config = AppConfig::default();
         if env_config.ci.is_some() {
             config.color = TerminalCapsDetectIntent::Never;
         }
         assert_eq!(config.color, TerminalCapsDetectIntent::Never);
-        
+
         clean_test_env();
     }
 
     #[test]
     fn test_environment_variable_precedence() {
         clean_test_env();
-        
+
         // Set all environment variables that affect color
         unsafe {
-            env::set_var("CLICOLOR", "0");   // Should disable color
-            env::set_var("NO_COLOR", "1");   // Should override CLICOLOR and disable color
+            env::set_var("CLICOLOR", "0"); // Should disable color
+            env::set_var("NO_COLOR", "1"); // Should override CLICOLOR and disable color
             env::set_var("FORCE_COLOR", "1"); // Should override everything and enable color
         }
-        
+
         let env_config: CommonEnvConfig = envy::from_env().unwrap();
         let mut config = AppConfig::default();
-        
+
         // Apply precedence: CLICOLOR < NO_COLOR < FORCE_COLOR
         // 1. CLICOLOR=0 (BSD/macOS standard)
         if let Some(clicolor) = &env_config.clicolor {
@@ -462,14 +474,14 @@ mod tests {
                 config.color = TerminalCapsDetectIntent::Never;
             }
         }
-        
+
         // 2. NO_COLOR (universal standard - overrides CLICOLOR)
         if let Some(no_color) = &env_config.no_color {
             if !no_color.is_empty() {
                 config.color = TerminalCapsDetectIntent::Never;
             }
         }
-        
+
         // 3. FORCE_COLOR (highest precedence)
         if let Some(force_color) = &env_config.force_color {
             match force_color.as_str() {
@@ -478,41 +490,45 @@ mod tests {
                 _ => {}
             }
         }
-        
+
         // FORCE_COLOR=1 should win, enabling color despite NO_COLOR and CLICOLOR
         assert_eq!(config.color, TerminalCapsDetectIntent::Always);
-        
+
         clean_test_env();
     }
 
     #[test]
     fn test_empty_no_color_is_ignored() {
         clean_test_env();
-        unsafe { env::set_var("NO_COLOR", ""); } // Empty value should be ignored
-        
+        unsafe {
+            env::set_var("NO_COLOR", "");
+        } // Empty value should be ignored
+
         let env_config: CommonEnvConfig = envy::from_env().unwrap();
         let mut config = AppConfig::default();
-        
+
         if let Some(no_color) = &env_config.no_color {
             if !no_color.is_empty() {
                 config.color = TerminalCapsDetectIntent::Never;
             }
         }
-        
+
         // Empty NO_COLOR should not change the default
         assert_eq!(config.color, TerminalCapsDetectIntent::Auto);
-        
+
         clean_test_env();
     }
 
     #[test]
     fn test_invalid_force_color_values_ignored() {
         clean_test_env();
-        unsafe { env::set_var("FORCE_COLOR", "invalid"); }
-        
+        unsafe {
+            env::set_var("FORCE_COLOR", "invalid");
+        }
+
         let env_config: CommonEnvConfig = envy::from_env().unwrap();
         let mut config = AppConfig::default();
-        
+
         if let Some(force_color) = &env_config.force_color {
             match force_color.as_str() {
                 "0" | "false" => config.color = TerminalCapsDetectIntent::Never,
@@ -520,10 +536,10 @@ mod tests {
                 _ => {} // Invalid values should be ignored
             }
         }
-        
+
         // Invalid FORCE_COLOR should not change the default
         assert_eq!(config.color, TerminalCapsDetectIntent::Auto);
-        
+
         clean_test_env();
     }
 }

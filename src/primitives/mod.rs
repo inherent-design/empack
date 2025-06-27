@@ -1,11 +1,18 @@
-use std::str::FromStr;
-
 use clap::ValueEnum;
+use std::str::FromStr;
 use thiserror::Error;
+
+// Import shared macros and patterns
+mod shared;
+use shared::impl_fromstr_for_value_enum;
+
+// Import and re-export terminal primitives
+pub mod terminal;
+pub use terminal::*;
 
 /// Available log output streams
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, clap::ValueEnum)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "lowercase")]
 pub enum LogOutput {
     /// STDERR
     Stderr,
@@ -25,7 +32,7 @@ pub enum LogLevel {
 
 /// Output formats for structured logging
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[serde(rename_all = "lowercase")]
 pub enum LogFormat {
     /// TEXT
     /// alias: text, txt, plain
@@ -40,90 +47,67 @@ pub enum LogFormat {
     Yaml,
 }
 
-/// Runtime color detection intent
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TerminalCapsDetectIntent {
-    /// Let module detect
-    /// alias: auto, automatic, detect, default
-    Auto,
+// ============================================================================
+// LOGGER CONFIGURATION TYPES
+// ============================================================================
 
-    /// Explicitly enable (useful in non-interactive)
-    /// alias: always, force, on
-    Always,
-
-    /// Explicitly disable (also useful in non-interactive)
-    /// alias: never, off
-    Never,
+/// Logger configuration combining terminal capabilities with application config
+#[derive(Debug, Clone)]
+pub struct LoggerConfig {
+    pub level: LogLevel,
+    pub format: LogFormat,
+    pub output: LogOutput,
+    pub terminal_caps: crate::terminal::TerminalCapabilities,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TerminalColorCaps {
-    None,
-    Ansi16,
-    Ansi256,
-    TrueColor,
+/// Progress-aware logging context for operations that need progress tracking
+#[derive(Debug, Clone)]
+pub struct LogContext {
+    pub operation: String,
+    pub total_items: Option<u64>,
+    pub current_item: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TerminalUnicodeCaps {
-    Ascii,
-    BasicUnicode,
-    ExtendedUnicode,
+impl LoggerConfig {
+    /// Create LoggerConfig from AppConfig and TerminalCapabilities
+    pub fn from_app_config(
+        config: &crate::application::AppConfig,
+        terminal_caps: &crate::terminal::TerminalCapabilities,
+    ) -> Self {
+        Self {
+            level: LogLevel::from_verbosity(config.log_level),
+            format: config.log_format,
+            output: config.log_output,
+            terminal_caps: terminal_caps.clone(),
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TerminalGraphicsCaps {
-    None,
-    Kitty,
+impl LogContext {
+    pub fn new(operation: &str) -> Self {
+        Self {
+            operation: operation.to_string(),
+            total_items: None,
+            current_item: None,
+        }
+    }
+
+    pub fn with_progress(operation: &str, total: u64) -> Self {
+        Self {
+            operation: operation.to_string(),
+            total_items: Some(total),
+            current_item: None,
+        }
+    }
+
+    pub fn set_progress(&mut self, current: u64) {
+        self.current_item = Some(current);
+    }
 }
 
 // ============================================================================
 // STRUCTURED ERROR TYPES
 // ============================================================================
-
-/// Terminal detection and capability probing errors
-#[derive(Debug, Error)]
-pub enum TerminalError {
-    #[error("Cannot probe capabilities on non-interactive terminal")]
-    NotInteractive,
-
-    #[error("Terminal capability probing timed out after {timeout}ms")]
-    ProbeTimeout { timeout: u64 },
-
-    #[error("Graphics protocol not supported: {protocol}")]
-    UnsupportedGraphics { protocol: String },
-
-    #[error("Failed to read terminal response: {source}")]
-    ResponseReadFailed {
-        #[from]
-        source: std::io::Error,
-    },
-
-    #[error("Terminal response contains invalid UTF-8: {source}")]
-    InvalidUtf8Response {
-        #[from]
-        source: std::string::FromUtf8Error,
-    },
-
-    #[error("Terminal dimension detection failed: {reason}")]
-    DimensionDetectionFailed { reason: String },
-
-    #[error("Raw mode setup failed: {reason}")]
-    RawModeSetupFailed { reason: String },
-
-    #[error("Environment variable parsing failed: {source}")]
-    EnvironmentParsingFailed {
-        #[from]
-        source: envy::Error,
-    },
-
-    #[error("Command execution failed: {command}")]
-    CommandFailed { command: String },
-}
 
 /// Application configuration loading and validation errors
 #[derive(Debug, Error)]
@@ -157,6 +141,28 @@ pub enum ConfigError {
 
     #[error("Failed to parse configuration value '{value}': {reason}")]
     ParseError { value: String, reason: String },
+}
+
+/// Logger initialization and operation errors
+#[derive(Debug, Error)]
+pub enum LoggerError {
+    #[error("Failed to initialize tracing subscriber: {reason}")]
+    InitializationFailed { reason: String },
+
+    #[error("Logger already initialized")]
+    AlreadyInitialized,
+
+    #[error("Invalid log format configuration: {format:?}")]
+    InvalidFormat { format: LogFormat },
+
+    #[error("Writer initialization failed: {source}")]
+    WriterError {
+        #[from]
+        source: std::io::Error,
+    },
+
+    #[error("Tracing subscriber build failed: {reason}")]
+    SubscriberBuildFailed { reason: String },
 }
 
 impl LogLevel {
@@ -226,96 +232,10 @@ impl ValueEnum for LogFormat {
     }
 }
 
-impl ValueEnum for TerminalCapsDetectIntent {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Auto, Self::Always, Self::Never]
-    }
-
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        match self {
-            Self::Auto => Some(
-                clap::builder::PossibleValue::new("auto")
-                    .alias("automatic")
-                    .alias("detect")
-                    .alias("default"),
-            ),
-            Self::Always => Some(
-                clap::builder::PossibleValue::new("always")
-                    .alias("force")
-                    .alias("on"),
-            ),
-            Self::Never => Some(clap::builder::PossibleValue::new("never").alias("off")),
-        }
-    }
-}
-
-impl FromStr for LogLevel {
-    type Err = ConfigError;
-
-    fn from_str(s: &str) -> Result<Self, ConfigError> {
-        for variant in Self::value_variants() {
-            if variant.to_possible_value().unwrap().matches(s, false) {
-                return Ok(*variant);
-            }
-        }
-
-        Err(ConfigError::ParseError {
-            value: s.to_string(),
-            reason: "invalid log level".to_string(),
-        })
-    }
-}
-
-impl FromStr for LogFormat {
-    type Err = ConfigError;
-
-    fn from_str(s: &str) -> Result<Self, ConfigError> {
-        for variant in Self::value_variants() {
-            if variant.to_possible_value().unwrap().matches(s, false) {
-                return Ok(*variant);
-            }
-        }
-
-        Err(ConfigError::ParseError {
-            value: s.to_string(),
-            reason: "invalid log format".to_string(),
-        })
-    }
-}
-
-impl FromStr for LogOutput {
-    type Err = ConfigError;
-
-    fn from_str(s: &str) -> Result<Self, ConfigError> {
-        for variant in Self::value_variants() {
-            if variant.to_possible_value().unwrap().matches(s, false) {
-                return Ok(*variant);
-            }
-        }
-
-        Err(ConfigError::ParseError {
-            value: s.to_string(),
-            reason: "invalid log output stream".to_string(),
-        })
-    }
-}
-
-impl FromStr for TerminalCapsDetectIntent {
-    type Err = ConfigError;
-
-    fn from_str(s: &str) -> Result<Self, ConfigError> {
-        for variant in Self::value_variants() {
-            if variant.to_possible_value().unwrap().matches(s, false) {
-                return Ok(*variant);
-            }
-        }
-
-        Err(ConfigError::ParseError {
-            value: s.to_string(),
-            reason: "invalid terminal capability detection intent".to_string(),
-        })
-    }
-}
+// Generate FromStr implementations for all ValueEnum types
+impl_fromstr_for_value_enum!(LogLevel, "invalid log level");
+impl_fromstr_for_value_enum!(LogFormat, "invalid log format");
+impl_fromstr_for_value_enum!(LogOutput, "invalid log output stream");
 
 #[cfg(test)]
 mod tests {
@@ -591,20 +511,28 @@ mod tests {
         let unicode = TerminalUnicodeCaps::ExtendedUnicode;
         assert_eq!(format!("{:?}", unicode), "ExtendedUnicode");
 
-        let graphics = TerminalGraphicsCaps::Kitty;
-        assert_eq!(format!("{:?}", graphics), "Kitty");
+        let graphics = TerminalGraphicsCaps::Kitty(Default::default());
+        assert!(format!("{:?}", graphics).contains("Kitty"));
     }
 
     #[test]
     fn test_terminal_error_display() {
         // Test error message formatting
         let error = TerminalError::NotInteractive;
-        assert_eq!(error.to_string(), "Cannot probe capabilities on non-interactive terminal");
+        assert_eq!(
+            error.to_string(),
+            "Cannot probe capabilities on non-interactive terminal"
+        );
 
         let error = TerminalError::ProbeTimeout { timeout: 1000 };
-        assert_eq!(error.to_string(), "Terminal capability probing timed out after 1000ms");
+        assert_eq!(
+            error.to_string(),
+            "Terminal capability probing timed out after 1000ms"
+        );
 
-        let error = TerminalError::UnsupportedGraphics { protocol: "sixel".to_string() };
+        let error = TerminalError::UnsupportedGraphics {
+            protocol: "sixel".to_string(),
+        };
         assert_eq!(error.to_string(), "Graphics protocol not supported: sixel");
     }
 
@@ -612,16 +540,35 @@ mod tests {
     fn test_config_error_display() {
         // Test error message formatting
         let error = ConfigError::AlreadyInitialized;
-        assert_eq!(error.to_string(), "Global configuration already initialized");
+        assert_eq!(
+            error.to_string(),
+            "Global configuration already initialized"
+        );
 
-        let error = ConfigError::InvalidWorkDir { path: "/invalid/path".to_string() };
-        assert_eq!(error.to_string(), "Invalid working directory: /invalid/path");
+        let error = ConfigError::InvalidWorkDir {
+            path: "/invalid/path".to_string(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "Invalid working directory: /invalid/path"
+        );
 
-        let error = ConfigError::ValidationFailed { reason: "missing required field".to_string() };
-        assert_eq!(error.to_string(), "Configuration validation failed: missing required field");
+        let error = ConfigError::ValidationFailed {
+            reason: "missing required field".to_string(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "Configuration validation failed: missing required field"
+        );
 
-        let error = ConfigError::ParseError { value: "invalid_level".to_string(), reason: "invalid log level".to_string() };
-        assert_eq!(error.to_string(), "Failed to parse configuration value 'invalid_level': invalid log level");
+        let error = ConfigError::ParseError {
+            value: "invalid_level".to_string(),
+            reason: "invalid log level".to_string(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "Failed to parse configuration value 'invalid_level': invalid log level"
+        );
     }
 
     #[test]
@@ -629,10 +576,13 @@ mod tests {
         // Test that errors can be constructed from their sources
         let io_error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
         let terminal_error = TerminalError::ResponseReadFailed { source: io_error };
-        
+
         // Should be able to access the source
         assert!(terminal_error.source().is_some());
-        assert_eq!(terminal_error.to_string(), "Failed to read terminal response: access denied");
+        assert_eq!(
+            terminal_error.to_string(),
+            "Failed to read terminal response: access denied"
+        );
     }
 
     // =============================================================================
@@ -708,14 +658,16 @@ mod tests {
                 LogLevel::Info.should_log(level),
                 fixture.should_log_at_info,
                 "Verbosity {} ({}): Info logging expectation failed",
-                fixture.verbosity, fixture.description
+                fixture.verbosity,
+                fixture.description
             );
 
             assert_eq!(
                 LogLevel::Debug.should_log(level),
                 fixture.should_log_at_debug,
                 "Verbosity {} ({}): Debug logging expectation failed",
-                fixture.verbosity, fixture.description
+                fixture.verbosity,
+                fixture.description
             );
         }
     }
@@ -747,11 +699,15 @@ mod tests {
     #[test]
     fn test_log_format_advanced_fixtures() {
         let fixture = create_log_format_fixture();
-        
+
         // Test all variants are covered
         for variant in &fixture.variants {
             let debug_output = format!("{:?}", variant);
-            assert!(!debug_output.is_empty(), "Debug output should not be empty for {:?}", variant);
+            assert!(
+                !debug_output.is_empty(),
+                "Debug output should not be empty for {:?}",
+                variant
+            );
         }
 
         // Test invalid strings fail consistently
@@ -776,7 +732,8 @@ mod tests {
                 result.unwrap(),
                 *expected,
                 "Alias '{}' should parse to {:?}",
-                alias, expected
+                alias,
+                expected
             );
         }
 
@@ -811,25 +768,25 @@ mod tests {
             let results_clone = Arc::clone(&results);
             let handle = thread::spawn(move || {
                 let mut local_results = Vec::new();
-                
+
                 for i in 0..iterations {
                     // Test parsing under concurrent load
                     let format: Result<LogFormat, _> = "json".parse();
                     local_results.push(format.is_ok());
-                    
+
                     let level: Result<LogLevel, _> = "debug".parse();
                     local_results.push(level.is_ok());
-                    
+
                     let intent: Result<TerminalCapsDetectIntent, _> = "auto".parse();
                     local_results.push(intent.is_ok());
-                    
+
                     // Add some variation to test different parse paths
                     let test_strings = ["text", "error", "always"];
                     let test_string = test_strings[i % test_strings.len()];
                     let result: Result<LogFormat, _> = test_string.parse();
                     local_results.push(result.is_ok() || result.is_err()); // Should always be true
                 }
-                
+
                 let mut global_results = results_clone.lock().unwrap();
                 global_results.extend(local_results);
             });
@@ -848,7 +805,7 @@ mod tests {
             "Should have {} total parsing operations",
             total_operations
         );
-        
+
         // All parsing operations should have completed successfully
         assert!(
             final_results.iter().all(|&result| result),
@@ -861,7 +818,7 @@ mod tests {
         // Stress test error construction and formatting
         // This test leverages nextest's process isolation for memory safety
         let iterations = 1000;
-        
+
         for i in 0..iterations {
             // Create various error types rapidly
             let terminal_error = TerminalError::ProbeTimeout { timeout: i };
@@ -869,20 +826,18 @@ mod tests {
                 value: format!("test_value_{}", i),
                 reason: format!("test_reason_{}", i),
             };
-            
+
             // Test that error display doesn't panic under stress
             let terminal_display = terminal_error.to_string();
             let config_display = config_error.to_string();
-            
+
             assert!(terminal_display.contains(&i.to_string()));
             assert!(config_display.contains(&format!("test_value_{}", i)));
-            
+
             // Test error chain construction
             if i % 100 == 0 {
-                let io_error = std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("io_error_{}", i)
-                );
+                let io_error =
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("io_error_{}", i));
                 let chained_error = TerminalError::ResponseReadFailed { source: io_error };
                 let chained_display = chained_error.to_string();
                 assert!(chained_display.contains("Failed to read terminal response"));
@@ -898,7 +853,7 @@ mod tests {
     fn test_cross_type_compatibility_matrix() {
         // Test interactions between different primitive types
         // This showcases how primitives work together in real scenarios
-        
+
         struct CompatibilityTestCase {
             log_format: LogFormat,
             log_level: LogLevel,
@@ -937,28 +892,38 @@ mod tests {
 
         for case in test_cases {
             // Test that each combination can be constructed and serialized
-            assert_eq!(case.valid_combination, true, "Test case should be valid: {}", case.description);
-            
+            assert_eq!(
+                case.valid_combination, true,
+                "Test case should be valid: {}",
+                case.description
+            );
+
             // Test debug output for each component
             let format_debug = format!("{:?}", case.log_format);
             let level_debug = format!("{:?}", case.log_level);
             let output_debug = format!("{:?}", case.log_output);
             let intent_debug = format!("{:?}", case.terminal_intent);
-            
+
             assert!(!format_debug.is_empty(), "Format debug should not be empty");
             assert!(!level_debug.is_empty(), "Level debug should not be empty");
             assert!(!output_debug.is_empty(), "Output debug should not be empty");
             assert!(!intent_debug.is_empty(), "Intent debug should not be empty");
-            
+
             // Test that combinations follow logical patterns
             match (case.log_format, case.log_level) {
                 (LogFormat::Json, LogLevel::Trace) | (LogFormat::Yaml, LogLevel::Trace) => {
                     // Structured formats with trace level should work
-                    assert!(case.valid_combination, "Structured formats should support trace level");
+                    assert!(
+                        case.valid_combination,
+                        "Structured formats should support trace level"
+                    );
                 }
                 (LogFormat::Text, _) => {
                     // Text format should work with any level
-                    assert!(case.valid_combination, "Text format should be universally compatible");
+                    assert!(
+                        case.valid_combination,
+                        "Text format should be universally compatible"
+                    );
                 }
                 _ => {}
             }
@@ -969,25 +934,25 @@ mod tests {
     fn test_memory_safety_and_clone_semantics() {
         // Test that all primitive types are properly copyable/cloneable
         // Leverages nextest's isolation to ensure no memory leaks between tests
-        
+
         let original_format = LogFormat::Json;
         let cloned_format = original_format.clone();
         let copied_format = original_format; // Should work due to Copy trait
-        
+
         assert_eq!(original_format, cloned_format);
         assert_eq!(cloned_format, copied_format);
-        
+
         // Test with all types that should implement Copy
         let level = LogLevel::Debug;
         let output = LogOutput::Stderr;
         let intent = TerminalCapsDetectIntent::Auto;
-        
+
         // These should all work without explicit clone() due to Copy trait
         let _level_copy = level;
         let _output_copy = output;
         let _intent_copy = intent;
         let _format_copy = copied_format;
-        
+
         // Original values should still be usable
         assert_eq!(level, LogLevel::Debug);
         assert_eq!(output, LogOutput::Stderr);
@@ -999,7 +964,7 @@ mod tests {
     fn test_exhaustive_error_scenario_coverage() {
         // Comprehensive error testing with all realistic scenarios
         use std::io::ErrorKind;
-        
+
         struct ErrorTestScenario {
             error: Box<dyn Fn() -> Box<dyn Error>>,
             expected_contains: Vec<&'static str>,
@@ -1024,7 +989,8 @@ mod tests {
             },
             ErrorTestScenario {
                 error: Box::new(|| {
-                    let io_err = std::io::Error::new(ErrorKind::PermissionDenied, "permission denied");
+                    let io_err =
+                        std::io::Error::new(ErrorKind::PermissionDenied, "permission denied");
                     Box::new(TerminalError::ResponseReadFailed { source: io_err })
                 }),
                 expected_contains: vec!["Failed to read", "permission denied"],
@@ -1035,18 +1001,24 @@ mod tests {
         for scenario in scenarios {
             let error = (scenario.error)();
             let error_string = error.to_string();
-            
+
             for expected in &scenario.expected_contains {
                 assert!(
                     error_string.contains(expected),
                     "Error '{}' should contain '{}' for scenario: {}",
-                    error_string, expected, scenario.description
+                    error_string,
+                    expected,
+                    scenario.description
                 );
             }
-            
+
             // Test that error has proper Debug output
             let debug_string = format!("{:?}", error);
-            assert!(!debug_string.is_empty(), "Debug output should not be empty for {}", scenario.description);
+            assert!(
+                !debug_string.is_empty(),
+                "Debug output should not be empty for {}",
+                scenario.description
+            );
         }
     }
 
@@ -1058,45 +1030,64 @@ mod tests {
     fn test_parsing_performance_characteristics() {
         // Not a full benchmark, but ensures parsing performance is reasonable
         // cargo-nextest isolation means this won't interfere with other tests
-        
+
         use std::time::{Duration, Instant};
-        
+
         let iterations = 10_000;
         let start = Instant::now();
-        
+
         for i in 0..iterations {
             let test_values = ["text", "json", "yaml", "error", "debug", "auto"];
             let test_value = test_values[i % test_values.len()];
-            
+
             // These should be very fast operations
             let _format: Result<LogFormat, _> = test_value.parse();
             let _level: Result<LogLevel, _> = test_value.parse();
             let _intent: Result<TerminalCapsDetectIntent, _> = test_value.parse();
         }
-        
+
         let elapsed = start.elapsed();
         let per_operation = elapsed / (iterations * 3) as u32;
-        
+
         // Parsing should be very fast - this is a performance regression test
         assert!(
             per_operation < Duration::from_micros(10),
             "Parsing should be fast: {} per operation is too slow",
             per_operation.as_nanos()
         );
-        
-        println!("Parsing performance: {} ns per operation", per_operation.as_nanos());
+
+        println!(
+            "Parsing performance: {} ns per operation",
+            per_operation.as_nanos()
+        );
     }
 
     #[test]
     fn test_enum_variant_completeness_regression() {
         // Regression test to ensure all enum variants are properly handled
         // If new variants are added, this test will fail and need updating
-        
-        assert_eq!(LogLevel::value_variants().len(), 5, "LogLevel should have exactly 5 variants");
-        assert_eq!(LogFormat::value_variants().len(), 3, "LogFormat should have exactly 3 variants");
-        assert_eq!(LogOutput::value_variants().len(), 2, "LogOutput should have exactly 2 variants");
-        assert_eq!(TerminalCapsDetectIntent::value_variants().len(), 3, "TerminalCapsDetectIntent should have exactly 3 variants");
-        
+
+        assert_eq!(
+            LogLevel::value_variants().len(),
+            5,
+            "LogLevel should have exactly 5 variants"
+        );
+        assert_eq!(
+            LogFormat::value_variants().len(),
+            3,
+            "LogFormat should have exactly 3 variants"
+        );
+        assert_eq!(
+            LogOutput::value_variants().len(),
+            2,
+            "LogOutput should have exactly 2 variants"
+        );
+        assert_eq!(
+            TerminalCapsDetectIntent::value_variants().len(),
+            3,
+            "TerminalCapsDetectIntent should have exactly 3 variants"
+        );
+
         // Ensure all variants can be round-tripped
         for variant in LogLevel::value_variants() {
             let possible_value = variant.to_possible_value().unwrap();

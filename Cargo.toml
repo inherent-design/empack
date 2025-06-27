@@ -9,22 +9,23 @@ repository = "https://github.com/inherent-design/empack"
 
 [dependencies]
 anyhow = "1.0.98"
-clap = { version = "4.5.40", features = ["derive", "env"] }
+clap = { version = "4.5.40", features = ["derive", "env", "unicode", "wrap_help"] }
 dialoguer = "0.11.0"
 dotenvy = "0.15.7"
 envy = "0.4.2"
 html-escape = "0.2.13"
-indicatif = "0.17.11"
+indicatif = { version = "0.17.11", features = ["rayon", "improved_unicode"] }
 percent-encoding = "2.3.1"
-reqwest = "0.12.20"
+reqwest = { version = "0.12.20", features = ["json", "gzip"] }
 serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
 serde_yaml = "0.9.34-deprecated"
 thiserror = "2.0.12"
-tokio = "1.45.1"
+tokio = { version = "1.45.1", features = ["full"] }
 tower = "0.5.2"
 tracing = "0.1.41"
 tracing-indicatif = "0.3.9"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "local-time", "time", "smallvec", "parking_lot"] }
 
 [dev-dependencies]
 criterion = "0.6.0"
