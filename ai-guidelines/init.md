@@ -3,11 +3,11 @@
 
 ## Project Overview
 
-**empack** is a smarter Minecraft modpack maker built in Rust. Automates modpack creation, building, and distribution with filesystem-based state management and multi-target build support.
+**empack** - Minecraft modpack management with filesystem-based state machine. Multi-crate Rust library with proven bash integration patterns.
 
-**Status**: Layer 0-1 Complete & Multi-Crate Architecture Established  
-**Codebase**: 7,819 lines Rust (26 files) + complete working v1 bash implementation + v2 config system  
-**State**: ✅ Multi-crate workspace + library API design + documentation
+**Status**: Multi-crate architecture + cross-platform tool detection implemented, CLI commands wired  
+**Codebase**: 9,672 lines Rust (29 files), 112 tests passing, V1/V2 bash reference implementations  
+**Next**: Packwiz integration in state machine transitions + template system implementation
 
 ## Atlas Context & Mission
 
@@ -59,11 +59,12 @@ workspace/
 - **Cross-Platform**: GitHub Actions + Act + cargo-nextest, 106 tests passing
 - **Type System**: Unified primitives-first architecture, graphics capabilities consolidated
 
-**Layer 2: Filesystem-State Integration (Next Phase)**
-- **State Discovery**: Runtime bounds from modpack folder structure
-- **Configuration Bridge**: empack.yml + pack.toml integration (v2 empack_reader.sh → Rust)
-- **Build Orchestration**: v1's proven 5-target system integration
-- **State Transitions**: Filesystem operations as state machine transitions
+**Layer 2: Filesystem-State Integration (In Progress)**
+- **State Machine**: ModpackState transitions (Uninitialized → Configured → Built) implemented
+- **CLI Commands**: Command routing through state machine operational (`requirements`, `init`, `build`, `sync`, `clean`)
+- **Cross-Platform Detection**: Composable tool detection API (packwiz, Go, archivers) working
+- **Packwiz Integration**: Needs implementation in state transition handlers
+- **Template System**: Needs V1 pattern integration
 
 ### Multi-Crate Benefits Achieved
 
@@ -109,7 +110,7 @@ workspace/
 
 ### Enhanced Module Integration
 
-**Current (Multi-Crate Ready)**:
+**Current (Multi-Crate + State Machine)**:
 ```rust
 crates/empack-lib/src/
 ├── lib.rs              // Public API with documentation
@@ -117,16 +118,18 @@ crates/empack-lib/src/
 ├── terminal/           // Cross-platform capability detection  
 ├── logger/             // Structured logging with progress tracking
 ├── networking/         // Async HTTP client with concurrency
-├── platform/           // System resource detection
+├── platform/           // System resource detection + tool capabilities
+│   └── capabilities.rs ✅ // Cross-platform program detection (new)
 ├── empack/             // Domain-specific modpack management
-│   ├── parsing.rs      ✅ // Minecraft types (keep)
-│   ├── search_intent.rs ✅ // Search classification (keep) 
-│   ├── resolved_project.rs ✅ // Resolution results (keep)
-│   ├── search.rs       ✅ // Business logic integration (keep)
-│   ├── state.rs        ✅ // Filesystem state machine operations
+│   ├── parsing.rs      ✅ // Minecraft types
+│   ├── search_intent.rs ✅ // Search classification
+│   ├── resolved_project.rs ✅ // Resolution results
+│   ├── search.rs       ✅ // Business logic integration
+│   ├── state.rs        ✅ // Filesystem state machine + transitions
 │   ├── config.rs       🆕 // empack.yml + pack.toml bridge (v2 logic)
 │   └── builds.rs       🆕 // v1 build orchestration patterns
-└── application/        // CLI interface and configuration management
+└── application/        // CLI interface and command execution
+    └── commands.rs     ✅ // CLI command handlers + state machine integration (new)
 ```
 
 **Integration Points**:
@@ -195,12 +198,12 @@ envy = "0.4"
 
 **Quality Metrics**:
 ```
-Language: Rust | Files: 26 | Lines: 7,819 | Code: 6,293 | Comments: 452
+Language: Rust | Files: 29 | Lines: 9,672 | Code: 7,815 | Comments: 508
 Performance: Enum parsing <10μs (macOS)
 Safety: Zero unsafe code
-Tests: 106 passing across multi-crate workspace
-Status: ✅ Clippy clean, complete testing, documentation
-Architecture: ✅ Multi-crate structure with library API design
+Tests: 112 passing (1 environment test failing)
+Status: ✅ Clippy clean, cross-platform tool detection, CLI operational
+Architecture: ✅ Multi-crate + composable platform detection API
 ```
 
 ## User Context (Development Partner)
@@ -292,6 +295,6 @@ cargo test -p empack-lib                         # Library-only testing
 
 **Integration Insights**: Multi-crate architecture achieved without artificial boundaries. Complete empack implementation in library form with beautiful documentation and convenient API, while binary provides transparent repackaging. Ready for filesystem-state integration of three proven systems.
 
-**Current Reality**: empack modpack maker with multi-crate architecture, proven business logic, cross-platform Rust foundation, documentation system, and filesystem-state integration strategy—ready for implementation.
+**Current Reality**: empack modpack maker with multi-crate architecture, filesystem state machine, cross-platform tool detection, CLI command routing operational. V1 business logic integration and template system remain for full functionality.
 
-🚀 **Phase**: Multi-crate library established. Ready for filesystem-state integration of three proven systems into cohesive empack platform.
+🚀 **Phase**: State machine + CLI commands operational. Ready for packwiz integration and V1 template system implementation to achieve functional `empack init` and `empack build`.

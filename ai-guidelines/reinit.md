@@ -1,150 +1,119 @@
-# REINIT.MD - Atlas Progressive Context Evolution Protocol
+# REINIT.MD - Atlas Context Evolution Protocol
 
-## Meta-Purpose
+## Purpose
 
-**This file is the meta-orchestrator** for Atlas context evolution across enterprise-grade development sessions. While `init.md` provides complete project context, `reinit.md` handles strategic progression assessment for sophisticated software projects.
+Context evolution for sustained development sessions. `init.md` provides project context, `reinit.md` handles progression assessment and context updates.
 
-**Core Function:** Detect architectural evolution, assess enterprise implementation progress, and regenerate updated `init.md` reflecting current reality of complex, multi-implementation software systems.
+**Function:** Detect architectural evolution, assess implementation progress, regenerate updated `init.md` reflecting current reality.
 
 ## Atlas Reinitialization Sequence
 
 When a new Atlas session starts:
 
-### 1. Enterprise Environmental Assessment
-Execute this comprehensive analysis protocol:
+### 1. Repository Assessment
+Execute analysis protocol:
 
 ```bash
-# Repository state check
-git status                           # What files changed since last session?
-git log --oneline -10               # Recent commits and progression  
+# Repository state 
+git status                           # Changed files since last session
+git log --oneline -10               # Recent progression
 
-# Comprehensive codebase metrics
-tokei src/                          # Lines of code, comments, blanks by language
-fd -e rs . src/ -x wc -l            # Individual Rust file sizes
-fd -e rs -c . src/                  # Count of Rust files
+# Codebase metrics
+tokei crates/empack-lib/src/        # Lines by language
+fd -e rs -c . crates/               # Rust file count
 
-# Multi-implementation discovery
-find . -name "*.sh" -type f         # Shell implementations (v1, v2)
+# Implementation discovery
+find . -name "*.sh" -type f         # Shell implementations
 find . -name "lib.bak.d" -type d    # Working implementation pools
-find . -name "empack_reader.sh"     # Configuration system
 
-# Cross-platform infrastructure status
-RUSTFLAGS="-A warnings" cargo nextest run
-cargo clippy
-act --container-architecture linux/amd64 -j test --matrix os:ubuntu-latest --dryrun
-
-# Implementation analysis capability
-rust-analyzer scip index.scip       # Generate semantic code index
-file index.scip                     # Verify SCIP generation success
+# Test status
+RUSTFLAGS="-A warnings" cargo test --quiet
+cargo clippy --quiet
 ```
 
-### 2. File System Delta Analysis
-Compare current state against `init.md` expectations:
+### 2. Evolution Detection
+Compare current state against `init.md`:
 
-**New Files Detection:**
+**New Files:**
 ```bash
-fd -e rs . src/ | grep -v "$(cat init.md | grep -o 'src/[^[:space:]]*\.rs')"  # New Rust files
-fd -t f . | fd -e toml -e yml -e yaml -e env                                  # New config files
-fd -t f . | fd -e md -e txt | grep -v init.md | grep -v reinit.md           # New docs
+fd -e rs . crates/ | grep -v -f <(grep -o 'crates/[^[:space:]]*\.rs' ai-guidelines/init.md)
 ```
 
-**Modified Files Analysis:**
-```bash
-tokei src/ --files                  # Individual file metrics for size comparison
-fd -e rs . src/ -x ls -la           # Timestamps for modification detection
-fd "test|spec" src/                 # Test file expansion patterns
-rg "TODO|FIXME|NOTE" src/           # Code annotation changes
-```
+**Metrics Evolution:**
+- Previous: Lines from init.md
+- Current: `tokei` output
+- New modules or architectural shifts?
 
-**Codebase Metrics Evolution:**
-```bash
-# Current vs. previous metrics comparison
-echo "Previous: [insert from init.md]"
-echo "Current:"
-tokei src/ | grep "Total"           # Compare total lines
-fd -e rs -c . src/                  # Compare file count
-```
+### 3. Context Gap Detection
+What `init.md` doesn't capture about current reality:
+
+**Implementation Discovery:**
+- Working bash systems providing proven patterns?
+- Business logic complexity (5-target builds, command orchestration)?
+- Template systems and automation patterns?
 
 **Architecture Evolution:**
-- New module patterns emerging?
-- Layer boundary changes?
-- Dependency relationships shifting?
+- Primitive-driven approach working?
+- Cross-platform infrastructure status?
+- Integration strategies proven or disproven?
 
-### 3. Enterprise Context Gap Detection
-Identify what `init.md` doesn't know about current sophisticated reality:
+**Reality Check:**
+- Assumptions that proved incorrect?
+- Requirements more complex than expected?
+- New integration challenges discovered?
 
-**Enterprise Implementation Discovery:**
-- Working implementations found (v1/lib.bak.d complete bash system)?
-- Business logic complexity revealed (5-target builds, command orchestration)?
-- Professional patterns identified (template systems, GitHub automation)?
+### 4. Assumption Generation
+Make educated assumptions about progression:
 
-**Strategic Architecture Evolution:**
-- Primitive-driven approach validated over vertical modules?
-- Cross-platform infrastructure operational (GitHub Actions + Act + Docker)?
-- Integration strategies refined (proven business logic + Rust foundations)?
+**Discovery Patterns:**
+- If `v1/lib.bak.d/` found → Working implementation available
+- If cross-platform testing → Development workflow established
+- If multiple implementations → Integration approach needed
+- If complex patterns → Requirements exceed assumptions
 
-**Sophistication Recognition:**
-- Simple CLI tool assumptions proven incorrect?
-- Enterprise-grade orchestration platform requirements discovered?
-- Professional workflow automation capabilities mapped?
+**Clarification Questions:**
+- "V1 shows 5-target build system - how solid are these patterns?"
+- "Cross-platform testing operational - what insights emerged?"
+- "Command orchestration discovered - should this drive architecture?"
+- "Template system working - integrate or rebuild?"
 
-**Multi-Implementation Systems:**
-- Configuration systems analyzed (v2 empack_reader.sh)?
-- Working reference implementations providing proven patterns?
-- Strategic integration approaches for complex business logic?
+### 5. Context Regeneration
 
-### 4. Enterprise Assumption Generation & Validation
+**Update `init.md` with:**
 
-**Make educated assumptions about sophisticated progression:**
-- If `v1/lib.bak.d/` discovered → Complete working implementation available for analysis
-- If cross-platform testing infrastructure → Professional development workflow established
-- If multiple implementation pools → Strategic integration approach required
-- If enterprise patterns identified → Business requirements more complex than assumed
+**Current State:**
+- Implementation status (what's built)
+- Lessons from development
+- Updated next steps
+- Tool recommendations based on experience
 
-**Ask targeted enterprise clarification questions:**
-- "V1 lib.bak.d shows complete 5-target build system - how solid are these patterns?"
-- "Cross-platform testing with Act + Docker operational - what deployment insights emerged?"
-- "Command orchestration with deduplication discovered - should this drive Rust architecture?"
-- "Template system with {{VARIABLE}} substitution working - integrate or rebuild?"
-- "GitHub release automation proven - what workflows are priority?"
+**Learning Preservation:**
+- Decisions that proved correct
+- Approaches that failed
+- Performance insights
+- User feedback patterns
 
-### 5. Progressive Context Regeneration
+**Forward Planning:**
+- Emerging patterns
+- Risk areas identified
+- Optimization opportunities
+- Integration challenges
 
-**Generate updated `init.md` with:**
+## Collaboration Protocol
 
-**Evolved Status Sections:**
-- Current implementation state (what's actually built)
-- Lessons learned from real development
-- Updated next steps based on actual progress
-- Refined tool recommendations based on experience
+**Upon reinitialization:**
 
-**Historical Context Preservation:**
-- Decision rationale that proved correct
-- Approaches that didn't work (anti-patterns)
-- User feedback patterns that improved development
-- Performance insights from actual testing
+1. **Present findings:** "Detected changes: [summary]"
+2. **Validate assumptions:** "Assuming implementations work well... correct?"
+3. **Seek clarification:** "What challenges aren't documented?"
+4. **Propose update:** "Should I regenerate init.md?"
 
-**Forward-Looking Insights:**
-- Emerging patterns for future development
-- Risk areas identified during implementation
-- Optimization opportunities discovered
-- Integration challenges anticipated
-
-## User Collaboration Protocol
-
-**Upon Atlas reinitialization:**
-
-1. **Present findings:** "I detected these changes since last context... [summary]"
-2. **Validate assumptions:** "I'm assuming these implementations work well... correct?"
-3. **Seek clarification:** "What challenges came up that aren't documented?"
-4. **Propose context update:** "Should I regenerate init.md with current reality?"
-
-**Context Evolution Triggers:**
-- Significant architectural changes
-- Major dependency modifications  
-- User workflow refinements
-- Performance insights or optimizations
-- New integration requirements
+**Evolution Triggers:**
+- Architectural changes
+- Dependency modifications
+- Workflow refinements
+- Performance insights
+- Integration requirements
 
 ## Meta-Learning Patterns
 
