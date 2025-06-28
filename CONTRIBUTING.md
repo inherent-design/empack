@@ -50,6 +50,44 @@ This provides clarity for debugging without noise from development artifacts.
 
 Production logging should be **intentional and permanent** - either tracing program flow (`trace`) or reporting problems (`error`). Everything else is temporary development scaffolding that should be cleaned up.
 
+### **Documentation and Content Style**
+
+**Semantic Clarity Over Marketing Language**
+
+Documentation and user-facing content should be clear, direct, and functional. Avoid business jargon and marketing superlatives.
+
+**Avoid These Terms:**
+- ~~"Enterprise-grade"~~ → just describe what it does
+- ~~"Production-ready"~~ → let quality speak for itself  
+- ~~"Intelligent/Intelligence"~~ → "smart" is fine, "AI-powered" is not
+- ~~"Orchestration"~~ → "coordination" or "management"
+- ~~"Comprehensive"~~ → be specific about what's included
+- ~~"Professional distribution"~~ → "distribution"
+- ~~"Workflow automation"~~ → "automation" or just describe the feature
+
+**Use These Instead:**
+- "Minecraft modpack management" not "enterprise modpack orchestration"
+- "Build system" not "build orchestration"
+- "Memory pressure assessment" not "comprehensive pressure analytics"
+- Simple, direct descriptions of actual functionality
+
+**Why:** 
+- Users want to know what the tool does, not how impressive it sounds
+- Technical accuracy over marketing language
+- Confidence through simplicity, not through adjectives
+
+**Example Transformations:**
+```diff
+- Enterprise-grade Minecraft modpack orchestration with intelligent workflow automation
++ Minecraft modpack management library
+
+- Comprehensive platform detection with robust error handling
++ Cross-platform system detection with error handling
+
+- Professional-grade logging infrastructure for production environments  
++ Structured logging with progress tracking
+```
+
 ### **Commit Style Guidelines**
 
 **Subject Line:**
