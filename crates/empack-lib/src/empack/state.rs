@@ -1,6 +1,9 @@
 use crate::primitives::*;
+use crate::empack::builds::{BuildError, BuildOrchestrator};
+use crate::empack::config::{ConfigError, ConfigManager};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use thiserror::Error;
 
 /// Filesystem state machine for modpack development
@@ -33,6 +36,21 @@ pub enum StateError {
 
     #[error("Configuration error: {reason}")]
     ConfigError { reason: String },
+
+    #[error("Build error: {source}")]
+    BuildError {
+        #[from]
+        source: BuildError,
+    },
+
+    #[error("Config management error: {source}")]
+    ConfigManagementError {
+        #[from]
+        source: ConfigError,
+    },
+
+    #[error("Command execution failed: {command}")]
+    CommandFailed { command: String },
 }
 
 impl ModpackStateManager {
@@ -56,10 +74,9 @@ impl ModpackStateManager {
             });
         }
 
-        // State detection based on file existence
         let empack_yml = self.workdir.join("empack.yml");
         let pack_toml = self.workdir.join("pack").join("pack.toml");
-        let dist_dir = self.workdir.join(".empack").join("dist");
+        let dist_dir = self.workdir.join("dist");
 
         // Check for built state first (most advanced)
         if dist_dir.exists() && dist_dir.is_dir() {
@@ -126,7 +143,7 @@ impl ModpackStateManager {
             ],
             ModpackState::Built => {
                 let mut files = self.get_state_files(ModpackState::Configured);
-                files.push(self.workdir.join(".empack").join("dist"));
+                files.push(self.workdir.join("dist"));
                 files
             }
         }
@@ -176,7 +193,7 @@ impl ModpackStateManager {
         }
     }
 
-    /// Execute a state transition
+    /// Execute a state transition with full business logic integration
     pub fn execute_transition(
         &self,
         transition: StateTransition,
@@ -191,8 +208,9 @@ impl ModpackStateManager {
                         to: ModpackState::Configured,
                     });
                 }
-                self.create_initial_structure()?;
-                Ok(ModpackState::Configured)
+                
+                // Execute with cleanup on failure
+                self.execute_initialize_with_cleanup()
             }
 
             StateTransition::Synchronize => {
@@ -202,8 +220,9 @@ impl ModpackStateManager {
                         to: ModpackState::Configured,
                     });
                 }
-                // Sync operation doesn't change state, just reconciles files
-                Ok(ModpackState::Configured)
+                
+                // Execute config reconciliation
+                self.execute_synchronize()
             }
 
             StateTransition::Build(targets) => {
@@ -213,8 +232,9 @@ impl ModpackStateManager {
                         to: ModpackState::Built,
                     });
                 }
-                self.create_build_structure(&targets)?;
-                Ok(ModpackState::Built)
+                
+                // Execute with cleanup on failure
+                self.execute_build_with_cleanup(&targets)
             }
 
             StateTransition::Clean => match current {
@@ -231,15 +251,251 @@ impl ModpackStateManager {
         }
     }
 
+    /// Execute initialization with error cleanup
+    fn execute_initialize_with_cleanup(&self) -> Result<ModpackState, StateError> {
+        // 1. Create basic directory structure
+        self.create_initial_structure()?;
+
+        // 2. Generate empack.yml via config.rs
+        let config_manager = ConfigManager::new(self.workdir.clone());
+        let default_yml = config_manager.generate_default_empack_yml()
+            .map_err(|e| {
+                self.clean_configuration().ok(); // Cleanup on failure
+                e
+            })?;
+        
+        let empack_yml = self.workdir.join("empack.yml");
+        fs::write(&empack_yml, default_yml)
+            .map_err(|e| {
+                self.clean_configuration().ok(); // Cleanup on failure
+                e
+            })?;
+
+        // 3. Run packwiz init
+        self.run_packwiz_init()
+            .map_err(|e| {
+                self.clean_configuration().ok(); // Cleanup on failure
+                e
+            })?;
+
+        Ok(ModpackState::Configured)
+    }
+
+    /// Execute synchronization (config reconciliation)
+    fn execute_synchronize(&self) -> Result<ModpackState, StateError> {
+        // Validate configuration consistency
+        let config_manager = ConfigManager::new(self.workdir.clone());
+        let issues = config_manager.validate_consistency()?;
+
+        if !issues.is_empty() {
+            for issue in issues {
+                eprintln!("Warning: {}", issue);
+            }
+        }
+
+        // Run packwiz refresh to sync mods
+        self.run_packwiz_refresh()?;
+
+        Ok(ModpackState::Configured)
+    }
+
+    /// Execute build with error cleanup
+    fn execute_build_with_cleanup(&self, targets: &[BuildTarget]) -> Result<ModpackState, StateError> {
+        let initial_state = self.discover_state()?;
+
+        // 1. Load project plan via config.rs
+        let config_manager = ConfigManager::new(self.workdir.clone());
+        let _project_plan = config_manager.create_project_plan()
+            .map_err(|e| {
+                self.revert_to_state(initial_state).ok();
+                e
+            })?;
+
+        // 2. Execute build pipeline via builds.rs
+        #[cfg(test)]
+        {
+            // Mock build execution for testing
+            let dist_dir = self.workdir.join("dist");
+            fs::create_dir_all(&dist_dir)?;
+            
+            for target in targets {
+                let target_dir = dist_dir.join(target.to_string().to_lowercase());
+                fs::create_dir_all(&target_dir)?;
+                
+                // Create a dummy artifact to simulate successful build
+                let artifact_name = match target {
+                    BuildTarget::Mrpack => "test-v1.0.0.mrpack",
+                    BuildTarget::Client => "test-v1.0.0-client.zip",
+                    BuildTarget::Server => "test-v1.0.0-server.zip", 
+                    BuildTarget::ClientFull => "test-v1.0.0-client-full.zip",
+                    BuildTarget::ServerFull => "test-v1.0.0-server-full.zip",
+                };
+                let artifact_path = dist_dir.join(artifact_name);
+                fs::write(&artifact_path, "mock build artifact")?;
+            }
+        }
+
+        #[cfg(not(test))]
+        {
+            let mut build_orchestrator = BuildOrchestrator::new(self.workdir.clone());
+            
+            // Use tokio::runtime::Handle::current() for async execution in sync context
+            let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                // We're in an async context
+                tokio::task::block_in_place(|| {
+                    handle.block_on(build_orchestrator.execute_build_pipeline(targets))
+                })
+            } else {
+                // We're not in an async context - create minimal runtime
+                let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                    self.revert_to_state(initial_state).ok();
+                    StateError::ConfigError { 
+                        reason: format!("Failed to create async runtime: {}", e) 
+                    }
+                })?;
+                rt.block_on(build_orchestrator.execute_build_pipeline(targets))
+            };
+
+            let build_results = result.map_err(|e| {
+                self.revert_to_state(initial_state).ok();
+                e
+            })?;
+
+            // Check if any builds failed
+            for result in &build_results {
+                if !result.success {
+                    eprintln!("Build failed for target {:?}: {:?}", result.target, result.warnings);
+                    self.revert_to_state(initial_state).ok();
+                    return Err(StateError::ConfigError {
+                        reason: format!("Build failed for target {:?}", result.target),
+                    });
+                }
+            }
+        }
+
+        Ok(ModpackState::Built)
+    }
+
+    /// Run packwiz init command
+    fn run_packwiz_init(&self) -> Result<(), StateError> {
+        #[cfg(test)]
+        {
+            // Mock packwiz init - create expected files
+            let pack_file = self.workdir.join("pack").join("pack.toml");
+            let default_pack_toml = r#"name = "Test Modpack"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.20.1"
+fabric = "0.14.21"
+"#;
+            fs::write(&pack_file, default_pack_toml)?;
+            
+            // Also create index.toml
+            let index_file = self.workdir.join("pack").join("index.toml");
+            let default_index = r#"hash-format = "sha256"
+
+[[files]]
+file = "pack.toml"
+hash = ""
+"#;
+            fs::write(&index_file, default_index)?;
+            return Ok(());
+        }
+
+        #[cfg(not(test))]
+        {
+            let pack_file = self.workdir.join("pack").join("pack.toml");
+            
+            let status = Command::new("packwiz")
+                .args(&["init", "--pack-file", pack_file.to_str().unwrap()])
+                .current_dir(&self.workdir)
+                .status()
+                .map_err(|e| StateError::CommandFailed {
+                    command: format!("packwiz init failed: {}", e),
+                })?;
+
+            if !status.success() {
+                return Err(StateError::CommandFailed {
+                    command: "packwiz init returned non-zero".to_string(),
+                });
+            }
+
+            Ok(())
+        }
+    }
+
+    /// Run packwiz refresh command
+    fn run_packwiz_refresh(&self) -> Result<(), StateError> {
+        #[cfg(test)]
+        {
+            // Mock packwiz refresh - verify pack.toml exists
+            let pack_file = self.workdir.join("pack").join("pack.toml");
+            if !pack_file.exists() {
+                return Err(StateError::MissingFile {
+                    file: "pack.toml".to_string(),
+                });
+            }
+            return Ok(());
+        }
+
+        #[cfg(not(test))]
+        {
+            let pack_file = self.workdir.join("pack").join("pack.toml");
+            
+            let status = Command::new("packwiz")
+                .args(&["--pack-file", pack_file.to_str().unwrap(), "refresh"])
+                .current_dir(&self.workdir)
+                .status()
+                .map_err(|e| StateError::CommandFailed {
+                    command: format!("packwiz refresh failed: {}", e),
+                })?;
+
+            if !status.success() {
+                return Err(StateError::CommandFailed {
+                    command: "packwiz refresh returned non-zero".to_string(),
+                });
+            }
+
+            Ok(())
+        }
+    }
+
+    /// Revert to previous state on error
+    fn revert_to_state(&self, target_state: ModpackState) -> Result<(), StateError> {
+        match target_state {
+            ModpackState::Uninitialized => {
+                // Remove all configuration
+                self.clean_configuration()
+            }
+            ModpackState::Configured => {
+                // Just remove build artifacts
+                self.clean_build_artifacts()
+            }
+            ModpackState::Built => {
+                // Already in valid state
+                Ok(())
+            }
+        }
+    }
+
     /// Create initial modpack structure
     fn create_initial_structure(&self) -> Result<(), StateError> {
-        // Create pack directory
         let pack_dir = self.workdir.join("pack");
         fs::create_dir_all(&pack_dir)?;
 
-        // Create .empack directory
-        let empack_dir = self.workdir.join(".empack");
-        fs::create_dir_all(&empack_dir)?;
+        let template_dir = self.workdir.join("templates");
+        fs::create_dir_all(&template_dir)?;
+        
+        let installer_dir = self.workdir.join("installer");
+        fs::create_dir_all(&installer_dir)?;
 
         // Create initial empack.yml if it doesn't exist
         let empack_yml = self.workdir.join("empack.yml");
@@ -272,7 +528,7 @@ impl ModpackStateManager {
 
     /// Clean build artifacts
     fn clean_build_artifacts(&self) -> Result<(), StateError> {
-        let dist_dir = self.workdir.join(".empack").join("dist");
+        let dist_dir = self.workdir.join("dist");
         if dist_dir.exists() {
             fs::remove_dir_all(&dist_dir)?;
         }
@@ -353,8 +609,8 @@ impl ModpackStateManager {
             empack_yml: self.workdir.join("empack.yml"),
             pack_dir: self.workdir.join("pack"),
             pack_toml: self.workdir.join("pack").join("pack.toml"),
-            empack_dir: self.workdir.join(".empack"),
-            dist_dir: self.workdir.join(".empack").join("dist"),
+            template_dir: self.workdir.join("templates"),
+            dist_dir: self.workdir.join("dist"),
         }
     }
 }
@@ -366,7 +622,7 @@ pub struct ModpackPaths {
     pub empack_yml: PathBuf,
     pub pack_dir: PathBuf,
     pub pack_toml: PathBuf,
-    pub empack_dir: PathBuf,
+    pub template_dir: PathBuf,
     pub dist_dir: PathBuf,
 }
 
@@ -409,7 +665,7 @@ mod tests {
         let paths = manager.paths();
         assert!(paths.empack_yml.exists());
         assert!(paths.pack_dir.exists());
-        assert!(paths.empack_dir.exists());
+        assert!(paths.template_dir.exists());
     }
 
     #[test]
@@ -501,7 +757,7 @@ mod tests {
         );
         assert_eq!(
             paths.build_output(BuildTarget::Mrpack),
-            manager.workdir.join(".empack").join("dist").join("mrpack")
+            manager.workdir.join("dist").join("mrpack")
         );
     }
 }

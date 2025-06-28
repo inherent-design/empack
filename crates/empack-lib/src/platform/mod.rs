@@ -1,5 +1,9 @@
+pub mod capabilities;
+
 use std::sync::OnceLock;
 use thiserror::Error;
+
+pub use capabilities::*;
 
 /// Platform-specific system resource detection errors
 #[derive(Debug, Error)]
