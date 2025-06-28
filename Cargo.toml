@@ -1,13 +1,21 @@
-[package]
-name = "empack"
-version = "0.1.0"
-edition = "2024"
-authors = ["mannie.exe <mannie@inherent.design>"]
-license = "MIT"
-readme = "README.md"
-repository = "https://github.com/inherent-design/empack"
+[workspace]
+resolver = "2"
+members = [
+    "crates/empack-lib",
+    "crates/empack",
+]
 
-[dependencies]
+[workspace.package]
+authors = ["mannie.exe <mannie@inherent.design>"]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/inherent-design/empack"
+version = "0.0.0-alpha.1"
+
+[workspace.dependencies]
+empack-lib = { path = "crates/empack-lib" }
+
+# External dependencies (versions shared across workspace)
 anyhow = "1.0.98"
 clap = { version = "4.5.40", features = ["derive", "env", "unicode", "wrap_help"] }
 dialoguer = "0.11.0"
@@ -21,17 +29,18 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 serde_yaml = "0.9.34-deprecated"
 thiserror = "2.0.12"
+toml = "0.8.23"
 tokio = { version = "1.45.1", features = ["full"] }
 tower = "0.5.2"
 tracing = "0.1.41"
 tracing-indicatif = "0.3.9"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "local-time", "time", "smallvec", "parking_lot"] }
 windows-core = "0.61.2"
-[dev-dependencies]
+
+# Dev dependencies
 criterion = "0.6.0"
+tempfile = "3.20.0"
 
-[target."cfg(unix)".dependencies]
+# Platform-specific dependencies
 libc = "0.2.174"
-
-[target."cfg(windows)".dependencies]
 windows-sys = { version = "0.60.2", features = ["Win32_System_SystemInformation", "Win32_Foundation", "Win32_Globalization", "Win32_System_Console"] }

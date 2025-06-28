@@ -1,0 +1,12 @@
+[package]
+name = "empack"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository = "https://github.com/inherent-design/empack/crates/empack"
+
+[dependencies]
+empack-lib = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
