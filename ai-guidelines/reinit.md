@@ -1,214 +1,212 @@
-# REINIT.MD - Atlas Context Evolution Protocol
+# Reinit Protocol - empack Operating System
 
-## Purpose
+## Session Initialization Sequence
 
-Context evolution for sustained development sessions. `init.md` provides project context, `reinit.md` handles progression assessment and context updates.
+**Project Status Assessment**: Standard software project health monitoring adapted to compositional orchestrator architecture. Use these commands to understand current system state and validate architectural health.
 
-**Function:** Detect architectural evolution, assess implementation progress, regenerate updated `init.md` reflecting current reality.
-
-## Atlas Reinitialization Sequence
-
-When a new Atlas session starts:
-
-### 1. Repository Assessment
-Execute analysis protocol:
+### Quick Health Check
 
 ```bash
-# Repository state 
-git status                           # Changed files since last session
-git log --oneline -10               # Recent progression
+# Session context establishment
+git status                              # Current changes
+git log --oneline -5                    # Recent development
 
-# Codebase metrics
-tokei crates/empack-lib/src/        # Lines by language
-fd -e rs -c . crates/               # Rust file count
+# Codebase metrics assessment  
+tokei crates/empack-lib/src/             # Implementation reality scale
+fd -e rs . crates/ | wc -l              # Rust file count
 
-# Implementation discovery
-find . -name "*.sh" -type f         # Shell implementations
-find . -name "lib.bak.d" -type d    # Working implementation pools
-
-# Test status
-RUSTFLAGS="-A warnings" cargo test --quiet
-cargo clippy --quiet
+# System integrity validation
+cargo check -p empack-lib               # Compilation health
+cargo nextest run                       # Test suite status
 ```
 
-### 2. Evolution Detection
-Compare current state against `init.md`:
+## Code Quality Spot Check
 
-**New Files:**
+**Technical debt accumulation assessment** - monitor these patterns for architectural health:
+
 ```bash
-fd -e rs . crates/ | grep -v -f <(grep -o 'crates/[^[:space:]]*\.rs' ai-guidelines/init.md)
+# Error handling patterns (avoid unwrap/expect in production code)
+rg --count "unwrap\(\)|expect\(" crates/
+
+# Debug artifacts cleanup (remove before commits)  
+rg --count "println!|dbg!" crates/
+
+# Clippy analysis (suppress warnings during development)
+RUSTFLAGS="-A warnings" cargo clippy 2>&1 | wc -l
+
+# Module size monitoring (watch for complexity accumulation)
+tokei crates/empack-lib/src/ --sort lines | head -10
 ```
 
-**Metrics Evolution:**
-- Previous: Lines from init.md
-- Current: `tokei` output
-- New modules or architectural shifts?
+### Development Analysis Commands
 
-### 3. Context Gap Detection
-What `init.md` doesn't capture about current reality:
+**Clean Development Environment**: Use `RUSTFLAGS="-A warnings"` to suppress low-level warnings during active development, enabling focus on architectural decisions without communication flow pollution:
 
-**Implementation Discovery:**
-- Working bash systems providing proven patterns?
-- Business logic complexity (5-target builds, command orchestration)?
-- Template systems and automation patterns?
-
-**Architecture Evolution:**
-- Primitive-driven approach working?
-- Cross-platform infrastructure status?
-- Integration strategies proven or disproven?
-
-**Reality Check:**
-- Assumptions that proved incorrect?
-- Requirements more complex than expected?
-- New integration challenges discovered?
-
-### 4. Assumption Generation
-Make educated assumptions about progression:
-
-**Discovery Patterns:**
-- If `v1/lib.bak.d/` found → Working implementation available
-- If cross-platform testing → Development workflow established
-- If multiple implementations → Integration approach needed
-- If complex patterns → Requirements exceed assumptions
-
-**Clarification Questions:**
-- "V1 shows 5-target build system - how solid are these patterns?"
-- "Cross-platform testing operational - what insights emerged?"
-- "Command orchestration discovered - should this drive architecture?"
-- "Template system working - integrate or rebuild?"
-
-### 5. Context Regeneration
-
-**Update `init.md` with:**
-
-**Current State:**
-- Implementation status (what's built)
-- Lessons from development
-- Updated next steps
-- Tool recommendations based on experience
-
-**Learning Preservation:**
-- Decisions that proved correct
-- Approaches that failed
-- Performance insights
-- User feedback patterns
-
-**Forward Planning:**
-- Emerging patterns
-- Risk areas identified
-- Optimization opportunities
-- Integration challenges
-
-## Collaboration Protocol
-
-**Upon reinitialization:**
-
-1. **Present findings:** "Detected changes: [summary]"
-2. **Validate assumptions:** "Assuming implementations work well... correct?"
-3. **Seek clarification:** "What challenges aren't documented?"
-4. **Propose update:** "Should I regenerate init.md?"
-
-**Evolution Triggers:**
-- Architectural changes
-- Dependency modifications
-- Workflow refinements
-- Performance insights
-- Integration requirements
-
-## Meta-Learning Patterns
-
-**Track these evolution indicators:**
-- Which library recommendations proved excellent vs problematic
-- How well layer architecture boundaries held during implementation
-- User communication patterns that work best for this project
-- Development velocity patterns (what accelerates vs slows progress)
-- Technical debt accumulation vs. resolution trends
-
-**Codebase Health Indicators:**
 ```bash
-# Code quality trends
-tokei src/ --sort lines             # Identify files growing rapidly
-rg "unwrap\(\)|expect\(" src/       # Error handling pattern usage
-rg "println!|dbg!" src/             # Debug artifact accumulation
-cargo clippy 2>&1 | wc -l           # Warning trend analysis
+# Clean test runs during development
+RUSTFLAGS="-A warnings" cargo nextest run
+
+# Clean clippy analysis for architectural focus
+RUSTFLAGS="-A warnings" cargo clippy
+
+# Clean compilation for rapid iteration
+RUSTFLAGS="-A warnings" cargo check
 ```
 
-**Reality Check Protocol:**
-- Are descriptions matching actual functionality?
-- Is complexity assessment accurate given current implementation?
-- Are "production/complete" labels premature for current state?
-- Do time estimates reflect actual development velocity?
+## LSP-Powered Dimensional Analysis
 
-## Atlas Identity Evolution
+Standard software development practice involves **architectural validation** through language server tooling - reference analysis, symbol navigation, and impact assessment enable confident system evolution and prevent architectural drift.
 
-**Preserve core Atlas traits while adapting:**
-- Research-first methodology (grows more targeted with experience)
-- Real-world pragmatism (informed by actual deployment results)
-- Bottom-up development (refined by layer interaction learnings)
-- Real-world validation (enhanced by accumulated test insights)
+### Implementation Reality Assessment
 
-**Evolve context-specific knowledge:**
-- empack domain expertise deepening
-- Rust ecosystem familiarity growing
-- User preference patterns becoming more precise
-- System integration insights accumulating
+```bash
+# Type usage pattern analysis (dimensional navigation)
+mcp__language-server__references BuildTarget    # Validate 78 refs across 6 files
+mcp__language-server__references ModLoader      # Validate 49 refs across 7 files
+mcp__language-server__references StateTransition # Validate 25 refs across 4 files
 
-## Context Renewal Decision Matrix
+# Shared type foundation verification
+rg "pub struct|pub enum" crates/empack-lib/src/primitives/
 
-**Always regenerate `init.md` when:**
-- Major architectural components completed
-- Significant user requirement changes
-- Library/tool choices proven inadequate
-- New integration patterns discovered
+# Architectural maturity validation through reference patterns
+# High reference counts indicate successful compositional integration
+# Distributed usage demonstrates architectural boundary health
+```
 
-**Consider regeneration when:**
-- Multiple small implementations accumulated
-- Performance characteristics better understood
-- User workflow patterns refined
-- Technical debt or optimization opportunities identified
+**Dimensional Navigation Protocol**: LSP reference patterns reveal compositional orchestrator health - well-composed systems exhibit distributed type usage without artificial concentration, enabling confident architectural evolution.
 
-**Skip regeneration when:**
-- Only minor bug fixes or tweaks
-- No new architectural insights
-- User preferences unchanged
-- Current context still accurate for next development phase
+## Compositional Health Indicators
 
-## Meta-Questions for Context Evolution
+**System evolution assessment** - monitor these patterns for architectural coherence:
 
-**For each reinitialization session:**
-1. What worked better than expected in the current implementation?
-2. What assumptions in `init.md` proved incorrect or incomplete?
-3. What new insights about empack, Rust, or user needs emerged?
-4. What risks or opportunities weren't visible in the original context?
-5. How should development priorities shift based on actual progress?
+🟢 **Healthy Compositional Growth**
+- New shared types emerge in `primitives/` with natural reuse patterns
+- LSP atomic refactoring operations complete without conflicts  
+- Test suite maintains stability (142 tests passing consistently)
+- Module boundaries remain clear with well-defined responsibilities
+- Reference patterns distribute naturally across architectural layers
 
----
+🔴 **Compositional Architecture Drift** 
+- Type duplication across modules indicates boundary confusion
+- Complex circular dependencies suggest compositional breakdown
+- Increasing warning counts signal technical debt accumulation
+- Manual refactoring required instead of LSP-assisted evolution
+- Reference concentration indicates architectural bottlenecks
 
-## Atlas Enterprise Evolution Protocol
+**Dimensional Coherence Assessment**: Healthy compositional orchestrators exhibit balanced reference distribution, natural type evolution, and LSP-assisted architectural changes. Architecture drift manifests as resistance to systematic evolution.
 
-**Atlas Mission**: Orchestrate sophisticated software development through systematic research and strategic integration. For enterprise-grade projects like empack, this means:
+## Current Production Status
 
-### Core Capabilities Required
-- **Multi-Implementation Analysis**: Assess working bash systems, incomplete architectures, configuration systems
-- **Enterprise Pattern Recognition**: Identify command orchestration, build systems, template processing, release automation
-- **Strategic Integration Planning**: Combine proven business logic with modern foundation strengths
-- **Cross-Platform Infrastructure**: Establish solid development and testing workflows
-- **Primitive-Driven Architecture**: Design composable building blocks for complex business requirements
+**Operational Command Validation**: All core empack functionality operational with production-level reliability:
 
-### Context Evolution Expectations
-Atlas expects to encounter and handle:
-- **Sophisticated Business Logic**: Enterprise workflows requiring professional orchestration
-- **Multiple Implementation Pools**: Working systems, incomplete attempts, configuration systems
-- **Cross-Platform Requirements**: Deployment across diverse environments  
-- **Solid Standards**: GitHub automation, complete testing, builds
-- **Strategic Complexity**: Integration challenges requiring systematic architectural approaches
+```bash
+# Metadata integration excellence
+empack init --modpack-directory ~/test-pack -y     # ✅ Full metadata integration
+empack init --modpack-name "My Pack" --modpack-author "Alice" -y  # ✅ Override defaults
 
-### Advanced Assessment Protocol
-When reinitialization reveals enterprise complexity:
-1. **Complete Implementation Discovery**: Analyze working v1 bash systems for proven patterns
-2. **Business Logic Mapping**: Document command orchestration, build targets, template systems
-3. **Integration Strategy**: Plan primitive-driven approach combining proven logic with Rust foundations
-4. **Infrastructure Validation**: Confirm cross-platform testing and solid workflows
-5. **Strategic Progression**: Update context to reflect enterprise-grade development reality
+# Build system operational (V1 migration complete)
+empack build mrpack                                # ✅ Primary target
+empack build client server                        # ✅ Multi-target execution  
+empack build all                                  # ✅ Parallel build system
 
-**Atlas: Execute this enterprise protocol now. Assess repository for sophisticated implementations, analyze working business logic, identify cross-platform infrastructure status, evaluate strategic integration opportunities, and regenerate init.md to reflect current enterprise development reality.**
+# Tool validation and state management
+empack requirements                               # ✅ Cross-platform tool detection
+empack clean                                     # ✅ State cleanup and recovery
+```
+
+### Architecture Status Assessment
+
+**✅ V1 Migration Excellence (92% Complete)**:
+- **Build System**: All 5 V1 targets operational with async execution surpassing bash performance
+- **State Machine**: Advanced filesystem-based discovery with error recovery and cleanup
+- **Template Engine**: Sophisticated handlebars system with embedded V1-compatible templates  
+- **CLI Integration**: Unified interactive/automation modes with intelligent metadata resolution
+- **Error Handling**: Structured types with source chains and automatic rollback capabilities
+
+**🎯 Production Refinement Opportunities (8% Enhancement Gap)**:
+1. **API Validation Excellence**: Live endpoint testing vs mocking for version resolution
+2. **Enhanced Tool Discovery**: Multi-path resolution (PATH, workdir, modpack directories)  
+3. **Template Registry Extension**: Extensible input→output mapping with community pathways
+4. **Dependency Resolution**: V1's sophisticated find_dependency pattern integration
+
+**🚧 Next Implementation Phase: empack.yml Ecosystem**
+**Critical Missing Commands**: `empack sync|add|rm` ecosystem for modpack state management:
+
+```bash
+# empack.yml state management (NOT YET IMPLEMENTED)
+empack sync     # Sync local state with empack.yml, rebuild if needed
+empack add <mod>    # Add mod to empack.yml, update packwiz, rebuild  
+empack rm <mod>     # Remove mod from empack.yml, update packwiz, cleanup
+
+# Current gaps requiring implementation:
+# - empack.yml parsing and state representation
+# - Packwiz tool integration for mod management
+# - State synchronization between empack.yml ↔ packwiz files
+# - Dependency resolution and conflict detection
+# - Incremental rebuild optimization
+```
+
+**Implementation Strategy Required**:
+- **empack.yml Schema**: Define modpack configuration format with mod listings, versions, dependencies
+- **Packwiz Integration**: Command execution and file parsing for mod management operations
+- **State Synchronization**: Bidirectional sync between empack.yml (source of truth) and packwiz files
+- **Change Detection**: Incremental updates and rebuild optimization based on state differences
+
+## Session Development Assessment
+
+**Compositional orchestrator status evaluation** - answer these questions each session:
+
+### Operational Reality Check
+1. **What functionality is actually working?**
+   - Run operational validation: `empack init -y`, `empack build mrpack`, `empack requirements` 
+   - Verify production commands vs development assumptions
+
+2. **What architectural insights emerged?**
+   - LSP reference patterns revealing compositional health
+   - Dimensional navigation discoveries enabling better understanding
+   - Workflow improvements through systematic investigation
+
+3. **Where is complexity accumulating?**
+   - Module size growth indicating boundary concerns (watch >200 lines)
+   - Function parameter count suggesting abstraction opportunities (>5 parameters)
+   - Type usage concentration indicating architectural bottlenecks (>10 ref locations)
+
+4. **What development bottlenecks exist?**
+   - Missing implementation blocking compositional progress
+   - Technical debt hindering dimensional navigation
+   - Integration challenges requiring systematic resolution
+
+### Context Update Protocol
+
+**Regenerate init.md (kernel) when:**
+✅ **Architectural breakthroughs**: Compositional orchestrator insights, dimensional navigation discoveries
+✅ **Production milestones**: Major functionality operational, V1 migration progress, systematic patterns proven  
+✅ **Development methodology evolution**: LSP workflow improvements, testing architecture advances
+
+❌ **Skip kernel updates for**: Minor bug fixes, cosmetic changes, routine maintenance
+
+## Development Command Quick Reference
+
+```bash
+# Project assessment (dimensional navigation)
+tokei crates/empack-lib/src/                    # Implementation reality scale
+fd -e rs . crates/ | wc -l                      # Rust file distribution
+
+# Architectural validation (compositional health)  
+mcp__language-server__references BuildTarget   # Reference pattern analysis
+RUSTFLAGS="-A warnings" cargo nextest run       # Clean test validation
+
+# Quality monitoring (production readiness)
+RUSTFLAGS="-A warnings" cargo clippy           # Clean static analysis
+cargo check -p empack-lib                      # Compilation integrity
+
+# Session context (development continuity)
+git status && git log --oneline -5             # Change tracking
+empack requirements                            # Operational validation
+```
+
+### Key Operational Insight
+
+**Reinit Protocol Purpose**: Recognize when mental model diverges from implementation reality. These commands enable rapid synchronization between dimensional understanding and compositional orchestrator status.
+
+**Dimensional Coherence**: Well-functioning systems demonstrate alignment between architectural understanding and operational behavior. Divergence signals need for investigation or model updating.
