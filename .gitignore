@@ -121,3 +121,7 @@ dist/*.mrpack
 .env*
 
 # End of Custom
+
+# gemini-mcp-tool local hooks
+.claude/settings.json
+.gemini-mcp-hooks/

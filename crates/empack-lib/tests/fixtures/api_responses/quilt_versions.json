@@ -1,0 +1,32 @@
+[
+  {
+    "separator": ".",
+    "build": 0,
+    "maven": "org.quiltmc:quilt-loader:0.29.0",
+    "version": "0.29.0"
+  },
+  {
+    "separator": ".",
+    "build": 8,
+    "maven": "org.quiltmc:quilt-loader:0.29.0-beta.8",
+    "version": "0.29.0-beta.8"
+  },
+  {
+    "separator": ".",
+    "build": 7,
+    "maven": "org.quiltmc:quilt-loader:0.29.0-beta.7",
+    "version": "0.29.0-beta.7"
+  },
+  {
+    "separator": ".",
+    "build": 6,
+    "maven": "org.quiltmc:quilt-loader:0.28.1",
+    "version": "0.28.1"
+  },
+  {
+    "separator": ".",
+    "build": 5,
+    "maven": "org.quiltmc:quilt-loader:0.28.0",
+    "version": "0.28.0"
+  }
+]

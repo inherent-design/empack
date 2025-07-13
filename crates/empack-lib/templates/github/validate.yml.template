@@ -1,0 +1,36 @@
+name: Validate Pack
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Install packwiz
+      run: go install github.com/packwiz/packwiz@latest
+    
+    - name: Validate pack configuration
+      run: |
+        cd pack
+        packwiz refresh
+        
+    - name: Check for file consistency
+      run: |
+        cd pack
+        if ! git diff --exit-code; then
+          echo "❌ Pack files are not up to date. Run 'packwiz refresh' and commit changes."
+          exit 1
+        fi
+        echo "✅ Pack validation successful"

@@ -81,35 +81,5 @@ impl ModLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_resolution_parsing() {
-        assert_eq!(
-            ResourcePackResolution::parse("64").unwrap(),
-            ResourcePackResolution::X64
-        );
-        assert_eq!(
-            ResourcePackResolution::parse("64x").unwrap(),
-            ResourcePackResolution::X64
-        );
-        assert_eq!(
-            ResourcePackResolution::parse("64x64").unwrap(),
-            ResourcePackResolution::X64
-        );
-        assert!(ResourcePackResolution::parse("invalid").is_err());
-    }
-
-    #[test]
-    fn test_shader_loader_parsing() {
-        assert_eq!(ShaderLoader::parse("iris").unwrap(), ShaderLoader::Iris);
-        assert_eq!(ShaderLoader::parse("IRIS").unwrap(), ShaderLoader::Iris);
-        assert!(ShaderLoader::parse("invalid").is_err());
-    }
-
-    #[test]
-    fn test_mod_loader_parsing() {
-        assert_eq!(ModLoader::parse("fabric").unwrap(), ModLoader::Fabric);
-        assert_eq!(ModLoader::parse("NEOFORGE").unwrap(), ModLoader::NeoForge);
-        assert!(ModLoader::parse("invalid").is_err());
-    }
+    include!("parsing.test.rs");
 }

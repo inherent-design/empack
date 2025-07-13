@@ -29,6 +29,8 @@ pub mod platform;
 pub mod primitives;
 pub mod terminal;
 
+pub mod testing;
+
 // Re-export commonly used types for convenience
 pub use application::{AppConfig, Cli, Commands, execute_command};
 pub use logger::Logger;

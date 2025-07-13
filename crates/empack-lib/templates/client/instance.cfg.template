@@ -1,0 +1,12 @@
+[General]
+ConfigVersion=1.2
+ExportAuthor={{AUTHOR}}
+MaxMemAlloc=8192
+MinMemAlloc=512
+PermGen=256
+name={{NAME}}
+iconKey=empack_icon
+AutoUpdate=false
+ManagedPack=true
+OverrideCommands=true
+PreLaunchCommand="$INST_JAVA" -jar packwiz-installer-bootstrap.jar pack/pack.toml

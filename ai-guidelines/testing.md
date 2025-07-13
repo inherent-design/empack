@@ -1,251 +1,275 @@
 # Testing Architecture & Migration Guide
 
-## Overview
+## Core Testing Philosophy
 
-**Status**: 🚧 **In Active Migration** - Transitioning from ad-hoc test patterns to systematic test architecture  
-**Goal**: Eliminate test state pollution and memory leaks through proper isolation and resource management  
-**Pattern**: `*.test.rs` files with RAII-based test environments and categorical test enforcement
+**MANDATORY PRINCIPLE**: Clean separation between tests and implementations.
+
+- **Implementation**: `mod.rs` (business logic only)
+- **Unit Tests**: `mod.test.rs` (adjacent test files)
+- **Integration Tests**: `tests/` directories or `tests.rs` files
+- **NO EMBEDDED TESTS**: Never use `#[cfg(test)]` in implementation modules
 
 ## Architecture Design
 
-### File Organization Pattern
+### File Organization Pattern (REQUIRED)
 ```
 src/
 ├── application/
-│   ├── mod.rs              // Implementation
-│   ├── cli.rs              // Implementation  
-│   ├── commands.rs         // Implementation
-│   ├── application.test.rs // All application tests ⚠️ NOT YET CREATED
-│   └── config.rs           // Implementation
+│   ├── mod.rs              // Implementation ONLY
+│   ├── mod.test.rs         // Unit tests for mod.rs
+│   ├── cli.rs              // Implementation ONLY
+│   ├── cli.test.rs         // Unit tests for cli.rs ✅ COMPLETE
+│   ├── commands.rs         // Implementation ONLY
+│   ├── commands.test.rs    // Unit tests for commands.rs ⚠️ TO CREATE
+│   └── tests/              // Integration tests directory
+│       └── config_integration.rs ✅ COMPLETE
 ├── empack/
-│   ├── mod.rs              // Implementation
-│   ├── state.rs            // Implementation
-│   ├── empack.test.rs      // All empack tests ⚠️ NOT YET CREATED
-│   └── builds.rs           // Implementation
+│   ├── mod.rs              // Implementation ONLY
+│   ├── mod.test.rs         // Unit tests for mod.rs ⚠️ TO CREATE
+│   ├── state.rs            // Implementation ONLY
+│   ├── state.test.rs       // Unit tests for state.rs ⚠️ TO CREATE
+│   ├── parsing.rs          // Implementation ONLY
+│   ├── parsing.test.rs     // Unit tests for parsing.rs ✅ COMPLETE
+│   └── builds.rs           // Implementation ONLY
+│       builds.test.rs      // Unit tests for builds.rs ⚠️ TO CREATE
+├── primitives/
+│   ├── mod.rs              // Implementation ONLY
+│   ├── mod.test.rs         // Unit tests for mod.rs ⚠️ TO CREATE
+│   ├── empack.rs           // Implementation ONLY
+│   ├── empack.test.rs      // Unit tests for empack.rs ✅ COMPLETE
 └── testing/
     ├── mod.rs              ✅ Test framework core
-    ├── environment.rs      🚧 Test environment management (WIP)
-    ├── fixtures.rs         🚧 Common test fixtures (WIP)
-    └── macros.rs           🚧 Test enforcement macros (WIP)
+    ├── filesystem.rs       ✅ Filesystem test utilities
+    ├── environment.rs      🚧 Test environment management (FUTURE)
+    ├── fixtures.rs         🚧 Common test fixtures (FUTURE)
+    └── macros.rs           🚧 Test enforcement macros (FUTURE)
 ```
 
 ### Test Categories & Isolation Levels
 
-**Unit Tests** (`#[unit_test]`)
-- Pure functions, no external resources
-- Fast execution, no I/O operations
-- Clean environment, no state pollution
+**Unit Tests** (`*.test.rs` files)
+- Test single modules in isolation
+- Use test utilities from `testing/` module
+- Fast execution, no external dependencies
+- Clean separation from implementation
 
-**Integration Tests** (`#[integration_test]`)  
-- Mock servers, temporary files, controlled environment
+**Integration Tests** (`tests/` directories)  
+- Test interaction between modules
+- Mock external dependencies when needed
 - Proper resource cleanup via RAII patterns
-- Isolated async runtime per test
+- Isolated environments per test
 
-**System Tests** (`#[system_test]`)
+**System Tests** (separate `empack-tests/` crate - FUTURE)
 - Real external dependencies (git, packwiz, etc.)
-- Slower execution, comprehensive validation
+- End-to-end workflow validation
 - Full environment setup/teardown
 
 ### Resource Management Architecture
 
-**RAII-Based Cleanup**:
+**Test Infrastructure**:
 ```rust
-pub struct TestEnvironment {
-    temp_dir: Option<TempDir>,
-    env_guard: Option<EnvGuard>, 
-    mock_server: Option<MockServerGuard>,
-    logger_guard: Option<LoggerGuard>,
+// In testing/mod.rs
+pub use filesystem::TempDirFixture;
+// Future: pub use environment::TestEnvironment;
+// Future: pub use fixtures::{MockServerFixture, EnvFixture};
+```
+
+**Test Pattern**:
+```rust
+// In module.test.rs
+use crate::testing::TempDirFixture;
+use super::*; // Import module being tested
+
+#[test]
+fn test_functionality() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = TempDirFixture::new()?;
+    // Test with automatic cleanup
+    Ok(())
+}
+```
+
+## Current Migration Status
+
+### ✅ **Clean Separation Achieved**
+- `application/cli.test.rs` - Unit tests separated from implementation
+- `empack/parsing.test.rs` - Unit tests separated from implementation  
+- `primitives/empack.test.rs` - Unit tests separated from implementation
+- `testing/filesystem.rs` - Test infrastructure operational
+
+### 🚧 **DUPLICATED TESTS (IMMEDIATE CLEANUP REQUIRED)**
+These modules have tests in BOTH implementation and separate files - **DUPLICATES MUST BE REMOVED**:
+- `application/cli.rs` - Remove embedded tests, keep `cli.test.rs`
+- `empack/parsing.rs` - Remove embedded tests, keep `parsing.test.rs`
+- `primitives/empack.rs` - Remove embedded tests, keep `empack.test.rs`
+
+### ❌ **EMBEDDED TESTS (MIGRATION REQUIRED)**
+These modules have tests embedded in implementation - **MUST BE MOVED TO SEPARATE FILES**:
+- `application/env.rs` → `application/env.test.rs`
+- `application/loader.rs` → `application/loader.test.rs`
+- `application/mod.rs` → `application/mod.test.rs`
+- `empack/builds.rs` → `empack/builds.test.rs`
+- `empack/config.rs` → `empack/config.test.rs`
+- `empack/mod.rs` → `empack/mod.test.rs`
+- `empack/resolved_project.rs` → `empack/resolved_project.test.rs`
+- `empack/search.rs` → `empack/search.test.rs`
+- `empack/search_intent.rs` → `empack/search_intent.test.rs`
+- `empack/state.rs` → `empack/state.test.rs`
+- `empack/templates.rs` → `empack/templates.test.rs`
+- `empack/versions.rs` → `empack/versions.test.rs`
+- `logger/mod.rs` → `logger/mod.test.rs`
+- `networking/mod.rs` → `networking/mod.test.rs`
+- `platform/mod.rs` → `platform/mod.test.rs`
+- `primitives/mod.rs` → `primitives/mod.test.rs`
+- `terminal/capabilities.rs` → `terminal/capabilities.test.rs`
+
+## Migration Workflow (MANDATORY STEPS)
+
+### Phase 1: Clean Up Duplicates (IMMEDIATE)
+For each duplicated module:
+1. **Verify** the separate `.test.rs` file has all tests
+2. **Remove** all `#[cfg(test)]` sections from implementation file
+3. **Test** that `cargo test` passes after removal
+4. **Commit** each cleanup individually
+
+### Phase 2: Migrate Embedded Tests
+For each module with embedded tests:
+1. **Create** `module.test.rs` file
+2. **Move** all test code from implementation to test file
+3. **Add** `use super::*;` to import module being tested
+4. **Update** any visibility (`pub(crate)`) needed for testing
+5. **Remove** all `#[cfg(test)]` sections from implementation
+6. **Verify** tests pass with `cargo test`
+7. **Commit** each migration individually
+
+### Phase 3: Validation
+- **Run** `cargo test` - all tests must pass
+- **Verify** no `#[cfg(test)]` remains in implementation files
+- **Confirm** clean separation is maintained
+
+## Implementation Examples
+
+### ❌ **FORBIDDEN PATTERN**
+```rust
+// In src/application/commands.rs - NEVER DO THIS
+pub fn some_function() {
+    // implementation
 }
 
-impl Drop for TestEnvironment {
-    fn drop(&mut self) {
-        // Cleanup in reverse order - automatic on scope exit
+#[cfg(test)]  // ❌ FORBIDDEN - NO TESTS IN IMPLEMENTATION
+mod tests {
+    #[test]
+    fn test_some_function() {
+        // test code
     }
 }
 ```
 
-**Test Fixtures**:
-- `TempDirFixture` - Isolated filesystem operations
-- `MockServerFixture` - Controlled API mocking with proper shutdown
-- `EnvFixture` - Environment variable snapshot/restore
-- `LoggerFixture` - Isolated logging per test
-
-## Current State Assessment
-
-### ✅ **Completed**
-- Basic testing framework structure (`src/testing/mod.rs`)
-- Test categorization design
-- RAII cleanup patterns designed
-
-### 🚧 **In Progress** 
-- **Memory Leak Issues**: 2 tests currently showing LEAK status in nextest
-  - `application::cli::tests::test_cli_parsing_with_args` 
-  - `application::commands::tests::test_modloader_selection_mapping`
-- **State Pollution**: Tests pass in isolation but leak when run together
-- **Mixed Test Patterns**: Some tests use MockApiServer cleanup, others don't
-
-### ❌ **Needs Migration**
-- **142 tests** currently embedded in implementation modules
-- No `*.test.rs` files exist yet
-- Inconsistent resource management patterns
-- Ad-hoc test setup/teardown
-
-## Migration Workflow
-
-When actively working on testing, follow this systematic approach:
-
-### (a) **Focus on Immediate Testing Concern**
-- Identify the specific test failure or leak
-- Understand root cause (state pollution vs. actual memory leak)
-- Apply quick fix if critical, but plan for systematic solution
-
-### (b) **Understand Testing Flow**
-1. **State Management**: What resources does this test use?
-2. **Isolation Requirements**: What level of isolation is needed?
-3. **Pseudo Runner**: Which test category should this be?
-4. **Cleanup Strategy**: What resources need explicit cleanup?
-
-### (c) **Fix Next Best Test**
-**Priority Order**:
-1. **Leaking tests** (currently showing LEAK status)
-2. **Tests with subprocess calls** (Command::new usage)
-3. **Tests with MockApiServer** (ensure proper cleanup)
-4. **Tests with file I/O** (temp directory usage)
-5. **Tests with environment variables** (env pollution)
-
-### (d) **Clear Polluted Modules**
-**Process**:
-1. Create `module.test.rs` file if it doesn't exist
-2. Move all `#[test]` and `#[tokio::test]` functions from implementation
-3. Organize tests into logical groups:
-   ```rust
-   // module.test.rs
-   mod unit_tests {
-       // Pure function tests
-   }
-   
-   mod integration_tests {
-       // Cross-module tests with resources
-   }
-   
-   mod system_tests {
-       // External dependency tests
-   }
-   ```
-4. Update module imports and visibility as needed
-5. Verify tests still pass after migration
-
-### (e) **Fix Broken Tests**
-**Common Migration Issues**:
-- **Visibility**: Tests may need `pub(crate)` on previously private functions
-- **Imports**: Test files need explicit imports from parent modules
-- **Resource Management**: Apply new cleanup patterns
-- **Async Context**: Ensure proper tokio runtime management
-
-### (f) **Expand Test Coverage**
-**Low-Hanging Fruit**:
-- **Duplicate Similar Tests**: Extract common patterns into fixtures
-- **Missing Edge Cases**: Add boundary condition tests
-- **Error Path Coverage**: Test failure scenarios
-- **Resource Cleanup Verification**: Add explicit cleanup validation
-
-## Implementation Examples
-
-### Current Pattern (Problematic)
+### ✅ **REQUIRED PATTERN**
 ```rust
-// In src/application/commands.rs
-#[tokio::test]
-async fn test_get_compatible_minecraft_version_fabric() {
-    let mock_server = MockApiServer::new().await; // ❌ May leak
-    let resolver = VersionResolver::new_with_mock_server(mock_server.url());
-    // ... test logic
-    // ❌ No explicit cleanup - relies on Drop
+// In src/application/commands.rs - Implementation only
+pub fn some_function() {
+    // implementation only
+}
+
+// In src/application/commands.test.rs - Tests only
+use super::*;
+
+#[test]
+fn test_some_function() {
+    // test code
 }
 ```
 
-### Target Pattern (Systematic)
+### ✅ **INTEGRATION TEST PATTERN**
 ```rust
-// In src/application/application.test.rs
-use crate::testing::*;
+// In src/application/tests/config_integration.rs
+use crate::testing::TempDirFixture;
+use crate::application::*;
 
-integration_test!(test_get_compatible_minecraft_version_fabric, {
-    let env = TestEnv::new()
-        .with_mock_server()  // ✅ Automatic cleanup
-        .with_temp_dir();    // ✅ Isolated filesystem
-    
-    let resolver = VersionResolver::new_with_mock_server(env.mock_server().url());
-    // ... test logic
-    // ✅ Automatic cleanup on scope exit
-});
+#[test]
+fn test_config_integration() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = TempDirFixture::new()?;
+    // Integration test with automatic cleanup
+    Ok(())
+}
 ```
 
 ## Quality Metrics
 
-### Test Isolation Verification
+### Migration Success Criteria
 ```bash
-# Tests should pass in any order
-cargo nextest run --shuffle
+# All tests pass
+cargo test
 
-# No memory leaks detected
-RUSTFLAGS="-A warnings" cargo nextest run
-# Expected: "Summary [X.XXs] 142 tests run: 142 passed, 0 skipped"
+# No embedded tests remain
+rg "#\[cfg\(test\)\]" crates/empack-lib/src/ 
+# Expected: No matches found
+
+# Clean separation verified
+find crates/empack-lib/src/ -name "*.test.rs" | wc -l
+# Expected: One .test.rs file per implementation module
 ```
 
-### Resource Management Validation
-- **No LEAK flags** in nextest output
-- **Consistent execution time** regardless of test order
-- **Clean temporary directories** after test runs
-- **No environment variable pollution** between tests
+### Test Execution Validation
+```bash
+# Tests pass in any order (isolation verification)
+cargo nextest run --shuffle
+
+# No memory leaks
+RUSTFLAGS="-A warnings" cargo nextest run
+# Expected: All tests passing, no LEAK flags
+```
 
 ## Migration Progress Tracking
 
-### Phase 1: Framework Infrastructure ⏳
-- [ ] Complete `testing/environment.rs`
-- [ ] Complete `testing/fixtures.rs` 
-- [ ] Complete `testing/macros.rs`
-- [ ] Test framework validation
+### ✅ **Phase 1: Clean Up Duplicates**
+- [ ] Remove embedded tests from `application/cli.rs` (keep `cli.test.rs`)
+- [ ] Remove embedded tests from `empack/parsing.rs` (keep `parsing.test.rs`)
+- [ ] Remove embedded tests from `primitives/empack.rs` (keep `empack.test.rs`)
 
-### Phase 2: Critical Leak Fixes 🎯
-- [ ] Fix `test_cli_parsing_with_args` leak
-- [ ] Fix `test_modloader_selection_mapping` leak
-- [ ] Verify MockApiServer cleanup patterns
-- [ ] Address subprocess cleanup in commands
+### ⏳ **Phase 2: Migrate Remaining Embedded Tests**
+- [ ] `application/env.rs` → `application/env.test.rs`
+- [ ] `application/loader.rs` → `application/loader.test.rs`
+- [ ] `application/mod.rs` → `application/mod.test.rs`
+- [ ] `empack/builds.rs` → `empack/builds.test.rs`
+- [ ] `empack/config.rs` → `empack/config.test.rs`
+- [ ] `empack/state.rs` → `empack/state.test.rs`
+- [ ] `empack/search.rs` → `empack/search.test.rs`
+- [ ] `logger/mod.rs` → `logger/mod.test.rs`
+- [ ] `networking/mod.rs` → `networking/mod.test.rs`
+- [ ] `platform/mod.rs` → `platform/mod.test.rs`
+- [ ] `primitives/mod.rs` → `primitives/mod.test.rs`
+- [ ] `terminal/capabilities.rs` → `terminal/capabilities.test.rs`
 
-### Phase 3: Systematic Migration 📦
-- [ ] Create `application.test.rs` and migrate tests
-- [ ] Create `empack.test.rs` and migrate tests
-- [ ] Create remaining `*.test.rs` files per module
-- [ ] Remove all tests from implementation files
-
-### Phase 4: Enhancement & Validation ✨
-- [ ] Add missing test coverage
-- [ ] Implement test isolation verification
-- [ ] Performance benchmarking
-- [ ] CI/CD integration with test categories
+### 🎯 **Phase 3: Validation & Enhancement**
+- [ ] Verify no `#[cfg(test)]` in implementation files
+- [ ] All tests pass with clean separation
+- [ ] Test isolation validation
+- [ ] Enhanced test infrastructure (future)
 
 ## Best Practices
 
-### Test Writing Guidelines
-1. **Always use test environment fixtures** for resource management
-2. **Categorize tests appropriately** - prefer unit over integration when possible
-3. **Test both success and failure paths** for comprehensive coverage
-4. **Use descriptive test names** that explain the scenario being tested
-5. **Keep tests focused** - one concept per test function
+### Absolute Rules
+1. **NEVER** embed tests in implementation modules
+2. **ALWAYS** use separate `.test.rs` files for unit tests
+3. **MAINTAIN** clean import separation (`use super::*;`)
+4. **USE** test infrastructure from `testing/` module
+5. **VERIFY** tests pass after every migration step
 
-### Resource Management Rules
-1. **Never create resources without cleanup** - use fixtures or RAII patterns
-2. **Isolate filesystem operations** - always use temp directories
-3. **Snapshot environment state** - restore env vars after tests
-4. **Verify async cleanup** - ensure background tasks terminate properly
-5. **Test cleanup itself** - verify resources are actually cleaned up
+### Test Writing Guidelines
+1. **One concept per test function** - focused, clear tests
+2. **Use descriptive test names** explaining the scenario
+3. **Test both success and failure paths** for comprehensive coverage
+4. **Use test fixtures** for resource management and cleanup
+5. **Keep tests isolated** - no dependencies between tests
 
 ### Migration Safety
 1. **Migrate incrementally** - one module at a time
-2. **Verify after each step** - ensure tests still pass
-3. **Maintain backwards compatibility** - during transition period
-4. **Document any breaking changes** - especially visibility modifications
-5. **Test the testing framework** - ensure the infrastructure is solid
+2. **Verify after each step** - `cargo test` must pass
+3. **Commit frequently** - individual module migrations
+4. **Document visibility changes** - any `pub(crate)` additions needed
+5. **Maintain test coverage** - no tests lost during migration
 
 ---
 
-**Next Action**: Focus on fixing the 2 currently leaking tests as immediate priority, then begin systematic migration starting with the most problematic modules (those with the most resource usage).
+**NEXT ACTION**: Begin Phase 1 by cleaning up the 3 duplicated modules, then proceed systematically through Phase 2 migration.

@@ -1,0 +1,21 @@
+# packwiz ignore file
+# Files and directories to ignore when updating the pack
+
+# Build outputs
+dist/
+
+# Development files
+.env
+.env.local
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
