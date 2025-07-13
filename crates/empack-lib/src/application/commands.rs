@@ -3,7 +3,7 @@
 //! Coordinates CLI commands with domain logic through the state machine.
 
 use crate::application::{Commands, CliConfig};
-use crate::empack::state::{ModpackStateManager, StateError};
+use crate::empack::state::{ModpackStateManager, StateError, LiveStateProvider};
 use crate::platform::{ProgramFinder, GoCapabilities, ArchiverCapabilities};
 use crate::primitives::{BuildTarget, ModpackState, StateTransition};
 use anyhow::{Result, Context};
@@ -75,7 +75,7 @@ async fn handle_requirements() -> Result<()> {
 
 async fn handle_init(name: Option<String>, force: bool) -> Result<()> {
     let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new(workdir.clone());
+    let manager = ModpackStateManager::new_default(workdir.clone());
 
     // Check if already initialized
     let current_state = manager.discover_state().map_err(StateError::from)?;
@@ -110,7 +110,7 @@ async fn handle_init(name: Option<String>, force: bool) -> Result<()> {
 
 async fn handle_sync(dry_run: bool) -> Result<()> {
     let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new(workdir);
+    let manager = ModpackStateManager::new_default(workdir);
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(StateError::from)?;
@@ -144,7 +144,7 @@ async fn handle_sync(dry_run: bool) -> Result<()> {
 
 async fn handle_build(targets: Vec<String>, clean: bool) -> Result<()> {
     let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new(workdir);
+    let manager = ModpackStateManager::new_default(workdir);
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(StateError::from)?;
@@ -194,7 +194,7 @@ async fn handle_remove() -> Result<()> {
 
 async fn handle_clean(targets: Vec<String>) -> Result<()> {
     let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new(workdir);
+    let manager = ModpackStateManager::new_default(workdir);
 
     if targets.is_empty() || targets.contains(&"builds".to_string()) || targets.contains(&"all".to_string()) {
         println!("🧹 Cleaning build artifacts...");
