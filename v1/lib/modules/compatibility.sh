@@ -86,6 +86,9 @@ validate_compatibility_matrix() {
     "quilt")
       validate_quilt_compatibility_matrix "$minecraft_version" "$modloader_version" "$source"
       ;;
+    "forge")
+      validate_forge_compatibility_matrix "$minecraft_version" "$modloader_version" "$source"
+      ;;
     *)
       EMPACK_COMPATIBILITY_MATRIX_STATUS="error_unknown_modloader"
       EMPACK_COMPATIBILITY_ERROR_MESSAGE="Unknown modloader for compatibility analysis: $modloader"
@@ -177,6 +180,36 @@ validate_quilt_compatibility_matrix() {
   return -1
 }
 
+# Forge compatibility matrix validation
+validate_forge_compatibility_matrix() {
+  local minecraft_version="$1"
+  local forge_version="$2"
+  local source="$3"
+
+  EMPACK_COMPATIBILITY_LAST_VALIDATION_TYPE="forge_matrix"
+  log_debug "Analyzing Forge compatibility: MC $minecraft_version, Forge $forge_version"
+
+  # Check if the Forge version supports the given Minecraft version
+  # Extract MC version from Forge version format: "1.21-51.0.33" -> "1.21"
+  if forge_mc_version=$(get_minecraft_version_from_forge_version "$forge_version"); then
+    if [ "$forge_mc_version" = "$minecraft_version" ]; then
+      EMPACK_COMPATIBILITY_MATRIX_STATUS="valid_forge_api"
+      log_debug "API confirms: Forge $forge_version supports Minecraft $minecraft_version"
+      return 0
+    else
+      EMPACK_COMPATIBILITY_MATRIX_STATUS="error_forge_incompatible"
+      handle_compatibility_error "$source" "Forge $forge_version" "Minecraft $minecraft_version" \
+        "Forge $forge_version is for Minecraft $forge_mc_version, not $minecraft_version" \
+        "Use 'empack versions' to see compatible combinations"
+      return 1
+    fi
+  else
+    EMPACK_COMPATIBILITY_MATRIX_STATUS="error_forge_api_unavailable"
+    log_error "API unavailable, cannot validate Forge compatibility"
+    return 1
+  fi
+}
+
 # Handle compatibility errors with detailed messaging
 handle_compatibility_error() {
   local source="$1"
@@ -220,6 +253,9 @@ get_recommended_defaults() {
       ;;
     "quilt")
       get_quilt_recommended_defaults
+      ;;
+    "forge")
+      get_forge_recommended_defaults
       ;;
     "none")
       get_vanilla_recommended_defaults
@@ -320,6 +356,32 @@ get_quilt_recommended_defaults() {
   EMPACK_COMPATIBILITY_RECOMMENDED_MINECRAFT_VERSION="$minecraft_version"
 
   log_debug "Recommended defaults: Quilt $quilt_version + Minecraft $minecraft_version"
+  return 0
+}
+
+# Get Forge recommended defaults (latest stable approach) with state management
+get_forge_recommended_defaults() {
+  log_debug "Getting Forge recommended defaults"
+
+  # Get latest stable Forge version (state-based)
+  if ! get_stable_forge_version; then
+    log_error "Failed to get latest stable Forge version"
+    return 1
+  fi
+  local forge_version="$EMPACK_API_FORGE_STABLE_VERSION"
+
+  # Get compatible Minecraft version from Forge version
+  if ! minecraft_version=$(get_minecraft_version_from_forge_version "$forge_version"); then
+    log_error "Failed to determine Minecraft version for Forge $forge_version"
+    return 1
+  fi
+
+  # Store in compatibility state variables
+  EMPACK_COMPATIBILITY_RECOMMENDED_MODLOADER="forge"
+  EMPACK_COMPATIBILITY_RECOMMENDED_MODLOADER_VERSION="$forge_version"
+  EMPACK_COMPATIBILITY_RECOMMENDED_MINECRAFT_VERSION="$minecraft_version"
+
+  log_debug "Recommended defaults: Forge $forge_version + Minecraft $minecraft_version"
   return 0
 }
 
@@ -451,6 +513,9 @@ stabilize_core_input() {
             ;;
           "quilt")
             compatible_modloader_versions=$(get_quilt_versions_for_minecraft "$provided_minecraft")
+            ;;
+          "forge")
+            compatible_modloader_versions=$(get_forge_versions_for_minecraft "$provided_minecraft")
             ;;
         esac
 
@@ -624,6 +689,11 @@ validate_compatibility_state() {
         validation_passed=false
     fi
     
+    if ! declare -F get_stable_forge_version >/dev/null 2>&1; then
+        errors+=("Function get_stable_forge_version not available from api module")
+        validation_passed=false
+    fi
+    
     if ! declare -F get_latest_minecraft_version >/dev/null 2>&1; then
         errors+=("Function get_latest_minecraft_version not available from api module")
         validation_passed=false
@@ -655,8 +725,8 @@ validate_compatibility_state() {
 
 # Export compatibility functions
 export -f validate_compatibility_matrix validate_neoforge_compatibility_matrix validate_fabric_compatibility_matrix
-export -f validate_quilt_compatibility_matrix handle_compatibility_error get_recommended_defaults
-export -f get_neoforge_recommended_defaults get_fabric_recommended_defaults get_quilt_recommended_defaults
+export -f validate_quilt_compatibility_matrix validate_forge_compatibility_matrix handle_compatibility_error get_recommended_defaults
+export -f get_neoforge_recommended_defaults get_fabric_recommended_defaults get_quilt_recommended_defaults get_forge_recommended_defaults
 export -f get_vanilla_recommended_defaults stabilize_core_input clear_compatibility_state
 export -f init_zero_config init_explicit_non_interactive init_interactive_with_autofill
 export -f set_compatibility_state is_compatibility_validated get_compatibility_state apply_compatibility_state

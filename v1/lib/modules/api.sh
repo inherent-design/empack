@@ -32,6 +32,9 @@ declare -g EMPACK_API_FABRIC_ALL_VERSIONS=""
 declare -g EMPACK_API_QUILT_LATEST_VERSION=""
 declare -g EMPACK_API_QUILT_STABLE_VERSION=""
 declare -g EMPACK_API_QUILT_ALL_VERSIONS=""
+declare -g EMPACK_API_FORGE_LATEST_VERSION=""
+declare -g EMPACK_API_FORGE_STABLE_VERSION=""
+declare -g EMPACK_API_FORGE_ALL_VERSIONS=""
 declare -g EMPACK_API_RESOLVED_MODLOADER=""
 declare -g EMPACK_API_RESOLVED_MODLOADER_VERSION=""
 declare -g EMPACK_API_RESOLVED_MINECRAFT_VERSION=""
@@ -52,6 +55,9 @@ clear_api_state() {
     EMPACK_API_QUILT_LATEST_VERSION=""
     EMPACK_API_QUILT_STABLE_VERSION=""
     EMPACK_API_QUILT_ALL_VERSIONS=""
+    EMPACK_API_FORGE_LATEST_VERSION=""
+    EMPACK_API_FORGE_STABLE_VERSION=""
+    EMPACK_API_FORGE_ALL_VERSIONS=""
     EMPACK_API_RESOLVED_MODLOADER=""
     EMPACK_API_RESOLVED_MODLOADER_VERSION=""
     EMPACK_API_RESOLVED_MINECRAFT_VERSION=""
@@ -435,6 +441,141 @@ get_all_quilt_versions() {
 }
 
 #=============================================================================
+# FORGE VERSION API (State-Based)
+#=============================================================================
+
+# Get latest Forge version (sets EMPACK_API_FORGE_LATEST_VERSION)
+get_latest_forge_version() {
+    log_debug "Fetching latest Forge version"
+
+    local result
+    result=$(fetch_xml_api \
+        "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml" \
+        "Forge Maven metadata" \
+        "//latest")
+
+    if [ $? -eq 0 ] && [ -n "$result" ]; then
+        EMPACK_API_FORGE_LATEST_VERSION="$result"
+        EMPACK_API_CALL_STATUS="success"
+        log_debug "Latest Forge version: $EMPACK_API_FORGE_LATEST_VERSION"
+        return 0
+    else
+        EMPACK_API_CALL_STATUS="error"
+        EMPACK_API_ERROR_MESSAGE="Failed to fetch latest Forge version"
+        log_error "$EMPACK_API_ERROR_MESSAGE"
+        return 1
+    fi
+}
+
+# Get stable Forge version (sets EMPACK_API_FORGE_STABLE_VERSION)
+get_stable_forge_version() {
+    log_debug "Fetching stable Forge version"
+
+    # First get all versions
+    if ! get_all_forge_versions; then
+        return 1
+    fi
+
+    # Filter for stable versions (exclude beta, alpha, rc)
+    local stable_version
+    stable_version=$(echo "$EMPACK_API_FORGE_ALL_VERSIONS" | grep -v -E '(beta|alpha|rc)' | head -1)
+
+    if [ -z "$stable_version" ]; then
+        log_warning "No stable Forge version found, using latest"
+        if get_latest_forge_version; then
+            EMPACK_API_FORGE_STABLE_VERSION="$EMPACK_API_FORGE_LATEST_VERSION"
+            return 0
+        else
+            return 1
+        fi
+    fi
+
+    EMPACK_API_FORGE_STABLE_VERSION="$stable_version"
+    EMPACK_API_CALL_STATUS="success"
+    log_debug "Stable Forge version: $EMPACK_API_FORGE_STABLE_VERSION"
+    return 0
+}
+
+# Get all Forge versions (sets EMPACK_API_FORGE_ALL_VERSIONS)
+get_all_forge_versions() {
+    log_debug "Fetching all Forge versions"
+
+    local result
+    result=$(fetch_xml_api \
+        "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml" \
+        "Forge version list" \
+        "//version")
+
+    if [ $? -eq 0 ] && [ -n "$result" ]; then
+        EMPACK_API_FORGE_ALL_VERSIONS="$result"
+        EMPACK_API_CALL_STATUS="success"
+        log_debug "Fetched $(echo "$EMPACK_API_FORGE_ALL_VERSIONS" | wc -l) Forge versions"
+        return 0
+    else
+        EMPACK_API_CALL_STATUS="error"
+        EMPACK_API_ERROR_MESSAGE="Failed to fetch Forge versions"
+        log_error "$EMPACK_API_ERROR_MESSAGE"
+        return 1
+    fi
+}
+
+# Get latest stable Forge version for specific Minecraft version
+get_stable_forge_version_for_minecraft() {
+    local minecraft_version="$1"
+    
+    if [ -z "$minecraft_version" ]; then
+        log_error "Minecraft version required"
+        return 1
+    fi
+
+    log_debug "Fetching stable Forge version for Minecraft $minecraft_version"
+
+    # Get all versions first
+    if ! get_all_forge_versions; then
+        return 1
+    fi
+
+    # Filter versions for this Minecraft version and find stable
+    local filtered_versions
+    filtered_versions=$(echo "$EMPACK_API_FORGE_ALL_VERSIONS" | grep "^$minecraft_version-")
+    
+    if [ -z "$filtered_versions" ]; then
+        log_error "No Forge versions found for Minecraft $minecraft_version"
+        return 1
+    fi
+
+    # Try to find stable version first (exclude beta, alpha, rc)
+    local stable_version
+    stable_version=$(echo "$filtered_versions" | grep -v -E '(beta|alpha|rc)' | head -1)
+
+    if [ -z "$stable_version" ]; then
+        log_warning "No stable Forge version found for Minecraft $minecraft_version, using latest available"
+        stable_version=$(echo "$filtered_versions" | head -1)
+    fi
+
+    if [ -z "$stable_version" ]; then
+        log_error "No valid Forge version found for Minecraft $minecraft_version"
+        return 1
+    fi
+
+    echo "$stable_version"
+    return 0
+}
+
+# Get Minecraft version from Forge version string
+get_minecraft_version_from_forge_version() {
+    local forge_version="$1"
+    
+    if [ -z "$forge_version" ]; then
+        log_error "Forge version required"
+        return 1
+    fi
+
+    # Extract MC version from format: "1.21-51.0.33" -> "1.21"
+    echo "$forge_version" | cut -d'-' -f1
+}
+
+#=============================================================================
 # COMPATIBILITY MATRIX API FUNCTIONS
 #=============================================================================
 
@@ -451,6 +592,11 @@ get_latest_stable_fabric() {
 # Get latest stable Quilt version (alias for compatibility.sh)
 get_latest_stable_quilt() {
     get_stable_quilt_version
+}
+
+# Get latest stable Forge version (alias for compatibility.sh)
+get_latest_stable_forge() {
+    get_stable_forge_version
 }
 
 # Get Minecraft versions supported by specific NeoForge version
@@ -566,6 +712,54 @@ get_latest_minecraft_for_quilt() {
     get_latest_minecraft_version
 }
 
+# Get Minecraft versions supported by specific Forge version
+get_minecraft_versions_for_forge() {
+    local forge_version="$1"
+    if [ -z "$forge_version" ]; then
+        log_error "Forge version required"
+        return 1
+    fi
+
+    # Extract MC version from Forge version format: "1.21-51.0.33" -> "1.21"
+    get_minecraft_version_from_forge_version "$forge_version"
+}
+
+# Get Forge versions that support specific Minecraft version
+get_forge_versions_for_minecraft() {
+    local minecraft_version="$1"
+    if [ -z "$minecraft_version" ]; then
+        log_error "Minecraft version required"
+        return 1
+    fi
+
+    log_debug "Getting Forge versions for Minecraft $minecraft_version"
+
+    # Get all Forge versions and filter by Minecraft version
+    if ! get_all_forge_versions; then
+        log_error "Failed to fetch Forge versions"
+        return 1
+    fi
+
+    # Filter versions for this Minecraft version
+    echo "$EMPACK_API_FORGE_ALL_VERSIONS" | grep "^$minecraft_version-"
+}
+
+# Get latest Minecraft version compatible with Forge
+get_latest_minecraft_for_forge() {
+    local forge_version="${1:-}"
+
+    # If no specific forge version provided, get latest and extract MC version
+    if [ -z "$forge_version" ]; then
+        if get_latest_forge_version; then
+            get_minecraft_version_from_forge_version "$EMPACK_API_FORGE_LATEST_VERSION"
+        else
+            return 1
+        fi
+    else
+        get_minecraft_version_from_forge_version "$forge_version"
+    fi
+}
+
 #=============================================================================
 # GOLDEN PATH DEFAULT CHAIN RESOLUTION
 #=============================================================================
@@ -660,6 +854,9 @@ export_api_state() {
     echo "EMPACK_API_QUILT_LATEST_VERSION='$EMPACK_API_QUILT_LATEST_VERSION'"
     echo "EMPACK_API_QUILT_STABLE_VERSION='$EMPACK_API_QUILT_STABLE_VERSION'"
     echo "EMPACK_API_QUILT_ALL_VERSIONS='$EMPACK_API_QUILT_ALL_VERSIONS'"
+    echo "EMPACK_API_FORGE_LATEST_VERSION='$EMPACK_API_FORGE_LATEST_VERSION'"
+    echo "EMPACK_API_FORGE_STABLE_VERSION='$EMPACK_API_FORGE_STABLE_VERSION'"
+    echo "EMPACK_API_FORGE_ALL_VERSIONS='$EMPACK_API_FORGE_ALL_VERSIONS'"
     echo "EMPACK_API_RESOLVED_MODLOADER='$EMPACK_API_RESOLVED_MODLOADER'"
     echo "EMPACK_API_RESOLVED_MODLOADER_VERSION='$EMPACK_API_RESOLVED_MODLOADER_VERSION'"
     echo "EMPACK_API_RESOLVED_MINECRAFT_VERSION='$EMPACK_API_RESOLVED_MINECRAFT_VERSION'"
@@ -738,12 +935,15 @@ export -f get_latest_minecraft_version get_all_minecraft_versions
 export -f get_latest_neoforge_version get_stable_neoforge_version get_all_neoforge_versions
 export -f get_latest_fabric_version get_stable_fabric_version get_all_fabric_versions
 export -f get_latest_quilt_version get_stable_quilt_version get_all_quilt_versions
+export -f get_latest_forge_version get_stable_forge_version get_all_forge_versions
 export -f get_latest_stable_neoforge_version get_minecraft_version_for_neoforge_version resolve_default_chain
+export -f get_stable_forge_version_for_minecraft get_minecraft_version_from_forge_version
 # Compatibility matrix functions
-export -f get_latest_stable_minecraft get_latest_stable_fabric get_latest_stable_quilt
+export -f get_latest_stable_minecraft get_latest_stable_fabric get_latest_stable_quilt get_latest_stable_forge
 export -f get_minecraft_versions_for_neoforge get_neoforge_versions_for_minecraft
 export -f get_minecraft_versions_for_fabric get_fabric_versions_for_minecraft
 export -f get_minecraft_versions_for_quilt get_quilt_versions_for_minecraft
-export -f get_latest_minecraft_for_fabric get_latest_minecraft_for_quilt
+export -f get_minecraft_versions_for_forge get_forge_versions_for_minecraft
+export -f get_latest_minecraft_for_fabric get_latest_minecraft_for_quilt get_latest_minecraft_for_forge
 # Module interface contract
 export -f export_api_state get_api_status validate_api_state
