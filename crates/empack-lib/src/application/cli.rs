@@ -42,6 +42,9 @@ pub enum Commands {
     /// Check tool dependencies and show setup guidance
     Requirements,
 
+    /// Show version information
+    Version,
+
     /// Initialize modpack development environment
     Init {
         /// Modpack name
@@ -142,6 +145,7 @@ impl Commands {
     pub fn requires_modpack(&self) -> bool {
         match self {
             Commands::Requirements => false,
+            Commands::Version => false,
             Commands::Init { .. } => false,
             Commands::Sync { .. } => true,
             Commands::Build { .. } => true,
@@ -155,6 +159,7 @@ impl Commands {
     pub fn execution_order(&self) -> u8 {
         match self {
             Commands::Requirements => 0,
+            Commands::Version => 0,
             Commands::Init { .. } => 1,
             Commands::Clean { .. } => 2,
             Commands::Sync { .. } => 5,

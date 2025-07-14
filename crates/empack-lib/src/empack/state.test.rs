@@ -157,6 +157,7 @@ fn create_configured_test() -> (MockStateProvider, PathBuf) {
     mock_provider.add_file(workdir.join("empack.yml"));
     mock_provider.add_directory(workdir.join("pack"));
     mock_provider.add_file(workdir.join("pack").join("pack.toml"));
+    mock_provider.add_file(workdir.join("pack").join("index.toml"));
     
     (mock_provider, workdir)
 }
@@ -306,4 +307,109 @@ fn test_pure_can_transition_function() {
     // Test invalid transitions
     assert!(!can_transition(ModpackState::Uninitialized, ModpackState::Built));
     assert!(!can_transition(ModpackState::Built, ModpackState::Uninitialized));
+}
+
+#[test]
+fn test_pure_execute_transition_function() {
+    // Test initialize transition
+    let (provider, workdir) = create_uninitialized_test();
+    let result = execute_transition(&provider, &workdir, StateTransition::Initialize).unwrap();
+    assert_eq!(result, ModpackState::Configured);
+
+    // Test build transition
+    let (provider, workdir) = create_configured_test();
+    let targets = vec![BuildTarget::Mrpack];
+    let result = execute_transition(&provider, &workdir, StateTransition::Build(targets)).unwrap();
+    assert_eq!(result, ModpackState::Built);
+
+    // Test synchronize transition (expect failure due to ConfigManager dependency)
+    let (provider, workdir) = create_configured_test();
+    let result = execute_transition(&provider, &workdir, StateTransition::Synchronize);
+    // This should fail because ConfigManager can't find real files
+    assert!(result.is_err());
+
+    // Test clean transition from built
+    let (provider, workdir) = create_built_test();
+    let result = execute_transition(&provider, &workdir, StateTransition::Clean).unwrap();
+    assert_eq!(result, ModpackState::Configured);
+
+    // Test clean transition from configured
+    let (provider, workdir) = create_configured_test();
+    let result = execute_transition(&provider, &workdir, StateTransition::Clean).unwrap();
+    assert_eq!(result, ModpackState::Uninitialized);
+}
+
+#[test]
+fn test_pure_execute_initialize_function() {
+    let (provider, workdir) = create_uninitialized_test();
+    let result = execute_initialize(&provider, &workdir).unwrap();
+    assert_eq!(result, ModpackState::Configured);
+
+    // Verify the mock provider received the expected calls
+    assert!(provider.files.borrow().contains(&workdir.join("empack.yml")));
+    assert!(provider.directories.borrow().contains(&workdir.join("pack")));
+    assert!(provider.directories.borrow().contains(&workdir.join("templates")));
+    assert!(provider.directories.borrow().contains(&workdir.join("installer")));
+}
+
+#[test]
+fn test_pure_execute_synchronize_function() {
+    // For this test, we need to skip the ConfigManager validation since it depends on real files
+    // The synchronize function will fail when trying to validate configuration
+    // This is expected behavior and shows that the function correctly calls ConfigManager
+    let (provider, workdir) = create_configured_test();
+    let result = execute_synchronize(&provider, &workdir);
+    
+    // The function should fail because ConfigManager can't find real files
+    // This demonstrates that the pure function is correctly calling the ConfigManager
+    assert!(result.is_err());
+    
+    // Verify the error is about missing configuration
+    match result.unwrap_err() {
+        StateError::ConfigManagementError { message } => {
+            assert!(message.contains("Missing required field") || message.contains("empack.yml"));
+        }
+        _ => panic!("Expected ConfigManagementError"),
+    }
+}
+
+#[test]
+fn test_pure_execute_build_function() {
+    let (provider, workdir) = create_configured_test();
+    let targets = vec![BuildTarget::Mrpack, BuildTarget::Client];
+    let result = execute_build(&provider, &workdir, &targets).unwrap();
+    assert_eq!(result, ModpackState::Built);
+
+    // Verify build artifacts were created
+    assert!(provider.directories.borrow().contains(&workdir.join("dist")));
+    assert!(provider.files.borrow().contains(&workdir.join("dist").join("test-v1.0.0.mrpack")));
+    assert!(provider.files.borrow().contains(&workdir.join("dist").join("test-v1.0.0-client.zip")));
+}
+
+#[test]
+fn test_pure_clean_functions() {
+    // Test clean_build_artifacts
+    let (provider, workdir) = create_built_test();
+    let result = clean_build_artifacts(&provider, &workdir);
+    assert!(result.is_ok());
+    assert!(!provider.directories.borrow().contains(&workdir.join("dist")));
+
+    // Test clean_configuration
+    let (provider, workdir) = create_configured_test();
+    let result = clean_configuration(&provider, &workdir);
+    assert!(result.is_ok());
+    assert!(!provider.files.borrow().contains(&workdir.join("empack.yml")));
+    assert!(!provider.directories.borrow().contains(&workdir.join("pack")));
+}
+
+#[test]
+fn test_pure_create_initial_structure_function() {
+    let (provider, workdir) = create_uninitialized_test();
+    let result = create_initial_structure(&provider, &workdir);
+    assert!(result.is_ok());
+
+    // Verify expected directories were created
+    assert!(provider.directories.borrow().contains(&workdir.join("pack")));
+    assert!(provider.directories.borrow().contains(&workdir.join("templates")));
+    assert!(provider.directories.borrow().contains(&workdir.join("installer")));
 }

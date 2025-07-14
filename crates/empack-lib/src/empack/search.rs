@@ -59,6 +59,7 @@ pub struct ProjectInfo {
 pub enum Platform {
     Modrinth,
     CurseForge,
+    Forge,
 }
 
 impl std::fmt::Display for Platform {
@@ -66,6 +67,7 @@ impl std::fmt::Display for Platform {
         match self {
             Platform::Modrinth => write!(f, "modrinth"),
             Platform::CurseForge => write!(f, "curseforge"),
+            Platform::Forge => write!(f, "forge"),
         }
     }
 }
@@ -98,9 +100,34 @@ struct CurseForgeProject {
     download_count: u64,
 }
 
+/// Forge API response structures (uses CurseForge API with Forge-specific filtering)
+#[derive(Debug, Deserialize)]
+struct ForgeSearchResponse {
+    data: Vec<ForgeProject>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ForgeProject {
+    id: u32,
+    name: String,
+    #[serde(rename = "downloadCount")]
+    download_count: u64,
+    #[serde(rename = "gameVersionLatestFiles")]
+    game_version_latest_files: Vec<ForgeGameVersionFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ForgeGameVersionFile {
+    #[serde(rename = "projectFileName")]
+    project_file_name: String,
+    #[serde(rename = "gameVersion")]
+    game_version: String,
+}
+
 /// Configuration constants from bash implementation
 const MODRINTH_CONFIDENCE_THRESHOLD: u8 = 90;
 const CURSEFORGE_CONFIDENCE_THRESHOLD: u8 = 85;
+const FORGE_CONFIDENCE_THRESHOLD: u8 = 80;
 const MIN_DOWNLOAD_THRESHOLD: u64 = 1000;
 const EXTRA_WORDS_MAX_RATIO: u8 = 150;
 
@@ -119,7 +146,7 @@ impl ProjectResolver {
         }
     }
 
-    /// Resolve project with platform priority: Modrinth first, then CurseForge
+    /// Resolve project with platform priority: Modrinth first, then CurseForge, then Forge
     pub async fn resolve_project(
         &self,
         title: &str,
@@ -188,6 +215,36 @@ impl ProjectResolver {
             }
             Err(e) => {
                 debug!("CurseForge search failed: {}", e);
+            }
+        }
+
+        // Final fallback to Forge (lowest threshold)
+        match self
+            .search_forge(title, project_type, minecraft_version, mod_loader)
+            .await
+        {
+            Ok(mut project) => {
+                let confidence =
+                    self.calculate_confidence(title, &project.title, project.downloads);
+                project.confidence = confidence;
+
+                if !self.has_extra_words(title, &project.title)
+                    && confidence >= FORGE_CONFIDENCE_THRESHOLD
+                {
+                    debug!(
+                        "Acceptable Forge match: {}% for '{}'",
+                        confidence, project.title
+                    );
+                    return Ok(project);
+                } else {
+                    warn!(
+                        "Forge match rejected: confidence {}% or extra words",
+                        confidence
+                    );
+                }
+            }
+            Err(e) => {
+                debug!("Forge search failed: {}", e);
             }
         }
 
@@ -354,6 +411,83 @@ impl ProjectResolver {
 
         Ok(ProjectInfo {
             platform: Platform::CurseForge,
+            project_id: project.id.to_string(),
+            title: project.name.clone(),
+            downloads: project.download_count,
+            confidence: 0, // Will be calculated by caller
+            project_type: normalized_type,
+        })
+    }
+
+    /// Search Forge API for project (uses CurseForge with Forge-specific filtering)
+    async fn search_forge(
+        &self,
+        title: &str,
+        project_type: &str,
+        minecraft_version: Option<&str>,
+        mod_loader: Option<&str>,
+    ) -> Result<ProjectInfo, SearchError> {
+        let api_key =
+            self.curseforge_api_key
+                .as_ref()
+                .ok_or_else(|| SearchError::MissingApiKey {
+                    platform: "Forge".to_string(),
+                })?;
+
+        let normalized_type = self.normalize_project_type(project_type);
+        let class_id = self.curseforge_class_id(&normalized_type);
+
+        let mut params = vec![
+            ("gameId", "432".to_string()),
+            ("classId", class_id.to_string()),
+            ("searchFilter", title.to_string()),
+            ("sortField", "6".to_string()), // Downloads
+            ("sortOrder", "desc".to_string()),
+            ("modLoaderType", "1".to_string()), // Forge loader type
+        ];
+
+        if let Some(version) = minecraft_version {
+            params.push(("gameVersion", version.to_string()));
+        }
+
+        let query_string = params
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, utf8_percent_encode(v, CONTROLS)))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        let url = format!("https://api.curseforge.com/v1/mods/search?{}", query_string);
+
+        trace!("Forge search URL: {}", url);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("x-api-key", api_key)
+            .header("User-Agent", "empack/0.1.0")
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(SearchError::NetworkError {
+                source: crate::networking::NetworkingError::RequestFailed {
+                    source: response.error_for_status().unwrap_err(),
+                },
+            });
+        }
+
+        let search_response: ForgeSearchResponse = response.json().await?;
+
+        if search_response.data.is_empty() {
+            return Err(SearchError::NoResults {
+                query: title.to_string(),
+            });
+        }
+
+        let project = &search_response.data[0];
+
+        Ok(ProjectInfo {
+            platform: Platform::Forge,
             project_id: project.id.to_string(),
             title: project.name.clone(),
             downloads: project.download_count,
@@ -540,6 +674,38 @@ pub async fn resolve_curseforge_mod(
 
     let mod_data = response.text().await?;
     trace!("Successfully resolved CurseForge mod: {}", project_id);
+
+    Ok(mod_data)
+}
+
+/// Resolve Forge project by ID (uses CurseForge API)
+pub async fn resolve_forge_mod(
+    client: Client,
+    project_id: String,
+    api_key: &str,
+) -> Result<String, SearchError> {
+    trace!("Resolving Forge mod via CurseForge API: {}", project_id);
+
+    let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
+
+    let response = client
+        .get(&url)
+        .header("x-api-key", api_key)
+        .header("User-Agent", "empack/0.1.0")
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        error!("CurseForge API request failed (Forge mod lookup): {}", response.status());
+        return Err(SearchError::NetworkError {
+            source: crate::networking::NetworkingError::RequestFailed {
+                source: response.error_for_status().unwrap_err(),
+            },
+        });
+    }
+
+    let mod_data = response.text().await?;
+    trace!("Successfully resolved Forge mod via CurseForge API: {}", project_id);
 
     Ok(mod_data)
 }
