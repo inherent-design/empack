@@ -29,6 +29,12 @@ pub enum ConfigError {
         source: toml::de::Error,
     },
 
+    #[error("Anyhow error: {source}")]
+    AnyhowError {
+        #[from]
+        source: anyhow::Error,
+    },
+
     #[error("Missing required field: {field}")]
     MissingField { field: String },
 
@@ -151,26 +157,27 @@ pub struct ProjectSpec {
 }
 
 /// Configuration manager bridging empack.yml and pack.toml
-pub struct ConfigManager {
+pub struct ConfigManager<'a> {
     workdir: PathBuf,
+    fs_provider: &'a dyn crate::application::session::FileSystemProvider,
 }
 
-impl ConfigManager {
-    pub fn new(workdir: PathBuf) -> Self {
-        Self { workdir }
+impl<'a> ConfigManager<'a> {
+    pub fn new(workdir: PathBuf, fs_provider: &'a dyn crate::application::session::FileSystemProvider) -> Self {
+        Self { workdir, fs_provider }
     }
 
     /// Load empack.yml configuration
     pub fn load_empack_config(&self) -> Result<EmpackConfig, ConfigError> {
         let empack_path = self.workdir.join("empack.yml");
 
-        if !empack_path.exists() {
+        if !self.fs_provider.exists(&empack_path) {
             return Err(ConfigError::MissingField {
                 field: "empack.yml".to_string(),
             });
         }
 
-        let content = std::fs::read_to_string(&empack_path)?;
+        let content = self.fs_provider.read_to_string(&empack_path)?;
         let config: EmpackConfig = serde_yaml::from_str(&content)?;
 
         Ok(config)
@@ -180,11 +187,11 @@ impl ConfigManager {
     pub fn load_pack_metadata(&self) -> Result<Option<PackMetadata>, ConfigError> {
         let pack_path = self.workdir.join("pack").join("pack.toml");
 
-        if !pack_path.exists() {
+        if !self.fs_provider.exists(&pack_path) {
             return Ok(None);
         }
 
-        let content = std::fs::read_to_string(&pack_path)?;
+        let content = self.fs_provider.read_to_string(&pack_path)?;
         let metadata: PackMetadata = toml::from_str(&content)?;
 
         Ok(Some(metadata))

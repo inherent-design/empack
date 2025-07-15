@@ -59,7 +59,9 @@ impl ShaderLoader {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ModLoader {
+    #[serde(rename = "neoforge")]
     NeoForge,
     Fabric,
     Quilt,

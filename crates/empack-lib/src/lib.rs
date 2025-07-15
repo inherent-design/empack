@@ -22,6 +22,7 @@
 //! ```
 
 pub mod application;
+pub mod display;
 pub mod empack;
 pub mod logger;
 pub mod networking;

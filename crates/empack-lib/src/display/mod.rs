@@ -13,6 +13,17 @@ pub mod status;
 pub mod interactive;
 pub mod progress;
 pub mod structured;
+pub mod providers;
+pub mod live;
+pub mod mock;
+
+// Re-export provider traits and implementations for easy access
+pub use providers::{
+    DisplayProvider, StatusProvider, ProgressProvider, PromptProvider, StructuredProvider,
+    ProgressTracker, MultiProgressProvider, OperationSummary, DisplayProviderExt,
+};
+pub use live::LiveDisplayProvider;
+pub use mock::{MockDisplayProvider, DisplayCall, ResponseValue};
 
 // Global display manager - initialized once with terminal capabilities
 static GLOBAL_DISPLAY: OnceLock<Display> = OnceLock::new();

@@ -6,6 +6,8 @@
 use percent_encoding::{CONTROLS, utf8_percent_encode};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::pin::Pin;
 use thiserror::Error;
 use tracing::{debug, error, trace, warn};
 
@@ -41,6 +43,18 @@ pub enum SearchError {
 
     #[error("API key missing for platform: {platform}")]
     MissingApiKey { platform: String },
+}
+
+/// Trait for project resolution across mod platforms
+pub trait ProjectResolverTrait: Send + Sync {
+    /// Resolve project with platform priority: Modrinth first, then CurseForge, then Forge
+    fn resolve_project(
+        &self,
+        title: &str,
+        project_type: Option<&str>,
+        minecraft_version: Option<&str>,
+        mod_loader: Option<&str>,
+    ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>>;
 }
 
 /// Platform-specific project information
@@ -135,6 +149,8 @@ const EXTRA_WORDS_MAX_RATIO: u8 = 150;
 pub struct ProjectResolver {
     client: Client,
     curseforge_api_key: Option<String>,
+    modrinth_base_url: String,
+    curseforge_base_url: String,
 }
 
 impl ProjectResolver {
@@ -143,6 +159,24 @@ impl ProjectResolver {
         Self {
             client,
             curseforge_api_key,
+            modrinth_base_url: "https://api.modrinth.com".to_string(),
+            curseforge_base_url: "https://api.curseforge.com".to_string(),
+        }
+    }
+    
+    /// Create new resolver with custom base URLs (for testing)
+    #[cfg(feature = "test-utils")]
+    pub fn new_with_base_urls(
+        client: Client,
+        curseforge_api_key: Option<String>,
+        modrinth_base_url: Option<String>,
+        curseforge_base_url: Option<String>,
+    ) -> Self {
+        Self {
+            client,
+            curseforge_api_key,
+            modrinth_base_url: modrinth_base_url.unwrap_or_else(|| "https://api.modrinth.com".to_string()),
+            curseforge_base_url: curseforge_base_url.unwrap_or_else(|| "https://api.curseforge.com".to_string()),
         }
     }
 
@@ -282,7 +316,8 @@ impl ProjectResolver {
         );
 
         let url = format!(
-            "https://api.modrinth.com/v2/search?query={}&facets={}",
+            "{}/v2/search?query={}&facets={}",
+            self.modrinth_base_url,
             utf8_percent_encode(title, CONTROLS),
             utf8_percent_encode(&facets_json, CONTROLS)
         );
@@ -379,7 +414,7 @@ impl ProjectResolver {
             .collect::<Vec<_>>()
             .join("&");
 
-        let url = format!("https://api.curseforge.com/v1/mods/search?{}", query_string);
+        let url = format!("{}/v1/mods/search?{}", self.curseforge_base_url, query_string);
 
         trace!("CurseForge search URL: {}", url);
 
@@ -456,7 +491,7 @@ impl ProjectResolver {
             .collect::<Vec<_>>()
             .join("&");
 
-        let url = format!("https://api.curseforge.com/v1/mods/search?{}", query_string);
+        let url = format!("{}/v1/mods/search?{}", self.curseforge_base_url, query_string);
 
         trace!("Forge search URL: {}", url);
 
@@ -616,6 +651,30 @@ impl ProjectResolver {
             "neoforge" => Some(6),
             _ => None,
         }
+    }
+}
+
+impl ProjectResolverTrait for ProjectResolver {
+    fn resolve_project(
+        &self,
+        title: &str,
+        project_type: Option<&str>,
+        minecraft_version: Option<&str>,
+        mod_loader: Option<&str>,
+    ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>> {
+        let title = title.to_string();
+        let project_type = project_type.map(|s| s.to_string());
+        let minecraft_version = minecraft_version.map(|s| s.to_string());
+        let mod_loader = mod_loader.map(|s| s.to_string());
+        
+        Box::pin(async move {
+            self.resolve_project(
+                &title,
+                project_type.as_deref(),
+                minecraft_version.as_deref(),
+                mod_loader.as_deref(),
+            ).await
+        })
     }
 }
 

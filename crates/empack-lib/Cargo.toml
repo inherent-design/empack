@@ -6,6 +6,9 @@ authors.workspace = true
 license.workspace = true
 repository = "https://github.com/inherent-design/empack/crates/empack-lib"
 
+[features]
+test-utils = []
+
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }

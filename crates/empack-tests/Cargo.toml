@@ -1,0 +1,18 @@
+[package]
+name = "empack-tests"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+empack-lib = { version = "0.0.0-alpha.1", path = "../empack-lib", features = ["test-utils"] }
+indicatif.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+mockito = "1.7.0"

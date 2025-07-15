@@ -1,12 +1,12 @@
-# Empack Architectural Decision Record: Handle Pattern Implementation
+# Empack Architectural Decision Record: Session-Scoped Dependency Injection Pattern
 
-**Date**: 2025-01-13  
+**Date**: 2025-01-14  
 **Status**: APPROVED  
 **Participants**: Atlas-Claude, Atlas-Gemini, Mannie  
 
 ## Executive Summary
 
-After comprehensive analysis of the empack Rust implementation against V1/V2 bash implementations, we have identified critical architectural decisions needed to achieve production readiness. This document formalizes our commitment to the **Handle Pattern** (trait-based dependency injection) as the foundational architecture for implementing missing features while maintaining testability and architectural clarity.
+Following comprehensive architectural analysis of the DisplayProvider compilation crisis and the broader empack ecosystem, we have identified a fundamental impedance mismatch between our desired trait-based architecture and Rust's ownership model. This document formalizes our commitment to the **Session-Scoped Dependency Injection Pattern** as the foundational architecture for resolving the immediate DisplayProvider issues while establishing a robust foundation for completing the remaining feature implementation.
 
 ## Current State Assessment
 
@@ -15,6 +15,16 @@ After comprehensive analysis of the empack Rust implementation against V1/V2 bas
 - **Quality**: Well-structured modular architecture with clean separation of concerns
 - **Testing**: Recent test migration to `.test.rs` files completed successfully, establishing strong testing foundation
 
+### The DisplayProvider Crisis (Critical Blocker)
+**Immediate Issue**: The DisplayProvider trait implementation has encountered six compilation errors due to lifetime mismatches between our `Box<dyn ProgressTracker>` return types and the `indicatif` library's borrowing requirements.
+
+**Root Cause**: Fundamental impedance mismatch between:
+- **Our Goal**: Trait-based dependency injection with owned trait objects (`Box<dyn Trait>`)
+- **Rust Reality**: `indicatif::MultiProgress` requires borrowed references with explicit lifetimes
+- **Library Constraint**: `ProgressBar` instances must borrow from their parent `MultiProgress` object
+
+**Architectural Significance**: This is not a bug but a design crisis revealing the collision between our v1 "ambient state" model and Rust's "explicit ownership" requirements.
+
 ### Feature Implementation Gap (40% Complete)
 **Fully Implemented**:
 - `empack init`: Complete state machine-driven project initialization
@@ -22,11 +32,10 @@ After comprehensive analysis of the empack Rust implementation against V1/V2 bas
 - `empack clean`: Build artifact cleaning operational
 - `empack requirements`: Dependency checking system
 
-**Stubbed/Incomplete**:
-- `empack sync`: Logic exists but dry-run mode stubbed ("Dry run functionality not yet implemented")
-- `empack add/remove`: Completely stubbed ("Add/Remove command not yet implemented")
-- Build targets: server, client-full, server-full incomplete
-- Cache management: Referenced but unimplemented
+**Blocked by Architecture**:
+- All user-facing commands requiring progress indication or interactive prompts
+- Testing infrastructure for any command using DisplayProvider
+- Further development until ownership model is resolved
 
 **Missing Entirely**:
 - `empack version`: Present in V1, absent in Rust
@@ -34,181 +43,258 @@ After comprehensive analysis of the empack Rust implementation against V1/V2 bas
 - Dependency resolution: No conflict detection or version constraint handling
 - empack.yml dependency processing: No translation to packwiz commands
 
-### Architectural Health (50% Complete)
-**Current Debt**:
-- Global state coupling via `OnceLock` patterns creates testing complexity
-- `ModpackStateManager` conflates discovery, logic, and execution
-- Side effects scattered throughout business logic modules
+### Architectural Health (Crisis State)
+**Critical Architecture Debt**:
+- **Ownership Model Undefined**: No clear pattern for managing state that must be shared across multiple components
+- **Lifetime Management Unclear**: No established pattern for handling borrowed resources within trait abstractions
+- **Session Boundaries Implicit**: Command execution lifecycle not explicitly modeled in the type system
 
-## Feature Gap Analysis: V1/V2 vs Rust
+## Architectural Analysis: The Great Contention
 
-### V1 Implementation Sophistication
-The bash V1 reveals mature features missing from Rust:
+### The Impedance Mismatch Defined
+
+**The v1 Model: Ambient State Architecture**
+The Bash implementation operated on an "ambient state" model where global environment variables (`EMPACK_*`) created a shared information space accessible from any execution context. This enabled loose coupling between components while maintaining system-wide coordination.
+
+**The Rust Model: Explicit Ownership Architecture**
+Rust enforces explicit ownership where every piece of data must have a clear owner, borrowers must be explicitly scoped, and the compiler validates all references remain valid. This trades ambient accessibility for guaranteed memory safety.
+
+**The Collision Point**: The DisplayProvider crisis represents the first irreconcilable collision between these models. `Box<dyn ProgressTracker>` implies `'static` ownership while `indicatif::ProgressBar` requires borrowing from a parent `MultiProgress`.
+
+### The Soul of empack: Immutable Principles
+
+Through analysis of the complete historical arc, two immutable principles constitute the "soul" of empack:
+
+**Principle 1: Runtime Boundary Enforcement**
+The strict separation between pre-init and post-init states prevents destructive operations and ensures operations only occur in valid contexts. This must survive translation to Rust through the type system.
+
+**Principle 2: Progressive Disclosure of Complexity**
+The "Loader-First Auto-Fill" philosophy where systems are maximally intelligent by default while allowing expert access through progressive disclosure. This should inform API design throughout the Rust implementation.
+
+### Historical Context: V1/V2 Sophistication
+
+**V1 Implementation Excellence**:
 - **Runtime Boundary Architecture**: Clean pre-init/post-init phase separation
 - **Command Registry**: Sophisticated five-array system with validation
 - **API Integration**: Multi-modloader version resolution with fallbacks
 - **Template System**: Static vs dynamic template processing
 - **Interactive Modes**: Three initialization modes with progressive disclosure
 
-### V2 Implementation Excellence  
-The bash V2 demonstrates advanced mod management capabilities:
+**V2 Implementation Excellence**:
 - **Multi-Platform Search**: `search_modrinth.sh` + `search_curseforge.sh` with unified API
 - **Fuzzy Matching**: `fuzz_match.sh` for intelligent mod name resolution
 - **Dependency Resolution**: `remote_resolver.sh` with project ID validation
 - **empack.yml Processing**: `empack_reader.sh` parsing dependency specifications
 - **Command Generation**: Automated packwiz command generation from dependency specs
 
-## Architectural Decision: Handle Pattern Implementation
+## Architectural Decision: Session-Scoped Dependency Injection Pattern
 
 ### Pattern Selection Rationale
-After research into production Rust patterns, the **Handle Pattern** (trait-based dependency injection) emerges as the idiomatic solution for managing side effects while maintaining testability. This pattern is:
 
-- **Zero-cost**: Compiler monomorphization eliminates runtime overhead
-- **Type-safe**: Full compile-time verification of dependencies
-- **Explicit**: No hidden dependencies or magic global state
-- **Testable**: Natural mocking through trait implementations
-- **Composable**: Clear interfaces enable feature composition
+After comprehensive analysis of the DisplayProvider crisis and evaluation of candidate patterns, the **Session-Scoped Dependency Injection Pattern** emerges as the optimal solution. This pattern resolves the immediate ownership conflicts while establishing a foundation for all future feature development.
 
-### Cross-Cutting Implementation Strategy
+**Key Advantages**:
+- **Lifetime Clarity**: Each `execute_command` creates a `CommandSession` that owns all ephemeral state
+- **Ownership Resolution**: Session owns `MultiProgress`, provides `Box<dyn ProgressTracker + '_>` with explicit lifetimes
+- **Test Isolation**: Each command execution is self-contained with mockable dependencies
+- **Resource Management**: Automatic cleanup when session ends, preventing resource leaks
+- **Type Safety**: Compile-time verification of all dependencies and lifetimes
 
-Every major feature follows the universal pattern:
-```
-User Input → API Calls → Dependency Resolution → File System Changes → User Feedback
-```
+### Core Architecture Pattern
 
-We will implement consistent architecture across all features using:
-
+**The CommandSession**:
 ```rust
-trait FeatureProvider {
-    // Define required side effects as pure interfaces
+pub struct CommandSession<'a> {
+    multi_progress: MultiProgress,
+    status_provider: Box<dyn StatusProvider + 'a>,
+    progress_provider: Box<dyn ProgressProvider + 'a>,
+    // Additional session-scoped capabilities
 }
 
-fn feature_logic<P: FeatureProvider>(provider: &P, input: Input) -> ExecutionPlan {
-    // Pure business logic returning execution plan
+impl<'a> CommandSession<'a> {
+    pub fn new() -> Self { /* ... */ }
+    
+    pub fn status_provider(&self) -> &dyn StatusProvider { /* ... */ }
+    pub fn progress_provider(&self) -> &dyn ProgressProvider { /* ... */ }
 }
+```
 
-// Live implementation for production
-struct LiveProvider;
-impl FeatureProvider for LiveProvider { /* real I/O */ }
+**Session-Scoped Execution**:
+```rust
+pub fn execute_command(command: EmpackCommand) -> Result<(), EmpackError> {
+    let session = CommandSession::new();
+    
+    match command {
+        EmpackCommand::Add(args) => handle_add(&session, args),
+        EmpackCommand::Build(args) => handle_build(&session, args),
+        // All commands receive session reference
+    }
+}
+```
 
-// Mock implementation for testing  
-struct MockProvider;
-impl FeatureProvider for MockProvider { /* in-memory simulation */ }
+**Business Logic Integration**:
+```rust
+pub fn handle_add(session: &CommandSession, args: AddArgs) -> Result<(), EmpackError> {
+    // Pure business logic using session-provided capabilities
+    let status = session.status_provider();
+    let progress = session.progress_provider();
+    
+    // All user interaction through session interfaces
+    status.info("Starting mod search...");
+    let bar = progress.create_progress_bar(100)?;
+    
+    // Business logic remains pure and testable
+}
 ```
 
 ## Implementation Roadmap
 
-### Phase 1: Architectural Foundation (1-2 weeks)
-**Refactor `empack::state` as Pattern Proof**
+### Phase 1: DisplayProvider Crisis Resolution (1 week)
+**Immediate Priority: Restore Compilation**
 
-1. **Define StateProvider trait**:
+1. **Implement CommandSession Architecture**:
    ```rust
-   pub trait StateProvider {
-       fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>, io::Error>;
-       fn has_build_artifacts(&self, dist_dir: &Path) -> bool;
+   pub struct CommandSession {
+       multi_progress: MultiProgress,
+       // Session owns all display state
+   }
+   
+   impl CommandSession {
+       pub fn create_progress_bar(&self, length: u64) -> Box<dyn ProgressTracker + '_> {
+           // Returns progress bar borrowing from self.multi_progress
+       }
    }
    ```
 
-2. **Extract pure logic**:
+2. **Refactor DisplayProvider Traits**:
+   - Change return types to `Box<dyn ProgressTracker + '_>` with explicit lifetimes
+   - Session provides factory methods instead of static constructors
+   - Maintain existing business logic interfaces
+
+3. **Update execute_command Integration**:
+   - Create `CommandSession` at the start of each command
+   - Pass session reference to all handle_* functions
+   - Verify all six compilation errors are resolved
+
+4. **Implement Test Infrastructure**:
+   - Create `MockCommandSession` for testing
+   - Verify all existing tests pass with new architecture
+   - Add session-specific test coverage
+
+**Success Criteria**: All code compiles cleanly, existing functionality preserved, test suite passes, session pattern validated.
+
+### Phase 2: Session-Scoped State Management (2-3 weeks)
+**Extend pattern to all state management**
+
+1. **Expand CommandSession Capabilities**:
+   - Add `FileSystemProvider` for file operations
+   - Add `NetworkProvider` for API interactions
+   - Add `ConfigProvider` for configuration access
+   - Add `CacheProvider` for cache management
+
+2. **Implement Session-Scoped Providers**:
    ```rust
-   pub fn discover_state<P: StateProvider>(provider: &P, workdir: &Path) -> ModpackState {
-       // Existing logic, now 100% testable
+   impl CommandSession {
+       pub fn filesystem(&self) -> &dyn FileSystemProvider { /* ... */ }
+       pub fn network(&self) -> &dyn NetworkProvider { /* ... */ }
+       pub fn config(&self) -> &dyn ConfigProvider { /* ... */ }
+       pub fn cache(&self) -> &dyn CacheProvider { /* ... */ }
    }
    ```
 
-3. **Implement live and mock providers**:
-   - `LiveStateProvider` using `std::fs`
-   - `MockStateProvider` using `HashSet<PathBuf>`
+3. **Refactor Existing Commands**:
+   - Update `handle_build` to use session providers
+   - Update `handle_init` to use session providers
+   - Update `handle_clean` to use session providers
+   - Maintain existing functionality while improving testability
 
-4. **Refactor ModpackStateManager**:
-   - Accept provider as dependency
-   - Maintain existing public interface
-   - Enable complete test coverage
+4. **Type-Level Runtime Boundaries**:
+   - Create `PreInitSession` and `PostInitSession` types
+   - Encode pre-init/post-init constraints in the type system
+   - Prevent invalid operations at compile time
 
-**Success Criteria**: State module fully testable without filesystem I/O, existing functionality preserved, pattern validated for future features.
-
-### Phase 2: Missing Feature Implementation (2-3 weeks)
-**Build features on established pattern**
+### Phase 3: Feature Completion (2-3 weeks)
+**Implement missing features using established session pattern**
 
 1. **`empack add/remove` commands**:
-   - Port V2 search logic to Rust using provider pattern
-   - Implement dependency resolution engine
-   - Create `ModSearchProvider` and `PackageManagerProvider` traits
+   - Port V2 search logic to Rust using session providers
+   - Implement dependency resolution engine within session context
    - Build complete mod lifecycle management
+   - Full test coverage using mock sessions
 
 2. **Complete `empack sync`**:
    - Implement dry-run mode using execution plans
    - Add empack.yml → pack.toml reconciliation logic
-   - Create `SyncProvider` for configuration diffing
+   - Use session providers for configuration diffing
 
 3. **`empack version` command**:
    - Simple implementation matching V1 functionality
+   - Use session for consistent output formatting
 
 4. **Complete build targets**:
    - Finish server, client-full, server-full implementations
-   - Use `BuildProvider` pattern for consistent testing
-
-### Phase 3: Production Hardening (1-2 weeks)
-**Security, reliability, and UX polish**
-
-1. **Security implementation**:
-   - Input sanitization for all mod specifications
-   - API rate limiting and timeout handling
-   - Filesystem boundary validation
-   - Command injection prevention
-
-2. **Cache management**:
-   - Implement `CacheProvider` trait
-   - Add API response caching
-   - Complete cache cleaning in clean command
-
-3. **UX enhancement**:
-   - Rich progress indicators using `indicatif`
-   - Interactive prompts with `dialoguer`
-   - Improved error messages with suggestions
+   - Use session providers for consistent testing
 
 ## Risk Assessment & Mitigation
 
 ### Technical Risks
-- **Learning curve**: Handle pattern requires trait design skills
-  - *Mitigation*: Start with state module as learning ground
-- **Over-abstraction**: Risk of creating unnecessary complexity
-  - *Mitigation*: Implement concrete features first, abstract patterns second
+- **Lifetime Complexity**: Session-scoped lifetimes might create complex borrowing chains
+  - *Mitigation*: Keep session interfaces simple, use factory methods for complex objects
+- **Performance Overhead**: Session creation/destruction on every command
+  - *Mitigation*: Profile session overhead, optimize hot paths, session pooling if needed
+- **Testing Integration**: Mock sessions might not accurately represent production behavior
+  - *Mitigation*: Integration tests with real sessions, careful mock validation
 
-### Timeline Risks
-- **Scope creep**: Pattern implementation could expand beyond necessity
-  - *Mitigation*: Strict phase boundaries, working software at each phase
-- **Integration challenges**: New architecture might conflict with existing code
-  - *Mitigation*: Maintain backward compatibility, incremental migration
+### Architecture Risks
+- **Scope Creep**: Session pattern might expand beyond display providers
+  - *Mitigation*: Strict boundaries, implement display first, extend incrementally
+- **Backwards Compatibility**: Changes might break existing command interfaces
+  - *Mitigation*: Maintain existing public APIs, internal refactoring only
+- **Future Icebergs**: Additional ownership conflicts in other modules
+  - *Mitigation*: Apply session pattern consistently, address conflicts as they arise
 
 ## Success Metrics
 
-### Quantitative Targets
-- **Test Coverage**: >90% for business logic modules
-- **Build Performance**: No regression in compilation or runtime speed
-- **Feature Completeness**: 80% completion after Phase 2
-- **API Compatibility**: 100% backward compatibility with existing interfaces
+### Immediate Success Criteria (Phase 1)
+- **Compilation**: All six DisplayProvider errors resolved
+- **Test Coverage**: Existing test suite passes with new architecture
+- **API Compatibility**: No breaking changes to existing command interfaces
+- **Performance**: No measurable regression in command execution time
 
-### Qualitative Indicators
-- **Developer Experience**: New features can be implemented with consistent patterns
-- **Maintainability**: Business logic can be modified without touching I/O concerns
+### Medium-term Success Criteria (Phase 2)
+- **Pattern Consistency**: All state management follows session-scoped pattern
+- **Type Safety**: Pre-init/post-init constraints enforced at compile time
+- **Test Coverage**: >90% coverage for business logic through mock sessions
+- **Architecture Debt**: Global state dependencies eliminated
+
+### Long-term Success Criteria (Phase 3)
+- **Feature Completeness**: All v1/v2 features implemented using session pattern
+- **Maintainability**: New features can be added without architectural changes
+- **Performance**: Session overhead <1% of total command execution time
 - **Reliability**: Comprehensive testing enables confident refactoring
-- **Extensibility**: New providers can be added without core logic changes
 
 ## Conclusion
 
-The Handle Pattern provides the architectural foundation needed to complete empack's feature development while maintaining the high code quality established during the test migration. This decision enables rapid, confident implementation of the sophisticated mod management capabilities demonstrated in the V1/V2 bash implementations.
+The Session-Scoped Dependency Injection Pattern provides the architectural foundation needed to resolve the immediate DisplayProvider crisis while establishing a robust pattern for all future development. This decision directly addresses the fundamental impedance mismatch between our design goals and Rust's ownership model.
 
 By committing to this pattern, we establish:
-- **Consistent architecture** across all features
-- **Universal testability** for business logic
-- **Clear extension points** for future capabilities
-- **Production-ready reliability** through comprehensive testing
+- **Ownership Clarity**: Clear lifetime management for all shared resources
+- **Compilation Success**: Resolution of all DisplayProvider lifetime errors
+- **Test Isolation**: Complete testability through session-scoped mocking
+- **Architectural Consistency**: Unified pattern for all state management
+- **Future Resilience**: Framework for handling similar ownership conflicts
 
-This architectural decision transforms empack from a collection of clever implementations into a systematically designed, maintainable, and extensible modpack development tool.
+This architectural decision transforms the current crisis into a strategic advantage, establishing empack as a systematically designed, maintainable, and extensible modpack development tool built on sound Rust principles.
+
+**The Path Forward**: 
+1. Phase 1 resolves the immediate compilation crisis
+2. Phase 2 extends the pattern to all state management
+3. Phase 3 completes the feature set using established patterns
+
+This is not just a fix—it is the foundation for empack's evolution into a production-ready, professionally architected tool.
 
 ---
 
 **Decision Approved**: Atlas-Claude, Atlas-Gemini, Mannie  
 **Implementation Start**: Immediate  
-**Next Review**: After Phase 1 completion
+**Next Review**: After Phase 1 completion (compilation success)

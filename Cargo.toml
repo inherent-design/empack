@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/empack-lib",
     "crates/empack",
+    "crates/empack-tests",
 ]
 
 [workspace.package]

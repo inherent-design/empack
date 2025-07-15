@@ -1,5 +1,5 @@
 use crate::empack::builds::{BuildError, BuildOrchestrator};
-use crate::empack::config::{ConfigError, ConfigManager};
+use crate::empack::config::ConfigError;
 use crate::primitives::*;
 use std::collections::HashSet;
 use std::fs;
@@ -7,217 +7,21 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use thiserror::Error;
 
-/// Handle trait for abstracting all I/O operations required by the state machine
-/// This enables pure business logic testing without filesystem dependencies
-pub trait StateProvider {
-    /// Check if a path exists and is a directory
-    fn is_directory(&self, path: &Path) -> Result<bool, std::io::Error>;
+// StateProvider trait removed - now using unified FileSystemProvider
+// LiveStateProvider removed - now using LiveFileSystemProvider from session.rs
 
-    /// Get list of files and directories in a path
-    fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>, std::io::Error>;
-
-    /// Check if directory has build artifacts (mrpack, zip, jar files or build target dirs)
-    fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool, std::io::Error>;
-
-    /// Create directory and all parent directories
-    fn create_dir_all(&self, path: &Path) -> Result<(), std::io::Error>;
-
-    /// Write content to a file
-    fn write_file(&self, path: &Path, content: &str) -> Result<(), std::io::Error>;
-
-    /// Remove a file
-    fn remove_file(&self, path: &Path) -> Result<(), std::io::Error>;
-
-    /// Remove a directory and all its contents
-    fn remove_dir_all(&self, path: &Path) -> Result<(), std::io::Error>;
-
-    /// Run packwiz init command
-    fn run_packwiz_init(&self, workdir: &Path) -> Result<(), StateError>;
-
-    /// Run packwiz refresh command
-    fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), StateError>;
-}
-
-/// Production implementation of StateProvider using real filesystem and commands
-pub struct LiveStateProvider;
-
-impl StateProvider for LiveStateProvider {
-    fn is_directory(&self, path: &Path) -> Result<bool, std::io::Error> {
-        Ok(path.exists() && path.is_dir())
-    }
-
-    fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>, std::io::Error> {
-        let mut files = HashSet::new();
-
-        if !path.exists() {
-            return Ok(files);
-        }
-
-        let entries = fs::read_dir(path)?;
-        for entry in entries {
-            let entry = entry?;
-            files.insert(entry.path());
-        }
-
-        Ok(files)
-    }
-
-    fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool, std::io::Error> {
-        if !dist_dir.exists() {
-            return Ok(false);
-        }
-
-        let entries = fs::read_dir(dist_dir)?;
-        for entry in entries {
-            let entry = entry?;
-            let path = entry.path();
-
-            // Look for common build artifacts (files)
-            if path.is_file() {
-                if let Some(extension) = path.extension() {
-                    match extension.to_str() {
-                        Some("mrpack") | Some("zip") | Some("jar") => return Ok(true),
-                        _ => continue,
-                    }
-                }
-            }
-
-            // Also consider build target directories as evidence of build state
-            if path.is_dir() {
-                if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                    match dir_name {
-                        "mrpack" | "client" | "server" | "client-full" | "server-full" => {
-                            return Ok(true);
-                        }
-                        _ => continue,
-                    }
-                }
-            }
-        }
-
-        Ok(false)
-    }
-
-    fn create_dir_all(&self, path: &Path) -> Result<(), std::io::Error> {
-        fs::create_dir_all(path)
-    }
-
-    fn write_file(&self, path: &Path, content: &str) -> Result<(), std::io::Error> {
-        fs::write(path, content)
-    }
-
-    fn remove_file(&self, path: &Path) -> Result<(), std::io::Error> {
-        fs::remove_file(path)
-    }
-
-    fn remove_dir_all(&self, path: &Path) -> Result<(), std::io::Error> {
-        fs::remove_dir_all(path)
-    }
-
-    fn run_packwiz_init(&self, workdir: &Path) -> Result<(), StateError> {
-        #[cfg(test)]
-        {
-            // Mock packwiz init - create expected files
-            let pack_dir = workdir.join("pack");
-            self.create_dir_all(&pack_dir)?;
-
-            let pack_file = pack_dir.join("pack.toml");
-            let default_pack_toml = r#"name = "Test Modpack"
-author = "Test Author"
-version = "1.0.0"
-pack-format = "packwiz:1.1.0"
-
-[index]
-file = "index.toml"
-hash-format = "sha256"
-hash = ""
-
-[versions]
-minecraft = "1.20.1"
-fabric = "0.14.21"
-"#;
-            self.write_file(&pack_file, default_pack_toml)?;
-
-            // Also create index.toml
-            let index_file = pack_dir.join("index.toml");
-            let default_index = r#"hash-format = "sha256"
-
-[[files]]
-file = "pack.toml"
-hash = ""
-"#;
-            self.write_file(&index_file, default_index)?;
-            return Ok(());
-        }
-
-        #[cfg(not(test))]
-        {
-            let pack_file = workdir.join("pack").join("pack.toml");
-
-            let status = Command::new("packwiz")
-                .args(&["init", "--pack-file", pack_file.to_str().unwrap()])
-                .current_dir(workdir)
-                .status()
-                .map_err(|e| StateError::CommandFailed {
-                    command: format!("packwiz init failed: {}", e),
-                })?;
-
-            if !status.success() {
-                return Err(StateError::CommandFailed {
-                    command: "packwiz init returned non-zero".to_string(),
-                });
-            }
-
-            Ok(())
-        }
-    }
-
-    fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), StateError> {
-        #[cfg(test)]
-        {
-            // Mock packwiz refresh - verify pack.toml exists
-            let pack_file = workdir.join("pack").join("pack.toml");
-            if !pack_file.exists() {
-                return Err(StateError::MissingFile {
-                    file: "pack.toml".to_string(),
-                });
-            }
-            return Ok(());
-        }
-
-        #[cfg(not(test))]
-        {
-            let pack_file = workdir.join("pack").join("pack.toml");
-
-            let status = Command::new("packwiz")
-                .args(&["--pack-file", pack_file.to_str().unwrap(), "refresh"])
-                .current_dir(workdir)
-                .status()
-                .map_err(|e| StateError::CommandFailed {
-                    command: format!("packwiz refresh failed: {}", e),
-                })?;
-
-            if !status.success() {
-                return Err(StateError::CommandFailed {
-                    command: "packwiz refresh returned non-zero".to_string(),
-                });
-            }
-
-            Ok(())
-        }
-    }
-}
+// LiveStateProvider implementation removed - now using LiveFileSystemProvider from session.rs
 
 /// Pure business logic functions - zero I/O, 100% testable
 /// These functions contain the core state machine logic without side effects
 
 /// Discover current state from filesystem structure (pure function)
-pub fn discover_state<P: StateProvider>(
+pub fn discover_state<P: crate::application::session::FileSystemProvider>(
     provider: &P,
     workdir: &Path,
 ) -> Result<ModpackState, StateError> {
     // Check if directory exists and is valid
-    if !provider.is_directory(workdir)? {
+    if !provider.is_directory(workdir) {
         return Err(StateError::InvalidDirectory {
             path: workdir.display().to_string(),
         });
@@ -228,16 +32,16 @@ pub fn discover_state<P: StateProvider>(
     let dist_dir = workdir.join("dist");
 
     // Check for built state first (most advanced)
-    if provider.is_directory(&dist_dir)? {
+    if provider.is_directory(&dist_dir) {
         // Check if we have any build artifacts
-        if provider.has_build_artifacts(&dist_dir)? {
+        if provider.has_build_artifacts(&dist_dir).unwrap_or(false) {
             return Ok(ModpackState::Built);
         }
     }
 
     // Check for configured state
-    if provider.is_directory(&empack_yml.parent().unwrap())? {
-        let files = provider.get_file_list(workdir)?;
+    if provider.is_directory(&empack_yml.parent().unwrap()) {
+        let files = provider.get_file_list(workdir).unwrap_or_default();
         if files.contains(&empack_yml) || files.contains(&pack_toml) {
             return Ok(ModpackState::Configured);
         }
@@ -270,7 +74,7 @@ pub fn can_transition(from: ModpackState, to: ModpackState) -> bool {
 }
 
 /// Execute a state transition (pure function)
-pub fn execute_transition<P: StateProvider>(
+pub fn execute_transition<P: crate::application::session::FileSystemProvider>(
     provider: &P,
     workdir: &Path,
     transition: StateTransition,
@@ -323,7 +127,7 @@ pub fn execute_transition<P: StateProvider>(
 }
 
 /// Execute initialization process (pure function)
-pub fn execute_initialize<P: StateProvider>(
+pub fn execute_initialize<P: crate::application::session::FileSystemProvider>(
     provider: &P,
     workdir: &Path,
 ) -> Result<ModpackState, StateError> {
@@ -333,8 +137,8 @@ pub fn execute_initialize<P: StateProvider>(
         e
     })?;
 
-    // Generate empack.yml via config.rs
-    let config_manager = ConfigManager::new(workdir.to_path_buf());
+    // Generate empack.yml via config.rs using session provider
+    let config_manager = provider.config_manager(workdir.to_path_buf());
     let default_yml = config_manager.generate_default_empack_yml().map_err(|e| {
         clean_configuration(provider, workdir).ok(); // Cleanup on failure
         e
@@ -358,12 +162,12 @@ pub fn execute_initialize<P: StateProvider>(
 }
 
 /// Execute synchronization process (pure function)
-pub fn execute_synchronize<P: StateProvider>(
+pub fn execute_synchronize<P: crate::application::session::FileSystemProvider>(
     provider: &P,
     workdir: &Path,
 ) -> Result<ModpackState, StateError> {
-    // Validate configuration consistency
-    let config_manager = ConfigManager::new(workdir.to_path_buf());
+    // Validate configuration consistency using session provider
+    let config_manager = provider.config_manager(workdir.to_path_buf());
     let issues = config_manager.validate_consistency()?;
 
     if !issues.is_empty() {
@@ -379,7 +183,7 @@ pub fn execute_synchronize<P: StateProvider>(
 }
 
 /// Execute build process (pure function)
-pub fn execute_build<P: StateProvider>(
+pub fn execute_build<P: crate::application::session::FileSystemProvider>(
     provider: &P,
     workdir: &Path,
     targets: &[BuildTarget],
@@ -387,7 +191,7 @@ pub fn execute_build<P: StateProvider>(
     // Load project plan via config.rs
     #[cfg(not(test))]
     {
-        let config_manager = ConfigManager::new(workdir.to_path_buf());
+        let config_manager = provider.config_manager(workdir.to_path_buf());
         let _project_plan = config_manager.create_project_plan().map_err(|e| {
             clean_build_artifacts(provider, workdir).ok();
             e
@@ -463,61 +267,75 @@ pub fn execute_build<P: StateProvider>(
 }
 
 /// Create initial modpack structure (pure function)
-pub fn create_initial_structure<P: StateProvider>(
+pub fn create_initial_structure<P: crate::application::session::FileSystemProvider>(
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
     let pack_dir = workdir.join("pack");
-    provider.create_dir_all(&pack_dir)?;
+    provider.create_dir_all(&pack_dir).map_err(|e| StateError::IoError {
+        message: e.to_string(),
+    })?;
 
     let template_dir = workdir.join("templates");
-    provider.create_dir_all(&template_dir)?;
+    provider.create_dir_all(&template_dir).map_err(|e| StateError::IoError {
+        message: e.to_string(),
+    })?;
 
     let installer_dir = workdir.join("installer");
-    provider.create_dir_all(&installer_dir)?;
+    provider.create_dir_all(&installer_dir).map_err(|e| StateError::IoError {
+        message: e.to_string(),
+    })?;
 
     Ok(())
 }
 
 /// Clean build artifacts (pure function)
-pub fn clean_build_artifacts<P: StateProvider>(
+pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider>(
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
     let dist_dir = workdir.join("dist");
-    if provider.is_directory(&dist_dir)? {
-        provider.remove_dir_all(&dist_dir)?;
+    if provider.is_directory(&dist_dir) {
+        provider.remove_dir_all(&dist_dir).map_err(|e| StateError::IoError {
+            message: e.to_string(),
+        })?;
     }
     Ok(())
 }
 
 /// Clean configuration files (pure function)
-pub fn clean_configuration<P: StateProvider>(
+pub fn clean_configuration<P: crate::application::session::FileSystemProvider>(
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
     let empack_yml = workdir.join("empack.yml");
-    let files = provider.get_file_list(workdir)?;
+    let files = provider.get_file_list(workdir).unwrap_or_default();
     if files.contains(&empack_yml) {
-        provider.remove_file(&empack_yml)?;
+        provider.remove_file(&empack_yml).map_err(|e| StateError::IoError {
+            message: e.to_string(),
+        })?;
     }
 
     let pack_dir = workdir.join("pack");
-    if provider.is_directory(&pack_dir)? {
-        provider.remove_dir_all(&pack_dir)?;
+    if provider.is_directory(&pack_dir) {
+        provider.remove_dir_all(&pack_dir).map_err(|e| StateError::IoError {
+            message: e.to_string(),
+        })?;
     }
 
     let empack_dir = workdir.join(".empack");
-    if provider.is_directory(&empack_dir)? {
-        provider.remove_dir_all(&empack_dir)?;
+    if provider.is_directory(&empack_dir) {
+        provider.remove_dir_all(&empack_dir).map_err(|e| StateError::IoError {
+            message: e.to_string(),
+        })?;
     }
 
     Ok(())
 }
 
 /// Filesystem state machine for modpack development
-/// Folder layout determines state - now generic over StateProvider for testability
-pub struct ModpackStateManager<'a, P: StateProvider> {
+/// Folder layout determines state - now generic over FileSystemProvider for testability
+pub struct ModpackStateManager<'a, P: crate::application::session::FileSystemProvider> {
     /// Working directory (where empack.yml should be)
     pub workdir: PathBuf,
     /// Provider for all I/O operations
@@ -580,7 +398,15 @@ impl From<ConfigError> for StateError {
     }
 }
 
-impl<'a, P: StateProvider> ModpackStateManager<'a, P> {
+impl From<anyhow::Error> for StateError {
+    fn from(err: anyhow::Error) -> Self {
+        StateError::IoError {
+            message: err.to_string(),
+        }
+    }
+}
+
+impl<'a, P: crate::application::session::FileSystemProvider> ModpackStateManager<'a, P> {
     /// Create a new state manager for the given directory with dependency injection
     pub fn new(workdir: PathBuf, provider: &'a P) -> Self {
         Self { workdir, provider }
@@ -621,12 +447,12 @@ impl<'a, P: StateProvider> ModpackStateManager<'a, P> {
             ModpackState::Uninitialized => Ok(true),
             ModpackState::Configured => {
                 let pack_dir = self.workdir.join("pack");
-                Ok(self.provider.is_directory(&pack_dir)?)
+                Ok(self.provider.is_directory(&pack_dir))
             }
             ModpackState::Built => {
                 let dist_dir = self.workdir.join(".empack").join("dist");
-                Ok(self.provider.is_directory(&dist_dir)?
-                    && self.provider.has_build_artifacts(&dist_dir)?)
+                Ok(self.provider.is_directory(&dist_dir)
+                    && self.provider.has_build_artifacts(&dist_dir).unwrap_or(false))
             }
         }
     }
@@ -643,9 +469,7 @@ impl<'a, P: StateProvider> ModpackStateManager<'a, P> {
     ) -> Result<ModpackState, StateError> {
         execute_transition(self.provider, &self.workdir, transition)
     }
-
-
-
+    
     /// Get paths for common modpack files
     pub fn paths(&self) -> ModpackPaths {
         ModpackPaths {
@@ -659,15 +483,16 @@ impl<'a, P: StateProvider> ModpackStateManager<'a, P> {
     }
 }
 
-impl ModpackStateManager<'static, LiveStateProvider> {
-    /// Create a new state manager with default LiveStateProvider for backward compatibility
-    pub fn new_default(workdir: PathBuf) -> ModpackStateManager<'static, LiveStateProvider> {
-        // We need a static reference to LiveStateProvider for this to work
-        // This approach allows existing code to continue working
-        static LIVE_PROVIDER: LiveStateProvider = LiveStateProvider;
-        ModpackStateManager::new(workdir, &LIVE_PROVIDER)
+impl<'a, P: crate::application::session::FileSystemProvider> crate::application::session::StateManager for ModpackStateManager<'a, P> {
+    fn discover_state(&self) -> Result<ModpackState, StateError> {
+        self.discover_state()
+    }
+    
+    fn execute_transition(&self, transition: StateTransition) -> Result<ModpackState, StateError> {
+        self.execute_transition(transition)
     }
 }
+
 
 /// Common paths for modpack operations
 #[derive(Debug, Clone)]

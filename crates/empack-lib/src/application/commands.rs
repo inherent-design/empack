@@ -1,16 +1,17 @@
 //! Command execution handlers
 //! 
-//! Coordinates CLI commands with domain logic through the state machine.
+//! New session-based architecture for command execution.
+//! Implements the Session-Scoped Dependency Injection Pattern.
 
 use crate::application::{Commands, CliConfig};
-use crate::application::cli::SearchPlatform;
-use crate::empack::state::{ModpackStateManager, StateError};
-use crate::empack::search::{ProjectResolver, Platform};
-use crate::empack::config::ConfigManager;
+use crate::application::session::{CommandSession, Session};
 use crate::platform::{GoCapabilities, ArchiverCapabilities};
-use crate::primitives::{BuildTarget, ModpackState, StateTransition};
+use crate::primitives::{ModpackState, StateTransition, ProjectType, BuildTarget};
+use crate::empack::state::StateError;
+use crate::empack::config::ConfigManager;
+use crate::empack::search::{ProjectResolver, Platform};
+use crate::empack::parsing::ModLoader;
 use anyhow::{Result, Context};
-use std::env;
 use std::process::Command;
 use std::collections::HashSet;
 
@@ -28,43 +29,53 @@ enum SyncAction {
     },
 }
 
-/// Execute CLI commands using the state machine
+/// Execute CLI commands using the new session-based architecture
 pub async fn execute_command(config: CliConfig) -> Result<()> {
+    // Create command session (owns all ephemeral state)
+    let session = CommandSession::new(config.app_config);
+    
     let command = match config.command {
         Some(cmd) => cmd,
         None => {
-            println!("empack - Minecraft modpack management");
-            println!("Run 'empack --help' for usage information");
+            session.display().status().message("empack - Minecraft modpack management");
+            session.display().status().subtle("Run 'empack --help' for usage information");
             return Ok(());
         }
     };
 
+    // Dispatch to session-aware command handlers
+    execute_command_with_session(command, &session).await
+}
+
+/// Execute a specific command with a provided session (for testing)
+pub async fn execute_command_with_session(command: Commands, session: &dyn Session) -> Result<()> {
     match command {
-        Commands::Requirements => handle_requirements().await,
-        Commands::Version => handle_version().await,
-        Commands::Init { name, force } => handle_init(name, force).await,
-        Commands::Sync { dry_run } => handle_sync(dry_run, &config.app_config).await,
-        Commands::Build { targets, clean, jobs: _ } => handle_build(targets, clean).await,
-        Commands::Add { mods, force, platform } => handle_add(mods, force, platform, &config.app_config).await,
-        Commands::Remove { mods, deps } => handle_remove(mods, deps).await,
-        Commands::Clean { targets } => handle_clean(targets).await,
+        Commands::Requirements => handle_requirements(session).await,
+        Commands::Version => handle_version(session).await,
+        Commands::Init { name, force } => handle_init(session, name, force).await,
+        Commands::Add { mods, force, platform } => handle_add(session, mods, force, platform).await,
+        Commands::Remove { mods, deps } => handle_remove(session, mods, deps).await,
+        Commands::Build { targets, clean, jobs: _ } => handle_build(session, targets, clean).await,
+        Commands::Clean { targets } => handle_clean(session, targets).await,
+        Commands::Sync { dry_run } => handle_sync(session, dry_run).await,
     }
 }
 
-async fn handle_requirements() -> Result<()> {
-    println!("🔧 Checking tool dependencies...");
+// Session-based command handlers using dependency injection pattern
+async fn handle_requirements(session: &dyn Session) -> Result<()> {
+    session.display().status().section("🔧 Checking tool dependencies");
     
     // Check packwiz
-    let packwiz = check_packwiz();
+    let packwiz = session.process().check_packwiz();
     match packwiz {
         Ok((true, version)) => {
-            println!("✅ packwiz: {}", version);
+            session.display().status().success("packwiz", &version);
         },
         _ => {
-            println!("❌ packwiz: not found");
-            println!("   Install from: https://packwiz.infra.link/installation/");
+            session.display().status().error("packwiz", "not found");
+            session.display().status().subtle("   Install from: https://packwiz.infra.link/installation/");
             if GoCapabilities::detect().available {
-                println!("   Or via Go: go install github.com/packwiz/packwiz@latest");
+                session.display().status().subtle("   Or via Go: go install github.com/packwiz/packwiz@latest");
             }
         }
     }
@@ -78,48 +89,57 @@ async fn handle_requirements() -> Result<()> {
     
     if can_create {
         let available: Vec<String> = create_caps.iter().filter(|p| p.available).map(|p| p.name.clone()).collect();
-        println!("✅ archive creation: {} available", available.join(", "));
+        session.display().status().success("archive creation", &format!("{} available", available.join(", ")));
     } else {
-        println!("❌ archive creation: no tools found");
+        session.display().status().error("archive creation", "no tools found");
     }
     
     if can_extract {
         let available: Vec<String> = extract_caps.iter().filter(|p| p.available).map(|p| p.name.clone()).collect();
-        println!("✅ archive extraction: {} available", available.join(", "));
+        session.display().status().success("archive extraction", &format!("{} available", available.join(", ")));
     } else {
-        println!("❌ archive extraction: no tools found");
+        session.display().status().error("archive extraction", "no tools found");
     }
 
     Ok(())
 }
 
-async fn handle_version() -> Result<()> {
-    println!("empack {}", env!("CARGO_PKG_VERSION"));
-    println!("A Minecraft modpack development and distribution tool");
-    println!();
-    println!("Built from commit: {}", option_env!("GIT_HASH").unwrap_or("unknown"));
-    println!("Build date: {}", option_env!("BUILD_DATE").unwrap_or("unknown"));
-    println!("Target: {}", std::env::consts::ARCH);
+async fn handle_version(session: &dyn Session) -> Result<()> {
+    session.display().status().emphasis(&format!("empack {}", env!("CARGO_PKG_VERSION")));
+    session.display().status().message("A Minecraft modpack development and distribution tool");
+    session.display().status().message("");
+    
+    let build_info = [
+        ("Built from commit", option_env!("GIT_HASH").unwrap_or("unknown")),
+        ("Build date", option_env!("BUILD_DATE").unwrap_or("unknown")),
+        ("Target", std::env::consts::ARCH),
+    ];
+    
+    session.display().table().properties(&build_info);
     
     Ok(())
 }
 
-async fn handle_init(name: Option<String>, force: bool) -> Result<()> {
-    let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new_default(workdir.clone());
+async fn handle_init(
+    session: &dyn Session,
+    name: Option<String>,
+    force: bool,
+) -> Result<()> {
+    let workdir = session.filesystem().current_dir()?;
+    let manager = session.filesystem().state_manager(workdir.clone());
 
     // Check if already initialized
     let current_state = manager.discover_state().map_err(StateError::from)?;
     if current_state != ModpackState::Uninitialized && !force {
-        println!("❌ Directory already contains a modpack project");
-        println!("   Use --force to overwrite existing files");
+        session.display().status().error("Directory already contains a modpack project", "");
+        session.display().status().subtle("   Use --force to overwrite existing files");
         return Ok(());
     }
 
-    println!("🚀 Initializing modpack project...");
+    session.display().status().section("🚀 Initializing modpack project");
     
     if let Some(modpack_name) = name {
-        println!("   Name: {}", modpack_name);
+        session.display().status().info(&format!("Name: {}", modpack_name));
     }
 
     // Execute initialization
@@ -128,10 +148,14 @@ async fn handle_init(name: Option<String>, force: bool) -> Result<()> {
 
     match result {
         ModpackState::Configured => {
-            println!("✅ Modpack project initialized successfully");
-            println!("   📝 Edit empack.yml to configure your dependencies");
-            println!("   🔧 Run 'empack sync' to sync with packwiz");
-            println!("   🏗️  Run 'empack build all' to build distribution packages");
+            session.display().status().complete("Modpack project initialized successfully");
+            
+            let next_steps = [
+                "📝 Edit empack.yml to configure your dependencies",
+                "🔧 Run 'empack sync' to sync with packwiz", 
+                "🏗️  Run 'empack build all' to build distribution packages"
+            ];
+            session.display().status().list(&next_steps);
         },
         _ => return Err(anyhow::anyhow!("Unexpected state after initialization: {:?}", result)),
     }
@@ -139,49 +163,304 @@ async fn handle_init(name: Option<String>, force: bool) -> Result<()> {
     Ok(())
 }
 
-async fn handle_sync(dry_run: bool, app_config: &crate::application::config::AppConfig) -> Result<()> {
-    let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new_default(workdir.clone());
+async fn handle_add(
+    session: &dyn Session,
+    mods: Vec<String>,
+    force: bool,
+    platform: Option<crate::application::cli::SearchPlatform>,
+) -> Result<()> {
+    // Migrate from legacy handle_add - using session providers
+    
+    if mods.is_empty() {
+        session.display().status().error("No mods specified to add", "");
+        session.display().status().subtle("   Usage: empack add <mod1> [mod2] [mod3]...");
+        return Ok(());
+    }
+
+    let workdir = session.filesystem().current_dir()?;
+    let manager = session.filesystem().state_manager(workdir.clone());
 
     // Verify we're in a configured state
-    let current_state = manager.discover_state().map_err(StateError::from)?;
-    if current_state == ModpackState::Uninitialized {
-        println!("❌ Not in a modpack directory");
-        println!("   Run 'empack init' to set up a modpack project");
+    let current_state = manager.discover_state().map_err(|e| anyhow::anyhow!("State error: {:?}", e))?;
+    if current_state == crate::primitives::ModpackState::Uninitialized {
+        session.display().status().error("Not in a modpack directory", "");
+        session.display().status().subtle("   Run 'empack init' to set up a modpack project");
         return Ok(());
     }
 
     // Create config manager
-    let config_manager = ConfigManager::new(workdir.clone());
+    let config_manager = session.filesystem().config_manager(workdir);
+
+    // Try to load existing project plan to get context
+    let project_plan = match config_manager.create_project_plan() {
+        Ok(plan) => Some(plan),
+        Err(_) => {
+            session.display().status().warning("No empack.yml found, using defaults");
+            None
+        }
+    };
+
+    // Create HTTP client for API requests
+    let client = session.network().http_client()?;
+
+    // Get CurseForge API key from app configuration
+    let curseforge_api_key = session.config().app_config().curseforge_api_client_key.clone();
+
+    // Create project resolver
+    let resolver = session.network().project_resolver(client, curseforge_api_key);
+
+    session.display().status().section(&format!("➕ Adding {} mod(s) to modpack", mods.len()));
+
+    let mut added_mods = Vec::new();
+    let mut failed_mods = Vec::new();
+
+    for mod_query in mods {
+        session.display().status().checking(&format!("Resolving mod: {}", mod_query));
+
+        // Use project plan context if available
+        let minecraft_version = project_plan.as_ref().map(|p| p.minecraft_version.as_str());
+        let mod_loader = project_plan.as_ref().map(|p| match p.loader {
+            crate::empack::parsing::ModLoader::Fabric => "fabric",
+            crate::empack::parsing::ModLoader::Forge => "forge",
+            crate::empack::parsing::ModLoader::Quilt => "quilt",
+            crate::empack::parsing::ModLoader::NeoForge => "neoforge",
+        });
+
+        match resolver.resolve_project(&mod_query, Some("mod"), minecraft_version, mod_loader).await {
+            Ok(project_info) => {
+                session.display().status().success("Found", &format!("{} on {}", project_info.title, project_info.platform));
+                session.display().status().info(&format!("Confidence: {}%", project_info.confidence));
+                
+                // Execute appropriate packwiz command
+                let packwiz_result = match project_info.platform {
+                    crate::empack::search::Platform::Modrinth => {
+                        session.process().execute_packwiz(&["mr", "add", &project_info.project_id])
+                    }
+                    crate::empack::search::Platform::CurseForge => {
+                        session.process().execute_packwiz(&["cf", "add", &project_info.project_id])
+                    }
+                    crate::empack::search::Platform::Forge => {
+                        session.process().execute_packwiz(&["cf", "add", &project_info.project_id])
+                    }
+                };
+
+                match packwiz_result {
+                    Ok(_) => {
+                        session.display().status().success("Successfully added to pack", "");
+                        added_mods.push((mod_query, project_info));
+                    }
+                    Err(e) => {
+                        session.display().status().error("Failed to add to pack", &e.to_string());
+                        failed_mods.push((mod_query, format!("Packwiz error: {}", e)));
+                    }
+                }
+            }
+            Err(e) => {
+                session.display().status().error("Failed to resolve mod", &e.to_string());
+                failed_mods.push((mod_query, e.to_string()));
+            }
+        }
+    }
+
+    // Show summary
+    session.display().status().section("📊 Add Summary");
+    session.display().status().success("Successfully added", &added_mods.len().to_string());
+    session.display().status().info(&format!("Failed: {}", failed_mods.len()));
+
+    if !failed_mods.is_empty() {
+        session.display().status().section("Failed mods");
+        for (mod_name, error) in failed_mods {
+            session.display().status().error(&mod_name, &error);
+        }
+    }
+
+    if !added_mods.is_empty() {
+        session.display().status().subtle("💡 Tip: Run 'empack sync' to update empack.yml with new dependencies");
+    }
+
+    Ok(())
+}
+
+async fn handle_remove(
+    session: &dyn Session,
+    mods: Vec<String>,
+    deps: bool,
+) -> Result<()> {
+    if mods.is_empty() {
+        session.display().status().error("No mods specified to remove", "");
+        session.display().status().subtle("   Usage: empack remove <mod1> [mod2] [mod3]...");
+        return Ok(());
+    }
+
+    let workdir = session.filesystem().current_dir()?;
+    let manager = session.filesystem().state_manager(workdir.clone());
+
+    // Verify we're in a configured state
+    let current_state = manager.discover_state().map_err(StateError::from)?;
+    if current_state == ModpackState::Uninitialized {
+        session.display().status().error("Not in a modpack directory", "");
+        session.display().status().subtle("   Run 'empack init' to set up a modpack project");
+        return Ok(());
+    }
+
+    session.display().status().section(&format!("➖ Removing {} mod(s) from modpack", mods.len()));
+
+    let mut removed_mods = Vec::new();
+    let mut failed_mods = Vec::new();
+
+    for mod_name in mods {
+        session.display().status().checking(&format!("Removing mod: {}", mod_name));
+
+        // Execute packwiz remove command
+        let mut packwiz_args = vec!["remove", &mod_name];
+        if deps {
+            packwiz_args.push("--remove-deps");
+        }
+
+        match session.process().execute_packwiz(&packwiz_args) {
+            Ok(_) => {
+                session.display().status().success("Successfully removed from pack", "");
+                removed_mods.push(mod_name);
+            }
+            Err(e) => {
+                session.display().status().error("Failed to remove from pack", &e.to_string());
+                failed_mods.push((mod_name, e.to_string()));
+            }
+        }
+    }
+
+    // Show summary
+    session.display().status().section("📊 Remove Summary");
+    session.display().status().success("Successfully removed", &removed_mods.len().to_string());
+    session.display().status().info(&format!("Failed: {}", failed_mods.len()));
+
+    if !failed_mods.is_empty() {
+        session.display().status().section("Failed mods");
+        for (mod_name, error) in failed_mods {
+            session.display().status().error(&mod_name, &error);
+        }
+    }
+
+    if !removed_mods.is_empty() {
+        session.display().status().subtle("💡 Tip: Run 'empack sync' to update empack.yml after removing dependencies");
+    }
+
+    Ok(())
+}
+
+async fn handle_build(
+    session: &dyn Session,
+    targets: Vec<String>,
+    clean: bool,
+) -> Result<()> {
+    let workdir = session.filesystem().current_dir()?;
+    let manager = session.filesystem().state_manager(workdir);
+
+    // Verify we're in a configured state
+    let current_state = manager.discover_state().map_err(StateError::from)?;
+    if current_state == ModpackState::Uninitialized {
+        session.display().status().error("Not in a modpack directory", "");
+        session.display().status().subtle("   Run 'empack init' to set up a modpack project");
+        return Ok(());
+    }
+
+    // Clean if requested
+    if clean {
+        session.display().status().checking("Cleaning build artifacts");
+        manager.execute_transition(StateTransition::Clean)
+            .context("Failed to clean build artifacts")?;
+    }
+
+    // Parse build targets
+    let build_targets = parse_build_targets(targets)?;
+    
+    session.display().status().section(&format!("🏗️  Building targets: {:?}", build_targets));
+
+    let result = manager.execute_transition(StateTransition::Build(build_targets))
+        .context("Failed to build modpack")?;
+
+    match result {
+        ModpackState::Built => {
+            session.display().status().complete("Build completed successfully");
+            session.display().status().subtle("   📦 Check dist/ directory for build artifacts");
+        },
+        _ => return Err(anyhow::anyhow!("Unexpected state after build: {:?}", result)),
+    }
+
+    Ok(())
+}
+
+async fn handle_clean(
+    session: &dyn Session,
+    targets: Vec<String>,
+) -> Result<()> {
+    let workdir = session.filesystem().current_dir()?;
+    let manager = session.filesystem().state_manager(workdir);
+
+    if targets.is_empty() || targets.contains(&"builds".to_string()) || targets.contains(&"all".to_string()) {
+        session.display().status().checking("Cleaning build artifacts");
+        
+        let current_state = manager.discover_state().map_err(StateError::from)?;
+        if current_state == ModpackState::Built {
+            manager.execute_transition(StateTransition::Clean)
+                .context("Failed to clean build artifacts")?;
+            session.display().status().complete("Build artifacts cleaned");
+        } else {
+            session.display().status().info("No build artifacts to clean");
+        }
+    }
+
+    if targets.contains(&"cache".to_string()) || targets.contains(&"all".to_string()) {
+        session.display().status().checking("Cleaning cache");
+        session.display().status().subtle("(Cache cleaning not yet implemented)");
+    }
+
+    Ok(())
+}
+
+async fn handle_sync(
+    session: &dyn Session,
+    dry_run: bool,
+) -> Result<()> {
+    let workdir = session.filesystem().current_dir()?;
+    let manager = session.filesystem().state_manager(workdir.clone());
+
+    // Verify we're in a configured state
+    let current_state = manager.discover_state().map_err(StateError::from)?;
+    if current_state == ModpackState::Uninitialized {
+        session.display().status().error("Not in a modpack directory", "");
+        session.display().status().subtle("   Run 'empack init' to set up a modpack project");
+        return Ok(());
+    }
+
+    // Create config manager
+    let config_manager = session.filesystem().config_manager(workdir);
 
     // Load project plan from empack.yml
     let project_plan = config_manager.create_project_plan()
         .context("Failed to load empack.yml configuration")?;
 
     // Create HTTP client for API requests
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .context("Failed to create HTTP client")?;
+    let client = session.network().http_client()?;
 
     // Get CurseForge API key from app configuration
-    let curseforge_api_key = app_config.curseforge_api_client_key.clone();
+    let curseforge_api_key = session.config().app_config().curseforge_api_client_key.clone();
 
     // Create project resolver
-    let resolver = ProjectResolver::new(client, curseforge_api_key);
+    let resolver = session.network().project_resolver(client, curseforge_api_key);
 
-    println!("🔄 Synchronizing empack.yml with packwiz...");
-    println!("   Target: {} v{}", project_plan.minecraft_version, project_plan.loader_version);
+    session.display().status().section("🔄 Synchronizing empack.yml with packwiz");
+    session.display().status().info(&format!("Target: {} v{}", project_plan.minecraft_version, project_plan.loader_version));
 
     // Get currently installed mods
-    let installed_mods = match get_installed_mods() {
+    let installed_mods = match session.filesystem().get_installed_mods() {
         Ok(mods) => {
-            println!("   📋 Found {} currently installed mods", mods.len());
+            session.display().status().info(&format!("📋 Found {} currently installed mods", mods.len()));
             mods
         }
         Err(e) => {
-            println!("   ⚠️  Could not read installed mods: {}", e);
-            println!("   ℹ️  Assuming empty pack (add-only mode)");
+            session.display().status().warning(&format!("Could not read installed mods: {}", e));
+            session.display().status().info("Assuming empty pack (add-only mode)");
             HashSet::new()
         }
     };
@@ -192,7 +471,7 @@ async fn handle_sync(dry_run: bool, app_config: &crate::application::config::App
 
     // Process each dependency in empack.yml
     for dep_spec in &project_plan.dependencies {
-        println!("\n🔍 Processing dependency: {}", dep_spec.key);
+        session.display().status().step(1, project_plan.dependencies.len(), &format!("Processing dependency: {}", dep_spec.key));
 
         // Normalize the key for comparison with installed mods
         let normalized_key = dep_spec.key
@@ -203,7 +482,7 @@ async fn handle_sync(dry_run: bool, app_config: &crate::application::config::App
 
         // Check if this mod is already installed
         if installed_mods.contains(&normalized_key) {
-            println!("   ✅ Already installed: {}", dep_spec.key);
+            session.display().status().success("Already installed", &dep_spec.key);
             continue; // Skip mods that are already installed
         }
 
@@ -215,22 +494,22 @@ async fn handle_sync(dry_run: bool, app_config: &crate::application::config::App
             // Use project plan context
             let minecraft_version = Some(dep_spec.minecraft_version.as_str());
             let mod_loader = Some(match dep_spec.loader {
-                crate::empack::parsing::ModLoader::Fabric => "fabric",
-                crate::empack::parsing::ModLoader::Forge => "forge",
-                crate::empack::parsing::ModLoader::Quilt => "quilt",
-                crate::empack::parsing::ModLoader::NeoForge => "neoforge",
+                ModLoader::Fabric => "fabric",
+                ModLoader::Forge => "forge",
+                ModLoader::Quilt => "quilt",
+                ModLoader::NeoForge => "neoforge",
             });
 
             match resolver.resolve_project(&dep_spec.search_query, 
                                          Some(match dep_spec.project_type {
-                                             crate::primitives::ProjectType::Mod => "mod",
-                                             crate::primitives::ProjectType::Datapack => "datapack",
-                                             crate::primitives::ProjectType::ResourcePack => "resourcepack",
-                                             crate::primitives::ProjectType::Shader => "shader",
+                                             ProjectType::Mod => "mod",
+                                             ProjectType::Datapack => "datapack",
+                                             ProjectType::ResourcePack => "resourcepack",
+                                             ProjectType::Shader => "shader",
                                          }), 
                                          minecraft_version, mod_loader).await {
                 Ok(project_info) => {
-                    println!("   ✅ Resolved: {} on {}", project_info.title, project_info.platform);
+                    session.display().status().success("Resolved", &format!("{} on {}", project_info.title, project_info.platform));
                     
                     // Create appropriate packwiz add command based on platform
                     let command = match project_info.platform {
@@ -242,7 +521,7 @@ async fn handle_sync(dry_run: bool, app_config: &crate::application::config::App
                     (project_info.project_id, command)
                 }
                 Err(e) => {
-                    println!("   ❌ Failed to resolve: {}", e);
+                    session.display().status().error("Failed to resolve", &e.to_string());
                     continue;
                 }
             }
@@ -267,62 +546,62 @@ async fn handle_sync(dry_run: bool, app_config: &crate::application::config::App
 
     // Show planned actions
     if planned_actions.is_empty() {
-        println!("\n✅ No changes needed - empack.yml already in sync");
+        session.display().status().complete("No changes needed - empack.yml already in sync");
         return Ok(());
     }
 
-    println!("\n📋 Planned Actions:");
+    session.display().status().section("📋 Planned Actions");
     for action in &planned_actions {
         match action {
             SyncAction::Add { key, title, command } => {
-                println!("   ➕ Add: {} ({})", title, key);
+                session.display().status().info(&format!("➕ Add: {} ({})", title, key));
                 if dry_run {
-                    println!("      Command: packwiz {}", command.join(" "));
+                    session.display().status().subtle(&format!("      Command: packwiz {}", command.join(" ")));
                 }
             }
             SyncAction::Remove { key, title } => {
-                println!("   ➖ Remove: {} ({})", title, key);
+                session.display().status().info(&format!("➖ Remove: {} ({})", title, key));
                 if dry_run {
-                    println!("      Command: packwiz remove {}", key);
+                    session.display().status().subtle(&format!("      Command: packwiz remove {}", key));
                 }
             }
         }
     }
 
     if dry_run {
-        println!("\n🔍 Dry run complete - no changes applied");
+        session.display().status().complete("Dry run complete - no changes applied");
         return Ok(());
     }
 
     // Execute planned actions
-    println!("\n🚀 Executing sync actions...");
+    session.display().status().section("🚀 Executing sync actions");
     let mut success_count = 0;
     let mut failure_count = 0;
 
     for action in planned_actions {
         match action {
             SyncAction::Add { key, title, command } => {
-                println!("   ➕ Adding: {}", title);
-                match execute_packwiz_command(&command.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
+                session.display().status().checking(&format!("Adding: {}", title));
+                match session.process().execute_packwiz(&command.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
                     Ok(_) => {
-                        println!("      ✅ Added successfully");
+                        session.display().status().success("Added", "successfully");
                         success_count += 1;
                     }
                     Err(e) => {
-                        println!("      ❌ Failed: {}", e);
+                        session.display().status().error("Failed", &e.to_string());
                         failure_count += 1;
                     }
                 }
             }
             SyncAction::Remove { key, title: _ } => {
-                println!("   ➖ Removing: {}", key);
-                match execute_packwiz_command(&["remove", &key]) {
+                session.display().status().checking(&format!("Removing: {}", key));
+                match session.process().execute_packwiz(&["remove", &key]) {
                     Ok(_) => {
-                        println!("      ✅ Removed successfully");
+                        session.display().status().success("Removed", "successfully");
                         success_count += 1;
                     }
                     Err(e) => {
-                        println!("      ❌ Failed: {}", e);
+                        session.display().status().error("Failed", &e.to_string());
                         failure_count += 1;
                     }
                 }
@@ -331,259 +610,22 @@ async fn handle_sync(dry_run: bool, app_config: &crate::application::config::App
     }
 
     // Show summary
-    println!("\n📊 Sync Summary:");
-    println!("   ✅ Successful actions: {}", success_count);
-    println!("   ❌ Failed actions: {}", failure_count);
+    session.display().status().section("📊 Sync Summary");
+    session.display().status().success("Successful actions", &success_count.to_string());
+    session.display().status().info(&format!("Failed actions: {}", failure_count));
 
     if failure_count == 0 {
-        println!("✅ empack.yml synchronized successfully with packwiz");
+        session.display().status().complete("empack.yml synchronized successfully with packwiz");
     } else {
-        println!("⚠️  Sync completed with {} failures", failure_count);
+        session.display().status().warning(&format!("Sync completed with {} failures", failure_count));
     }
 
     Ok(())
 }
 
-async fn handle_build(targets: Vec<String>, clean: bool) -> Result<()> {
-    let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new_default(workdir);
+// Helper functions
 
-    // Verify we're in a configured state
-    let current_state = manager.discover_state().map_err(StateError::from)?;
-    if current_state == ModpackState::Uninitialized {
-        println!("❌ Not in a modpack directory");
-        println!("   Run 'empack init' to set up a modpack project");
-        return Ok(());
-    }
-
-    // Clean if requested
-    if clean {
-        println!("🧹 Cleaning build artifacts...");
-        manager.execute_transition(StateTransition::Clean)
-            .context("Failed to clean build artifacts")?;
-    }
-
-    // Parse build targets
-    let build_targets = parse_build_targets(targets)?;
-    
-    println!("🏗️  Building targets: {:?}", build_targets);
-
-    let result = manager.execute_transition(StateTransition::Build(build_targets))
-        .context("Failed to build modpack")?;
-
-    match result {
-        ModpackState::Built => {
-            println!("✅ Build completed successfully");
-            println!("   📦 Check dist/ directory for build artifacts");
-        },
-        _ => return Err(anyhow::anyhow!("Unexpected state after build: {:?}", result)),
-    }
-
-    Ok(())
-}
-
-async fn handle_add(mods: Vec<String>, force: bool, platform: Option<SearchPlatform>, app_config: &crate::application::config::AppConfig) -> Result<()> {
-    if mods.is_empty() {
-        println!("❌ No mods specified to add");
-        println!("   Usage: empack add <mod1> [mod2] [mod3]...");
-        return Ok(());
-    }
-
-    let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new_default(workdir.clone());
-
-    // Verify we're in a configured state
-    let current_state = manager.discover_state().map_err(StateError::from)?;
-    if current_state == ModpackState::Uninitialized {
-        println!("❌ Not in a modpack directory");
-        println!("   Run 'empack init' to set up a modpack project");
-        return Ok(());
-    }
-
-    // Create config manager
-    let config_manager = ConfigManager::new(workdir);
-
-    // Try to load existing project plan to get context
-    let project_plan = match config_manager.create_project_plan() {
-        Ok(plan) => Some(plan),
-        Err(_) => {
-            println!("⚠️  No empack.yml found, using defaults");
-            None
-        }
-    };
-
-    // Create HTTP client for API requests
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .context("Failed to create HTTP client")?;
-
-    // Get CurseForge API key from app configuration
-    let curseforge_api_key = app_config.curseforge_api_client_key.clone();
-
-    // Create project resolver
-    let resolver = ProjectResolver::new(client, curseforge_api_key);
-
-    println!("➕ Adding {} mod(s) to modpack...", mods.len());
-
-    let mut added_mods = Vec::new();
-    let mut failed_mods = Vec::new();
-
-    for mod_query in mods {
-        println!("\n🔍 Resolving mod: {}", mod_query);
-
-        // Use project plan context if available
-        let minecraft_version = project_plan.as_ref().map(|p| p.minecraft_version.as_str());
-        let mod_loader = project_plan.as_ref().map(|p| match p.loader {
-            crate::empack::parsing::ModLoader::Fabric => "fabric",
-            crate::empack::parsing::ModLoader::Forge => "forge",
-            crate::empack::parsing::ModLoader::Quilt => "quilt",
-            crate::empack::parsing::ModLoader::NeoForge => "neoforge",
-        });
-
-        match resolver.resolve_project(&mod_query, Some("mod"), minecraft_version, mod_loader).await {
-            Ok(project_info) => {
-                println!("✅ Found: {} on {}", project_info.title, project_info.platform);
-                println!("   Confidence: {}%", project_info.confidence);
-                
-                // Execute appropriate packwiz command
-                let packwiz_result = match project_info.platform {
-                    Platform::Modrinth => {
-                        execute_packwiz_command(&["mr", "add", &project_info.project_id])
-                    }
-                    Platform::CurseForge => {
-                        execute_packwiz_command(&["cf", "add", &project_info.project_id])
-                    }
-                    Platform::Forge => {
-                        execute_packwiz_command(&["cf", "add", &project_info.project_id])
-                    }
-                };
-
-                match packwiz_result {
-                    Ok(_) => {
-                        println!("   ✅ Successfully added to pack");
-                        added_mods.push((mod_query, project_info));
-                    }
-                    Err(e) => {
-                        println!("   ❌ Failed to add to pack: {}", e);
-                        failed_mods.push((mod_query, format!("Packwiz error: {}", e)));
-                    }
-                }
-            }
-            Err(e) => {
-                println!("❌ Failed to resolve mod: {}", e);
-                failed_mods.push((mod_query, e.to_string()));
-            }
-        }
-    }
-
-    // Show summary
-    println!("\n📊 Add Summary:");
-    println!("   ✅ Successfully added: {}", added_mods.len());
-    println!("   ❌ Failed: {}", failed_mods.len());
-
-    if !failed_mods.is_empty() {
-        println!("\n❌ Failed mods:");
-        for (mod_name, error) in failed_mods {
-            println!("   • {}: {}", mod_name, error);
-        }
-    }
-
-    if !added_mods.is_empty() {
-        println!("\n💡 Tip: Run 'empack sync' to update empack.yml with new dependencies");
-    }
-
-    Ok(())
-}
-
-async fn handle_remove(mods: Vec<String>, deps: bool) -> Result<()> {
-    if mods.is_empty() {
-        println!("❌ No mods specified to remove");
-        println!("   Usage: empack remove <mod1> [mod2] [mod3]...");
-        return Ok(());
-    }
-
-    let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new_default(workdir.clone());
-
-    // Verify we're in a configured state
-    let current_state = manager.discover_state().map_err(StateError::from)?;
-    if current_state == ModpackState::Uninitialized {
-        println!("❌ Not in a modpack directory");
-        println!("   Run 'empack init' to set up a modpack project");
-        return Ok(());
-    }
-
-    println!("➖ Removing {} mod(s) from modpack...", mods.len());
-
-    let mut removed_mods = Vec::new();
-    let mut failed_mods = Vec::new();
-
-    for mod_name in mods {
-        println!("\n🗑️  Removing mod: {}", mod_name);
-
-        // Execute packwiz remove command
-        let mut packwiz_args = vec!["remove", &mod_name];
-        if deps {
-            packwiz_args.push("--remove-deps");
-        }
-
-        match execute_packwiz_command(&packwiz_args) {
-            Ok(_) => {
-                println!("   ✅ Successfully removed from pack");
-                removed_mods.push(mod_name);
-            }
-            Err(e) => {
-                println!("   ❌ Failed to remove from pack: {}", e);
-                failed_mods.push((mod_name, e.to_string()));
-            }
-        }
-    }
-
-    // Show summary
-    println!("\n📊 Remove Summary:");
-    println!("   ✅ Successfully removed: {}", removed_mods.len());
-    println!("   ❌ Failed: {}", failed_mods.len());
-
-    if !failed_mods.is_empty() {
-        println!("\n❌ Failed mods:");
-        for (mod_name, error) in failed_mods {
-            println!("   • {}: {}", mod_name, error);
-        }
-    }
-
-    if !removed_mods.is_empty() {
-        println!("\n💡 Tip: Run 'empack sync' to update empack.yml after removing dependencies");
-    }
-
-    Ok(())
-}
-
-async fn handle_clean(targets: Vec<String>) -> Result<()> {
-    let workdir = env::current_dir().context("Failed to get current directory")?;
-    let manager = ModpackStateManager::new_default(workdir);
-
-    if targets.is_empty() || targets.contains(&"builds".to_string()) || targets.contains(&"all".to_string()) {
-        println!("🧹 Cleaning build artifacts...");
-        
-        let current_state = manager.discover_state().map_err(StateError::from)?;
-        if current_state == ModpackState::Built {
-            manager.execute_transition(StateTransition::Clean)
-                .context("Failed to clean build artifacts")?;
-            println!("✅ Build artifacts cleaned");
-        } else {
-            println!("   No build artifacts to clean");
-        }
-    }
-
-    if targets.contains(&"cache".to_string()) || targets.contains(&"all".to_string()) {
-        println!("🧹 Cleaning cache...");
-        println!("   (Cache cleaning not yet implemented)");
-    }
-
-    Ok(())
-}
-
+/// Parse build targets from string arguments
 fn parse_build_targets(targets: Vec<String>) -> Result<Vec<BuildTarget>> {
     if targets.is_empty() {
         return Err(anyhow::anyhow!("No build targets specified"));
@@ -614,109 +656,7 @@ fn parse_build_targets(targets: Vec<String>) -> Result<Vec<BuildTarget>> {
     Ok(build_targets)
 }
 
-fn check_packwiz() -> Result<(bool, String)> {
-    match std::process::Command::new("packwiz").arg("--help").output() {
-        Ok(output) if output.status.success() => {
-            let version = get_packwiz_version().unwrap_or_else(|| "unknown".to_string());
-            Ok((true, version))
-        },
-        _ => Ok((false, "not found".to_string())),
-    }
-}
-
-fn get_packwiz_version() -> Option<String> {
-    let packwiz_path = std::process::Command::new("which")
-        .arg("packwiz")
-        .output()
-        .ok()?
-        .stdout;
-    
-    if packwiz_path.is_empty() {
-        return None;
-    }
-    
-    let path_str = String::from_utf8_lossy(&packwiz_path).trim().to_string();
-    
-    let output = std::process::Command::new("go")
-        .arg("version")
-        .arg("-m")
-        .arg(&path_str)
-        .output()
-        .ok()?;
-    
-    if !output.status.success() {
-        return None;
-    }
-    
-    let version_output = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = version_output.lines().collect();
-    if lines.len() >= 3 {
-        let third_line = lines[2];
-        let fields: Vec<&str> = third_line.split_whitespace().collect();
-        if fields.len() >= 3 {
-            return Some(fields[2].to_string());
-        }
-    }
-    
-    None
-}
-
-/// Execute packwiz command with arguments
-fn execute_packwiz_command(args: &[&str]) -> Result<()> {
-    let output = Command::new("packwiz")
-        .args(args)
-        .output()
-        .context("Failed to execute packwiz command")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!("Packwiz command failed: {}", stderr));
-    }
-
-    Ok(())
-}
-
-/// Get the list of currently installed mods from packwiz
-fn get_installed_mods() -> Result<HashSet<String>> {
-    let output = Command::new("packwiz")
-        .arg("list")
-        .output()
-        .context("Failed to execute packwiz list command")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!("Packwiz list command failed: {}", stderr));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut installed_mods = HashSet::new();
-
-    // Parse packwiz list output - each line should contain a mod name
-    // The format varies, but we're looking for .toml files or project names
-    for line in stdout.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with("Mods:") || line.starts_with("Total:") {
-            continue;
-        }
-
-        // Extract mod name from various formats packwiz might use
-        // Common formats: "- modname" or "modname.pw.toml" or just "modname"
-        let mod_name = if line.starts_with("- ") {
-            line.trim_start_matches("- ").trim()
-        } else if line.ends_with(".pw.toml") {
-            line.trim_end_matches(".pw.toml")
-        } else {
-            line
-        };
-
-        // Convert to a normalized key format (lowercase, replace spaces/dashes with underscores)
-        let normalized_name = mod_name
-            .to_lowercase()
-            .replace(' ', "_")
-            .replace('-', "_");
-
-        installed_mods.insert(normalized_name);
-    }
-
-    Ok(installed_mods)
+#[cfg(test)]
+mod tests {
+    include!("commands.test.rs");
 }
