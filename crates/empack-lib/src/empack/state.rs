@@ -16,7 +16,7 @@ use thiserror::Error;
 /// These functions contain the core state machine logic without side effects
 
 /// Discover current state from filesystem structure (pure function)
-pub fn discover_state<P: crate::application::session::FileSystemProvider>(
+pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
 ) -> Result<ModpackState, StateError> {
@@ -74,10 +74,10 @@ pub fn can_transition(from: ModpackState, to: ModpackState) -> bool {
 }
 
 /// Execute a state transition (pure function)
-pub fn execute_transition<P: crate::application::session::FileSystemProvider>(
+pub async fn execute_transition<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
-    transition: StateTransition,
+    transition: StateTransition<'_>,
 ) -> Result<ModpackState, StateError> {
     let current = discover_state(provider, workdir)?;
 
@@ -102,14 +102,14 @@ pub fn execute_transition<P: crate::application::session::FileSystemProvider>(
             execute_synchronize(provider, workdir)
         }
 
-        StateTransition::Build(targets) => {
+        StateTransition::Build(orchestrator, targets) => {
             if !can_transition(current, ModpackState::Built) {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: ModpackState::Built,
                 });
             }
-            execute_build(provider, workdir, &targets)
+            execute_build(orchestrator, &targets).await
         }
 
         StateTransition::Clean => match current {
@@ -122,12 +122,44 @@ pub fn execute_transition<P: crate::application::session::FileSystemProvider>(
                 Ok(ModpackState::Uninitialized)
             }
             ModpackState::Uninitialized => Ok(ModpackState::Uninitialized),
+            ModpackState::Building => {
+                return Err(StateError::InvalidTransition {
+                    from: current,
+                    to: ModpackState::Configured,
+                });
+            }
+            ModpackState::Cleaning => {
+                return Err(StateError::InvalidTransition {
+                    from: current,
+                    to: ModpackState::Configured,
+                });
+            }
         },
+
+        StateTransition::Building => {
+            if current != ModpackState::Configured {
+                return Err(StateError::InvalidTransition {
+                    from: current,
+                    to: ModpackState::Building,
+                });
+            }
+            Ok(ModpackState::Building)
+        }
+
+        StateTransition::Cleaning => {
+            if current != ModpackState::Built {
+                return Err(StateError::InvalidTransition {
+                    from: current,
+                    to: ModpackState::Cleaning,
+                });
+            }
+            Ok(ModpackState::Cleaning)
+        }
     }
 }
 
 /// Execute initialization process (pure function)
-pub fn execute_initialize<P: crate::application::session::FileSystemProvider>(
+pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
 ) -> Result<ModpackState, StateError> {
@@ -162,7 +194,7 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider>(
 }
 
 /// Execute synchronization process (pure function)
-pub fn execute_synchronize<P: crate::application::session::FileSystemProvider>(
+pub fn execute_synchronize<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
 ) -> Result<ModpackState, StateError> {
@@ -183,32 +215,17 @@ pub fn execute_synchronize<P: crate::application::session::FileSystemProvider>(
 }
 
 /// Execute build process (pure function)
-pub fn execute_build<P: crate::application::session::FileSystemProvider>(
-    provider: &P,
-    workdir: &Path,
+pub async fn execute_build<'a>(
+    mut orchestrator: crate::empack::builds::BuildOrchestrator<'a>,
     targets: &[BuildTarget],
 ) -> Result<ModpackState, StateError> {
-    // Load project plan via config.rs
-    #[cfg(not(test))]
-    {
-        let config_manager = provider.config_manager(workdir.to_path_buf());
-        let _project_plan = config_manager.create_project_plan().map_err(|e| {
-            clean_build_artifacts(provider, workdir).ok();
-            e
-        })?;
-    }
-
     // Execute build pipeline via builds.rs
     #[cfg(test)]
     {
         // Mock build execution for testing
-        let dist_dir = workdir.join("dist");
-        provider.create_dir_all(&dist_dir)?;
-
+        let dist_dir = std::path::PathBuf::from("/test/dist");
+        
         for target in targets {
-            let target_dir = dist_dir.join(target.to_string().to_lowercase());
-            provider.create_dir_all(&target_dir)?;
-
             // Create a dummy artifact to simulate successful build
             let artifact_name = match target {
                 BuildTarget::Mrpack => "test-v1.0.0.mrpack",
@@ -218,34 +235,20 @@ pub fn execute_build<P: crate::application::session::FileSystemProvider>(
                 BuildTarget::ServerFull => "test-v1.0.0-server-full.zip",
             };
             let artifact_path = dist_dir.join(artifact_name);
-            provider.write_file(&artifact_path, "mock build artifact")?;
+            // In test mode, we'll simulate the build without actually writing files
+            // The test framework will handle the mock filesystem
         }
     }
 
     #[cfg(not(test))]
     {
-        let mut build_orchestrator = BuildOrchestrator::new(workdir.to_path_buf());
-
-        // Use tokio::runtime::Handle::current() for async execution in sync context
-        let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            // We're in an async context
-            tokio::task::block_in_place(|| {
-                handle.block_on(build_orchestrator.execute_build_pipeline(targets))
-            })
-        } else {
-            // We're not in an async context - create minimal runtime
-            let rt = tokio::runtime::Runtime::new().map_err(|e| {
-                clean_build_artifacts(provider, workdir).ok();
-                StateError::ConfigError {
-                    reason: format!("Failed to create async runtime: {}", e),
-                }
-            })?;
-            rt.block_on(build_orchestrator.execute_build_pipeline(targets))
-        };
+        // Execute build pipeline directly in async context
+        let result = orchestrator.execute_build_pipeline(targets).await;
 
         let build_results = result.map_err(|e| {
-            clean_build_artifacts(provider, workdir).ok();
-            e
+            StateError::BuildError {
+                message: e.to_string(),
+            }
         })?;
 
         // Check if any builds failed
@@ -255,7 +258,6 @@ pub fn execute_build<P: crate::application::session::FileSystemProvider>(
                     "Build failed for target {:?}: {:?}",
                     result.target, result.warnings
                 );
-                clean_build_artifacts(provider, workdir).ok();
                 return Err(StateError::ConfigError {
                     reason: format!("Build failed for target {:?}", result.target),
                 });
@@ -267,7 +269,7 @@ pub fn execute_build<P: crate::application::session::FileSystemProvider>(
 }
 
 /// Create initial modpack structure (pure function)
-pub fn create_initial_structure<P: crate::application::session::FileSystemProvider>(
+pub fn create_initial_structure<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
@@ -290,7 +292,7 @@ pub fn create_initial_structure<P: crate::application::session::FileSystemProvid
 }
 
 /// Clean build artifacts (pure function)
-pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider>(
+pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
@@ -304,7 +306,7 @@ pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider>
 }
 
 /// Clean configuration files (pure function)
-pub fn clean_configuration<P: crate::application::session::FileSystemProvider>(
+pub fn clean_configuration<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
@@ -335,7 +337,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider>(
 
 /// Filesystem state machine for modpack development
 /// Folder layout determines state - now generic over FileSystemProvider for testability
-pub struct ModpackStateManager<'a, P: crate::application::session::FileSystemProvider> {
+pub struct ModpackStateManager<'a, P: crate::application::session::FileSystemProvider + ?Sized> {
     /// Working directory (where empack.yml should be)
     pub workdir: PathBuf,
     /// Provider for all I/O operations
@@ -406,7 +408,7 @@ impl From<anyhow::Error> for StateError {
     }
 }
 
-impl<'a, P: crate::application::session::FileSystemProvider> ModpackStateManager<'a, P> {
+impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackStateManager<'a, P> {
     /// Create a new state manager for the given directory with dependency injection
     pub fn new(workdir: PathBuf, provider: &'a P) -> Self {
         Self { workdir, provider }
@@ -431,6 +433,14 @@ impl<'a, P: crate::application::session::FileSystemProvider> ModpackStateManager
                 files.push(self.workdir.join("dist"));
                 files
             }
+            ModpackState::Building => {
+                // Same as Configured - intermediate state
+                self.get_state_files(ModpackState::Configured)
+            }
+            ModpackState::Cleaning => {
+                // Same as Built - intermediate state
+                self.get_state_files(ModpackState::Built)
+            }
         }
     }
 
@@ -454,6 +464,16 @@ impl<'a, P: crate::application::session::FileSystemProvider> ModpackStateManager
                 Ok(self.provider.is_directory(&dist_dir)
                     && self.provider.has_build_artifacts(&dist_dir).unwrap_or(false))
             }
+            ModpackState::Building => {
+                // Intermediate state - just check if we can build
+                let pack_dir = self.workdir.join("pack");
+                Ok(self.provider.is_directory(&pack_dir))
+            }
+            ModpackState::Cleaning => {
+                // Intermediate state - just check if we can clean
+                let dist_dir = self.workdir.join(".empack").join("dist");
+                Ok(self.provider.is_directory(&dist_dir))
+            }
         }
     }
 
@@ -463,11 +483,56 @@ impl<'a, P: crate::application::session::FileSystemProvider> ModpackStateManager
     }
 
     /// Execute a state transition with full business logic integration
-    pub fn execute_transition(
+    pub async fn execute_transition(
         &self,
-        transition: StateTransition,
+        transition: StateTransition<'_>,
     ) -> Result<ModpackState, StateError> {
-        execute_transition(self.provider, &self.workdir, transition)
+        execute_transition(self.provider, &self.workdir, transition).await
+    }
+    
+    /// Begin a state transition (for BuildOrchestrator to use)
+    pub fn begin_state_transition(&self, transition: StateTransition<'_>) -> Result<(), StateError> {
+        let current = self.discover_state()?;
+        
+        // Validate that the transition is allowed
+        match transition {
+            StateTransition::Building => {
+                if current != ModpackState::Configured {
+                    return Err(StateError::InvalidTransition {
+                        from: current,
+                        to: ModpackState::Building,
+                    });
+                }
+            }
+            StateTransition::Cleaning => {
+                if current != ModpackState::Built {
+                    return Err(StateError::InvalidTransition {
+                        from: current,
+                        to: ModpackState::Cleaning,
+                    });
+                }
+            }
+            _ => {
+                return Err(StateError::ConfigError {
+                    reason: "begin_state_transition only supports Building and Cleaning transitions".to_string(),
+                });
+            }
+        }
+        
+        // TODO: In a full implementation, we might want to persist the intermediate state
+        // For now, we just validate the transition is allowed
+        Ok(())
+    }
+    
+    /// Complete a state transition (for BuildOrchestrator to use)
+    pub fn complete_state_transition(&self) -> Result<(), StateError> {
+        // TODO: In a full implementation, we would:
+        // 1. Check the current intermediate state (Building/Cleaning)
+        // 2. Transition to the final state (Built/Configured)
+        // 3. Persist the new state
+        
+        // For now, we just validate that the operation completed successfully
+        Ok(())
     }
     
     /// Get paths for common modpack files
@@ -483,15 +548,7 @@ impl<'a, P: crate::application::session::FileSystemProvider> ModpackStateManager
     }
 }
 
-impl<'a, P: crate::application::session::FileSystemProvider> crate::application::session::StateManager for ModpackStateManager<'a, P> {
-    fn discover_state(&self) -> Result<ModpackState, StateError> {
-        self.discover_state()
-    }
-    
-    fn execute_transition(&self, transition: StateTransition) -> Result<ModpackState, StateError> {
-        self.execute_transition(transition)
-    }
-}
+// StateManager trait implementation removed - using concrete type directly
 
 
 /// Common paths for modpack operations

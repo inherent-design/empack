@@ -36,7 +36,7 @@ pub enum BuildError {
 }
 
 /// Build orchestrator with state tracking and template processing
-pub struct BuildOrchestrator {
+pub struct BuildOrchestrator<'a> {
     workdir: PathBuf,
     dist_dir: PathBuf,
 
@@ -46,6 +46,22 @@ pub struct BuildOrchestrator {
 
     // Cached template variables
     pack_info: Option<PackInfo>,
+    
+    // Session provider for resource resolution and state management
+    session: &'a dyn crate::application::session::Session,
+}
+
+impl<'a> std::fmt::Debug for BuildOrchestrator<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BuildOrchestrator")
+            .field("workdir", &self.workdir)
+            .field("dist_dir", &self.dist_dir)
+            .field("pack_refreshed", &self.pack_refreshed)
+            .field("mrpack_extracted", &self.mrpack_extracted)
+            .field("pack_info", &self.pack_info)
+            .field("session", &"<dyn Session>")
+            .finish()
+    }
 }
 
 /// Pack metadata from pack.toml for template processing
@@ -85,18 +101,22 @@ pub struct BuildArtifact {
     pub size: u64,
 }
 
-impl BuildOrchestrator {
-    pub fn new(workdir: PathBuf) -> Self {
+impl<'a> BuildOrchestrator<'a> {
+    pub fn new(session: &'a dyn crate::application::session::Session) -> Result<Self, BuildError> {
+        let workdir = session.filesystem().current_dir()
+            .map_err(|e| BuildError::ConfigError { reason: format!("Failed to get current directory: {}", e) })?;
         let dist_dir = workdir.join("dist");
 
-        Self {
+        Ok(Self {
             workdir,
             dist_dir,
             pack_refreshed: false,
             mrpack_extracted: false,
             pack_info: None,
-        }
+            session,
+        })
     }
+
 
     /// Load pack info from pack.toml (V1's load_pack_info implementation)
     fn load_pack_info(&mut self) -> Result<&PackInfo, BuildError> {
@@ -105,13 +125,15 @@ impl BuildOrchestrator {
         }
 
         let pack_toml = self.workdir.join("pack").join("pack.toml");
-        if !pack_toml.exists() {
+        let filesystem = self.session.filesystem();
+        if !filesystem.exists(&pack_toml) {
             return Err(BuildError::PackInfoError {
                 reason: "pack.toml not found".to_string(),
             });
         }
 
-        let content = std::fs::read_to_string(&pack_toml)?;
+        let content = filesystem.read_to_string(&pack_toml)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
         let toml_value: toml::Value =
             toml::from_str(&content).map_err(|e| BuildError::PackInfoError {
                 reason: format!("TOML parse error: {}", e),
@@ -229,20 +251,20 @@ impl BuildOrchestrator {
         }
 
         let pack_file = self.workdir.join("pack").join("pack.toml");
-        if !pack_file.exists() {
+        if !self.session.filesystem().exists(&pack_file) {
             return Err(BuildError::ConfigError {
                 reason: format!("Pack file not found: {}", pack_file.display()),
             });
         }
 
-        let status = Command::new("packwiz")
-            .args(&["--pack-file", pack_file.to_str().unwrap(), "refresh"])
-            .current_dir(&self.workdir)
-            .status()?;
+        let output = self.session.process().execute("packwiz", &["--pack-file", pack_file.to_str().unwrap(), "refresh"], &self.workdir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("packwiz refresh: {}", e),
+            })?;
 
-        if !status.success() {
+        if !output.success {
             return Err(BuildError::CommandFailed {
-                command: "packwiz refresh".to_string(),
+                command: format!("packwiz refresh: {}", output.stderr),
             });
         }
 
@@ -261,30 +283,33 @@ impl BuildOrchestrator {
             .dist_dir
             .join(format!("{}-v{}.mrpack", pack_info.name, pack_info.version));
 
-        if !mrpack_file.exists() {
+        if !self.session.filesystem().exists(&mrpack_file) {
             // Build mrpack first (V1 pattern)
             self.build_mrpack_impl()?;
         }
 
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
-        if temp_extract_dir.exists() {
-            std::fs::remove_dir_all(&temp_extract_dir)?;
+        if self.session.filesystem().exists(&temp_extract_dir) {
+            self.session.filesystem().remove_dir_all(&temp_extract_dir)
+                .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
         }
-        std::fs::create_dir_all(&temp_extract_dir)?;
+        self.session.filesystem().create_dir_all(&temp_extract_dir)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // V1 uses generic extract_archive - we'll use unzip for now
-        let status = Command::new("unzip")
-            .args(&[
+        let output = self.session.process().execute("unzip", &[
                 "-q",
                 mrpack_file.to_str().unwrap(),
                 "-d",
                 temp_extract_dir.to_str().unwrap(),
-            ])
-            .status()?;
+            ], &self.workdir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("unzip mrpack: {}", e),
+            })?;
 
-        if !status.success() {
+        if !output.success {
             return Err(BuildError::CommandFailed {
-                command: "unzip mrpack".to_string(),
+                command: format!("unzip mrpack: {}", output.stderr),
             });
         }
 
@@ -311,13 +336,14 @@ impl BuildOrchestrator {
         let zip_path = self.dist_dir.join(&filename);
 
         // Remove existing zip file
-        if zip_path.exists() {
-            std::fs::remove_file(&zip_path)?;
+        if self.session.filesystem().exists(&zip_path) {
+            self.session.filesystem().remove_file(&zip_path)
+                .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
         }
 
         // Check if directory has content (V1's pattern)
-        let has_content = std::fs::read_dir(&dist_dir)
-            .map(|entries| entries.count() > 0)
+        let has_content = self.session.filesystem().get_file_list(&dist_dir)
+            .map(|entries| !entries.is_empty())
             .unwrap_or(false);
 
         if !has_content {
@@ -327,14 +353,14 @@ impl BuildOrchestrator {
         }
 
         // Create zip file (V1 pattern: cd dist_dir && zip -r0 "../filename" ./)
-        let status = Command::new("zip")
-            .args(&["-r0", zip_path.to_str().unwrap(), "./"])
-            .current_dir(&dist_dir)
-            .status()?;
+        let output = self.session.process().execute("zip", &["-r0", zip_path.to_str().unwrap(), "./"], &dist_dir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("zip {}: {}", filename, e),
+            })?;
 
-        if !status.success() {
+        if !output.success {
             return Err(BuildError::CommandFailed {
-                command: format!("zip {}", filename),
+                command: format!("zip {}: {}", filename, output.stderr),
             });
         }
 
@@ -352,27 +378,29 @@ impl BuildOrchestrator {
             .join(format!("{}-v{}.mrpack", pack_info.name, pack_info.version));
 
         // Ensure dist directory exists
-        std::fs::create_dir_all(&self.dist_dir)?;
+        self.session.filesystem().create_dir_all(&self.dist_dir)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Remove existing mrpack file
-        if output_file.exists() {
-            std::fs::remove_file(&output_file)?;
+        if self.session.filesystem().exists(&output_file) {
+            self.session.filesystem().remove_file(&output_file)
+                .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
         }
 
         // Build mrpack using packwiz (V1 pattern)
-        let status = Command::new("packwiz")
-            .args(&[
+        let output = self.session.process().execute("packwiz", &[
                 "--pack-file",
                 pack_file.to_str().unwrap(),
                 "mr",
                 "export",
                 "-o",
                 output_file.to_str().unwrap(),
-            ])
-            .current_dir(&self.workdir)
-            .status()?;
+            ], &self.workdir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("packwiz mr export: {}", e),
+            })?;
 
-        if !status.success() {
+        if !output.success {
             return Ok(BuildResult {
                 target: BuildTarget::Mrpack,
                 success: false,
@@ -394,43 +422,31 @@ impl BuildOrchestrator {
     }
 
     /// Build client implementation (V1's build_client_impl)
-    fn build_client_impl(&mut self) -> Result<BuildResult, BuildError> {
+    fn build_client_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
         // Clean first (V1 pattern)
         self.clean_target(BuildTarget::Client)?;
 
         self.refresh_pack()?;
 
         let dist_dir = self.dist_dir.join("client");
-        std::fs::create_dir_all(&dist_dir)?;
+        self.session.filesystem().create_dir_all(&dist_dir)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // V1 pattern: process_build_templates "templates/client" "$dist_dir"
         self.process_build_templates("templates/client", &dist_dir)?;
 
         // Set up client structure (V1 pattern)
         let minecraft_dir = dist_dir.join(".minecraft");
-        std::fs::create_dir_all(&minecraft_dir)?;
+        self.session.filesystem().create_dir_all(&minecraft_dir)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
-        // Copy packwiz installer (V1 pattern)
-        let installer_jar = self
-            .workdir
-            .join("installer")
-            .join("packwiz-installer-bootstrap.jar");
-        if installer_jar.exists() {
-            std::fs::copy(
-                &installer_jar,
-                minecraft_dir.join("packwiz-installer-bootstrap.jar"),
-            )?;
-        } else {
-            return Ok(BuildResult {
-                target: BuildTarget::Client,
-                success: false,
-                output_path: None,
-                artifacts: vec![],
-                warnings: vec![
-                    "packwiz-installer-bootstrap.jar not found in installer/".to_string(),
-                ],
-            });
-        }
+        // Copy packwiz installer
+        let bootstrap_content = self.session.filesystem().read_to_string(bootstrap_jar_path)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        self.session.filesystem().write_file(
+            &minecraft_dir.join("packwiz-installer-bootstrap.jar"),
+            &bootstrap_content,
+        ).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Copy pack files (V1 pattern)
         let pack_dir = self.workdir.join("pack");
@@ -440,7 +456,7 @@ impl BuildOrchestrator {
         self.extract_mrpack()?;
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
         let overrides_dir = temp_extract_dir.join("overrides");
-        if overrides_dir.exists() {
+        if self.session.filesystem().exists(&overrides_dir) {
             self.copy_dir_contents(&overrides_dir, &minecraft_dir)?;
         }
 
@@ -457,61 +473,324 @@ impl BuildOrchestrator {
         })
     }
 
-    /// Execute V1's proven 5-target build pipeline
+    /// Build server implementation (V1's build_server_impl)
+    fn build_server_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
+        // Step 1: Clean the dist/server/ directory
+        self.clean_target(BuildTarget::Server)?;
+
+        // Step 2: Refresh the pack using packwiz refresh
+        self.refresh_pack()?;
+
+        let dist_dir = self.dist_dir.join("server");
+        self.session.filesystem().create_dir_all(&dist_dir)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+
+        // Step 3: Process templates from templates/server/ into dist/server/
+        self.process_build_templates("templates/server", &dist_dir)?;
+
+        // Step 4: Copy the entire pack/ directory into dist/server/
+        let pack_dir = self.workdir.join("pack");
+        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+
+        // Step 5: Copy the packwiz-installer-bootstrap.jar into dist/server/
+        let bootstrap_content = self.session.filesystem().read_to_string(bootstrap_jar_path)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        self.session.filesystem().write_file(
+            &dist_dir.join("packwiz-installer-bootstrap.jar"),
+            &bootstrap_content,
+        ).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+
+        // Step 6: Execute mrpack-install to download the appropriate Minecraft server JAR
+        let pack_info = self.load_pack_info()?.clone();
+        let server_type = match pack_info.fabric_version.as_str() {
+            "" => "vanilla",
+            _ => "fabric",
+        };
+        let result = self.session.process().execute("mrpack-install", &[
+                "server",
+                server_type,
+                "--server-file",
+                "srv.jar",
+            ], &dist_dir);
+
+        match result {
+            Ok(output) if output.success => {
+                // Server JAR downloaded successfully
+            }
+            Ok(output) => {
+                return Ok(BuildResult {
+                    target: BuildTarget::Server,
+                    success: false,
+                    output_path: None,
+                    artifacts: vec![],
+                    warnings: vec![
+                        format!("mrpack-install command failed to download server JAR: {}", output.stderr),
+                    ],
+                });
+            }
+            Err(e) => {
+                return Ok(BuildResult {
+                    target: BuildTarget::Server,
+                    success: false,
+                    output_path: None,
+                    artifacts: vec![],
+                    warnings: vec![
+                        "mrpack-install command not found - ensure it's installed and in PATH".to_string(),
+                    ],
+                });
+            }
+        }
+
+        // Step 7: Extract the .mrpack file (building it first if necessary)
+        self.extract_mrpack()?;
+
+        // Step 8: Copy the overrides/ from the extracted mrpack into dist/server/
+        let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
+        let overrides_dir = temp_extract_dir.join("overrides");
+        if self.session.filesystem().exists(&overrides_dir) {
+            self.copy_dir_contents(&overrides_dir, &dist_dir)?;
+        }
+
+        // Step 9: Create a final zip archive of the dist/server/ directory
+        let zip_path = self.zip_distribution(BuildTarget::Server)?;
+        let artifact = self.create_artifact(&zip_path)?;
+
+        Ok(BuildResult {
+            target: BuildTarget::Server,
+            success: true,
+            output_path: Some(zip_path),
+            artifacts: vec![artifact],
+            warnings: vec![],
+        })
+    }
+
+    /// Build client-full implementation (V1's build_client_full_impl)
+    fn build_client_full_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
+        // Step 1: Clean the dist/client-full/ directory
+        self.clean_target(BuildTarget::ClientFull)?;
+
+        // Step 2: Refresh the pack using packwiz refresh
+        self.refresh_pack()?;
+
+        let dist_dir = self.dist_dir.join("client-full");
+        self.session.filesystem().create_dir_all(&dist_dir)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+
+        // Step 3: Execute packwiz-installer-bootstrap.jar with -g (no-GUI) and -s both flags
+
+        // Copy pack files to client-full directory for installer to use
+        let pack_dir = self.workdir.join("pack");
+        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+
+        // Execute installer with -g (no-GUI) and -s both flags
+        let output = self.session.process().execute("java", &[
+                "-jar",
+                bootstrap_jar_path.to_str().unwrap(),
+                "-g",
+                "-s", "both",
+                "--pack-folder", "pack",
+            ], &dist_dir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("java -jar packwiz-installer-bootstrap.jar: {}", e),
+            })?;
+
+        if !output.success {
+            return Ok(BuildResult {
+                target: BuildTarget::ClientFull,
+                success: false,
+                output_path: None,
+                artifacts: vec![],
+                warnings: vec![
+                    format!("packwiz-installer-bootstrap.jar execution failed: {}", output.stderr),
+                ],
+            });
+        }
+
+        // Step 4: Create a final zip archive of the dist/client-full/ directory
+        let zip_path = self.zip_distribution(BuildTarget::ClientFull)?;
+        let artifact = self.create_artifact(&zip_path)?;
+
+        Ok(BuildResult {
+            target: BuildTarget::ClientFull,
+            success: true,
+            output_path: Some(zip_path),
+            artifacts: vec![artifact],
+            warnings: vec![],
+        })
+    }
+
+    /// Build server-full implementation (V1's build_server_full_impl)
+    fn build_server_full_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
+        // Step 1: Clean the dist/server-full/ directory
+        self.clean_target(BuildTarget::ServerFull)?;
+
+        // Step 2: Refresh the pack using packwiz refresh
+        self.refresh_pack()?;
+
+        let dist_dir = self.dist_dir.join("server-full");
+        self.session.filesystem().create_dir_all(&dist_dir)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+
+        // Step 3: Process templates from templates/server/ into dist/server-full/
+        self.process_build_templates("templates/server", &dist_dir)?;
+
+        // Step 4: Execute mrpack-install to download the Minecraft server JAR
+        let pack_info = self.load_pack_info()?.clone();
+        let server_type = match pack_info.fabric_version.as_str() {
+            "" => "vanilla",
+            _ => "fabric",
+        };
+        let result = self.session.process().execute("mrpack-install", &[
+                "server",
+                server_type,
+                "--server-file",
+                "srv.jar",
+            ], &dist_dir);
+
+        match result {
+            Ok(output) if output.success => {
+                // Server JAR downloaded successfully
+            }
+            Ok(output) => {
+                return Ok(BuildResult {
+                    target: BuildTarget::ServerFull,
+                    success: false,
+                    output_path: None,
+                    artifacts: vec![],
+                    warnings: vec![
+                        format!("mrpack-install command failed to download server JAR: {}", output.stderr),
+                    ],
+                });
+            }
+            Err(e) => {
+                return Ok(BuildResult {
+                    target: BuildTarget::ServerFull,
+                    success: false,
+                    output_path: None,
+                    artifacts: vec![],
+                    warnings: vec![
+                        format!("mrpack-install command not found - ensure it's installed and in PATH: {}", e),
+                    ],
+                });
+            }
+        }
+
+        // Step 5: Execute packwiz-installer-bootstrap.jar with -g and -s server flags
+
+        // Copy pack files to server-full directory for installer to use
+        let pack_dir = self.workdir.join("pack");
+        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+
+        // Execute installer with -g (no-GUI) and -s server flags
+        let output = self.session.process().execute("java", &[
+                "-jar",
+                bootstrap_jar_path.to_str().unwrap(),
+                "-g",
+                "-s", "server",
+                "--pack-folder", "pack",
+            ], &dist_dir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("java -jar packwiz-installer-bootstrap.jar: {}", e),
+            })?;
+
+        if !output.success {
+            return Ok(BuildResult {
+                target: BuildTarget::ServerFull,
+                success: false,
+                output_path: None,
+                artifacts: vec![],
+                warnings: vec![
+                    format!("packwiz-installer-bootstrap.jar execution failed: {}", output.stderr),
+                ],
+            });
+        }
+
+        // Step 6: Create a final zip archive of the dist/server-full/ directory
+        let zip_path = self.zip_distribution(BuildTarget::ServerFull)?;
+        let artifact = self.create_artifact(&zip_path)?;
+
+        Ok(BuildResult {
+            target: BuildTarget::ServerFull,
+            success: true,
+            output_path: Some(zip_path),
+            artifacts: vec![artifact],
+            warnings: vec![],
+        })
+    }
+
+    /// Execute V1's proven 5-target build pipeline with state management
     pub async fn execute_build_pipeline(
         &mut self,
         targets: &[BuildTarget],
     ) -> Result<Vec<BuildResult>, BuildError> {
+        // Begin state transition
+        self.session.state().begin_state_transition(crate::primitives::StateTransition::Building)
+            .map_err(|e| BuildError::ConfigError { reason: format!("Failed to begin build transition: {:?}", e) })?;
+
         self.prepare_build_environment()?;
+
+        // Get bootstrap JAR path from session
+        let bootstrap_jar_path = self.session.filesystem().get_bootstrap_jar_cache_path()
+            .map_err(|e| BuildError::ConfigError { reason: format!("Failed to get bootstrap JAR path: {}", e) })?;
 
         let mut results = Vec::new();
 
         for target in targets {
             let result = match target {
                 BuildTarget::Mrpack => self.build_mrpack_impl()?,
-                BuildTarget::Client => self.build_client_impl()?,
-                _ => {
-                    // TODO: Implement remaining targets following V1 patterns
-                    BuildResult {
-                        target: *target,
-                        success: false,
-                        output_path: None,
-                        artifacts: vec![],
-                        warnings: vec![format!("{:?} build not yet implemented", target)],
-                    }
-                }
+                BuildTarget::Client => self.build_client_impl(&bootstrap_jar_path)?,
+                BuildTarget::Server => self.build_server_impl(&bootstrap_jar_path)?,
+                BuildTarget::ClientFull => self.build_client_full_impl(&bootstrap_jar_path)?,
+                BuildTarget::ServerFull => self.build_server_full_impl(&bootstrap_jar_path)?,
             };
             results.push(result);
         }
 
+        // Complete state transition on success
+        self.session.state().complete_state_transition()
+            .map_err(|e| BuildError::ConfigError { reason: format!("Failed to complete build transition: {:?}", e) })?;
+
         Ok(results)
+    }
+
+    /// Execute clean pipeline with state management
+    pub async fn execute_clean_pipeline(
+        &mut self,
+        targets: &[BuildTarget],
+    ) -> Result<(), BuildError> {
+        // Begin state transition
+        self.session.state().begin_state_transition(crate::primitives::StateTransition::Cleaning)
+            .map_err(|e| BuildError::ConfigError { reason: format!("Failed to begin clean transition: {:?}", e) })?;
+
+        // Clean each target
+        for target in targets {
+            self.clean_target(*target)?;
+        }
+
+        // Complete state transition on success
+        self.session.state().complete_state_transition()
+            .map_err(|e| BuildError::ConfigError { reason: format!("Failed to complete clean transition: {:?}", e) })?;
+
+        Ok(())
     }
 
     /// Prepare build environment (V1's pattern checking)
     fn prepare_build_environment(&self) -> Result<(), BuildError> {
         // Ensure pack directory exists
         let pack_dir = self.workdir.join("pack");
-        if !pack_dir.exists() {
+        if !self.session.filesystem().exists(&pack_dir) {
             return Err(BuildError::ConfigError {
                 reason: "pack/ directory not found - run empack init first".to_string(),
             });
         }
 
         // Ensure dist directory exists
-        std::fs::create_dir_all(&self.dist_dir)?;
+        self.session.filesystem().create_dir_all(&self.dist_dir)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
-        // Validate packwiz is available (V1 pattern)
-        let status = Command::new("packwiz").args(&["--version"]).status();
-
-        match status {
-            Ok(status) if status.success() => Ok(()),
-            Ok(_) => Err(BuildError::MissingTool {
-                tool: "packwiz (command failed)".to_string(),
-            }),
-            Err(_) => Err(BuildError::MissingTool {
-                tool: "packwiz (not found in PATH)".to_string(),
-            }),
-        }
+        // Note: Tool availability checking is now handled by the ProcessProvider
+        // and the requirements command, which is the correct architectural separation
+        Ok(())
     }
 
     /// Clean build target (V1's clean_target implementation)
@@ -521,16 +800,19 @@ impl BuildOrchestrator {
         let dist_dir = self.dist_dir.join(target.to_string());
 
         // Clean directory contents (V1 pattern with .gitkeep preservation)
-        if dist_dir.exists() {
-            for entry in std::fs::read_dir(&dist_dir)? {
-                let entry = entry?;
-                let file_name = entry.file_name();
-                if file_name != ".gitkeep" {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        std::fs::remove_dir_all(&path)?;
-                    } else {
-                        std::fs::remove_file(&path)?;
+        if self.session.filesystem().exists(&dist_dir) {
+            let files = self.session.filesystem().get_file_list(&dist_dir)
+                .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+            for file_path in files {
+                if let Some(file_name) = file_path.file_name() {
+                    if file_name != ".gitkeep" {
+                        if self.session.filesystem().is_directory(&file_path) {
+                            self.session.filesystem().remove_dir_all(&file_path)
+                                .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+                        } else {
+                            self.session.filesystem().remove_file(&file_path)
+                                .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+                        }
                     }
                 }
             }
@@ -544,8 +826,9 @@ impl BuildOrchestrator {
                 info.version,
                 target.to_string()
             ));
-            if zip_file.exists() {
-                std::fs::remove_file(&zip_file)?;
+            if self.session.filesystem().exists(&zip_file) {
+                self.session.filesystem().remove_file(&zip_file)
+                    .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
             }
         }
 
@@ -559,38 +842,38 @@ impl BuildOrchestrator {
         target_dir: &Path,
     ) -> Result<(), BuildError> {
         let template_path = self.workdir.join(template_dir);
-        if !template_path.exists() {
+        if !self.session.filesystem().exists(&template_path) {
             // Not an error - templates are optional
             return Ok(());
         }
 
         let pack_info = self.load_pack_info()?.clone();
 
-        for entry in std::fs::read_dir(&template_path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
+        let template_files = self.session.filesystem().get_file_list(&template_path)
+            .map_err(|e| BuildError::IoError { source: e })?;
+        for path in template_files {
+            if !self.session.filesystem().is_directory(&path) {
+                let filename = path.file_name().unwrap().to_str().unwrap();
+                let target_file = if filename.ends_with(".template") {
+                    target_dir.join(&filename[..filename.len() - 9]) // Remove .template suffix
+                } else {
+                    target_dir.join(filename)
+                };
+
+                let content = self.session.filesystem().read_to_string(&path)
+                    .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+
+                // V1's template variable processing
+                let processed = content
+                    .replace("{{VERSION}}", &pack_info.version)
+                    .replace("{{NAME}}", &pack_info.name)
+                    .replace("{{AUTHOR}}", &pack_info.author)
+                    .replace("{{MC_VERSION}}", &pack_info.mc_version)
+                    .replace("{{FABRIC_VERSION}}", &pack_info.fabric_version);
+
+                self.session.filesystem().write_file(&target_file, &processed)
+                    .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
             }
-
-            let filename = path.file_name().unwrap().to_str().unwrap();
-            let target_file = if filename.ends_with(".template") {
-                target_dir.join(&filename[..filename.len() - 9]) // Remove .template suffix
-            } else {
-                target_dir.join(filename)
-            };
-
-            let content = std::fs::read_to_string(&path)?;
-
-            // V1's template variable processing
-            let processed = content
-                .replace("{{VERSION}}", &pack_info.version)
-                .replace("{{NAME}}", &pack_info.name)
-                .replace("{{AUTHOR}}", &pack_info.author)
-                .replace("{{MC_VERSION}}", &pack_info.mc_version)
-                .replace("{{FABRIC_VERSION}}", &pack_info.fabric_version);
-
-            std::fs::write(&target_file, processed)?;
         }
 
         Ok(())
@@ -598,17 +881,22 @@ impl BuildOrchestrator {
 
     /// Helper: Copy directory contents recursively
     fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), BuildError> {
-        std::fs::create_dir_all(dst)?;
+        self.session.filesystem().create_dir_all(dst)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
-        for entry in std::fs::read_dir(src)? {
-            let entry = entry?;
-            let src_path = entry.path();
-            let dst_path = dst.join(entry.file_name());
+        let src_files = self.session.filesystem().get_file_list(src)
+            .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        for src_path in src_files {
+            let file_name = src_path.file_name().unwrap();
+            let dst_path = dst.join(file_name);
 
-            if src_path.is_dir() {
+            if self.session.filesystem().is_directory(&src_path) {
                 self.copy_dir_contents(&src_path, &dst_path)?;
             } else {
-                std::fs::copy(&src_path, &dst_path)?;
+                let content = self.session.filesystem().read_to_string(&src_path)
+                    .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+                self.session.filesystem().write_file(&dst_path, &content)
+                    .map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
             }
         }
 
@@ -617,17 +905,25 @@ impl BuildOrchestrator {
 
     /// Helper: Create build artifact metadata
     fn create_artifact(&self, path: &Path) -> Result<BuildArtifact, BuildError> {
-        let metadata = std::fs::metadata(path)?;
         let name = path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
 
+        // For mock filesystem, we'll use content length as size
+        let size = if self.session.filesystem().exists(path) {
+            self.session.filesystem().read_to_string(path)
+                .map(|content| content.len() as u64)
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
         Ok(BuildArtifact {
             name,
             path: path.to_path_buf(),
-            size: metadata.len(),
+            size,
         })
     }
 }

@@ -17,21 +17,14 @@ use std::collections::HashSet;
 use reqwest::Client;
 
 /// Abstract interface for state management operations
-pub trait StateManager {
-    /// Discover current state from filesystem
-    fn discover_state(&self) -> Result<ModpackState, StateError>;
-    
-    /// Execute a state transition
-    fn execute_transition(&self, transition: StateTransition) -> Result<ModpackState, StateError>;
-}
+// StateManager trait removed - using concrete ModpackStateManager type instead
 
 /// Provider trait for filesystem operations
 pub trait FileSystemProvider {
     /// Get current working directory
     fn current_dir(&self) -> Result<PathBuf>;
     
-    /// Create a modpack state manager for the given directory
-    fn state_manager(&self, workdir: PathBuf) -> Box<dyn StateManager + '_>;
+    // state_manager method removed - create ModpackStateManager directly
     
     /// Get list of currently installed mods from packwiz
     fn get_installed_mods(&self) -> Result<HashSet<String>>;
@@ -73,6 +66,9 @@ pub trait FileSystemProvider {
     
     /// Run packwiz refresh command
     fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), crate::empack::state::StateError>;
+    
+    /// Get the expected cache path for packwiz-installer-bootstrap.jar
+    fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf>;
 }
 
 /// Provider trait for network operations
@@ -84,10 +80,18 @@ pub trait NetworkProvider {
     fn project_resolver(&self, client: Client, curseforge_api_key: Option<String>) -> Box<dyn ProjectResolverTrait + Send + Sync>;
 }
 
+/// Process execution output
+#[derive(Debug, Clone)]
+pub struct ProcessOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub success: bool,
+}
+
 /// Provider trait for process execution
 pub trait ProcessProvider {
-    /// Execute a packwiz command with given arguments
-    fn execute_packwiz(&self, args: &[&str]) -> Result<()>;
+    /// Execute a command with given arguments in working directory
+    fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput>;
     
     /// Check if packwiz is available and return version info
     fn check_packwiz(&self) -> Result<(bool, String)>;
@@ -118,6 +122,9 @@ pub trait Session {
     
     /// Get the config provider for this session
     fn config(&self) -> &dyn ConfigProvider;
+    
+    /// Get the state manager for this session
+    fn state(&self) -> ModpackStateManager<'_, dyn FileSystemProvider + '_>;
 }
 
 /// Live implementation of FileSystemProvider
@@ -128,9 +135,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
         env::current_dir().context("Failed to get current directory")
     }
     
-    fn state_manager(&self, workdir: PathBuf) -> Box<dyn StateManager + '_> {
-        Box::new(ModpackStateManager::new(workdir, self))
-    }
+    // state_manager method removed - create ModpackStateManager directly
     
     fn get_installed_mods(&self) -> Result<HashSet<String>> {
         let output = std::process::Command::new("packwiz")
@@ -365,6 +370,26 @@ hash = ""
             Ok(())
         }
     }
+    
+    fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf> {
+        // First check for local installer JAR (for development/testing)
+        let local_jar = std::env::current_dir()
+            .context("Failed to get current directory")?
+            .join("installer")
+            .join("packwiz-installer-bootstrap.jar");
+        
+        if local_jar.exists() {
+            return Ok(local_jar);
+        }
+        
+        // Return cache directory path
+        let cache_dir = dirs::cache_dir()
+            .context("Failed to determine cache directory")?
+            .join("empack")
+            .join("jars");
+        
+        Ok(cache_dir.join("packwiz-installer-bootstrap.jar"))
+    }
 }
 
 /// Live implementation of NetworkProvider
@@ -437,13 +462,29 @@ impl NetworkProvider for LiveNetworkProvider {
 pub struct LiveProcessProvider;
 
 impl ProcessProvider for LiveProcessProvider {
-    fn execute_packwiz(&self, args: &[&str]) -> Result<()> {
-        execute_packwiz_command(args)
+    fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput> {
+        use std::process::Command;
+        
+        let output = Command::new(command)
+            .args(args)
+            .current_dir(working_dir)
+            .output()
+            .with_context(|| format!("Failed to execute command: {}", command))?;
+        
+        Ok(ProcessOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            success: output.status.success(),
+        })
     }
     
     fn check_packwiz(&self) -> Result<(bool, String)> {
-        match std::process::Command::new("packwiz").arg("--help").output() {
-            Ok(output) if output.status.success() => {
+        // Check if packwiz is available in PATH
+        match std::process::Command::new("which")
+            .arg("packwiz")
+            .output()
+        {
+            Ok(output) if output.status.success() && !output.stdout.is_empty() => {
                 let version = self.get_packwiz_version().unwrap_or_else(|| "unknown".to_string());
                 Ok((true, version))
             },
@@ -452,18 +493,19 @@ impl ProcessProvider for LiveProcessProvider {
     }
     
     fn get_packwiz_version(&self) -> Option<String> {
-        let packwiz_path = std::process::Command::new("which")
+        // First, find the absolute path to packwiz
+        let packwiz_path_output = std::process::Command::new("which")
             .arg("packwiz")
             .output()
-            .ok()?
-            .stdout;
+            .ok()?;
         
-        if packwiz_path.is_empty() {
+        if !packwiz_path_output.status.success() || packwiz_path_output.stdout.is_empty() {
             return None;
         }
         
-        let path_str = String::from_utf8_lossy(&packwiz_path).trim().to_string();
+        let path_str = String::from_utf8_lossy(&packwiz_path_output.stdout).trim().to_string();
         
+        // Use go version -m to inspect the binary's module information
         let output = std::process::Command::new("go")
             .arg("version")
             .arg("-m")
@@ -476,12 +518,15 @@ impl ProcessProvider for LiveProcessProvider {
         }
         
         let version_output = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = version_output.lines().collect();
-        if lines.len() >= 3 {
-            let third_line = lines[2];
-            let fields: Vec<&str> = third_line.split_whitespace().collect();
-            if fields.len() >= 3 {
-                return Some(fields[2].to_string());
+        
+        // Parse the output to find the version
+        // Looking for the line that starts with "mod" and extract the third field
+        for line in version_output.lines() {
+            if line.starts_with("mod") {
+                let fields: Vec<&str> = line.split_whitespace().collect();
+                if fields.len() >= 3 {
+                    return Some(fields[2].to_string());
+                }
             }
         }
         
@@ -531,6 +576,11 @@ where
 impl CommandSession<LiveFileSystemProvider, LiveNetworkProvider, LiveProcessProvider, LiveConfigProvider> {
     /// Create a new command session with owned state (production composition)
     pub fn new(app_config: AppConfig) -> Self {
+        // Initialize display system if not already done
+        if let Ok(terminal_caps) = crate::terminal::TerminalCapabilities::detect_from_config(&app_config) {
+            let _ = crate::display::Display::init(terminal_caps);
+        }
+        
         let multi_progress = MultiProgress::new();
         let display_provider = LiveDisplayProvider::new_with_multi_progress(&multi_progress);
         
@@ -625,21 +675,10 @@ where
     fn config(&self) -> &dyn ConfigProvider {
         &self.config_provider
     }
-}
-
-// Helper function for packwiz execution - will be moved to appropriate module later
-fn execute_packwiz_command(args: &[&str]) -> Result<()> {
-    use std::process::Command;
     
-    let output = Command::new("packwiz")
-        .args(args)
-        .output()
-        .context("Failed to execute packwiz command")?;
-    
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(anyhow::anyhow!("Packwiz command failed: {}", stderr))
+    fn state(&self) -> ModpackStateManager<'_, dyn FileSystemProvider + '_> {
+        let workdir = self.filesystem().current_dir().expect("Failed to get current directory");
+        ModpackStateManager::new(workdir, self.filesystem())
     }
 }
+

@@ -6,7 +6,7 @@
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::cli::Commands;
 use empack_lib::application::config::AppConfig;
-use empack_lib::application::session::{CommandSession, LiveFileSystemProvider, LiveNetworkProvider, LiveConfigProvider};
+use empack_lib::application::session::{CommandSession, LiveFileSystemProvider, LiveNetworkProvider, LiveConfigProvider, ProcessOutput};
 use empack_lib::application::session_mocks::MockProcessProvider;
 use empack_lib::display::{Display, LiveDisplayProvider};
 use empack_lib::empack::search::{ProjectInfo, Platform};
@@ -58,7 +58,7 @@ async fn e2e_add_mod_successfully() -> Result<()> {
     let mock_process_provider = MockProcessProvider::new()
         .with_packwiz_result(
             vec!["mr".to_string(), "add".to_string(), "AANobbMI".to_string()],
-            Ok(())
+            Ok(ProcessOutput { stdout: String::new(), stderr: String::new(), success: true })
         );
     
     let session = CommandSession::new_with_providers(

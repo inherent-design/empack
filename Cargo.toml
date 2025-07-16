@@ -20,12 +20,13 @@ empack-lib = { path = "crates/empack-lib" }
 anyhow = "1.0.98"
 clap = { version = "4.5.40", features = ["derive", "env", "unicode", "wrap_help"] }
 dialoguer = "0.11.0"
+dirs = "5.0.1"
 dotenvy = "0.15.7"
 envy = "0.4.2"
 html-escape = "0.2.13"
 indicatif = { version = "0.17.11", features = ["rayon", "improved_unicode"] }
 percent-encoding = "2.3.1"
-reqwest = { version = "0.12.20", features = ["json", "gzip"] }
+reqwest = { version = "0.12.20", features = ["json", "gzip", "blocking"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 serde_yaml = "0.9.34-deprecated"

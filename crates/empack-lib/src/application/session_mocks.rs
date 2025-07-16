@@ -3,7 +3,7 @@
 //! These mocks enable comprehensive testing of command handlers without
 //! requiring external dependencies or filesystem operations.
 
-use crate::application::session::{Session, *};
+use crate::application::session::{Session, ProcessOutput, *};
 use crate::empack::state::ModpackStateManager;
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait, ProjectInfo, SearchError};
@@ -17,6 +17,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::future::Future;
 use std::pin::Pin;
+use std::cell::RefCell;
 use reqwest::Client;
 
 /// Mock filesystem provider for testing
@@ -168,10 +169,7 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(self.current_dir.clone())
     }
     
-    fn state_manager(&self, workdir: PathBuf) -> Box<dyn crate::application::session::StateManager + '_> {
-        self.state_manager_calls.lock().unwrap().push(workdir.clone());
-        Box::new(ModpackStateManager::new(workdir, self))
-    }
+    // state_manager method removed - create ModpackStateManager directly
     
     fn get_installed_mods(&self) -> Result<HashSet<String>> {
         Ok(self.installed_mods.clone())
@@ -197,7 +195,10 @@ impl FileSystemProvider for MockFileSystemProvider {
     }
     
     fn exists(&self, path: &std::path::Path) -> bool {
-        self.files.lock().unwrap().contains_key(path)
+        // Check both files and directories
+        self.files.lock().unwrap().contains_key(path) || 
+        self.directories.lock().unwrap().contains(path) ||
+        self.is_directory(path)
     }
     
     fn is_directory(&self, path: &std::path::Path) -> bool {
@@ -212,25 +213,38 @@ impl FileSystemProvider for MockFileSystemProvider {
             return true;
         }
         
-        // Fall back to pattern matching for common directory patterns
-        let path_str = path.to_string_lossy();
-        path_str.ends_with("pack") || path_str.ends_with("dist") || path_str.ends_with("templates") || 
-        path_str.ends_with("installer") || path_str.ends_with(".empack")
+        // No fallback pattern matching - if it's not explicitly tracked, it doesn't exist
+        false
     }
     
-    fn create_dir_all(&self, _path: &std::path::Path) -> Result<()> {
-        // For mock, we don't need to actually create directories
-        // This would be tracked in a real implementation
+    fn create_dir_all(&self, path: &std::path::Path) -> Result<()> {
+        // Track the directory creation in the mock filesystem
+        self.directories.lock().unwrap().insert(path.to_path_buf());
+        // Also track all parent directories as existing
+        let mut current = path.to_path_buf();
+        while let Some(parent) = current.parent() {
+            self.directories.lock().unwrap().insert(parent.to_path_buf());
+            current = parent.to_path_buf();
+        }
         Ok(())
     }
     
     fn get_file_list(&self, path: &std::path::Path) -> Result<HashSet<PathBuf>, std::io::Error> {
         let files = self.files.lock().unwrap();
+        let directories = self.directories.lock().unwrap();
         let mut result = HashSet::new();
         
+        // Add files that are direct children of the path
         for file_path in files.keys() {
             if file_path.parent() == Some(path) {
                 result.insert(file_path.clone());
+            }
+        }
+        
+        // Add directories that are direct children of the path
+        for dir_path in directories.iter() {
+            if dir_path.parent() == Some(path) {
+                result.insert(dir_path.clone());
             }
         }
         
@@ -323,6 +337,23 @@ hash = ""
             });
         }
         Ok(())
+    }
+    
+    fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf> {
+        // For testing, return a path in the test directory
+        let jar_path = self.current_dir.join("cache").join("packwiz-installer-bootstrap.jar");
+        
+        // Ensure the mock JAR file exists to prevent network download attempts
+        if !self.exists(&jar_path) {
+            // Create cache directory
+            let cache_dir = jar_path.parent().unwrap().to_path_buf();
+            self.directories.lock().unwrap().insert(cache_dir);
+            
+            // Create mock JAR file
+            self.files.lock().unwrap().insert(jar_path.clone(), "mock bootstrap jar content".to_string());
+        }
+        
+        Ok(jar_path)
     }
 }
 
@@ -419,12 +450,20 @@ impl ProjectResolverTrait for MockProjectResolver {
     }
 }
 
-/// Mock process provider for testing
+/// Process call record for spy pattern
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProcessCall {
+    pub command: String,
+    pub args: Vec<String>,
+    pub working_dir: PathBuf,
+}
+
+/// Mock process provider for testing with spy pattern
 pub struct MockProcessProvider {
     pub packwiz_available: bool,
     pub packwiz_version: String,
-    pub packwiz_commands: Arc<Mutex<Vec<Vec<String>>>>,
-    pub packwiz_results: HashMap<Vec<String>, Result<(), String>>,
+    pub calls: RefCell<Vec<ProcessCall>>,
+    pub results: HashMap<(String, Vec<String>), Result<ProcessOutput, String>>,
 }
 
 impl MockProcessProvider {
@@ -432,8 +471,8 @@ impl MockProcessProvider {
         Self {
             packwiz_available: true,
             packwiz_version: "1.0.0".to_string(),
-            packwiz_commands: Arc::new(Mutex::new(Vec::new())),
-            packwiz_results: HashMap::new(),
+            calls: RefCell::new(Vec::new()),
+            results: HashMap::new(),
         }
     }
     
@@ -447,30 +486,65 @@ impl MockProcessProvider {
         self
     }
     
-    pub fn with_packwiz_result(mut self, args: Vec<String>, result: Result<(), String>) -> Self {
-        self.packwiz_results.insert(args, result);
+    pub fn with_result(mut self, command: String, args: Vec<String>, result: Result<ProcessOutput, String>) -> Self {
+        self.results.insert((command, args), result);
         self
+    }
+    
+    pub fn with_packwiz_result(mut self, args: Vec<String>, result: Result<ProcessOutput, String>) -> Self {
+        self.results.insert(("packwiz".to_string(), args), result);
+        self
+    }
+    
+    /// Get all recorded process calls for verification
+    pub fn get_calls(&self) -> Vec<ProcessCall> {
+        self.calls.borrow().clone()
+    }
+    
+    /// Get calls for a specific command
+    pub fn get_calls_for_command(&self, command: &str) -> Vec<ProcessCall> {
+        self.calls.borrow().iter()
+            .filter(|call| call.command == command)
+            .cloned()
+            .collect()
+    }
+    
+    /// Verify that a specific command was called with expected arguments
+    pub fn verify_call(&self, command: &str, args: &[&str], working_dir: &std::path::Path) -> bool {
+        let expected_call = ProcessCall {
+            command: command.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            working_dir: working_dir.to_path_buf(),
+        };
+        
+        self.calls.borrow().contains(&expected_call)
     }
 }
 
 impl ProcessProvider for MockProcessProvider {
-    fn execute_packwiz(&self, args: &[&str]) -> Result<()> {
-        let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-        self.packwiz_commands.lock().unwrap().push(args_vec.clone());
+    fn execute(&self, command: &str, args: &[&str], working_dir: &std::path::Path) -> Result<ProcessOutput> {
+        // Record the call for spy pattern verification
+        let call = ProcessCall {
+            command: command.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            working_dir: working_dir.to_path_buf(),
+        };
+        self.calls.borrow_mut().push(call);
         
         // Check if we have a specific result for this command
-        if let Some(result) = self.packwiz_results.get(&args_vec) {
+        let key = (command.to_string(), args.iter().map(|s| s.to_string()).collect());
+        if let Some(result) = self.results.get(&key) {
             match result {
-                Ok(_) => Ok(()),
+                Ok(output) => Ok(output.clone()),
                 Err(e) => Err(anyhow::anyhow!("{}", e)),
             }
         } else {
-            // Default behavior: succeed if packwiz is available
-            if self.packwiz_available {
-                Ok(())
-            } else {
-                Err(anyhow::anyhow!("Packwiz not available"))
-            }
+            // Default behavior: succeed with empty output
+            Ok(ProcessOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+            })
         }
     }
     
@@ -602,6 +676,11 @@ impl Session for MockCommandSession {
     fn config(&self) -> &dyn ConfigProvider {
         &self.config_provider
     }
+    
+    fn state(&self) -> crate::empack::state::ModpackStateManager<'_, dyn FileSystemProvider + '_> {
+        let workdir = self.filesystem().current_dir().expect("Failed to get current directory");
+        crate::empack::state::ModpackStateManager::new(workdir, self.filesystem())
+    }
 }
 
 #[cfg(test)]
@@ -624,9 +703,11 @@ mod tests {
     
     #[test]
     fn test_mock_process_provider() {
+        let working_dir = PathBuf::from("/test/workdir");
         let provider = MockProcessProvider::new()
             .with_packwiz_version("2.0.0".to_string())
-            .with_packwiz_result(
+            .with_result(
+                "packwiz".to_string(),
                 vec!["add".to_string(), "test-mod".to_string()],
                 Err("Mock error".to_string())
             );
@@ -634,11 +715,27 @@ mod tests {
         assert_eq!(provider.check_packwiz().unwrap(), (true, "2.0.0".to_string()));
         assert_eq!(provider.get_packwiz_version().unwrap(), "2.0.0");
         
-        // Test successful command
-        assert!(provider.execute_packwiz(&["list"]).is_ok());
+        // Test successful command (uses default behavior)
+        let result = provider.execute("packwiz", &["list"], &working_dir);
+        assert!(result.is_ok());
+        assert!(result.unwrap().success);
         
         // Test command with specific result
-        assert!(provider.execute_packwiz(&["add", "test-mod"]).is_err());
+        let result = provider.execute("packwiz", &["add", "test-mod"], &working_dir);
+        assert!(result.is_err());
+        
+        // Test spy pattern - verify calls were recorded
+        let calls = provider.get_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].command, "packwiz");
+        assert_eq!(calls[0].args, vec!["list"]);
+        assert_eq!(calls[1].command, "packwiz");
+        assert_eq!(calls[1].args, vec!["add", "test-mod"]);
+        
+        // Test verification helper
+        assert!(provider.verify_call("packwiz", &["list"], &working_dir));
+        assert!(provider.verify_call("packwiz", &["add", "test-mod"], &working_dir));
+        assert!(!provider.verify_call("packwiz", &["remove", "test-mod"], &working_dir));
     }
     
     #[test]

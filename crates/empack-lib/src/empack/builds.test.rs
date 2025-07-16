@@ -2,29 +2,47 @@ use super::*;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
+use crate::application::session_mocks::MockCommandSession;
 
 // Mock structure for testing build orchestrator without external dependencies
 struct MockBuildOrchestrator {
-    orchestrator: BuildOrchestrator,
     temp_dir: TempDir,
     mock_commands: Vec<String>,
+    session: MockCommandSession,
 }
 
 impl MockBuildOrchestrator {
     fn new() -> Self {
         let temp_dir = TempDir::new().unwrap();
-        let orchestrator = BuildOrchestrator::new(temp_dir.path().to_path_buf());
+        let workdir = temp_dir.path().to_path_buf();
+        
+        // Create mock session with the temp directory as working directory
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                crate::application::session_mocks::MockFileSystemProvider::new()
+                    .with_current_dir(workdir)
+            );
+        
         Self {
-            orchestrator,
             temp_dir,
             mock_commands: Vec::new(),
+            session,
         }
+    }
+    
+    fn orchestrator(&self) -> BuildOrchestrator {
+        BuildOrchestrator::new(&self.session).expect("Failed to create orchestrator")
     }
 
     fn setup_basic_pack_structure(&self) -> Result<(), BuildError> {
+        let workdir = self.temp_dir.path().to_path_buf();
+        
+        // Use the mock filesystem to create the pack structure
+        let filesystem = self.session.filesystem();
+        
         // Create pack directory
-        let pack_dir = self.temp_dir.path().join("pack");
-        fs::create_dir_all(&pack_dir)?;
+        let pack_dir = workdir.join("pack");
+        filesystem.create_dir_all(&pack_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create basic pack.toml
         let pack_toml = pack_dir.join("pack.toml");
@@ -37,7 +55,7 @@ version = "1.0.0"
 minecraft = "1.21"
 fabric = "0.15.11"
 "#;
-        fs::write(&pack_toml, toml_content)?;
+        filesystem.write_file(&pack_toml, toml_content).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create basic index.toml
         let index_toml = pack_dir.join("index.toml");
@@ -48,11 +66,11 @@ hash-format = "sha1"
 file = "mods/test-mod.pw.toml"
 hash = "abcd1234"
 "#;
-        fs::write(&index_toml, index_content)?;
+        filesystem.write_file(&index_toml, index_content).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create mods directory
         let mods_dir = pack_dir.join("mods");
-        fs::create_dir_all(&mods_dir)?;
+        filesystem.create_dir_all(&mods_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create a test mod file
         let mod_file = mods_dir.join("test-mod.pw.toml");
@@ -66,25 +84,31 @@ url = "https://example.com/test-mod-1.0.0.jar"
 hash-format = "sha1"
 hash = "abcd1234"
 "#;
-        fs::write(&mod_file, mod_content)?;
+        filesystem.write_file(&mod_file, mod_content).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         Ok(())
     }
 
     fn setup_installer_structure(&self) -> Result<(), BuildError> {
-        let installer_dir = self.temp_dir.path().join("installer");
-        fs::create_dir_all(&installer_dir)?;
+        let workdir = self.temp_dir.path().to_path_buf();
+        let filesystem = self.session.filesystem();
+        
+        let installer_dir = workdir.join("installer");
+        filesystem.create_dir_all(&installer_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create mock installer jar
         let installer_jar = installer_dir.join("packwiz-installer-bootstrap.jar");
-        fs::write(&installer_jar, "mock installer jar content")?;
+        filesystem.write_file(&installer_jar, "mock installer jar content").map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         Ok(())
     }
 
     fn setup_templates(&self) -> Result<(), BuildError> {
-        let templates_dir = self.temp_dir.path().join("templates").join("client");
-        fs::create_dir_all(&templates_dir)?;
+        let workdir = self.temp_dir.path().to_path_buf();
+        let filesystem = self.session.filesystem();
+        
+        let templates_dir = workdir.join("templates").join("client");
+        filesystem.create_dir_all(&templates_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create a test template file
         let template_file = templates_dir.join("launcher.json.template");
@@ -95,18 +119,21 @@ hash = "abcd1234"
     "mcVersion": "{{MC_VERSION}}",
     "fabricVersion": "{{FABRIC_VERSION}}"
 }"#;
-        fs::write(&template_file, template_content)?;
+        filesystem.write_file(&template_file, template_content).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         Ok(())
     }
 
     fn create_mock_mrpack(&self) -> Result<(), BuildError> {
-        let dist_dir = self.temp_dir.path().join("dist");
-        fs::create_dir_all(&dist_dir)?;
+        let workdir = self.temp_dir.path().to_path_buf();
+        let filesystem = self.session.filesystem();
+        
+        let dist_dir = workdir.join("dist");
+        filesystem.create_dir_all(&dist_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create mock mrpack file
         let mrpack_file = dist_dir.join("TestPack-v1.0.0.mrpack");
-        fs::write(&mrpack_file, "mock mrpack content")?;
+        filesystem.write_file(&mrpack_file, "mock mrpack content").map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
 
         Ok(())
     }
@@ -116,10 +143,10 @@ hash = "abcd1234"
     }
 }
 
-fn create_test_orchestrator() -> (TempDir, BuildOrchestrator) {
+fn create_test_orchestrator() -> (TempDir, MockCommandSession) {
     let temp_dir = TempDir::new().unwrap();
-    let orchestrator = BuildOrchestrator::new(temp_dir.path().to_path_buf());
-    (temp_dir, orchestrator)
+    let session = MockCommandSession::new();
+    (temp_dir, session)
 }
 
 #[test]
@@ -148,7 +175,8 @@ fn test_build_registry() {
 
 #[test]
 fn test_prepare_build_environment() {
-    let (_temp, orchestrator) = create_test_orchestrator();
+    let (temp_dir, session) = create_test_orchestrator();
+    let orchestrator = BuildOrchestrator::new(&session).expect("Failed to create orchestrator");
 
     // Should fail without pack directory
     let result = orchestrator.prepare_build_environment();
@@ -160,18 +188,13 @@ fn test_prepare_build_environment() {
         _ => panic!("Expected ConfigError"),
     }
 
-    // Create pack directory
-    std::fs::create_dir_all(orchestrator.workdir.join("pack")).unwrap();
+    // Create pack directory through the session filesystem
+    session.filesystem().create_dir_all(&orchestrator.workdir.join("pack")).unwrap();
 
-    // Should fail because packwiz is not available in test environment
+    // Should succeed now that pack directory exists
+    // (tool validation is handled by ProcessProvider, not BuildOrchestrator)
     let result = orchestrator.prepare_build_environment();
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        BuildError::MissingTool { tool } => {
-            assert!(tool.contains("packwiz"));
-        }
-        _ => panic!("Expected MissingTool error"),
-    }
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -179,7 +202,7 @@ fn test_load_pack_info() {
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
 
-    let mut orchestrator = mock.orchestrator;
+    let mut orchestrator = mock.orchestrator();
     let pack_info = orchestrator.load_pack_info().unwrap();
 
     assert_eq!(pack_info.name, "TestPack");
@@ -191,7 +214,8 @@ fn test_load_pack_info() {
 
 #[test]
 fn test_load_pack_info_missing_file() {
-    let (_temp, mut orchestrator) = create_test_orchestrator();
+    let (temp_dir, session) = create_test_orchestrator();
+    let mut orchestrator = BuildOrchestrator::new(&session).expect("Failed to create orchestrator");
     
     let result = orchestrator.load_pack_info();
     assert!(result.is_err());
@@ -208,12 +232,14 @@ fn test_load_pack_info_invalid_toml() {
     let mock = MockBuildOrchestrator::new();
     
     // Create pack directory with invalid TOML
-    let pack_dir = mock.workdir().join("pack");
-    fs::create_dir_all(&pack_dir).unwrap();
+    let workdir = mock.workdir().to_path_buf();
+    let filesystem = mock.session.filesystem();
+    let pack_dir = workdir.join("pack");
+    filesystem.create_dir_all(&pack_dir).unwrap();
     let pack_toml = pack_dir.join("pack.toml");
-    fs::write(&pack_toml, "invalid toml content [ unclosed bracket").unwrap();
+    filesystem.write_file(&pack_toml, "invalid toml content [ unclosed bracket").unwrap();
 
-    let mut orchestrator = mock.orchestrator;
+    let mut orchestrator = mock.orchestrator();
     let result = orchestrator.load_pack_info();
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -229,7 +255,7 @@ fn test_load_pack_info_caching() {
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
 
-    let mut orchestrator = mock.orchestrator;
+    let mut orchestrator = mock.orchestrator();
     
     // First call should load from file
     let pack_info1 = orchestrator.load_pack_info().unwrap();
@@ -252,11 +278,12 @@ fn test_process_build_templates() {
     mock.setup_templates().unwrap();
 
     let workdir = mock.workdir().to_path_buf();
-    let mut orchestrator = mock.orchestrator;
+    let mut orchestrator = mock.orchestrator();
     
-    // Create target directory
+    // Create target directory through the session filesystem
+    let filesystem = mock.session.filesystem();
     let target_dir = workdir.join("test-target");
-    fs::create_dir_all(&target_dir).unwrap();
+    filesystem.create_dir_all(&target_dir).unwrap();
 
     // Process templates
     let result = orchestrator.process_build_templates("templates/client", &target_dir);
@@ -264,9 +291,9 @@ fn test_process_build_templates() {
 
     // Check that template was processed
     let output_file = target_dir.join("launcher.json");
-    assert!(output_file.exists());
+    assert!(filesystem.exists(&output_file));
     
-    let content = fs::read_to_string(&output_file).unwrap();
+    let content = filesystem.read_to_string(&output_file).unwrap();
     assert!(content.contains("\"name\": \"TestPack\""));
     assert!(content.contains("\"version\": \"1.0.0\""));
     assert!(content.contains("\"author\": \"TestAuthor\""));
@@ -280,10 +307,11 @@ fn test_process_build_templates_missing_directory() {
     mock.setup_basic_pack_structure().unwrap();
 
     let workdir = mock.workdir().to_path_buf();
-    let mut orchestrator = mock.orchestrator;
+    let mut orchestrator = mock.orchestrator();
     
+    let filesystem = mock.session.filesystem();
     let target_dir = workdir.join("test-target");
-    fs::create_dir_all(&target_dir).unwrap();
+    filesystem.create_dir_all(&target_dir).unwrap();
 
     // Process templates from non-existent directory (should not error)
     let result = orchestrator.process_build_templates("templates/nonexistent", &target_dir);
@@ -296,17 +324,18 @@ fn test_copy_dir_contents() {
     mock.setup_basic_pack_structure().unwrap();
 
     let workdir = mock.workdir().to_path_buf();
-    let orchestrator = mock.orchestrator;
+    let orchestrator = mock.orchestrator();
     
-    // Create source directory with content
+    // Create source directory with content through the session filesystem
+    let filesystem = mock.session.filesystem();
     let src_dir = workdir.join("test-src");
-    fs::create_dir_all(&src_dir).unwrap();
-    fs::write(src_dir.join("file1.txt"), "content1").unwrap();
-    fs::write(src_dir.join("file2.txt"), "content2").unwrap();
+    filesystem.create_dir_all(&src_dir).unwrap();
+    filesystem.write_file(&src_dir.join("file1.txt"), "content1").unwrap();
+    filesystem.write_file(&src_dir.join("file2.txt"), "content2").unwrap();
     
     let sub_dir = src_dir.join("subdir");
-    fs::create_dir_all(&sub_dir).unwrap();
-    fs::write(sub_dir.join("file3.txt"), "content3").unwrap();
+    filesystem.create_dir_all(&sub_dir).unwrap();
+    filesystem.write_file(&sub_dir.join("file3.txt"), "content3").unwrap();
 
     // Copy to destination
     let dst_dir = workdir.join("test-dst");
@@ -314,11 +343,11 @@ fn test_copy_dir_contents() {
     assert!(result.is_ok());
 
     // Verify files were copied
-    assert!(dst_dir.join("file1.txt").exists());
-    assert!(dst_dir.join("file2.txt").exists());
-    assert!(dst_dir.join("subdir").join("file3.txt").exists());
+    assert!(filesystem.exists(&dst_dir.join("file1.txt")));
+    assert!(filesystem.exists(&dst_dir.join("file2.txt")));
+    assert!(filesystem.exists(&dst_dir.join("subdir").join("file3.txt")));
     
-    let content1 = fs::read_to_string(dst_dir.join("file1.txt")).unwrap();
+    let content1 = filesystem.read_to_string(&dst_dir.join("file1.txt")).unwrap();
     assert_eq!(content1, "content1");
 }
 
@@ -326,12 +355,13 @@ fn test_copy_dir_contents() {
 fn test_create_artifact() {
     let mock = MockBuildOrchestrator::new();
     let workdir = mock.workdir().to_path_buf();
-    let orchestrator = mock.orchestrator;
+    let orchestrator = mock.orchestrator();
     
-    // Create test file
+    // Create test file through the session filesystem
+    let filesystem = mock.session.filesystem();
     let test_file = workdir.join("test.txt");
     let content = "test content";
-    fs::write(&test_file, content).unwrap();
+    filesystem.write_file(&test_file, content).unwrap();
 
     let artifact = orchestrator.create_artifact(&test_file).unwrap();
     assert_eq!(artifact.name, "test.txt");
@@ -345,29 +375,30 @@ fn test_clean_target() {
     mock.setup_basic_pack_structure().unwrap();
     
     let workdir = mock.workdir().to_path_buf();
-    let mut orchestrator = mock.orchestrator;
+    let mut orchestrator = mock.orchestrator();
     
     // Load pack info to enable zip file cleaning
     orchestrator.load_pack_info().unwrap();
     
-    // Create target directory with files
+    // Create target directory with files through the session filesystem
+    let filesystem = mock.session.filesystem();
     let target_dir = workdir.join("dist").join("client");
-    fs::create_dir_all(&target_dir).unwrap();
-    fs::write(target_dir.join("test.txt"), "content").unwrap();
-    fs::write(target_dir.join(".gitkeep"), "").unwrap();
+    filesystem.create_dir_all(&target_dir).unwrap();
+    filesystem.write_file(&target_dir.join("test.txt"), "content").unwrap();
+    filesystem.write_file(&target_dir.join(".gitkeep"), "").unwrap();
     
     // Create zip file
     let zip_file = workdir.join("dist").join("TestPack-v1.0.0-client.zip");
-    fs::write(&zip_file, "mock zip content").unwrap();
+    filesystem.write_file(&zip_file, "mock zip content").unwrap();
 
     // Clean target
     let result = orchestrator.clean_target(BuildTarget::Client);
     assert!(result.is_ok());
     
     // Verify files were cleaned but .gitkeep preserved
-    assert!(!target_dir.join("test.txt").exists());
-    assert!(target_dir.join(".gitkeep").exists());
-    assert!(!zip_file.exists());
+    assert!(!filesystem.exists(&target_dir.join("test.txt")));
+    assert!(filesystem.exists(&target_dir.join(".gitkeep")));
+    assert!(!filesystem.exists(&zip_file));
 }
 
 // Note: The following tests would require mocking external commands (packwiz, zip, unzip)

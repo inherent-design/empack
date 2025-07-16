@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::path::PathBuf;
 
 /// Project types for empack dependency specifications
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -68,6 +69,10 @@ pub enum ModpackState {
     Configured,
     /// Built artifacts exist in .empack/dist/
     Built,
+    /// Currently building
+    Building,
+    /// Currently cleaning
+    Cleaning,
 }
 
 impl fmt::Display for ModpackState {
@@ -76,29 +81,35 @@ impl fmt::Display for ModpackState {
             ModpackState::Uninitialized => write!(f, "uninitialized"),
             ModpackState::Configured => write!(f, "configured"),
             ModpackState::Built => write!(f, "built"),
+            ModpackState::Building => write!(f, "building"),
+            ModpackState::Cleaning => write!(f, "cleaning"),
         }
     }
 }
 
 /// State transition operations
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum StateTransition {
+#[derive(Debug)]
+pub enum StateTransition<'a> {
     /// Initialize: Uninitialized -> Configured
     Initialize,
     /// Sync: Configured -> Configured (reconcile configs)
     Synchronize,
     /// Build: Configured -> Built
-    Build(Vec<BuildTarget>),
+    Build(crate::empack::builds::BuildOrchestrator<'a>, Vec<BuildTarget>),
     /// Clean: Built -> Configured
     Clean,
+    /// Begin building: Configured -> Building
+    Building,
+    /// Begin cleaning: Built -> Cleaning
+    Cleaning,
 }
 
-impl fmt::Display for StateTransition {
+impl<'a> fmt::Display for StateTransition<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StateTransition::Initialize => write!(f, "initialize"),
             StateTransition::Synchronize => write!(f, "synchronize"),
-            StateTransition::Build(targets) => {
+            StateTransition::Build(_, targets) => {
                 write!(
                     f,
                     "build [{}]",
@@ -110,6 +121,8 @@ impl fmt::Display for StateTransition {
                 )
             }
             StateTransition::Clean => write!(f, "clean"),
+            StateTransition::Building => write!(f, "building"),
+            StateTransition::Cleaning => write!(f, "cleaning"),
         }
     }
 }

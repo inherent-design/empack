@@ -7,7 +7,7 @@ use crate::application::{Commands, CliConfig};
 use crate::application::session::{CommandSession, Session};
 use crate::platform::{GoCapabilities, ArchiverCapabilities};
 use crate::primitives::{ModpackState, StateTransition, ProjectType, BuildTarget};
-use crate::empack::state::StateError;
+use crate::empack::state::{StateError, ModpackStateManager};
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectResolver, Platform};
 use crate::empack::parsing::ModLoader;
@@ -125,8 +125,7 @@ async fn handle_init(
     name: Option<String>,
     force: bool,
 ) -> Result<()> {
-    let workdir = session.filesystem().current_dir()?;
-    let manager = session.filesystem().state_manager(workdir.clone());
+    let manager = session.state();
 
     // Check if already initialized
     let current_state = manager.discover_state().map_err(StateError::from)?;
@@ -143,7 +142,7 @@ async fn handle_init(
     }
 
     // Execute initialization
-    let result = manager.execute_transition(StateTransition::Initialize)
+    let result = manager.execute_transition(StateTransition::Initialize).await
         .context("Failed to initialize modpack project")?;
 
     match result {
@@ -177,8 +176,7 @@ async fn handle_add(
         return Ok(());
     }
 
-    let workdir = session.filesystem().current_dir()?;
-    let manager = session.filesystem().state_manager(workdir.clone());
+    let manager = session.state();
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(|e| anyhow::anyhow!("State error: {:?}", e))?;
@@ -189,7 +187,8 @@ async fn handle_add(
     }
 
     // Create config manager
-    let config_manager = session.filesystem().config_manager(workdir);
+    let workdir = session.filesystem().current_dir()?;
+    let config_manager = session.filesystem().config_manager(workdir.clone());
 
     // Try to load existing project plan to get context
     let project_plan = match config_manager.create_project_plan() {
@@ -234,15 +233,24 @@ async fn handle_add(
                 // Execute appropriate packwiz command
                 let packwiz_result = match project_info.platform {
                     crate::empack::search::Platform::Modrinth => {
-                        session.process().execute_packwiz(&["mr", "add", &project_info.project_id])
+                        session.process().execute("packwiz", &["mr", "add", &project_info.project_id], &workdir)
                     }
                     crate::empack::search::Platform::CurseForge => {
-                        session.process().execute_packwiz(&["cf", "add", &project_info.project_id])
+                        session.process().execute("packwiz", &["cf", "add", &project_info.project_id], &workdir)
                     }
                     crate::empack::search::Platform::Forge => {
-                        session.process().execute_packwiz(&["cf", "add", &project_info.project_id])
+                        session.process().execute("packwiz", &["cf", "add", &project_info.project_id], &workdir)
                     }
                 };
+                
+                // Check if command was successful
+                let packwiz_result = packwiz_result.and_then(|output| {
+                    if output.success {
+                        Ok(())
+                    } else {
+                        Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                    }
+                });
 
                 match packwiz_result {
                     Ok(_) => {
@@ -292,8 +300,7 @@ async fn handle_remove(
         return Ok(());
     }
 
-    let workdir = session.filesystem().current_dir()?;
-    let manager = session.filesystem().state_manager(workdir.clone());
+    let manager = session.state();
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(StateError::from)?;
@@ -305,6 +312,7 @@ async fn handle_remove(
 
     session.display().status().section(&format!("➖ Removing {} mod(s) from modpack", mods.len()));
 
+    let workdir = session.filesystem().current_dir()?;
     let mut removed_mods = Vec::new();
     let mut failed_mods = Vec::new();
 
@@ -317,7 +325,16 @@ async fn handle_remove(
             packwiz_args.push("--remove-deps");
         }
 
-        match session.process().execute_packwiz(&packwiz_args) {
+        let result = session.process().execute("packwiz", &packwiz_args, &workdir)
+            .and_then(|output| {
+                if output.success {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                }
+            });
+
+        match result {
             Ok(_) => {
                 session.display().status().success("Successfully removed from pack", "");
                 removed_mods.push(mod_name);
@@ -353,8 +370,7 @@ async fn handle_build(
     targets: Vec<String>,
     clean: bool,
 ) -> Result<()> {
-    let workdir = session.filesystem().current_dir()?;
-    let manager = session.filesystem().state_manager(workdir);
+    let manager = session.state();
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(StateError::from)?;
@@ -367,7 +383,7 @@ async fn handle_build(
     // Clean if requested
     if clean {
         session.display().status().checking("Cleaning build artifacts");
-        manager.execute_transition(StateTransition::Clean)
+        manager.execute_transition(StateTransition::Clean).await
             .context("Failed to clean build artifacts")?;
     }
 
@@ -376,16 +392,53 @@ async fn handle_build(
     
     session.display().status().section(&format!("🏗️  Building targets: {:?}", build_targets));
 
-    let result = manager.execute_transition(StateTransition::Build(build_targets))
-        .context("Failed to build modpack")?;
+    // Ensure packwiz-installer-bootstrap.jar is available for builds that need it
+    let bootstrap_jar_path = session.filesystem().get_bootstrap_jar_cache_path()?;
+    let needs_bootstrap_jar = build_targets.iter().any(|target| {
+        matches!(target, BuildTarget::Client | BuildTarget::Server | BuildTarget::ClientFull | BuildTarget::ServerFull)
+    });
 
-    match result {
-        ModpackState::Built => {
-            session.display().status().complete("Build completed successfully");
-            session.display().status().subtle("   📦 Check dist/ directory for build artifacts");
-        },
-        _ => return Err(anyhow::anyhow!("Unexpected state after build: {:?}", result)),
+    if needs_bootstrap_jar && !session.filesystem().exists(&bootstrap_jar_path) {
+        session.display().status().info("Downloading required component: packwiz-installer-bootstrap.jar...");
+
+        // Create cache directory if it doesn't exist
+        if let Some(parent) = bootstrap_jar_path.parent() {
+            session.filesystem().create_dir_all(parent)?;
+        }
+
+        // Use the NetworkProvider to download the file
+        let client = session.network().http_client()?;
+        let url = "https://github.com/packwiz/packwiz-installer-bootstrap/releases/latest/download/packwiz-installer-bootstrap.jar";
+        let response = client.get(url).send().await
+            .context("Failed to download packwiz-installer-bootstrap.jar")?;
+        
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to download packwiz-installer-bootstrap.jar: HTTP {}",
+                response.status()
+            ));
+        }
+
+        let bytes = response.bytes().await
+            .context("Failed to read response bytes")?;
+
+        // Use the FileSystemProvider to save the file
+        std::fs::write(&bootstrap_jar_path, bytes)
+            .context("Failed to write JAR file to cache")?;
+
+        session.display().status().complete("Downloaded packwiz-installer-bootstrap.jar");
     }
+
+    // Create BuildOrchestrator with session
+    let mut build_orchestrator = crate::empack::builds::BuildOrchestrator::new(session)
+        .context("Failed to create build orchestrator")?;
+    
+    // Execute build pipeline with state management
+    let results = build_orchestrator.execute_build_pipeline(&build_targets).await
+        .context("Failed to execute build pipeline")?;
+
+    session.display().status().complete("Build completed successfully");
+    session.display().status().subtle("   📦 Check dist/ directory for build artifacts");
 
     Ok(())
 }
@@ -394,15 +447,14 @@ async fn handle_clean(
     session: &dyn Session,
     targets: Vec<String>,
 ) -> Result<()> {
-    let workdir = session.filesystem().current_dir()?;
-    let manager = session.filesystem().state_manager(workdir);
+    let manager = session.state();
 
     if targets.is_empty() || targets.contains(&"builds".to_string()) || targets.contains(&"all".to_string()) {
         session.display().status().checking("Cleaning build artifacts");
         
         let current_state = manager.discover_state().map_err(StateError::from)?;
         if current_state == ModpackState::Built {
-            manager.execute_transition(StateTransition::Clean)
+            manager.execute_transition(StateTransition::Clean).await
                 .context("Failed to clean build artifacts")?;
             session.display().status().complete("Build artifacts cleaned");
         } else {
@@ -422,8 +474,7 @@ async fn handle_sync(
     session: &dyn Session,
     dry_run: bool,
 ) -> Result<()> {
-    let workdir = session.filesystem().current_dir()?;
-    let manager = session.filesystem().state_manager(workdir.clone());
+    let manager = session.state();
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(StateError::from)?;
@@ -434,7 +485,8 @@ async fn handle_sync(
     }
 
     // Create config manager
-    let config_manager = session.filesystem().config_manager(workdir);
+    let workdir = session.filesystem().current_dir()?;
+    let config_manager = session.filesystem().config_manager(workdir.clone());
 
     // Load project plan from empack.yml
     let project_plan = config_manager.create_project_plan()
@@ -582,7 +634,15 @@ async fn handle_sync(
         match action {
             SyncAction::Add { key, title, command } => {
                 session.display().status().checking(&format!("Adding: {}", title));
-                match session.process().execute_packwiz(&command.iter().map(|s| s.as_str()).collect::<Vec<_>>()) {
+                let result = session.process().execute("packwiz", &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(), &workdir)
+                    .and_then(|output| {
+                        if output.success {
+                            Ok(())
+                        } else {
+                            Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                        }
+                    });
+                match result {
                     Ok(_) => {
                         session.display().status().success("Added", "successfully");
                         success_count += 1;
@@ -595,7 +655,15 @@ async fn handle_sync(
             }
             SyncAction::Remove { key, title: _ } => {
                 session.display().status().checking(&format!("Removing: {}", key));
-                match session.process().execute_packwiz(&["remove", &key]) {
+                let result = session.process().execute("packwiz", &["remove", &key], &workdir)
+                    .and_then(|output| {
+                        if output.success {
+                            Ok(())
+                        } else {
+                            Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                        }
+                    });
+                match result {
                     Ok(_) => {
                         session.display().status().success("Removed", "successfully");
                         success_count += 1;
