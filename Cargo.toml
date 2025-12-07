@@ -9,7 +9,7 @@ members = [
 [workspace.package]
 authors = ["mannie.exe <mannie@inherent.design>"]
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/inherent-design/empack"
 version = "0.0.0-alpha.1"
 
@@ -19,7 +19,7 @@ empack-lib = { path = "crates/empack-lib" }
 # External dependencies (versions shared across workspace)
 anyhow = "1.0.98"
 clap = { version = "4.5.40", features = ["derive", "env", "unicode", "wrap_help"] }
-dialoguer = "0.11.0"
+dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 dirs = "5.0.1"
 dotenvy = "0.15.7"
 envy = "0.4.2"
