@@ -5,7 +5,7 @@ pub mod resolved_project;
 pub mod search;
 pub mod search_intent;
 pub mod state;
-
+pub mod versions;
 
 // Re-export main types for convenience
 pub use builds::{BuildOrchestrator, BuildResult, PackInfo};

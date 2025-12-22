@@ -674,5 +674,3 @@ fn detect_memory_info_windows() -> Result<(u64, u64), PlatformError> {
 mod tests {
     include!("mod.test.rs");
 }
-
-

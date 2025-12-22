@@ -16,4 +16,3 @@ pub mod session_mocks;
 pub use cli::{Cli, CliConfig, Commands};
 pub use commands::{execute_command, execute_command_with_session};
 pub use config::AppConfig;
-pub use loader::*;

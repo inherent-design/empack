@@ -4,26 +4,26 @@
 //! adapt to terminal capabilities. Separates concerns between logging (tracing)
 //! and user interaction (status, prompts, progress).
 
-use crate::terminal::TerminalCapabilities;
 use crate::primitives::ConfigError;
+use crate::terminal::TerminalCapabilities;
 use std::sync::OnceLock;
 
-pub mod styling;
-pub mod status;
 pub mod interactive;
-pub mod progress;
-pub mod structured;
-pub mod providers;
 pub mod live;
 pub mod mock;
+pub mod progress;
+pub mod providers;
+pub mod status;
+pub mod structured;
+pub mod styling;
 
 // Re-export provider traits and implementations for easy access
-pub use providers::{
-    DisplayProvider, StatusProvider, ProgressProvider, PromptProvider, StructuredProvider,
-    ProgressTracker, MultiProgressProvider, OperationSummary, DisplayProviderExt,
-};
 pub use live::LiveDisplayProvider;
-pub use mock::{MockDisplayProvider, DisplayCall, ResponseValue};
+pub use mock::{DisplayCall, MockDisplayProvider, ResponseValue};
+pub use providers::{
+    DisplayProvider, DisplayProviderExt, MultiProgressProvider, OperationSummary, ProgressProvider,
+    ProgressTracker, PromptProvider, StatusProvider, StructuredProvider,
+};
 
 // Global display manager - initialized once with terminal capabilities
 static GLOBAL_DISPLAY: OnceLock<Display> = OnceLock::new();

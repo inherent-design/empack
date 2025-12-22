@@ -3,7 +3,6 @@
 //! Provides composable APIs for detecting available programs and their capabilities
 //! across Windows and Unix systems.
 
-use std::ffi::OsStr;
 use std::process::Command;
 
 /// Program detection result
@@ -27,7 +26,7 @@ impl ProgramFinder {
     pub fn find(program: &str) -> ProgramInfo {
         let path = Self::find_program_path(program);
         let available = path.is_some();
-        
+
         ProgramInfo {
             name: program.to_string(),
             available,
@@ -39,11 +38,11 @@ impl ProgramFinder {
     /// Check if a program exists and attempt to get version
     pub fn find_with_version(program: &str, version_args: &[&str]) -> ProgramInfo {
         let mut info = Self::find(program);
-        
+
         if info.available {
             info.version = Self::get_program_version(program, version_args);
         }
-        
+
         info
     }
 
@@ -65,7 +64,7 @@ impl ProgramFinder {
         if let Some(path) = Self::try_where_command(program) {
             return Some(path);
         }
-        
+
         // Try with .exe extension
         let exe_name = format!("{}.exe", program);
         Self::try_where_command(&exe_name)
@@ -128,7 +127,7 @@ impl ArchiverCapabilities {
     /// Detect available archive creation capabilities
     pub fn detect_creation() -> Vec<ProgramInfo> {
         let mut programs = Vec::new();
-        
+
         #[cfg(windows)]
         {
             // Check PowerShell Compress-Archive
@@ -140,24 +139,24 @@ impl ArchiverCapabilities {
                     path: Some("powershell".to_string()),
                 });
             }
-            
+
             // Check zip.exe
             programs.push(ProgramFinder::find("zip"));
         }
-        
+
         #[cfg(unix)]
         {
             programs.push(ProgramFinder::find("zip"));
             programs.push(ProgramFinder::find("tar"));
         }
-        
+
         programs
     }
 
     /// Detect available archive extraction capabilities
     pub fn detect_extraction() -> Vec<ProgramInfo> {
         let mut programs = Vec::new();
-        
+
         #[cfg(windows)]
         {
             // Check PowerShell Expand-Archive
@@ -169,24 +168,27 @@ impl ArchiverCapabilities {
                     path: Some("powershell".to_string()),
                 });
             }
-            
+
             // Check unzip.exe
             programs.push(ProgramFinder::find("unzip"));
         }
-        
+
         #[cfg(unix)]
         {
             programs.push(ProgramFinder::find("unzip"));
             programs.push(ProgramFinder::find("tar"));
         }
-        
+
         programs
     }
 
     #[cfg(windows)]
     fn has_powershell_compress() -> bool {
         Command::new("powershell")
-            .args(&["-Command", "Get-Command Compress-Archive -ErrorAction SilentlyContinue"])
+            .args(&[
+                "-Command",
+                "Get-Command Compress-Archive -ErrorAction SilentlyContinue",
+            ])
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)
@@ -195,7 +197,10 @@ impl ArchiverCapabilities {
     #[cfg(windows)]
     fn has_powershell_expand() -> bool {
         Command::new("powershell")
-            .args(&["-Command", "Get-Command Expand-Archive -ErrorAction SilentlyContinue"])
+            .args(&[
+                "-Command",
+                "Get-Command Expand-Archive -ErrorAction SilentlyContinue",
+            ])
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)
@@ -209,16 +214,16 @@ impl JavaCapabilities {
     /// Detect Java runtime information
     pub fn detect() -> Vec<ProgramInfo> {
         let mut javas = Vec::new();
-        
+
         // Check standard java command
         let java_info = ProgramFinder::find_with_version("java", &["--version"]);
         javas.push(java_info);
-        
+
         // Check javac if java is available
         if javas[0].available {
             javas.push(ProgramFinder::find_with_version("javac", &["--version"]));
         }
-        
+
         javas
     }
 }
@@ -262,17 +267,17 @@ impl ToolchainSummary {
     pub fn can_create_archives(&self) -> bool {
         self.archivers_create.iter().any(|p| p.available)
     }
-    
+
     /// Check if basic extraction is available
     pub fn can_extract_archives(&self) -> bool {
         self.archivers_extract.iter().any(|p| p.available)
     }
-    
+
     /// Check if Go toolchain is available
     pub fn has_go(&self) -> bool {
         self.go.available
     }
-    
+
     /// Check if Java runtime is available
     pub fn has_java(&self) -> bool {
         self.java.iter().any(|p| p.available)

@@ -10,6 +10,7 @@ version.workspace = true
 anyhow.workspace = true
 empack-lib = { version = "0.0.0-alpha.1", path = "../empack-lib", features = ["test-utils"] }
 indicatif.workspace = true
+reqwest.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

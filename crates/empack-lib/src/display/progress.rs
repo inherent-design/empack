@@ -4,7 +4,7 @@
 //! terminal-capability-aware styling.
 
 use super::styling::StyleManager;
-use indicatif::{ProgressBar, ProgressStyle, MultiProgress, ProgressDrawTarget};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::time::Duration;
 
 /// Progress display manager for long-running operations
@@ -18,60 +18,60 @@ impl<'a> ProgressDisplay<'a> {
     }
 
     /// Create a progress bar for operations with known total
-    /// 
+    ///
     /// Example:
     /// ```
     /// let progress = Display::progress()
     ///     .message("Downloading mods")
     ///     .total(25);
-    /// 
+    ///
     /// for i in 0..25 {
     ///     progress.set_position(i);
     ///     // ... download mod
     /// }
-    /// 
+    ///
     /// progress.finish("Downloaded 25 mods");
     /// ```
     pub fn bar(&self, total: u64) -> ProgressTracker {
         let pb = ProgressBar::new(total);
-        
+
         // Use terminal-appropriate progress style
         let style = if self.styling.primitives().checkmark == "✓" {
             // Unicode-capable terminal
             ProgressStyle::with_template(
-                "{spinner:.green} {msg} [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})"
-            ).unwrap()
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-                .progress_chars("█▉▊▋▌▍▎▏  ")
+                "{spinner:.green} {msg} [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
+            )
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+            .progress_chars("█▉▊▋▌▍▎▏  ")
         } else {
             // ASCII-only terminal
-            ProgressStyle::with_template(
-                "{spinner} {msg} [{wide_bar}] {pos}/{len} ({eta})"
-            ).unwrap()
+            ProgressStyle::with_template("{spinner} {msg} [{wide_bar}] {pos}/{len} ({eta})")
+                .unwrap()
                 .tick_strings(&["-", "\\", "|", "/"])
                 .progress_chars("##-")
         };
-        
+
         pb.set_style(style);
         pb.enable_steady_tick(Duration::from_millis(100));
-        
+
         ProgressTracker::new(pb, self.styling)
     }
 
     /// Create a spinner for operations with unknown duration
-    /// 
+    ///
     /// Example:
     /// ```
     /// let spinner = Display::progress()
     ///     .spinner("Resolving dependencies");
-    /// 
+    ///
     /// // ... long operation
-    /// 
+    ///
     /// spinner.finish("Dependencies resolved");
     /// ```
     pub fn spinner(&self, message: &str) -> ProgressTracker {
         let pb = ProgressBar::new_spinner();
-        
+
         let style = if self.styling.primitives().checkmark == "✓" {
             // Unicode spinner
             ProgressStyle::with_template("{spinner:.green} {msg}")
@@ -83,11 +83,11 @@ impl<'a> ProgressDisplay<'a> {
                 .unwrap()
                 .tick_strings(&["-", "\\", "|", "/"])
         };
-        
+
         pb.set_style(style);
         pb.set_message(message.to_string());
         pb.enable_steady_tick(Duration::from_millis(100));
-        
+
         ProgressTracker::new(pb, self.styling)
     }
 
@@ -136,16 +136,14 @@ impl<'a> ProgressTracker<'a> {
 
     /// Finish with success message
     pub fn finish(&self, message: &str) {
-        self.bar.finish_with_message(
-            self.styling.format_success(message)
-        );
+        self.bar
+            .finish_with_message(self.styling.format_success(message));
     }
 
     /// Abandon with error message
     pub fn abandon(&self, message: &str) {
-        self.bar.abandon_with_message(
-            self.styling.format_error(message)
-        );
+        self.bar
+            .abandon_with_message(self.styling.format_error(message));
     }
 
     /// Finish and clear the progress bar
@@ -170,7 +168,7 @@ impl<'a> MultiProgressTracker<'a> {
         let multi = MultiProgress::new();
         // Hide by default, shown when bars are added
         multi.set_draw_target(ProgressDrawTarget::hidden());
-        
+
         Self { multi, styling }
     }
 
@@ -182,25 +180,25 @@ impl<'a> MultiProgressTracker<'a> {
         }
 
         let pb = self.multi.add(ProgressBar::new(total));
-        
+
         let style = if self.styling.primitives().checkmark == "✓" {
             ProgressStyle::with_template(
-                "{spinner:.green} {msg} [{wide_bar:.cyan/blue}] {pos}/{len}"
-            ).unwrap()
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-                .progress_chars("█▉▊▋▌▍▎▏  ")
+                "{spinner:.green} {msg} [{wide_bar:.cyan/blue}] {pos}/{len}",
+            )
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+            .progress_chars("█▉▊▋▌▍▎▏  ")
         } else {
-            ProgressStyle::with_template(
-                "{spinner} {msg} [{wide_bar}] {pos}/{len}"
-            ).unwrap()
+            ProgressStyle::with_template("{spinner} {msg} [{wide_bar}] {pos}/{len}")
+                .unwrap()
                 .tick_strings(&["-", "\\", "|", "/"])
                 .progress_chars("##-")
         };
-        
+
         pb.set_style(style);
         pb.set_message(message.to_string());
         pb.enable_steady_tick(Duration::from_millis(100));
-        
+
         ProgressTracker::new(pb, self.styling)
     }
 
@@ -211,7 +209,7 @@ impl<'a> MultiProgressTracker<'a> {
         }
 
         let pb = self.multi.add(ProgressBar::new_spinner());
-        
+
         let style = if self.styling.primitives().checkmark == "✓" {
             ProgressStyle::with_template("{spinner:.green} {msg}")
                 .unwrap()
@@ -221,11 +219,11 @@ impl<'a> MultiProgressTracker<'a> {
                 .unwrap()
                 .tick_strings(&["-", "\\", "|", "/"])
         };
-        
+
         pb.set_style(style);
         pb.set_message(message.to_string());
         pb.enable_steady_tick(Duration::from_millis(100));
-        
+
         ProgressTracker::new(pb, self.styling)
     }
 

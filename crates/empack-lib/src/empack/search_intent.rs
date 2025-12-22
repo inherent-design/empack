@@ -94,5 +94,3 @@ pub struct ShaderSearchIntent {
 mod tests {
     include!("search_intent.test.rs");
 }
-
-

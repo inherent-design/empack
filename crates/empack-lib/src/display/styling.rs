@@ -3,8 +3,10 @@
 //! Provides semantic color schemes and symbols that leverage the existing
 //! terminal primitives and capability detection.
 
+use crate::primitives::terminal::{
+    TerminalPrimitives, from_terminal_capabilities, init_primitives, primitives,
+};
 use crate::terminal::TerminalCapabilities;
-use crate::primitives::terminal::{TerminalPrimitives, from_terminal_capabilities, init_primitives, primitives};
 
 /// Style manager that uses empack's terminal primitives
 pub struct StyleManager {
@@ -16,7 +18,7 @@ impl StyleManager {
         // Convert detailed capabilities to basic capabilities and initialize primitives
         let basic_caps = from_terminal_capabilities(capabilities);
         init_primitives(&basic_caps);
-        
+
         Self {
             primitives: primitives(),
         }
@@ -24,7 +26,10 @@ impl StyleManager {
 
     /// Style text with semantic success intent
     pub fn style_success(&self, text: &str) -> String {
-        format!("{}{}{}", self.primitives.success, text, self.primitives.reset)
+        format!(
+            "{}{}{}",
+            self.primitives.success, text, self.primitives.reset
+        )
     }
 
     /// Style text with semantic error intent
@@ -34,7 +39,10 @@ impl StyleManager {
 
     /// Style text with semantic warning intent
     pub fn style_warning(&self, text: &str) -> String {
-        format!("{}{}{}", self.primitives.warning, text, self.primitives.reset)
+        format!(
+            "{}{}{}",
+            self.primitives.warning, text, self.primitives.reset
+        )
     }
 
     /// Style text with semantic info intent
@@ -59,42 +67,39 @@ impl StyleManager {
 
     /// Format success message with symbol and styling
     pub fn format_success(&self, message: &str) -> String {
-        format!("{} {}", 
-            self.style_success(self.primitives.checkmark), 
+        format!(
+            "{} {}",
+            self.style_success(self.primitives.checkmark),
             message
         )
     }
 
     /// Format error message with symbol and styling
     pub fn format_error(&self, message: &str) -> String {
-        format!("{} {}", 
-            self.style_error(self.primitives.cross), 
-            message
-        )
+        format!("{} {}", self.style_error(self.primitives.cross), message)
     }
 
     /// Format warning message with symbol and styling
     pub fn format_warning(&self, message: &str) -> String {
-        format!("{} {}", 
-            self.style_warning(self.primitives.warning_symbol), 
+        format!(
+            "{} {}",
+            self.style_warning(self.primitives.warning_symbol),
             message
         )
     }
 
     /// Format info message with symbol and styling
     pub fn format_info(&self, message: &str) -> String {
-        format!("{} {}", 
-            self.style_info(self.primitives.info_symbol), 
+        format!(
+            "{} {}",
+            self.style_info(self.primitives.info_symbol),
             message
         )
     }
 
     /// Format working/progress message (using info color with arrow)
     pub fn format_working(&self, message: &str) -> String {
-        format!("{} {}", 
-            self.style_info(self.primitives.arrow), 
-            message
-        )
+        format!("{} {}", self.style_info(self.primitives.arrow), message)
     }
 }
 

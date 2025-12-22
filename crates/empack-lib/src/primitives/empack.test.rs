@@ -64,7 +64,16 @@ fn test_transition_display() {
     // Note: We can't easily test the Build transition display in isolation
     // because it requires a BuildOrchestrator instance, which needs providers.
     // The Display implementation is tested through integration tests.
-    assert_eq!(StateTransition::Initialize.to_string(), "initialize");
+    assert_eq!(StateTransition::Initialize(
+        crate::primitives::InitializationConfig {
+            name: "Test Pack",
+            author: "Test Author",
+            version: "1.0.0",
+            modloader: "fabric",
+            mc_version: "1.20.1",
+            loader_version: "0.14.21",
+        }
+    ).to_string(), "initialize");
     assert_eq!(StateTransition::Synchronize.to_string(), "synchronize");
     assert_eq!(StateTransition::Clean.to_string(), "clean");
 }

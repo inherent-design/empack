@@ -163,7 +163,7 @@ impl ProjectResolver {
             curseforge_base_url: "https://api.curseforge.com".to_string(),
         }
     }
-    
+
     /// Create new resolver with custom base URLs (for testing)
     #[cfg(feature = "test-utils")]
     pub fn new_with_base_urls(
@@ -175,8 +175,10 @@ impl ProjectResolver {
         Self {
             client,
             curseforge_api_key,
-            modrinth_base_url: modrinth_base_url.unwrap_or_else(|| "https://api.modrinth.com".to_string()),
-            curseforge_base_url: curseforge_base_url.unwrap_or_else(|| "https://api.curseforge.com".to_string()),
+            modrinth_base_url: modrinth_base_url
+                .unwrap_or_else(|| "https://api.modrinth.com".to_string()),
+            curseforge_base_url: curseforge_base_url
+                .unwrap_or_else(|| "https://api.curseforge.com".to_string()),
         }
     }
 
@@ -414,7 +416,10 @@ impl ProjectResolver {
             .collect::<Vec<_>>()
             .join("&");
 
-        let url = format!("{}/v1/mods/search?{}", self.curseforge_base_url, query_string);
+        let url = format!(
+            "{}/v1/mods/search?{}",
+            self.curseforge_base_url, query_string
+        );
 
         trace!("CurseForge search URL: {}", url);
 
@@ -491,7 +496,10 @@ impl ProjectResolver {
             .collect::<Vec<_>>()
             .join("&");
 
-        let url = format!("{}/v1/mods/search?{}", self.curseforge_base_url, query_string);
+        let url = format!(
+            "{}/v1/mods/search?{}",
+            self.curseforge_base_url, query_string
+        );
 
         trace!("Forge search URL: {}", url);
 
@@ -666,14 +674,15 @@ impl ProjectResolverTrait for ProjectResolver {
         let project_type = project_type.map(|s| s.to_string());
         let minecraft_version = minecraft_version.map(|s| s.to_string());
         let mod_loader = mod_loader.map(|s| s.to_string());
-        
+
         Box::pin(async move {
             self.resolve_project(
                 &title,
                 project_type.as_deref(),
                 minecraft_version.as_deref(),
                 mod_loader.as_deref(),
-            ).await
+            )
+            .await
         })
     }
 }
@@ -755,7 +764,10 @@ pub async fn resolve_forge_mod(
         .await?;
 
     if !response.status().is_success() {
-        error!("CurseForge API request failed (Forge mod lookup): {}", response.status());
+        error!(
+            "CurseForge API request failed (Forge mod lookup): {}",
+            response.status()
+        );
         return Err(SearchError::NetworkError {
             source: crate::networking::NetworkingError::RequestFailed {
                 source: response.error_for_status().unwrap_err(),
@@ -764,7 +776,10 @@ pub async fn resolve_forge_mod(
     }
 
     let mod_data = response.text().await?;
-    trace!("Successfully resolved Forge mod via CurseForge API: {}", project_id);
+    trace!(
+        "Successfully resolved Forge mod via CurseForge API: {}",
+        project_id
+    );
 
     Ok(mod_data)
 }
@@ -773,5 +788,3 @@ pub async fn resolve_forge_mod(
 mod tests {
     include!("search.test.rs");
 }
-
-

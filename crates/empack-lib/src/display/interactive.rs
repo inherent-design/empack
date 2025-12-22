@@ -4,10 +4,13 @@
 //! terminal-capability-aware styling.
 
 use super::styling::StyleManager;
-use crate::terminal::TerminalCapabilities;
 use crate::primitives::TerminalColorCaps;
-use dialoguer::{Confirm, Select, Input, theme::{ColorfulTheme, SimpleTheme, Theme}};
+use crate::terminal::TerminalCapabilities;
 use anyhow::Result;
+use dialoguer::{
+    Confirm, Input, Select,
+    theme::{ColorfulTheme, SimpleTheme, Theme},
+};
 use std::io;
 
 /// Interactive display manager for prompts and selections
@@ -22,7 +25,7 @@ impl<'a> InteractiveDisplay<'a> {
             TerminalColorCaps::None => {
                 // Use simple theme for no-color terminals
                 Box::new(SimpleTheme)
-            },
+            }
             _ => {
                 // Use colorful theme for color-capable terminals
                 Box::new(ColorfulTheme::default())
@@ -33,7 +36,7 @@ impl<'a> InteractiveDisplay<'a> {
     }
 
     /// Create a yes/no confirmation prompt
-    /// 
+    ///
     /// Example:
     /// ```
     /// let confirmed = Display::prompt()
@@ -46,7 +49,7 @@ impl<'a> InteractiveDisplay<'a> {
     }
 
     /// Create a selection prompt
-    /// 
+    ///
     /// Example:
     /// ```
     /// let choice = Display::prompt()
@@ -59,7 +62,7 @@ impl<'a> InteractiveDisplay<'a> {
     }
 
     /// Create a text input prompt
-    /// 
+    ///
     /// Example:
     /// ```
     /// let name = Display::prompt()
@@ -79,9 +82,8 @@ pub struct ConfirmPrompt<'a> {
 
 impl<'a> ConfirmPrompt<'a> {
     fn new(message: &str, theme: &'a dyn Theme) -> Self {
-        let confirm = Confirm::with_theme(theme)
-            .with_prompt(message);
-        
+        let confirm = Confirm::with_theme(theme).with_prompt(message);
+
         Self { confirm }
     }
 
@@ -110,10 +112,9 @@ pub struct SelectPrompt<'a> {
 
 impl<'a> SelectPrompt<'a> {
     fn new(message: &str, theme: &'a dyn Theme) -> Self {
-        let select = Select::with_theme(theme)
-            .with_prompt(message);
-        
-        Self { 
+        let select = Select::with_theme(theme).with_prompt(message);
+
+        Self {
             select,
             options: Vec::new(),
         }
@@ -158,9 +159,8 @@ pub struct InputPrompt<'a> {
 
 impl<'a> InputPrompt<'a> {
     fn new(message: &str, theme: &'a dyn Theme) -> Self {
-        let input = Input::with_theme(theme)
-            .with_prompt(message);
-        
+        let input = Input::with_theme(theme).with_prompt(message);
+
         Self { input }
     }
 
@@ -224,7 +224,12 @@ impl<'a> InteractiveDisplay<'a> {
     }
 
     /// Select with non-interactive fallback to first option
-    pub fn select_or_default(&self, message: &str, options: &[&str], default_index: usize) -> String {
+    pub fn select_or_default(
+        &self,
+        message: &str,
+        options: &[&str],
+        default_index: usize,
+    ) -> String {
         if Self::is_interactive() {
             self.select(message)
                 .options(options)

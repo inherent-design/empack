@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::path::PathBuf;
 
 /// Project types for empack dependency specifications
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -87,15 +86,29 @@ impl fmt::Display for ModpackState {
     }
 }
 
+/// Initialization parameters for packwiz init
+#[derive(Debug)]
+pub struct InitializationConfig<'a> {
+    pub name: &'a str,
+    pub author: &'a str,
+    pub version: &'a str,
+    pub modloader: &'a str,
+    pub mc_version: &'a str,
+    pub loader_version: &'a str,
+}
+
 /// State transition operations
 #[derive(Debug)]
 pub enum StateTransition<'a> {
     /// Initialize: Uninitialized -> Configured
-    Initialize,
+    Initialize(InitializationConfig<'a>),
     /// Sync: Configured -> Configured (reconcile configs)
     Synchronize,
     /// Build: Configured -> Built
-    Build(crate::empack::builds::BuildOrchestrator<'a>, Vec<BuildTarget>),
+    Build(
+        crate::empack::builds::BuildOrchestrator<'a>,
+        Vec<BuildTarget>,
+    ),
     /// Clean: Built -> Configured
     Clean,
     /// Begin building: Configured -> Building
@@ -107,7 +120,7 @@ pub enum StateTransition<'a> {
 impl<'a> fmt::Display for StateTransition<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StateTransition::Initialize => write!(f, "initialize"),
+            StateTransition::Initialize(_) => write!(f, "initialize"),
             StateTransition::Synchronize => write!(f, "synchronize"),
             StateTransition::Build(_, targets) => {
                 write!(

@@ -239,7 +239,7 @@ mod handle_remove_tests {
         
         // Verify packwiz remove command was called
         let calls = session.process_provider.get_calls();
-        assert!(session.process_provider.verify_call("packwiz", &["remove", "test-mod"], &session.filesystem_provider.current_dir));
+        assert!(session.process_provider.verify_call("packwiz", &["remove", "test-mod"], &session.filesystem_provider.current_dir.join("pack")));
     }
     
     #[tokio::test]
@@ -257,8 +257,8 @@ mod handle_remove_tests {
         
         // Verify multiple remove commands were called
         let calls = session.process_provider.get_calls();
-        assert!(session.process_provider.verify_call("packwiz", &["remove", "mod1"], &session.filesystem_provider.current_dir));
-        assert!(session.process_provider.verify_call("packwiz", &["remove", "mod2"], &session.filesystem_provider.current_dir));
+        assert!(session.process_provider.verify_call("packwiz", &["remove", "mod1"], &session.filesystem_provider.current_dir.join("pack")));
+        assert!(session.process_provider.verify_call("packwiz", &["remove", "mod2"], &session.filesystem_provider.current_dir.join("pack")));
     }
     
     #[tokio::test]
@@ -280,7 +280,7 @@ mod handle_remove_tests {
         
         // Verify packwiz remove command was called with --remove-deps flag
         let calls = session.process_provider.get_calls();
-        assert!(session.process_provider.verify_call("packwiz", &["remove", "test-mod", "--remove-deps"], &session.filesystem_provider.current_dir));
+        assert!(session.process_provider.verify_call("packwiz", &["remove", "test-mod", "--remove-deps"], &session.filesystem_provider.current_dir.join("pack")));
     }
     
     #[tokio::test]

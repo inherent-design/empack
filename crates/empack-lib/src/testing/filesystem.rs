@@ -1,5 +1,5 @@
 //! Filesystem-based integration testing utilities
-//! 
+//!
 //! Provides systematic test patterns for filesystem operations with:
 //! - Automatic temporary directory creation and cleanup
 //! - RAII-based resource management
@@ -36,14 +36,18 @@ impl TempDirFixture {
     }
 
     /// Write content to a file within the temporary directory
-    pub fn write_file(&self, file_path: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn write_file(
+        &self,
+        file_path: &str,
+        content: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let full_path = self.path().join(file_path);
-        
+
         // Ensure parent directory exists
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         fs::write(&full_path, content)?;
         Ok(())
     }

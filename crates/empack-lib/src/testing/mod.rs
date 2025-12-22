@@ -1,5 +1,5 @@
 //! Comprehensive test framework for empack
-//! 
+//!
 //! Provides systematic test architecture with:
 //! - Isolated test environments with automatic cleanup
 //! - Resource management (temp dirs, mock servers, env vars)
@@ -26,7 +26,7 @@ pub enum TestCategory {
     /// Pure unit tests - no external resources, fast execution
     Unit,
     /// Integration tests - mock servers, temp files, controlled environment
-    Integration, 
+    Integration,
     /// System tests - real external dependencies, slower execution
     System,
 }
@@ -56,7 +56,7 @@ impl TestRunner {
             start_time: std::time::Instant::now(),
         }
     }
-    
+
     pub fn finish(self, success: bool, resources_leaked: bool) -> TestResult {
         TestResult {
             category: self.category,
@@ -77,7 +77,7 @@ impl TestUtils {
         // TODO: Implement resource leak detection
         true
     }
-    
+
     /// Generate unique test identifier
     pub fn test_id() -> String {
         use std::time::{SystemTime, UNIX_EPOCH};

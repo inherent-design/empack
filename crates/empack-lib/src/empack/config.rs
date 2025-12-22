@@ -163,8 +163,14 @@ pub struct ConfigManager<'a> {
 }
 
 impl<'a> ConfigManager<'a> {
-    pub fn new(workdir: PathBuf, fs_provider: &'a dyn crate::application::session::FileSystemProvider) -> Self {
-        Self { workdir, fs_provider }
+    pub fn new(
+        workdir: PathBuf,
+        fs_provider: &'a dyn crate::application::session::FileSystemProvider,
+    ) -> Self {
+        Self {
+            workdir,
+            fs_provider,
+        }
     }
 
     /// Load empack.yml configuration
@@ -480,5 +486,3 @@ impl<'a> ConfigManager<'a> {
 mod tests {
     include!("config.test.rs");
 }
-
-

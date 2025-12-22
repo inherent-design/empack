@@ -14,11 +14,14 @@ pub struct StructuredDisplay<'a> {
 
 impl<'a> StructuredDisplay<'a> {
     pub(crate) fn new(styling: &'a StyleManager, capabilities: &'a TerminalCapabilities) -> Self {
-        Self { styling, capabilities }
+        Self {
+            styling,
+            capabilities,
+        }
     }
 
     /// Create a simple table
-    /// 
+    ///
     /// Example:
     /// ```
     /// Display::table()
@@ -32,7 +35,7 @@ impl<'a> StructuredDisplay<'a> {
     }
 
     /// Create a key-value list
-    /// 
+    ///
     /// Example:
     /// ```
     /// Display::structured()
@@ -43,13 +46,11 @@ impl<'a> StructuredDisplay<'a> {
     ///     ]);
     /// ```
     pub fn pairs(&self, pairs: &[(&str, &str)]) {
-        let max_key_len = pairs.iter()
-            .map(|(key, _)| key.len())
-            .max()
-            .unwrap_or(0);
+        let max_key_len = pairs.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
 
         for (key, value) in pairs {
-            println!("{:width$} | {}", 
+            println!(
+                "{:width$} | {}",
                 self.styling.style_subtle(key),
                 value,
                 width = max_key_len
@@ -60,18 +61,16 @@ impl<'a> StructuredDisplay<'a> {
     /// Create a bulleted list
     pub fn list(&self, items: &[&str]) {
         for item in items {
-            println!("{} {}", 
-                self.styling.bullet(), 
-                item
-            );
+            println!("{} {}", self.styling.bullet(), item);
         }
     }
 
     /// Create a numbered list
     pub fn numbered_list(&self, items: &[&str]) {
         for (i, item) in items.iter().enumerate() {
-            println!("{}. {}", 
-                self.styling.style_subtle(&(i + 1).to_string()), 
+            println!(
+                "{}. {}",
+                self.styling.style_subtle(&(i + 1).to_string()),
                 item
             );
         }
@@ -106,7 +105,8 @@ impl<'a> TableDisplay<'a> {
 
     /// Add a table row
     pub fn row(mut self, cells: &[&str]) -> Self {
-        self.rows.push(cells.iter().map(|s| s.to_string()).collect());
+        self.rows
+            .push(cells.iter().map(|s| s.to_string()).collect());
         self
     }
 
@@ -122,7 +122,8 @@ impl<'a> TableDisplay<'a> {
             return;
         }
 
-        let terminal_width = self.max_width
+        let terminal_width = self
+            .max_width
             .unwrap_or(self.capabilities.dimensions.cols as usize);
 
         // Calculate column widths
@@ -175,7 +176,7 @@ impl<'a> TableDisplay<'a> {
 
     fn render_row(&self, cells: &[String], widths: &[usize], is_header: bool) {
         let mut output = String::new();
-        
+
         for (i, cell) in cells.iter().enumerate() {
             if i < widths.len() {
                 let width = widths[i];
@@ -192,27 +193,26 @@ impl<'a> TableDisplay<'a> {
                 };
 
                 output.push_str(&format!("{:width$}", styled_cell, width = width));
-                
+
                 if i < cells.len() - 1 {
                     output.push_str(" | ");
                 }
             }
         }
-        
+
         println!("{}", output);
     }
 
     fn render_separator(&self, widths: &[usize]) {
         let mut output = String::new();
-        
+
         for (i, &width) in widths.iter().enumerate() {
             output.push_str(&"-".repeat(width));
             if i < widths.len() - 1 {
                 output.push_str("---");
             }
         }
-        
+
         println!("{}", self.styling.style_subtle(&output));
     }
 }
-
