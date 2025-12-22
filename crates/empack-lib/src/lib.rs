@@ -9,6 +9,7 @@
 //! - [`logger`] - Structured logging with progress tracking
 //! - [`networking`] - Async HTTP client with concurrency management
 //! - [`platform`] - System resource detection and optimization
+//! - [`api`] - Platform API abstraction and dependency resolution
 //! - [`empack`] - Domain-specific modpack management types
 //! - [`application`] - CLI interface and configuration management
 //!
@@ -21,6 +22,7 @@
 //! # })
 //! ```
 
+pub mod api;
 pub mod application;
 pub mod display;
 pub mod empack;
@@ -33,6 +35,7 @@ pub mod terminal;
 pub mod testing;
 
 // Re-export commonly used types for convenience
+pub use api::{DependencyGraph, DependencyGraphError, DependencyNode};
 pub use application::{AppConfig, Cli, Commands, execute_command};
 pub use logger::Logger;
 pub use networking::{NetworkingConfig, NetworkingManager};
