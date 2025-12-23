@@ -1,0 +1,2028 @@
+{
+  "name": "curseforge/search_jei",
+  "request": {
+    "method": "GET",
+    "url": "https://api.curseforge.com/v1/mods/search",
+    "query": {
+      "gameId": "432",
+      "classId": "6",
+      "searchFilter": "jei",
+      "pageSize": "10"
+    },
+    "headers": {
+      "x-api-key": "REDACTED"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": [
+        {
+          "screenshots": [
+            {
+              "id": 1288095,
+              "modId": 1326695,
+              "title": "GIFRecording2025-08-14at10.52.46-ezgif.com-resize.gif",
+              "description": "GIFRecording2025-08-14at10.52.46-ezgif.com-resize.gif",
+              "thumbnailUrl": "https://media.forgecdn.net/attachments/thumbnails/1288/95/310/172/gifrecording2025-08-14at10-52-46-ezgif-com-resize.gif",
+              "url": "https://media.forgecdn.net/attachments/1288/95/gifrecording2025-08-14at10-52-46-ezgif-com-resize.gif"
+            }
+          ],
+          "id": 1326695,
+          "gameId": 432,
+          "name": "JEI Hover Search",
+          "slug": "jei-hover-search",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/jei-hover-search",
+            "wikiUrl": null,
+            "issuesUrl": "https://github.com/Madgique/jei-hover-search/issues",
+            "sourceUrl": "https://github.com/Madgique/jei-hover-search"
+          },
+          "summary": "A simple and convenient Minecraft mod that allows you to quickly search for items in JEI by simply hovering over them and pressing a hotkey.",
+          "status": 4,
+          "downloadCount": 3948,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 5191,
+              "gameId": 432,
+              "name": "Utility & QoL",
+              "slug": "utility-qol",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/utility-qol",
+              "iconUrl": "https://media.forgecdn.net/avatars/456/558/637727379086405233.png",
+              "dateModified": "2021-11-17T11:45:09.143Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 102831109,
+              "name": "Madgique",
+              "url": "https://www.curseforge.com/members/madgique",
+              "avatarUrl": "https://static-cdn.jtvnw.net/jtv_user_pictures/6bc430f3-15f8-40e3-ad8f-c089f2cc211e-profile_image-150x150.png"
+            }
+          ],
+          "logo": {
+            "id": 1399471,
+            "modId": 1326695,
+            "title": "638907130770012671.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/1399/471/256/256/638907130770012671.png",
+            "url": "https://media.forgecdn.net/avatars/1399/471/638907130770012671.png"
+          },
+          "mainFileId": 6885769,
+          "latestFiles": [
+            {
+              "id": 6885767,
+              "gameId": 432,
+              "modId": 1326695,
+              "isAvailable": true,
+              "displayName": "jei_hover_search-1.20.1-1.0.0-forge.jar",
+              "fileName": "jei_hover_search-1.20.1-1.0.0-forge.jar",
+              "releaseType": 1,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "7c5c4027112823e7cfdc4c56a3e82fde3c988c94",
+                  "algo": 1
+                },
+                {
+                  "value": "c2819b4a928d271e7a479a5b1631a5bb",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2025-08-14T13:32:38.7Z",
+              "fileLength": 118243,
+              "downloadCount": 0,
+              "fileSizeOnDisk": 119875,
+              "downloadUrl": "https://edge.forgecdn.net/files/6885/767/jei_hover_search-1.20.1-1.0.0-forge.jar",
+              "gameVersions": [
+                "Client",
+                "1.20.1",
+                "Forge"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Client",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "1.20.1",
+                  "gameVersionPadded": "0000000001.0000000020.0000000001",
+                  "gameVersion": "1.20.1",
+                  "gameVersionReleaseDate": "2023-06-12T14:26:38.477Z",
+                  "gameVersionTypeId": 75125
+                },
+                {
+                  "gameVersionName": "Forge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                }
+              ],
+              "dependencies": [],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 1999504761,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 3610927772
+                },
+                {
+                  "name": "architectury_inject_jeihoversearch_common_bbb1e9f08cc8438eb7e4af699224d42b_4b4034639ccb038de5530ccfb585ef6e958edda60cb102844c0b3f68082996dajei_hover_search1201100devjar",
+                  "fingerprint": 2813174186
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 1826448981
+                },
+                {
+                  "name": "com",
+                  "fingerprint": 306981704
+                },
+                {
+                  "name": "icon.png",
+                  "fingerprint": 3667854642
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 3888393594
+                }
+              ]
+            },
+            {
+              "id": 6885769,
+              "gameId": 432,
+              "modId": 1326695,
+              "isAvailable": true,
+              "displayName": "jei_hover_search-1.20.1-1.0.0-fabric.jar",
+              "fileName": "jei_hover_search-1.20.1-1.0.0-fabric.jar",
+              "releaseType": 1,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "9c99cf1d4167e24d1d2a642792e16e77d2f1e9f3",
+                  "algo": 1
+                },
+                {
+                  "value": "ee6bab4f117c7413ef8133e85bf6d961",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2025-08-14T13:33:22.633Z",
+              "fileLength": 8086,
+              "downloadCount": 0,
+              "fileSizeOnDisk": 9289,
+              "downloadUrl": "https://edge.forgecdn.net/files/6885/769/jei_hover_search-1.20.1-1.0.0-fabric.jar",
+              "gameVersions": [
+                "Fabric",
+                "Client",
+                "1.20.1"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Fabric",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-09-01T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                },
+                {
+                  "gameVersionName": "Client",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "1.20.1",
+                  "gameVersionPadded": "0000000001.0000000020.0000000001",
+                  "gameVersion": "1.20.1",
+                  "gameVersionReleaseDate": "2023-06-12T14:26:38.477Z",
+                  "gameVersionTypeId": 75125
+                }
+              ],
+              "dependencies": [],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 2578800342,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 4137340521
+                },
+                {
+                  "name": "architectury_inject_jeihoversearch_common_bbb1e9f08cc8438eb7e4af699224d42b_4b4034639ccb038de5530ccfb585ef6e958edda60cb102844c0b3f68082996dajei_hover_search1201100devjar",
+                  "fingerprint": 332643844
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 3586775802
+                },
+                {
+                  "name": "com",
+                  "fingerprint": 382863209
+                },
+                {
+                  "name": "fabric.mod.json",
+                  "fingerprint": 1942388236
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.20.1",
+              "fileId": 6885769,
+              "filename": "jei_hover_search-1.20.1-1.0.0-fabric.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 75125,
+              "modLoader": 4
+            },
+            {
+              "gameVersion": "1.20.1",
+              "fileId": 6885767,
+              "filename": "jei_hover_search-1.20.1-1.0.0-forge.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 75125,
+              "modLoader": 1
+            },
+            {
+              "gameVersion": "1.18.2",
+              "fileId": 6883629,
+              "filename": "jei_hover_search-1.18.2-1.0-forge.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 73250,
+              "modLoader": 1
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2025-08-14T10:34:27.89Z",
+          "dateModified": "2025-08-14T21:10:56.157Z",
+          "dateReleased": "2025-08-14T13:33:22.633Z",
+          "allowModDistribution": true,
+          "gamePopularityRank": 999999,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "serverAffiliation": {
+            "isEnabled": true,
+            "isDefaultBanner": true,
+            "hasDiscount": true,
+            "affiliationService": 1,
+            "defaultBannerCustomTitle": "Madgique | JEI Hover Search",
+            "affiliationLink": "https://url-shortener.curseforge.com/SPEaI"
+          },
+          "socialLinks": [
+            {
+              "type": 13,
+              "url": "https://github.com/Madgique"
+            }
+          ],
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [],
+          "id": 1322073,
+          "gameId": 432,
+          "name": "Recipe History Addon for JEI",
+          "slug": "recipe-history-addon-for-jei",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/recipe-history-addon-for-jei",
+            "wikiUrl": null,
+            "issuesUrl": "https://github.com/spoonypanda/JEI-Recipe-History-1.16.5/issues",
+            "sourceUrl": "https://github.com/spoonypanda/JEI-Recipe-History-1.16.5"
+          },
+          "summary": "A plugin for JEI in 1.16.5 to add recipe history similar to JEI Utilities of 1.12.2",
+          "status": 4,
+          "downloadCount": 13082,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 5191,
+              "gameId": 432,
+              "name": "Utility & QoL",
+              "slug": "utility-qol",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/utility-qol",
+              "iconUrl": "https://media.forgecdn.net/avatars/456/558/637727379086405233.png",
+              "dateModified": "2021-11-17T11:45:09.143Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 128940006,
+              "name": "spoonypanda",
+              "url": "https://www.curseforge.com/members/spoonypanda",
+              "avatarUrl": "https://lh3.googleusercontent.com/a/ACg8ocIsiBR33PMPL-eVK_osVfQooogOPiqNcPaUDmDUuvr0ztQ3EmU=s96-c"
+            }
+          ],
+          "logo": {
+            "id": 1389641,
+            "modId": 1322073,
+            "title": "638900987043357372.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/1389/641/256/256/638900987043357372.png",
+            "url": "https://media.forgecdn.net/avatars/1389/641/638900987043357372.png"
+          },
+          "mainFileId": 6870142,
+          "latestFiles": [
+            {
+              "id": 6870142,
+              "gameId": 432,
+              "modId": 1322073,
+              "isAvailable": true,
+              "displayName": "JEI Recipe History Addon RC2",
+              "fileName": "recipehistory-1.0.0rc2.jar",
+              "releaseType": 2,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "b088050bdf4e59ce9cff94ba3f0a66e0e56178de",
+                  "algo": 1
+                },
+                {
+                  "value": "1ca653bdf9486c3c038f60860bb0154f",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2025-08-10T06:19:50.343Z",
+              "fileLength": 33419,
+              "downloadCount": 382,
+              "fileSizeOnDisk": 59038,
+              "downloadUrl": "https://edge.forgecdn.net/files/6870/142/recipehistory-1.0.0rc2.jar",
+              "gameVersions": [
+                "Client",
+                "1.16.5",
+                "Forge"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Client",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "1.16.5",
+                  "gameVersionPadded": "0000000001.0000000016.0000000005",
+                  "gameVersion": "1.16.5",
+                  "gameVersionReleaseDate": "2021-01-15T14:14:48.91Z",
+                  "gameVersionTypeId": 70886
+                },
+                {
+                  "gameVersionName": "Forge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                }
+              ],
+              "dependencies": [],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 4147424240,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 536827316
+                },
+                {
+                  "name": "com",
+                  "fingerprint": 3743784300
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 1438559181
+                },
+                {
+                  "name": "recipehistory.mixins-refmap.json",
+                  "fingerprint": 708233270
+                },
+                {
+                  "name": "recipehistory.mixins.json",
+                  "fingerprint": 3749623949
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.16.5",
+              "fileId": 6870142,
+              "filename": "recipehistory-1.0.0rc2.jar",
+              "releaseType": 2,
+              "gameVersionTypeId": 70886,
+              "modLoader": 1
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2025-08-07T10:51:15.577Z",
+          "dateModified": "2025-08-10T06:25:45.28Z",
+          "dateReleased": "2025-08-10T06:19:50.343Z",
+          "allowModDistribution": true,
+          "gamePopularityRank": 131795,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [
+            {
+              "id": 214458,
+              "modId": 272546,
+              "title": "Item descriptions",
+              "description": "",
+              "thumbnailUrl": "https://media.forgecdn.net/attachments/thumbnails/214/458/310/172/e8vzdt9w.png",
+              "url": "https://media.forgecdn.net/attachments/214/458/e8vzdt9w.png"
+            },
+            {
+              "id": 214457,
+              "modId": 272546,
+              "title": "Book Binder recipes support",
+              "description": "",
+              "thumbnailUrl": "https://media.forgecdn.net/attachments/thumbnails/214/457/310/172/s8vgzrmi.png",
+              "url": "https://media.forgecdn.net/attachments/214/457/s8vgzrmi.png"
+            },
+            {
+              "id": 214456,
+              "modId": 272546,
+              "title": "Writing Desk recipes support",
+              "description": "",
+              "thumbnailUrl": "https://media.forgecdn.net/attachments/thumbnails/214/456/310/172/ggbl4aly.png",
+              "url": "https://media.forgecdn.net/attachments/214/456/ggbl4aly.png"
+            },
+            {
+              "id": 214455,
+              "modId": 272546,
+              "title": "Ink Mixer recipes support",
+              "description": "",
+              "thumbnailUrl": "https://media.forgecdn.net/attachments/thumbnails/214/455/310/172/klohk3cw.png",
+              "url": "https://media.forgecdn.net/attachments/214/455/klohk3cw.png"
+            }
+          ],
+          "id": 272546,
+          "gameId": 432,
+          "name": "JEI Mystcraft Plugin",
+          "slug": "jei-mystcraft-plugin",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/jei-mystcraft-plugin",
+            "wikiUrl": null,
+            "issuesUrl": "https://github.com/heldplayer/mystcraft-jei-plugin/issues",
+            "sourceUrl": "https://github.com/heldplayer/mystcraft-jei-plugin"
+          },
+          "summary": "Adds JEI integration for Mystcraft",
+          "status": 4,
+          "downloadCount": 5153,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 410,
+              "gameId": 432,
+              "name": "Dimensions",
+              "slug": "world-dimensions",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/world-gen/world-dimensions",
+              "iconUrl": "https://media.forgecdn.net/avatars/6/25/635351494468414756.png",
+              "dateModified": "2014-05-08T17:37:26.84Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 406
+            },
+            {
+              "id": 435,
+              "gameId": 432,
+              "name": "Server Utility",
+              "slug": "server-utility",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/server-utility",
+              "iconUrl": "https://media.forgecdn.net/avatars/6/48/635351498950580836.png",
+              "dateModified": "2014-05-08T17:44:55.057Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 423,
+              "gameId": 432,
+              "name": "Map and Information",
+              "slug": "map-information",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/map-information",
+              "iconUrl": "https://media.forgecdn.net/avatars/6/38/635351497437388438.png",
+              "dateModified": "2014-05-08T17:42:23.74Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 7279955,
+              "name": "heldplayer",
+              "url": "https://www.curseforge.com/members/heldplayer",
+              "avatarUrl": "https://static-cdn.jtvnw.net/jtv_user_pictures/heldplayer-profile_image-7812e9cf64e9cd70-150x150.png"
+            }
+          ],
+          "logo": {
+            "id": 106701,
+            "modId": 272546,
+            "title": "636361209874440991.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/106/701/256/256/636361209874440991.png",
+            "url": "https://media.forgecdn.net/avatars/106/701/636361209874440991.png"
+          },
+          "mainFileId": 2458603,
+          "latestFiles": [
+            {
+              "id": 2458603,
+              "gameId": 432,
+              "modId": 272546,
+              "isAvailable": true,
+              "displayName": "mystcraft-jei-1.11.2-1.0.0.jar",
+              "fileName": "mystcraft-jei-1.11.2-1.0.0.jar",
+              "releaseType": 1,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "e7577e99fcb8cb95e616d36c4a250d6690a38b56",
+                  "algo": 1
+                },
+                {
+                  "value": "f97a14ee95a4434dfaf308ac9e65f8a5",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2017-07-31T22:52:22.583Z",
+              "fileLength": 80620,
+              "downloadCount": 5079,
+              "downloadUrl": "https://edge.forgecdn.net/files/2458/603/mystcraft-jei-1.11.2-1.0.0.jar",
+              "gameVersions": [
+                "1.11.2"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "1.11.2",
+                  "gameVersionPadded": "0000000001.0000000011.0000000002",
+                  "gameVersion": "1.11.2",
+                  "gameVersionReleaseDate": "2016-12-21T06:00:00Z",
+                  "gameVersionTypeId": 599
+                }
+              ],
+              "dependencies": [
+                {
+                  "modId": 238222,
+                  "relationType": 3
+                },
+                {
+                  "modId": 224599,
+                  "relationType": 3
+                }
+              ],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 241281561,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 715103108
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 3621708767
+                },
+                {
+                  "name": "mcmod.info",
+                  "fingerprint": 96234174
+                },
+                {
+                  "name": "me",
+                  "fingerprint": 551159635
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.11.2",
+              "fileId": 2458603,
+              "filename": "mystcraft-jei-1.11.2-1.0.0.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 599
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2017-08-01T15:37:28.04Z",
+          "dateModified": "2019-02-12T19:59:35.523Z",
+          "dateReleased": "2017-07-31T22:52:22.583Z",
+          "allowModDistribution": true,
+          "gamePopularityRank": 121893,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [],
+          "id": 590913,
+          "gameId": 432,
+          "name": "Jeildsaddons",
+          "slug": "lightritium",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/lightritium",
+            "wikiUrl": "",
+            "issuesUrl": null,
+            "sourceUrl": null
+          },
+          "summary": "A mod thats addons for the jeildscraft severs all references from there",
+          "status": 4,
+          "downloadCount": 952,
+          "isFeatured": false,
+          "primaryCategoryId": 434,
+          "categories": [
+            {
+              "id": 434,
+              "gameId": 432,
+              "name": "Armor, Tools, and Weapons",
+              "slug": "armor-weapons-tools",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/armor-weapons-tools",
+              "iconUrl": "https://media.forgecdn.net/avatars/6/47/635351498790409758.png",
+              "dateModified": "2014-05-08T17:44:39.057Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 4906,
+              "gameId": 432,
+              "name": "MCreator",
+              "slug": "mc-creator",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-creator",
+              "iconUrl": "https://media.forgecdn.net/avatars/380/489/637562419922532076.png",
+              "dateModified": "2021-05-10T11:13:12.27Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 102381595,
+              "name": "Cooli_LOL",
+              "url": "https://www.curseforge.com/members/cooli_lol",
+              "avatarUrl": "https://static-cdn.jtvnw.net/jtv_user_pictures/1dde156e-b52b-43ed-8b65-181ea96cc918-profile_image-150x150.png"
+            }
+          ],
+          "logo": {
+            "id": 515615,
+            "modId": 590913,
+            "title": "637838516979892129.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/515/615/256/256/637838516979892129.png",
+            "url": "https://media.forgecdn.net/avatars/515/615/637838516979892129.png"
+          },
+          "mainFileId": 3715204,
+          "latestFiles": [
+            {
+              "id": 3714113,
+              "gameId": 432,
+              "modId": 590913,
+              "isAvailable": true,
+              "displayName": "Jeildsaddon1.12.2.jar",
+              "fileName": "Jeildsaddon1.12.2.jar",
+              "releaseType": 2,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "67c5cf178a570f6f916932468b7cb247dcadf931",
+                  "algo": 1
+                },
+                {
+                  "value": "d9cde4731b45881fdee982ac5ee0c3b6",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2022-03-26T16:52:50.213Z",
+              "fileLength": 406706,
+              "downloadCount": 41,
+              "downloadUrl": null,
+              "gameVersions": [
+                "Forge",
+                "1.12.2"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Forge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                },
+                {
+                  "gameVersionName": "1.12.2",
+                  "gameVersionPadded": "0000000001.0000000012.0000000002",
+                  "gameVersion": "1.12.2",
+                  "gameVersionReleaseDate": "2017-09-18T05:00:00Z",
+                  "gameVersionTypeId": 628
+                }
+              ],
+              "dependencies": [],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 3260111133,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 2464251221
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 2072836120
+                },
+                {
+                  "name": "mcmod.info",
+                  "fingerprint": 1905018751
+                },
+                {
+                  "name": "net",
+                  "fingerprint": 2878764318
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 692744858
+                }
+              ]
+            },
+            {
+              "id": 3715204,
+              "gameId": 432,
+              "modId": 590913,
+              "isAvailable": true,
+              "displayName": "Jeildsaddon1.12.2 0.3.jar",
+              "fileName": "Jeildsaddon1.12.2 0.3.jar",
+              "releaseType": 2,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "76e8e37099e8fd8d534ebfffa1b5e9da69554ad9",
+                  "algo": 1
+                },
+                {
+                  "value": "37e2ee3105711066b38856af0821e5df",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2022-03-26T18:23:26.267Z",
+              "fileLength": 748635,
+              "downloadCount": 124,
+              "downloadUrl": null,
+              "gameVersions": [
+                "1.12.2"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "1.12.2",
+                  "gameVersionPadded": "0000000001.0000000012.0000000002",
+                  "gameVersion": "1.12.2",
+                  "gameVersionReleaseDate": "2017-09-18T05:00:00Z",
+                  "gameVersionTypeId": 628
+                }
+              ],
+              "dependencies": [],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 9651858,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 2464251221
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 2303231311
+                },
+                {
+                  "name": "mcmod.info",
+                  "fingerprint": 1905018751
+                },
+                {
+                  "name": "net",
+                  "fingerprint": 3584770580
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 692744858
+                }
+              ]
+            },
+            {
+              "id": 3717640,
+              "gameId": 432,
+              "modId": 590913,
+              "isAvailable": true,
+              "displayName": "Addons1.12.2 0.4.jar",
+              "fileName": "Addons1.12.2 0.4.jar",
+              "releaseType": 3,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "975265aead43de98a481a5468088bf318390c367",
+                  "algo": 1
+                },
+                {
+                  "value": "b296c66a0d418d6f5f7c87eec9fb472d",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2022-03-27T01:36:19.35Z",
+              "fileLength": 753454,
+              "downloadCount": 293,
+              "downloadUrl": null,
+              "gameVersions": [
+                "1.12.2"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "1.12.2",
+                  "gameVersionPadded": "0000000001.0000000012.0000000002",
+                  "gameVersion": "1.12.2",
+                  "gameVersionReleaseDate": "2017-09-18T05:00:00Z",
+                  "gameVersionTypeId": 628
+                }
+              ],
+              "dependencies": [],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 1704430399,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 2464251221
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 948953430
+                },
+                {
+                  "name": "mcmod.info",
+                  "fingerprint": 1905018751
+                },
+                {
+                  "name": "net",
+                  "fingerprint": 1807393222
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 692744858
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.12.2",
+              "fileId": 3717640,
+              "filename": "Addons1.12.2 0.4.jar",
+              "releaseType": 3,
+              "gameVersionTypeId": 628
+            },
+            {
+              "gameVersion": "1.12.2",
+              "fileId": 3715204,
+              "filename": "Jeildsaddon1.12.2 0.3.jar",
+              "releaseType": 2,
+              "gameVersionTypeId": 628
+            },
+            {
+              "gameVersion": "1.12.2",
+              "fileId": 3714113,
+              "filename": "Jeildsaddon1.12.2.jar",
+              "releaseType": 2,
+              "gameVersionTypeId": 628,
+              "modLoader": 1
+            },
+            {
+              "gameVersion": "1.16.5",
+              "fileId": 3712438,
+              "filename": "Jeildsaddons.jar",
+              "releaseType": 3,
+              "gameVersionTypeId": 70886
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2022-03-27T07:34:53.563Z",
+          "dateModified": "2022-03-27T07:38:02.673Z",
+          "dateReleased": "2022-03-27T01:36:19.35Z",
+          "allowModDistribution": false,
+          "gamePopularityRank": 105699,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [],
+          "id": 1409581,
+          "gameId": 432,
+          "name": "NEO JEI ",
+          "slug": "neojei",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/neojei",
+            "wikiUrl": null,
+            "issuesUrl": null,
+            "sourceUrl": null
+          },
+          "summary": "Just 1.21.11 version of JEI",
+          "status": 4,
+          "downloadCount": 518,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 111687876,
+              "name": "spartanpowerarmy",
+              "url": "https://www.curseforge.com/members/spartanpowerarmy",
+              "avatarUrl": "https://static-cdn.jtvnw.net/user-default-pictures-uv/75305d54-c7cc-40d1-bb9c-91fbe85943c7-profile_image-150x150.png"
+            }
+          ],
+          "logo": {
+            "id": 1570916,
+            "modId": 1409581,
+            "title": "639018297458137558.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/1570/916/256/256/639018297458137558.png",
+            "url": "https://media.forgecdn.net/avatars/1570/916/639018297458137558.png"
+          },
+          "mainFileId": 7356924,
+          "latestFiles": [
+            {
+              "id": 7356924,
+              "gameId": 432,
+              "modId": 1409581,
+              "isAvailable": true,
+              "displayName": "NeoJei 1.21.11 neoforge-27.0.0.1.jar",
+              "fileName": "jei-1.21.11-neoforge-27.0.0.1.jar",
+              "releaseType": 1,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "af97fa254ea532eb415e4d7f17f3161a6dea9a85",
+                  "algo": 1
+                },
+                {
+                  "value": "eb9c2d1b10534c65f783e4b0b2a8ad91",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2025-12-20T12:16:41.517Z",
+              "fileLength": 1492129,
+              "downloadCount": 248,
+              "fileSizeOnDisk": 3553010,
+              "downloadUrl": null,
+              "gameVersions": [
+                "Client",
+                "NeoForge",
+                "Server",
+                "1.21.11"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Client",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "NeoForge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2023-07-25T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                },
+                {
+                  "gameVersionName": "Server",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "1.21.11",
+                  "gameVersionPadded": "0000000001.0000000021.0000000011",
+                  "gameVersion": "1.21.11",
+                  "gameVersionReleaseDate": "2025-12-09T16:42:14.27Z",
+                  "gameVersionTypeId": 77784
+                }
+              ],
+              "dependencies": [],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 2199018505,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 2364689163
+                },
+                {
+                  "name": "mezz",
+                  "fingerprint": 188284252
+                },
+                {
+                  "name": "jei-icon.png",
+                  "fingerprint": 2007185424
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 1442595849
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 1869018711
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.21.11",
+              "fileId": 7356924,
+              "filename": "jei-1.21.11-neoforge-27.0.0.1.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 77784,
+              "modLoader": 6
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2025-12-20T13:20:06.39Z",
+          "dateModified": "2025-12-20T13:22:06.6Z",
+          "dateReleased": "2025-12-20T12:16:41.517Z",
+          "allowModDistribution": false,
+          "gamePopularityRank": 100000,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [],
+          "id": 983646,
+          "gameId": 432,
+          "name": "Ex Nihilo: Sequentia - JEI Addon",
+          "slug": "ex-nihilo-sequentia-jei-addon",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/ex-nihilo-sequentia-jei-addon",
+            "wikiUrl": "https://novamachina-mods.github.io",
+            "issuesUrl": "https://github.com/NovaMachina-Mods/ExNihiloJEI/issues",
+            "sourceUrl": "https://github.com/NovaMachina-Mods/ExNihiloJEI"
+          },
+          "summary": "Addon for Ex Nihilo: Sequentia to support JEI",
+          "status": 4,
+          "downloadCount": 1250,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 423,
+              "gameId": 432,
+              "name": "Map and Information",
+              "slug": "map-information",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/map-information",
+              "iconUrl": "https://media.forgecdn.net/avatars/6/38/635351497437388438.png",
+              "dateModified": "2014-05-08T17:42:23.74Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 100810788,
+              "name": "NovaMachina",
+              "url": "https://www.curseforge.com/members/novamachina",
+              "avatarUrl": "https://static-cdn.jtvnw.net/jtv_user_pictures/7bc24e05-3cce-45a0-a2b4-00b11a0b895d-profile_image-150x150.png"
+            }
+          ],
+          "logo": {
+            "id": 958866,
+            "modId": 983646,
+            "title": "638453477817455639.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/958/866/256/256/638453477817455639.png",
+            "url": "https://media.forgecdn.net/avatars/958/866/638453477817455639.png"
+          },
+          "mainFileId": 5192523,
+          "latestFiles": [
+            {
+              "id": 5192523,
+              "gameId": 432,
+              "modId": 983646,
+              "isAvailable": true,
+              "displayName": "exnjei-1.20.4-1.0.0-build.1.jar",
+              "fileName": "exnjei-1.20.4-1.0.0-build.1.jar",
+              "releaseType": 1,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "b8915a509f8d9f8c3fe5fb11377b6f616409139c",
+                  "algo": 1
+                },
+                {
+                  "value": "8422896c1e42ac605d5443c901d51360",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2024-03-18T15:53:26.907Z",
+              "fileLength": 47950,
+              "downloadCount": 1114,
+              "downloadUrl": "https://edge.forgecdn.net/files/5192/523/exnjei-1.20.4-1.0.0-build.1.jar",
+              "gameVersions": [
+                "NeoForge",
+                "1.20.4"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "NeoForge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2023-07-25T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                },
+                {
+                  "gameVersionName": "1.20.4",
+                  "gameVersionPadded": "0000000001.0000000020.0000000004",
+                  "gameVersion": "1.20.4",
+                  "gameVersionReleaseDate": "2023-12-07T15:17:47.907Z",
+                  "gameVersionTypeId": 75125
+                }
+              ],
+              "dependencies": [
+                {
+                  "modId": 238222,
+                  "relationType": 3
+                },
+                {
+                  "modId": 400012,
+                  "relationType": 3
+                }
+              ],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 1380656932,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 2033425510
+                },
+                {
+                  "name": "novamachina",
+                  "fingerprint": 1530675426
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 3331194129
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 2666984876
+                },
+                {
+                  "name": ".cache",
+                  "fingerprint": 2125842046
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.20.4",
+              "fileId": 5192523,
+              "filename": "exnjei-1.20.4-1.0.0-build.1.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 75125,
+              "modLoader": 6
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2024-03-19T08:29:22.49Z",
+          "dateModified": "2024-03-19T10:31:55.283Z",
+          "dateReleased": "2024-03-18T15:53:26.907Z",
+          "allowModDistribution": true,
+          "gamePopularityRank": 90701,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [
+            {
+              "id": 468118,
+              "modId": 632064,
+              "title": "tab display example",
+              "description": "",
+              "thumbnailUrl": "https://media.forgecdn.net/attachments/thumbnails/468/118/310/172/minecraft-1.png",
+              "url": "https://media.forgecdn.net/attachments/468/118/minecraft-1.png"
+            }
+          ],
+          "id": 632064,
+          "gameId": 432,
+          "name": "JEIcats",
+          "slug": "jeicats",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/jeicats",
+            "wikiUrl": "",
+            "issuesUrl": "https://github.com/igentuman/jeiCats/issues",
+            "sourceUrl": "https://github.com/igentuman/jeiCats"
+          },
+          "summary": "Adds JEI tabs for unknown recipes. Custom JEI tabs",
+          "status": 4,
+          "downloadCount": 7452,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 5191,
+              "gameId": 432,
+              "name": "Utility & QoL",
+              "slug": "utility-qol",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/utility-qol",
+              "iconUrl": "https://media.forgecdn.net/avatars/456/558/637727379086405233.png",
+              "dateModified": "2021-11-17T11:45:09.143Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 101392012,
+              "name": "igentuman",
+              "url": "https://www.curseforge.com/members/igentuman",
+              "avatarUrl": "https://static-cdn.jtvnw.net/jtv_user_pictures/dd59726f-17f9-41d5-9528-6ad9f0e8089e-profile_image-150x150.png"
+            }
+          ],
+          "logo": {
+            "id": 557360,
+            "modId": 632064,
+            "title": "637903903903033920.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/557/360/256/256/637903903903033920.png",
+            "url": "https://media.forgecdn.net/avatars/557/360/637903903903033920.png"
+          },
+          "mainFileId": 3824807,
+          "latestFiles": [
+            {
+              "id": 3824807,
+              "gameId": 432,
+              "modId": 632064,
+              "isAvailable": true,
+              "displayName": "JEIcats-1.0.0.jar",
+              "fileName": "JEIcats-1.0.0.jar",
+              "releaseType": 1,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "3668c36e6cc8d51bfc264557af0cf7926aa66c93",
+                  "algo": 1
+                },
+                {
+                  "value": "a2730484aed4f0dcef3164af4b1b04cd",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2022-06-09T17:04:28.18Z",
+              "fileLength": 24930,
+              "downloadCount": 7198,
+              "downloadUrl": "https://edge.forgecdn.net/files/3824/807/JEIcats-1.0.0.jar",
+              "gameVersions": [
+                "Client",
+                "Forge",
+                "1.12.2"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Client",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "Forge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                },
+                {
+                  "gameVersionName": "1.12.2",
+                  "gameVersionPadded": "0000000001.0000000012.0000000002",
+                  "gameVersion": "1.12.2",
+                  "gameVersionReleaseDate": "2017-09-18T05:00:00Z",
+                  "gameVersionTypeId": 628
+                }
+              ],
+              "dependencies": [
+                {
+                  "modId": 238222,
+                  "relationType": 3
+                }
+              ],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 2940600767,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 84029218
+                },
+                {
+                  "name": "igentuman",
+                  "fingerprint": 839223823
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 3156182241
+                },
+                {
+                  "name": "mcmod.info",
+                  "fingerprint": 2594317137
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 1602892700
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.12.2",
+              "fileId": 3824807,
+              "filename": "JEIcats-1.0.0.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 628,
+              "modLoader": 1
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2022-06-12T08:25:12.053Z",
+          "dateModified": "2024-09-16T21:57:06.543Z",
+          "dateReleased": "2022-06-09T17:04:28.18Z",
+          "allowModDistribution": true,
+          "gamePopularityRank": 70610,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [
+            {
+              "id": 1411949,
+              "modId": 1396885,
+              "title": "Screenshot 2025-12-02 193923.png",
+              "description": "Screenshot 2025-12-02 193923.png",
+              "thumbnailUrl": "https://media.forgecdn.net/attachments/thumbnails/1411/949/310/172/screenshot-2025-12-02-193923-png.png",
+              "url": "https://media.forgecdn.net/attachments/1411/949/screenshot-2025-12-02-193923-png.png"
+            }
+          ],
+          "id": 1396885,
+          "gameId": 432,
+          "name": "[JEI] Armageddon Treasure Bags",
+          "slug": "jei-armageddon-treasure-bags",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/jei-armageddon-treasure-bags",
+            "wikiUrl": null,
+            "issuesUrl": null,
+            "sourceUrl": "https://github.com/SaloEater/Armageddon-to-JEI"
+          },
+          "summary": "Adds JEI tab for Armageddon treasure bags",
+          "status": 4,
+          "downloadCount": 107,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 101570447,
+              "name": "SaloEater",
+              "url": "https://www.curseforge.com/members/saloeater",
+              "avatarUrl": "https://static-cdn.jtvnw.net/jtv_user_pictures/isaloeater-profile_image-5de50563e99ed019-150x150.jpeg"
+            }
+          ],
+          "logo": {
+            "id": 1545828,
+            "modId": 1396885,
+            "title": "639003212601142949.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/1545/828/256/256/639003212601142949.png",
+            "url": "https://media.forgecdn.net/avatars/1545/828/639003212601142949.png"
+          },
+          "mainFileId": 7294661,
+          "latestFiles": [
+            {
+              "id": 7294661,
+              "gameId": 432,
+              "modId": 1396885,
+              "isAvailable": true,
+              "displayName": "armageddon_jei-1.0.0.jar",
+              "fileName": "armageddon_jei-1.0.0.jar",
+              "releaseType": 1,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "4c383880b5019ddcc35df9bfa3b29e541cf713df",
+                  "algo": 1
+                },
+                {
+                  "value": "ce8dbbd941207c6c714a42677b13bcf6",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2025-12-04T19:47:02.583Z",
+              "fileLength": 36169,
+              "downloadCount": 9,
+              "fileSizeOnDisk": 70659,
+              "downloadUrl": "https://edge.forgecdn.net/files/7294/661/armageddon_jei-1.0.0.jar",
+              "gameVersions": [
+                "Client",
+                "1.20.1",
+                "Forge"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Client",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "1.20.1",
+                  "gameVersionPadded": "0000000001.0000000020.0000000001",
+                  "gameVersion": "1.20.1",
+                  "gameVersionReleaseDate": "2023-06-12T14:26:38.477Z",
+                  "gameVersionTypeId": 75125
+                },
+                {
+                  "gameVersionName": "Forge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                }
+              ],
+              "dependencies": [
+                {
+                  "modId": 238222,
+                  "relationType": 3
+                },
+                {
+                  "modId": 1110642,
+                  "relationType": 3
+                }
+              ],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 2086603387,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 1726921133
+                },
+                {
+                  "name": "armageddon_jei.mixins.json",
+                  "fingerprint": 1085159098
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 4267490553
+                },
+                {
+                  "name": "com",
+                  "fingerprint": 163189818
+                },
+                {
+                  "name": "data",
+                  "fingerprint": 3640925122
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 2539076835
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.20.1",
+              "fileId": 7294661,
+              "filename": "armageddon_jei-1.0.0.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 75125,
+              "modLoader": 1
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2025-12-03T11:29:48.03Z",
+          "dateModified": "2025-12-04T19:52:18.307Z",
+          "dateReleased": "2025-12-04T19:47:02.583Z",
+          "allowModDistribution": true,
+          "gamePopularityRank": 66347,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [],
+          "id": 1377529,
+          "gameId": 432,
+          "name": "JEI Recipe Chains",
+          "slug": "jei-recipe-chains",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/jei-recipe-chains",
+            "wikiUrl": null,
+            "issuesUrl": null,
+            "sourceUrl": null
+          },
+          "summary": "JEI Recipe Chains shows full recipe chains within JEI.",
+          "status": 4,
+          "downloadCount": 705,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 5191,
+              "gameId": 432,
+              "name": "Utility & QoL",
+              "slug": "utility-qol",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/utility-qol",
+              "iconUrl": "https://media.forgecdn.net/avatars/456/558/637727379086405233.png",
+              "dateModified": "2021-11-17T11:45:09.143Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 31919953,
+              "name": "daFARKA",
+              "url": "https://www.curseforge.com/members/dafarka",
+              "avatarUrl": "https://static-cdn.jtvnw.net/jtv_user_pictures/4fc7a227-e8be-414e-bbe0-10c64fe1a1a8-profile_image-150x150.png"
+            }
+          ],
+          "logo": {
+            "id": 1504691,
+            "modId": 1377529,
+            "title": "638977167965852297.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/1504/691/256/256/638977167965852297.png",
+            "url": "https://media.forgecdn.net/avatars/1504/691/638977167965852297.png"
+          },
+          "mainFileId": 7180030,
+          "latestFiles": [
+            {
+              "id": 7180030,
+              "gameId": 432,
+              "modId": 1377529,
+              "isAvailable": true,
+              "displayName": "jeirecipechains-0.0.1-1.20.1.jar",
+              "fileName": "jeirecipechains-0.0.1-1.20.1.jar",
+              "releaseType": 2,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "d666ef27b16609451936f499d7b935634e04a839",
+                  "algo": 1
+                },
+                {
+                  "value": "01269f6cdc8d978dfd30259e3ba57dbf",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2025-11-02T21:48:55.607Z",
+              "fileLength": 24724,
+              "downloadCount": 18,
+              "fileSizeOnDisk": 45993,
+              "downloadUrl": null,
+              "gameVersions": [
+                "Client",
+                "1.20.1",
+                "Forge"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Client",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "1.20.1",
+                  "gameVersionPadded": "0000000001.0000000020.0000000001",
+                  "gameVersion": "1.20.1",
+                  "gameVersionReleaseDate": "2023-06-12T14:26:38.477Z",
+                  "gameVersionTypeId": 75125
+                },
+                {
+                  "gameVersionName": "Forge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                }
+              ],
+              "dependencies": [
+                {
+                  "modId": 238222,
+                  "relationType": 3
+                }
+              ],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 460972538,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 3046549980
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 3853072728
+                },
+                {
+                  "name": "net",
+                  "fingerprint": 3510054839
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 1994808778
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.20.1",
+              "fileId": 7180030,
+              "filename": "jeirecipechains-0.0.1-1.20.1.jar",
+              "releaseType": 2,
+              "gameVersionTypeId": 75125,
+              "modLoader": 1
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2025-11-03T09:06:09.847Z",
+          "dateModified": "2025-11-03T09:09:10.567Z",
+          "dateReleased": "2025-11-02T21:48:55.607Z",
+          "allowModDistribution": false,
+          "gamePopularityRank": 61885,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        },
+        {
+          "screenshots": [
+            {
+              "id": 657410,
+              "modId": 856893,
+              "title": "Recipe History",
+              "description": "",
+              "thumbnailUrl": "https://media.forgecdn.net/attachments/thumbnails/657/410/310/172/2023-05-06_07.png",
+              "url": "https://media.forgecdn.net/attachments/657/410/2023-05-06_07.png"
+            }
+          ],
+          "id": 856893,
+          "gameId": 432,
+          "name": "JEI Recipe History [Archived]",
+          "slug": "jei-recipe-history",
+          "links": {
+            "websiteUrl": "https://www.curseforge.com/minecraft/mc-mods/jei-recipe-history",
+            "wikiUrl": null,
+            "issuesUrl": "https://github.com/Christofmeg/JEI-Recipe-History/issues",
+            "sourceUrl": "https://github.com/Christofmeg/JEI-Recipe-History"
+          },
+          "summary": "Client side history of recent JEI recipe lookups",
+          "status": 4,
+          "downloadCount": 5055,
+          "isFeatured": false,
+          "primaryCategoryId": 426,
+          "categories": [
+            {
+              "id": 426,
+              "gameId": 432,
+              "name": "Addons",
+              "slug": "mc-addons",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/mc-addons",
+              "iconUrl": "https://media.forgecdn.net/avatars/5/998/635351477886290676.png",
+              "dateModified": "2014-05-08T17:09:48.63Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 423,
+              "gameId": 432,
+              "name": "Map and Information",
+              "slug": "map-information",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/map-information",
+              "iconUrl": "https://media.forgecdn.net/avatars/6/38/635351497437388438.png",
+              "dateModified": "2014-05-08T17:42:23.74Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            },
+            {
+              "id": 5191,
+              "gameId": 432,
+              "name": "Utility & QoL",
+              "slug": "utility-qol",
+              "url": "https://www.curseforge.com/minecraft/mc-mods/utility-qol",
+              "iconUrl": "https://media.forgecdn.net/avatars/456/558/637727379086405233.png",
+              "dateModified": "2021-11-17T11:45:09.143Z",
+              "isClass": false,
+              "classId": 6,
+              "parentCategoryId": 6
+            }
+          ],
+          "classId": 6,
+          "authors": [
+            {
+              "id": 101345595,
+              "name": "Christofmeg",
+              "url": "https://www.curseforge.com/members/christofmeg",
+              "avatarUrl": "https://static-cdn.jtvnw.net/jtv_user_pictures/64fe28e7-44db-4948-b088-b0adf4fb3acc-profile_image-150x150.png"
+            }
+          ],
+          "logo": {
+            "id": 812200,
+            "modId": 856893,
+            "title": "638185455276310387.png",
+            "description": "",
+            "thumbnailUrl": "https://media.forgecdn.net/avatars/thumbnails/812/200/256/256/638185455276310387.png",
+            "url": "https://media.forgecdn.net/avatars/812/200/638185455276310387.png"
+          },
+          "mainFileId": 5141471,
+          "latestFiles": [
+            {
+              "id": 5141471,
+              "gameId": 432,
+              "modId": 856893,
+              "isAvailable": true,
+              "displayName": "jeirecipehistory-forge-1.18.2-1.1.2-jei-9.jar",
+              "fileName": "jeirecipehistory-forge-1.18.2-1.1.2-jei-9.jar",
+              "releaseType": 1,
+              "fileStatus": 4,
+              "hashes": [
+                {
+                  "value": "4daa4d8979a6e3c0817bb90bfc846f207b3ff202",
+                  "algo": 1
+                },
+                {
+                  "value": "66747ca02f720a5bc7ed6527aa5295a8",
+                  "algo": 2
+                }
+              ],
+              "fileDate": "2024-02-27T20:56:15.763Z",
+              "fileLength": 45640,
+              "downloadCount": 1431,
+              "downloadUrl": "https://edge.forgecdn.net/files/5141/471/jeirecipehistory-forge-1.18.2-1.1.2-jei-9.jar",
+              "gameVersions": [
+                "Client",
+                "1.18.2",
+                "Forge",
+                "Server"
+              ],
+              "sortableGameVersions": [
+                {
+                  "gameVersionName": "Client",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                },
+                {
+                  "gameVersionName": "1.18.2",
+                  "gameVersionPadded": "0000000001.0000000018.0000000002",
+                  "gameVersion": "1.18.2",
+                  "gameVersionReleaseDate": "2022-02-28T14:23:37.723Z",
+                  "gameVersionTypeId": 73250
+                },
+                {
+                  "gameVersionName": "Forge",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-10-01T00:00:00Z",
+                  "gameVersionTypeId": 68441
+                },
+                {
+                  "gameVersionName": "Server",
+                  "gameVersionPadded": "0",
+                  "gameVersion": "",
+                  "gameVersionReleaseDate": "2022-12-08T00:00:00Z",
+                  "gameVersionTypeId": 75208
+                }
+              ],
+              "dependencies": [
+                {
+                  "modId": 238222,
+                  "relationType": 3
+                },
+                {
+                  "modId": 459701,
+                  "relationType": 2
+                }
+              ],
+              "alternateFileId": 0,
+              "isServerPack": false,
+              "fileFingerprint": 3133290731,
+              "modules": [
+                {
+                  "name": "META-INF",
+                  "fingerprint": 4180469889
+                },
+                {
+                  "name": "assets",
+                  "fingerprint": 2627456592
+                },
+                {
+                  "name": "com",
+                  "fingerprint": 874461093
+                },
+                {
+                  "name": "icon.png",
+                  "fingerprint": 109187140
+                },
+                {
+                  "name": "jeirecipehistory-icon.png",
+                  "fingerprint": 3245352387
+                },
+                {
+                  "name": "jeirecipehistory.mixins.json",
+                  "fingerprint": 1498901956
+                },
+                {
+                  "name": "jeirecipehistory.refmap.json",
+                  "fingerprint": 1493072104
+                },
+                {
+                  "name": "jeirecipehistory",
+                  "fingerprint": 3928327260
+                },
+                {
+                  "name": "pack.mcmeta",
+                  "fingerprint": 1349792494
+                }
+              ]
+            }
+          ],
+          "latestFilesIndexes": [
+            {
+              "gameVersion": "1.18.2",
+              "fileId": 5141471,
+              "filename": "jeirecipehistory-forge-1.18.2-1.1.2-jei-9.jar",
+              "releaseType": 1,
+              "gameVersionTypeId": 73250,
+              "modLoader": 1
+            }
+          ],
+          "latestEarlyAccessFilesIndexes": [],
+          "dateCreated": "2023-05-01T14:05:17.08Z",
+          "dateModified": "2024-02-27T21:03:39.667Z",
+          "dateReleased": "2024-02-27T20:56:15.763Z",
+          "allowModDistribution": true,
+          "gamePopularityRank": 60625,
+          "isAvailable": true,
+          "thumbsUpCount": 0,
+          "featuredProjectTag": 0
+        }
+      ],
+      "pagination": {
+        "index": 0,
+        "pageSize": 10,
+        "resultCount": 10,
+        "totalCount": 49
+      }
+    }
+  },
+  "recorded_at": "2025-12-23T12:18:26Z"
+}

@@ -4,7 +4,7 @@
 //! requiring external dependencies or filesystem operations.
 
 use crate::application::config::AppConfig;
-use crate::application::session::{ProcessOutput, Session, *};
+use crate::application::session::{InteractiveProvider, ProcessOutput, Session, *};
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectInfo, ProjectResolverTrait, SearchError};
@@ -328,6 +328,7 @@ impl FileSystemProvider for MockFileSystemProvider {
 
     fn run_packwiz_init(
         &self,
+        _process: &dyn crate::application::session::ProcessProvider,
         workdir: &std::path::Path,
         name: &str,
         author: &str,
@@ -380,6 +381,7 @@ hash = ""
 
     fn run_packwiz_refresh(
         &self,
+        _process: &dyn crate::application::session::ProcessProvider,
         workdir: &std::path::Path,
     ) -> std::result::Result<(), crate::empack::state::StateError> {
         // Mock packwiz refresh - verify pack.toml exists
@@ -679,6 +681,131 @@ impl ConfigProvider for MockConfigProvider {
     }
 }
 
+/// Mock interactive provider for testing
+pub struct MockInteractiveProvider {
+    pub text_input_calls: Arc<Mutex<Vec<(String, String)>>>, // (prompt, default)
+    pub confirm_calls: Arc<Mutex<Vec<(String, bool)>>>,      // (prompt, default)
+    pub select_calls: Arc<Mutex<Vec<String>>>,               // prompt
+    pub fuzzy_select_calls: Arc<Mutex<Vec<String>>>,         // prompt
+    pub text_input_response: Arc<Mutex<Option<String>>>,
+    pub confirm_response: Arc<Mutex<Option<bool>>>,
+    pub select_response: Arc<Mutex<Option<usize>>>,
+    pub fuzzy_select_response: Arc<Mutex<Option<usize>>>,
+}
+
+impl MockInteractiveProvider {
+    pub fn new() -> Self {
+        Self {
+            text_input_calls: Arc::new(Mutex::new(Vec::new())),
+            confirm_calls: Arc::new(Mutex::new(Vec::new())),
+            select_calls: Arc::new(Mutex::new(Vec::new())),
+            fuzzy_select_calls: Arc::new(Mutex::new(Vec::new())),
+            text_input_response: Arc::new(Mutex::new(None)),
+            confirm_response: Arc::new(Mutex::new(None)),
+            select_response: Arc::new(Mutex::new(None)),
+            fuzzy_select_response: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn with_text_input(self, response: String) -> Self {
+        *self.text_input_response.lock().unwrap() = Some(response);
+        self
+    }
+
+    pub fn with_confirm(self, response: bool) -> Self {
+        *self.confirm_response.lock().unwrap() = Some(response);
+        self
+    }
+
+    pub fn with_select(self, response: usize) -> Self {
+        *self.select_response.lock().unwrap() = Some(response);
+        self
+    }
+
+    pub fn with_fuzzy_select(self, response: usize) -> Self {
+        *self.fuzzy_select_response.lock().unwrap() = Some(response);
+        self
+    }
+
+    /// Get recorded text input calls
+    pub fn get_text_input_calls(&self) -> Vec<(String, String)> {
+        self.text_input_calls.lock().unwrap().clone()
+    }
+
+    /// Get recorded confirm calls
+    pub fn get_confirm_calls(&self) -> Vec<(String, bool)> {
+        self.confirm_calls.lock().unwrap().clone()
+    }
+
+    /// Get recorded select calls
+    pub fn get_select_calls(&self) -> Vec<String> {
+        self.select_calls.lock().unwrap().clone()
+    }
+
+    /// Get recorded fuzzy select calls
+    pub fn get_fuzzy_select_calls(&self) -> Vec<String> {
+        self.fuzzy_select_calls.lock().unwrap().clone()
+    }
+}
+
+impl InteractiveProvider for MockInteractiveProvider {
+    fn text_input(&self, prompt: &str, default: String) -> Result<String> {
+        self.text_input_calls
+            .lock()
+            .unwrap()
+            .push((prompt.to_string(), default.clone()));
+
+        if let Some(response) = self.text_input_response.lock().unwrap().clone() {
+            Ok(response)
+        } else {
+            // Default behavior: return the default value
+            Ok(default)
+        }
+    }
+
+    fn confirm(&self, prompt: &str, default: bool) -> Result<bool> {
+        self.confirm_calls
+            .lock()
+            .unwrap()
+            .push((prompt.to_string(), default));
+
+        if let Some(response) = *self.confirm_response.lock().unwrap() {
+            Ok(response)
+        } else {
+            // Default behavior: return the default value
+            Ok(default)
+        }
+    }
+
+    fn select(&self, prompt: &str, _options: &[&str]) -> Result<usize> {
+        self.select_calls
+            .lock()
+            .unwrap()
+            .push(prompt.to_string());
+
+        if let Some(response) = *self.select_response.lock().unwrap() {
+            Ok(response)
+        } else {
+            // Default behavior: return first option (0)
+            Ok(0)
+        }
+    }
+
+    fn fuzzy_select(&self, prompt: &str, _options: &[String]) -> Result<usize> {
+        self.fuzzy_select_calls
+            .lock()
+            .unwrap()
+            .push(prompt.to_string());
+
+        if let Some(response) = *self.fuzzy_select_response.lock().unwrap() {
+            Ok(response)
+        } else {
+            // Default behavior: return first option (0)
+            Ok(0)
+        }
+    }
+}
+
 /// Mock command session for testing
 pub struct MockCommandSession {
     pub multi_progress: MultiProgress,
@@ -687,6 +814,7 @@ pub struct MockCommandSession {
     pub network_provider: MockNetworkProvider,
     pub process_provider: MockProcessProvider,
     pub config_provider: MockConfigProvider,
+    pub interactive_provider: MockInteractiveProvider,
 }
 
 impl MockCommandSession {
@@ -708,6 +836,7 @@ impl MockCommandSession {
             network_provider: MockNetworkProvider::new(),
             process_provider: MockProcessProvider::new(),
             config_provider: MockConfigProvider::new(AppConfig::default()),
+            interactive_provider: MockInteractiveProvider::new(),
         }
     }
 
@@ -728,6 +857,11 @@ impl MockCommandSession {
 
     pub fn with_config(mut self, config: MockConfigProvider) -> Self {
         self.config_provider = config;
+        self
+    }
+
+    pub fn with_interactive(mut self, interactive: MockInteractiveProvider) -> Self {
+        self.interactive_provider = interactive;
         self
     }
 
@@ -755,6 +889,11 @@ impl MockCommandSession {
     pub fn config(&self) -> &dyn ConfigProvider {
         &self.config_provider
     }
+
+    /// Get the interactive provider for this session
+    pub fn interactive(&self) -> &dyn InteractiveProvider {
+        &self.interactive_provider
+    }
 }
 
 impl Session for MockCommandSession {
@@ -776,6 +915,10 @@ impl Session for MockCommandSession {
 
     fn config(&self) -> &dyn ConfigProvider {
         &self.config_provider
+    }
+
+    fn interactive(&self) -> &dyn InteractiveProvider {
+        &self.interactive_provider
     }
 
     fn state(&self) -> crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_> {

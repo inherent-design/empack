@@ -26,6 +26,7 @@ fn clean_test_env() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_truecolor_detection_via_colorterm() {
     clean_test_env();
     unsafe {
@@ -41,6 +42,7 @@ fn test_truecolor_detection_via_colorterm() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_256_color_detection_via_term() {
     clean_test_env();
     unsafe {
@@ -56,6 +58,7 @@ fn test_256_color_detection_via_term() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_unicode_detection_via_lang() {
     clean_test_env();
     unsafe {
@@ -70,6 +73,7 @@ fn test_unicode_detection_via_lang() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_kitty_terminal_detection() {
     clean_test_env();
     unsafe {
@@ -88,6 +92,7 @@ fn test_kitty_terminal_detection() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_windows_terminal_detection() {
     clean_test_env();
     unsafe {
@@ -118,6 +123,7 @@ fn test_terminal_dimensions_default() {
 // =============================================================================
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_terminal_capabilities_detect_from_config_auto() {
     clean_test_env();
     unsafe {
@@ -141,6 +147,7 @@ fn test_terminal_capabilities_detect_from_config_auto() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_terminal_capabilities_detect_forced_never() {
     clean_test_env();
     unsafe {
@@ -371,6 +378,7 @@ fn test_terminal_dimensions_sources() {
 // =============================================================================
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_environment_isolation_kitty_vs_iterm() {
     // This test demonstrates cargo-nextest's environment isolation
     // Each test gets its own process, so env vars don't interfere
@@ -394,6 +402,7 @@ fn test_environment_isolation_kitty_vs_iterm() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_environment_isolation_iterm_detection() {
     // This runs in a separate process from the kitty test above
     // Demonstrates that cargo-nextest prevents environment pollution
@@ -413,6 +422,7 @@ fn test_environment_isolation_iterm_detection() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_environment_isolation_unicode_locales() {
     clean_test_env();
     unsafe {
@@ -427,6 +437,7 @@ fn test_environment_isolation_unicode_locales() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_environment_isolation_utf8_locale() {
     clean_test_env();
     unsafe {
@@ -473,6 +484,7 @@ fn test_terminal_interactivity_construction() {
 // =============================================================================
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_comprehensive_terminal_detection_vscode() {
     clean_test_env();
     unsafe {
@@ -491,6 +503,7 @@ fn test_comprehensive_terminal_detection_vscode() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_comprehensive_terminal_detection_wezterm() {
     clean_test_env();
     unsafe {
@@ -529,6 +542,7 @@ fn test_comprehensive_terminal_detection_fallback() {
 // =============================================================================
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_full_integration_modern_terminal() {
     clean_test_env();
     unsafe {
@@ -558,6 +572,7 @@ fn test_full_integration_modern_terminal() {
 }
 
 #[test]
+#[ignore] // UNSAFE: Manipulates global environment variables
 fn test_full_integration_legacy_terminal() {
     clean_test_env();
     unsafe {

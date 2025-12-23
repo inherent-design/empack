@@ -12,9 +12,9 @@ use empack_lib::application::session::{
 };
 use empack_lib::application::session_mocks::MockProcessProvider;
 use empack_lib::display::{Display, LiveDisplayProvider};
-use empack_lib::empack::search::{Platform, ProjectInfo};
+use empack_lib::application::session_mocks::MockInteractiveProvider;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::fixtures::load_fixture;
+use empack_tests::fixtures::load_vcr_body_string;
 use indicatif::MultiProgress;
 use mockito::Server;
 use std::path::Path;
@@ -43,7 +43,11 @@ async fn e2e_add_mod_successfully() -> Result<()> {
 
     // Set up mockito server for Modrinth API
     let mut server = Server::new_async().await;
-    let sodium_fixture = load_fixture("modrinth_search_sodium.json")?;
+    let cassette_path = format!(
+        "{}/fixtures/cassettes/modrinth/search_sodium.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let sodium_fixture = load_vcr_body_string(&cassette_path)?;
 
     let mock_modrinth = server
         .mock("GET", "/v2/search")
@@ -75,6 +79,7 @@ async fn e2e_add_mod_successfully() -> Result<()> {
         LiveNetworkProvider::new_for_test(Some(server.url()), None),
         mock_process_provider,
         LiveConfigProvider::new(app_config),
+        MockInteractiveProvider::new(),
     );
 
     // Execute the add command - this will use the mock server instead of live API calls

@@ -100,6 +100,16 @@ pub struct AppConfig {
     #[arg(short, long, env = "EMPACK_COLOR", default_value = defaults::TTY_CAPS_DETECT_INTENT)]
     #[serde(default = "default_fns::tty_caps_detect_intent")]
     pub color: TerminalCapsDetectIntent,
+
+    /// Skip prompts and use defaults (global non-interactive mode)
+    #[arg(short = 'y', long, global = true, env = "EMPACK_YES", help = "Skip prompts and use defaults")]
+    #[serde(default)]
+    pub yes: bool,
+
+    /// Preview operations without executing (global dry-run mode)
+    #[arg(long, global = true, env = "EMPACK_DRY_RUN", help = "Preview operations without executing")]
+    #[serde(default)]
+    pub dry_run: bool,
 }
 
 impl Default for AppConfig {
@@ -115,6 +125,8 @@ impl Default for AppConfig {
             log_format: default_fns::log_format(),
             log_output: default_fns::log_output(),
             color: default_fns::tty_caps_detect_intent(),
+            yes: false,
+            dry_run: false,
         }
     }
 }
@@ -158,6 +170,14 @@ impl AppConfig {
         }
         if other.cpu_jobs != default_fns::cpu_parallels() {
             self.cpu_jobs = other.cpu_jobs;
+        }
+
+        // For booleans, take other if true (non-default)
+        if other.yes {
+            self.yes = other.yes;
+        }
+        if other.dry_run {
+            self.dry_run = other.dry_run;
         }
 
         // For enums, detect if it's non-default

@@ -57,11 +57,7 @@ pub enum Commands {
     },
 
     /// Synchronize empack.yml dependencies with pack.toml reality
-    Sync {
-        /// Dry run - show what would be changed without applying
-        #[arg(long, help = "Show planned changes without applying them")]
-        dry_run: bool,
-    },
+    Sync {},
 
     /// Build modpack targets
     Build {

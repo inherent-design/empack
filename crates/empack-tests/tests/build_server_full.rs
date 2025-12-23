@@ -11,6 +11,7 @@ use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveNetworkProvider,
     LiveProcessProvider,
 };
+use empack_lib::application::session_mocks::MockInteractiveProvider;
 use empack_lib::display::{Display, LiveDisplayProvider};
 use empack_lib::terminal::TerminalCapabilities;
 use indicatif::MultiProgress;
@@ -26,6 +27,7 @@ async fn initialize_empack_project(
         LiveNetworkProvider,
         LiveProcessProvider,
         LiveConfigProvider,
+        MockInteractiveProvider,
     >,
 > {
     // Create the basic structure that empack expects
@@ -85,6 +87,7 @@ hash = ""
         network_provider,
         process_provider,
         config_provider,
+        MockInteractiveProvider::new(),
     );
 
     // Change to the working directory

@@ -60,38 +60,41 @@ mod handle_init_tests {
     
     #[tokio::test]
     async fn it_initializes_new_project() {
-        let session = MockCommandSession::new()
+        let mut session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new()
                 .with_current_dir(PathBuf::from("/test/empty-project")));
-        
+        session.config_provider.app_config.yes = true; // Enable non-interactive mode
+
         let result = handle_init(&session, Some("test-pack".to_string()), false).await;
-        
+
         // The function should complete without error
         // Note: Real state management would require more complex mocking
         // For now, we verify the basic flow works
         assert!(result.is_ok() || result.is_err()); // Either outcome is acceptable in mock environment
     }
-    
+
     #[tokio::test]
     async fn it_refuses_to_overwrite_existing_without_force() {
-        let session = MockCommandSession::new()
+        let mut session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new()
                 .with_current_dir(PathBuf::from("/test/existing-project")));
-        
+        session.config_provider.app_config.yes = true; // Enable non-interactive mode
+
         let result = handle_init(&session, Some("test-pack".to_string()), false).await;
-        
+
         // Should complete (may succeed or fail depending on mock state)
         assert!(result.is_ok() || result.is_err());
     }
-    
+
     #[tokio::test]
     async fn it_overwrites_existing_with_force() {
-        let session = MockCommandSession::new()
+        let mut session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new()
                 .with_current_dir(PathBuf::from("/test/existing-project")));
-        
+        session.config_provider.app_config.yes = true; // Enable non-interactive mode
+
         let result = handle_init(&session, Some("test-pack".to_string()), true).await;
-        
+
         // Should complete with force flag
         assert!(result.is_ok() || result.is_err());
     }
@@ -270,17 +273,18 @@ mod handle_remove_tests {
                 .with_configured_project(workdir))
             .with_process(MockProcessProvider::new()
                 .with_packwiz_result(
-                    vec!["remove".to_string(), "test-mod".to_string(), "--remove-deps".to_string()],
+                    vec!["remove".to_string(), "test-mod".to_string()],
                     Ok(ProcessOutput { stdout: String::new(), stderr: String::new(), success: true })
                 ));
-        
+
         let result = handle_remove(&session, vec!["test-mod".to_string()], true).await;
-        
+
         assert!(result.is_ok());
-        
-        // Verify packwiz remove command was called with --remove-deps flag
+
+        // Verify packwiz remove command was called (without --remove-deps flag)
+        // Note: packwiz does not support --remove-deps, orphan detection is implemented separately
         let calls = session.process_provider.get_calls();
-        assert!(session.process_provider.verify_call("packwiz", &["remove", "test-mod", "--remove-deps"], &session.filesystem_provider.current_dir.join("pack")));
+        assert!(session.process_provider.verify_call("packwiz", &["remove", "test-mod"], &session.filesystem_provider.current_dir.join("pack")));
     }
     
     #[tokio::test]
@@ -321,96 +325,97 @@ mod handle_sync_tests {
     async fn it_adds_missing_mod() {
         let mut installed_mods = HashSet::new();
         // Empty set - no mods currently installed
-        
+
         let workdir = PathBuf::from("/test/configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
                 .with_configured_project(workdir)
                 .with_installed_mods(installed_mods));
-        
-        let result = handle_sync(&session, false).await;
-        
+
+        let result = handle_sync(&session).await;
+
         // Should complete (may succeed or fail depending on config resolution)
         assert!(result.is_ok() || result.is_err());
-        
+
         // In a real test, we'd verify that add commands were executed
         // This requires more complex mocking of the config system
     }
-    
+
     #[tokio::test]
     async fn it_removes_extra_mod() {
         let mut installed_mods = HashSet::new();
         installed_mods.insert("extra_mod".to_string());
-        
+
         let workdir = PathBuf::from("/test/configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
                 .with_configured_project(workdir)
                 .with_installed_mods(installed_mods));
-        
-        let result = handle_sync(&session, false).await;
-        
+
+        let result = handle_sync(&session).await;
+
         // Should complete (may succeed or fail depending on config resolution)
         assert!(result.is_ok() || result.is_err());
-        
+
         // In a real test, we'd verify that remove commands were executed
     }
-    
+
     #[tokio::test]
     async fn it_does_nothing_when_in_sync() {
         let mut installed_mods = HashSet::new();
         installed_mods.insert("required_mod".to_string());
-        
+
         let workdir = PathBuf::from("/test/configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
                 .with_configured_project(workdir)
                 .with_installed_mods(installed_mods));
-        
-        let result = handle_sync(&session, false).await;
-        
+
+        let result = handle_sync(&session).await;
+
         // Should complete (may succeed or fail depending on config resolution)
         assert!(result.is_ok() || result.is_err());
-        
+
         // In a real test with proper config mocking, we'd verify no commands were executed
     }
-    
+
     #[tokio::test]
     async fn it_performs_dry_run_without_changes() {
         let mut installed_mods = HashSet::new();
         installed_mods.insert("test_mod".to_string());
-        
+
         let workdir = PathBuf::from("/test/configured-project");
-        let session = MockCommandSession::new()
+        let mut session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
                 .with_configured_project(workdir)
                 .with_installed_mods(installed_mods));
-        
-        let result = handle_sync(&session, true).await;
-        
+        session.config_provider.app_config.dry_run = true; // Enable dry-run mode
+
+        let result = handle_sync(&session).await;
+
         // Should complete (may succeed or fail depending on config resolution)
         assert!(result.is_ok() || result.is_err());
-        
+
         // In dry run mode, no packwiz commands should be executed
         let calls = session.process_provider.get_calls();
         // Note: Commands might be empty due to early exit in dry run or config errors
         assert!(calls.is_empty() || !calls.is_empty());
     }
-    
+
     #[tokio::test]
     async fn it_handles_uninitialized_project() {
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new()
                 .with_current_dir(PathBuf::from("/test/uninitialized-project")));
-        
-        let result = handle_sync(&session, false).await;
-        
+
+        let result = handle_sync(&session).await;
+
         assert!(result.is_ok());
-        
+
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();
         assert!(calls.is_empty());

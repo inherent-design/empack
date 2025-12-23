@@ -133,6 +133,82 @@ impl TestEnvironment {
             }
             MockBehavior::SucceedWithOutput { stdout, stderr } => {
                 let mut code = String::new();
+
+                // Special handling for packwiz init - create pack.toml and index.toml
+                if name == "packwiz" && stdout.contains("Initialized") {
+                    code.push_str(r#"
+# Create pack.toml and index.toml if 'init' command detected
+if [[ "$1" == "init" ]]; then
+  # Extract parameters from command line
+  NAME="mock-pack"
+  AUTHOR="Test Author"
+  VERSION="1.0.0"
+  MC_VERSION="1.21.1"
+  MODLOADER="fabric"
+  LOADER_VERSION="0.15.0"
+
+  # Parse arguments (simple extraction)
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name)
+        NAME="$2"
+        shift 2
+        ;;
+      --author)
+        AUTHOR="$2"
+        shift 2
+        ;;
+      --version)
+        VERSION="$2"
+        shift 2
+        ;;
+      --mc-version)
+        MC_VERSION="$2"
+        shift 2
+        ;;
+      --modloader)
+        MODLOADER="$2"
+        shift 2
+        ;;
+      --fabric-version|--neoforge-version|--forge-version|--quilt-version)
+        LOADER_VERSION="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  # Create pack.toml
+  cat > pack.toml <<PACKTOML
+name = "$NAME"
+author = "$AUTHOR"
+version = "$VERSION"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "$MC_VERSION"
+$MODLOADER = "$LOADER_VERSION"
+PACKTOML
+
+  # Create index.toml
+  cat > index.toml <<'INDEXTOML'
+hash-format = "sha256"
+
+[[files]]
+file = "pack.toml"
+hash = ""
+INDEXTOML
+fi
+"#);
+                }
+
                 if !stdout.is_empty() {
                     code.push_str(&format!("echo '{}'\n", stdout));
                 }
@@ -304,6 +380,7 @@ pub struct HermeticSessionBuilder {
     test_env: TestEnvironment,
     app_config: AppConfig,
     network_provider: MockNetworkProvider,
+    interactive_provider: Option<empack_lib::application::session_mocks::MockInteractiveProvider>,
 }
 
 impl HermeticSessionBuilder {
@@ -317,6 +394,7 @@ impl HermeticSessionBuilder {
             test_env,
             app_config,
             network_provider,
+            interactive_provider: None,
         })
     }
 
@@ -332,6 +410,18 @@ impl HermeticSessionBuilder {
         self
     }
 
+    /// Enable non-interactive mode (--yes flag)
+    pub fn with_yes_flag(mut self) -> Self {
+        self.app_config.yes = true;
+        self
+    }
+
+    /// Enable dry-run mode (--dry-run flag)
+    pub fn with_dry_run_flag(mut self) -> Self {
+        self.app_config.dry_run = true;
+        self
+    }
+
     /// Add a mock mod to the network provider
     pub fn with_mock_mod(mut self, name: &str, project_id: &str) -> Self {
         self.network_provider.add_mock_mod(name, project_id);
@@ -341,6 +431,15 @@ impl HermeticSessionBuilder {
     /// Add a mock search result to the network provider
     pub fn with_mock_search_result(mut self, query: &str, project_info: ProjectInfo) -> Self {
         self.network_provider.add_search_result(query, project_info);
+        self
+    }
+
+    /// Configure the interactive provider with custom responses
+    pub fn with_interactive_provider(
+        mut self,
+        interactive_provider: empack_lib::application::session_mocks::MockInteractiveProvider,
+    ) -> Self {
+        self.interactive_provider = Some(interactive_provider);
         self
     }
 
@@ -367,9 +466,25 @@ impl HermeticSessionBuilder {
             MockNetworkProvider,
             LiveProcessProvider,
             LiveConfigProvider,
+            empack_lib::application::session_mocks::MockInteractiveProvider,
         >,
         TestEnvironment,
     )> {
+        use empack_lib::application::session_mocks::MockInteractiveProvider;
+
+        // Set XDG_CACHE_HOME to test temp directory to isolate version fetcher cache
+        // This prevents tests from reading real cached API responses
+        let cache_dir = self.test_env.root_path.join("cache");
+        std::fs::create_dir_all(&cache_dir)?;
+        // SAFETY: This is safe in test environments where we control execution
+        // Tests run sequentially or in isolated processes, so no concurrent modification
+        unsafe {
+            std::env::set_var("XDG_CACHE_HOME", &cache_dir);
+        }
+
+        // Use provided interactive provider or create default one
+        let interactive_provider = self.interactive_provider.unwrap_or_else(MockInteractiveProvider::new);
+
         // Create session with coordinated mock providers
         let session = CommandSession::new_with_providers(
             LiveFileSystemProvider,
@@ -378,6 +493,7 @@ impl HermeticSessionBuilder {
                 self.test_env.bin_path.to_string_lossy().to_string(),
             )),
             LiveConfigProvider::new(self.app_config),
+            interactive_provider,
         );
 
         Ok((session, self.test_env))
@@ -431,8 +547,9 @@ impl MockNetworkProvider {
 
 impl NetworkProvider for MockNetworkProvider {
     fn http_client(&self) -> Result<Client> {
-        // Return a client that won't actually be used in mocked scenarios
-        Ok(Client::new())
+        // Return error to force fallback to hardcoded versions in tests
+        // This prevents real network calls and makes tests deterministic
+        Err(anyhow::anyhow!("Mock HTTP client unavailable (test mode)"))
     }
 
     fn project_resolver(

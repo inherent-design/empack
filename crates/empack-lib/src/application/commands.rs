@@ -69,7 +69,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             jobs: _,
         } => handle_build(session, targets, clean).await,
         Commands::Clean { targets } => handle_clean(session, targets).await,
-        Commands::Sync { dry_run } => handle_sync(session, dry_run).await,
+        Commands::Sync {} => handle_sync(session).await,
     }
 }
 
@@ -170,7 +170,11 @@ async fn handle_version(session: &dyn Session) -> Result<()> {
     Ok(())
 }
 
-async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -> Result<()> {
+async fn handle_init(
+    session: &dyn Session,
+    name: Option<String>,
+    force: bool,
+) -> Result<()> {
     // Handle directory creation case: `empack init <name>` where <name> is a directory
     let (target_dir, initial_name) = if let Some(name) = name {
         let potential_dir = session
@@ -238,21 +242,44 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
             .to_string()
     });
 
-    // Interactive prompt for modpack configuration
-    let modpack_name = dialoguer::Input::new()
-        .with_prompt("Modpack name")
-        .default(default_name)
-        .interact_text()?;
+    // Interactive prompt for modpack configuration (or use defaults if --yes)
+    let modpack_name = if session.config().app_config().yes {
+        default_name
+    } else {
+        session
+            .interactive()
+            .text_input("Modpack name", default_name)?
+    };
 
-    let author = dialoguer::Input::new()
-        .with_prompt("Author")
-        .default("Unknown Author".to_string())
-        .interact_text()?;
+    let author = if session.config().app_config().yes {
+        // Try to get git user.name, fallback to "Unknown Author"
+        std::process::Command::new("git")
+            .args(["config", "user.name"])
+            .output()
+            .ok()
+            .and_then(|output| {
+                if output.status.success() {
+                    String::from_utf8(output.stdout).ok()
+                } else {
+                    None
+                }
+            })
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Unknown Author".to_string())
+    } else {
+        session
+            .interactive()
+            .text_input("Author", "Unknown Author".to_string())?
+    };
 
-    let version = dialoguer::Input::new()
-        .with_prompt("Version")
-        .default("1.0.0".to_string())
-        .interact_text()?;
+    let version = if session.config().app_config().yes {
+        "1.0.0".to_string()
+    } else {
+        session
+            .interactive()
+            .text_input("Version", "1.0.0".to_string())?
+    };
 
     // Create version fetcher for dynamic version discovery
     let version_fetcher =
@@ -281,12 +308,14 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
         }
     };
 
-    // Minecraft version selection with FuzzySelect
-    let mc_version_index = dialoguer::FuzzySelect::new()
-        .with_prompt("Minecraft version")
-        .items(&minecraft_versions)
-        .default(0)
-        .interact()?;
+    // Minecraft version selection with FuzzySelect (or default if --yes)
+    let mc_version_index = if session.config().app_config().yes {
+        0 // Use first (newest) version
+    } else {
+        session
+            .interactive()
+            .fuzzy_select("Minecraft version", &minecraft_versions)?
+    };
     let minecraft_version = &minecraft_versions[mc_version_index];
 
     // Step 3: Dynamic, Filtered Mod Loader Prompt
@@ -343,16 +372,19 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
         return Ok(());
     }
 
-    // Present filtered loader list with intelligent priority
+    // Present filtered loader list with intelligent priority (or default if --yes)
     let loader_names: Vec<String> = compatible_loaders
         .iter()
         .map(|l| l.as_str().to_string())
         .collect();
-    let loader_index = dialoguer::Select::new()
-        .with_prompt("Mod loader")
-        .items(&loader_names)
-        .default(0) // First in priority-ordered list
-        .interact()?;
+    let loader_index = if session.config().app_config().yes {
+        0 // Use first (priority-ordered) loader
+    } else {
+        let loader_name_refs: Vec<&str> = loader_names.iter().map(|s| s.as_str()).collect();
+        session
+            .interactive()
+            .select("Mod loader", &loader_name_refs)?
+    };
     let selected_loader = &compatible_loaders[loader_index];
     let loader_str = selected_loader.as_str();
 
@@ -464,12 +496,14 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
         }
     };
 
-    // Loader version selection with FuzzySelect
-    let loader_version_index = dialoguer::FuzzySelect::new()
-        .with_prompt(&format!("{} version", loader_str))
-        .items(&loader_versions)
-        .default(0) // Default to newest/stable
-        .interact()?;
+    // Loader version selection with FuzzySelect (or default if --yes)
+    let loader_version_index = if session.config().app_config().yes {
+        0 // Default to newest/stable
+    } else {
+        session
+            .interactive()
+            .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?
+    };
     let loader_version = &loader_versions[loader_version_index];
 
     // Step 5: Final Confirmation and Execution
@@ -495,11 +529,14 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
         .status()
         .info(&format!("   Loader: {} v{}", loader_str, loader_version));
 
-    // Final confirmation
-    let confirmed = dialoguer::Confirm::new()
-        .with_prompt("Create modpack with these settings?")
-        .default(true)
-        .interact()?;
+    // Final confirmation (skip if --yes)
+    let confirmed = if session.config().app_config().yes {
+        true
+    } else {
+        session
+            .interactive()
+            .confirm("Create modpack with these settings?", true)?
+    };
 
     if !confirmed {
         session
@@ -537,7 +574,7 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
         loader_version: loader_version,
     };
     let result = manager
-        .execute_transition(StateTransition::Initialize(init_config))
+        .execute_transition(session.process(), StateTransition::Initialize(init_config))
         .await
         .context("Failed to initialize modpack project")?;
 
@@ -593,7 +630,7 @@ async fn handle_add(
     session: &dyn Session,
     mods: Vec<String>,
     force: bool,
-    platform: Option<crate::application::cli::SearchPlatform>,
+    _platform: Option<crate::application::cli::SearchPlatform>,
 ) -> Result<()> {
     // Migrate from legacy handle_add - using session providers
 
@@ -631,6 +668,19 @@ async fn handle_add(
     let manager = session.state();
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
+
+    // Build dependency graph from existing mods to detect duplicates and cycles
+    let mut dep_graph = crate::api::dependency_graph::DependencyGraph::new();
+    let mods_dir = workdir.join("pack").join("mods");
+
+    if mods_dir.exists() {
+        if let Err(e) = dep_graph.build_from_directory(&mods_dir) {
+            session
+                .display()
+                .status()
+                .warning(&format!("Failed to build dependency graph: {}", e));
+        }
+    }
 
     // Try to load existing project plan to get context
     let project_plan = match config_manager.create_project_plan() {
@@ -696,6 +746,15 @@ async fn handle_add(
                     .status()
                     .info(&format!("Confidence: {}%", project_info.confidence));
 
+                // Check for duplicate mod (unless --force flag is set)
+                if !force && dep_graph.contains(&project_info.project_id) {
+                    session
+                        .display()
+                        .status()
+                        .warning(&format!("Mod already installed: {} (use --force to reinstall)", project_info.title));
+                    continue; // Skip this mod
+                }
+
                 // Execute appropriate packwiz command
                 let packwiz_result = match project_info.platform {
                     crate::primitives::ProjectPlatform::Modrinth => session.process().execute(
@@ -725,6 +784,37 @@ async fn handle_add(
                             .display()
                             .status()
                             .success("Successfully added to pack", "");
+
+                        // Update dependency graph with newly added mod
+                        // Rebuild from directory to capture new .pw.toml files
+                        let mut updated_graph = crate::api::dependency_graph::DependencyGraph::new();
+                        if let Err(e) = updated_graph.build_from_directory(&mods_dir) {
+                            session
+                                .display()
+                                .status()
+                                .warning(&format!("Failed to update dependency graph: {}", e));
+                        } else {
+                            // Check for cycles introduced by new mod
+                            if updated_graph.has_cycles() {
+                                if let Some(cycle) = updated_graph.detect_cycle() {
+                                    session
+                                        .display()
+                                        .status()
+                                        .error(
+                                            "Circular dependency detected",
+                                            &cycle.join(" → ")
+                                        );
+                                    session
+                                        .display()
+                                        .status()
+                                        .warning("Installation may fail - consider removing conflicting mods");
+                                }
+                            } else {
+                                // Update our graph for next iteration
+                                dep_graph = updated_graph;
+                            }
+                        }
+
                         added_mods.push((mod_query, project_info));
                     }
                     Err(e) => {
@@ -811,6 +901,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     // Use the session's working directory
     let manager = session.state();
     let workdir = manager.workdir.clone();
+    let mods_dir = workdir.join("pack").join("mods");
     let mut removed_mods = Vec::new();
     let mut failed_mods = Vec::new();
 
@@ -821,10 +912,9 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             .checking(&format!("Removing mod: {}", mod_name));
 
         // Execute packwiz remove command
-        let mut packwiz_args = vec!["remove", &mod_name];
-        if deps {
-            packwiz_args.push("--remove-deps");
-        }
+        // Note: packwiz does not support --remove-deps flag
+        // Orphan detection must be implemented using DependencyGraph
+        let packwiz_args = vec!["remove", &mod_name];
 
         let result = session
             .process()
@@ -855,12 +945,115 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         }
     }
 
+    // Orphan detection: Find mods with no dependents (if --deps flag is set)
+    let mut removed_orphans = Vec::new();
+    if deps && !removed_mods.is_empty() && mods_dir.exists() {
+        session.display().status().section("🔍 Detecting orphaned dependencies");
+
+        // Rebuild dependency graph after removals
+        let mut dep_graph = crate::api::dependency_graph::DependencyGraph::new();
+        if let Err(e) = dep_graph.build_from_directory(&mods_dir) {
+            session
+                .display()
+                .status()
+                .warning(&format!("Failed to build dependency graph: {}", e));
+        } else {
+            // Load empack.yml to get top-level mods
+            let config_manager = session.filesystem().config_manager(workdir.clone());
+            let top_level_mods: std::collections::HashSet<String> = match config_manager.create_project_plan() {
+                Ok(plan) => {
+                    // Use the dependency key as the mod identifier
+                    plan.dependencies.iter().map(|dep| dep.key.clone()).collect()
+                }
+                Err(_) => std::collections::HashSet::new(),
+            };
+
+            // Find orphans: mods not in top-level AND no dependents
+            let mut orphans = Vec::new();
+            for node in dep_graph.all_nodes() {
+                // Skip if mod is explicitly declared in empack.yml
+                if top_level_mods.contains(&node.mod_id) {
+                    continue;
+                }
+
+                // Check if any mods depend on this one
+                let has_dependents = dep_graph
+                    .get_dependents(&node.mod_id)
+                    .map(|deps| !deps.is_empty())
+                    .unwrap_or(false);
+
+                if !has_dependents {
+                    orphans.push(node.mod_id.clone());
+                }
+            }
+
+            if !orphans.is_empty() {
+                session
+                    .display()
+                    .status()
+                    .info(&format!("Found {} orphaned dependencies:", orphans.len()));
+                for orphan in &orphans {
+                    session.display().status().subtle(&format!("  - {}", orphan));
+                }
+
+                // Prompt user to remove orphans
+                let should_remove = session
+                    .interactive()
+                    .text_input("Remove orphaned dependencies? [y/N]", "N".to_string())?
+                    .to_lowercase();
+
+                if should_remove == "y" || should_remove == "yes" {
+                    session.display().status().section("🧹 Removing orphans");
+
+                    for orphan in orphans {
+                        let result = session
+                            .process()
+                            .execute("packwiz", &["remove", &orphan], &workdir.join("pack"))
+                            .and_then(|output| {
+                                if output.success {
+                                    Ok(())
+                                } else {
+                                    Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                                }
+                            });
+
+                        match result {
+                            Ok(_) => {
+                                session
+                                    .display()
+                                    .status()
+                                    .success(&format!("Removed orphan: {}", orphan), "");
+                                removed_orphans.push(orphan);
+                            }
+                            Err(e) => {
+                                session
+                                    .display()
+                                    .status()
+                                    .error(&format!("Failed to remove orphan: {}", orphan), &e.to_string());
+                            }
+                        }
+                    }
+                } else {
+                    session.display().status().info("Orphans not removed");
+                }
+            } else {
+                session.display().status().info("No orphaned dependencies found");
+            }
+        }
+    }
+
     // Show summary
     session.display().status().section("📊 Remove Summary");
     session
         .display()
         .status()
         .success("Successfully removed", &removed_mods.len().to_string());
+    if !removed_orphans.is_empty() {
+        session
+            .display()
+            .status()
+            .success("Orphans removed", &removed_orphans.len().to_string());
+    }
     session
         .display()
         .status()
@@ -907,7 +1100,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
             .status()
             .checking("Cleaning build artifacts");
         manager
-            .execute_transition(StateTransition::Clean)
+            .execute_transition(session.process(), StateTransition::Clean)
             .await
             .context("Failed to clean build artifacts")?;
     }
@@ -1010,7 +1203,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
         let current_state = manager.discover_state().map_err(StateError::from)?;
         if current_state == PackState::Built {
             manager
-                .execute_transition(StateTransition::Clean)
+                .execute_transition(session.process(), StateTransition::Clean)
                 .await
                 .context("Failed to clean build artifacts")?;
             session
@@ -1036,7 +1229,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
     Ok(())
 }
 
-async fn handle_sync(session: &dyn Session, dry_run: bool) -> Result<()> {
+async fn handle_sync(session: &dyn Session) -> Result<()> {
     let manager = session.state();
 
     // Verify we're in a configured state
@@ -1239,7 +1432,7 @@ async fn handle_sync(session: &dyn Session, dry_run: bool) -> Result<()> {
                     .display()
                     .status()
                     .info(&format!("➕ Add: {} ({})", title, key));
-                if dry_run {
+                if session.config().app_config().dry_run {
                     session
                         .display()
                         .status()
@@ -1251,7 +1444,7 @@ async fn handle_sync(session: &dyn Session, dry_run: bool) -> Result<()> {
                     .display()
                     .status()
                     .info(&format!("➖ Remove: {} ({})", title, key));
-                if dry_run {
+                if session.config().app_config().dry_run {
                     session
                         .display()
                         .status()
@@ -1261,7 +1454,7 @@ async fn handle_sync(session: &dyn Session, dry_run: bool) -> Result<()> {
         }
     }
 
-    if dry_run {
+    if session.config().app_config().dry_run {
         session
             .display()
             .status()

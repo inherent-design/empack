@@ -155,6 +155,7 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
 
     fn run_packwiz_init(
         &self,
+        _process: &dyn crate::application::session::ProcessProvider,
         _workdir: &Path,
         _name: &str,
         _author: &str,
@@ -169,7 +170,11 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         }
     }
 
-    fn run_packwiz_refresh(&self, _workdir: &Path) -> Result<(), StateError> {
+    fn run_packwiz_refresh(
+        &self,
+        _process: &dyn crate::application::session::ProcessProvider,
+        _workdir: &Path,
+    ) -> Result<(), StateError> {
         match self.packwiz_results.get("refresh") {
             Some(result) => result.clone(),
             None => Ok(()), // Default success
@@ -227,18 +232,20 @@ fn test_initial_state_is_uninitialized() {
 async fn test_transition_to_configured() {
     let (provider, workdir) = create_uninitialized_test();
     let manager = PackStateManager::new(workdir, &provider);
+    let process = crate::application::session_mocks::MockProcessProvider::new();
 
     let result = manager
-        .execute_transition(StateTransition::Initialize(
-            crate::primitives::InitializationConfig {
+        .execute_transition(
+            &process,
+            StateTransition::Initialize(crate::primitives::InitializationConfig {
                 name: "Test Pack",
                 author: "Test Author",
                 version: "1.0.0",
                 modloader: "fabric",
                 mc_version: "1.20.1",
                 loader_version: "0.14.21",
-            },
-        ))
+            }),
+        )
         .await
         .unwrap();
     assert_eq!(result, PackState::Configured);
@@ -251,13 +258,14 @@ async fn test_transition_to_configured() {
 async fn test_transition_to_built() {
     let (provider, workdir) = create_configured_test();
     let manager = PackStateManager::new(workdir.clone(), &provider);
+    let process = crate::application::session_mocks::MockProcessProvider::new();
 
     // Build from configured state
     let targets = vec![BuildTarget::Mrpack, BuildTarget::Client];
     let mock_session = crate::application::session_mocks::MockCommandSession::new();
     let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
     let result = manager
-        .execute_transition(StateTransition::Build(mock_orchestrator, targets))
+        .execute_transition(&process, StateTransition::Build(mock_orchestrator, targets))
         .await
         .unwrap();
     assert_eq!(result, PackState::Built);
@@ -270,17 +278,18 @@ async fn test_transition_to_built() {
 async fn test_clean_transitions() {
     let (provider, workdir) = create_built_test();
     let manager = PackStateManager::new(workdir, &provider);
+    let process = crate::application::session_mocks::MockProcessProvider::new();
 
     // Start from built state and clean back to configured
     let result = manager
-        .execute_transition(StateTransition::Clean)
+        .execute_transition(&process, StateTransition::Clean)
         .await
         .unwrap();
     assert_eq!(result, PackState::Configured);
 
     // Clean back to uninitialized
     let result = manager
-        .execute_transition(StateTransition::Clean)
+        .execute_transition(&process, StateTransition::Clean)
         .await
         .unwrap();
     assert_eq!(result, PackState::Uninitialized);
@@ -292,21 +301,22 @@ async fn test_clean_transitions() {
 async fn test_invalid_transitions() {
     let (provider, workdir) = create_uninitialized_test();
     let manager = PackStateManager::new(workdir.clone(), &provider);
+    let process = crate::application::session_mocks::MockProcessProvider::new();
 
     // Can't build from uninitialized
     let mock_session = crate::application::session_mocks::MockCommandSession::new();
     let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
     let result = manager
-        .execute_transition(StateTransition::Build(
-            mock_orchestrator,
-            vec![BuildTarget::Mrpack],
-        ))
+        .execute_transition(
+            &process,
+            StateTransition::Build(mock_orchestrator, vec![BuildTarget::Mrpack]),
+        )
         .await;
     assert!(result.is_err());
 
     // Can't sync from uninitialized
     let result = manager
-        .execute_transition(StateTransition::Synchronize)
+        .execute_transition(&process, StateTransition::Synchronize)
         .await;
     assert!(result.is_err());
 }
@@ -398,10 +408,13 @@ fn test_pure_can_transition_function() {
 
 #[tokio::test]
 async fn test_pure_execute_transition_function() {
+    let process = crate::application::session_mocks::MockProcessProvider::new();
+
     // Test initialize transition
     let (provider, workdir) = create_uninitialized_test();
     let result = execute_transition(
         &provider,
+        &process,
         &workdir,
         StateTransition::Initialize(crate::primitives::InitializationConfig {
             name: "Test Pack",
@@ -423,6 +436,7 @@ async fn test_pure_execute_transition_function() {
     let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
     let result = execute_transition(
         &provider,
+        &process,
         &workdir,
         StateTransition::Build(mock_orchestrator, targets),
     )
@@ -432,20 +446,20 @@ async fn test_pure_execute_transition_function() {
 
     // Test synchronize transition (expect failure due to ConfigManager dependency)
     let (provider, workdir) = create_configured_test();
-    let result = execute_transition(&provider, &workdir, StateTransition::Synchronize).await;
+    let result = execute_transition(&provider, &process, &workdir, StateTransition::Synchronize).await;
     // This should fail because ConfigManager can't find real files
     assert!(result.is_err());
 
     // Test clean transition from built
     let (provider, workdir) = create_built_test();
-    let result = execute_transition(&provider, &workdir, StateTransition::Clean)
+    let result = execute_transition(&provider, &process, &workdir, StateTransition::Clean)
         .await
         .unwrap();
     assert_eq!(result, PackState::Configured);
 
     // Test clean transition from configured
     let (provider, workdir) = create_configured_test();
-    let result = execute_transition(&provider, &workdir, StateTransition::Clean)
+    let result = execute_transition(&provider, &process, &workdir, StateTransition::Clean)
         .await
         .unwrap();
     assert_eq!(result, PackState::Uninitialized);
@@ -454,8 +468,10 @@ async fn test_pure_execute_transition_function() {
 #[test]
 fn test_pure_execute_initialize_function() {
     let (provider, workdir) = create_uninitialized_test();
+    let process = crate::application::session_mocks::MockProcessProvider::new();
     let result = execute_initialize(
         &provider,
+        &process,
         &workdir,
         "Test Pack",
         "Test Author",
@@ -500,7 +516,8 @@ fn test_pure_execute_synchronize_function() {
     // The synchronize function will fail when trying to validate configuration
     // This is expected behavior and shows that the function correctly calls ConfigManager
     let (provider, workdir) = create_configured_test();
-    let result = execute_synchronize(&provider, &workdir);
+    let process = crate::application::session_mocks::MockProcessProvider::new();
+    let result = execute_synchronize(&provider, &process, &workdir);
 
     // The function should fail because ConfigManager can't find real files
     // This demonstrates that the pure function is correctly calling the ConfigManager

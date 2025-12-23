@@ -64,6 +64,7 @@ pub trait FileSystemProvider {
     /// Run packwiz init command
     fn run_packwiz_init(
         &self,
+        process: &dyn ProcessProvider,
         workdir: &Path,
         name: &str,
         author: &str,
@@ -74,7 +75,11 @@ pub trait FileSystemProvider {
     ) -> std::result::Result<(), crate::empack::state::StateError>;
 
     /// Run packwiz refresh command
-    fn run_packwiz_refresh(&self, workdir: &Path) -> std::result::Result<(), crate::empack::state::StateError>;
+    fn run_packwiz_refresh(
+        &self,
+        process: &dyn ProcessProvider,
+        workdir: &Path,
+    ) -> std::result::Result<(), crate::empack::state::StateError>;
 
     /// Get the expected cache path for packwiz-installer-bootstrap.jar
     fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf>;
@@ -119,6 +124,21 @@ pub trait ConfigProvider {
     fn app_config(&self) -> &AppConfig;
 }
 
+/// Provider trait for interactive user input operations
+pub trait InteractiveProvider {
+    /// Prompt for text input with optional default value
+    fn text_input(&self, prompt: &str, default: String) -> Result<String>;
+
+    /// Prompt for confirmation (yes/no)
+    fn confirm(&self, prompt: &str, default: bool) -> Result<bool>;
+
+    /// Prompt for selection from a list of options
+    fn select(&self, prompt: &str, options: &[&str]) -> Result<usize>;
+
+    /// Prompt for fuzzy selection from a list of options
+    fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<usize>;
+}
+
 /// Session trait that both CommandSession and MockCommandSession can implement
 pub trait Session {
     /// Get the display provider for this session
@@ -135,6 +155,9 @@ pub trait Session {
 
     /// Get the config provider for this session
     fn config(&self) -> &dyn ConfigProvider;
+
+    /// Get the interactive provider for this session
+    fn interactive(&self) -> &dyn InteractiveProvider;
 
     /// Get the state manager for this session
     fn state(&self) -> PackStateManager<'_, dyn FileSystemProvider + '_>;
@@ -282,6 +305,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
 
     fn run_packwiz_init(
         &self,
+        process: &dyn ProcessProvider,
         workdir: &Path,
         name: &str,
         author: &str,
@@ -290,157 +314,95 @@ impl FileSystemProvider for LiveFileSystemProvider {
         mc_version: &str,
         loader_version: &str,
     ) -> std::result::Result<(), crate::empack::state::StateError> {
-        use std::process::Command;
+        let pack_dir = workdir.join("pack");
 
-        #[cfg(test)]
-        {
-            // Mock packwiz init - create expected files
-            let pack_dir = workdir.join("pack");
-            self.create_dir_all(&pack_dir).map_err(|e| {
-                crate::empack::state::StateError::IoError {
-                    message: e.to_string(),
-                }
-            })?;
-
-            let pack_file = pack_dir.join("pack.toml");
-            let default_pack_toml = r#"name = "Test Modpack"
-author = "Test Author"
-version = "1.0.0"
-pack-format = "packwiz:1.1.0"
-
-[index]
-file = "index.toml"
-hash-format = "sha256"
-hash = ""
-
-[versions]
-minecraft = "1.20.1"
-fabric = "0.14.21"
-"#;
-            self.write_file(&pack_file, default_pack_toml)
-                .map_err(|e| crate::empack::state::StateError::IoError {
-                    message: e.to_string(),
-                })?;
-
-            // Also create index.toml
-            let index_file = pack_dir.join("index.toml");
-            let default_index = r#"hash-format = "sha256"
-
-[[files]]
-file = "pack.toml"
-hash = ""
-"#;
-            self.write_file(&index_file, default_index).map_err(|e| {
-                crate::empack::state::StateError::IoError {
-                    message: e.to_string(),
-                }
-            })?;
-            return Ok(());
+        // Ensure pack directory exists before running packwiz
+        if !pack_dir.exists() {
+            return Err(crate::empack::state::StateError::MissingFile {
+                file: "pack directory".to_string(),
+            });
         }
 
-        #[cfg(not(test))]
-        {
-            let pack_dir = workdir.join("pack");
+        // Build packwiz init command with all required parameters
+        let mut args = vec![
+            "init",
+            "--name",
+            name,
+            "--author",
+            author,
+            "--version",
+            version,
+            "--mc-version",
+            mc_version,
+            "--modloader",
+            modloader,
+            "-y", // Non-interactive mode
+        ];
 
-            // Ensure pack directory exists before running packwiz
-            if !pack_dir.exists() {
-                return Err(crate::empack::state::StateError::MissingFile {
-                    file: "pack directory".to_string(),
-                });
+        // Add modloader-specific version arguments
+        match modloader {
+            "neoforge" => {
+                args.push("--neoforge-version");
+                args.push(loader_version);
             }
-
-            // Build packwiz init command with all required parameters
-            let mut args = vec![
-                "init",
-                "--name",
-                name,
-                "--author",
-                author,
-                "--version",
-                version,
-                "--mc-version",
-                mc_version,
-                "--modloader",
-                modloader,
-                "-y", // Non-interactive mode
-            ];
-
-            // Add modloader-specific version arguments
-            match modloader {
-                "neoforge" => {
-                    args.push("--neoforge-version");
-                    args.push(loader_version);
-                }
-                "fabric" => {
-                    args.push("--fabric-version");
-                    args.push(loader_version);
-                }
-                "quilt" => {
-                    args.push("--quilt-version");
-                    args.push(loader_version);
-                }
-                "forge" => {
-                    args.push("--forge-version");
-                    args.push(loader_version);
-                }
-                _ => {
-                    // For vanilla or unknown modloaders, don't add version args
-                }
+            "fabric" => {
+                args.push("--fabric-version");
+                args.push(loader_version);
             }
-
-            let status = Command::new("packwiz")
-                .args(&args)
-                .current_dir(&pack_dir)
-                .status()
-                .map_err(|e| crate::empack::state::StateError::CommandFailed {
-                    command: format!("packwiz init failed: {}", e),
-                })?;
-
-            if !status.success() {
-                return Err(crate::empack::state::StateError::CommandFailed {
-                    command: "packwiz init returned non-zero".to_string(),
-                });
+            "quilt" => {
+                args.push("--quilt-version");
+                args.push(loader_version);
             }
-
-            Ok(())
+            "forge" => {
+                args.push("--forge-version");
+                args.push(loader_version);
+            }
+            _ => {
+                // For vanilla or unknown modloaders, don't add version args
+            }
         }
+
+        let output = process
+            .execute("packwiz", &args, &pack_dir)
+            .map_err(|e| crate::empack::state::StateError::CommandFailed {
+                command: format!("packwiz init failed: {}", e),
+            })?;
+
+        if !output.success {
+            return Err(crate::empack::state::StateError::CommandFailed {
+                command: format!("packwiz init returned non-zero: {}", output.stderr),
+            });
+        }
+
+        Ok(())
     }
 
-    fn run_packwiz_refresh(&self, workdir: &Path) -> std::result::Result<(), crate::empack::state::StateError> {
-        use std::process::Command;
+    fn run_packwiz_refresh(
+        &self,
+        process: &dyn ProcessProvider,
+        workdir: &Path,
+    ) -> std::result::Result<(), crate::empack::state::StateError> {
+        let pack_file = workdir.join("pack").join("pack.toml");
 
-        #[cfg(test)]
-        {
-            // Mock packwiz refresh - verify pack.toml exists
-            let pack_file = workdir.join("pack").join("pack.toml");
-            if !pack_file.exists() {
-                return Err(crate::empack::state::StateError::MissingFile {
-                    file: "pack.toml".to_string(),
-                });
-            }
-            return Ok(());
+        let pack_file_str = pack_file
+            .to_str()
+            .ok_or_else(|| crate::empack::state::StateError::IoError {
+                message: "Invalid UTF-8 in pack.toml path".to_string(),
+            })?;
+
+        let output = process
+            .execute("packwiz", &["--pack-file", pack_file_str, "refresh"], workdir)
+            .map_err(|e| crate::empack::state::StateError::CommandFailed {
+                command: format!("packwiz refresh failed: {}", e),
+            })?;
+
+        if !output.success {
+            return Err(crate::empack::state::StateError::CommandFailed {
+                command: format!("packwiz refresh returned non-zero: {}", output.stderr),
+            });
         }
 
-        #[cfg(not(test))]
-        {
-            let pack_file = workdir.join("pack").join("pack.toml");
-
-            let status = Command::new("packwiz")
-                .args(&["--pack-file", pack_file.to_str().unwrap(), "refresh"])
-                .current_dir(workdir)
-                .status()
-                .map_err(|e| crate::empack::state::StateError::CommandFailed {
-                    command: format!("packwiz refresh failed: {}", e),
-                })?;
-
-            if !status.success() {
-                return Err(crate::empack::state::StateError::CommandFailed {
-                    command: "packwiz refresh returned non-zero".to_string(),
-                });
-            }
-
-            Ok(())
-        }
+        Ok(())
     }
 
     fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf> {
@@ -690,13 +652,91 @@ impl ConfigProvider for LiveConfigProvider {
     }
 }
 
+/// Live implementation of InteractiveProvider
+pub struct LiveInteractiveProvider;
+
+impl LiveInteractiveProvider {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Check if we're in a TTY environment suitable for interactive prompts
+    fn is_tty() -> bool {
+        use std::io::IsTerminal;
+        std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+    }
+}
+
+impl InteractiveProvider for LiveInteractiveProvider {
+    fn text_input(&self, prompt: &str, default: String) -> Result<String> {
+        if !Self::is_tty() {
+            // Non-interactive mode: return default
+            return Ok(default);
+        }
+
+        use dialoguer::Input;
+
+        Input::new()
+            .with_prompt(prompt)
+            .default(default.clone())
+            .interact_text()
+            .context("Failed to read text input")
+    }
+
+    fn confirm(&self, prompt: &str, default: bool) -> Result<bool> {
+        if !Self::is_tty() {
+            // Non-interactive mode: return default
+            return Ok(default);
+        }
+
+        use dialoguer::Confirm;
+
+        Confirm::new()
+            .with_prompt(prompt)
+            .default(default)
+            .interact()
+            .context("Failed to read confirmation")
+    }
+
+    fn select(&self, prompt: &str, options: &[&str]) -> Result<usize> {
+        if !Self::is_tty() {
+            // Non-interactive mode: return first option (index 0)
+            return Ok(0);
+        }
+
+        use dialoguer::Select;
+
+        Select::new()
+            .with_prompt(prompt)
+            .items(options)
+            .interact()
+            .context("Failed to read selection")
+    }
+
+    fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<usize> {
+        if !Self::is_tty() {
+            // Non-interactive mode: return first option (index 0)
+            return Ok(0);
+        }
+
+        use dialoguer::FuzzySelect;
+
+        FuzzySelect::new()
+            .with_prompt(prompt)
+            .items(options)
+            .interact()
+            .context("Failed to read fuzzy selection")
+    }
+}
+
 /// CommandSession owns all ephemeral state for a single command execution
-pub struct CommandSession<F, N, P, C>
+pub struct CommandSession<F, N, P, C, I>
 where
     F: FileSystemProvider,
     N: NetworkProvider,
     P: ProcessProvider,
     C: ConfigProvider,
+    I: InteractiveProvider,
 {
     /// Owns the progress display infrastructure
     multi_progress: MultiProgress,
@@ -710,6 +750,8 @@ where
     process_provider: P,
     /// Configuration provider
     config_provider: C,
+    /// Interactive input provider
+    interactive_provider: I,
 }
 
 impl
@@ -718,6 +760,7 @@ impl
         LiveNetworkProvider,
         LiveProcessProvider,
         LiveConfigProvider,
+        LiveInteractiveProvider,
     >
 {
     /// Create a new command session with owned state (production composition)
@@ -739,16 +782,18 @@ impl
             network_provider: LiveNetworkProvider::new(),
             process_provider: LiveProcessProvider::new(),
             config_provider: LiveConfigProvider::new(app_config),
+            interactive_provider: LiveInteractiveProvider::new(),
         }
     }
 }
 
-impl<F, N, P, C> CommandSession<F, N, P, C>
+impl<F, N, P, C, I> CommandSession<F, N, P, C, I>
 where
     F: FileSystemProvider,
     N: NetworkProvider,
     P: ProcessProvider,
     C: ConfigProvider,
+    I: InteractiveProvider,
 {
     /// Create a new generic command session with custom providers (for testing)
     #[cfg(feature = "test-utils")]
@@ -757,6 +802,7 @@ where
         network_provider: N,
         process_provider: P,
         config_provider: C,
+        interactive_provider: I,
     ) -> Self {
         let multi_progress = MultiProgress::new();
         let display_provider = LiveDisplayProvider::new_with_multi_progress(&multi_progress);
@@ -768,6 +814,7 @@ where
             network_provider,
             process_provider,
             config_provider,
+            interactive_provider,
         }
     }
 
@@ -795,14 +842,20 @@ where
     pub fn config(&self) -> &dyn ConfigProvider {
         &self.config_provider
     }
+
+    /// Get the interactive provider for this session
+    pub fn interactive(&self) -> &dyn InteractiveProvider {
+        &self.interactive_provider
+    }
 }
 
-impl<F, N, P, C> Session for CommandSession<F, N, P, C>
+impl<F, N, P, C, I> Session for CommandSession<F, N, P, C, I>
 where
     F: FileSystemProvider,
     N: NetworkProvider,
     P: ProcessProvider,
     C: ConfigProvider,
+    I: InteractiveProvider,
 {
     fn display(&self) -> &dyn DisplayProvider {
         &self.display_provider
@@ -822,6 +875,10 @@ where
 
     fn config(&self) -> &dyn ConfigProvider {
         &self.config_provider
+    }
+
+    fn interactive(&self) -> &dyn InteractiveProvider {
+        &self.interactive_provider
     }
 
     fn state(&self) -> PackStateManager<'_, dyn FileSystemProvider + '_> {

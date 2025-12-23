@@ -277,6 +277,25 @@ impl DependencyGraph {
         }
     }
 
+    /// Get all direct dependents of a mod (mods that depend on this one)
+    /// This is the reverse of `get_dependencies` - useful for orphan detection
+    pub fn get_dependents(&self, mod_id: &str) -> Option<Vec<DependencyNode>> {
+        let node_idx = self.node_map.get(mod_id)?;
+
+        // Since edges go from dependency -> dependent, we need to look at outgoing edges
+        // to find what mods depend on this one
+        let dependents = self
+            .graph
+            .edges_directed(*node_idx, petgraph::Direction::Outgoing)
+            .map(|edge| {
+                let target_node = &self.graph[edge.target()];
+                target_node.clone()
+            })
+            .collect();
+
+        Some(dependents)
+    }
+
     /// Parse a packwiz `.pw.toml` file and extract dependencies
     pub fn parse_packwiz_file(
         &mut self,
@@ -437,6 +456,11 @@ impl DependencyGraph {
     pub fn get_node(&self, mod_id: &str) -> Option<&DependencyNode> {
         let idx = self.node_map.get(mod_id)?;
         Some(&self.graph[*idx])
+    }
+
+    /// Get an iterator over all nodes in the graph
+    pub fn all_nodes(&self) -> impl Iterator<Item = &DependencyNode> {
+        self.graph.node_weights()
     }
 }
 

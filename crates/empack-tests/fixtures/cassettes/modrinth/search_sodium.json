@@ -1,0 +1,543 @@
+{
+  "name": "modrinth/search_sodium",
+  "request": {
+    "method": "GET",
+    "url": "https://api.modrinth.com/v2/search",
+    "query": {
+      "query": "sodium",
+      "limit": "10"
+    },
+    "headers": {
+      "User-Agent": "empack-tests/0.1.0"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "hits": [
+        {
+          "project_id": "AANobbMI",
+          "project_type": "mod",
+          "slug": "sodium",
+          "author": "jellysquid3",
+          "title": "Sodium",
+          "description": "The fastest and most compatible rendering optimization mod for Minecraft. Now available for both NeoForge and Fabric!",
+          "categories": [
+            "fabric",
+            "neoforge",
+            "optimization",
+            "quilt"
+          ],
+          "display_categories": [
+            "fabric",
+            "neoforge",
+            "optimization",
+            "quilt"
+          ],
+          "versions": [
+            "1.16.3",
+            "1.16.4",
+            "1.16.5",
+            "1.17",
+            "1.17.1",
+            "1.18",
+            "1.18.1",
+            "1.18.2",
+            "1.19",
+            "1.19.1",
+            "1.19.2",
+            "1.19.3",
+            "1.19.4",
+            "1.20",
+            "1.20.1",
+            "1.20.2",
+            "1.20.3",
+            "1.20.4",
+            "1.20.5",
+            "1.20.6",
+            "1.21",
+            "1.21.1",
+            "1.21.2",
+            "1.21.3",
+            "1.21.4",
+            "1.21.5",
+            "1.21.6",
+            "1.21.7",
+            "1.21.8",
+            "1.21.9",
+            "1.21.10",
+            "1.21.11"
+          ],
+          "downloads": 100564396,
+          "follows": 31039,
+          "icon_url": "https://cdn.modrinth.com/data/AANobbMI/295862f4724dc3f78df3447ad6072b2dcd3ef0c9_96.webp",
+          "date_created": "2021-01-03T00:53:34.185936Z",
+          "date_modified": "2025-12-22T20:35:01.627136Z",
+          "latest_version": "IIO7jQ3j",
+          "license": "LicenseRef-Polyform-Shield-1.0.0",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [
+            "https://cdn.modrinth.com/data/AANobbMI/images/d84313e6f57dc9e7896961dbd2dfc2689d482758_350.webp",
+            "https://cdn.modrinth.com/data/AANobbMI/images/6b0e58705156ba67a6d97a74b9f9ac05da69f502_350.webp",
+            "https://cdn.modrinth.com/data/AANobbMI/images/b681a9e87daa53a0e85336a894db70427007149b_350.webp",
+            "https://cdn.modrinth.com/data/AANobbMI/images/56c4599efcb529a19aed0e118caad4178d7fd540.webp",
+            "https://cdn.modrinth.com/data/AANobbMI/images/5ca2e8f6c72f3d543dd3dc95b706964c5678d80e_350.webp",
+            "https://cdn.modrinth.com/data/AANobbMI/images/c39debea7fc623306e9c45148084585399fc59ee.webp"
+          ],
+          "featured_gallery": null,
+          "color": 8703084
+        },
+        {
+          "project_id": "PtjYWJkn",
+          "project_type": "mod",
+          "slug": "sodium-extra",
+          "author": "FlashyReese",
+          "title": "Sodium Extra",
+          "description": "A Sodium addon that adds features that shouldn't be in Sodium.",
+          "categories": [
+            "cursed",
+            "fabric",
+            "neoforge",
+            "optimization",
+            "quilt",
+            "utility"
+          ],
+          "display_categories": [
+            "cursed",
+            "fabric",
+            "neoforge",
+            "optimization",
+            "quilt",
+            "utility"
+          ],
+          "versions": [
+            "1.16.2",
+            "1.16.3",
+            "1.16.4",
+            "1.16.5",
+            "1.17",
+            "1.17.1",
+            "1.18",
+            "1.18.1",
+            "1.18.2",
+            "1.19",
+            "1.19.1",
+            "1.19.2",
+            "1.19.3",
+            "1.19.4",
+            "1.20",
+            "1.20.1",
+            "1.20.2",
+            "1.20.3",
+            "1.20.4",
+            "1.20.5",
+            "1.20.6",
+            "1.21",
+            "1.21.1",
+            "1.21.2",
+            "1.21.3",
+            "1.21.4",
+            "1.21.5",
+            "1.21.6",
+            "1.21.7",
+            "1.21.8",
+            "1.21.9",
+            "1.21.10",
+            "1.21.11"
+          ],
+          "downloads": 45556963,
+          "follows": 10750,
+          "icon_url": "https://cdn.modrinth.com/data/PtjYWJkn/0df4fb22a11e1dcb5e83cb0aadd275b571aca7a9_96.webp",
+          "date_created": "2021-02-17T04:37:04.928784Z",
+          "date_modified": "2025-12-18T04:10:24.065163Z",
+          "latest_version": "f4TfteNb",
+          "license": "LGPL-3.0-only",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [],
+          "featured_gallery": null,
+          "color": 16577485
+        },
+        {
+          "project_id": "PxQSWIcD",
+          "project_type": "mod",
+          "slug": "sodium-dynamic-lights",
+          "author": "Txni",
+          "title": "Sodium Dynamic Lights",
+          "description": "Multiloader port of LambDynLights that adds Sodium options integration",
+          "categories": [
+            "decoration",
+            "fabric",
+            "forge",
+            "neoforge",
+            "optimization",
+            "utility"
+          ],
+          "display_categories": [
+            "decoration",
+            "fabric",
+            "forge",
+            "neoforge",
+            "optimization"
+          ],
+          "versions": [
+            "1.20",
+            "1.20.1",
+            "1.21.1",
+            "1.21.4",
+            "1.21.5"
+          ],
+          "downloads": 9545909,
+          "follows": 902,
+          "icon_url": "https://cdn.modrinth.com/data/PxQSWIcD/a5ab5515213391934e18baaf487c87e4b24ebfa3_96.webp",
+          "date_created": "2024-08-27T23:14:23.618914Z",
+          "date_modified": "2025-04-10T21:19:54.307913Z",
+          "latest_version": "nXZIQIRI",
+          "license": "MIT",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [
+            "https://cdn.modrinth.com/data/PxQSWIcD/images/bf198f89bf08b1e43a67d8da3038c5b32c8f7ce3_350.webp"
+          ],
+          "featured_gallery": null,
+          "color": 6874264
+        },
+        {
+          "project_id": "EIa1eiMm",
+          "project_type": "mod",
+          "slug": "sodium-shadowy-path-blocks",
+          "author": "Rynnavinx",
+          "title": "Sodium Shadowy Path Blocks",
+          "description": "Reintroduces vanilla-like smooth lighting to non-full blocks (e.g. dirt paths and how they have dark shading when directly next to a full block) when using Sodium. ",
+          "categories": [
+            "decoration",
+            "fabric",
+            "neoforge",
+            "quilt"
+          ],
+          "display_categories": [
+            "decoration",
+            "fabric",
+            "neoforge",
+            "quilt"
+          ],
+          "versions": [
+            "1.16.1",
+            "1.16.2",
+            "1.16.3",
+            "1.16.4",
+            "1.16.5",
+            "1.17.1",
+            "1.18",
+            "1.18.1",
+            "1.18.2",
+            "1.19",
+            "1.19.1",
+            "1.19.2",
+            "1.19.3",
+            "1.19.4",
+            "1.20",
+            "1.20.1",
+            "1.20.2",
+            "1.20.3",
+            "1.20.4",
+            "1.20.5",
+            "1.20.6",
+            "1.21",
+            "1.21.1",
+            "1.21.2",
+            "1.21.3",
+            "1.21.4",
+            "1.21.5",
+            "1.21.6",
+            "1.21.7",
+            "1.21.8",
+            "1.21.9",
+            "1.21.10",
+            "1.21.11"
+          ],
+          "downloads": 8864690,
+          "follows": 1023,
+          "icon_url": "https://cdn.modrinth.com/data/EIa1eiMm/7ea3bc26470ba1f45b1c980d5058b033a752396b_96.webp",
+          "date_created": "2022-03-21T23:07:38.094967Z",
+          "date_modified": "2025-12-13T04:31:31.210879Z",
+          "latest_version": "WYf1O6E6",
+          "license": "LGPL-3.0-only",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [],
+          "featured_gallery": null,
+          "color": 5980205
+        },
+        {
+          "project_id": "Es5v4eyq",
+          "project_type": "mod",
+          "slug": "sodium-options-api",
+          "author": "Txni",
+          "title": "Sodium Options API",
+          "description": "Config API for adding Sodium options with a better categories menu",
+          "categories": [
+            "fabric",
+            "forge",
+            "neoforge",
+            "optimization",
+            "utility"
+          ],
+          "display_categories": [
+            "fabric",
+            "forge",
+            "neoforge",
+            "optimization",
+            "utility"
+          ],
+          "versions": [
+            "1.20",
+            "1.20.1",
+            "1.21.1",
+            "1.21.4",
+            "1.21.5"
+          ],
+          "downloads": 8078022,
+          "follows": 374,
+          "icon_url": "https://cdn.modrinth.com/data/Es5v4eyq/7bff17babb498584c0edd74211d97435b651c11f_96.webp",
+          "date_created": "2024-09-20T18:45:08.850673Z",
+          "date_modified": "2025-04-10T17:03:35.567318Z",
+          "latest_version": "nww69hqs",
+          "license": "LGPL-3.0-only",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [],
+          "featured_gallery": "https://cdn.modrinth.com/data/Es5v4eyq/images/3768c862c279cb47278855c2d99aeb568e68573b_350.webp",
+          "color": 7659424
+        },
+        {
+          "project_id": "vqqx0QiE",
+          "project_type": "mod",
+          "slug": "sodium-extras",
+          "author": "Txni",
+          "title": "Sodium Extras",
+          "description": "An add-on mod for Sodium that adds new features and customization.",
+          "categories": [
+            "fabric",
+            "forge",
+            "neoforge",
+            "optimization",
+            "utility"
+          ],
+          "display_categories": [
+            "fabric",
+            "forge",
+            "neoforge",
+            "optimization"
+          ],
+          "versions": [
+            "1.20",
+            "1.20.1",
+            "1.21.1",
+            "1.21.4",
+            "1.21.5"
+          ],
+          "downloads": 4848841,
+          "follows": 383,
+          "icon_url": "https://cdn.modrinth.com/data/vqqx0QiE/3fcad840acf5e9e27fc71fa195f89a769f6ad27a_96.webp",
+          "date_created": "2024-08-25T22:47:03.490765Z",
+          "date_modified": "2025-04-10T17:05:55.413525Z",
+          "latest_version": "xbDvQSi2",
+          "license": "LGPL-3.0-only",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [
+            "https://cdn.modrinth.com/data/vqqx0QiE/images/d677392b4e8d938e0dfc84e6dd0224b9864d216e_350.webp"
+          ],
+          "featured_gallery": null,
+          "color": 6087828
+        },
+        {
+          "project_id": "Yg1VT27P",
+          "project_type": "mod",
+          "slug": "sodium-options-mod-compat",
+          "author": "Txni",
+          "title": "Sodium Options Mod Compat",
+          "description": "Adds compatibility for various mods through Sodium Options API",
+          "categories": [
+            "decoration",
+            "fabric",
+            "forge",
+            "neoforge",
+            "optimization",
+            "utility"
+          ],
+          "display_categories": [
+            "decoration",
+            "fabric",
+            "forge",
+            "neoforge",
+            "optimization",
+            "utility"
+          ],
+          "versions": [
+            "1.20",
+            "1.20.1",
+            "1.21.1",
+            "1.21.4"
+          ],
+          "downloads": 3042924,
+          "follows": 217,
+          "icon_url": "https://cdn.modrinth.com/data/Yg1VT27P/ca677a47214e6428dca89dbfc80efa49e14de0b6_96.webp",
+          "date_created": "2024-11-25T10:25:00.307541Z",
+          "date_modified": "2025-08-26T10:34:03.254407Z",
+          "latest_version": "VSq6XYM3",
+          "license": "LicenseRef-Tonis-MMC-License",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [
+            "https://cdn.modrinth.com/data/Yg1VT27P/images/b45f2a2af6ae084d41f6543689dc71d41eaf97af_350.webp"
+          ],
+          "featured_gallery": null,
+          "color": 5366940
+        },
+        {
+          "project_id": "M25bkObt",
+          "project_type": "mod",
+          "slug": "sodiumleafculling",
+          "author": "Txni",
+          "title": "Sodium Leaf Culling",
+          "description": "Smart leaf culling algorithm for Sodium on 1.21+",
+          "categories": [
+            "fabric",
+            "neoforge",
+            "optimization",
+            "utility"
+          ],
+          "display_categories": [
+            "fabric",
+            "neoforge",
+            "optimization"
+          ],
+          "versions": [
+            "1.21.1"
+          ],
+          "downloads": 3010004,
+          "follows": 220,
+          "icon_url": "https://cdn.modrinth.com/data/M25bkObt/b624afe158f3f4cd8e82d280b4f6de344d824186_96.webp",
+          "date_created": "2024-08-25T21:57:19.695323Z",
+          "date_modified": "2025-04-07T04:30:56.050209Z",
+          "latest_version": "nYTeWG7l",
+          "license": "MIT",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [
+            "https://cdn.modrinth.com/data/M25bkObt/images/63dca13a94ca8e142eb8c6b7be0b52454883607e_350.webp"
+          ],
+          "featured_gallery": null,
+          "color": 2241305
+        },
+        {
+          "project_id": "ch7UHY2J",
+          "project_type": "modpack",
+          "slug": "sodiumplus",
+          "author": "NoSadBeHappy",
+          "title": "Sodium Plus",
+          "description": "A client-side optimization modpack with a few extra tweaks.",
+          "categories": [
+            "fabric",
+            "lightweight",
+            "multiplayer",
+            "optimization",
+            "quilt"
+          ],
+          "display_categories": [
+            "lightweight",
+            "multiplayer",
+            "optimization"
+          ],
+          "versions": [
+            "1.18.2",
+            "1.19",
+            "1.19.2",
+            "1.19.3",
+            "1.19.4",
+            "1.20",
+            "1.20.1",
+            "1.21",
+            "1.21.5",
+            "1.21.8",
+            "1.21.10",
+            "1.21.11"
+          ],
+          "downloads": 1404496,
+          "follows": 453,
+          "icon_url": "https://cdn.modrinth.com/data/ch7UHY2J/cf0150ba8d6c01144974709a27b23bba93c0fc9e.png",
+          "date_created": "2022-05-19T02:57:12.389199Z",
+          "date_modified": "2025-12-21T00:41:35.197611Z",
+          "latest_version": "lwka7Q7t",
+          "license": "MIT",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [
+            "https://cdn.modrinth.com/data/ch7UHY2J/images/f516760f3a1cb5a7cc13964037ab962582a7f3fd_350.webp",
+            "https://cdn.modrinth.com/data/ch7UHY2J/images/7f9e3f932b31300b570568627944c638e02fab6f_350.webp",
+            "https://cdn.modrinth.com/data/ch7UHY2J/images/49779414dfdfe33b32f0a46df1811ab22bc73fd7_350.webp"
+          ],
+          "featured_gallery": null,
+          "color": 8375147
+        },
+        {
+          "project_id": "G8yJPRdl",
+          "project_type": "mod",
+          "slug": "sodium-core-shader-support",
+          "author": "linusdev",
+          "title": "Sodium Core Shader Support",
+          "description": "Enables resourcepacks to be able to replace sodium's shaders, similar to resourcepacks being able to replace vanilla's core shaders.",
+          "categories": [
+            "fabric",
+            "game-mechanics",
+            "neoforge"
+          ],
+          "display_categories": [
+            "fabric",
+            "game-mechanics",
+            "neoforge"
+          ],
+          "versions": [
+            "1.20.4",
+            "1.20.5",
+            "1.20.6",
+            "1.21",
+            "1.21.1",
+            "1.21.2",
+            "1.21.3",
+            "1.21.4",
+            "1.21.5",
+            "1.21.6",
+            "1.21.7",
+            "1.21.8",
+            "1.21.9",
+            "1.21.10",
+            "1.21.11"
+          ],
+          "downloads": 336504,
+          "follows": 220,
+          "icon_url": "https://cdn.modrinth.com/data/G8yJPRdl/2d322f159405e6c26b1962acb6b0b23ba11aded8.png",
+          "date_created": "2023-12-11T22:33:12.686596Z",
+          "date_modified": "2025-12-19T12:32:00.451742Z",
+          "latest_version": "9PngzS6I",
+          "license": "Apache-2.0",
+          "client_side": "required",
+          "server_side": "unsupported",
+          "gallery": [],
+          "featured_gallery": null,
+          "color": 10342154
+        }
+      ],
+      "offset": 0,
+      "limit": 10,
+      "total_hits": 229
+    }
+  },
+  "recorded_at": "2025-12-23T12:18:26Z"
+}
