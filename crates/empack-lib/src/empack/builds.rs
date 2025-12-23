@@ -1,6 +1,7 @@
 //! Build system for empack targets
 //! Five-target system: mrpack, client, server, client-full, server-full
 
+use crate::empack::PackwizInstaller;
 use crate::primitives::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -681,39 +682,17 @@ impl<'a> BuildOrchestrator<'a> {
         let pack_dir = self.workdir.join("pack");
         self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
 
-        // Execute installer with -g (no-GUI) and -s both flags
-        let output = self
-            .session
-            .process()
-            .execute(
-                "java",
-                &[
-                    "-jar",
-                    bootstrap_jar_path.to_str().unwrap(),
-                    "-g",
-                    "-s",
-                    "both",
-                    "--pack-folder",
-                    "pack",
-                ],
-                &dist_dir,
-            )
+        // Execute installer with PackwizInstaller abstraction
+        let installer = PackwizInstaller::new(self.session, bootstrap_jar_path.to_owned())
             .map_err(|e| BuildError::CommandFailed {
-                command: format!("java -jar packwiz-installer-bootstrap.jar: {}", e),
+                command: format!("PackwizInstaller initialization: {}", e),
             })?;
 
-        if !output.success {
-            return Ok(BuildResult {
-                target: BuildTarget::ClientFull,
-                success: false,
-                output_path: None,
-                artifacts: vec![],
-                warnings: vec![format!(
-                    "packwiz-installer-bootstrap.jar execution failed: {}",
-                    output.stderr
-                )],
-            });
-        }
+        installer
+            .install_mods("both", &dist_dir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("packwiz-installer-bootstrap.jar: {}", e),
+            })?;
 
         // Step 4: Create a final zip archive of the dist/client-full/ directory
         let zip_path = self.zip_distribution(BuildTarget::ClientFull)?;
@@ -798,39 +777,17 @@ impl<'a> BuildOrchestrator<'a> {
         let pack_dir = self.workdir.join("pack");
         self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
 
-        // Execute installer with -g (no-GUI) and -s server flags
-        let output = self
-            .session
-            .process()
-            .execute(
-                "java",
-                &[
-                    "-jar",
-                    bootstrap_jar_path.to_str().unwrap(),
-                    "-g",
-                    "-s",
-                    "server",
-                    "--pack-folder",
-                    "pack",
-                ],
-                &dist_dir,
-            )
+        // Execute installer with PackwizInstaller abstraction
+        let installer = PackwizInstaller::new(self.session, bootstrap_jar_path.to_owned())
             .map_err(|e| BuildError::CommandFailed {
-                command: format!("java -jar packwiz-installer-bootstrap.jar: {}", e),
+                command: format!("PackwizInstaller initialization: {}", e),
             })?;
 
-        if !output.success {
-            return Ok(BuildResult {
-                target: BuildTarget::ServerFull,
-                success: false,
-                output_path: None,
-                artifacts: vec![],
-                warnings: vec![format!(
-                    "packwiz-installer-bootstrap.jar execution failed: {}",
-                    output.stderr
-                )],
-            });
-        }
+        installer
+            .install_mods("server", &dist_dir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("packwiz-installer-bootstrap.jar: {}", e),
+            })?;
 
         // Step 6: Create a final zip archive of the dist/server-full/ directory
         let zip_path = self.zip_distribution(BuildTarget::ServerFull)?;

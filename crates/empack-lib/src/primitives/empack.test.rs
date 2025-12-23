@@ -55,8 +55,8 @@ fn test_expand_all() {
 
 #[test]
 fn test_state_display() {
-    assert_eq!(ModpackState::Uninitialized.to_string(), "uninitialized");
-    assert_eq!(ModpackState::Configured.to_string(), "configured");
+    assert_eq!(PackState::Uninitialized.to_string(), "uninitialized");
+    assert_eq!(PackState::Configured.to_string(), "configured");
 }
 
 #[test]

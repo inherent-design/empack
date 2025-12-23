@@ -17,11 +17,11 @@ pub enum ConfigError {
         source: std::io::Error,
     },
 
-    #[error("YAML parsing error: {source}")]
-    YamlError {
-        #[from]
-        source: serde_yaml::Error,
-    },
+    #[error("YAML error: {0}")]
+    YamlError(String),
+
+    #[error("YAML serialization error: {0}")]
+    YamlSerError(String),
 
     #[error("TOML parsing error: {source}")]
     TomlError {
@@ -184,7 +184,8 @@ impl<'a> ConfigManager<'a> {
         }
 
         let content = self.fs_provider.read_to_string(&empack_path)?;
-        let config: EmpackConfig = serde_yaml::from_str(&content)?;
+        let config: EmpackConfig = serde_saphyr::from_str(&content)
+            .map_err(|e| ConfigError::YamlError(e.to_string()))?;
 
         Ok(config)
     }
@@ -444,7 +445,8 @@ impl<'a> ConfigManager<'a> {
             },
         };
 
-        Ok(serde_yaml::to_string(&config)?)
+        serde_saphyr::to_string(&config)
+            .map_err(|e| ConfigError::YamlSerError(e.to_string()))
     }
 
     /// Validate empack.yml consistency (pack.toml is optional)

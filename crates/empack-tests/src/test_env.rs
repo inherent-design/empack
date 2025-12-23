@@ -9,7 +9,8 @@ use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
     NetworkProvider,
 };
-use empack_lib::empack::search::{Platform, ProjectInfo, ProjectResolverTrait, SearchError};
+use empack_lib::empack::search::{ProjectInfo, ProjectResolverTrait, SearchError};
+use empack_lib::primitives::ProjectPlatform;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::fs;
@@ -417,7 +418,7 @@ impl MockNetworkProvider {
         self.search_results.insert(
             name.to_string(),
             ProjectInfo {
-                platform: Platform::Modrinth,
+                platform: ProjectPlatform::Modrinth,
                 project_id: project_id.to_string(),
                 title: name.to_string(),
                 downloads: 1000,

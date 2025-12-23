@@ -53,7 +53,7 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         Ok(PathBuf::from("/test"))
     }
 
-    // state_manager method removed - create ModpackStateManager directly
+    // state_manager method removed - create PackStateManager directly
 
     fn get_installed_mods(&self) -> anyhow::Result<HashSet<String>> {
         Ok(HashSet::new())
@@ -218,15 +218,15 @@ fn create_built_test() -> (MockStateProvider, PathBuf) {
 #[test]
 fn test_initial_state_is_uninitialized() {
     let (provider, workdir) = create_uninitialized_test();
-    let manager = ModpackStateManager::new(workdir, &provider);
+    let manager = PackStateManager::new(workdir, &provider);
     let state = manager.discover_state().unwrap();
-    assert_eq!(state, ModpackState::Uninitialized);
+    assert_eq!(state, PackState::Uninitialized);
 }
 
 #[tokio::test]
 async fn test_transition_to_configured() {
     let (provider, workdir) = create_uninitialized_test();
-    let manager = ModpackStateManager::new(workdir, &provider);
+    let manager = PackStateManager::new(workdir, &provider);
 
     let result = manager
         .execute_transition(StateTransition::Initialize(
@@ -241,7 +241,7 @@ async fn test_transition_to_configured() {
         ))
         .await
         .unwrap();
-    assert_eq!(result, ModpackState::Configured);
+    assert_eq!(result, PackState::Configured);
 
     // Note: In the new architecture, we verify the logic without checking actual files
     // The MockStateProvider simulates successful file operations
@@ -250,7 +250,7 @@ async fn test_transition_to_configured() {
 #[tokio::test]
 async fn test_transition_to_built() {
     let (provider, workdir) = create_configured_test();
-    let manager = ModpackStateManager::new(workdir.clone(), &provider);
+    let manager = PackStateManager::new(workdir.clone(), &provider);
 
     // Build from configured state
     let targets = vec![BuildTarget::Mrpack, BuildTarget::Client];
@@ -260,7 +260,7 @@ async fn test_transition_to_built() {
         .execute_transition(StateTransition::Build(mock_orchestrator, targets))
         .await
         .unwrap();
-    assert_eq!(result, ModpackState::Built);
+    assert_eq!(result, PackState::Built);
 
     // In the new architecture, we test that the transition logic works correctly
     // The MockStateProvider handles all I/O operations
@@ -269,21 +269,21 @@ async fn test_transition_to_built() {
 #[tokio::test]
 async fn test_clean_transitions() {
     let (provider, workdir) = create_built_test();
-    let manager = ModpackStateManager::new(workdir, &provider);
+    let manager = PackStateManager::new(workdir, &provider);
 
     // Start from built state and clean back to configured
     let result = manager
         .execute_transition(StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result, ModpackState::Configured);
+    assert_eq!(result, PackState::Configured);
 
     // Clean back to uninitialized
     let result = manager
         .execute_transition(StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result, ModpackState::Uninitialized);
+    assert_eq!(result, PackState::Uninitialized);
 
     // The MockStateProvider simulates successful cleanup operations
 }
@@ -291,7 +291,7 @@ async fn test_clean_transitions() {
 #[tokio::test]
 async fn test_invalid_transitions() {
     let (provider, workdir) = create_uninitialized_test();
-    let manager = ModpackStateManager::new(workdir.clone(), &provider);
+    let manager = PackStateManager::new(workdir.clone(), &provider);
 
     // Can't build from uninitialized
     let mock_session = crate::application::session_mocks::MockCommandSession::new();
@@ -315,21 +315,21 @@ async fn test_invalid_transitions() {
 fn test_state_validation() {
     // Test uninitialized state validation
     let (provider, workdir) = create_uninitialized_test();
-    let manager = ModpackStateManager::new(workdir.clone(), &provider);
-    assert!(manager.validate_state(ModpackState::Uninitialized).unwrap());
-    assert!(!manager.validate_state(ModpackState::Configured).unwrap());
+    let manager = PackStateManager::new(workdir.clone(), &provider);
+    assert!(manager.validate_state(PackState::Uninitialized).unwrap());
+    assert!(!manager.validate_state(PackState::Configured).unwrap());
 
     // Test configured state validation
     let (provider, workdir) = create_configured_test();
-    let manager = ModpackStateManager::new(workdir, &provider);
-    assert!(manager.validate_state(ModpackState::Configured).unwrap());
-    assert!(!manager.validate_state(ModpackState::Uninitialized).unwrap());
+    let manager = PackStateManager::new(workdir, &provider);
+    assert!(manager.validate_state(PackState::Configured).unwrap());
+    assert!(!manager.validate_state(PackState::Uninitialized).unwrap());
 }
 
 #[test]
 fn test_paths_helper() {
     let (provider, workdir) = create_uninitialized_test();
-    let manager = ModpackStateManager::new(workdir.clone(), &provider);
+    let manager = PackStateManager::new(workdir.clone(), &provider);
     let paths = manager.paths();
 
     assert_eq!(paths.empack_yml, workdir.join("empack.yml"));
@@ -346,53 +346,53 @@ fn test_pure_discover_state_function() {
     // Test uninitialized state
     let (provider, workdir) = create_uninitialized_test();
     let state = discover_state(&provider, &workdir).unwrap();
-    assert_eq!(state, ModpackState::Uninitialized);
+    assert_eq!(state, PackState::Uninitialized);
 
     // Test configured state
     let (provider, workdir) = create_configured_test();
     let state = discover_state(&provider, &workdir).unwrap();
-    assert_eq!(state, ModpackState::Configured);
+    assert_eq!(state, PackState::Configured);
 
     // Test built state
     let (provider, workdir) = create_built_test();
     let state = discover_state(&provider, &workdir).unwrap();
-    assert_eq!(state, ModpackState::Built);
+    assert_eq!(state, PackState::Built);
 }
 
 #[test]
 fn test_pure_can_transition_function() {
     // Test valid transitions
     assert!(can_transition(
-        ModpackState::Uninitialized,
-        ModpackState::Configured
+        PackState::Uninitialized,
+        PackState::Configured
     ));
     assert!(can_transition(
-        ModpackState::Configured,
-        ModpackState::Built
+        PackState::Configured,
+        PackState::Built
     ));
     assert!(can_transition(
-        ModpackState::Built,
-        ModpackState::Configured
+        PackState::Built,
+        PackState::Configured
     ));
     assert!(can_transition(
-        ModpackState::Configured,
-        ModpackState::Uninitialized
+        PackState::Configured,
+        PackState::Uninitialized
     ));
 
     // Test same state transitions
     assert!(can_transition(
-        ModpackState::Configured,
-        ModpackState::Configured
+        PackState::Configured,
+        PackState::Configured
     ));
 
     // Test invalid transitions
     assert!(!can_transition(
-        ModpackState::Uninitialized,
-        ModpackState::Built
+        PackState::Uninitialized,
+        PackState::Built
     ));
     assert!(!can_transition(
-        ModpackState::Built,
-        ModpackState::Uninitialized
+        PackState::Built,
+        PackState::Uninitialized
     ));
 }
 
@@ -414,7 +414,7 @@ async fn test_pure_execute_transition_function() {
     )
     .await
     .unwrap();
-    assert_eq!(result, ModpackState::Configured);
+    assert_eq!(result, PackState::Configured);
 
     // Test build transition
     let (provider, workdir) = create_configured_test();
@@ -428,7 +428,7 @@ async fn test_pure_execute_transition_function() {
     )
     .await
     .unwrap();
-    assert_eq!(result, ModpackState::Built);
+    assert_eq!(result, PackState::Built);
 
     // Test synchronize transition (expect failure due to ConfigManager dependency)
     let (provider, workdir) = create_configured_test();
@@ -441,14 +441,14 @@ async fn test_pure_execute_transition_function() {
     let result = execute_transition(&provider, &workdir, StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result, ModpackState::Configured);
+    assert_eq!(result, PackState::Configured);
 
     // Test clean transition from configured
     let (provider, workdir) = create_configured_test();
     let result = execute_transition(&provider, &workdir, StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result, ModpackState::Uninitialized);
+    assert_eq!(result, PackState::Uninitialized);
 }
 
 #[test]
@@ -465,7 +465,7 @@ fn test_pure_execute_initialize_function() {
         "0.14.21",
     )
     .unwrap();
-    assert_eq!(result, ModpackState::Configured);
+    assert_eq!(result, PackState::Configured);
 
     // Verify the mock provider received the expected calls
     assert!(
@@ -530,7 +530,7 @@ async fn test_pure_execute_build_function() {
     let mock_session = crate::application::session_mocks::MockCommandSession::new();
     let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
     let result = execute_build(mock_orchestrator, &targets).await.unwrap();
-    assert_eq!(result, ModpackState::Built);
+    assert_eq!(result, PackState::Built);
 
     // In the new architecture, the build verification is handled by the orchestrator
     // The test validates the state transition logic

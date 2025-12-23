@@ -1,6 +1,6 @@
 //! # API Module
 //!
-//! Platform API abstraction layer for dependency resolution and mod management.
+//! Platform API abstraction layer for dependency resolution and project management.
 //!
 //! ## Modules
 //!

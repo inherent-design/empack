@@ -8,7 +8,7 @@ use crate::application::session::{ProcessOutput, Session, *};
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectInfo, ProjectResolverTrait, SearchError};
-use anyhow::Result;
+use crate::Result;
 use indicatif::MultiProgress;
 use reqwest::Client;
 use std::cell::RefCell;
@@ -198,7 +198,7 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(self.current_dir.clone())
     }
 
-    // state_manager method removed - create ModpackStateManager directly
+    // state_manager method removed - create PackStateManager directly
 
     fn get_installed_mods(&self) -> Result<HashSet<String>> {
         Ok(self.installed_mods.clone())
@@ -267,7 +267,7 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(())
     }
 
-    fn get_file_list(&self, path: &std::path::Path) -> Result<HashSet<PathBuf>, std::io::Error> {
+    fn get_file_list(&self, path: &std::path::Path) -> std::result::Result<HashSet<PathBuf>, std::io::Error> {
         let files = self.files.lock().unwrap();
         let directories = self.directories.lock().unwrap();
         let mut result = HashSet::new();
@@ -289,7 +289,7 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(result)
     }
 
-    fn has_build_artifacts(&self, dist_dir: &std::path::Path) -> Result<bool, std::io::Error> {
+    fn has_build_artifacts(&self, dist_dir: &std::path::Path) -> std::result::Result<bool, std::io::Error> {
         let files = self.files.lock().unwrap();
 
         for path in files.keys() {
@@ -306,12 +306,12 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(false)
     }
 
-    fn remove_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
+    fn remove_file(&self, path: &std::path::Path) -> std::result::Result<(), std::io::Error> {
         self.files.lock().unwrap().remove(path);
         Ok(())
     }
 
-    fn remove_dir_all(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
+    fn remove_dir_all(&self, path: &std::path::Path) -> std::result::Result<(), std::io::Error> {
         let mut files = self.files.lock().unwrap();
         let paths_to_remove: Vec<PathBuf> = files
             .keys()
@@ -335,7 +335,7 @@ impl FileSystemProvider for MockFileSystemProvider {
         modloader: &str,
         mc_version: &str,
         loader_version: &str,
-    ) -> Result<(), crate::empack::state::StateError> {
+    ) -> std::result::Result<(), crate::empack::state::StateError> {
         // Mock packwiz init - create expected files in memory
         let pack_dir = workdir.join("pack");
         let pack_file = pack_dir.join("pack.toml");
@@ -381,7 +381,7 @@ hash = ""
     fn run_packwiz_refresh(
         &self,
         workdir: &std::path::Path,
-    ) -> Result<(), crate::empack::state::StateError> {
+    ) -> std::result::Result<(), crate::empack::state::StateError> {
         // Mock packwiz refresh - verify pack.toml exists
         let pack_file = workdir.join("pack").join("pack.toml");
         if !self.exists(&pack_file) {
@@ -476,7 +476,7 @@ impl NetworkProvider for MockNetworkProvider {
 /// Mock project resolver for testing
 #[derive(Clone)]
 pub struct MockProjectResolver {
-    pub responses: Arc<Mutex<HashMap<String, Result<ProjectInfo, String>>>>,
+    pub responses: Arc<Mutex<HashMap<String, std::result::Result<ProjectInfo, String>>>>,
 }
 
 impl MockProjectResolver {
@@ -486,7 +486,7 @@ impl MockProjectResolver {
         }
     }
 
-    pub fn with_response(self, query: String, response: Result<ProjectInfo, String>) -> Self {
+    pub fn with_response(self, query: String, response: std::result::Result<ProjectInfo, String>) -> Self {
         self.responses.lock().unwrap().insert(query, response);
         self
     }
@@ -515,7 +515,7 @@ impl ProjectResolverTrait for MockProjectResolver {
         _project_type: Option<&str>,
         _minecraft_version: Option<&str>,
         _mod_loader: Option<&str>,
-    ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = std::result::Result<ProjectInfo, SearchError>> + Send + '_>> {
         let responses = self.responses.clone();
         let query = title.to_string();
 
@@ -545,7 +545,7 @@ pub struct MockProcessProvider {
     pub packwiz_available: bool,
     pub packwiz_version: String,
     pub calls: RefCell<Vec<ProcessCall>>,
-    pub results: HashMap<(String, Vec<String>), Result<ProcessOutput, String>>,
+    pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
 }
 
 impl MockProcessProvider {
@@ -572,7 +572,7 @@ impl MockProcessProvider {
         mut self,
         command: String,
         args: Vec<String>,
-        result: Result<ProcessOutput, String>,
+        result: std::result::Result<ProcessOutput, String>,
     ) -> Self {
         self.results.insert((command, args), result);
         self
@@ -581,7 +581,7 @@ impl MockProcessProvider {
     pub fn with_packwiz_result(
         mut self,
         args: Vec<String>,
-        result: Result<ProcessOutput, String>,
+        result: std::result::Result<ProcessOutput, String>,
     ) -> Self {
         self.results.insert(("packwiz".to_string(), args), result);
         self
@@ -778,12 +778,12 @@ impl Session for MockCommandSession {
         &self.config_provider
     }
 
-    fn state(&self) -> crate::empack::state::ModpackStateManager<'_, dyn FileSystemProvider + '_> {
+    fn state(&self) -> crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_> {
         let workdir = self
             .filesystem()
             .current_dir()
             .expect("Failed to get current directory");
-        crate::empack::state::ModpackStateManager::new(workdir, self.filesystem())
+        crate::empack::state::PackStateManager::new(workdir, self.filesystem())
     }
 }
 

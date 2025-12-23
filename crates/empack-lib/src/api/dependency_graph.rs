@@ -1,6 +1,6 @@
 //! Dependency graph resolution with transitive dependencies and cycle detection
 //!
-//! This module provides a graph-based dependency resolver for mod management.
+//! This module provides a graph-based dependency resolver for project management.
 //! It parses packwiz `.pw.toml` files, builds a dependency graph, detects cycles,
 //! and provides topological ordering for installation.
 
@@ -53,7 +53,7 @@ pub enum DependencyType {
     Optional,
 }
 
-/// Represents a mod in the dependency graph
+/// Represents a project in the dependency graph
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DependencyNode {
     /// Unique mod identifier (slug or ID)
@@ -109,7 +109,7 @@ impl DependencyGraph {
         }
     }
 
-    /// Add a mod to the graph (idempotent - won't duplicate if already exists)
+    /// Add a project to the graph (idempotent - won't duplicate if already exists)
     pub fn add_node(&mut self, node: DependencyNode) -> NodeIndex {
         if let Some(&idx) = self.node_map.get(&node.mod_id) {
             trace!("Node already exists: {}", node.mod_id);
@@ -298,7 +298,7 @@ impl DependencyGraph {
             }
         })?;
 
-        // Extract mod metadata
+        // Extract project metadata
         let name = toml
             .get("name")
             .and_then(|v| v.as_str())

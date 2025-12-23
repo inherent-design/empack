@@ -6,7 +6,7 @@
 use super::styling::StyleManager;
 use crate::primitives::TerminalColorCaps;
 use crate::terminal::TerminalCapabilities;
-use anyhow::Result;
+use crate::Result;
 use dialoguer::{
     Confirm, Input, Select,
     theme::{ColorfulTheme, SimpleTheme, Theme},

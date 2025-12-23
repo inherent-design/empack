@@ -370,7 +370,7 @@ impl From<crate::networking::NetworkingError> for NetworkingConfigError {
     }
 }
 
-/// Common endpoint configurations for Minecraft mod platforms
+/// Common endpoint configurations for Minecraft project platforms
 pub mod endpoints {
     use super::*;
 

@@ -5,7 +5,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProjectType {
-    /// Mod project
+    /// MProject
     Mod,
     /// Datapack project
     Datapack,
@@ -61,7 +61,7 @@ impl std::str::FromStr for BuildTarget {
 /// Filesystem state machine states for modpack development
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum ModpackState {
+pub enum PackState {
     /// No empack.yml or pack/ directory exists
     Uninitialized,
     /// empack.yml exists, pack/ may be initialized
@@ -74,14 +74,14 @@ pub enum ModpackState {
     Cleaning,
 }
 
-impl fmt::Display for ModpackState {
+impl fmt::Display for PackState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ModpackState::Uninitialized => write!(f, "uninitialized"),
-            ModpackState::Configured => write!(f, "configured"),
-            ModpackState::Built => write!(f, "built"),
-            ModpackState::Building => write!(f, "building"),
-            ModpackState::Cleaning => write!(f, "cleaning"),
+            PackState::Uninitialized => write!(f, "uninitialized"),
+            PackState::Configured => write!(f, "configured"),
+            PackState::Built => write!(f, "built"),
+            PackState::Building => write!(f, "building"),
+            PackState::Cleaning => write!(f, "cleaning"),
         }
     }
 }

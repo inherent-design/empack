@@ -46,8 +46,10 @@ pub use primitives::{
 };
 pub use terminal::TerminalCapabilities;
 
+// Centralized Result type alias
+pub type Result<T> = anyhow::Result<T>;
+
 // Private imports for the main function
-use anyhow::Result;
 use application::CliConfig;
 
 pub async fn main() -> Result<()> {

@@ -2,11 +2,11 @@ use reqwest::Client;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Semaphore;
-use tracing::{error, trace};
+use tracing::trace;
 
 use crate::platform::SystemResources;
 
-/// Networking errors for mod resolution and API communication
+/// Networking errors for project resolution and API communication
 #[derive(Debug, Error)]
 pub enum NetworkingError {
     #[error("HTTP request failed: {source}")]
@@ -38,6 +38,12 @@ pub enum NetworkingError {
 
     #[error("No mods provided for resolution")]
     NoModsProvided,
+
+    #[error("Cache operation failed: {message}")]
+    CacheError { message: String },
+
+    #[error("Rate limit error: {message}")]
+    RateLimitError { message: String },
 }
 
 /// Resource-aware networking configuration
@@ -61,7 +67,7 @@ impl Default for NetworkingConfig {
     }
 }
 
-/// Networking manager for mod resolution
+/// Networking manager for project resolution
 pub struct NetworkingManager {
     client: Client,
     config: NetworkingConfig,
@@ -133,7 +139,7 @@ impl NetworkingManager {
             return Err(NetworkingError::NoModsProvided);
         }
 
-        trace!("Starting mod resolution for {} mods", mod_identifiers.len());
+        trace!("Starting project resolution for {} mods", mod_identifiers.len());
 
         let resolver = Arc::new(resolver_fn);
         let mut tasks = Vec::new();
@@ -149,7 +155,7 @@ impl NetworkingManager {
                 let _permit = semaphore.acquire().await?;
 
                 if trace_requests {
-                    trace!("Processing mod resolution task");
+                    trace!("Processing project resolution task");
                 }
 
                 // Execute the resolver function
@@ -178,7 +184,7 @@ impl NetworkingManager {
             }
         }
 
-        trace!("Completed mod resolution for {} mods", results.len());
+        trace!("Completed project resolution for {} mods", results.len());
         Ok(results)
     }
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
-use anyhow::{Context, Result};
+use crate::Result;
 use handlebars::Handlebars;
 use thiserror::Error;
 use crate::empack::config::PackMetadata;

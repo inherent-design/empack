@@ -26,6 +26,10 @@ pub mod platform;
 /// Async HTTP client with concurrency limiting
 pub mod networking;
 
+/// Project hosting platform types
+pub mod project_platform;
+pub use project_platform::*;
+
 /// Available log output streams
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]

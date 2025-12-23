@@ -7,8 +7,9 @@ use crate::application::config::AppConfig;
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
-use crate::empack::state::ModpackStateManager;
-use anyhow::{Context, Result};
+use crate::empack::state::PackStateManager;
+use crate::Result;
+use anyhow::Context;
 use indicatif::MultiProgress;
 use reqwest::Client;
 use std::collections::HashSet;
@@ -16,14 +17,14 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 /// Abstract interface for state management operations
-// StateManager trait removed - using concrete ModpackStateManager type instead
+// StateManager trait removed - using concrete PackStateManager type instead
 
 /// Provider trait for filesystem operations
 pub trait FileSystemProvider {
     /// Get current working directory
     fn current_dir(&self) -> Result<PathBuf>;
 
-    // state_manager method removed - create ModpackStateManager directly
+    // state_manager method removed - create PackStateManager directly
 
     /// Get list of currently installed mods from packwiz
     fn get_installed_mods(&self) -> Result<HashSet<String>>;
@@ -49,16 +50,16 @@ pub trait FileSystemProvider {
 
     // Additional methods for state management
     /// Get list of files and directories in a path
-    fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>, std::io::Error>;
+    fn get_file_list(&self, path: &Path) -> std::result::Result<HashSet<PathBuf>, std::io::Error>;
 
     /// Check if directory has build artifacts (mrpack, zip, jar files or build target dirs)
-    fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool, std::io::Error>;
+    fn has_build_artifacts(&self, dist_dir: &Path) -> std::result::Result<bool, std::io::Error>;
 
     /// Remove a file
-    fn remove_file(&self, path: &Path) -> Result<(), std::io::Error>;
+    fn remove_file(&self, path: &Path) -> std::result::Result<(), std::io::Error>;
 
     /// Remove a directory and all its contents
-    fn remove_dir_all(&self, path: &Path) -> Result<(), std::io::Error>;
+    fn remove_dir_all(&self, path: &Path) -> std::result::Result<(), std::io::Error>;
 
     /// Run packwiz init command
     fn run_packwiz_init(
@@ -70,10 +71,10 @@ pub trait FileSystemProvider {
         modloader: &str,
         mc_version: &str,
         loader_version: &str,
-    ) -> Result<(), crate::empack::state::StateError>;
+    ) -> std::result::Result<(), crate::empack::state::StateError>;
 
     /// Run packwiz refresh command
-    fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), crate::empack::state::StateError>;
+    fn run_packwiz_refresh(&self, workdir: &Path) -> std::result::Result<(), crate::empack::state::StateError>;
 
     /// Get the expected cache path for packwiz-installer-bootstrap.jar
     fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf>;
@@ -136,7 +137,7 @@ pub trait Session {
     fn config(&self) -> &dyn ConfigProvider;
 
     /// Get the state manager for this session
-    fn state(&self) -> ModpackStateManager<'_, dyn FileSystemProvider + '_>;
+    fn state(&self) -> PackStateManager<'_, dyn FileSystemProvider + '_>;
 }
 
 /// Live implementation of FileSystemProvider
@@ -147,7 +148,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
         env::current_dir().context("Failed to get current directory")
     }
 
-    // state_manager method removed - create ModpackStateManager directly
+    // state_manager method removed - create PackStateManager directly
 
     fn get_installed_mods(&self) -> Result<HashSet<String>> {
         let pack_dir = self.current_dir()?.join("pack");
@@ -219,7 +220,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
             .with_context(|| format!("Failed to create directory: {}", path.display()))
     }
 
-    fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>, std::io::Error> {
+    fn get_file_list(&self, path: &Path) -> std::result::Result<HashSet<PathBuf>, std::io::Error> {
         let mut files = HashSet::new();
 
         if !path.exists() {
@@ -235,7 +236,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
         Ok(files)
     }
 
-    fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool, std::io::Error> {
+    fn has_build_artifacts(&self, dist_dir: &Path) -> std::result::Result<bool, std::io::Error> {
         if !dist_dir.exists() {
             return Ok(false);
         }
@@ -271,11 +272,11 @@ impl FileSystemProvider for LiveFileSystemProvider {
         Ok(false)
     }
 
-    fn remove_file(&self, path: &Path) -> Result<(), std::io::Error> {
+    fn remove_file(&self, path: &Path) -> std::result::Result<(), std::io::Error> {
         std::fs::remove_file(path)
     }
 
-    fn remove_dir_all(&self, path: &Path) -> Result<(), std::io::Error> {
+    fn remove_dir_all(&self, path: &Path) -> std::result::Result<(), std::io::Error> {
         std::fs::remove_dir_all(path)
     }
 
@@ -288,7 +289,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
         modloader: &str,
         mc_version: &str,
         loader_version: &str,
-    ) -> Result<(), crate::empack::state::StateError> {
+    ) -> std::result::Result<(), crate::empack::state::StateError> {
         use std::process::Command;
 
         #[cfg(test)]
@@ -405,7 +406,7 @@ hash = ""
         }
     }
 
-    fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), crate::empack::state::StateError> {
+    fn run_packwiz_refresh(&self, workdir: &Path) -> std::result::Result<(), crate::empack::state::StateError> {
         use std::process::Command;
 
         #[cfg(test)]
@@ -823,7 +824,7 @@ where
         &self.config_provider
     }
 
-    fn state(&self) -> ModpackStateManager<'_, dyn FileSystemProvider + '_> {
+    fn state(&self) -> PackStateManager<'_, dyn FileSystemProvider + '_> {
         let workdir = self
             .config()
             .app_config()
@@ -835,6 +836,6 @@ where
                     .current_dir()
                     .expect("Failed to get current directory")
             });
-        ModpackStateManager::new(workdir, self.filesystem())
+        PackStateManager::new(workdir, self.filesystem())
     }
 }

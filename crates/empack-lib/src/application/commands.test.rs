@@ -1,9 +1,9 @@
 use super::*;
 use crate::application::session_mocks::*;
 use crate::application::session::ProcessOutput;
-use crate::primitives::{BuildTarget, ModpackState};
+use crate::primitives::{BuildTarget, PackState, ProjectPlatform};
 use crate::application::config::AppConfig;
-use crate::empack::search::{ProjectInfo, Platform};
+use crate::empack::search::ProjectInfo;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -108,7 +108,7 @@ mod handle_add_tests {
         
         // Create a mock project info for successful resolution
         let mock_project = ProjectInfo {
-            platform: Platform::Modrinth,
+            platform: ProjectPlatform::Modrinth,
             project_id: "test-mod-id".to_string(),
             title: "Test Mod".to_string(),
             downloads: 1000,

@@ -78,22 +78,22 @@ pub enum Commands {
         jobs: Option<usize>,
     },
 
-    /// Add mods to the modpack
+    /// Add projects to the modpack
     Add {
         /// Mod names, URLs, or project IDs to add
         #[arg(help = "Mod names, URLs, or project IDs")]
         mods: Vec<String>,
 
         /// Force add even if conflicts exist
-        #[arg(short, long, help = "Force add mods even if version conflicts exist")]
+        #[arg(short, long, help = "Force add projects even if version conflicts exist")]
         force: bool,
 
         /// Search platform preference
-        #[arg(long, value_enum, help = "Preferred platform for mod resolution")]
+        #[arg(long, value_enum, help = "Preferred platform for project resolution")]
         platform: Option<SearchPlatform>,
     },
 
-    /// Remove mods from the modpack
+    /// Remove projects from the modpack
     Remove {
         /// Mod names to remove
         #[arg(help = "Mod names to remove")]
@@ -116,7 +116,7 @@ pub enum Commands {
     },
 }
 
-/// Search platform preference for mod resolution
+/// Search platform preference for project resolution
 #[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
 pub enum SearchPlatform {
     /// Prefer Modrinth

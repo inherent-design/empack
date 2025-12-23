@@ -16,7 +16,7 @@ use thiserror::Error;
 pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
-) -> Result<ModpackState, StateError> {
+) -> Result<PackState, StateError> {
     // Check if directory exists and is valid
     if !provider.is_directory(workdir) {
         return Err(StateError::InvalidDirectory {
@@ -32,7 +32,7 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
     if provider.is_directory(&dist_dir) {
         // Check if we have any build artifacts
         if provider.has_build_artifacts(&dist_dir).unwrap_or(false) {
-            return Ok(ModpackState::Built);
+            return Ok(PackState::Built);
         }
     }
 
@@ -40,27 +40,27 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
     if provider.is_directory(&empack_yml.parent().unwrap()) {
         let files = provider.get_file_list(workdir).unwrap_or_default();
         if files.contains(&empack_yml) || files.contains(&pack_toml) {
-            return Ok(ModpackState::Configured);
+            return Ok(PackState::Configured);
         }
     }
 
     // Default to uninitialized
-    Ok(ModpackState::Uninitialized)
+    Ok(PackState::Uninitialized)
 }
 
 /// Check if state transition is valid (pure function)
-pub fn can_transition(from: ModpackState, to: ModpackState) -> bool {
+pub fn can_transition(from: PackState, to: PackState) -> bool {
     match (from, to) {
         // Can always clean (go backwards)
-        (ModpackState::Built, ModpackState::Configured) => true,
-        (ModpackState::Configured, ModpackState::Uninitialized) => true,
+        (PackState::Built, PackState::Configured) => true,
+        (PackState::Configured, PackState::Uninitialized) => true,
 
         // Can advance through states
-        (ModpackState::Uninitialized, ModpackState::Configured) => true,
-        (ModpackState::Configured, ModpackState::Built) => true,
+        (PackState::Uninitialized, PackState::Configured) => true,
+        (PackState::Configured, PackState::Built) => true,
 
         // Can sync within configured state
-        (ModpackState::Configured, ModpackState::Configured) => true,
+        (PackState::Configured, PackState::Configured) => true,
 
         // Same state is always valid
         (a, b) if a == b => true,
@@ -75,15 +75,15 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
     provider: &P,
     workdir: &Path,
     transition: StateTransition<'_>,
-) -> Result<ModpackState, StateError> {
+) -> Result<PackState, StateError> {
     let current = discover_state(provider, workdir)?;
 
     match transition {
         StateTransition::Initialize(config) => {
-            if !can_transition(current, ModpackState::Configured) {
+            if !can_transition(current, PackState::Configured) {
                 return Err(StateError::InvalidTransition {
                     from: current,
-                    to: ModpackState::Configured,
+                    to: PackState::Configured,
                 });
             }
             execute_initialize(
@@ -99,67 +99,67 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
         }
 
         StateTransition::Synchronize => {
-            if current != ModpackState::Configured {
+            if current != PackState::Configured {
                 return Err(StateError::InvalidTransition {
                     from: current,
-                    to: ModpackState::Configured,
+                    to: PackState::Configured,
                 });
             }
             execute_synchronize(provider, workdir)
         }
 
         StateTransition::Build(orchestrator, targets) => {
-            if !can_transition(current, ModpackState::Built) {
+            if !can_transition(current, PackState::Built) {
                 return Err(StateError::InvalidTransition {
                     from: current,
-                    to: ModpackState::Built,
+                    to: PackState::Built,
                 });
             }
             execute_build(orchestrator, &targets).await
         }
 
         StateTransition::Clean => match current {
-            ModpackState::Built => {
+            PackState::Built => {
                 clean_build_artifacts(provider, workdir)?;
-                Ok(ModpackState::Configured)
+                Ok(PackState::Configured)
             }
-            ModpackState::Configured => {
+            PackState::Configured => {
                 clean_configuration(provider, workdir)?;
-                Ok(ModpackState::Uninitialized)
+                Ok(PackState::Uninitialized)
             }
-            ModpackState::Uninitialized => Ok(ModpackState::Uninitialized),
-            ModpackState::Building => {
+            PackState::Uninitialized => Ok(PackState::Uninitialized),
+            PackState::Building => {
                 return Err(StateError::InvalidTransition {
                     from: current,
-                    to: ModpackState::Configured,
+                    to: PackState::Configured,
                 });
             }
-            ModpackState::Cleaning => {
+            PackState::Cleaning => {
                 return Err(StateError::InvalidTransition {
                     from: current,
-                    to: ModpackState::Configured,
+                    to: PackState::Configured,
                 });
             }
         },
 
         StateTransition::Building => {
-            if current != ModpackState::Configured {
+            if current != PackState::Configured {
                 return Err(StateError::InvalidTransition {
                     from: current,
-                    to: ModpackState::Building,
+                    to: PackState::Building,
                 });
             }
-            Ok(ModpackState::Building)
+            Ok(PackState::Building)
         }
 
         StateTransition::Cleaning => {
-            if current != ModpackState::Built {
+            if current != PackState::Built {
                 return Err(StateError::InvalidTransition {
                     from: current,
-                    to: ModpackState::Cleaning,
+                    to: PackState::Cleaning,
                 });
             }
-            Ok(ModpackState::Cleaning)
+            Ok(PackState::Cleaning)
         }
     }
 }
@@ -174,7 +174,7 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
     modloader: &str,
     mc_version: &str,
     loader_version: &str,
-) -> Result<ModpackState, StateError> {
+) -> Result<PackState, StateError> {
     // Create basic directory structure
     create_initial_structure(provider, workdir).map_err(|e| {
         clean_configuration(provider, workdir).ok(); // Cleanup on failure
@@ -216,14 +216,14 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
             e
         })?;
 
-    Ok(ModpackState::Configured)
+    Ok(PackState::Configured)
 }
 
 /// Execute synchronization process (pure function)
 pub fn execute_synchronize<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
-) -> Result<ModpackState, StateError> {
+) -> Result<PackState, StateError> {
     // Validate configuration consistency using session provider
     let config_manager = provider.config_manager(workdir.to_path_buf());
     let issues = config_manager.validate_consistency()?;
@@ -237,14 +237,14 @@ pub fn execute_synchronize<P: crate::application::session::FileSystemProvider + 
     // Run packwiz refresh to sync mods
     provider.run_packwiz_refresh(workdir)?;
 
-    Ok(ModpackState::Configured)
+    Ok(PackState::Configured)
 }
 
 /// Execute build process (pure function)
 pub async fn execute_build<'a>(
     mut orchestrator: crate::empack::builds::BuildOrchestrator<'a>,
     targets: &[BuildTarget],
-) -> Result<ModpackState, StateError> {
+) -> Result<PackState, StateError> {
     // Execute build pipeline via builds.rs
     #[cfg(test)]
     {
@@ -289,7 +289,7 @@ pub async fn execute_build<'a>(
         }
     }
 
-    Ok(ModpackState::Built)
+    Ok(PackState::Built)
 }
 
 /// Create initial modpack structure (pure function)
@@ -375,7 +375,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
 
 /// Filesystem state machine for modpack development
 /// Folder layout determines state - now generic over FileSystemProvider for testability
-pub struct ModpackStateManager<'a, P: crate::application::session::FileSystemProvider + ?Sized> {
+pub struct PackStateManager<'a, P: crate::application::session::FileSystemProvider + ?Sized> {
     /// Working directory (where empack.yml should be)
     pub workdir: PathBuf,
     /// Provider for all I/O operations
@@ -393,8 +393,8 @@ pub enum StateError {
 
     #[error("State transition not allowed: {from} -> {to}")]
     InvalidTransition {
-        from: ModpackState,
-        to: ModpackState,
+        from: PackState,
+        to: PackState,
     },
 
     #[error("Missing required file: {file}")]
@@ -446,44 +446,44 @@ impl From<anyhow::Error> for StateError {
     }
 }
 
-impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackStateManager<'a, P> {
+impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateManager<'a, P> {
     /// Create a new state manager for the given directory with dependency injection
     pub fn new(workdir: PathBuf, provider: &'a P) -> Self {
         Self { workdir, provider }
     }
 
     /// Discover current state from filesystem
-    pub fn discover_state(&self) -> Result<ModpackState, StateError> {
+    pub fn discover_state(&self) -> Result<PackState, StateError> {
         discover_state(self.provider, &self.workdir)
     }
 
     /// Get expected files for each state
-    pub fn get_state_files(&self, state: ModpackState) -> Vec<PathBuf> {
+    pub fn get_state_files(&self, state: PackState) -> Vec<PathBuf> {
         match state {
-            ModpackState::Uninitialized => vec![],
-            ModpackState::Configured => vec![
+            PackState::Uninitialized => vec![],
+            PackState::Configured => vec![
                 self.workdir.join("empack.yml"),
                 self.workdir.join("pack").join("pack.toml"),
                 self.workdir.join("pack").join("index.toml"),
             ],
-            ModpackState::Built => {
-                let mut files = self.get_state_files(ModpackState::Configured);
+            PackState::Built => {
+                let mut files = self.get_state_files(PackState::Configured);
                 files.push(self.workdir.join("dist"));
                 files
             }
-            ModpackState::Building => {
+            PackState::Building => {
                 // Same as Configured - intermediate state
-                self.get_state_files(ModpackState::Configured)
+                self.get_state_files(PackState::Configured)
             }
-            ModpackState::Cleaning => {
+            PackState::Cleaning => {
                 // Same as Built - intermediate state
-                self.get_state_files(ModpackState::Built)
+                self.get_state_files(PackState::Built)
             }
         }
     }
 
     /// Validate that current filesystem matches expected state
-    pub fn validate_state(&self, expected: ModpackState) -> Result<bool, StateError> {
+    pub fn validate_state(&self, expected: PackState) -> Result<bool, StateError> {
         let current = self.discover_state()?;
 
         if current != expected {
@@ -492,12 +492,12 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackSta
 
         // Additional validation for configured/built states
         match expected {
-            ModpackState::Uninitialized => Ok(true),
-            ModpackState::Configured => {
+            PackState::Uninitialized => Ok(true),
+            PackState::Configured => {
                 let pack_dir = self.workdir.join("pack");
                 Ok(self.provider.is_directory(&pack_dir))
             }
-            ModpackState::Built => {
+            PackState::Built => {
                 let dist_dir = self.workdir.join(".empack").join("dist");
                 Ok(self.provider.is_directory(&dist_dir)
                     && self
@@ -505,12 +505,12 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackSta
                         .has_build_artifacts(&dist_dir)
                         .unwrap_or(false))
             }
-            ModpackState::Building => {
+            PackState::Building => {
                 // Intermediate state - just check if we can build
                 let pack_dir = self.workdir.join("pack");
                 Ok(self.provider.is_directory(&pack_dir))
             }
-            ModpackState::Cleaning => {
+            PackState::Cleaning => {
                 // Intermediate state - just check if we can clean
                 let dist_dir = self.workdir.join(".empack").join("dist");
                 Ok(self.provider.is_directory(&dist_dir))
@@ -519,7 +519,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackSta
     }
 
     /// Check if state transition is valid
-    pub fn can_transition(&self, from: ModpackState, to: ModpackState) -> bool {
+    pub fn can_transition(&self, from: PackState, to: PackState) -> bool {
         can_transition(from, to)
     }
 
@@ -527,7 +527,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackSta
     pub async fn execute_transition(
         &self,
         transition: StateTransition<'_>,
-    ) -> Result<ModpackState, StateError> {
+    ) -> Result<PackState, StateError> {
         execute_transition(self.provider, &self.workdir, transition).await
     }
 
@@ -541,18 +541,18 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackSta
         // Validate that the transition is allowed
         match transition {
             StateTransition::Building => {
-                if current != ModpackState::Configured {
+                if current != PackState::Configured {
                     return Err(StateError::InvalidTransition {
                         from: current,
-                        to: ModpackState::Building,
+                        to: PackState::Building,
                     });
                 }
             }
             StateTransition::Cleaning => {
-                if current != ModpackState::Built {
+                if current != PackState::Built {
                     return Err(StateError::InvalidTransition {
                         from: current,
-                        to: ModpackState::Cleaning,
+                        to: PackState::Cleaning,
                     });
                 }
             }
@@ -582,8 +582,8 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackSta
     }
 
     /// Get paths for common modpack files
-    pub fn paths(&self) -> ModpackPaths {
-        ModpackPaths {
+    pub fn paths(&self) -> PackPaths {
+        PackPaths {
             workdir: self.workdir.clone(),
             empack_yml: self.workdir.join("empack.yml"),
             pack_dir: self.workdir.join("pack"),
@@ -598,7 +598,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> ModpackSta
 
 /// Common paths for modpack operations
 #[derive(Debug, Clone)]
-pub struct ModpackPaths {
+pub struct PackPaths {
     pub workdir: PathBuf,
     pub empack_yml: PathBuf,
     pub pack_dir: PathBuf,
@@ -607,7 +607,7 @@ pub struct ModpackPaths {
     pub dist_dir: PathBuf,
 }
 
-impl ModpackPaths {
+impl PackPaths {
     /// Get build output path for a specific target
     pub fn build_output(&self, target: BuildTarget) -> PathBuf {
         self.dist_dir.join(target.to_string())

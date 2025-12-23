@@ -6,11 +6,11 @@
 use crate::application::session::{CommandSession, Session};
 use crate::application::{CliConfig, Commands};
 use crate::empack::parsing::ModLoader;
-use crate::empack::search::Platform;
 use crate::empack::state::StateError;
 use crate::platform::{ArchiverCapabilities, GoCapabilities};
-use crate::primitives::{BuildTarget, ModpackState, ProjectType, StateTransition};
-use anyhow::{Context, Result};
+use crate::primitives::{BuildTarget, PackState, ProjectType, StateTransition};
+use crate::Result;
+use anyhow::Context;
 use std::collections::HashSet;
 
 /// Actions to be taken during sync
@@ -208,11 +208,11 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
 
     // Create state manager for the target directory
     let manager =
-        crate::empack::state::ModpackStateManager::new(target_dir.clone(), session.filesystem());
+        crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
 
     // Check if already initialized
     let current_state = manager.discover_state().map_err(StateError::from)?;
-    if current_state != ModpackState::Uninitialized && !force {
+    if current_state != PackState::Uninitialized && !force {
         session
             .display()
             .status()
@@ -542,7 +542,7 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
         .context("Failed to initialize modpack project")?;
 
     match result {
-        ModpackState::Configured => {
+        PackState::Configured => {
             session
                 .display()
                 .status()
@@ -566,6 +566,29 @@ async fn handle_init(session: &dyn Session, name: Option<String>, force: bool) -
     Ok(())
 }
 
+/// Handle `empack add` command - search, resolve, and install projects
+///
+/// ## Packwiz Integration Strategy
+///
+/// This function uses **direct ProcessProvider.execute()** to invoke packwiz CLI commands
+/// rather than the PackwizMetadata wrapper (defined in empack/packwiz.rs).
+///
+/// **Design Rationale:**
+/// - Single-command operations: Each mod is added via one packwiz invocation
+/// - Simplicity advantage: Direct CLI is ~17 lines vs wrapper's ~35 lines
+/// - No state management: Commands don't need cached availability checks
+/// - Computational desperation: Minimal abstractions until complexity justifies them
+/// - Error handling adequate: Generic anyhow errors sufficient for fail-fast per-mod handling
+///
+/// **When to use PackwizMetadata wrapper instead:**
+/// PackwizMetadata should be integrated IF future commands need:
+/// - Cached availability checks across multiple invocations
+/// - Structured error parsing (HashMismatch, PackFormat detection)
+/// - Transactional behavior with rollback on failure
+/// - Complex multi-step validation (refresh_index, export_mrpack)
+/// - Better test isolation (mock wrapper instead of ProcessProvider)
+///
+/// **See also:** packwiz.rs module documentation for usage patterns
 async fn handle_add(
     session: &dyn Session,
     mods: Vec<String>,
@@ -592,7 +615,7 @@ async fn handle_add(
     let current_state = manager
         .discover_state()
         .map_err(|e| anyhow::anyhow!("State error: {:?}", e))?;
-    if current_state == crate::primitives::ModpackState::Uninitialized {
+    if current_state == crate::primitives::PackState::Uninitialized {
         session
             .display()
             .status()
@@ -675,17 +698,12 @@ async fn handle_add(
 
                 // Execute appropriate packwiz command
                 let packwiz_result = match project_info.platform {
-                    crate::empack::search::Platform::Modrinth => session.process().execute(
+                    crate::primitives::ProjectPlatform::Modrinth => session.process().execute(
                         "packwiz",
                         &["mr", "add", &project_info.project_id],
                         &workdir.join("pack"),
                     ),
-                    crate::empack::search::Platform::CurseForge => session.process().execute(
-                        "packwiz",
-                        &["cf", "add", &project_info.project_id],
-                        &workdir.join("pack"),
-                    ),
-                    crate::empack::search::Platform::Forge => session.process().execute(
+                    crate::primitives::ProjectPlatform::CurseForge => session.process().execute(
                         "packwiz",
                         &["cf", "add", &project_info.project_id],
                         &workdir.join("pack"),
@@ -773,7 +791,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(StateError::from)?;
-    if current_state == ModpackState::Uninitialized {
+    if current_state == PackState::Uninitialized {
         session
             .display()
             .status()
@@ -870,7 +888,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(StateError::from)?;
-    if current_state == ModpackState::Uninitialized {
+    if current_state == PackState::Uninitialized {
         session
             .display()
             .status()
@@ -990,7 +1008,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
             .checking("Cleaning build artifacts");
 
         let current_state = manager.discover_state().map_err(StateError::from)?;
-        if current_state == ModpackState::Built {
+        if current_state == PackState::Built {
             manager
                 .execute_transition(StateTransition::Clean)
                 .await
@@ -1023,7 +1041,7 @@ async fn handle_sync(session: &dyn Session, dry_run: bool) -> Result<()> {
 
     // Verify we're in a configured state
     let current_state = manager.discover_state().map_err(StateError::from)?;
-    if current_state == ModpackState::Uninitialized {
+    if current_state == PackState::Uninitialized {
         session
             .display()
             .status()
@@ -1159,17 +1177,12 @@ async fn handle_sync(session: &dyn Session, dry_run: bool) -> Result<()> {
 
                     // Create appropriate packwiz add command based on platform
                     let command = match project_info.platform {
-                        Platform::Modrinth => vec![
+                        crate::primitives::ProjectPlatform::Modrinth => vec![
                             "mr".to_string(),
                             "add".to_string(),
                             project_info.project_id.clone(),
                         ],
-                        Platform::CurseForge => vec![
-                            "cf".to_string(),
-                            "add".to_string(),
-                            project_info.project_id.clone(),
-                        ],
-                        Platform::Forge => vec![
+                        crate::primitives::ProjectPlatform::CurseForge => vec![
                             "cf".to_string(),
                             "add".to_string(),
                             project_info.project_id.clone(),

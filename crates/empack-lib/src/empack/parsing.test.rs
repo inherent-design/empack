@@ -36,22 +36,22 @@ fn test_mod_loader_parsing() {
 #[test]
 fn test_mod_loader_serialization() {
     // Test that ModLoader serializes to lowercase
-    let fabric_yaml = serde_yaml::to_string(&ModLoader::Fabric).unwrap();
+    let fabric_yaml = serde_saphyr::to_string(&ModLoader::Fabric).unwrap();
     assert_eq!(fabric_yaml.trim(), "fabric");
-    
-    let neoforge_yaml = serde_yaml::to_string(&ModLoader::NeoForge).unwrap();
+
+    let neoforge_yaml = serde_saphyr::to_string(&ModLoader::NeoForge).unwrap();
     assert_eq!(neoforge_yaml.trim(), "neoforge");
-    
-    let quilt_yaml = serde_yaml::to_string(&ModLoader::Quilt).unwrap();
+
+    let quilt_yaml = serde_saphyr::to_string(&ModLoader::Quilt).unwrap();
     assert_eq!(quilt_yaml.trim(), "quilt");
-    
-    let forge_yaml = serde_yaml::to_string(&ModLoader::Forge).unwrap();
+
+    let forge_yaml = serde_saphyr::to_string(&ModLoader::Forge).unwrap();
     assert_eq!(forge_yaml.trim(), "forge");
-    
+
     // Test deserialization from lowercase
-    let fabric_from_yaml: ModLoader = serde_yaml::from_str("fabric").unwrap();
+    let fabric_from_yaml: ModLoader = serde_saphyr::from_str("fabric").unwrap();
     assert_eq!(fabric_from_yaml, ModLoader::Fabric);
-    
-    let neoforge_from_yaml: ModLoader = serde_yaml::from_str("neoforge").unwrap();
+
+    let neoforge_from_yaml: ModLoader = serde_saphyr::from_str("neoforge").unwrap();
     assert_eq!(neoforge_from_yaml, ModLoader::NeoForge);
 }

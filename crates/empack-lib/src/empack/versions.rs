@@ -4,7 +4,8 @@
 //! available versions from official APIs with caching for performance.
 
 use crate::application::session::{FileSystemProvider, NetworkProvider};
-use anyhow::{Context, Result};
+use crate::Result;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
