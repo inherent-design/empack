@@ -13,6 +13,35 @@ use crate::Result;
 use anyhow::Context;
 use std::collections::HashSet;
 
+/// Default template for empack.yml configuration file
+const DEFAULT_EMPACK_YML_TEMPLATE: &str = r#"empack:
+  name: "{name}"
+  author: "{author}"
+  version: "{version}"
+  minecraft_version: "{minecraft_version}"
+  loader: {loader}
+  loader_version: "{loader_version}"
+  dependencies: []
+"#;
+
+/// Format empack.yml template with provided configuration values
+fn format_empack_yml(
+    name: &str,
+    author: &str,
+    version: &str,
+    minecraft_version: &str,
+    loader: &str,
+    loader_version: &str,
+) -> String {
+    DEFAULT_EMPACK_YML_TEMPLATE
+        .replace("{name}", name)
+        .replace("{author}", author)
+        .replace("{version}", version)
+        .replace("{minecraft_version}", minecraft_version)
+        .replace("{loader}", loader)
+        .replace("{loader_version}", loader_version)
+}
+
 /// Actions to be taken during sync
 #[derive(Debug, Clone)]
 enum SyncAction {
@@ -215,7 +244,7 @@ async fn handle_init(
         crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
 
     // Check if already initialized
-    let current_state = manager.discover_state().map_err(StateError::from)?;
+    let current_state = manager.discover_state()?;
     if current_state != PackState::Uninitialized && !force {
         session
             .display()
@@ -547,17 +576,13 @@ async fn handle_init(
     }
 
     // Create the empack.yml file with the collected configuration FIRST
-    let empack_yml_content = format!(
-        r#"empack:
-  name: "{}"
-  author: "{}"
-  version: "{}"
-  minecraft_version: "{}"
-  loader: {}
-  loader_version: "{}"
-  dependencies: []
-"#,
-        modpack_name, author, version, minecraft_version, loader_str, loader_version
+    let empack_yml_content = format_empack_yml(
+        &modpack_name,
+        &author,
+        &version,
+        &minecraft_version,
+        &loader_str,
+        &loader_version,
     );
 
     session
@@ -880,7 +905,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     let manager = session.state();
 
     // Verify we're in a configured state
-    let current_state = manager.discover_state().map_err(StateError::from)?;
+    let current_state = manager.discover_state()?;
     if current_state == PackState::Uninitialized {
         session
             .display()
@@ -1080,7 +1105,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
     let manager = session.state();
 
     // Verify we're in a configured state
-    let current_state = manager.discover_state().map_err(StateError::from)?;
+    let current_state = manager.discover_state()?;
     if current_state == PackState::Uninitialized {
         session
             .display()
@@ -1200,7 +1225,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
             .status()
             .checking("Cleaning build artifacts");
 
-        let current_state = manager.discover_state().map_err(StateError::from)?;
+        let current_state = manager.discover_state()?;
         if current_state == PackState::Built {
             manager
                 .execute_transition(session.process(), StateTransition::Clean)
@@ -1233,7 +1258,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let manager = session.state();
 
     // Verify we're in a configured state
-    let current_state = manager.discover_state().map_err(StateError::from)?;
+    let current_state = manager.discover_state()?;
     if current_state == PackState::Uninitialized {
         session
             .display()

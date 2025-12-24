@@ -19,6 +19,14 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+/// Default index.toml template for packwiz integration tests
+const DEFAULT_INDEX_TOML: &str = r#"hash-format = "sha256"
+
+[[files]]
+file = "pack.toml"
+hash = ""
+"#;
+
 /// Mock filesystem provider for testing
 pub struct MockFileSystemProvider {
     pub current_dir: PathBuf,
@@ -111,12 +119,7 @@ minecraft = "{}"
             name, minecraft_version, loader
         );
 
-        let index_toml = r#"hash-format = "sha256"
-
-[[files]]
-file = "pack.toml"
-hash = ""
-"#;
+        let index_toml = DEFAULT_INDEX_TOML;
 
         self.with_file(workdir.join("empack.yml"), empack_yml)
             .with_file(
@@ -157,12 +160,7 @@ minecraft = "1.21.1"
 fabric = "0.15.0"
 "#;
 
-        let index_toml = r#"hash-format = "sha256"
-
-[[files]]
-file = "pack.toml"
-hash = ""
-"#;
+        let index_toml = DEFAULT_INDEX_TOML;
 
         self.with_file(workdir.join("empack.yml"), empack_yml.to_string())
             .with_file(
@@ -293,12 +291,12 @@ impl FileSystemProvider for MockFileSystemProvider {
         let files = self.files.lock().unwrap();
 
         for path in files.keys() {
-            if path.starts_with(dist_dir) {
-                if let Some(extension) = path.extension() {
-                    match extension.to_str() {
-                        Some("mrpack") | Some("zip") | Some("jar") => return Ok(true),
-                        _ => continue,
-                    }
+            if path.starts_with(dist_dir)
+                && let Some(extension) = path.extension()
+            {
+                match extension.to_str() {
+                    Some("mrpack") | Some("zip") | Some("jar") => return Ok(true),
+                    _ => continue,
                 }
             }
         }
@@ -364,12 +362,7 @@ minecraft = "{}"
 
         // Also create index.toml
         let index_file = pack_dir.join("index.toml");
-        let default_index = r#"hash-format = "sha256"
-
-[[files]]
-file = "pack.toml"
-hash = ""
-"#;
+        let default_index = DEFAULT_INDEX_TOML;
         self.write_file(&index_file, default_index)
             .map_err(|e| crate::empack::state::StateError::IoError {
                 source: std::io::Error::new(std::io::ErrorKind::Other, e),
