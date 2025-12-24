@@ -165,7 +165,10 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         _loader_version: &str,
     ) -> Result<(), StateError> {
         match self.packwiz_results.get("init") {
-            Some(result) => result.clone(),
+            Some(Ok(_)) => Ok(()),
+            Some(Err(_)) => Err(StateError::CommandFailed {
+                command: "packwiz init".to_string(),
+            }),
             None => Ok(()), // Default success
         }
     }
@@ -176,7 +179,10 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         _workdir: &Path,
     ) -> Result<(), StateError> {
         match self.packwiz_results.get("refresh") {
-            Some(result) => result.clone(),
+            Some(Ok(_)) => Ok(()),
+            Some(Err(_)) => Err(StateError::CommandFailed {
+                command: "packwiz refresh".to_string(),
+            }),
             None => Ok(()), // Default success
         }
     }
@@ -525,7 +531,8 @@ fn test_pure_execute_synchronize_function() {
 
     // Verify the error is about missing configuration
     match result.unwrap_err() {
-        StateError::ConfigManagementError { message } => {
+        StateError::ConfigManagementError { source } => {
+            let message = source.to_string();
             println!("Actual error message: {}", message);
             assert!(
                 message.contains("Missing required field")

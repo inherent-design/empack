@@ -359,7 +359,7 @@ minecraft = "{}"
         );
         self.write_file(&pack_file, &default_pack_toml)
             .map_err(|e| crate::empack::state::StateError::IoError {
-                message: e.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
             })?;
 
         // Also create index.toml
@@ -370,11 +370,10 @@ minecraft = "{}"
 file = "pack.toml"
 hash = ""
 "#;
-        self.write_file(&index_file, default_index).map_err(|e| {
-            crate::empack::state::StateError::IoError {
-                message: e.to_string(),
-            }
-        })?;
+        self.write_file(&index_file, default_index)
+            .map_err(|e| crate::empack::state::StateError::IoError {
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+            })?;
 
         Ok(())
     }
@@ -388,7 +387,7 @@ hash = ""
         let pack_file = workdir.join("pack").join("pack.toml");
         if !self.exists(&pack_file) {
             return Err(crate::empack::state::StateError::MissingFile {
-                file: "pack.toml".to_string(),
+                file: pack_file.to_path_buf(),
             });
         }
         Ok(())

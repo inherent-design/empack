@@ -119,6 +119,7 @@ dist/*.mrpack
 
 # Environment configuration
 .env*
+!.env*template
 
 # End of Custom
 

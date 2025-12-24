@@ -319,7 +319,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
         // Ensure pack directory exists before running packwiz
         if !pack_dir.exists() {
             return Err(crate::empack::state::StateError::MissingFile {
-                file: "pack directory".to_string(),
+                file: pack_dir.to_path_buf(),
             });
         }
 
@@ -384,11 +384,14 @@ impl FileSystemProvider for LiveFileSystemProvider {
     ) -> std::result::Result<(), crate::empack::state::StateError> {
         let pack_file = workdir.join("pack").join("pack.toml");
 
-        let pack_file_str = pack_file
-            .to_str()
-            .ok_or_else(|| crate::empack::state::StateError::IoError {
-                message: "Invalid UTF-8 in pack.toml path".to_string(),
-            })?;
+        let pack_file_str = pack_file.to_str().ok_or_else(|| {
+            crate::empack::state::StateError::IoError {
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Invalid UTF-8 in pack.toml path",
+                ),
+            }
+        })?;
 
         let output = process
             .execute("packwiz", &["--pack-file", pack_file_str, "refresh"], workdir)

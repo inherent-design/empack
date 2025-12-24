@@ -20,7 +20,7 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
     // Check if directory exists and is valid
     if !provider.is_directory(workdir) {
         return Err(StateError::InvalidDirectory {
-            path: workdir.display().to_string(),
+            path: workdir.to_path_buf(),
         });
     }
 
@@ -192,7 +192,7 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
             .map_err(|e| {
                 clean_configuration(provider, workdir).ok(); // Cleanup on failure
                 StateError::IoError {
-                    message: e.to_string(),
+                    source: std::io::Error::new(std::io::ErrorKind::Other, e),
                 }
             })?;
     }
@@ -269,9 +269,7 @@ pub async fn execute_build<'a>(
         // Execute build pipeline directly in async context
         let result = orchestrator.execute_build_pipeline(targets).await;
 
-        let build_results = result.map_err(|e| StateError::BuildError {
-            message: e.to_string(),
-        })?;
+        let build_results = result.map_err(|e| StateError::BuildError { source: e })?;
 
         // Check if any builds failed
         for result in &build_results {
@@ -299,21 +297,21 @@ pub fn create_initial_structure<P: crate::application::session::FileSystemProvid
     provider
         .create_dir_all(&pack_dir)
         .map_err(|e| StateError::IoError {
-            message: e.to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e),
         })?;
 
     let template_dir = workdir.join("templates");
     provider
         .create_dir_all(&template_dir)
         .map_err(|e| StateError::IoError {
-            message: e.to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e),
         })?;
 
     let installer_dir = workdir.join("installer");
     provider
         .create_dir_all(&installer_dir)
         .map_err(|e| StateError::IoError {
-            message: e.to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e),
         })?;
 
     Ok(())
@@ -329,7 +327,7 @@ pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider 
         provider
             .remove_dir_all(&dist_dir)
             .map_err(|e| StateError::IoError {
-                message: e.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
             })?;
     }
     Ok(())
@@ -346,7 +344,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
         provider
             .remove_file(&empack_yml)
             .map_err(|e| StateError::IoError {
-                message: e.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
             })?;
     }
 
@@ -355,7 +353,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
         provider
             .remove_dir_all(&pack_dir)
             .map_err(|e| StateError::IoError {
-                message: e.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
             })?;
     }
 
@@ -364,7 +362,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
         provider
             .remove_dir_all(&empack_dir)
             .map_err(|e| StateError::IoError {
-                message: e.to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
             })?;
     }
 
@@ -381,13 +379,16 @@ pub struct PackStateManager<'a, P: crate::application::session::FileSystemProvid
 }
 
 /// State detection errors
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error)]
 pub enum StateError {
-    #[error("IO error: {message}")]
-    IoError { message: String },
+    #[error("IO error")]
+    IoError {
+        #[from]
+        source: std::io::Error,
+    },
 
     #[error("Invalid modpack directory: {path}")]
-    InvalidDirectory { path: String },
+    InvalidDirectory { path: PathBuf },
 
     #[error("State transition not allowed: {from} -> {to}")]
     InvalidTransition {
@@ -396,52 +397,25 @@ pub enum StateError {
     },
 
     #[error("Missing required file: {file}")]
-    MissingFile { file: String },
+    MissingFile { file: PathBuf },
 
     #[error("Configuration error: {reason}")]
     ConfigError { reason: String },
 
-    #[error("Build error: {message}")]
-    BuildError { message: String },
+    #[error("Build error")]
+    BuildError {
+        #[from]
+        source: BuildError,
+    },
 
-    #[error("Config management error: {message}")]
-    ConfigManagementError { message: String },
+    #[error("Config management error")]
+    ConfigManagementError {
+        #[from]
+        source: ConfigError,
+    },
 
     #[error("Command execution failed: {command}")]
     CommandFailed { command: String },
-}
-
-// Implement From traits for error conversion
-impl From<std::io::Error> for StateError {
-    fn from(err: std::io::Error) -> Self {
-        StateError::IoError {
-            message: err.to_string(),
-        }
-    }
-}
-
-impl From<BuildError> for StateError {
-    fn from(err: BuildError) -> Self {
-        StateError::BuildError {
-            message: err.to_string(),
-        }
-    }
-}
-
-impl From<ConfigError> for StateError {
-    fn from(err: ConfigError) -> Self {
-        StateError::ConfigManagementError {
-            message: err.to_string(),
-        }
-    }
-}
-
-impl From<anyhow::Error> for StateError {
-    fn from(err: anyhow::Error) -> Self {
-        StateError::IoError {
-            message: err.to_string(),
-        }
-    }
 }
 
 impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateManager<'a, P> {
