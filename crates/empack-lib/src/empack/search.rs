@@ -333,10 +333,9 @@ impl ProjectResolver {
             params.push(("gameVersion", version.to_string()));
         }
 
-        if let Some(loader) = mod_loader {
-            if let Some(loader_id) = self.curseforge_loader_id(loader) {
-                params.push(("modLoaderType", loader_id.to_string()));
-            }
+        if let Some(loader) = mod_loader
+            && let Some(loader_id) = self.curseforge_loader_id(loader) {
+            params.push(("modLoaderType", loader_id.to_string()));
         }
 
         let query_string = params

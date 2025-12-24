@@ -167,9 +167,7 @@ impl DependencyGraph {
 
         for node_idx in self.graph.node_indices() {
             if !visited.contains_key(&node_idx) {
-                if let Some(cycle) =
-                    self.dfs_cycle_detect(node_idx, &mut visited, &mut stack)
-                {
+                if let Some(cycle) = self.dfs_cycle_detect(node_idx, &mut visited, &mut stack) {
                     return Some(cycle);
                 }
             }
@@ -361,44 +359,42 @@ impl DependencyGraph {
         let node_idx = self.add_node(node.clone());
 
         // Parse dependencies section
-        if let Some(deps_table) = toml.get("deps") {
-            if let Some(deps) = deps_table.as_table() {
-                for (dep_id, dep_value) in deps {
-                    trace!("Found dependency: {} = {:?}", dep_id, dep_value);
+        if let Some(deps) = toml.get("deps").and_then(|t| t.as_table()) {
+            for (dep_id, dep_value) in deps {
+                trace!("Found dependency: {} = {:?}", dep_id, dep_value);
 
-                    // Dependency can be:
-                    // - String: version constraint (required)
-                    // - Table: { version = "x.y.z", optional = true }
-                    let (dep_type, _version_constraint) = match dep_value {
-                        Value::String(v) => (DependencyType::Required, Some(v.as_str())),
-                        Value::Table(t) => {
-                            let optional = t
-                                .get("optional")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false);
-                            let version = t.get("version").and_then(|v| v.as_str());
-                            let typ = if optional {
-                                DependencyType::Optional
-                            } else {
-                                DependencyType::Required
-                            };
-                            (typ, version)
-                        }
-                        _ => continue,
-                    };
+                // Dependency can be:
+                // - String: version constraint (required)
+                // - Table: { version = "x.y.z", optional = true }
+                let (dep_type, _version_constraint) = match dep_value {
+                    Value::String(v) => (DependencyType::Required, Some(v.as_str())),
+                    Value::Table(t) => {
+                        let optional = t
+                            .get("optional")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let version = t.get("version").and_then(|v| v.as_str());
+                        let typ = if optional {
+                            DependencyType::Optional
+                        } else {
+                            DependencyType::Required
+                        };
+                        (typ, version)
+                    }
+                    _ => continue,
+                };
 
-                    // Create dependency node (minimal - will be filled in later)
-                    let dep_node = DependencyNode::new(
-                        dep_id.clone(),
-                        dep_id.clone(),
-                        "unknown".to_string(),
-                        None,
-                    );
-                    let dep_idx = self.add_node(dep_node);
+                // Create dependency node (minimal - will be filled in later)
+                let dep_node = DependencyNode::new(
+                    dep_id.clone(),
+                    dep_id.clone(),
+                    "unknown".to_string(),
+                    None,
+                );
+                let dep_idx = self.add_node(dep_node);
 
-                    // Add edge from dependency to dependent (reversed for topological sort)
-                    self.graph.add_edge(dep_idx, node_idx, dep_type);
-                }
+                // Add edge from dependency to dependent (reversed for topological sort)
+                self.graph.add_edge(dep_idx, node_idx, dep_type);
             }
         }
 

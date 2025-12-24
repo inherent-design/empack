@@ -1,30 +1,5 @@
 use super::*;
-use crate::display::styling::StyleManager;
-use crate::primitives::{TerminalColorCaps, TerminalUnicodeCaps, TerminalGraphicsCaps};
-use crate::terminal::{TerminalCapabilities, TerminalDimensions, TerminalInteractivity};
-
-fn create_test_styling() -> StyleManager {
-    let caps = TerminalCapabilities {
-        color: TerminalColorCaps::None,
-        unicode: TerminalUnicodeCaps::Ascii,
-        graphics: TerminalGraphicsCaps::None,
-        dimensions: TerminalDimensions::default(),
-        interactivity: TerminalInteractivity::default(),
-        is_tty: false,
-    };
-    StyleManager::new(&caps)
-}
-
-fn create_test_capabilities() -> TerminalCapabilities {
-    TerminalCapabilities {
-        color: TerminalColorCaps::None,
-        unicode: TerminalUnicodeCaps::Ascii,
-        graphics: TerminalGraphicsCaps::None,
-        dimensions: TerminalDimensions::default(),
-        interactivity: TerminalInteractivity::default(),
-        is_tty: false,
-    }
-}
+use crate::display::test_utils::{create_test_styling, create_test_capabilities};
 
 #[test]
 fn test_structured_table_basic_rendering() {

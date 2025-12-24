@@ -130,18 +130,14 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                 Ok(PackState::Uninitialized)
             }
             PackState::Uninitialized => Ok(PackState::Uninitialized),
-            PackState::Building => {
-                return Err(StateError::InvalidTransition {
-                    from: current,
-                    to: PackState::Configured,
-                });
-            }
-            PackState::Cleaning => {
-                return Err(StateError::InvalidTransition {
-                    from: current,
-                    to: PackState::Configured,
-                });
-            }
+            PackState::Building => Err(StateError::InvalidTransition {
+                from: current,
+                to: PackState::Configured,
+            }),
+            PackState::Cleaning => Err(StateError::InvalidTransition {
+                from: current,
+                to: PackState::Configured,
+            }),
         },
 
         StateTransition::Building => {
@@ -179,18 +175,16 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
     loader_version: &str,
 ) -> Result<PackState, StateError> {
     // Create basic directory structure
-    create_initial_structure(provider, workdir).map_err(|e| {
-        clean_configuration(provider, workdir).ok(); // Cleanup on failure
-        e
+    create_initial_structure(provider, workdir).inspect_err(|_| {
+        let _ = clean_configuration(provider, workdir);
     })?;
 
     // Generate empack.yml via config.rs using session provider (only if it doesn't exist)
     let empack_yml = workdir.join("empack.yml");
     if !provider.exists(&empack_yml) {
         let config_manager = provider.config_manager(workdir.to_path_buf());
-        let default_yml = config_manager.generate_default_empack_yml().map_err(|e| {
-            clean_configuration(provider, workdir).ok(); // Cleanup on failure
-            e
+        let default_yml = config_manager.generate_default_empack_yml().inspect_err(|_| {
+            let _ = clean_configuration(provider, workdir);
         })?;
 
         provider
@@ -215,9 +209,8 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
             mc_version,
             loader_version,
         )
-        .map_err(|e| {
-            clean_configuration(provider, workdir).ok(); // Cleanup on failure
-            e
+        .inspect_err(|_| {
+            let _ = clean_configuration(provider, workdir);
         })?;
 
     Ok(PackState::Configured)

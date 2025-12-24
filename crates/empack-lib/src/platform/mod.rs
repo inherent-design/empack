@@ -253,27 +253,27 @@ fn detect_memory_info_unix() -> Result<(u64, u64), PlatformError> {
     // Platform-specific implementations with conditional compilation
     #[cfg(target_os = "macos")]
     {
-        return detect_memory_info_macos();
+        detect_memory_info_macos()
     }
 
     #[cfg(target_os = "linux")]
     {
-        return detect_memory_info_linux();
+        detect_memory_info_linux()
     }
 
     #[cfg(target_os = "freebsd")]
     {
-        return detect_memory_info_freebsd();
+        detect_memory_info_freebsd()
     }
 
     #[cfg(target_os = "openbsd")]
     {
-        return detect_memory_info_openbsd();
+        detect_memory_info_openbsd()
     }
 
     #[cfg(target_os = "netbsd")]
     {
-        return detect_memory_info_netbsd();
+        detect_memory_info_netbsd()
     }
 
     // Generic Unix fallback for Solaris, AIX, DragonFly BSD, etc.
@@ -406,7 +406,7 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
             let mut pages_active = 0u64;
             let mut pages_free = 0u64;
             let mut pages_inactive = 0u64;
-            let mut pages_wired = 0u64;
+            let mut _pages_wired = 0u64;
 
             for line in output_str.lines() {
                 if line.starts_with("Pages active:") {
@@ -423,7 +423,7 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
                     }
                 } else if line.starts_with("Pages wired down:") {
                     if let Some(val) = line.split_whitespace().nth(3) {
-                        pages_wired = val.trim_end_matches('.').parse().unwrap_or(0);
+                        _pages_wired = val.trim_end_matches('.').parse().unwrap_or(0);
                     }
                 }
             }

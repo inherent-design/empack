@@ -366,7 +366,7 @@ impl<'a> BuildOrchestrator<'a> {
             "{}-v{}-{}.zip",
             pack_info.name,
             pack_info.version,
-            target.to_string()
+            target
         );
         let zip_path = self.dist_dir.join(&filename);
 
@@ -946,7 +946,7 @@ impl<'a> BuildOrchestrator<'a> {
                 "{}-v{}-{}.zip",
                 info.name,
                 info.version,
-                target.to_string()
+                target
             ));
             if self.session.filesystem().exists(&zip_file) {
                 self.session
@@ -983,8 +983,8 @@ impl<'a> BuildOrchestrator<'a> {
         for path in template_files {
             if !self.session.filesystem().is_directory(&path) {
                 let filename = path.file_name().unwrap().to_str().unwrap();
-                let target_file = if filename.ends_with(".template") {
-                    target_dir.join(&filename[..filename.len() - 9]) // Remove .template suffix
+                let target_file = if let Some(stripped) = filename.strip_suffix(".template") {
+                    target_dir.join(stripped)
                 } else {
                     target_dir.join(filename)
                 };

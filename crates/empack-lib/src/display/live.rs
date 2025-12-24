@@ -154,6 +154,7 @@ impl ProgressProvider for LiveProgressProvider {
 }
 
 /// Owned wrapper around progress tracker that doesn't depend on borrowed data
+// TODO: Remove if SimpleProgressTracker is fully capable
 struct OwnedProgressTracker {
     tracker: ConcreteProgressTracker<'static>,
 }
@@ -201,7 +202,9 @@ impl ProgressTracker for OwnedProgressTracker {
 /// Multi-progress provider with owned state
 struct LiveMultiProgressProvider {
     parent: Arc<MultiProgress>,
+    // TODO: Remove if unused in MultiProgressProvider
     trackers: Arc<Mutex<HashMap<usize, ConcreteProgressTracker<'static>>>>,
+    // TODO: Remove if unused in MultiProgressProvider
     next_id: Arc<Mutex<usize>>,
 }
 

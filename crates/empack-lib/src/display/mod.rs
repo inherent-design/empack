@@ -17,6 +17,9 @@ pub mod status;
 pub mod structured;
 pub mod styling;
 
+#[cfg(test)]
+pub mod test_utils;
+
 // Re-export provider traits and implementations for easy access
 pub use live::LiveDisplayProvider;
 pub use mock::{DisplayCall, MockDisplayProvider, ResponseValue};

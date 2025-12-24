@@ -15,6 +15,7 @@ use std::io;
 
 /// Interactive display manager for prompts and selections
 pub struct InteractiveDisplay<'a> {
+    // TODO: Consolidate with theme field if redundant
     styling: &'a StyleManager,
     theme: Box<dyn Theme>,
 }

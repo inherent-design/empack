@@ -7,7 +7,7 @@ use crate::application::session::{FileSystemProvider, NetworkProvider};
 use crate::Result;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Check if a Minecraft version is a stable release (not snapshot/pre-release)
@@ -505,7 +505,7 @@ impl<'a> VersionFetcher<'a> {
     }
 
     /// Load cached data from disk using session filesystem provider
-    fn load_from_cache(&self, cache_path: &PathBuf) -> Result<CachedVersions> {
+    fn load_from_cache(&self, cache_path: &Path) -> Result<CachedVersions> {
         let content = self
             .filesystem
             .read_to_string(cache_path)
@@ -518,7 +518,7 @@ impl<'a> VersionFetcher<'a> {
     }
 
     /// Save data to cache using session filesystem provider
-    fn save_to_cache(&self, cache_path: &PathBuf, versions: &[String]) -> Result<()> {
+    fn save_to_cache(&self, cache_path: &Path, versions: &[String]) -> Result<()> {
         // Ensure cache directory exists
         if let Some(parent) = cache_path.parent() {
             self.filesystem

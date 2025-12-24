@@ -208,7 +208,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
             };
 
             // Convert to a normalized key format (lowercase, replace spaces/dashes with underscores)
-            let normalized_name = mod_name.to_lowercase().replace(' ', "_").replace('-', "_");
+            let normalized_name = mod_name.to_lowercase().replace([' ', '-'], "_");
 
             installed_mods.insert(normalized_name);
         }
@@ -270,7 +270,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
             let path = entry.path();
 
             // Look for common build artifacts (files)
-            if path.is_file() {
+            if path.is_file() && path.extension().is_some() {
                 if let Some(extension) = path.extension() {
                     match extension.to_str() {
                         Some("mrpack") | Some("zip") | Some("jar") => return Ok(true),
@@ -280,7 +280,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
             }
 
             // Also consider build target directories as evidence of build state
-            if path.is_dir() {
+            if path.is_dir() && path.file_name().and_then(|n| n.to_str()).is_some() {
                 if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
                     match dir_name {
                         "mrpack" | "client" | "server" | "client-full" | "server-full" => {
@@ -534,6 +534,7 @@ impl LiveProcessProvider {
     }
 
     /// Get the PATH environment variable to use for this provider
+    // TODO: Evaluate removal if ProcessProvider abstraction is complete
     fn get_path_env(&self) -> String {
         match &self.custom_path {
             Some(path) => path.clone(),
@@ -739,6 +740,7 @@ where
     I: InteractiveProvider,
 {
     /// Owns the progress display infrastructure
+    // TODO: Determine if LiveDisplayProvider fully replaces this field
     multi_progress: MultiProgress,
     /// Display provider for this session
     display_provider: LiveDisplayProvider,

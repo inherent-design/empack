@@ -1,29 +1,6 @@
 use super::*;
+use crate::display::test_utils::clean_test_env;
 use std::env;
-
-fn clean_test_env() {
-    let vars_to_clean = [
-        "TERM",
-        "COLORTERM",
-        "TERM_PROGRAM",
-        "TERM_PROGRAM_VERSION",
-        "LANG",
-        "LC_CTYPE",
-        "LC_ALL",
-        "VSCODE_INJECTION",
-        "WT_SESSION",
-        "KITTY_WINDOW_ID",
-        "KITTY_PID",
-        "WEZTERM_PANE",
-        "WEZTERM_UNIX_SOCKET",
-    ];
-
-    for var in &vars_to_clean {
-        unsafe {
-            env::remove_var(var);
-        }
-    }
-}
 
 #[test]
 #[ignore] // UNSAFE: Manipulates global environment variables

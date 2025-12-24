@@ -501,7 +501,7 @@ impl MockMultiProgressProvider {
 }
 
 impl MultiProgressProvider for MockMultiProgressProvider {
-    fn add_bar(&self, total: u64, message: &str) -> Box<dyn ProgressTracker> {
+    fn add_bar(&self, total: u64, _message: &str) -> Box<dyn ProgressTracker> {
         let tracker_id = self.get_next_tracker_id();
         self.calls
             .lock()

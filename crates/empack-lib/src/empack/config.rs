@@ -52,9 +52,10 @@ pub struct EmpackConfig {
 }
 
 /// Project configuration within empack.yml
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EmpackProjectConfig {
     /// User-defined dependencies with search specifications
+    #[serde(default)]
     pub dependencies: Vec<String>,
 
     /// Optional project ID mappings for performance
@@ -239,7 +240,7 @@ impl<'a> ConfigManager<'a> {
                 field: "minecraft_version (from empack.yml or pack.toml)".to_string(),
             })?;
 
-        let loader = if let Some(empack_loader) = empack_config.empack.loader.clone() {
+        let loader = if let Some(empack_loader) = empack_config.empack.loader {
             empack_loader
         } else if let Some(pack_meta) = &pack_metadata {
             self.infer_loader_from_metadata(pack_meta)?
@@ -458,24 +459,22 @@ impl<'a> ConfigManager<'a> {
         // Only validate consistency if pack.toml exists
         if let Ok(Some(pack_metadata)) = self.load_pack_metadata() {
             // Check Minecraft version consistency
-            if let Some(empack_mc) = &empack_config.empack.minecraft_version {
-                if empack_mc != &pack_metadata.versions.minecraft {
-                    issues.push(format!(
-                        "Minecraft version mismatch: empack.yml has '{}', pack.toml has '{}'",
-                        empack_mc, pack_metadata.versions.minecraft
-                    ));
-                }
+            if let Some(empack_mc) = &empack_config.empack.minecraft_version
+                && empack_mc != &pack_metadata.versions.minecraft {
+                issues.push(format!(
+                    "Minecraft version mismatch: empack.yml has '{}', pack.toml has '{}'",
+                    empack_mc, pack_metadata.versions.minecraft
+                ));
             }
 
             // Check loader consistency
             if let Some(empack_loader) = &empack_config.empack.loader {
-                if let Ok(pack_loader) = self.infer_loader_from_metadata(&pack_metadata) {
-                    if empack_loader != &pack_loader {
-                        issues.push(format!(
-                            "Loader mismatch: empack.yml has '{:?}', pack.toml infers '{:?}'",
-                            empack_loader, pack_loader
-                        ));
-                    }
+                if let Ok(pack_loader) = self.infer_loader_from_metadata(&pack_metadata)
+                    && empack_loader != &pack_loader {
+                    issues.push(format!(
+                        "Loader mismatch: empack.yml has '{:?}', pack.toml infers '{:?}'",
+                        empack_loader, pack_loader
+                    ));
                 }
             }
         }

@@ -1,15 +1,6 @@
 use super::*;
+use crate::display::test_utils::clean_test_env;
 use std::env;
-
-// Helper to clean environment before tests
-fn clean_test_env() {
-    unsafe {
-        env::remove_var("NO_COLOR");
-        env::remove_var("FORCE_COLOR");
-        env::remove_var("CLICOLOR");
-        env::remove_var("CI");
-    }
-}
 
 #[test]
 fn test_no_color_environment_variable() {
