@@ -713,3 +713,66 @@ fn test_state_transition_requires_intermediate_steps() {
         "Should not skip to Cleaning from Uninitialized"
     );
 }
+
+/// Test: execute_synchronize with malformed empack.yml
+///
+/// Validates error recovery when empack.yml is corrupted or has invalid YAML syntax.
+#[test]
+fn test_execute_synchronize_malformed_yaml() {
+    use std::fs;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    // Create temporary test directory
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let workdir = temp_dir.path();
+
+    // Create pack directory
+    let pack_dir = workdir.join("pack");
+    fs::create_dir(&pack_dir).expect("Failed to create pack dir");
+
+    // Create malformed empack.yml (invalid YAML syntax)
+    let empack_yml_path = workdir.join("empack.yml");
+    let mut file = fs::File::create(&empack_yml_path).expect("Failed to create empack.yml");
+    file.write_all(b"name: test-pack\nversion: [invalid yaml syntax here\nminecraft:\n  version: 1.21.1")
+        .expect("Failed to write malformed YAML");
+
+    // Create pack.toml (so state machine thinks we're initialized)
+    let pack_toml_path = pack_dir.join("pack.toml");
+    fs::write(
+        &pack_toml_path,
+        r#"name = "test-pack"
+version = "1.0.0"
+[index]
+file = "index.toml"
+"#,
+    )
+    .expect("Failed to create pack.toml");
+
+    // Create mock providers
+    let fs_provider = crate::application::session_mocks::MockFileSystemProvider::new()
+        .with_current_dir(workdir.to_path_buf())
+        .with_configured_project(workdir.to_path_buf());
+
+    let process_provider = crate::application::session_mocks::MockProcessProvider::new();
+
+    // Execute synchronize - should return error due to malformed YAML
+    let result = execute_synchronize(&fs_provider, &process_provider, workdir);
+
+    // Verify error occurred
+    assert!(
+        result.is_err(),
+        "execute_synchronize should fail with malformed YAML"
+    );
+
+    // Verify error message contains useful information
+    let err = result.unwrap_err();
+    let err_msg = format!("{:?}", err);
+    // Error should mention configuration or YAML parsing issue
+    assert!(
+        err_msg.contains("empack.yml") || err_msg.contains("ConfigManagementError")
+            || err_msg.contains("YamlError") || err_msg.contains("YAML"),
+        "Error should indicate configuration/YAML issue, got: {}",
+        err_msg
+    );
+}

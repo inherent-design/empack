@@ -202,3 +202,8 @@ impl RateLimiterManager {
 mod tests {
     include!("rate_limit.test.rs");
 }
+
+#[cfg(test)]
+mod retry_behavior_tests {
+    include!("network_retry_behavior.test.rs");
+}

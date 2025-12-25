@@ -17,22 +17,22 @@ pub enum ConfigError {
         source: std::io::Error,
     },
 
-    #[error("YAML error: {0}")]
-    YamlError(String),
+    #[error("YAML parsing error: {source}")]
+    YamlError {
+        #[source]
+        source: serde_saphyr::Error,
+    },
 
-    #[error("YAML serialization error: {0}")]
-    YamlSerError(String),
+    #[error("YAML serialization error: {source}")]
+    YamlSerError {
+        #[source]
+        source: serde_saphyr::ser_error::Error,
+    },
 
     #[error("TOML parsing error: {source}")]
     TomlError {
         #[from]
         source: toml::de::Error,
-    },
-
-    #[error("Anyhow error: {source}")]
-    AnyhowError {
-        #[from]
-        source: anyhow::Error,
     },
 
     #[error("Missing required field: {field}")]
@@ -184,9 +184,14 @@ impl<'a> ConfigManager<'a> {
             });
         }
 
-        let content = self.fs_provider.read_to_string(&empack_path)?;
+        let content = self
+            .fs_provider
+            .read_to_string(&empack_path)
+            .map_err(|e| ConfigError::IoError {
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+            })?;
         let config: EmpackConfig = serde_saphyr::from_str(&content)
-            .map_err(|e| ConfigError::YamlError(e.to_string()))?;
+            .map_err(|e| ConfigError::YamlError { source: e })?;
 
         Ok(config)
     }
@@ -199,7 +204,12 @@ impl<'a> ConfigManager<'a> {
             return Ok(None);
         }
 
-        let content = self.fs_provider.read_to_string(&pack_path)?;
+        let content = self
+            .fs_provider
+            .read_to_string(&pack_path)
+            .map_err(|e| ConfigError::IoError {
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+            })?;
         let metadata: PackMetadata = toml::from_str(&content)?;
 
         Ok(Some(metadata))
@@ -447,7 +457,7 @@ impl<'a> ConfigManager<'a> {
         };
 
         serde_saphyr::to_string(&config)
-            .map_err(|e| ConfigError::YamlSerError(e.to_string()))
+            .map_err(|e| ConfigError::YamlSerError { source: e })
     }
 
     /// Validate empack.yml consistency (pack.toml is optional)

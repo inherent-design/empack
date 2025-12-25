@@ -494,3 +494,130 @@ fn test_cached_packwiz_check() {
     // call doesn't fail due to check_packwiz being called again
     assert!(result1.is_ok() && result2.is_ok());
 }
+
+/// Test: Packwiz parser robustness - malformed pack.toml handling
+///
+/// Validates error handling when pack.toml has invalid TOML syntax or missing required fields.
+/// This tests packwiz's error reporting, not direct parsing (empack delegates to packwiz).
+#[test]
+fn test_packwiz_malformed_pack_toml() {
+    // Simulate packwiz returning error due to malformed pack.toml
+    let mock_process = MockProcessProvider::new().with_packwiz_result(
+        vec![
+            "--pack-file".to_string(),
+            "/test/workdir/pack/pack.toml".to_string(),
+            "refresh".to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: String::new(),
+            stderr: "Error: failed to parse pack.toml: expected '=' after table key at line 3 column 1"
+                .to_string(),
+            success: false,
+        }),
+    );
+
+    let session = MockCommandSession::new()
+        .with_process(mock_process)
+        .with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+        );
+
+    let mut metadata = PackwizMetadata::new(&session).unwrap();
+    let result = metadata.refresh_index();
+
+    // Should propagate error from packwiz
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        PackwizError::CommandFailed { stderr, .. } => {
+            assert!(
+                stderr.contains("parse") && stderr.contains("pack.toml"),
+                "Error should indicate pack.toml parsing issue, got: {}",
+                stderr
+            );
+        }
+        _ => panic!("Expected CommandFailed error for malformed pack.toml"),
+    }
+}
+
+/// Test: Packwiz parser robustness - missing required fields in pack.toml
+#[test]
+fn test_packwiz_pack_toml_missing_fields() {
+    // Simulate packwiz returning error due to missing required pack.toml fields
+    let mock_process = MockProcessProvider::new().with_packwiz_result(
+        vec![
+            "--pack-file".to_string(),
+            "/test/workdir/pack/pack.toml".to_string(),
+            "modrinth".to_string(),
+            "export".to_string(),
+            "-o".to_string(),
+            "/test/pack.mrpack".to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: String::new(),
+            stderr: "Error: pack.toml is missing required field: name".to_string(),
+            success: false,
+        }),
+    );
+
+    let session = MockCommandSession::new()
+        .with_process(mock_process)
+        .with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+        );
+
+    let mut metadata = PackwizMetadata::new(&session).unwrap();
+    let result = metadata.export_mrpack(&PathBuf::from("/test/pack.mrpack"));
+
+    // Should propagate error from packwiz
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        PackwizError::CommandFailed { stderr, .. } => {
+            assert!(
+                stderr.contains("missing required field"),
+                "Error should indicate missing field, got: {}",
+                stderr
+            );
+        }
+        _ => panic!("Expected CommandFailed error for missing pack.toml fields"),
+    }
+}
+
+/// Test: Packwiz parser robustness - invalid TOML syntax
+#[test]
+fn test_packwiz_invalid_toml_syntax() {
+    // Simulate packwiz failing due to completely invalid TOML syntax
+    let mock_process = MockProcessProvider::new().with_packwiz_result(
+        vec![
+            "--pack-file".to_string(),
+            "/test/workdir/pack/pack.toml".to_string(),
+            "refresh".to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: String::new(),
+            stderr: "Error: invalid TOML value, unexpected newline\nexpected an equals, found a newline at line 1".to_string(),
+            success: false,
+        }),
+    );
+
+    let session = MockCommandSession::new()
+        .with_process(mock_process)
+        .with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+        );
+
+    let mut metadata = PackwizMetadata::new(&session).unwrap();
+    let result = metadata.refresh_index();
+
+    // Should propagate packwiz error
+    assert!(result.is_err());
+
+    let err = result.unwrap_err();
+    let err_msg = format!("{:?}", err);
+
+    // Error should contain information about TOML or parse failure
+    assert!(
+        err_msg.contains("TOML") || err_msg.contains("parse") || err_msg.contains("invalid"),
+        "Error should indicate TOML/parse issue, got: {}",
+        err_msg
+    );
+}

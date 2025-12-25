@@ -470,3 +470,8 @@ impl Default for DependencyGraph {
 mod tests {
     include!("dependency_graph.test.rs");
 }
+
+#[cfg(test)]
+mod cycle_detection_tests {
+    include!("dependency_cycle_detection.test.rs");
+}

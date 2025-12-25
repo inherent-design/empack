@@ -48,8 +48,14 @@ pub enum PackwizError {
     #[error("Hash mismatch: {0}")]
     HashMismatchError(String),
 
-    #[error("Process execution failed: {0}")]
-    ProcessFailed(#[from] anyhow::Error),
+    #[error("Invalid path: {reason}")]
+    InvalidPath { reason: String },
+
+    #[error("Process execution failed: {source}")]
+    ProcessFailed {
+        #[from]
+        source: std::io::Error,
+    },
 }
 
 /// Packwiz CLI wrapper for metadata management (.pw.toml files)
@@ -122,7 +128,9 @@ impl<'a> PackwizMetadata<'a> {
         let pack_toml = self.pack_dir.join("pack.toml");
         let pack_toml_str = pack_toml
             .to_str()
-            .ok_or_else(|| PackwizError::ProcessFailed(anyhow::anyhow!("Invalid pack.toml path")))?;
+            .ok_or_else(|| PackwizError::InvalidPath {
+                reason: "pack.toml path contains invalid UTF-8".to_string(),
+            })?;
 
         let (platform_cmd, id_flag) = match platform {
             ProjectPlatform::Modrinth => ("modrinth", "--project-id"),
@@ -141,7 +149,9 @@ impl<'a> PackwizMetadata<'a> {
                 "-y",
             ],
             &self.pack_dir,
-        )?;
+        ).map_err(|e| PackwizError::ProcessFailed {
+            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+        })?;
 
         if !output.success {
             return Err(PackwizError::CommandFailed {
@@ -164,13 +174,17 @@ impl<'a> PackwizMetadata<'a> {
         let pack_toml = self.pack_dir.join("pack.toml");
         let pack_toml_str = pack_toml
             .to_str()
-            .ok_or_else(|| PackwizError::ProcessFailed(anyhow::anyhow!("Invalid pack.toml path")))?;
+            .ok_or_else(|| PackwizError::InvalidPath {
+                reason: "pack.toml path contains invalid UTF-8".to_string(),
+            })?;
 
         let output = self.process_provider.execute(
             "packwiz",
             &["--pack-file", pack_toml_str, "remove", mod_name, "-y"],
             &self.pack_dir,
-        )?;
+        ).map_err(|e| PackwizError::ProcessFailed {
+            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+        })?;
 
         if !output.success {
             return Err(PackwizError::CommandFailed {
@@ -192,13 +206,17 @@ impl<'a> PackwizMetadata<'a> {
         let pack_toml = self.pack_dir.join("pack.toml");
         let pack_toml_str = pack_toml
             .to_str()
-            .ok_or_else(|| PackwizError::ProcessFailed(anyhow::anyhow!("Invalid pack.toml path")))?;
+            .ok_or_else(|| PackwizError::InvalidPath {
+                reason: "pack.toml path contains invalid UTF-8".to_string(),
+            })?;
 
         let output = self.process_provider.execute(
             "packwiz",
             &["--pack-file", pack_toml_str, "refresh"],
             &self.pack_dir,
-        )?;
+        ).map_err(|e| PackwizError::ProcessFailed {
+            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+        })?;
 
         if !output.success {
             // Parse stderr for specific errors
@@ -231,11 +249,15 @@ impl<'a> PackwizMetadata<'a> {
         let pack_toml = self.pack_dir.join("pack.toml");
         let pack_toml_str = pack_toml
             .to_str()
-            .ok_or_else(|| PackwizError::ProcessFailed(anyhow::anyhow!("Invalid pack.toml path")))?;
+            .ok_or_else(|| PackwizError::InvalidPath {
+                reason: "pack.toml path contains invalid UTF-8".to_string(),
+            })?;
 
         let output_str = output_path
             .to_str()
-            .ok_or_else(|| PackwizError::ProcessFailed(anyhow::anyhow!("Invalid output path")))?;
+            .ok_or_else(|| PackwizError::InvalidPath {
+                reason: "output path contains invalid UTF-8".to_string(),
+            })?;
 
         let output = self.process_provider.execute(
             "packwiz",
@@ -248,7 +270,9 @@ impl<'a> PackwizMetadata<'a> {
                 output_str,
             ],
             &self.pack_dir,
-        )?;
+        ).map_err(|e| PackwizError::ProcessFailed {
+            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+        })?;
 
         if !output.success {
             return Err(PackwizError::CommandFailed {
@@ -304,13 +328,17 @@ impl<'a> PackwizInstaller<'a> {
         let jar_str = self
             .bootstrap_jar_path
             .to_str()
-            .ok_or_else(|| PackwizError::ProcessFailed(anyhow::anyhow!("Invalid JAR path")))?;
+            .ok_or_else(|| PackwizError::InvalidPath {
+                reason: "JAR path contains invalid UTF-8".to_string(),
+            })?;
 
         let output = self.process_provider.execute(
             "java",
             &["-jar", jar_str, "-g", "-s", side, "--pack-folder", "pack"],
             working_dir,
-        )?;
+        ).map_err(|e| PackwizError::ProcessFailed {
+            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+        })?;
 
         if !output.success {
             return Err(PackwizError::CommandFailed {
