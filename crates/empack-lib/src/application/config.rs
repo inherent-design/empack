@@ -16,6 +16,8 @@ pub mod defaults {
     pub const CPU_PARALLELS: &str = "2";
     pub const LOG_OUTPUT: &str = "stderr";
     pub const TTY_CAPS_DETECT_INTENT: &str = "auto";
+    pub const CURSEFORGE_API_CLIENT_KEY: &str =
+        "$2a$10$78GooA4YTCKFQI9vgZ1oEeVM.jNyeNKSIFUhFkwiA0L/Uwv19BFAq";
 }
 
 /// Default value functions for configuration fields
@@ -45,6 +47,10 @@ mod default_fns {
 
     pub fn tty_caps_detect_intent() -> TerminalCapsDetectIntent {
         defaults::TTY_CAPS_DETECT_INTENT.parse().unwrap()
+    }
+
+    pub fn curseforge_api_client_key() -> Option<String> {
+        Some(defaults::CURSEFORGE_API_CLIENT_KEY.to_string())
     }
 }
 
@@ -77,8 +83,8 @@ pub struct AppConfig {
     pub modrinth_api_client_key: Option<String>,
 
     /// CurseForge API Client Key
-    #[arg(long, env = "EMPACK_KEY_CURSEFORGE", hide_env_values = true)]
-    #[serde(default)]
+    #[arg(long, env = "EMPACK_KEY_CURSEFORGE", default_value = defaults::CURSEFORGE_API_CLIENT_KEY, hide_env_values = true)]
+    #[serde(default = "default_fns::curseforge_api_client_key")]
     pub curseforge_api_client_key: Option<String>,
 
     /// Verbosity level (0=error, 1=warn, 2=info, 3=debug, 4=trace)
@@ -102,12 +108,23 @@ pub struct AppConfig {
     pub color: TerminalCapsDetectIntent,
 
     /// Skip prompts and use defaults (global non-interactive mode)
-    #[arg(short = 'y', long, global = true, env = "EMPACK_YES", help = "Skip prompts and use defaults")]
+    #[arg(
+        short = 'y',
+        long,
+        global = true,
+        env = "EMPACK_YES",
+        help = "Skip prompts and use defaults"
+    )]
     #[serde(default)]
     pub yes: bool,
 
     /// Preview operations without executing (global dry-run mode)
-    #[arg(long, global = true, env = "EMPACK_DRY_RUN", help = "Preview operations without executing")]
+    #[arg(
+        long,
+        global = true,
+        env = "EMPACK_DRY_RUN",
+        help = "Preview operations without executing"
+    )]
     #[serde(default)]
     pub dry_run: bool,
 }
