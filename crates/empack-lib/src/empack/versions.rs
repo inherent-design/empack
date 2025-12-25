@@ -3,9 +3,10 @@
 //! This module provides intelligent version discovery by fetching the latest
 //! available versions from official APIs with caching for performance.
 
-use crate::application::session::{FileSystemProvider, NetworkProvider};
 use crate::Result;
+use crate::application::session::{FileSystemProvider, NetworkProvider};
 use anyhow::Context;
+use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -144,15 +145,10 @@ impl<'a> VersionFetcher<'a> {
         network: &'a dyn NetworkProvider,
         filesystem: &'a dyn FileSystemProvider,
     ) -> Result<Self> {
-        // Use standard cache directory structure
-        let cache_dir = if let Some(cache_home) = std::env::var_os("XDG_CACHE_HOME") {
-            PathBuf::from(cache_home).join("empack")
-        } else if let Some(home) = std::env::var_os("HOME") {
-            PathBuf::from(home).join(".cache").join("empack")
-        } else {
-            // Fallback for Windows
-            std::env::temp_dir().join("empack-cache")
-        };
+        // Use cross-platform cache directory via ProjectDirs
+        let cache_dir = ProjectDirs::from("design", "inherent", "empack")
+            .map(|dirs| dirs.cache_dir().to_path_buf())
+            .unwrap_or_else(|| std::env::temp_dir().join("empack-cache"));
 
         Ok(Self {
             network,

@@ -271,44 +271,34 @@ async fn handle_init(
             .to_string()
     });
 
-    // Interactive prompt for modpack configuration (or use defaults if --yes)
-    let modpack_name = if session.config().app_config().yes {
-        default_name
-    } else {
-        session
-            .interactive()
-            .text_input("Modpack name", default_name)?
-    };
+    // Interactive prompt for modpack configuration
+    let modpack_name = session
+        .interactive()
+        .text_input("Modpack name", default_name)?;
 
-    let author = if session.config().app_config().yes {
-        // Try to get git user.name, fallback to "Unknown Author"
-        std::process::Command::new("git")
-            .args(["config", "user.name"])
-            .output()
-            .ok()
-            .and_then(|output| {
-                if output.status.success() {
-                    String::from_utf8(output.stdout).ok()
-                } else {
-                    None
-                }
-            })
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "Unknown Author".to_string())
-    } else {
-        session
-            .interactive()
-            .text_input("Author", "Unknown Author".to_string())?
-    };
+    // Try to get git user.name as smart default
+    let default_author = std::process::Command::new("git")
+        .args(["config", "user.name"])
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout).ok()
+            } else {
+                None
+            }
+        })
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Unknown Author".to_string());
 
-    let version = if session.config().app_config().yes {
-        "1.0.0".to_string()
-    } else {
-        session
-            .interactive()
-            .text_input("Version", "1.0.0".to_string())?
-    };
+    let author = session
+        .interactive()
+        .text_input("Author", default_author)?;
+
+    let version = session
+        .interactive()
+        .text_input("Version", "1.0.0".to_string())?;
 
     // Create version fetcher for dynamic version discovery
     let version_fetcher =
@@ -337,14 +327,10 @@ async fn handle_init(
         }
     };
 
-    // Minecraft version selection with FuzzySelect (or default if --yes)
-    let mc_version_index = if session.config().app_config().yes {
-        0 // Use first (newest) version
-    } else {
-        session
-            .interactive()
-            .fuzzy_select("Minecraft version", &minecraft_versions)?
-    };
+    // Minecraft version selection with FuzzySelect
+    let mc_version_index = session
+        .interactive()
+        .fuzzy_select("Minecraft version", &minecraft_versions)?;
     let minecraft_version = &minecraft_versions[mc_version_index];
 
     // Step 3: Dynamic, Filtered Mod Loader Prompt
@@ -401,19 +387,15 @@ async fn handle_init(
         return Ok(());
     }
 
-    // Present filtered loader list with intelligent priority (or default if --yes)
+    // Present filtered loader list with intelligent priority
     let loader_names: Vec<String> = compatible_loaders
         .iter()
         .map(|l| l.as_str().to_string())
         .collect();
-    let loader_index = if session.config().app_config().yes {
-        0 // Use first (priority-ordered) loader
-    } else {
-        let loader_name_refs: Vec<&str> = loader_names.iter().map(|s| s.as_str()).collect();
-        session
-            .interactive()
-            .select("Mod loader", &loader_name_refs)?
-    };
+    let loader_name_refs: Vec<&str> = loader_names.iter().map(|s| s.as_str()).collect();
+    let loader_index = session
+        .interactive()
+        .select("Mod loader", &loader_name_refs)?;
     let selected_loader = &compatible_loaders[loader_index];
     let loader_str = selected_loader.as_str();
 
@@ -525,14 +507,10 @@ async fn handle_init(
         }
     };
 
-    // Loader version selection with FuzzySelect (or default if --yes)
-    let loader_version_index = if session.config().app_config().yes {
-        0 // Default to newest/stable
-    } else {
-        session
-            .interactive()
-            .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?
-    };
+    // Loader version selection with FuzzySelect
+    let loader_version_index = session
+        .interactive()
+        .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?;
     let loader_version = &loader_versions[loader_version_index];
 
     // Step 5: Final Confirmation and Execution
@@ -558,14 +536,10 @@ async fn handle_init(
         .status()
         .info(&format!("   Loader: {} v{}", loader_str, loader_version));
 
-    // Final confirmation (skip if --yes)
-    let confirmed = if session.config().app_config().yes {
-        true
-    } else {
-        session
-            .interactive()
-            .confirm("Create modpack with these settings?", true)?
-    };
+    // Final confirmation
+    let confirmed = session
+        .interactive()
+        .confirm("Create modpack with these settings?", true)?;
 
     if !confirmed {
         session

@@ -96,33 +96,11 @@ $RECYCLE.BIN/
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,macos,windows,rust,rust-analyzer
 
-### Custom ###
-
-# packwiz-installer
-installer/packwiz-installer.jar
-
-# Builds
-dist/client/*
-dist/client/.*
-!dist/client/.gitkeep
-dist/client-full/*
-dist/client-full/.*
-!dist/client-full/.gitkeep
-dist/server/*
-dist/server/.*
-!dist/server/.gitkeep
-dist/server-full/*
-dist/server-full/.*
-!dist/server-full/.gitkeep
-dist/*.zip
-dist/*.mrpack
+### empack ###
 
 # Environment configuration
 .env*
 !.env*template
 
-# End of Custom
-
-# gemini-mcp-tool local hooks
-.claude/settings.json
-.gemini-mcp-hooks/
+# Claude
+.claude

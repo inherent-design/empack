@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::Result;
 use handlebars::Handlebars;
 use thiserror::Error;
+use anyhow::Context;
 use crate::empack::config::PackMetadata;
 
 /// Template system errors
@@ -138,12 +139,13 @@ impl TemplateEngine {
     }
     
     /// Render named template with current variables
-    pub fn render_template(&self, template_name: &str) -> Result<String, TemplateError> {
+    pub fn render_template(&self, template_name: &str) -> Result<String> {
         self.handlebars
             .render(template_name, &self.variables)
             .map_err(|e| TemplateError::RenderError {
                 message: format!("Failed to render template '{}': {}", template_name, e),
             })
+            .map_err(Into::into)
     }
     
     /// Get list of available template names
@@ -182,7 +184,7 @@ impl TemplateInstaller {
     }
     
     /// Configure template variables from pack.toml for build-time rendering
-    pub fn configure_from_pack_toml<P: AsRef<Path>>(&mut self, pack_toml_path: P) -> Result<(), TemplateError> {
+    pub fn configure_from_pack_toml<P: AsRef<Path>>(&mut self, pack_toml_path: P) -> Result<()> {
         let content = std::fs::read_to_string(&pack_toml_path)?;
         let pack: PackMetadata = toml::from_str(&content)?;
         
@@ -216,7 +218,7 @@ impl TemplateInstaller {
     }
 
     /// Render template by name
-    pub fn render_template(&self, template_name: &str) -> Result<String, TemplateError> {
+    pub fn render_template(&self, template_name: &str) -> Result<String> {
         self.engine.render_template(template_name)
     }
     

@@ -98,6 +98,44 @@ mod handle_init_tests {
         // Should complete with force flag
         assert!(result.is_ok() || result.is_err());
     }
+
+    #[tokio::test]
+    async fn it_handles_user_cancellation_at_confirmation() {
+        use crate::application::session_mocks::MockInteractiveProvider;
+
+        // Create interactive provider that cancels/rejects confirmation
+        let interactive = MockInteractiveProvider::new()
+            .with_confirm(false);  // Reject confirmation prompt
+
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new()
+                .with_current_dir(PathBuf::from("/test/new-project")))
+            .with_interactive(interactive);
+
+        // Do NOT set yes flag - we want interactive flow
+        // session.config_provider.app_config.yes = false; (default)
+
+        let result = handle_init(&session, Some("cancel-test".to_string()), false).await;
+
+        // Init should either:
+        // 1. Return error (user cancelled)
+        // 2. Return ok with no files created (graceful cancellation)
+        // Either is acceptable depending on implementation
+
+        // Verify no files were created after cancellation
+        let empack_yml = PathBuf::from("/test/new-project/empack.yml");
+        assert!(
+            !session.filesystem().exists(&empack_yml),
+            "empack.yml should not be created after user cancellation"
+        );
+
+        // Verify no packwiz commands were executed after cancellation
+        let calls = session.process_provider.get_calls();
+        assert!(
+            calls.is_empty() || result.is_err(),
+            "No packwiz commands should execute after cancellation"
+        );
+    }
 }
 
 // ===== HANDLE_ADD TESTS =====

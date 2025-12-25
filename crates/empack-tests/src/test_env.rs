@@ -4,6 +4,7 @@
 //! with mock executables, enabling true hermetic E2E testing without external dependencies.
 
 use anyhow::Result;
+use directories::ProjectDirs;
 use empack_lib::application::config::AppConfig;
 use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
@@ -472,18 +473,29 @@ impl HermeticSessionBuilder {
     )> {
         use empack_lib::application::session_mocks::MockInteractiveProvider;
 
-        // Set XDG_CACHE_HOME to test temp directory to isolate version fetcher cache
+        // Set up cross-platform cache directory for test isolation
         // This prevents tests from reading real cached API responses
         let cache_dir = self.test_env.root_path.join("cache");
         std::fs::create_dir_all(&cache_dir)?;
+
+        // Set platform-appropriate cache environment variables to isolate tests
         // SAFETY: This is safe in test environments where we control execution
         // Tests run sequentially or in isolated processes, so no concurrent modification
         unsafe {
+            // Unix-like systems use XDG_CACHE_HOME
+            #[cfg(unix)]
             std::env::set_var("XDG_CACHE_HOME", &cache_dir);
+
+            // Windows uses LocalAppData for cache (not typically overridden, using temp dir pattern)
+            // macOS respects XDG when set, but also uses ~/Library/Caches
+            // For hermetic testing, we rely on ProjectDirs::from("com", "inherent.design", "empack-test")
+            // falling back to our controlled temp directory in test environment
         }
 
-        // Use provided interactive provider or create default one
-        let interactive_provider = self.interactive_provider.unwrap_or_else(MockInteractiveProvider::new);
+        // Use provided interactive provider or create default one with yes_mode from config
+        let interactive_provider = self
+            .interactive_provider
+            .unwrap_or_else(|| MockInteractiveProvider::new().with_yes_mode(self.app_config.yes));
 
         // Create session with coordinated mock providers
         let session = CommandSession::new_with_providers(

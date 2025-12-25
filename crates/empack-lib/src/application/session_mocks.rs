@@ -675,6 +675,7 @@ impl ConfigProvider for MockConfigProvider {
 
 /// Mock interactive provider for testing
 pub struct MockInteractiveProvider {
+    yes_mode: bool,
     pub text_input_calls: Arc<Mutex<Vec<(String, String)>>>, // (prompt, default)
     pub confirm_calls: Arc<Mutex<Vec<(String, bool)>>>,      // (prompt, default)
     pub select_calls: Arc<Mutex<Vec<String>>>,               // prompt
@@ -688,6 +689,7 @@ pub struct MockInteractiveProvider {
 impl MockInteractiveProvider {
     pub fn new() -> Self {
         Self {
+            yes_mode: false,
             text_input_calls: Arc::new(Mutex::new(Vec::new())),
             confirm_calls: Arc::new(Mutex::new(Vec::new())),
             select_calls: Arc::new(Mutex::new(Vec::new())),
@@ -697,6 +699,11 @@ impl MockInteractiveProvider {
             select_response: Arc::new(Mutex::new(None)),
             fuzzy_select_response: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub fn with_yes_mode(mut self, yes_mode: bool) -> Self {
+        self.yes_mode = yes_mode;
+        self
     }
 
     pub fn with_text_input(self, response: String) -> Self {
@@ -747,6 +754,11 @@ impl InteractiveProvider for MockInteractiveProvider {
             .unwrap()
             .push((prompt.to_string(), default.clone()));
 
+        // Check yes_mode first (--yes flag)
+        if self.yes_mode {
+            return Ok(default);
+        }
+
         if let Some(response) = self.text_input_response.lock().unwrap().clone() {
             Ok(response)
         } else {
@@ -760,6 +772,11 @@ impl InteractiveProvider for MockInteractiveProvider {
             .lock()
             .unwrap()
             .push((prompt.to_string(), default));
+
+        // Check yes_mode first (--yes flag)
+        if self.yes_mode {
+            return Ok(default);
+        }
 
         if let Some(response) = *self.confirm_response.lock().unwrap() {
             Ok(response)
@@ -775,6 +792,11 @@ impl InteractiveProvider for MockInteractiveProvider {
             .unwrap()
             .push(prompt.to_string());
 
+        // Check yes_mode first (--yes flag)
+        if self.yes_mode {
+            return Ok(0); // First option
+        }
+
         if let Some(response) = *self.select_response.lock().unwrap() {
             Ok(response)
         } else {
@@ -788,6 +810,11 @@ impl InteractiveProvider for MockInteractiveProvider {
             .lock()
             .unwrap()
             .push(prompt.to_string());
+
+        // Check yes_mode first (--yes flag)
+        if self.yes_mode {
+            return Ok(0); // First option
+        }
 
         if let Some(response) = *self.fuzzy_select_response.lock().unwrap() {
             Ok(response)

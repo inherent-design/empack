@@ -10,8 +10,15 @@ async fn test_version_fetcher_creation() {
     let filesystem = MockFileSystemProvider::new();
     let fetcher = VersionFetcher::new(&network, &filesystem).unwrap();
 
-    // Verify cache directory is reasonable
-    assert!(fetcher.cache_dir.ends_with("empack"));
+    // Verify cache directory contains "empack" (platform-specific path format)
+    // Linux: ~/.cache/empack
+    // macOS: ~/Library/Caches/inherent.design.empack
+    // Windows: %LOCALAPPDATA%\inherent.design\empack\cache
+    assert!(
+        fetcher.cache_dir.to_string_lossy().contains("empack"),
+        "Cache directory should contain 'empack': {:?}",
+        fetcher.cache_dir
+    );
 }
 
 #[test]

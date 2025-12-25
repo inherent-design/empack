@@ -529,7 +529,12 @@ impl LiveProcessProvider {
         match test_bin_path {
             Some(bin_path) => {
                 let current_path = std::env::var("PATH").unwrap_or_default();
-                let custom_path = format!("{}:{}", bin_path, current_path);
+                // Use platform-specific PATH separator
+                #[cfg(windows)]
+                let path_sep = ";";
+                #[cfg(not(windows))]
+                let path_sep = ":";
+                let custom_path = format!("{}{}{}", bin_path, path_sep, current_path);
                 Self::with_custom_path(custom_path)
             }
             None => Self::new(),
@@ -657,11 +662,13 @@ impl ConfigProvider for LiveConfigProvider {
 }
 
 /// Live implementation of InteractiveProvider
-pub struct LiveInteractiveProvider;
+pub struct LiveInteractiveProvider {
+    yes_mode: bool,
+}
 
 impl LiveInteractiveProvider {
-    pub fn new() -> Self {
-        Self
+    pub fn new(yes_mode: bool) -> Self {
+        Self { yes_mode }
     }
 
     /// Check if we're in a TTY environment suitable for interactive prompts
@@ -673,7 +680,8 @@ impl LiveInteractiveProvider {
 
 impl InteractiveProvider for LiveInteractiveProvider {
     fn text_input(&self, prompt: &str, default: String) -> Result<String> {
-        if !Self::is_tty() {
+        // Check yes_mode first (--yes flag), then TTY
+        if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return default
             return Ok(default);
         }
@@ -688,7 +696,8 @@ impl InteractiveProvider for LiveInteractiveProvider {
     }
 
     fn confirm(&self, prompt: &str, default: bool) -> Result<bool> {
-        if !Self::is_tty() {
+        // Check yes_mode first (--yes flag), then TTY
+        if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return default
             return Ok(default);
         }
@@ -703,7 +712,8 @@ impl InteractiveProvider for LiveInteractiveProvider {
     }
 
     fn select(&self, prompt: &str, options: &[&str]) -> Result<usize> {
-        if !Self::is_tty() {
+        // Check yes_mode first (--yes flag), then TTY
+        if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return first option (index 0)
             return Ok(0);
         }
@@ -718,7 +728,8 @@ impl InteractiveProvider for LiveInteractiveProvider {
     }
 
     fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<usize> {
-        if !Self::is_tty() {
+        // Check yes_mode first (--yes flag), then TTY
+        if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return first option (index 0)
             return Ok(0);
         }
@@ -786,8 +797,8 @@ impl
             filesystem_provider: LiveFileSystemProvider,
             network_provider: LiveNetworkProvider::new(),
             process_provider: LiveProcessProvider::new(),
-            config_provider: LiveConfigProvider::new(app_config),
-            interactive_provider: LiveInteractiveProvider::new(),
+            config_provider: LiveConfigProvider::new(app_config.clone()),
+            interactive_provider: LiveInteractiveProvider::new(app_config.yes),
         }
     }
 }

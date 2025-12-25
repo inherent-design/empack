@@ -594,44 +594,6 @@ pub async fn resolve_curseforge_mod(
     Ok(mod_data)
 }
 
-/// Resolve Forge project by ID (uses CurseForge API)
-pub async fn resolve_forge_mod(
-    client: Client,
-    project_id: String,
-    api_key: &str,
-) -> Result<String, SearchError> {
-    trace!("Resolving Forge mod via CurseForge API: {}", project_id);
-
-    let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
-
-    let response = client
-        .get(&url)
-        .header("x-api-key", api_key)
-        .header("User-Agent", "empack/0.1.0")
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        error!(
-            "CurseForge API request failed (Forge mod lookup): {}",
-            response.status()
-        );
-        return Err(SearchError::NetworkError {
-            source: crate::networking::NetworkingError::RequestFailed {
-                source: response.error_for_status().unwrap_err(),
-            },
-        });
-    }
-
-    let mod_data = response.text().await?;
-    trace!(
-        "Successfully resolved Forge mod via CurseForge API: {}",
-        project_id
-    );
-
-    Ok(mod_data)
-}
-
 #[cfg(test)]
 mod tests {
     include!("search.test.rs");
