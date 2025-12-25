@@ -59,7 +59,7 @@ Examples:
 
 Prerequisites:
   - curl, jq installed
-  - .env.local file with CURSEFORGE_API_CLIENT_KEY (script expects this variable name)
+  - .env.local file with EMPACK_KEY_CURSEFORGE (script expects this variable name)
 
 Cassettes Recorded (Phase 1 - 12 total):
   Modrinth (4):
@@ -114,9 +114,9 @@ declare -A CASSETTES=(
     ["modrinth/versions_AANobbMI"]="https://api.modrinth.com/v2/project/AANobbMI/version|{\"User-Agent\":\"empack-tests/0.1.0\"}|{\"game_versions\":[\"1.21.1\"],\"loaders\":[\"fabric\"]}"
 
     # CurseForge (3 cassettes)
-    ["curseforge/search_jei"]="https://api.curseforge.com/v1/mods/search|{\"x-api-key\":\"$CURSEFORGE_API_CLIENT_KEY\"}|{\"gameId\":\"432\",\"classId\":\"6\",\"searchFilter\":\"jei\",\"pageSize\":\"10\"}"
-    ["curseforge/mod_238222"]="https://api.curseforge.com/v1/mods/238222|{\"x-api-key\":\"$CURSEFORGE_API_CLIENT_KEY\"}|{}"
-    ["curseforge/files_238222"]="https://api.curseforge.com/v1/mods/238222/files|{\"x-api-key\":\"$CURSEFORGE_API_CLIENT_KEY\"}|{\"pageSize\":\"10\"}"
+    ["curseforge/search_jei"]="https://api.curseforge.com/v1/mods/search|{\"x-api-key\":\"$EMPACK_KEY_CURSEFORGE\"}|{\"gameId\":\"432\",\"classId\":\"6\",\"searchFilter\":\"jei\",\"pageSize\":\"10\"}"
+    ["curseforge/mod_238222"]="https://api.curseforge.com/v1/mods/238222|{\"x-api-key\":\"$EMPACK_KEY_CURSEFORGE\"}|{}"
+    ["curseforge/files_238222"]="https://api.curseforge.com/v1/mods/238222/files|{\"x-api-key\":\"$EMPACK_KEY_CURSEFORGE\"}|{\"pageSize\":\"10\"}"
 
     # Loaders (4 cassettes)
     ["loaders/fabric_versions_1.21.1"]="https://meta.fabricmc.net/v2/versions/loader/1.21.1|{}|{}"

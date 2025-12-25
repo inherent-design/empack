@@ -84,8 +84,8 @@ impl ProjectPlatform {
     /// Get the environment variable name for the API key
     pub fn api_key_env_var(&self) -> &'static str {
         match self {
-            ProjectPlatform::Modrinth => "MODRINTH_API_KEY", // Optional for higher limits
-            ProjectPlatform::CurseForge => "CURSEFORGE_API_KEY", // Required
+            ProjectPlatform::Modrinth => "EMPACK_KEY_MODRINTH", // Optional for higher limits
+            ProjectPlatform::CurseForge => "EMPACK_KEY_CURSEFORGE", // Required
         }
     }
 
@@ -152,10 +152,10 @@ mod tests {
 
     #[test]
     fn test_api_key_env_vars() {
-        assert_eq!(ProjectPlatform::Modrinth.api_key_env_var(), "MODRINTH_API_KEY");
+        assert_eq!(ProjectPlatform::Modrinth.api_key_env_var(), "EMPACK_KEY_MODRINTH");
         assert_eq!(
             ProjectPlatform::CurseForge.api_key_env_var(),
-            "CURSEFORGE_API_KEY"
+            "EMPACK_KEY_CURSEFORGE"
         );
     }
 

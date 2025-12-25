@@ -67,8 +67,8 @@ validate_env_file() {
     source "$env_file"
     set +a
 
-    if [[ -z "${CURSEFORGE_API_CLIENT_KEY:-}" ]]; then
-        log_error "CURSEFORGE_API_CLIENT_KEY not found in $env_file"
+    if [[ -z "${EMPACK_KEY_CURSEFORGE:-}" ]]; then
+        log_error "EMPACK_KEY_CURSEFORGE not found in $env_file"
         log_error "Add your API key to $env_file"
         return 1
     fi

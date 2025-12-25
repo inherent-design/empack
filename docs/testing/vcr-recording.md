@@ -50,13 +50,13 @@ CurseForge API requires authentication:
    vim .env.local
 
    # Add your API key:
-   CURSEFORGE_API_KEY=your_actual_api_key_here
+   EMPACK_KEY_CURSEFORGE=your_actual_api_key_here
    ```
 
 3. **Verify:**
    ```bash
    # Should show your API key
-   grep CURSEFORGE_API_KEY .env.local
+   grep EMPACK_KEY_CURSEFORGE .env.local
    ```
 
 ---
@@ -315,15 +315,15 @@ brew install curl jq
 **Solution:**
 ```bash
 cp .env.local.template .env.local
-vim .env.local  # Add your CURSEFORGE_API_KEY
+vim .env.local  # Add your EMPACK_KEY_CURSEFORGE
 ```
 
-### "CURSEFORGE_API_KEY not found in .env.local"
+### "EMPACK_KEY_CURSEFORGE not found in .env.local"
 
 **Solution:**
 1. Get API key from https://console.curseforge.com
 2. Edit `.env.local`
-3. Set `CURSEFORGE_API_KEY=your_key_here`
+3. Set `EMPACK_KEY_CURSEFORGE=your_key_here`
 
 ### "Rate limited (429) - retry 1/3 in 5s"
 
