@@ -805,7 +805,7 @@ impl InteractiveProvider for MockInteractiveProvider {
         }
     }
 
-    fn fuzzy_select(&self, prompt: &str, _options: &[String]) -> Result<usize> {
+    fn fuzzy_select(&self, prompt: &str, _options: &[String]) -> Result<Option<usize>> {
         self.fuzzy_select_calls
             .lock()
             .unwrap()
@@ -813,14 +813,14 @@ impl InteractiveProvider for MockInteractiveProvider {
 
         // Check yes_mode first (--yes flag)
         if self.yes_mode {
-            return Ok(0); // First option
+            return Ok(Some(0)); // First option
         }
 
         if let Some(response) = *self.fuzzy_select_response.lock().unwrap() {
-            Ok(response)
+            Ok(Some(response))
         } else {
             // Default behavior: return first option (0)
-            Ok(0)
+            Ok(Some(0))
         }
     }
 }

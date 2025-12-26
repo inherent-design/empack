@@ -112,6 +112,170 @@ struct NeoForgeVersionResponse {
     versions: Vec<String>,
 }
 
+/// Response from Forge promotions_slim.json API
+#[derive(Debug, Deserialize)]
+struct ForgePromotionsResponse {
+    homepage: String,
+    promos: std::collections::HashMap<String, String>,
+}
+
+/// Filter NeoForge versions by Minecraft version compatibility
+///
+/// NeoForge versions follow a semantic pattern: MAJOR.MINOR.PATCH[-beta]
+/// where MAJOR.MINOR maps to the Minecraft version:
+/// - 20.2.x → MC 1.20.2
+/// - 20.4.x → MC 1.20.4
+/// - 21.0.x → MC 1.21.0
+/// - 21.1.x → MC 1.21.1
+/// - 21.10.x → MC 1.21.10
+///
+/// Algorithm from neoforged.net/js/neoforge.js:
+/// - MC version "1.X.Y" → NeoForge prefix "X.Y."
+/// - Example: MC "1.20.2" → NeoForge "20.2." prefix
+/// - Example: MC "1.21.10" → NeoForge "21.10." prefix
+///
+/// This function extracts compatible versions and filters out beta versions
+/// unless no stable versions exist for that MC version.
+fn filter_neoforge_versions_by_minecraft(
+    all_versions: &[String],
+    mc_version: &str,
+) -> Result<Vec<String>> {
+    // Parse MC version to determine expected NeoForge major.minor prefix
+    // Use dynamic algorithm from neoforged.net instead of hardcoded matches
+
+    // NeoForge only supports MC 1.20.2+
+    if version_compare(mc_version, "1.20.2") < 0 {
+        return Ok(vec![]);
+    }
+
+    // Extract X.Y from "1.X.Y" to create "X.Y." prefix
+    // MC "1.20.2" → remove "1." → "20.2" → add "." → "20.2."
+    // MC "1.21.10" → remove "1." → "21.10" → add "." → "21.10."
+    // MC "1.21" → normalize to "1.21.0" → remove "1." → "21.0" → add "." → "21.0."
+    let normalized_version = if mc_version.matches('.').count() == 1 {
+        // MC "1.21" → "1.21.0"
+        format!("{}.0", mc_version)
+    } else {
+        mc_version.to_string()
+    };
+
+    let expected_prefix = if let Some(suffix) = normalized_version.strip_prefix("1.") {
+        format!("{}.", suffix)
+    } else {
+        // Invalid MC version format
+        return Ok(vec![]);
+    };
+
+    // Filter versions matching the expected prefix
+    let mut matching_versions: Vec<String> = all_versions
+        .iter()
+        .filter(|v| v.starts_with(&expected_prefix))
+        .cloned()
+        .collect();
+
+    // Separate stable and beta versions
+    let stable_versions: Vec<String> = matching_versions
+        .iter()
+        .filter(|v| !v.contains("-beta"))
+        .cloned()
+        .collect();
+
+    // Prefer stable versions, but if none exist, include betas
+    let result = if !stable_versions.is_empty() {
+        stable_versions
+    } else {
+        matching_versions
+    };
+
+    // Versions are already sorted newest-first by the API, preserve order
+    Ok(result)
+}
+
+/// Filter Forge versions by Minecraft version from promotions API
+///
+/// Forge promotions_slim.json structure:
+/// - Keys: "{mc_version}-latest" or "{mc_version}-recommended"
+/// - Values: Forge version (e.g., "47.4.13" for MC 1.20.1)
+///
+/// Strategy (user requirement: single track, don't distinguish latest/recommended):
+/// - Extract all versions for the given MC version
+/// - Deduplicate (latest and recommended might be same version)
+/// - Return single list sorted newest first
+///
+/// Examples:
+/// - MC "1.20.1" → ["47.4.13", "47.4.10"] (latest=47.4.13, recommended=47.4.10)
+/// - MC "1.16.5" → ["36.2.42", "36.2.34"] (latest=36.2.42, recommended=36.2.34)
+/// - MC "1.20.5" → [] (no 1.20.5 in promotions)
+fn filter_forge_versions_by_minecraft(
+    promotions: &std::collections::HashMap<String, String>,
+    mc_version: &str,
+) -> Result<Vec<String>> {
+    // Forge supports very old MC versions (back to 1.1), no minimum check needed
+
+    // Normalize MC version (handle "1.21" → "1.21.0" for consistency)
+    let normalized_version = if mc_version.matches('.').count() == 1 {
+        format!("{}.0", mc_version)
+    } else {
+        mc_version.to_string()
+    };
+
+    // Collect all Forge versions for this MC version
+    let mut versions = Vec::new();
+
+    // Try latest
+    let latest_key = format!("{}-latest", normalized_version);
+    if let Some(forge_version) = promotions.get(&latest_key) {
+        versions.push(forge_version.clone());
+    }
+
+    // Try recommended
+    let recommended_key = format!("{}-recommended", normalized_version);
+    if let Some(forge_version) = promotions.get(&recommended_key) {
+        // Only add if different from latest (deduplicate)
+        if !versions.contains(forge_version) {
+            versions.push(forge_version.clone());
+        }
+    }
+
+    // Also try without normalization (handle "1.21" directly)
+    if mc_version != normalized_version {
+        let latest_key_unnorm = format!("{}-latest", mc_version);
+        if let Some(forge_version) = promotions.get(&latest_key_unnorm) {
+            if !versions.contains(forge_version) {
+                versions.push(forge_version.clone());
+            }
+        }
+
+        let recommended_key_unnorm = format!("{}-recommended", mc_version);
+        if let Some(forge_version) = promotions.get(&recommended_key_unnorm) {
+            if !versions.contains(forge_version) {
+                versions.push(forge_version.clone());
+            }
+        }
+    }
+
+    // Sort by version (newest first)
+    // Forge versions follow semantic versioning: major.minor.patch
+    // Parse and compare numerically
+    versions.sort_by(|a, b| {
+        let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
+        let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
+
+        // Compare major, minor, patch in order (reverse for newest first)
+        for i in 0..a_parts.len().max(b_parts.len()) {
+            let a_part = a_parts.get(i).unwrap_or(&0);
+            let b_part = b_parts.get(i).unwrap_or(&0);
+            match b_part.cmp(a_part) {
+                std::cmp::Ordering::Equal => continue,
+                other => return other,
+            }
+        }
+        std::cmp::Ordering::Equal
+    });
+
+    Ok(versions)
+}
+
 /// Supported mod loaders in priority order
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModLoader {
@@ -340,10 +504,20 @@ impl<'a> VersionFetcher<'a> {
                 match response {
                     Ok(resp) if resp.status().is_success() => {
                         if let Ok(version_data) = resp.json::<NeoForgeVersionResponse>().await {
-                            // NeoForge API returns all versions, we need to return them
-                            let mut sorted_versions = version_data.versions.clone();
-                            sorted_versions.reverse(); // newest first
-                            return Ok(sorted_versions);
+                            // NeoForge API returns all versions (1403+), filter by MC version compatibility
+                            // NeoForge versions follow pattern: MAJOR.MINOR.PATCH[-beta]
+                            // where MAJOR.MINOR maps to MC version (e.g., 21.0.x → MC 1.21, 20.4.x → MC 1.20.4)
+                            let filtered_versions = filter_neoforge_versions_by_minecraft(
+                                &version_data.versions,
+                                mc_version,
+                            )?;
+
+                            // Return filtered list (newest first, already sorted by API)
+                            if filtered_versions.is_empty() {
+                                // No compatible versions found - fall through to fallback
+                            } else {
+                                return Ok(filtered_versions);
+                            }
                         }
                     }
                     _ => {
@@ -389,35 +563,67 @@ impl<'a> VersionFetcher<'a> {
 
     /// Fetch Forge versions with proper MC version compatibility
     pub async fn fetch_forge_loader_versions(&self, mc_version: &str) -> Result<Vec<String>> {
-        // Implement proper Forge compatibility logic
-        // Forge has broader MC version support than NeoForge
-        let versions = match mc_version {
-            "1.20.1" => vec![
-                "47.2.20".to_string(), // Known working versions for 1.20.1
-                "47.2.17".to_string(),
-                "47.2.0".to_string(),
-            ],
-            "1.20.2" | "1.20.4" | "1.20.6" => vec![
-                "48.1.0".to_string(),
-                "48.0.48".to_string(),
-                "48.0.30".to_string(),
-            ],
-            "1.21.1" | "1.21.3" | "1.21.4" => vec![
-                "52.0.17".to_string(),
-                "52.0.16".to_string(),
-                "52.0.15".to_string(),
-            ],
-            _ => {
-                // Fallback for unknown versions
-                vec![
-                    "47.2.20".to_string(),
-                    "47.2.17".to_string(),
-                    "47.2.0".to_string(),
-                ]
-            }
-        };
+        let cache_key = format!("forge_loader_{}.json", mc_version);
 
-        Ok(versions)
+        self.fetch_cached_or_network(
+            &cache_key,
+            6, // 6 hour cache
+            || async {
+                let client = self.network.http_client()?;
+
+                // Fetch promotions_slim.json (contains latest/recommended for all MC versions)
+                let url = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
+
+                let response = client
+                    .get(url)
+                    .send()
+                    .await;
+
+                match response {
+                    Ok(resp) if resp.status().is_success() => {
+                        if let Ok(promotions_data) = resp.json::<ForgePromotionsResponse>().await {
+                            // Filter versions by MC version compatibility
+                            let filtered_versions = filter_forge_versions_by_minecraft(
+                                &promotions_data.promos,
+                                mc_version,
+                            )?;
+
+                            // If we found versions, return them
+                            if !filtered_versions.is_empty() {
+                                return Ok(filtered_versions);
+                            }
+                            // Otherwise fall through to fallback
+                        }
+                    }
+                    _ => {
+                        // API failed, use fallback
+                    }
+                }
+
+                // Fallback for network failures or unknown MC versions
+                let fallback_versions = match mc_version {
+                    "1.20.1" => vec![
+                        "47.4.13".to_string(),
+                        "47.4.10".to_string(),
+                    ],
+                    "1.16.5" => vec![
+                        "36.2.42".to_string(),
+                        "36.2.34".to_string(),
+                    ],
+                    "1.21.1" => vec![
+                        "52.1.8".to_string(),
+                        "52.1.0".to_string(),
+                    ],
+                    _ => {
+                        // For unknown versions, return empty to hide Forge option
+                        vec![]
+                    }
+                };
+
+                Ok(fallback_versions)
+            },
+        )
+        .await
     }
 
     /// Fetch Quilt versions from official API

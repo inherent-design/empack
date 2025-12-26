@@ -327,10 +327,11 @@ async fn handle_init(
         }
     };
 
-    // Minecraft version selection with FuzzySelect
+    // Minecraft version selection with FuzzySelect (pagination enabled, 6 items per page)
     let mc_version_index = session
         .interactive()
-        .fuzzy_select("Minecraft version", &minecraft_versions)?;
+        .fuzzy_select("Minecraft version", &minecraft_versions)?
+        .ok_or_else(|| anyhow::anyhow!("Minecraft version selection cancelled"))?;
     let minecraft_version = &minecraft_versions[mc_version_index];
 
     // Step 3: Dynamic, Filtered Mod Loader Prompt
@@ -507,10 +508,11 @@ async fn handle_init(
         }
     };
 
-    // Loader version selection with FuzzySelect
+    // Loader version selection with FuzzySelect (pagination enabled, 6 items per page)
     let loader_version_index = session
         .interactive()
-        .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?;
+        .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?
+        .ok_or_else(|| anyhow::anyhow!("Loader version selection cancelled"))?;
     let loader_version = &loader_versions[loader_version_index];
 
     // Step 5: Final Confirmation and Execution

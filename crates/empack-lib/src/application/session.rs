@@ -136,7 +136,8 @@ pub trait InteractiveProvider {
     fn select(&self, prompt: &str, options: &[&str]) -> Result<usize>;
 
     /// Prompt for fuzzy selection from a list of options
-    fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<usize>;
+    /// Returns Some(index) if user selected, None if user pressed ESC
+    fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<Option<usize>>;
 }
 
 /// Session trait that both CommandSession and MockCommandSession can implement
@@ -727,11 +728,11 @@ impl InteractiveProvider for LiveInteractiveProvider {
             .context("Failed to read selection")
     }
 
-    fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<usize> {
+    fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<Option<usize>> {
         // Check yes_mode first (--yes flag), then TTY
         if self.yes_mode || !Self::is_tty() {
             // Non-interactive mode: return first option (index 0)
-            return Ok(0);
+            return Ok(Some(0));
         }
 
         use dialoguer::FuzzySelect;
@@ -739,7 +740,8 @@ impl InteractiveProvider for LiveInteractiveProvider {
         FuzzySelect::new()
             .with_prompt(prompt)
             .items(options)
-            .interact()
+            .max_length(6)  // Show 6 items per page (enables pagination)
+            .interact_opt()  // Allow ESC key to cancel
             .context("Failed to read fuzzy selection")
     }
 }
@@ -785,7 +787,9 @@ impl
         if let Ok(terminal_caps) =
             crate::terminal::TerminalCapabilities::detect_from_config(&app_config)
         {
-            let _ = crate::display::Display::init(terminal_caps);
+            let _ = crate::display::Display::init(terminal_caps.clone());
+            let logger_config = app_config.to_logger_config(&terminal_caps);
+            let _ = crate::logger::Logger::init(logger_config);
         }
 
         let multi_progress = MultiProgress::new();
