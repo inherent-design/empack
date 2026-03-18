@@ -13,6 +13,7 @@ use empack_lib::application::session::{
 use empack_lib::application::session_mocks::{MockInteractiveProvider, MockProcessProvider};
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
+use empack_tests::{HermeticSessionBuilder, MockBehavior};
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -65,52 +66,29 @@ hash = ""
 /// Test that the build command works end-to-end with mock packwiz
 #[tokio::test]
 async fn e2e_build_mrpack_successfully() -> Result<()> {
-    // Setup: Create a real temporary directory
-    let temp_dir = TempDir::new()?;
-    let workdir = temp_dir.path().to_path_buf();
+    let (session, test_env) = HermeticSessionBuilder::new()?
+        .with_empack_project("workflow-build-pack", "1.21.1", "fabric")?
+        .with_mock_executable(
+            "packwiz",
+            MockBehavior::SucceedWithOutput {
+                stdout: "Refreshed packwiz index\nExported to workflow-build-pack-v1.0.0.mrpack"
+                    .to_string(),
+                stderr: String::new(),
+            },
+        )?
+        .build()?;
 
-    // Initialize: Create a real empack project
-    initialize_empack_project(&workdir).await?;
-
-    // Set working directory for the test
-    std::env::set_current_dir(&workdir)?;
-
-    // Create hybrid session: Real filesystem + Mock process (no live packwiz required)
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
-
-    // Initialize display system
-    let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
+    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
     Display::init(terminal_caps)?;
 
-    // Use a mock process provider that simulates packwiz refresh and export success
-    let mock_process_provider = MockProcessProvider::new()
-        .with_packwiz_result(
-            vec!["refresh".to_string()],
-            Ok(ProcessOutput {
-                stdout: "Pack refreshed successfully".to_string(),
-                stderr: String::new(),
-                success: true,
-            }),
-        )
-        .with_packwiz_result(
-            vec!["modrinth".to_string(), "export".to_string()],
-            Ok(ProcessOutput {
-                stdout: "Exported to test-modpack.mrpack".to_string(),
-                stderr: String::new(),
-                success: true,
-            }),
-        );
+    let workdir = session
+        .config()
+        .app_config()
+        .workdir
+        .clone()
+        .expect("hermetic project should configure a workdir");
+    std::env::set_current_dir(&workdir)?;
 
-    let session = CommandSession::new_with_providers(
-        LiveFileSystemProvider,
-        LiveNetworkProvider::new(),
-        mock_process_provider,
-        LiveConfigProvider::new(app_config),
-        MockInteractiveProvider::new(),
-    );
-
-    // Execute the build command
     let result = execute_command_with_session(
         Commands::Build {
             targets: vec!["mrpack".to_string()],
@@ -121,11 +99,32 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
     )
     .await;
 
-    // Assert: Check that the command succeeded
     assert!(result.is_ok(), "Build command failed: {:?}", result);
 
-    // Verify that packwiz refresh was called (via mock)
-    // Note: MockProcessProvider tracks calls internally, test passing indicates correct calls
+    let mrpack_path = workdir
+        .join("dist")
+        .join("workflow-build-pack-v1.0.0.mrpack");
+    assert!(
+        mrpack_path.exists(),
+        "mrpack build should create an artifact in dist/: {}",
+        mrpack_path.display()
+    );
+
+    let packwiz_calls = test_env.get_mock_calls("packwiz")?;
+    assert!(
+        packwiz_calls
+            .iter()
+            .any(|call| call.contains("packwiz --pack-file") && call.contains(" refresh")),
+        "build should refresh the pack before exporting: {packwiz_calls:?}"
+    );
+    assert!(
+        packwiz_calls.iter().any(|call| {
+            call.contains("packwiz --pack-file")
+                && call.contains(" mr export ")
+                && call.contains("workflow-build-pack-v1.0.0.mrpack")
+        }),
+        "build should export the mrpack artifact through packwiz: {packwiz_calls:?}"
+    );
 
     Ok(())
 }

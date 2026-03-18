@@ -4,7 +4,6 @@
 //! with mock executables, enabling true hermetic E2E testing without external dependencies.
 
 use anyhow::Result;
-use directories::ProjectDirs;
 use empack_lib::application::config::AppConfig;
 use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
@@ -137,7 +136,8 @@ impl TestEnvironment {
 
                 // Special handling for packwiz init - create pack.toml and index.toml
                 if name == "packwiz" && stdout.contains("Initialized") {
-                    code.push_str(r#"
+                    code.push_str(
+                        r#"
 # Create pack.toml and index.toml if 'init' command detected
 if [[ "$1" == "init" ]]; then
   # Extract parameters from command line
@@ -207,7 +207,38 @@ file = "pack.toml"
 hash = ""
 INDEXTOML
 fi
-"#);
+"#,
+                    );
+                }
+
+                if name == "packwiz" && stdout.contains("Exported") {
+                    code.push_str(
+                        r#"
+# Create a dummy mrpack artifact if 'mr export' is requested
+if [[ "$*" == *"mr export"* ]]; then
+  OUTPUT_FILE=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -o)
+        OUTPUT_FILE="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -n "$OUTPUT_FILE" ]]; then
+    mkdir -p "$(dirname "$OUTPUT_FILE")"
+    cat > "$OUTPUT_FILE" <<'MRPACK'
+mock mrpack artifact
+MRPACK
+  fi
+fi
+"#,
+                    );
                 }
 
                 if !stdout.is_empty() {
@@ -435,6 +466,13 @@ impl HermeticSessionBuilder {
         self
     }
 
+    /// Allow the mock network provider to construct an inert HTTP client for
+    /// paths that require a client handle before using mocked resolvers.
+    pub fn with_mock_http_client(mut self) -> Self {
+        self.network_provider.enable_http_client();
+        self
+    }
+
     /// Configure the interactive provider with custom responses
     pub fn with_interactive_provider(
         mut self,
@@ -481,10 +519,15 @@ impl HermeticSessionBuilder {
         // Set platform-appropriate cache environment variables to isolate tests
         // SAFETY: This is safe in test environments where we control execution
         // Tests run sequentially or in isolated processes, so no concurrent modification
+        let path_env = self.test_env.get_path_env();
         unsafe {
             // Unix-like systems use XDG_CACHE_HOME
             #[cfg(unix)]
             std::env::set_var("XDG_CACHE_HOME", &cache_dir);
+
+            // Ensure all command paths, including direct std::process::Command
+            // calls inside live providers, resolve to the hermetic mock tools.
+            std::env::set_var("PATH", &path_env);
 
             // Windows uses LocalAppData for cache (not typically overridden, using temp dir pattern)
             // macOS respects XDG when set, but also uses ~/Library/Caches
@@ -501,9 +544,7 @@ impl HermeticSessionBuilder {
         let session = CommandSession::new_with_providers(
             LiveFileSystemProvider,
             self.network_provider,
-            LiveProcessProvider::new_for_test(Some(
-                self.test_env.bin_path.to_string_lossy().to_string(),
-            )),
+            LiveProcessProvider::new(),
             LiveConfigProvider::new(self.app_config),
             interactive_provider,
         );
@@ -526,6 +567,8 @@ impl HermeticSessionBuilder {
 pub struct MockNetworkProvider {
     /// Mock project search results
     search_results: HashMap<String, ProjectInfo>,
+    /// Whether tests may construct a reqwest client without performing live IO.
+    allow_http_client: bool,
 }
 
 impl MockNetworkProvider {
@@ -533,7 +576,12 @@ impl MockNetworkProvider {
     pub fn new() -> Self {
         Self {
             search_results: HashMap::new(),
+            allow_http_client: false,
         }
+    }
+
+    pub fn enable_http_client(&mut self) {
+        self.allow_http_client = true;
     }
 
     /// Add a mock search result for a query
@@ -559,6 +607,13 @@ impl MockNetworkProvider {
 
 impl NetworkProvider for MockNetworkProvider {
     fn http_client(&self) -> Result<Client> {
+        if self.allow_http_client {
+            return Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to create mock HTTP client: {e}"));
+        }
+
         // Return error to force fallback to hardcoded versions in tests
         // This prevents real network calls and makes tests deterministic
         Err(anyhow::anyhow!("Mock HTTP client unavailable (test mode)"))
@@ -644,10 +699,23 @@ mod tests {
         env.add_mock_executable("test-cmd", MockBehavior::AlwaysSucceed)
             .expect("Failed to add mock executable");
 
-        // In a real test, we would execute the mock command here
-        // For now, we just verify the log file path is correct
-        let log_path = env.root_path.join("test-cmd.log");
-        assert!(!log_path.exists()); // Should not exist until command is run
+        let output = std::process::Command::new(env.bin_path.join("test-cmd"))
+            .args(["alpha", "beta"])
+            .current_dir(&env.work_path)
+            .env("PATH", env.get_path_env())
+            .output()
+            .expect("Failed to execute mock command");
+
+        assert!(output.status.success());
+        assert!(
+            env.verify_mock_call("test-cmd", &["alpha", "beta"])
+                .expect("Failed to verify mock call")
+        );
+        assert_eq!(
+            env.get_mock_calls("test-cmd")
+                .expect("Failed to read mock calls"),
+            vec!["test-cmd alpha beta".to_string()]
+        );
     }
 
     #[test]

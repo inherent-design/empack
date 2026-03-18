@@ -26,7 +26,7 @@ use std::fs;
 async fn test_init_zero_config() -> Result<()> {
     // Create hermetic session with mock packwiz and --yes flag
     let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_yes_flag()  // Enable non-interactive mode
+        .with_yes_flag() // Enable non-interactive mode
         .with_mock_executable(
             "packwiz",
             MockBehavior::SucceedWithOutput {
@@ -62,7 +62,11 @@ async fn test_init_zero_config() -> Result<()> {
     let result = execute_command_with_session(
         Commands::Init {
             name: None,
+            pack_name: None,
             force: false,
+            modloader: None,
+            mc_version: None,
+            author: None,
         },
         &session,
     )
@@ -99,28 +103,16 @@ async fn test_init_zero_config() -> Result<()> {
     Ok(())
 }
 
-/// Test: empack init with explicit name and interactive prompts
+/// Test: empack init with explicit CLI configuration
 ///
 /// Workflow:
-/// 1. Run `empack init test-pack` (name provided, yes=false to trigger prompts)
-/// 2. Mock interactive provider will return defaults for all prompts
-/// 3. Verify empack.yml created with expected configuration
-///
-/// Note: MockInteractiveProvider returns the default value when no specific response is configured.
-/// This tests that the interactive flow works correctly with defaults.
+/// 1. Run `empack init matrix-fabric --pack-name "Matrix Fabric" --modloader fabric --mc-version 1.21.1`
+/// 2. Verify the generated empack.yml reflects the explicit inputs
+/// 3. Verify the packwiz invocation received the expected progressive-init flags
 #[tokio::test]
 async fn test_init_with_explicit_flags() -> Result<()> {
-    use empack_lib::application::session_mocks::MockInteractiveProvider;
-
-    // Configure mock interactive responses to return defaults
-    // (not setting specific responses means defaults will be used)
-    let interactive = MockInteractiveProvider::new()
-        .with_select(0)           // Select first loader
-        .with_fuzzy_select(0);    // Select first MC version
-
-    // Create hermetic session with configured interactive provider
     let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_interactive_provider(interactive)
+        .with_yes_flag()
         .with_mock_executable(
             "packwiz",
             MockBehavior::SucceedWithOutput {
@@ -152,41 +144,59 @@ async fn test_init_with_explicit_flags() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Execute init with name specified (interactive prompts will use mock provider)
+    // Execute init with explicit CLI configuration.
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("test-pack".to_string()),
+            name: Some("matrix-fabric".to_string()),
+            pack_name: Some("Matrix Fabric".to_string()),
             force: false,
+            modloader: Some("fabric".to_string()),
+            mc_version: Some("1.21.1".to_string()),
+            author: Some("Workflow Test".to_string()),
         },
         &session,
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "Init with name failed: {:?}",
-        result.err()
-    );
+    assert!(result.is_ok(), "Init with name failed: {:?}", result.err());
 
     // When name is provided, init creates a subdirectory
-    let project_dir = workdir.join("test-pack");
+    let project_dir = workdir.join("matrix-fabric");
     assert!(
         project_dir.exists(),
-        "test-pack directory should be created"
+        "matrix-fabric directory should be created"
     );
 
-    // Verify empack.yml was created inside test-pack/
+    // Verify empack.yml was created inside the configured project directory.
     let empack_yml_path = project_dir.join("empack.yml");
     assert!(
         empack_yml_path.exists(),
-        "empack.yml should be created inside test-pack/"
+        "empack.yml should be created inside matrix-fabric/"
     );
 
-    // Verify pack/ directory created inside test-pack/
+    let empack_yml = fs::read_to_string(&empack_yml_path)?;
+    assert!(
+        empack_yml.contains("name: \"Matrix Fabric\""),
+        "empack.yml should persist the explicit pack name"
+    );
+    assert!(
+        empack_yml.contains("author: \"Workflow Test\""),
+        "empack.yml should persist the explicit author"
+    );
+    assert!(
+        empack_yml.contains("minecraft_version: \"1.21.1\""),
+        "empack.yml should persist the explicit Minecraft version"
+    );
+    assert!(
+        empack_yml.contains("loader: fabric"),
+        "empack.yml should persist the explicit loader"
+    );
+
+    // Verify pack/ directory created inside matrix-fabric/
     let pack_dir = project_dir.join("pack");
     assert!(
         pack_dir.exists(),
-        "pack/ directory should be created inside test-pack/"
+        "pack/ directory should be created inside matrix-fabric/"
     );
 
     // Verify packwiz was called
@@ -194,6 +204,31 @@ async fn test_init_with_explicit_flags() -> Result<()> {
     assert!(
         !packwiz_calls.is_empty(),
         "packwiz should have been called for initialization"
+    );
+
+    let init_call = packwiz_calls
+        .iter()
+        .find(|call| call.contains(" init "))
+        .expect("packwiz init invocation should be logged");
+    assert!(
+        init_call.contains("--name Matrix Fabric"),
+        "packwiz init should receive the explicit pack name: {init_call}"
+    );
+    assert!(
+        init_call.contains("--author Workflow Test"),
+        "packwiz init should receive the explicit author: {init_call}"
+    );
+    assert!(
+        init_call.contains("--mc-version 1.21.1"),
+        "packwiz init should receive the explicit Minecraft version: {init_call}"
+    );
+    assert!(
+        init_call.contains("--modloader fabric"),
+        "packwiz init should receive the explicit loader: {init_call}"
+    );
+    assert!(
+        init_call.contains("--fabric-version"),
+        "packwiz init should resolve and pass a Fabric loader version: {init_call}"
     );
 
     Ok(())
@@ -210,7 +245,7 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 async fn test_init_creates_directory_from_name() -> Result<()> {
     // Create hermetic session with --yes flag
     let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_yes_flag()  // Enable non-interactive mode
+        .with_yes_flag() // Enable non-interactive mode
         .with_mock_executable(
             "packwiz",
             MockBehavior::SucceedWithOutput {
@@ -246,7 +281,11 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("my-pack".to_string()),
+            pack_name: None,
             force: false,
+            modloader: None,
+            mc_version: None,
+            author: None,
         },
         &session,
     )
@@ -260,14 +299,8 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
 
     // Verify my-pack directory was created
     let project_dir = workdir.join("my-pack");
-    assert!(
-        project_dir.exists(),
-        "my-pack directory should be created"
-    );
-    assert!(
-        project_dir.is_dir(),
-        "my-pack should be a directory"
-    );
+    assert!(project_dir.exists(), "my-pack directory should be created");
+    assert!(project_dir.is_dir(), "my-pack should be a directory");
 
     // Verify empack.yml exists inside my-pack/
     let empack_yml_path = project_dir.join("empack.yml");
@@ -298,7 +331,7 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
 async fn test_init_existing_project_error() -> Result<()> {
     // Create hermetic session with --yes flag
     let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_yes_flag()  // Enable non-interactive mode
+        .with_yes_flag() // Enable non-interactive mode
         .with_mock_executable(
             "packwiz",
             MockBehavior::SucceedWithOutput {
@@ -348,7 +381,11 @@ async fn test_init_existing_project_error() -> Result<()> {
     let result = execute_command_with_session(
         Commands::Init {
             name: None,
-            force: false, // No force flag - should fail or prompt
+            pack_name: None,
+            force: false,
+            modloader: None,
+            mc_version: None,
+            author: None, // No force flag - should fail or prompt
         },
         &session,
     )
