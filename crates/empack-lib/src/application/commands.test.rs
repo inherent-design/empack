@@ -76,78 +76,114 @@ mod handle_init_tests {
 
     #[tokio::test]
     async fn it_initializes_new_project() {
-        let mut session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/empty-project")),
-        );
-        session.config_provider.app_config.yes = true; // Enable non-interactive mode
+        let workdir = PathBuf::from("/test/empty-project");
+        let target_dir = workdir.join("test-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
 
         let result = handle_init(
             &session,
             Some("test-pack".to_string()),
             None,
             false,
-            None,
-            None,
-            None,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
         )
         .await;
 
-        // The function should complete without error
-        // Note: Real state management would require more complex mocking
-        // For now, we verify the basic flow works
-        assert!(result.is_ok() || result.is_err()); // Either outcome is acceptable in mock environment
+        assert!(result.is_ok());
+        assert!(session.filesystem().is_directory(&target_dir));
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("empack.yml"))
+            .unwrap();
+        assert!(empack_yml.contains("name: \"test-pack\""));
+        assert!(empack_yml.contains("author: \"Test Author\""));
+        assert!(empack_yml.contains("minecraft_version: \"1.21.1\""));
+
+        let pack_toml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("pack").join("pack.toml"))
+            .unwrap();
+        assert!(pack_toml.contains("name = \"test-pack\""));
+        assert!(pack_toml.contains("author = \"Test Author\""));
+        assert!(pack_toml.contains("minecraft = \"1.21.1\""));
     }
 
     #[tokio::test]
     async fn it_refuses_to_overwrite_existing_without_force() {
-        let mut session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/existing-project")),
+        let workdir = PathBuf::from("/test/existing-project");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
         );
-        session.config_provider.app_config.yes = true; // Enable non-interactive mode
 
-        let result = handle_init(
-            &session,
-            Some("test-pack".to_string()),
-            None,
-            false,
-            None,
-            None,
-            None,
-        )
-        .await;
+        let original_empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
 
-        // Should complete (may succeed or fail depending on mock state)
-        assert!(result.is_ok() || result.is_err());
+        let result = handle_init(&session, None, None, false, None, None, None).await;
+
+        assert!(result.is_ok());
+        assert_eq!(
+            session
+                .filesystem()
+                .read_to_string(&workdir.join("empack.yml"))
+                .unwrap(),
+            original_empack_yml
+        );
+        assert!(session.interactive_provider.get_confirm_calls().is_empty());
     }
 
     #[tokio::test]
     async fn it_overwrites_existing_with_force() {
-        let mut session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/existing-project")),
-        );
-        session.config_provider.app_config.yes = true; // Enable non-interactive mode
+        let workdir = PathBuf::from("/test/force-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
 
         let result = handle_init(
             &session,
-            Some("test-pack".to_string()),
+            None,
             None,
             true,
-            None,
-            None,
-            None,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Overwrite Author".to_string()),
         )
         .await;
 
-        // Should complete with force flag
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok());
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
+        assert!(empack_yml.contains("name: \"force-pack\""));
+        assert!(empack_yml.contains("author: \"Overwrite Author\""));
+
+        let pack_toml = session
+            .filesystem()
+            .read_to_string(&workdir.join("pack").join("pack.toml"))
+            .unwrap();
+        assert!(pack_toml.contains("name = \"force-pack\""));
+        assert!(pack_toml.contains("author = \"Overwrite Author\""));
+        assert!(pack_toml.contains("minecraft = \"1.21.1\""));
     }
 
     #[tokio::test]
     async fn it_handles_user_cancellation_at_confirmation() {
-        use crate::application::session_mocks::MockInteractiveProvider;
-
-        // Create interactive provider that cancels/rejects confirmation
-        let interactive = MockInteractiveProvider::new().with_confirm(false); // Reject confirmation prompt
+        let target_dir = PathBuf::from("/test/new-project/cancel-test");
+        let interactive = MockInteractiveProvider::new().with_confirm(false);
 
         let session = MockCommandSession::new()
             .with_filesystem(
@@ -155,37 +191,23 @@ mod handle_init_tests {
             )
             .with_interactive(interactive);
 
-        // Do NOT set yes flag - we want interactive flow
-        // session.config_provider.app_config.yes = false; (default)
-
         let result = handle_init(
             &session,
             Some("cancel-test".to_string()),
             None,
             false,
-            None,
-            None,
-            None,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Cancel Author".to_string()),
         )
         .await;
 
-        // Init should either:
-        // 1. Return error (user cancelled)
-        // 2. Return ok with no files created (graceful cancellation)
-        // Either is acceptable depending on implementation
-
-        // Verify no files were created after cancellation
-        let empack_yml = PathBuf::from("/test/new-project/empack.yml");
-        assert!(
-            !session.filesystem().exists(&empack_yml),
-            "empack.yml should not be created after user cancellation"
-        );
-
-        // Verify no packwiz commands were executed after cancellation
-        let calls = session.process_provider.get_calls();
-        assert!(
-            calls.is_empty() || result.is_err(),
-            "No packwiz commands should execute after cancellation"
+        assert!(result.is_ok());
+        assert!(!session.filesystem().exists(&target_dir.join("empack.yml")));
+        assert!(session.filesystem().is_directory(&target_dir));
+        assert_eq!(
+            session.interactive_provider.get_confirm_calls(),
+            vec![("Create modpack with these settings?".to_string(), true)]
         );
     }
 }
