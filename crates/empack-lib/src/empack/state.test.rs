@@ -719,45 +719,31 @@ fn test_state_transition_requires_intermediate_steps() {
 /// Validates error recovery when empack.yml is corrupted or has invalid YAML syntax.
 #[test]
 fn test_execute_refresh_index_malformed_yaml() {
-    use std::fs;
-    use std::io::Write;
-    use tempfile::TempDir;
+    let workdir = PathBuf::from("/test/malformed-yaml");
 
-    // Create temporary test directory
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let workdir = temp_dir.path();
-
-    // Create pack directory
-    let pack_dir = workdir.join("pack");
-    fs::create_dir(&pack_dir).expect("Failed to create pack dir");
-
-    // Create malformed empack.yml (invalid YAML syntax)
-    let empack_yml_path = workdir.join("empack.yml");
-    let mut file = fs::File::create(&empack_yml_path).expect("Failed to create empack.yml");
-    file.write_all(b"name: test-pack\nversion: [invalid yaml syntax here\nminecraft:\n  version: 1.21.1")
-        .expect("Failed to write malformed YAML");
-
-    // Create pack.toml (so state machine thinks we're initialized)
-    let pack_toml_path = pack_dir.join("pack.toml");
-    fs::write(
-        &pack_toml_path,
-        r#"name = "test-pack"
+    // Load malformed empack.yml directly into the mock filesystem so config validation
+    // sees the same contents the test is asserting on.
+    let fs_provider = crate::application::session_mocks::MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            workdir.join("empack.yml"),
+            "name: test-pack\nversion: [invalid yaml syntax here\nminecraft:\n  version: 1.21.1"
+                .to_string(),
+        )
+        .with_file(
+            workdir.join("pack").join("pack.toml"),
+            r#"name = "test-pack"
 version = "1.0.0"
 [index]
 file = "index.toml"
-"#,
-    )
-    .expect("Failed to create pack.toml");
-
-    // Create mock providers
-    let fs_provider = crate::application::session_mocks::MockFileSystemProvider::new()
-        .with_current_dir(workdir.to_path_buf())
-        .with_configured_project(workdir.to_path_buf());
+"#
+            .to_string(),
+        );
 
     let process_provider = crate::application::session_mocks::MockProcessProvider::new();
 
     // Execute refresh-index - should return error due to malformed YAML
-    let result = execute_refresh_index(&fs_provider, &process_provider, workdir);
+    let result = execute_refresh_index(&fs_provider, &process_provider, &workdir);
 
     // Verify error occurred
     assert!(
