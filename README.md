@@ -2,11 +2,18 @@
 
 empack is a Rust CLI for Minecraft modpack project setup, dependency reconciliation, and build or export workflows around `packwiz`.
 
+## Start here
+
+- Using the current Rust CLI: [`docs/usage.md`](docs/usage.md)
+- Checking the trusted verification matrix: [`docs/testing/README.md`](docs/testing/README.md)
+- Contributing or maintaining fixtures: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- VCR-backed maintenance and provider reference material: [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md), [`docs/reference/`](docs/reference/)
+
 ## Current status
 
 - Active release target: the Rust workspace in `crates/*`
 - Historical Bash implementations in `v1/` and `v2/` are reference context only
-- Current trusted verification guidance lives in [`docs/testing/README.md`](docs/testing/README.md)
+- Current trusted verification matrix lives in [`docs/testing/README.md`](docs/testing/README.md)
 - Known grouped-workflow caveat: grouped `sync_workflow` reruns can hit `Global configuration already initialized`
 - Deferred gaps remain for standalone `client-full` and `server-full` missing-installer propagation
 
@@ -59,12 +66,12 @@ See [`docs/testing/README.md`](docs/testing/README.md) for exact command example
 
 ## Documentation
 
-- [`docs/usage.md`](docs/usage.md)
-- [`docs/testing/README.md`](docs/testing/README.md)
-- [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
-- [`docs/reference/MODRINTH.md`](docs/reference/MODRINTH.md)
-- [`docs/reference/CURSEFORGE.md`](docs/reference/CURSEFORGE.md)
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- User and workflow guidance: [`docs/usage.md`](docs/usage.md)
+- Verification guidance: [`docs/testing/README.md`](docs/testing/README.md)
+- VCR-backed maintenance: [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
+- Contributor workflow: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Provider reference notes: [`docs/reference/MODRINTH.md`](docs/reference/MODRINTH.md), [`docs/reference/CURSEFORGE.md`](docs/reference/CURSEFORGE.md)
+- Historical architecture context: [`ARCHITECTURAL_DECISION_RECORD.md`](ARCHITECTURAL_DECISION_RECORD.md)
 
 ## Historical context
 
