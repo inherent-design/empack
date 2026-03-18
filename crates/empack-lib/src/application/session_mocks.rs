@@ -3,12 +3,12 @@
 //! These mocks enable comprehensive testing of command handlers without
 //! requiring external dependencies or filesystem operations.
 
+use crate::Result;
 use crate::application::config::AppConfig;
 use crate::application::session::{InteractiveProvider, ProcessOutput, Session, *};
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectInfo, ProjectResolverTrait, SearchError};
-use crate::Result;
 use indicatif::MultiProgress;
 use reqwest::Client;
 use std::cell::RefCell;
@@ -90,8 +90,8 @@ impl MockFileSystemProvider {
         let empack_yml = format!(
             r#"empack:
   dependencies:
-    - fabric_api: "Fabric API|mod"
-    - sodium: "Sodium|mod"  
+    - 'fabric_api: "Fabric API|mod"'
+    - 'sodium: "Sodium|mod"'
   minecraft_version: "{}"
   loader: {}
   name: "{}"
@@ -136,8 +136,8 @@ minecraft = "{}"
     pub fn with_configured_project(self, workdir: PathBuf) -> Self {
         let empack_yml = r#"empack:
   dependencies:
-    - fabric_api: "Fabric API|mod"
-    - sodium: "Sodium|mod"
+    - 'fabric_api: "Fabric API|mod"'
+    - 'sodium: "Sodium|mod"'
   minecraft_version: "1.21.1"
   loader: fabric
   name: "Test Pack"
@@ -265,7 +265,10 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(())
     }
 
-    fn get_file_list(&self, path: &std::path::Path) -> std::result::Result<HashSet<PathBuf>, std::io::Error> {
+    fn get_file_list(
+        &self,
+        path: &std::path::Path,
+    ) -> std::result::Result<HashSet<PathBuf>, std::io::Error> {
         let files = self.files.lock().unwrap();
         let directories = self.directories.lock().unwrap();
         let mut result = HashSet::new();
@@ -287,7 +290,10 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(result)
     }
 
-    fn has_build_artifacts(&self, dist_dir: &std::path::Path) -> std::result::Result<bool, std::io::Error> {
+    fn has_build_artifacts(
+        &self,
+        dist_dir: &std::path::Path,
+    ) -> std::result::Result<bool, std::io::Error> {
         let files = self.files.lock().unwrap();
 
         for path in files.keys() {
@@ -363,10 +369,11 @@ minecraft = "{}"
         // Also create index.toml
         let index_file = pack_dir.join("index.toml");
         let default_index = DEFAULT_INDEX_TOML;
-        self.write_file(&index_file, default_index)
-            .map_err(|e| crate::empack::state::StateError::IoError {
+        self.write_file(&index_file, default_index).map_err(|e| {
+            crate::empack::state::StateError::IoError {
                 source: std::io::Error::new(std::io::ErrorKind::Other, e),
-            })?;
+            }
+        })?;
 
         Ok(())
     }
@@ -480,7 +487,11 @@ impl MockProjectResolver {
         }
     }
 
-    pub fn with_response(self, query: String, response: std::result::Result<ProjectInfo, String>) -> Self {
+    pub fn with_response(
+        self,
+        query: String,
+        response: std::result::Result<ProjectInfo, String>,
+    ) -> Self {
         self.responses.lock().unwrap().insert(query, response);
         self
     }
@@ -509,7 +520,8 @@ impl ProjectResolverTrait for MockProjectResolver {
         _project_type: Option<&str>,
         _minecraft_version: Option<&str>,
         _mod_loader: Option<&str>,
-    ) -> Pin<Box<dyn Future<Output = std::result::Result<ProjectInfo, SearchError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = std::result::Result<ProjectInfo, SearchError>> + Send + '_>>
+    {
         let responses = self.responses.clone();
         let query = title.to_string();
 
@@ -787,10 +799,7 @@ impl InteractiveProvider for MockInteractiveProvider {
     }
 
     fn select(&self, prompt: &str, _options: &[&str]) -> Result<usize> {
-        self.select_calls
-            .lock()
-            .unwrap()
-            .push(prompt.to_string());
+        self.select_calls.lock().unwrap().push(prompt.to_string());
 
         // Check yes_mode first (--yes flag)
         if self.yes_mode {
