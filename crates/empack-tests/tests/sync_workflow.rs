@@ -73,7 +73,10 @@ async fn test_sync_workflow_full() -> Result<()> {
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains("packwiz mr add P7dR8mSH")),
+            .any(|call| {
+                call.contains("packwiz modrinth add --project-id P7dR8mSH -y")
+                    || call.contains("packwiz mr add P7dR8mSH")
+            }),
         "sync should add the missing dependency by project id: {packwiz_calls:?}"
     );
     assert!(
@@ -85,7 +88,10 @@ async fn test_sync_workflow_full() -> Result<()> {
     assert!(
         !packwiz_calls
             .iter()
-            .any(|call| call.contains("packwiz mr add AANobbMI")),
+            .any(|call| {
+                call.contains("packwiz modrinth add --project-id AANobbMI -y")
+                    || call.contains("packwiz mr add AANobbMI")
+            }),
         "sync should not re-add dependencies that are already installed: {packwiz_calls:?}"
     );
 
@@ -139,7 +145,12 @@ async fn test_sync_dry_run_no_modifications() -> Result<()> {
         "dry-run sync should still inspect installed mods: {packwiz_calls:?}"
     );
     assert!(
-        !packwiz_calls.iter().any(|call| call.contains(" mr add ")),
+        !packwiz_calls.iter().any(|call| {
+            call.contains(" mr add ")
+                || call.contains(" modrinth add ")
+                || call.contains(" cf add ")
+                || call.contains(" curseforge add ")
+        }),
         "dry-run sync must not add dependencies: {packwiz_calls:?}"
     );
     assert!(
