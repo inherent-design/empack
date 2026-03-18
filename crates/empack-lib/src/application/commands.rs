@@ -4,14 +4,16 @@
 //! Implements the Session-Scoped Dependency Injection Pattern.
 
 use crate::Result;
+use crate::application::cli::SearchPlatform;
 use crate::application::session::{CommandSession, Session};
 use crate::application::sync::{
-    SyncExecutionAction, SyncPlanAction, build_sync_plan, normalize_mod_key, resolve_sync_action,
+    AddContractError, SyncExecutionAction, SyncPlanAction, build_sync_plan, normalize_mod_key,
+    resolve_add_contract, resolve_sync_action,
 };
 use crate::application::{CliConfig, Commands};
 use crate::empack::parsing::ModLoader;
 use crate::platform::{ArchiverCapabilities, GoCapabilities};
-use crate::primitives::{BuildTarget, PackState, StateTransition};
+use crate::primitives::{BuildTarget, PackState, ProjectPlatform, StateTransition};
 use anyhow::Context;
 use std::collections::HashSet;
 
@@ -250,17 +252,31 @@ async fn handle_init(
         crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
 
     // Check if already initialized
-    let current_state = manager.discover_state()?;
-    if current_state != PackState::Uninitialized && !force {
+    let mut current_state = manager.discover_state()?;
+    if current_state != PackState::Uninitialized {
+        if !force {
+            session
+                .display()
+                .status()
+                .error("Directory already contains a modpack project", "");
+            session
+                .display()
+                .status()
+                .subtle("   Use --force to overwrite existing files");
+            return Ok(());
+        }
+
         session
             .display()
             .status()
-            .error("Directory already contains a modpack project", "");
-        session
-            .display()
-            .status()
-            .subtle("   Use --force to overwrite existing files");
-        return Ok(());
+            .checking("Resetting existing project state for --force init");
+
+        while current_state != PackState::Uninitialized {
+            current_state = manager
+                .execute_transition(session.process(), StateTransition::Clean)
+                .await
+                .context("Failed to reset existing project before initialization")?;
+        }
     }
 
     session
@@ -701,7 +717,7 @@ async fn handle_init(
 /// - Simplicity advantage: Direct CLI is ~17 lines vs wrapper's ~35 lines
 /// - No state management: Commands don't need cached availability checks
 /// - Computational desperation: Minimal abstractions until complexity justifies them
-/// - Error handling adequate: Generic anyhow errors sufficient for fail-fast per-mod handling
+/// - Resolution and command-planning errors stay typed at the shared seam; packwiz execution remains local here
 ///
 /// **When to use PackwizMetadata wrapper instead:**
 /// PackwizMetadata should be integrated IF future commands need:
@@ -716,7 +732,7 @@ async fn handle_add(
     session: &dyn Session,
     mods: Vec<String>,
     force: bool,
-    _platform: Option<crate::application::cli::SearchPlatform>,
+    platform: Option<SearchPlatform>,
 ) -> Result<()> {
     // Migrate from legacy handle_add - using session providers
 
@@ -804,6 +820,7 @@ async fn handle_add(
     let mut failed_mods = Vec::new();
 
     for mod_query in mods {
+        let resolution_intent = AddResolutionIntent::from_cli_input(&mod_query, platform.clone());
         session
             .display()
             .status()
@@ -811,58 +828,72 @@ async fn handle_add(
 
         // Use project plan context if available
         let minecraft_version = project_plan.as_ref().map(|p| p.minecraft_version.as_str());
-        let mod_loader = project_plan.as_ref().map(|p| match p.loader {
-            crate::empack::parsing::ModLoader::Fabric => "fabric",
-            crate::empack::parsing::ModLoader::Forge => "forge",
-            crate::empack::parsing::ModLoader::Quilt => "quilt",
-            crate::empack::parsing::ModLoader::NeoForge => "neoforge",
-        });
+        let mod_loader = project_plan.as_ref().map(|p| p.loader);
 
-        match resolver
-            .resolve_project(&mod_query, Some("mod"), minecraft_version, mod_loader)
+        match resolve_add_contract(
+            &resolution_intent.search_query,
+            crate::primitives::ProjectType::Mod,
+            minecraft_version,
+            mod_loader,
+            resolution_intent.direct_project_id.as_deref(),
+            resolution_intent.direct_platform,
+            None,
+            resolver.as_ref(),
+        )
             .await
         {
-            Ok(project_info) => {
+            Ok(resolution) => {
+                let status_label = if resolution_intent.direct_project_id.is_some() {
+                    "Using direct project ID"
+                } else {
+                    "Found"
+                };
                 session.display().status().success(
-                    "Found",
-                    &format!("{} on {}", project_info.title, project_info.platform),
+                    status_label,
+                    &format!("{} on {}", resolution.title, resolution.resolved_platform),
                 );
-                session
-                    .display()
-                    .status()
-                    .info(&format!("Confidence: {}%", project_info.confidence));
+                if let Some(confidence) = resolution.confidence {
+                    session
+                        .display()
+                        .status()
+                        .info(&format!("Confidence: {}%", confidence));
+                }
 
                 // Check for duplicate mod (unless --force flag is set)
-                if !force && dep_graph.contains(&project_info.project_id) {
+                if !force && dep_graph.contains(&resolution.resolved_project_id) {
                     session.display().status().warning(&format!(
                         "Mod already installed: {} (use --force to reinstall)",
-                        project_info.title
+                        resolution.title
                     ));
                     continue; // Skip this mod
                 }
 
-                // Execute appropriate packwiz command
-                let packwiz_result = match project_info.platform {
-                    crate::primitives::ProjectPlatform::Modrinth => session.process().execute(
+                let mut packwiz_result = Ok(());
+                let mut last_error = None;
+                for command in &resolution.commands {
+                    match session.process().execute(
                         "packwiz",
-                        &["mr", "add", &project_info.project_id],
+                        &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                         &workdir.join("pack"),
-                    ),
-                    crate::primitives::ProjectPlatform::CurseForge => session.process().execute(
-                        "packwiz",
-                        &["cf", "add", &project_info.project_id],
-                        &workdir.join("pack"),
-                    ),
-                };
-
-                // Check if command was successful
-                let packwiz_result = packwiz_result.and_then(|output| {
-                    if output.success {
-                        Ok(())
-                    } else {
-                        Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                    ) {
+                        Ok(output) if output.success => {
+                            packwiz_result = Ok(());
+                            last_error = None;
+                            break;
+                        }
+                        Ok(output) => {
+                            packwiz_result = Err(());
+                            last_error = Some(anyhow::anyhow!(
+                                "Packwiz command failed: {}",
+                                output.stderr
+                            ));
+                        }
+                        Err(error) => {
+                            packwiz_result = Err(());
+                            last_error = Some(anyhow::anyhow!(error));
+                        }
                     }
-                });
+                }
 
                 match packwiz_result {
                     Ok(_) => {
@@ -899,9 +930,11 @@ async fn handle_add(
                             }
                         }
 
-                        added_mods.push((mod_query, project_info));
+                        added_mods.push((mod_query, resolution));
                     }
-                    Err(e) => {
+                    Err(_) => {
+                        let e = last_error
+                            .unwrap_or_else(|| anyhow::anyhow!("Unknown packwiz add failure"));
                         session
                             .display()
                             .status()
@@ -911,11 +944,12 @@ async fn handle_add(
                 }
             }
             Err(e) => {
+                let rendered = render_add_contract_error(&e);
                 session
                     .display()
                     .status()
-                    .error("Failed to resolve mod", &e.to_string());
-                failed_mods.push((mod_query, e.to_string()));
+                    .error(&rendered.item, &rendered.details);
+                failed_mods.push((mod_query, rendered.details));
             }
         }
     }
@@ -946,6 +980,88 @@ async fn handle_add(
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RenderedStatusError {
+    item: String,
+    details: String,
+}
+
+fn render_add_contract_error(error: &AddContractError) -> RenderedStatusError {
+    let item = match error {
+        AddContractError::ResolveProject { .. } => "Failed to resolve mod",
+        AddContractError::PlanPackwizAdd { .. } => "Failed to prepare add command",
+    };
+
+    RenderedStatusError {
+        item: item.to_string(),
+        details: render_add_contract_error_details(error),
+    }
+}
+
+fn render_add_contract_error_details(error: &AddContractError) -> String {
+    match error {
+        AddContractError::ResolveProject { query, source } => format!("{query}: {source}"),
+        AddContractError::PlanPackwizAdd {
+            project_id,
+            platform,
+            source,
+        } => format!("{platform} project {project_id}: {source}"),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AddResolutionIntent {
+    search_query: String,
+    direct_project_id: Option<String>,
+    direct_platform: Option<ProjectPlatform>,
+}
+
+impl AddResolutionIntent {
+    fn from_cli_input(mod_query: &str, platform: Option<SearchPlatform>) -> Self {
+        let preferred_platform = match platform {
+            Some(SearchPlatform::Modrinth) => Some(ProjectPlatform::Modrinth),
+            Some(SearchPlatform::Curseforge) => Some(ProjectPlatform::CurseForge),
+            Some(SearchPlatform::Both) | None => None,
+        };
+
+        let direct_project_id = match preferred_platform {
+            Some(ProjectPlatform::CurseForge) if is_curseforge_project_id(mod_query) => {
+                Some(mod_query.to_string())
+            }
+            Some(ProjectPlatform::Modrinth) if is_modrinth_project_id(mod_query) => {
+                Some(mod_query.to_string())
+            }
+            None if is_modrinth_project_id(mod_query) => Some(mod_query.to_string()),
+            _ => None,
+        };
+
+        let direct_platform = if direct_project_id.is_some() {
+            preferred_platform
+        } else {
+            None
+        };
+
+        Self {
+            search_query: mod_query.to_string(),
+            direct_project_id,
+            direct_platform,
+        }
+    }
+}
+
+fn is_modrinth_project_id(value: &str) -> bool {
+    value.len() == 8
+        && value.chars().all(|c| c.is_ascii_alphanumeric())
+        && !value.chars().all(|c| c.is_ascii_digit())
+        && value
+            .chars()
+            .any(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+}
+
+fn is_curseforge_project_id(value: &str) -> bool {
+    !value.is_empty() && value.chars().all(|c| c.is_ascii_digit())
 }
 
 async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> Result<()> {
@@ -1192,6 +1308,16 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
             .subtle("   Run 'empack init' to set up a modpack project");
         return Ok(());
     }
+    if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
+        session
+            .display()
+            .status()
+            .error("Project initialization is incomplete", "");
+        session.display().status().subtle(
+            "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before building",
+        );
+        return Ok(());
+    }
 
     // Clean if requested
     if clean {
@@ -1199,9 +1325,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
             .display()
             .status()
             .checking("Cleaning build artifacts");
-        manager
-            .execute_transition(session.process(), StateTransition::Clean)
-            .await
+        crate::empack::state::clean_build_artifacts(session.filesystem(), &manager.workdir)
             .context("Failed to clean build artifacts")?;
     }
 
@@ -1443,7 +1567,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 };
                 session.display().status().error(
                     &format!("Failed to plan {label}"),
-                    &e.to_string(),
+                    &render_add_contract_error_details(&e),
                 );
             }
         }

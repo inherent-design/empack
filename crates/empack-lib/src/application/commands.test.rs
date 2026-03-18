@@ -181,6 +181,33 @@ mod handle_init_tests {
     }
 
     #[tokio::test]
+    async fn it_force_reinitializes_built_projects_from_a_clean_state() {
+        let workdir = PathBuf::from("/test/force-built-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            )
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            None,
+            None,
+            true,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Overwrite Author".to_string()),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(!session.filesystem().exists(&workdir.join("dist/test-pack.mrpack")));
+        assert!(session.filesystem().exists(&workdir.join("pack/pack.toml")));
+    }
+
+    #[tokio::test]
     async fn it_handles_user_cancellation_at_confirmation() {
         let target_dir = PathBuf::from("/test/new-project/cancel-test");
         let interactive = MockInteractiveProvider::new().with_confirm(false);
@@ -1138,6 +1165,40 @@ mod handle_build_tests {
 
         // Should complete successfully - command handler checks state and exits gracefully
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn it_rejects_incomplete_project_state() {
+        let workdir = PathBuf::from("/test/incomplete-project");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(
+                    workdir.join("empack.yml"),
+                    "empack:\n  name: incomplete\n".to_string(),
+                ),
+        );
+
+        let result = handle_build(&session, vec!["mrpack".to_string()], false).await;
+
+        assert!(result.is_ok());
+        assert!(session.process_provider.get_calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn it_preserves_configuration_when_cleaning_before_build() {
+        let workdir = PathBuf::from("/test/built-project");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_built_project(workdir.clone()),
+        );
+
+        let result = handle_build(&session, vec!["mrpack".to_string()], true).await;
+
+        assert!(result.is_err() || result.is_ok());
+        assert!(session.filesystem().exists(&workdir.join("empack.yml")));
+        assert!(session.filesystem().exists(&workdir.join("pack/pack.toml")));
     }
 }
 

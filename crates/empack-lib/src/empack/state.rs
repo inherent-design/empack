@@ -12,6 +12,61 @@ use thiserror::Error;
 /// Pure business logic functions - zero I/O, 100% testable
 /// These functions contain the core state machine logic without side effects
 
+/// Canonical project-local artifact root for build outputs.
+pub fn artifact_root(workdir: &Path) -> PathBuf {
+    workdir.join("dist")
+}
+
+fn has_config_file<P: crate::application::session::FileSystemProvider + ?Sized>(
+    provider: &P,
+    workdir: &Path,
+) -> bool {
+    provider.exists(&workdir.join("empack.yml"))
+}
+
+fn has_pack_metadata<P: crate::application::session::FileSystemProvider + ?Sized>(
+    provider: &P,
+    workdir: &Path,
+) -> bool {
+    let pack_dir = workdir.join("pack");
+    provider.is_directory(&pack_dir) && provider.exists(&pack_dir.join("pack.toml"))
+}
+
+fn has_canonical_build_artifacts<P: crate::application::session::FileSystemProvider + ?Sized>(
+    provider: &P,
+    workdir: &Path,
+) -> bool {
+    let dist_dir = artifact_root(workdir);
+    provider.is_directory(&dist_dir) && provider.has_build_artifacts(&dist_dir).unwrap_or(false)
+}
+
+fn is_progressive_init_state<P: crate::application::session::FileSystemProvider + ?Sized>(
+    provider: &P,
+    workdir: &Path,
+) -> bool {
+    has_config_file(provider, workdir)
+        && !has_pack_metadata(provider, workdir)
+        && !has_canonical_build_artifacts(provider, workdir)
+}
+
+fn validate_state_layout<P: crate::application::session::FileSystemProvider + ?Sized>(
+    provider: &P,
+    workdir: &Path,
+    expected: PackState,
+) -> bool {
+    match expected {
+        PackState::Uninitialized => true,
+        PackState::Configured | PackState::Building => {
+            has_config_file(provider, workdir) && has_pack_metadata(provider, workdir)
+        }
+        PackState::Built => {
+            validate_state_layout(provider, workdir, PackState::Configured)
+                && has_canonical_build_artifacts(provider, workdir)
+        }
+        PackState::Cleaning => provider.is_directory(&artifact_root(workdir)),
+    }
+}
+
 /// Discover current state from filesystem structure (pure function)
 pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
@@ -26,7 +81,7 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
 
     let empack_yml = workdir.join("empack.yml");
     let pack_toml = workdir.join("pack").join("pack.toml");
-    let dist_dir = workdir.join("dist");
+    let dist_dir = artifact_root(workdir);
 
     // Check for built state first (most advanced)
     if provider.is_directory(&dist_dir) {
@@ -81,7 +136,9 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 
     match transition {
         StateTransition::Initialize(config) => {
-            if !can_transition(current, PackState::Configured) {
+            let can_initialize = matches!(current, PackState::Uninitialized)
+                || (current == PackState::Configured && is_progressive_init_state(provider, workdir));
+            if !can_initialize {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Configured,
@@ -100,18 +157,22 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
             )
         }
 
-        StateTransition::Synchronize => {
-            if current != PackState::Configured {
+        StateTransition::RefreshIndex => {
+            if current != PackState::Configured
+                || !validate_state_layout(provider, workdir, PackState::Configured)
+            {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Configured,
                 });
             }
-            execute_synchronize(provider, process, workdir)
+            execute_refresh_index(provider, process, workdir)
         }
 
         StateTransition::Build(orchestrator, targets) => {
-            if !can_transition(current, PackState::Built) {
+            if current != PackState::Configured
+                || !validate_state_layout(provider, workdir, PackState::Configured)
+            {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Built,
@@ -183,9 +244,11 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
     let empack_yml = workdir.join("empack.yml");
     if !provider.exists(&empack_yml) {
         let config_manager = provider.config_manager(workdir.to_path_buf());
-        let default_yml = config_manager.generate_default_empack_yml().inspect_err(|_| {
-            let _ = clean_configuration(provider, workdir);
-        })?;
+        let default_yml = config_manager
+            .generate_default_empack_yml()
+            .inspect_err(|_| {
+                let _ = clean_configuration(provider, workdir);
+            })?;
 
         provider
             .write_file(&empack_yml, &default_yml)
@@ -216,8 +279,8 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
     Ok(PackState::Configured)
 }
 
-/// Execute synchronization process (pure function)
-pub fn execute_synchronize<P: crate::application::session::FileSystemProvider + ?Sized>(
+/// Execute packwiz refresh for an already configured project
+pub fn execute_refresh_index<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     process: &dyn crate::application::session::ProcessProvider,
     workdir: &Path,
@@ -322,7 +385,7 @@ pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider 
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
-    let dist_dir = workdir.join("dist");
+    let dist_dir = artifact_root(workdir);
     if provider.is_directory(&dist_dir) {
         provider
             .remove_dir_all(&dist_dir)
@@ -391,10 +454,7 @@ pub enum StateError {
     InvalidDirectory { path: PathBuf },
 
     #[error("State transition not allowed: {from} -> {to}")]
-    InvalidTransition {
-        from: PackState,
-        to: PackState,
-    },
+    InvalidTransition { from: PackState, to: PackState },
 
     #[error("Missing required file: {file}")]
     MissingFile { file: PathBuf },
@@ -465,28 +525,26 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         // Additional validation for configured/built states
         match expected {
             PackState::Uninitialized => Ok(true),
-            PackState::Configured => {
-                let pack_dir = self.workdir.join("pack");
-                Ok(self.provider.is_directory(&pack_dir))
-            }
-            PackState::Built => {
-                let dist_dir = self.workdir.join(".empack").join("dist");
-                Ok(self.provider.is_directory(&dist_dir)
-                    && self
-                        .provider
-                        .has_build_artifacts(&dist_dir)
-                        .unwrap_or(false))
-            }
-            PackState::Building => {
-                // Intermediate state - just check if we can build
-                let pack_dir = self.workdir.join("pack");
-                Ok(self.provider.is_directory(&pack_dir))
-            }
-            PackState::Cleaning => {
-                // Intermediate state - just check if we can clean
-                let dist_dir = self.workdir.join(".empack").join("dist");
-                Ok(self.provider.is_directory(&dist_dir))
-            }
+            PackState::Configured => Ok(validate_state_layout(
+                self.provider,
+                &self.workdir,
+                PackState::Configured,
+            )),
+            PackState::Built => Ok(validate_state_layout(
+                self.provider,
+                &self.workdir,
+                PackState::Built,
+            )),
+            PackState::Building => Ok(validate_state_layout(
+                self.provider,
+                &self.workdir,
+                PackState::Building,
+            )),
+            PackState::Cleaning => Ok(validate_state_layout(
+                self.provider,
+                &self.workdir,
+                PackState::Cleaning,
+            )),
         }
     }
 
@@ -514,7 +572,9 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         // Validate that the transition is allowed
         match transition {
             StateTransition::Building => {
-                if current != PackState::Configured {
+                if current != PackState::Configured
+                    || !validate_state_layout(self.provider, &self.workdir, PackState::Configured)
+                {
                     return Err(StateError::InvalidTransition {
                         from: current,
                         to: PackState::Building,
@@ -562,7 +622,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
             pack_dir: self.workdir.join("pack"),
             pack_toml: self.workdir.join("pack").join("pack.toml"),
             template_dir: self.workdir.join("templates"),
-            dist_dir: self.workdir.join("dist"),
+            dist_dir: artifact_root(&self.workdir),
         }
     }
 }

@@ -66,7 +66,7 @@ pub enum PackState {
     Uninitialized,
     /// empack.yml exists, pack/ may be initialized
     Configured,
-    /// Built artifacts exist in .empack/dist/
+    /// Built artifacts exist in the project-local dist/ artifact root
     Built,
     /// Currently building
     Building,
@@ -102,8 +102,8 @@ pub struct InitializationConfig<'a> {
 pub enum StateTransition<'a> {
     /// Initialize: Uninitialized -> Configured
     Initialize(InitializationConfig<'a>),
-    /// Sync: Configured -> Configured (reconcile configs)
-    Synchronize,
+    /// Refresh packwiz metadata inside an already configured project
+    RefreshIndex,
     /// Build: Configured -> Built
     Build(
         crate::empack::builds::BuildOrchestrator<'a>,
@@ -121,7 +121,7 @@ impl<'a> fmt::Display for StateTransition<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StateTransition::Initialize(_) => write!(f, "initialize"),
-            StateTransition::Synchronize => write!(f, "synchronize"),
+            StateTransition::RefreshIndex => write!(f, "refresh-index"),
             StateTransition::Build(_, targets) => {
                 write!(
                     f,

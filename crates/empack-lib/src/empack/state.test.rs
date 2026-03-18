@@ -231,6 +231,14 @@ fn create_built_test() -> (MockStateProvider, PathBuf) {
     (mock_provider, workdir)
 }
 
+fn create_progressive_init_test() -> (MockStateProvider, PathBuf) {
+    let (mock_provider, workdir) = create_uninitialized_test();
+
+    mock_provider.add_file(workdir.join("empack.yml"));
+
+    (mock_provider, workdir)
+}
+
 #[test]
 fn test_initial_state_is_uninitialized() {
     let (provider, workdir) = create_uninitialized_test();
@@ -345,6 +353,16 @@ fn test_state_validation() {
     let manager = PackStateManager::new(workdir, &provider);
     assert!(manager.validate_state(PackState::Configured).unwrap());
     assert!(!manager.validate_state(PackState::Uninitialized).unwrap());
+
+    // Test built state validation uses the canonical dist/ root
+    let (provider, workdir) = create_built_test();
+    let manager = PackStateManager::new(workdir, &provider);
+    assert!(manager.validate_state(PackState::Built).unwrap());
+
+    // Test progressive init state is not treated as fully configured
+    let (provider, workdir) = create_progressive_init_test();
+    let manager = PackStateManager::new(workdir, &provider);
+    assert!(!manager.validate_state(PackState::Configured).unwrap());
 }
 
 #[test]
@@ -440,6 +458,25 @@ async fn test_pure_execute_transition_function() {
     .unwrap();
     assert_eq!(result, PackState::Configured);
 
+    // Test initialize transition for progressive-init state after empack.yml exists
+    let (provider, workdir) = create_progressive_init_test();
+    let result = execute_transition(
+        &provider,
+        &process,
+        &workdir,
+        StateTransition::Initialize(crate::primitives::InitializationConfig {
+            name: "Test Pack",
+            author: "Test Author",
+            version: "1.0.0",
+            modloader: "fabric",
+            mc_version: "1.20.1",
+            loader_version: "0.14.21",
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result, PackState::Configured);
+
     // Test build transition
     let (provider, workdir) = create_configured_test();
     let targets = vec![BuildTarget::Mrpack];
@@ -474,6 +511,38 @@ async fn test_pure_execute_transition_function() {
         .await
         .unwrap();
     assert_eq!(result, PackState::Uninitialized);
+}
+
+#[tokio::test]
+async fn test_initialize_transition_rejects_already_configured_project() {
+    let (provider, workdir) = create_configured_test();
+    let process = crate::application::session_mocks::MockProcessProvider::new();
+
+    let result = execute_transition(
+        &provider,
+        &process,
+        &workdir,
+        StateTransition::Initialize(crate::primitives::InitializationConfig {
+            name: "Test Pack",
+            author: "Test Author",
+            version: "1.0.0",
+            modloader: "fabric",
+            mc_version: "1.20.1",
+            loader_version: "0.14.21",
+        }),
+    )
+    .await;
+
+    assert!(matches!(result, Err(StateError::InvalidTransition { .. })));
+}
+
+#[test]
+fn test_begin_build_transition_rejects_incomplete_configured_layout() {
+    let (provider, workdir) = create_progressive_init_test();
+    let manager = PackStateManager::new(workdir, &provider);
+
+    let result = manager.begin_state_transition(StateTransition::Building);
+    assert!(matches!(result, Err(StateError::InvalidTransition { .. })));
 }
 
 #[test]
