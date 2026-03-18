@@ -139,7 +139,10 @@ impl NetworkingManager {
             return Err(NetworkingError::NoModsProvided);
         }
 
-        trace!("Starting project resolution for {} mods", mod_identifiers.len());
+        trace!(
+            "Starting project resolution for {} mods",
+            mod_identifiers.len()
+        );
 
         let resolver = Arc::new(resolver_fn);
         let mut tasks = Vec::new();
