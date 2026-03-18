@@ -42,7 +42,7 @@ impl MockBuildOrchestrator {
         
         // Create pack directory
         let pack_dir = workdir.join("pack");
-        filesystem.create_dir_all(&pack_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.create_dir_all(&pack_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create basic pack.toml
         let pack_toml = pack_dir.join("pack.toml");
@@ -55,7 +55,7 @@ version = "1.0.0"
 minecraft = "1.21"
 fabric = "0.15.11"
 "#;
-        filesystem.write_file(&pack_toml, toml_content).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.write_file(&pack_toml, toml_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create basic index.toml
         let index_toml = pack_dir.join("index.toml");
@@ -66,11 +66,11 @@ hash-format = "sha1"
 file = "mods/test-mod.pw.toml"
 hash = "abcd1234"
 "#;
-        filesystem.write_file(&index_toml, index_content).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.write_file(&index_toml, index_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create mods directory
         let mods_dir = pack_dir.join("mods");
-        filesystem.create_dir_all(&mods_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.create_dir_all(&mods_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create a test mod file
         let mod_file = mods_dir.join("test-mod.pw.toml");
@@ -84,7 +84,7 @@ url = "https://example.com/test-mod-1.0.0.jar"
 hash-format = "sha1"
 hash = "abcd1234"
 "#;
-        filesystem.write_file(&mod_file, mod_content).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.write_file(&mod_file, mod_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         Ok(())
     }
@@ -94,11 +94,11 @@ hash = "abcd1234"
         let filesystem = self.session.filesystem();
         
         let installer_dir = workdir.join("installer");
-        filesystem.create_dir_all(&installer_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.create_dir_all(&installer_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create mock installer jar
         let installer_jar = installer_dir.join("packwiz-installer-bootstrap.jar");
-        filesystem.write_file(&installer_jar, "mock installer jar content").map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.write_file(&installer_jar, "mock installer jar content").map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         Ok(())
     }
@@ -108,7 +108,7 @@ hash = "abcd1234"
         let filesystem = self.session.filesystem();
         
         let templates_dir = workdir.join("templates").join("client");
-        filesystem.create_dir_all(&templates_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.create_dir_all(&templates_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create a test template file
         let template_file = templates_dir.join("launcher.json.template");
@@ -119,7 +119,7 @@ hash = "abcd1234"
     "mcVersion": "{{MC_VERSION}}",
     "fabricVersion": "{{FABRIC_VERSION}}"
 }"#;
-        filesystem.write_file(&template_file, template_content).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.write_file(&template_file, template_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         Ok(())
     }
@@ -129,11 +129,11 @@ hash = "abcd1234"
         let filesystem = self.session.filesystem();
         
         let dist_dir = workdir.join("dist");
-        filesystem.create_dir_all(&dist_dir).map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.create_dir_all(&dist_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         // Create mock mrpack file
         let mrpack_file = dist_dir.join("TestPack-v1.0.0.mrpack");
-        filesystem.write_file(&mrpack_file, "mock mrpack content").map_err(|e| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem.write_file(&mrpack_file, "mock mrpack content").map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
         Ok(())
     }

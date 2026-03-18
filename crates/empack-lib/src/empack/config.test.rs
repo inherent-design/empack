@@ -1,6 +1,6 @@
 use super::*;
 use crate::empack::parsing::ModLoader;
-use crate::primitives::ProjectType;
+use crate::primitives::{ProjectPlatform, ProjectType};
 use crate::application::session_mocks::MockFileSystemProvider;
 use crate::application::session::FileSystemProvider;
 use std::collections::HashMap;
@@ -618,6 +618,34 @@ empack:
     assert_eq!(plan.dependencies.len(), 1);
     let dep = &plan.dependencies[0];
     assert_eq!(dep.project_id, Some("P7dR8mSH".to_string()));
+    assert_eq!(dep.project_platform, None);
+}
+
+#[test]
+fn test_parse_dependency_spec_with_project_platforms() {
+    let workdir = PathBuf::from("/test/config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    - "jei: \"Just Enough Items|mod\""
+  project_ids:
+    jei: "238222"
+  project_platforms:
+    jei: curseforge
+  minecraft_version: "1.21"
+  loader: forge
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir);
+    let result = config_manager.create_project_plan();
+
+    assert!(result.is_ok());
+    let plan = result.unwrap();
+    let dep = &plan.dependencies[0];
+    assert_eq!(dep.project_id, Some("238222".to_string()));
+    assert_eq!(dep.project_platform, Some(ProjectPlatform::CurseForge));
 }
 
 #[test]

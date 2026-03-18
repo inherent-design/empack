@@ -327,7 +327,7 @@ async fn test_invalid_transitions() {
 
     // Can't sync from uninitialized
     let result = manager
-        .execute_transition(&process, StateTransition::Synchronize)
+        .execute_transition(&process, StateTransition::RefreshIndex)
         .await;
     assert!(result.is_err());
 }
@@ -455,10 +455,10 @@ async fn test_pure_execute_transition_function() {
     .unwrap();
     assert_eq!(result, PackState::Built);
 
-    // Test synchronize transition (should succeed with valid mock data)
+    // Test refresh-index transition (should succeed with valid mock data)
     let (provider, workdir) = create_configured_test();
-    let result = execute_transition(&provider, &process, &workdir, StateTransition::Synchronize).await;
-    // With valid YAML and mock packwiz, synchronize should succeed
+    let result = execute_transition(&provider, &process, &workdir, StateTransition::RefreshIndex).await;
+    // With valid YAML and mock packwiz, refresh-index should succeed
     assert_eq!(result.unwrap(), PackState::Configured);
 
     // Test clean transition from built
@@ -522,18 +522,18 @@ fn test_pure_execute_initialize_function() {
 }
 
 #[test]
-fn test_pure_execute_synchronize_function() {
-    // Test that execute_synchronize correctly validates configuration and runs packwiz refresh
+fn test_pure_execute_refresh_index_function() {
+    // Test that execute_refresh_index correctly validates configuration and runs packwiz refresh
     // With valid mock data, this should succeed demonstrating the function works correctly
     let (provider, workdir) = create_configured_test();
     let process = crate::application::session_mocks::MockProcessProvider::new();
-    let result = execute_synchronize(&provider, &process, &workdir);
+    let result = execute_refresh_index(&provider, &process, &workdir);
 
     // With valid YAML and mock packwiz, synchronization should succeed
     // This demonstrates that the pure function correctly calls ConfigManager and packwiz
     match result {
         Ok(PackState::Configured) => {
-            // Expected: synchronize returns to Configured state after validation
+            // Expected: refresh-index returns to Configured state after validation
         }
         Err(e) => {
             panic!("Expected success, got error: {:?}", e);
@@ -714,11 +714,11 @@ fn test_state_transition_requires_intermediate_steps() {
     );
 }
 
-/// Test: execute_synchronize with malformed empack.yml
+/// Test: execute_refresh_index with malformed empack.yml
 ///
 /// Validates error recovery when empack.yml is corrupted or has invalid YAML syntax.
 #[test]
-fn test_execute_synchronize_malformed_yaml() {
+fn test_execute_refresh_index_malformed_yaml() {
     use std::fs;
     use std::io::Write;
     use tempfile::TempDir;
@@ -756,13 +756,13 @@ file = "index.toml"
 
     let process_provider = crate::application::session_mocks::MockProcessProvider::new();
 
-    // Execute synchronize - should return error due to malformed YAML
-    let result = execute_synchronize(&fs_provider, &process_provider, workdir);
+    // Execute refresh-index - should return error due to malformed YAML
+    let result = execute_refresh_index(&fs_provider, &process_provider, workdir);
 
     // Verify error occurred
     assert!(
         result.is_err(),
-        "execute_synchronize should fail with malformed YAML"
+        "execute_refresh_index should fail with malformed YAML"
     );
 
     // Verify error message contains useful information

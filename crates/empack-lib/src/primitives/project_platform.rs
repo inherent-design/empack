@@ -26,6 +26,7 @@ use std::time::Duration;
 /// assert_eq!(platform.to_string(), "modrinth");
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ProjectPlatform {
     /// Modrinth platform (https://modrinth.com)
     Modrinth,
@@ -152,7 +153,10 @@ mod tests {
 
     #[test]
     fn test_api_key_env_vars() {
-        assert_eq!(ProjectPlatform::Modrinth.api_key_env_var(), "EMPACK_KEY_MODRINTH");
+        assert_eq!(
+            ProjectPlatform::Modrinth.api_key_env_var(),
+            "EMPACK_KEY_MODRINTH"
+        );
         assert_eq!(
             ProjectPlatform::CurseForge.api_key_env_var(),
             "EMPACK_KEY_CURSEFORGE"
@@ -190,7 +194,7 @@ mod tests {
     fn test_serialization() {
         let platform = ProjectPlatform::Modrinth;
         let json = serde_json::to_string(&platform).unwrap();
-        assert_eq!(json, "\"Modrinth\"");
+        assert_eq!(json, "\"modrinth\"");
 
         let deserialized: ProjectPlatform = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, platform);

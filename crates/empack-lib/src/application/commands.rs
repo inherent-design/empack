@@ -3,13 +3,15 @@
 //! New session-based architecture for command execution.
 //! Implements the Session-Scoped Dependency Injection Pattern.
 
+use crate::Result;
 use crate::application::session::{CommandSession, Session};
+use crate::application::sync::{
+    SyncExecutionAction, SyncPlanAction, build_sync_plan, normalize_mod_key, resolve_sync_action,
+};
 use crate::application::{CliConfig, Commands};
 use crate::empack::parsing::ModLoader;
-use crate::empack::state::StateError;
 use crate::platform::{ArchiverCapabilities, GoCapabilities};
-use crate::primitives::{BuildTarget, PackState, ProjectType, StateTransition};
-use crate::Result;
+use crate::primitives::{BuildTarget, PackState, StateTransition};
 use anyhow::Context;
 use std::collections::HashSet;
 
@@ -42,20 +44,6 @@ fn format_empack_yml(
         .replace("{loader_version}", loader_version)
 }
 
-/// Actions to be taken during sync
-#[derive(Debug, Clone)]
-enum SyncAction {
-    Add {
-        key: String,
-        title: String,
-        command: Vec<String>,
-    },
-    Remove {
-        key: String,
-        title: String,
-    },
-}
-
 /// Execute CLI commands using the new session-based architecture
 pub async fn execute_command(config: CliConfig) -> Result<()> {
     // Create command session (owns all ephemeral state)
@@ -85,7 +73,19 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
     match command {
         Commands::Requirements => handle_requirements(session).await,
         Commands::Version => handle_version(session).await,
-        Commands::Init { name, force } => handle_init(session, name, force).await,
+        Commands::Init {
+            name,
+            force,
+            modloader,
+            mc_version,
+            author,
+            pack_name,
+        } => {
+            handle_init(
+                session, name, pack_name, force, modloader, mc_version, author,
+            )
+            .await
+        }
         Commands::Add {
             mods,
             force,
@@ -201,10 +201,16 @@ async fn handle_version(session: &dyn Session) -> Result<()> {
 
 async fn handle_init(
     session: &dyn Session,
-    name: Option<String>,
+    positional_name: Option<String>,
+    cli_pack_name: Option<String>,
     force: bool,
+    cli_modloader: Option<String>,
+    cli_mc_version: Option<String>,
+    cli_author: Option<String>,
 ) -> Result<()> {
     // Handle directory creation case: `empack init <name>` where <name> is a directory
+    // Precedence: positional arg > --name flag
+    let name = positional_name.or(cli_pack_name.clone());
     let (target_dir, initial_name) = if let Some(name) = name {
         let potential_dir = session
             .config()
@@ -271,10 +277,18 @@ async fn handle_init(
             .to_string()
     });
 
-    // Interactive prompt for modpack configuration
-    let modpack_name = session
-        .interactive()
-        .text_input("Modpack name", default_name)?;
+    // Interactive prompt for modpack configuration (or use CLI flag)
+    let modpack_name = if let Some(name) = cli_pack_name.clone() {
+        session
+            .display()
+            .status()
+            .info(&format!("Using name: {}", name));
+        name
+    } else {
+        session
+            .interactive()
+            .text_input("Modpack name", default_name)?
+    };
 
     // Try to get git user.name as smart default
     let default_author = std::process::Command::new("git")
@@ -292,9 +306,15 @@ async fn handle_init(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Unknown Author".to_string());
 
-    let author = session
-        .interactive()
-        .text_input("Author", default_author)?;
+    let author = if let Some(author) = cli_author {
+        session
+            .display()
+            .status()
+            .info(&format!("Using author: {}", author));
+        author
+    } else {
+        session.interactive().text_input("Author", default_author)?
+    };
 
     let version = session
         .interactive()
@@ -328,11 +348,22 @@ async fn handle_init(
     };
 
     // Minecraft version selection with FuzzySelect (pagination enabled, 6 items per page)
-    let mc_version_index = session
-        .interactive()
-        .fuzzy_select("Minecraft version", &minecraft_versions)?
-        .ok_or_else(|| anyhow::anyhow!("Minecraft version selection cancelled"))?;
-    let minecraft_version = &minecraft_versions[mc_version_index];
+    let minecraft_version = if let Some(mc_ver) = cli_mc_version {
+        session
+            .display()
+            .status()
+            .info(&format!("Using Minecraft version: {}", mc_ver));
+        // FIXME: Validate MC version exists in minecraft_versions list
+        // FIXME: Handle invalid MC version gracefully (error or fallback?)
+        // FIXME: Should we case-insensitively match versions? (e.g., "1.21.4" vs "1.21.4")
+        mc_ver
+    } else {
+        let mc_version_index = session
+            .interactive()
+            .fuzzy_select("Minecraft version", &minecraft_versions)?
+            .ok_or_else(|| anyhow::anyhow!("Minecraft version selection cancelled"))?;
+        minecraft_versions[mc_version_index].clone()
+    };
 
     // Step 3: Dynamic, Filtered Mod Loader Prompt
     session
@@ -340,7 +371,7 @@ async fn handle_init(
         .status()
         .info("🎯 Finding compatible mod loaders...");
     let compatible_loaders = match version_fetcher
-        .fetch_compatible_loaders(minecraft_version)
+        .fetch_compatible_loaders(&minecraft_version)
         .await
     {
         Ok(loaders) => {
@@ -375,6 +406,10 @@ async fn handle_init(
         }
     };
 
+    // FIXME: Filter compatible_loaders by MC version compatibility
+    // FIXME: Some loaders may not support certain MC versions (Fabric 400, Quilt 404)
+    // FIXME: Should we pre-filter here or let version fetching handle it?
+
     // If no compatible loaders found, inform user and exit gracefully
     if compatible_loaders.is_empty() {
         session.display().status().error(
@@ -389,26 +424,54 @@ async fn handle_init(
     }
 
     // Present filtered loader list with intelligent priority
-    let loader_names: Vec<String> = compatible_loaders
-        .iter()
-        .map(|l| l.as_str().to_string())
-        .collect();
-    let loader_name_refs: Vec<&str> = loader_names.iter().map(|s| s.as_str()).collect();
-    let loader_index = session
-        .interactive()
-        .select("Mod loader", &loader_name_refs)?;
-    let selected_loader = &compatible_loaders[loader_index];
-    let loader_str = selected_loader.as_str();
+    let (selected_loader, loader_str) = if let Some(loader_str) = cli_modloader {
+        session
+            .display()
+            .status()
+            .info(&format!("Using loader: {}", loader_str));
+        // FIXME: Validate loader_str is in compatible_loaders list
+        // FIXME: Parse loader_str (future: support @version syntax like "neoforge@latest")
+        // FIXME: Convert string to ModLoader enum (case-insensitive matching?)
+        // FIXME: What if loader not found in compatible_loaders? Error or proceed anyway?
+
+        // Parse the loader string
+        let parsed_loader = ModLoader::parse(&loader_str)
+            .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
+
+        // Convert to versions::ModLoader for compatibility with existing code
+        let versions_loader = match parsed_loader {
+            ModLoader::NeoForge => crate::empack::versions::ModLoader::NeoForge,
+            ModLoader::Fabric => crate::empack::versions::ModLoader::Fabric,
+            ModLoader::Quilt => crate::empack::versions::ModLoader::Quilt,
+            ModLoader::Forge => crate::empack::versions::ModLoader::Forge,
+        };
+
+        (versions_loader, loader_str)
+    } else {
+        let loader_names: Vec<String> = compatible_loaders
+            .iter()
+            .map(|l| l.as_str().to_string())
+            .collect();
+        let loader_name_refs: Vec<&str> = loader_names.iter().map(|s| s.as_str()).collect();
+        let loader_index = session
+            .interactive()
+            .select("Mod loader", &loader_name_refs)?;
+        let selected_loader = &compatible_loaders[loader_index];
+        (
+            selected_loader.clone(),
+            selected_loader.as_str().to_string(),
+        )
+    };
 
     // Step 4: Dynamic, Searchable Loader Version Prompt
     session.display().status().info(&format!(
         "🔍 Fetching {} versions for Minecraft {}...",
         loader_str, minecraft_version
     ));
-    let loader_versions = match selected_loader {
+    let loader_versions = match &selected_loader {
         crate::empack::versions::ModLoader::Fabric => {
             match version_fetcher
-                .fetch_fabric_loader_versions(minecraft_version)
+                .fetch_fabric_loader_versions(&minecraft_version)
                 .await
             {
                 Ok(versions) => {
@@ -426,14 +489,14 @@ async fn handle_init(
                     session.display().status().info("Using fallback versions");
                     crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
                         "fabric",
-                        minecraft_version,
+                        &minecraft_version,
                     )
                 }
             }
         }
         crate::empack::versions::ModLoader::NeoForge => {
             match version_fetcher
-                .fetch_neoforge_loader_versions(minecraft_version)
+                .fetch_neoforge_loader_versions(&minecraft_version)
                 .await
             {
                 Ok(versions) => {
@@ -451,14 +514,14 @@ async fn handle_init(
                     session.display().status().info("Using fallback versions");
                     crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
                         "neoforge",
-                        minecraft_version,
+                        &minecraft_version,
                     )
                 }
             }
         }
         crate::empack::versions::ModLoader::Forge => {
             match version_fetcher
-                .fetch_forge_loader_versions(minecraft_version)
+                .fetch_forge_loader_versions(&minecraft_version)
                 .await
             {
                 Ok(versions) => {
@@ -476,14 +539,14 @@ async fn handle_init(
                     session.display().status().info("Using fallback versions");
                     crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
                         "forge",
-                        minecraft_version,
+                        &minecraft_version,
                     )
                 }
             }
         }
         crate::empack::versions::ModLoader::Quilt => {
             match version_fetcher
-                .fetch_quilt_loader_versions(minecraft_version)
+                .fetch_quilt_loader_versions(&minecraft_version)
                 .await
             {
                 Ok(versions) => {
@@ -501,19 +564,32 @@ async fn handle_init(
                     session.display().status().info("Using fallback versions");
                     crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
                         "quilt",
-                        minecraft_version,
+                        &minecraft_version,
                     )
                 }
             }
         }
     };
 
+    // FIXME: This already filters by MC version for some loaders (Fabric, Quilt)
+    // FIXME: Verify NeoForge and Forge filtering is correct
+    // FIXME: What if loader_versions is empty? (unsupported MC version)
+    //        Should we error here or earlier in loader selection?
+
     // Loader version selection with FuzzySelect (pagination enabled, 6 items per page)
-    let loader_version_index = session
-        .interactive()
-        .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?
-        .ok_or_else(|| anyhow::anyhow!("Loader version selection cancelled"))?;
-    let loader_version = &loader_versions[loader_version_index];
+    let loader_version = if loader_versions.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No {} versions available for Minecraft {}",
+            loader_str,
+            minecraft_version
+        ));
+    } else {
+        let loader_version_index = session
+            .interactive()
+            .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?
+            .ok_or_else(|| anyhow::anyhow!("Loader version selection cancelled"))?;
+        loader_versions[loader_version_index].clone()
+    };
 
     // Step 5: Final Confirmation and Execution
     session.display().status().info("📋 Configuration Summary:");
@@ -565,14 +641,23 @@ async fn handle_init(
         .filesystem()
         .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
 
+    // FIXME: Final validation checkpoint before calling packwiz
+    // FIXME: Verify MC version + loader + loader version combination is valid
+    // FIXME: Cross-check all compatibility constraints:
+    //        - Does this loader support this MC version?
+    //        - Does this loader version support this MC version?
+    //        - Are we using correct packwiz flag format (--neoforge-version vs --fabric-version)?
+    // FIXME: Consider adding a validate_init_config() function to centralize all checks
+    // FIXME: When using CLI flags, we skip interactive validation - need programmatic validation
+
     // Execute initialization with the collected information
     let init_config = crate::primitives::InitializationConfig {
         name: &modpack_name,
         author: &author,
         version: &version,
-        modloader: loader_str,
-        mc_version: minecraft_version,
-        loader_version: loader_version,
+        modloader: &loader_str,
+        mc_version: &minecraft_version,
+        loader_version: &loader_version,
     };
     let result = manager
         .execute_transition(session.process(), StateTransition::Initialize(init_config))
@@ -749,10 +834,10 @@ async fn handle_add(
 
                 // Check for duplicate mod (unless --force flag is set)
                 if !force && dep_graph.contains(&project_info.project_id) {
-                    session
-                        .display()
-                        .status()
-                        .warning(&format!("Mod already installed: {} (use --force to reinstall)", project_info.title));
+                    session.display().status().warning(&format!(
+                        "Mod already installed: {} (use --force to reinstall)",
+                        project_info.title
+                    ));
                     continue; // Skip this mod
                 }
 
@@ -788,7 +873,8 @@ async fn handle_add(
 
                         // Update dependency graph with newly added mod
                         // Rebuild from directory to capture new .pw.toml files
-                        let mut updated_graph = crate::api::dependency_graph::DependencyGraph::new();
+                        let mut updated_graph =
+                            crate::api::dependency_graph::DependencyGraph::new();
                         if let Err(e) = updated_graph.build_from_directory(&mods_dir) {
                             session
                                 .display()
@@ -801,10 +887,7 @@ async fn handle_add(
                                     session
                                         .display()
                                         .status()
-                                        .error(
-                                            "Circular dependency detected",
-                                            &cycle.join(" → ")
-                                        );
+                                        .error("Circular dependency detected", &cycle.join(" → "));
                                     session
                                         .display()
                                         .status()
@@ -949,7 +1032,10 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     // Orphan detection: Find mods with no dependents (if --deps flag is set)
     let mut removed_orphans = Vec::new();
     if deps && !removed_mods.is_empty() && mods_dir.exists() {
-        session.display().status().section("🔍 Detecting orphaned dependencies");
+        session
+            .display()
+            .status()
+            .section("🔍 Detecting orphaned dependencies");
 
         // Rebuild dependency graph after removals
         let mut dep_graph = crate::api::dependency_graph::DependencyGraph::new();
@@ -961,13 +1047,17 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         } else {
             // Load empack.yml to get top-level mods
             let config_manager = session.filesystem().config_manager(workdir.clone());
-            let top_level_mods: std::collections::HashSet<String> = match config_manager.create_project_plan() {
-                Ok(plan) => {
-                    // Use the dependency key as the mod identifier
-                    plan.dependencies.iter().map(|dep| dep.key.clone()).collect()
-                }
-                Err(_) => std::collections::HashSet::new(),
-            };
+            let top_level_mods: std::collections::HashSet<String> =
+                match config_manager.create_project_plan() {
+                    Ok(plan) => {
+                        // Use the dependency key as the mod identifier
+                        plan.dependencies
+                            .iter()
+                            .map(|dep| dep.key.clone())
+                            .collect()
+                    }
+                    Err(_) => std::collections::HashSet::new(),
+                };
 
             // Find orphans: mods not in top-level AND no dependents
             let mut orphans = Vec::new();
@@ -994,7 +1084,10 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                     .status()
                     .info(&format!("Found {} orphaned dependencies:", orphans.len()));
                 for orphan in &orphans {
-                    session.display().status().subtle(&format!("  - {}", orphan));
+                    session
+                        .display()
+                        .status()
+                        .subtle(&format!("  - {}", orphan));
                 }
 
                 // Prompt user to remove orphans
@@ -1014,7 +1107,10 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                                 if output.success {
                                     Ok(())
                                 } else {
-                                    Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                                    Err(anyhow::anyhow!(
+                                        "Packwiz command failed: {}",
+                                        output.stderr
+                                    ))
                                 }
                             });
 
@@ -1027,10 +1123,10 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                                 removed_orphans.push(orphan);
                             }
                             Err(e) => {
-                                session
-                                    .display()
-                                    .status()
-                                    .error(&format!("Failed to remove orphan: {}", orphan), &e.to_string());
+                                session.display().status().error(
+                                    &format!("Failed to remove orphan: {}", orphan),
+                                    &e.to_string(),
+                                );
                             }
                         }
                     }
@@ -1038,7 +1134,10 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                     session.display().status().info("Orphans not removed");
                 }
             } else {
-                session.display().status().info("No orphaned dependencies found");
+                session
+                    .display()
+                    .status()
+                    .info("No orphaned dependencies found");
             }
         }
     }
@@ -1303,11 +1402,9 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         }
     };
 
-    // Collect expected mods from empack.yml
-    let mut expected_mods = HashSet::new();
+    let sync_plan = build_sync_plan(&project_plan, &installed_mods);
     let mut planned_actions = Vec::new();
 
-    // Process each dependency in empack.yml
     for dep_spec in &project_plan.dependencies {
         session.display().status().step(
             1,
@@ -1315,100 +1412,40 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             &format!("Processing dependency: {}", dep_spec.key),
         );
 
-        // Normalize the key for comparison with installed mods
-        let normalized_key = dep_spec
-            .key
-            .to_lowercase()
-            .replace(' ', "_")
-            .replace('-', "_");
-        expected_mods.insert(normalized_key.clone());
-
-        // Check if this mod is already installed
-        if installed_mods.contains(&normalized_key) {
+        if installed_mods.contains(&normalize_mod_key(&dep_spec.key)) {
             session
                 .display()
                 .status()
                 .success("Already installed", &dep_spec.key);
-            continue; // Skip mods that are already installed
         }
-
-        // Resolve the project if we don't have a direct project_id
-        let (project_id, command) = if let Some(existing_id) = &dep_spec.project_id {
-            // Use existing project ID - default to Modrinth command
-            (
-                existing_id.clone(),
-                vec!["mr".to_string(), "add".to_string(), existing_id.clone()],
-            )
-        } else {
-            // Use project plan context
-            let minecraft_version = Some(dep_spec.minecraft_version.as_str());
-            let mod_loader = Some(match dep_spec.loader {
-                ModLoader::Fabric => "fabric",
-                ModLoader::Forge => "forge",
-                ModLoader::Quilt => "quilt",
-                ModLoader::NeoForge => "neoforge",
-            });
-
-            match resolver
-                .resolve_project(
-                    &dep_spec.search_query,
-                    Some(match dep_spec.project_type {
-                        ProjectType::Mod => "mod",
-                        ProjectType::Datapack => "datapack",
-                        ProjectType::ResourcePack => "resourcepack",
-                        ProjectType::Shader => "shader",
-                    }),
-                    minecraft_version,
-                    mod_loader,
-                )
-                .await
-            {
-                Ok(project_info) => {
-                    session.display().status().success(
-                        "Resolved",
-                        &format!("{} on {}", project_info.title, project_info.platform),
-                    );
-
-                    // Create appropriate packwiz add command based on platform
-                    let command = match project_info.platform {
-                        crate::primitives::ProjectPlatform::Modrinth => vec![
-                            "mr".to_string(),
-                            "add".to_string(),
-                            project_info.project_id.clone(),
-                        ],
-                        crate::primitives::ProjectPlatform::CurseForge => vec![
-                            "cf".to_string(),
-                            "add".to_string(),
-                            project_info.project_id.clone(),
-                        ],
-                    };
-
-                    (project_info.project_id, command)
-                }
-                Err(e) => {
-                    session
-                        .display()
-                        .status()
-                        .error("Failed to resolve", &e.to_string());
-                    continue;
-                }
-            }
-        };
-
-        planned_actions.push(SyncAction::Add {
-            key: dep_spec.key.clone(),
-            title: dep_spec.search_query.clone(),
-            command,
-        });
     }
 
-    // Find mods that are installed but not in empack.yml (need to be removed)
-    for installed_mod in &installed_mods {
-        if !expected_mods.contains(installed_mod) {
-            planned_actions.push(SyncAction::Remove {
-                key: installed_mod.clone(),
-                title: installed_mod.clone(),
-            });
+    for action in &sync_plan.actions {
+        match resolve_sync_action(action, resolver.as_ref()).await {
+            Ok(resolved) => {
+                if let SyncExecutionAction::Add {
+                    title,
+                    resolved_platform,
+                    ..
+                } = &resolved
+                {
+                    session.display().status().success(
+                        "Resolved",
+                        &format!("{} on {}", title, resolved_platform),
+                    );
+                }
+                planned_actions.push(resolved);
+            }
+            Err(e) => {
+                let label = match action {
+                    SyncPlanAction::Add(dep) => dep.search_query.as_str(),
+                    SyncPlanAction::Remove { key, .. } => key.as_str(),
+                };
+                session.display().status().error(
+                    &format!("Failed to plan {label}"),
+                    &e.to_string(),
+                );
+            }
         }
     }
 
@@ -1424,23 +1461,27 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     session.display().status().section("📋 Planned Actions");
     for action in &planned_actions {
         match action {
-            SyncAction::Add {
+            SyncExecutionAction::Add {
                 key,
                 title,
-                command,
+                commands,
+                resolved_project_id: _,
+                resolved_platform: _,
             } => {
                 session
                     .display()
                     .status()
                     .info(&format!("➕ Add: {} ({})", title, key));
                 if session.config().app_config().dry_run {
-                    session
-                        .display()
-                        .status()
-                        .subtle(&format!("      Command: packwiz {}", command.join(" ")));
+                    for command in commands {
+                        session
+                            .display()
+                            .status()
+                            .subtle(&format!("      Command: packwiz {}", command.join(" ")));
+                    }
                 }
             }
-            SyncAction::Remove { key, title } => {
+            SyncExecutionAction::Remove { key, title } => {
                 session
                     .display()
                     .status()
@@ -1473,41 +1514,57 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     for action in planned_actions {
         match action {
-            SyncAction::Add {
-                key,
+            SyncExecutionAction::Add {
+                key: _,
                 title,
-                command,
+                commands,
+                resolved_project_id: _,
+                resolved_platform: _,
             } => {
                 session
                     .display()
                     .status()
                     .checking(&format!("Adding: {}", title));
-                let result = session
-                    .process()
-                    .execute(
+                let mut last_error = None;
+                let mut result = Ok(());
+                for command in &commands {
+                    match session.process().execute(
                         "packwiz",
                         &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                         &workdir.join("pack"),
-                    )
-                    .and_then(|output| {
-                        if output.success {
-                            Ok(())
-                        } else {
-                            Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                    ) {
+                        Ok(output) if output.success => {
+                            result = Ok(());
+                            last_error = None;
+                            break;
                         }
-                    });
+                        Ok(output) => {
+                            result = Err(());
+                            last_error = Some(anyhow::anyhow!(
+                                "Packwiz command failed: {}",
+                                output.stderr
+                            ));
+                        }
+                        Err(error) => {
+                            result = Err(());
+                            last_error = Some(anyhow::anyhow!(error));
+                        }
+                    }
+                }
                 match result {
                     Ok(_) => {
                         session.display().status().success("Added", "successfully");
                         success_count += 1;
                     }
-                    Err(e) => {
+                    Err(_) => {
+                        let e = last_error
+                            .unwrap_or_else(|| anyhow::anyhow!("Unknown packwiz add failure"));
                         session.display().status().error("Failed", &e.to_string());
                         failure_count += 1;
                     }
                 }
             }
-            SyncAction::Remove { key, title: _ } => {
+            SyncExecutionAction::Remove { key, title: _ } => {
                 session
                     .display()
                     .status()

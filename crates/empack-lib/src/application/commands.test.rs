@@ -559,9 +559,11 @@ mod handle_sync_tests {
                 MockProcessProvider::new()
                     .with_packwiz_result(
                         vec![
-                            "mr".to_string(),
+                            "modrinth".to_string(),
                             "add".to_string(),
+                            "--project-id".to_string(),
                             "fabric-api-id".to_string(),
+                            "-y".to_string(),
                         ],
                         Ok(ProcessOutput {
                             stdout: String::new(),
@@ -570,7 +572,13 @@ mod handle_sync_tests {
                         }),
                     )
                     .with_packwiz_result(
-                        vec!["mr".to_string(), "add".to_string(), "sodium-id".to_string()],
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "sodium-id".to_string(),
+                            "-y".to_string(),
+                        ],
                         Ok(ProcessOutput {
                             stdout: String::new(),
                             stderr: String::new(),
@@ -587,12 +595,12 @@ mod handle_sync_tests {
         assert_eq!(calls.len(), 2);
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["mr", "add", "fabric-api-id"],
+            &["modrinth", "add", "--project-id", "fabric-api-id", "-y"],
             &workdir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["mr", "add", "sodium-id"],
+            &["modrinth", "add", "--project-id", "sodium-id", "-y"],
             &workdir.join("pack")
         ));
     }
@@ -687,6 +695,188 @@ mod handle_sync_tests {
             session.process_provider.get_calls().is_empty(),
             "Dry-run mode should plan add/remove work without executing packwiz"
         );
+    }
+
+    #[tokio::test]
+    async fn it_preserves_curseforge_direct_id_and_version_override() {
+        let workdir = PathBuf::from("/test/configured-project");
+        let empack_yml = r#"empack:
+  dependencies:
+    - 'jei: "Just Enough Items|mod"'
+  project_ids:
+    jei: "238222"
+  project_platforms:
+    jei: curseforge
+  version_overrides:
+    jei: "5678901"
+  minecraft_version: "1.21.1"
+  loader: forge
+  name: "Test Pack"
+  author: "Test Author"
+  version: "1.0.0"
+"#;
+        let pack_toml = r#"name = "Test Pack"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+
+[versions]
+minecraft = "1.21.1"
+forge = "47.3.0"
+"#;
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_file(workdir.join("empack.yml"), empack_yml.to_string())
+                    .with_file(workdir.join("pack").join("pack.toml"), pack_toml.to_string()),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "curseforge".to_string(),
+                    "add".to_string(),
+                    "--addon-id".to_string(),
+                    "238222".to_string(),
+                    "--file-id".to_string(),
+                    "5678901".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_sync(&session).await;
+
+        assert!(result.is_ok());
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &[
+                "curseforge",
+                "add",
+                "--addon-id",
+                "238222",
+                "--file-id",
+                "5678901",
+                "-y",
+            ],
+            &workdir.join("pack")
+        ));
+    }
+
+    #[tokio::test]
+    async fn it_tries_multiple_version_overrides_until_one_succeeds() {
+        let workdir = PathBuf::from("/test/configured-project");
+        let empack_yml = r#"empack:
+  dependencies:
+    - 'sodium: "Sodium|mod"'
+  project_ids:
+    sodium: "AANobbMI"
+  version_overrides:
+    sodium:
+      - "bad-version"
+      - "good-version"
+  minecraft_version: "1.21.1"
+  loader: fabric
+  name: "Test Pack"
+  author: "Test Author"
+  version: "1.0.0"
+"#;
+        let pack_toml = r#"name = "Test Pack"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.16.0"
+"#;
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_file(workdir.join("empack.yml"), empack_yml.to_string())
+                    .with_file(workdir.join("pack").join("pack.toml"), pack_toml.to_string()),
+            )
+            .with_process(
+                MockProcessProvider::new()
+                    .with_packwiz_result(
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "AANobbMI".to_string(),
+                            "--version-id".to_string(),
+                            "bad-version".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: "not found".to_string(),
+                            success: false,
+                        }),
+                    )
+                    .with_packwiz_result(
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "AANobbMI".to_string(),
+                            "--version-id".to_string(),
+                            "good-version".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    ),
+            );
+
+        let result = handle_sync(&session).await;
+
+        assert!(result.is_ok());
+        let calls = session.process_provider.get_calls();
+        assert_eq!(calls.len(), 2);
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &[
+                "modrinth",
+                "add",
+                "--project-id",
+                "AANobbMI",
+                "--version-id",
+                "bad-version",
+                "-y",
+            ],
+            &workdir.join("pack")
+        ));
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &[
+                "modrinth",
+                "add",
+                "--project-id",
+                "AANobbMI",
+                "--version-id",
+                "good-version",
+                "-y",
+            ],
+            &workdir.join("pack")
+        ));
     }
 
     #[tokio::test]
@@ -980,21 +1170,27 @@ async fn test_parse_build_targets_empty_list() {
 #[tokio::test]
 async fn test_sync_action_creation() {
     // Test that sync actions are created correctly
-    let add_action = SyncAction::Add {
+    let add_action = crate::application::sync::SyncExecutionAction::Add {
         key: "jei".to_string(),
         title: "Just Enough Items".to_string(),
-        command: vec!["packwiz".to_string(), "add".to_string(), "jei".to_string()],
+        commands: vec![vec!["packwiz".to_string(), "add".to_string(), "jei".to_string()]],
+        resolved_project_id: "jei".to_string(),
+        resolved_platform: ProjectPlatform::Modrinth,
     };
 
     match add_action {
-        SyncAction::Add {
+        crate::application::sync::SyncExecutionAction::Add {
             key,
             title,
-            command,
+            commands,
+            resolved_project_id,
+            resolved_platform,
         } => {
             assert_eq!(key, "jei");
             assert_eq!(title, "Just Enough Items");
-            assert_eq!(command, vec!["packwiz", "add", "jei"]);
+            assert_eq!(commands, vec![vec!["packwiz", "add", "jei"]]);
+            assert_eq!(resolved_project_id, "jei");
+            assert_eq!(resolved_platform, ProjectPlatform::Modrinth);
         }
         _ => panic!("Expected Add action"),
     }
@@ -1002,13 +1198,13 @@ async fn test_sync_action_creation() {
 
 #[tokio::test]
 async fn test_sync_action_remove() {
-    let remove_action = SyncAction::Remove {
+    let remove_action = crate::application::sync::SyncExecutionAction::Remove {
         key: "jei".to_string(),
         title: "Just Enough Items".to_string(),
     };
 
     match remove_action {
-        SyncAction::Remove { key, title } => {
+        crate::application::sync::SyncExecutionAction::Remove { key, title } => {
             assert_eq!(key, "jei");
             assert_eq!(title, "Just Enough Items");
         }
