@@ -43,6 +43,15 @@ pub enum SyncExecutionAction {
     Remove { key: String, title: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddResolution {
+    pub title: String,
+    pub commands: Vec<Vec<String>>,
+    pub resolved_project_id: String,
+    pub resolved_platform: ProjectPlatform,
+    pub confidence: Option<u8>,
+}
+
 pub fn normalize_mod_key(key: &str) -> String {
     key.to_lowercase().replace(' ', "_").replace('-', "_")
 }
@@ -90,36 +99,70 @@ pub async fn resolve_sync_action(
             title: title.clone(),
         }),
         SyncPlanAction::Add(dep) => {
-            let (project_id, platform) = if let Some(project_id) = &dep.project_id {
-                (
-                    project_id.clone(),
-                    dep.project_platform.unwrap_or(ProjectPlatform::Modrinth),
-                )
-            } else {
-                let project = resolver
-                    .resolve_project(
-                        &dep.search_query,
-                        Some(project_type_arg(dep.project_type)),
-                        Some(dep.minecraft_version.as_str()),
-                        Some(loader_arg(dep.loader)),
-                    )
-                    .await?;
-                (project.project_id, project.platform)
-            };
+            let resolution = resolve_add_contract(
+                &dep.search_query,
+                dep.project_type,
+                Some(dep.minecraft_version.as_str()),
+                Some(dep.loader),
+                dep.project_id.as_deref(),
+                dep.project_platform,
+                dep.version_override.as_ref(),
+                resolver,
+            )
+            .await?;
 
             Ok(SyncExecutionAction::Add {
                 key: dep.key.clone(),
-                title: dep.search_query.clone(),
-                commands: build_packwiz_add_commands(
-                    &project_id,
-                    platform,
-                    dep.version_override.as_ref(),
-                )?,
-                resolved_project_id: project_id,
-                resolved_platform: platform,
+                title: resolution.title,
+                commands: resolution.commands,
+                resolved_project_id: resolution.resolved_project_id,
+                resolved_platform: resolution.resolved_platform,
             })
         }
     }
+}
+
+pub async fn resolve_add_contract(
+    search_query: &str,
+    project_type: ProjectType,
+    minecraft_version: Option<&str>,
+    loader: Option<ModLoader>,
+    direct_project_id: Option<&str>,
+    direct_platform: Option<ProjectPlatform>,
+    version_override: Option<&VersionOverride>,
+    resolver: &dyn ProjectResolverTrait,
+) -> Result<AddResolution> {
+    let (project_id, platform, title, confidence) = if let Some(project_id) = direct_project_id {
+        (
+            project_id.to_string(),
+            direct_platform.unwrap_or(ProjectPlatform::Modrinth),
+            search_query.to_string(),
+            None,
+        )
+    } else {
+        let project = resolver
+            .resolve_project(
+                search_query,
+                Some(project_type_arg(project_type)),
+                minecraft_version,
+                loader.map(loader_arg),
+            )
+            .await?;
+        (
+            project.project_id,
+            project.platform,
+            project.title,
+            Some(project.confidence),
+        )
+    };
+
+    Ok(AddResolution {
+        title,
+        commands: build_packwiz_add_commands(&project_id, platform, version_override)?,
+        resolved_project_id: project_id,
+        resolved_platform: platform,
+        confidence,
+    })
 }
 
 pub fn build_packwiz_add_commands(
