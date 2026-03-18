@@ -236,9 +236,11 @@ mod handle_add_tests {
             )
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
-                    "mr".to_string(),
+                    "modrinth".to_string(),
                     "add".to_string(),
+                    "--project-id".to_string(),
                     "test-mod-id".to_string(),
+                    "-y".to_string(),
                 ],
                 Ok(ProcessOutput {
                     stdout: String::new(),
@@ -261,9 +263,12 @@ mod handle_add_tests {
 
         // Verify packwiz add command was called
         let calls = session.process_provider.get_calls();
-        // Note: The actual command structure depends on project resolution
-        // In real testing, we'd verify the correct command sequence
-        assert!(!calls.is_empty());
+        assert_eq!(calls.len(), 1);
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["modrinth", "add", "--project-id", "test-mod-id", "-y"],
+            &workdir.join("pack")
+        ));
     }
 
     #[tokio::test]
@@ -289,7 +294,13 @@ mod handle_add_tests {
             .with_process(
                 MockProcessProvider::new()
                     .with_packwiz_result(
-                        vec!["mr".to_string(), "add".to_string(), "mod1-id".to_string()],
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "mod1-id".to_string(),
+                            "-y".to_string(),
+                        ],
                         Ok(ProcessOutput {
                             stdout: String::new(),
                             stderr: String::new(),
@@ -297,7 +308,13 @@ mod handle_add_tests {
                         }),
                     )
                     .with_packwiz_result(
-                        vec!["mr".to_string(), "add".to_string(), "mod2-id".to_string()],
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "mod2-id".to_string(),
+                            "-y".to_string(),
+                        ],
                         Ok(ProcessOutput {
                             stdout: String::new(),
                             stderr: String::new(),
@@ -320,12 +337,86 @@ mod handle_add_tests {
         assert_eq!(calls.len(), 2);
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["mr", "add", "mod1-id"],
+            &["modrinth", "add", "--project-id", "mod1-id", "-y"],
             &workdir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["mr", "add", "mod2-id"],
+            &["modrinth", "add", "--project-id", "mod2-id", "-y"],
+            &workdir.join("pack")
+        ));
+    }
+
+    #[tokio::test]
+    async fn it_uses_modrinth_direct_ids_without_resolving_search() {
+        let workdir = PathBuf::from("/test/configured-project");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "AANobbMI".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_add(&session, vec!["AANobbMI".to_string()], false, None).await;
+
+        assert!(result.is_ok());
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["modrinth", "add", "--project-id", "AANobbMI", "-y"],
+            &workdir.join("pack")
+        ));
+    }
+
+    #[tokio::test]
+    async fn it_uses_curseforge_direct_ids_when_platform_is_explicit() {
+        let workdir = PathBuf::from("/test/configured-project");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "curseforge".to_string(),
+                    "add".to_string(),
+                    "--addon-id".to_string(),
+                    "238222".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_add(
+            &session,
+            vec!["238222".to_string()],
+            false,
+            Some(crate::application::cli::SearchPlatform::Curseforge),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["curseforge", "add", "--addon-id", "238222", "-y"],
             &workdir.join("pack")
         ));
     }
@@ -374,9 +465,11 @@ mod handle_add_tests {
             ))
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
-                    "mr".to_string(),
+                    "modrinth".to_string(),
                     "add".to_string(),
+                    "--project-id".to_string(),
                     "failing-mod-id".to_string(),
+                    "-y".to_string(),
                 ],
                 Err("Mock packwiz error".to_string()),
             ));
@@ -389,7 +482,7 @@ mod handle_add_tests {
         assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["mr", "add", "failing-mod-id"],
+            &["modrinth", "add", "--project-id", "failing-mod-id", "-y"],
             &workdir.join("pack")
         ));
     }
@@ -1262,6 +1355,31 @@ async fn test_mod_loader_validation() {
 }
 
 // ===== ERROR HANDLING TESTS =====
+
+#[test]
+fn test_render_add_contract_error_for_resolver_failures() {
+    let rendered = render_add_contract_error(&AddContractError::ResolveProject {
+        query: "sodium".to_string(),
+        source: crate::empack::search::SearchError::NoResults {
+            query: "sodium".to_string(),
+        },
+    });
+
+    assert_eq!(rendered.item, "Failed to resolve mod");
+    assert_eq!(rendered.details, "sodium: No results found for query: sodium");
+}
+
+#[test]
+fn test_render_add_contract_error_for_plan_failures() {
+    let rendered = render_add_contract_error(&AddContractError::PlanPackwizAdd {
+        project_id: "AANobbMI".to_string(),
+        platform: ProjectPlatform::Modrinth,
+        source: crate::application::sync::AddCommandPlanError::EmptyVersionOverrideList,
+    });
+
+    assert_eq!(rendered.item, "Failed to prepare add command");
+    assert_eq!(rendered.details, "modrinth project AANobbMI: version override list cannot be empty");
+}
 
 #[tokio::test]
 async fn test_error_message_formatting() {

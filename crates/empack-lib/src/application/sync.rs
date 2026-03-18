@@ -1,10 +1,9 @@
-use crate::Result;
 use crate::empack::config::{ProjectPlan, ProjectSpec, VersionOverride};
 use crate::empack::parsing::ModLoader;
-use crate::empack::search::ProjectResolverTrait;
+use crate::empack::search::{ProjectResolverTrait, SearchError};
 use crate::primitives::{ProjectPlatform, ProjectType};
-use anyhow::anyhow;
 use std::collections::HashSet;
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncPlan {
@@ -52,6 +51,30 @@ pub struct AddResolution {
     pub confidence: Option<u8>,
 }
 
+#[derive(Debug, Error)]
+pub enum AddContractError {
+    #[error("failed to resolve project '{query}': {source}")]
+    ResolveProject {
+        query: String,
+        #[source]
+        source: SearchError,
+    },
+
+    #[error("failed to plan packwiz add for {platform} project '{project_id}': {source}")]
+    PlanPackwizAdd {
+        project_id: String,
+        platform: ProjectPlatform,
+        #[source]
+        source: AddCommandPlanError,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum AddCommandPlanError {
+    #[error("version override list cannot be empty")]
+    EmptyVersionOverrideList,
+}
+
 pub fn normalize_mod_key(key: &str) -> String {
     key.to_lowercase().replace(' ', "_").replace('-', "_")
 }
@@ -92,7 +115,7 @@ pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<Stri
 pub async fn resolve_sync_action(
     action: &SyncPlanAction,
     resolver: &dyn ProjectResolverTrait,
-) -> Result<SyncExecutionAction> {
+) -> std::result::Result<SyncExecutionAction, AddContractError> {
     match action {
         SyncPlanAction::Remove { key, title } => Ok(SyncExecutionAction::Remove {
             key: key.clone(),
@@ -131,7 +154,7 @@ pub async fn resolve_add_contract(
     direct_platform: Option<ProjectPlatform>,
     version_override: Option<&VersionOverride>,
     resolver: &dyn ProjectResolverTrait,
-) -> Result<AddResolution> {
+) -> std::result::Result<AddResolution, AddContractError> {
     let (project_id, platform, title, confidence) = if let Some(project_id) = direct_project_id {
         (
             project_id.to_string(),
@@ -147,7 +170,11 @@ pub async fn resolve_add_contract(
                 minecraft_version,
                 loader.map(loader_arg),
             )
-            .await?;
+            .await
+            .map_err(|source| AddContractError::ResolveProject {
+                query: search_query.to_string(),
+                source,
+            })?;
         (
             project.project_id,
             project.platform,
@@ -156,9 +183,17 @@ pub async fn resolve_add_contract(
         )
     };
 
+    let commands = build_packwiz_add_commands(&project_id, platform, version_override).map_err(
+        |source| AddContractError::PlanPackwizAdd {
+            project_id: project_id.clone(),
+            platform,
+            source,
+        },
+    )?;
+
     Ok(AddResolution {
         title,
-        commands: build_packwiz_add_commands(&project_id, platform, version_override)?,
+        commands,
         resolved_project_id: project_id,
         resolved_platform: platform,
         confidence,
@@ -169,7 +204,7 @@ pub fn build_packwiz_add_commands(
     project_id: &str,
     platform: ProjectPlatform,
     version_override: Option<&VersionOverride>,
-) -> Result<Vec<Vec<String>>> {
+) -> std::result::Result<Vec<Vec<String>>, AddCommandPlanError> {
     let (platform_cmd, id_flag, version_flag) = match platform {
         ProjectPlatform::Modrinth => ("modrinth", "--project-id", "--version-id"),
         ProjectPlatform::CurseForge => ("curseforge", "--addon-id", "--file-id"),
@@ -188,7 +223,7 @@ pub fn build_packwiz_add_commands(
             Ok(vec![append_yes(with_version(base, version_flag, version))])
         }
         Some(VersionOverride::Multiple(versions)) if versions.is_empty() => {
-            Err(anyhow!("Version override list cannot be empty"))
+            Err(AddCommandPlanError::EmptyVersionOverrideList)
         }
         Some(VersionOverride::Multiple(versions)) => Ok(versions
             .iter()
