@@ -1,130 +1,110 @@
-//! E2E tests for server build target
-//!
-//! Tests the complete server build workflow including template processing,
-//! installer bootstrap, and distribution creation.
+//! Hermetic E2E tests for the server build target.
 
 use anyhow::Result;
 use empack_lib::application::Commands;
 use empack_lib::application::commands::execute_command_with_session;
-use empack_lib::application::config::AppConfig;
 use empack_lib::application::session::{
-    CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveNetworkProvider,
-    LiveProcessProvider,
+    CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
 };
 use empack_lib::application::session_mocks::MockInteractiveProvider;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use std::path::Path;
-use tempfile::TempDir;
+use empack_tests::{
+    HermeticSessionBuilder, MockBehavior, MockNetworkProvider, TestEnvironment,
+};
+use std::path::PathBuf;
 
-/// Initialize a real empack project in the given directory and return a session
-async fn initialize_empack_project(
-    workdir: &Path,
-) -> Result<
-    CommandSession<
-        LiveFileSystemProvider,
-        LiveNetworkProvider,
-        LiveProcessProvider,
-        LiveConfigProvider,
-        MockInteractiveProvider,
-    >,
-> {
-    // Create the basic structure that empack expects
-    std::fs::create_dir_all(workdir.join("pack"))?;
+type HermeticSession = CommandSession<
+    LiveFileSystemProvider,
+    MockNetworkProvider,
+    LiveProcessProvider,
+    LiveConfigProvider,
+    MockInteractiveProvider,
+>;
 
-    // Create empack.yml
-    let empack_yml = r#"empack:
-  dependencies:
-    - "fabric_api: Fabric API|mod"
-  minecraft_version: "1.21.1"
-  loader: fabric
-  name: "Test Modpack"
-  author: "Test Author"
-  version: "1.0.0"
-"#;
-    std::fs::write(workdir.join("empack.yml"), empack_yml)?;
+fn build_packwiz_output(project_name: &str) -> String {
+    format!(
+        "Refreshed packwiz index\nExported to {project_name}-v1.0.0.mrpack"
+    )
+}
 
-    // Create pack.toml
-    let pack_toml = r#"name = "Test Modpack"
-author = "Test Author"
-version = "1.0.0"
-pack-format = "packwiz:1.1.0"
-
-[index]
-file = "index.toml"
-hash-format = "sha256"
-hash = ""
-
-[versions]
-minecraft = "1.21.1"
-fabric = "0.15.0"
-"#;
-    std::fs::write(workdir.join("pack").join("pack.toml"), pack_toml)?;
-
-    // Create index.toml
-    let index_toml = r#"hash-format = "sha256"
-
-[[files]]
-file = "pack.toml"
-hash = ""
-"#;
-    std::fs::write(workdir.join("pack").join("index.toml"), index_toml)?;
-
-    // Initialize display for test
-    let app_config = AppConfig::default();
-    let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
+fn init_display(session: &HermeticSession) -> Result<()> {
+    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
     let _ = Display::init(terminal_caps);
+    Ok(())
+}
 
-    // Create session with live providers for E2E testing
-    let filesystem_provider = LiveFileSystemProvider;
-    let network_provider = LiveNetworkProvider::new();
-    let process_provider = LiveProcessProvider::new();
-    let config_provider = LiveConfigProvider::new(app_config);
+async fn initialize_empack_project(
+    project_name: &str,
+) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
+    let (session, test_env) = HermeticSessionBuilder::new()?
+        .with_empack_project(project_name, "1.21.1", "fabric")?
+        .with_mock_executable(
+            "packwiz",
+            MockBehavior::SucceedWithOutput {
+                stdout: build_packwiz_output(project_name),
+                stderr: String::new(),
+            },
+        )?
+        .with_mock_executable(
+            "mrpack-install",
+            MockBehavior::SucceedWithOutput {
+                stdout: "Installed mock server jar".to_string(),
+                stderr: String::new(),
+            },
+        )?
+        .with_mock_executable(
+            "unzip",
+            MockBehavior::SucceedWithOutput {
+                stdout: "Extracted mock mrpack".to_string(),
+                stderr: String::new(),
+            },
+        )?
+        .with_mock_executable(
+            "zip",
+            MockBehavior::SucceedWithOutput {
+                stdout: "Created server archive".to_string(),
+                stderr: String::new(),
+            },
+        )?
+        .build()?;
 
-    let session = CommandSession::new_with_providers(
-        filesystem_provider,
-        network_provider,
-        process_provider,
-        config_provider,
-        MockInteractiveProvider::new(),
-    );
+    init_display(&session)?;
 
-    // Change to the working directory
-    std::env::set_current_dir(workdir)?;
+    let workdir = session
+        .config()
+        .app_config()
+        .workdir
+        .clone()
+        .expect("hermetic project should configure a workdir");
+    std::env::set_current_dir(&workdir)?;
 
-    Ok(session)
+    Ok((session, test_env, workdir))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_successfully() -> anyhow::Result<()> {
-    let temp_dir = TempDir::new()?;
-    let session = initialize_empack_project(temp_dir.path()).await?;
+    let project_name = "workflow-server";
+    let (session, test_env, workdir) = initialize_empack_project(project_name).await?;
 
-    // Create required directories for server build
-    let templates_dir = temp_dir.path().join("templates/server");
+    let templates_dir = workdir.join("templates/server");
     std::fs::create_dir_all(&templates_dir)?;
-
-    let installer_dir = temp_dir.path().join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
-
-    // Create a mock installer JAR (server build requires it)
-    let installer_jar = installer_dir.join("packwiz-installer-bootstrap.jar");
-    std::fs::write(&installer_jar, "mock-installer-jar")?;
-
-    // Create server template files
-    let server_properties = templates_dir.join("server.properties.template");
     std::fs::write(
-        &server_properties,
+        templates_dir.join("server.properties.template"),
         "server-port=25565\nmotd={{NAME}} v{{VERSION}}\n",
     )?;
-
-    let install_script = templates_dir.join("install_pack.sh.template");
     std::fs::write(
-        &install_script,
+        templates_dir.join("install_pack.sh.template"),
         "#!/bin/bash\necho \"Installing {{NAME}}\"\n",
     )?;
 
-    // Execute server build command
+    let installer_dir = workdir.join("installer");
+    std::fs::create_dir_all(&installer_dir)?;
+    std::fs::write(
+        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        "mock-installer-jar",
+    )?;
+
     let result = execute_command_with_session(
         Commands::Build {
             targets: vec!["server".to_string()],
@@ -135,64 +115,57 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
     )
     .await;
 
-    // Server build may fail due to missing mrpack-install tool, but should create directory structure
-    match result {
-        Ok(_) => {
-            // If successful, verify the server directory structure was created
-            let server_dir = temp_dir.path().join("dist/server");
-            assert!(server_dir.exists(), "Server build directory should exist");
+    assert!(result.is_ok(), "Server build failed: {result:?}");
 
-            // Verify template processing occurred
-            let processed_properties = server_dir.join("server.properties");
-            if processed_properties.exists() {
-                let content = std::fs::read_to_string(&processed_properties)?;
-                assert!(
-                    content.contains("Test Modpack"),
-                    "Template variables should be processed"
-                );
-            }
+    let server_dir = workdir.join("dist/server");
+    assert!(server_dir.exists(), "Server build directory should exist");
+    assert!(
+        std::fs::read_to_string(server_dir.join("server.properties"))?.contains(project_name),
+        "Server templates should be rendered"
+    );
+    assert!(
+        server_dir.join("packwiz-installer-bootstrap.jar").exists(),
+        "Bootstrap installer should be copied into server output"
+    );
+    assert!(
+        server_dir.join("srv.jar").exists(),
+        "Server build should materialize the server JAR"
+    );
+    assert!(
+        server_dir.join("config/generated.txt").exists(),
+        "Mock unzip should supply deterministic override content"
+    );
+    assert!(
+        workdir
+            .join("dist")
+            .join(format!("{project_name}-v1.0.0-server.zip"))
+            .exists(),
+        "Server archive should be created"
+    );
 
-            // Verify pack directory was copied
-            let pack_dir = server_dir.join("pack");
-            assert!(
-                pack_dir.exists(),
-                "Pack directory should be copied to server build"
-            );
+    let packwiz_calls = test_env.get_mock_calls("packwiz")?;
+    assert!(
+        packwiz_calls.iter().any(|call| call.contains(" mr export ")),
+        "Server build should export an mrpack before extraction: {packwiz_calls:?}"
+    );
 
-            // Verify installer was copied
-            let copied_installer = server_dir.join("packwiz-installer-bootstrap.jar");
-            assert!(
-                copied_installer.exists(),
-                "Installer JAR should be copied to server build"
-            );
-        }
-        Err(e) => {
-            // Expected if mrpack-install is not available - verify partial build occurred
-            let server_dir = temp_dir.path().join("dist/server");
-            if server_dir.exists() {
-                println!(
-                    "Server build failed as expected (likely missing mrpack-install): {}",
-                    e
-                );
-            } else {
-                return Err(e);
-            }
-        }
-    }
+    let unzip_calls = test_env.get_mock_calls("unzip")?;
+    assert!(
+        !unzip_calls.is_empty(),
+        "Server build should extract the generated mrpack: {unzip_calls:?}"
+    );
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
-    let temp_dir = TempDir::new()?;
-    let session = initialize_empack_project(temp_dir.path()).await?;
+    let (session, _test_env, workdir) =
+        initialize_empack_project("workflow-server-missing-installer").await?;
 
-    // Create templates directory but not installer
-    let templates_dir = temp_dir.path().join("templates/server");
+    let templates_dir = workdir.join("templates/server");
     std::fs::create_dir_all(&templates_dir)?;
 
-    // Execute server build command (should fail due to missing installer)
     let result = execute_command_with_session(
         Commands::Build {
             targets: vec!["server".to_string()],
@@ -203,57 +176,54 @@ async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
     )
     .await;
 
-    // Should complete but with warnings about missing installer
-    match result {
-        Ok(_) => {
-            // Build system should handle missing installer gracefully
-            println!("Build completed with missing installer handled gracefully");
-        }
-        Err(e) => {
-            // Also acceptable if build system fails fast on missing installer
-            println!("Build failed as expected with missing installer: {}", e);
-        }
-    }
+    assert!(result.is_err(), "Build should fail when installer JAR is unavailable");
+    let error = result.unwrap_err().to_string();
+    assert!(
+        error.contains("Failed to execute build pipeline"),
+        "Missing installer should surface as a pipeline failure, got: {error}"
+    );
+    assert!(
+        !workdir
+            .join("dist")
+            .join("workflow-server-missing-installer-v1.0.0-server.zip")
+            .exists(),
+        "No server archive should be produced when the installer is missing"
+    );
+    assert!(
+        !workdir.join("dist/server/srv.jar").exists(),
+        "The server jar should not be materialized when the installer bootstrap is missing"
+    );
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
-    let temp_dir = TempDir::new()?;
-    let session = initialize_empack_project(temp_dir.path()).await?;
+    let project_name = "workflow-server-templates";
+    let (session, _test_env, workdir) = initialize_empack_project(project_name).await?;
 
-    // Create templates directory with various template files
-    let templates_dir = temp_dir.path().join("templates/server");
+    let templates_dir = workdir.join("templates/server");
     std::fs::create_dir_all(&templates_dir)?;
-
-    let installer_dir = temp_dir.path().join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
-
-    // Create mock installer JAR
-    let installer_jar = installer_dir.join("packwiz-installer-bootstrap.jar");
-    std::fs::write(&installer_jar, "mock-installer-jar")?;
-
-    // Create multiple template files
-    let server_properties = templates_dir.join("server.properties.template");
     std::fs::write(
-        &server_properties,
+        templates_dir.join("server.properties.template"),
         "server-port=25565\nmotd={{NAME}} v{{VERSION}} by {{AUTHOR}}\nmax-players=20\n",
     )?;
-
-    let readme = templates_dir.join("README.md.template");
     std::fs::write(
-        &readme,
+        templates_dir.join("README.md.template"),
         "# {{NAME}}\n\nVersion: {{VERSION}}\nAuthor: {{AUTHOR}}\nMinecraft: {{MC_VERSION}}\n",
     )?;
-
-    let start_script = templates_dir.join("start.sh.template");
     std::fs::write(
-        &start_script,
+        templates_dir.join("start.sh.template"),
         "#!/bin/bash\necho \"Starting {{NAME}} server\"\njava -jar srv.jar\n",
     )?;
 
-    // Execute server build command
+    let installer_dir = workdir.join("installer");
+    std::fs::create_dir_all(&installer_dir)?;
+    std::fs::write(
+        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        "mock-installer-jar",
+    )?;
+
     let result = execute_command_with_session(
         Commands::Build {
             targets: vec!["server".to_string()],
@@ -264,59 +234,38 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
     )
     .await;
 
-    // Verify template processing worked regardless of overall build success
-    let server_dir = temp_dir.path().join("dist/server");
-    if server_dir.exists() {
-        // Check that templates were processed
-        let processed_properties = server_dir.join("server.properties");
-        if processed_properties.exists() {
-            let content = std::fs::read_to_string(&processed_properties)?;
-            assert!(
-                content.contains("Test Modpack"),
-                "Server name should be processed"
-            );
-            assert!(
-                content.contains("Test Author"),
-                "Author should be processed"
-            );
-            assert!(
-                !content.contains("{{NAME}}"),
-                "Template variables should be replaced"
-            );
-        }
+    assert!(result.is_ok(), "Server build failed: {result:?}");
 
-        let processed_readme = server_dir.join("README.md");
-        if processed_readme.exists() {
-            let content = std::fs::read_to_string(&processed_readme)?;
-            assert!(
-                content.contains("# Test Modpack"),
-                "README title should be processed"
-            );
-            assert!(
-                !content.contains("{{VERSION}}"),
-                "Version template should be replaced"
-            );
-        }
+    let server_dir = workdir.join("dist/server");
+    let properties = std::fs::read_to_string(server_dir.join("server.properties"))?;
+    assert!(properties.contains(project_name), "Server name should be processed");
+    assert!(properties.contains("Test Author"), "Author should be processed");
+    assert!(
+        !properties.contains("{{NAME}}"),
+        "Template variables should be replaced"
+    );
 
-        let processed_script = server_dir.join("start.sh");
-        if processed_script.exists() {
-            let content = std::fs::read_to_string(&processed_script)?;
-            assert!(
-                content.contains("Starting Test Modpack"),
-                "Script should be processed"
-            );
-            assert!(
-                content.contains("java -jar srv.jar"),
-                "Script should contain server command"
-            );
-        }
-    }
+    let readme = std::fs::read_to_string(server_dir.join("README.md"))?;
+    assert!(readme.contains(&format!("# {project_name}")), "README should be rendered");
+    assert!(
+        !readme.contains("{{VERSION}}"),
+        "README template variables should be replaced"
+    );
 
-    // Result may be Ok or Err depending on mrpack-install availability
-    match result {
-        Ok(_) => println!("Server build completed successfully"),
-        Err(e) => println!("Server build failed (likely missing mrpack-install): {}", e),
-    }
+    let script = std::fs::read_to_string(server_dir.join("start.sh"))?;
+    assert!(
+        script.contains(&format!("Starting {project_name} server")),
+        "Script should be processed"
+    );
+    assert!(
+        script.contains("java -jar srv.jar"),
+        "Script should contain the server launch command"
+    );
+    assert!(server_dir.join("srv.jar").exists(), "Server JAR should exist");
+    assert!(
+        server_dir.join("config/generated.txt").exists(),
+        "Override content should be copied into the rendered server build"
+    );
 
     Ok(())
 }

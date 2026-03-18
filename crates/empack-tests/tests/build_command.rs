@@ -148,11 +148,16 @@ async fn e2e_build_packwiz_refresh_fails() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    Display::init(terminal_caps)?;
+    let _ = Display::init(terminal_caps);
 
     // Mock packwiz refresh failure
+    let pack_file = workdir.join("pack/pack.toml");
     let mock_process_provider = MockProcessProvider::new().with_packwiz_result(
-        vec!["refresh".to_string()],
+        vec![
+            "--pack-file".to_string(),
+            pack_file.to_string_lossy().to_string(),
+            "refresh".to_string(),
+        ],
         Ok(ProcessOutput {
             stdout: String::new(),
             stderr: "Error: pack.toml is corrupted".to_string(),
@@ -179,16 +184,19 @@ async fn e2e_build_packwiz_refresh_fails() -> Result<()> {
     )
     .await;
 
-    // Assert: Command behavior is implementation-dependent
-    // May succeed (handles failure gracefully) or fail (strict mode)
-    match result {
-        Ok(_) => {
-            println!("Build succeeded despite packwiz refresh failure (graceful handling)");
-        }
-        Err(e) => {
-            println!("Build failed as expected when packwiz refresh fails: {}", e);
-        }
-    }
+    assert!(
+        result.is_err(),
+        "Build should fail fast when packwiz refresh returns a non-zero exit code"
+    );
+    let error = result.unwrap_err().to_string();
+    assert!(
+        error.contains("Failed to execute build pipeline"),
+        "Refresh failure should propagate a clear packwiz error, got: {error}"
+    );
+    assert!(
+        !workdir.join("dist/test-modpack-v1.0.0.mrpack").exists(),
+        "No mrpack artifact should be produced after a failed refresh"
+    );
 
     Ok(())
 }

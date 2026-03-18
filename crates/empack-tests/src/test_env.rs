@@ -211,6 +211,31 @@ fi
                     );
                 }
 
+                if name == "packwiz" {
+                    code.push_str(
+                        r#"
+# Create mock mod metadata when add commands are requested
+if [[ "$1" == "mr" && "$2" == "add" && -n "$3" ]]; then
+  mkdir -p mods
+  cat > "mods/$3.pw.toml" <<MODRINTH
+name = "$3"
+filename = "$3.jar"
+side = "both"
+MODRINTH
+fi
+
+if [[ "$1" == "cf" && "$2" == "add" && -n "$3" ]]; then
+  mkdir -p mods
+  cat > "mods/$3.pw.toml" <<CURSEFORGE
+name = "$3"
+filename = "$3.jar"
+side = "both"
+CURSEFORGE
+fi
+"#,
+                    );
+                }
+
                 if name == "packwiz" && stdout.contains("Exported") {
                     code.push_str(
                         r#"
@@ -236,6 +261,101 @@ if [[ "$*" == *"mr export"* ]]; then
 mock mrpack artifact
 MRPACK
   fi
+fi
+"#,
+                    );
+                }
+
+                if name == "java" {
+                    code.push_str(
+                        r#"
+SIDE="unknown"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -s)
+      SIDE="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+mkdir -p mods
+cat > "mods/${SIDE}-installed.txt" <<JAVAINSTALL
+installed=$SIDE
+JAVAINSTALL
+"#,
+                    );
+                }
+
+                if name == "mrpack-install" {
+                    code.push_str(
+                        r#"
+SERVER_FILE="srv.jar"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --server-file)
+      SERVER_FILE="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+cat > "$SERVER_FILE" <<SERVERJAR
+mock server jar
+SERVERJAR
+"#,
+                    );
+                }
+
+                if name == "zip" {
+                    code.push_str(
+                        r#"
+OUTPUT_FILE=""
+
+if [[ "$1" == "-r0" ]]; then
+  OUTPUT_FILE="$2"
+fi
+
+if [[ -n "$OUTPUT_FILE" ]]; then
+  mkdir -p "$(dirname "$OUTPUT_FILE")"
+  cat > "$OUTPUT_FILE" <<ZIPFILE
+mock zip artifact
+ZIPFILE
+fi
+"#,
+                    );
+                }
+
+                if name == "unzip" {
+                    code.push_str(
+                        r#"
+DEST_DIR=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d)
+      DEST_DIR="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [[ -n "$DEST_DIR" ]]; then
+  mkdir -p "$DEST_DIR/overrides/config"
+  cat > "$DEST_DIR/overrides/config/generated.txt" <<UNZIPFILE
+override=true
+UNZIPFILE
 fi
 "#,
                     );
