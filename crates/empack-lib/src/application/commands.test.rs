@@ -1276,17 +1276,44 @@ mod handle_build_tests {
     #[tokio::test]
     async fn it_preserves_configuration_when_cleaning_before_build() {
         let workdir = PathBuf::from("/test/built-project");
-        let session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new()
-                .with_current_dir(workdir.clone())
-                .with_built_project(workdir.clone()),
-        );
+        let pack_file = workdir.join("pack").join("pack.toml");
+        let rebuilt_mrpack = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
         let result = handle_build(&session, vec!["mrpack".to_string()], true).await;
 
-        assert!(result.is_err() || result.is_ok());
+        assert!(result.is_ok(), "clean-before-build should succeed: {result:?}");
         assert!(session.filesystem().exists(&workdir.join("empack.yml")));
         assert!(session.filesystem().exists(&workdir.join("pack/pack.toml")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")));
+        assert!(session.filesystem().exists(&rebuilt_mrpack));
+
+        let pack_file_arg = pack_file.display().to_string();
+        let rebuilt_mrpack_arg = rebuilt_mrpack.display().to_string();
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "refresh"],
+            &workdir
+        ));
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &[
+                "--pack-file",
+                &pack_file_arg,
+                "mr",
+                "export",
+                "-o",
+                &rebuilt_mrpack_arg,
+            ],
+            &workdir
+        ));
     }
 }
 

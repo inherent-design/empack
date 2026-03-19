@@ -85,6 +85,9 @@ async fn initialize_empack_project(
         .clone()
         .expect("hermetic project should configure a workdir");
     std::env::set_current_dir(&workdir)?;
+    unsafe {
+        std::env::set_var("HOME", &test_env.root_path);
+    }
 
     Ok((session, test_env, workdir))
 }
@@ -114,7 +117,7 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
 
     let result = execute_command_with_session(
         Commands::Build {
-            targets: vec!["server".to_string(), "server-full".to_string()],
+            targets: vec!["server-full".to_string()],
             clean: false,
             jobs: None,
         },
@@ -150,6 +153,17 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
             .exists(),
         "Server-full archive should be created"
     );
+    assert!(
+        !workdir.join("dist/server").exists(),
+        "Standalone server-full builds should not materialize the server target directory"
+    );
+    assert!(
+        !workdir
+            .join("dist")
+            .join(format!("{project_name}-v1.0.0-server.zip"))
+            .exists(),
+        "Standalone server-full builds should not create a server archive"
+    );
 
     let mrpack_install_calls = test_env.get_mock_calls("mrpack-install")?;
     assert!(
@@ -180,7 +194,7 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
 
     let result = execute_command_with_session(
         Commands::Build {
-            targets: vec!["server".to_string(), "server-full".to_string()],
+            targets: vec!["server-full".to_string()],
             clean: false,
             jobs: None,
         },
@@ -191,8 +205,8 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
     assert!(result.is_err(), "Build should fail when installer JAR is unavailable");
     let error = result.unwrap_err().to_string();
     assert!(
-        error.contains("Failed to execute build pipeline"),
-        "Missing installer should surface as a pipeline failure, got: {error}"
+        error.contains("Mock HTTP client unavailable (test mode)"),
+        "Missing installer should fail while resolving the bootstrap JAR, got: {error}"
     );
     assert!(
         !workdir
@@ -204,6 +218,17 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
     assert!(
         !workdir.join("dist/server-full/srv.jar").exists(),
         "The full server jar should not be materialized when the installer bootstrap is missing"
+    );
+    assert!(
+        !workdir.join("dist/server").exists(),
+        "Standalone server-full failures should not create the server target directory"
+    );
+    assert!(
+        !workdir
+            .join("dist")
+            .join("workflow-server-full-missing-installer-v1.0.0-server.zip")
+            .exists(),
+        "Standalone server-full failures should not create a server archive"
     );
 
     Ok(())

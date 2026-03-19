@@ -254,6 +254,7 @@ fn configured_build_session(
     let pack_file = workdir.join("pack").join("pack.toml");
     let mrpack_output = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
     let process = crate::application::session_mocks::MockProcessProvider::new()
+        .with_mrpack_export_side_effects()
         .with_packwiz_result(
             vec![
                 "--pack-file".to_string(),

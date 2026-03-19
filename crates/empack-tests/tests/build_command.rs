@@ -88,6 +88,115 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
     Ok(())
 }
 
+/// Test that clean-before-build rebuilds the mrpack artifact without removing config files
+#[tokio::test]
+async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Result<()> {
+    let fixture = WorkflowProjectFixture::new("workflow-build-clean");
+    let (session, test_env) = HermeticSessionBuilder::new()?
+        .with_empack_project(&fixture.pack_name, &fixture.minecraft_version, &fixture.loader)?
+        .with_mock_executable(
+            "packwiz",
+            MockBehavior::SucceedWithOutput {
+                stdout: format!(
+                    "Refreshed packwiz index\nExported to {}",
+                    fixture.artifact_file_name(WorkflowArtifact::Mrpack)
+                ),
+                stderr: String::new(),
+            },
+        )?
+        .build()?;
+
+    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
+    let _ = Display::init(terminal_caps);
+
+    let workdir = session
+        .config()
+        .app_config()
+        .workdir
+        .clone()
+        .expect("hermetic project should configure a workdir");
+    std::env::set_current_dir(&workdir)?;
+
+    let stale_server_dir = workdir.join("dist/server");
+    std::fs::create_dir_all(&stale_server_dir)?;
+    std::fs::write(stale_server_dir.join("stale.txt"), "stale build output")?;
+
+    let mrpack_path = fixture.artifact_path(&workdir, WorkflowArtifact::Mrpack);
+    std::fs::write(&mrpack_path, "stale mrpack artifact")?;
+
+    let sentinel = workdir.join("sentinel.txt");
+    std::fs::write(&sentinel, "preserve me")?;
+
+    let pack_file = workdir.join("pack/pack.toml");
+    let result = execute_command_with_session(
+        Commands::Build {
+            targets: vec!["mrpack".to_string()],
+            clean: true,
+            jobs: None,
+        },
+        &session,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "clean-before-build should rebuild the mrpack artifact: {result:?}"
+    );
+    assert!(
+        mrpack_path.exists(),
+        "clean-before-build should recreate the mrpack artifact in dist/: {}",
+        mrpack_path.display()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&mrpack_path)?.trim_end(),
+        "mock mrpack artifact",
+        "clean-before-build should replace stale artifact contents with the rebuilt artifact"
+    );
+    assert!(
+        !stale_server_dir.exists(),
+        "clean-before-build should remove stale sibling build directories under dist/"
+    );
+    assert!(
+        workdir.join("empack.yml").exists(),
+        "clean-before-build should preserve empack.yml"
+    );
+    assert!(
+        workdir.join("pack/pack.toml").exists(),
+        "clean-before-build should preserve pack.toml"
+    );
+    assert!(
+        workdir.join("pack/index.toml").exists(),
+        "clean-before-build should preserve index.toml"
+    );
+    assert!(
+        sentinel.exists(),
+        "clean-before-build should not remove unrelated project files outside dist/"
+    );
+
+    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    assert!(packwiz_calls.iter().any(|call| {
+        call.args
+            == vec![
+                "--pack-file".to_string(),
+                pack_file.to_string_lossy().to_string(),
+                "refresh".to_string(),
+            ]
+    }), "clean-before-build should refresh the pack after cleaning: {packwiz_calls:?}");
+    assert!(packwiz_calls.iter().any(|call| {
+        call.args
+            == vec![
+                "--pack-file".to_string(),
+                pack_file.to_string_lossy().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                mrpack_path.to_string_lossy().to_string(),
+            ]
+    }), "clean-before-build should export the rebuilt mrpack artifact: {packwiz_calls:?}");
+
+    Ok(())
+}
+
 /// Test that build command fails gracefully when packwiz refresh fails
 #[tokio::test]
 async fn e2e_build_packwiz_refresh_fails() -> Result<()> {

@@ -483,11 +483,59 @@ async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
 }
 
 #[tokio::test]
+async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_export() {
+    let workdir = std::path::PathBuf::from("/test/build-project");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let process = MockProcessProvider::new()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(successful_process_output()),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
+        )
+        .with_process(process);
+    let mut orchestrator = BuildOrchestrator::new(&session).unwrap();
+    let error = orchestrator
+        .execute_build_pipeline(&[BuildTarget::Mrpack])
+        .await
+        .unwrap_err();
+
+    match error {
+        BuildError::ValidationError { reason } => {
+            assert!(reason.contains("without creating expected artifact"));
+            assert!(reason.contains(&output_file.display().to_string()));
+        }
+        other => panic!("expected ValidationError, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn test_execute_build_pipeline_rebuilds_from_built_state_before_server_failure() {
     let workdir = std::path::PathBuf::from("/test/built-project");
     let pack_file = workdir.join("pack").join("pack.toml");
     let dist_dir = workdir.join("dist").join("server");
     let process = MockProcessProvider::new()
+        .with_mrpack_export_side_effects()
         .with_packwiz_result(
             vec![
                 "--pack-file".to_string(),

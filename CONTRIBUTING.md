@@ -21,7 +21,7 @@ This repository currently treats the Rust workspace as the active implementation
 - `docs/testing/README.md`: trusted verification matrix and caveats
 - `docs/testing/vcr-recording.md`: VCR-backed maintenance workflow
 - `docs/reference/*`: provider reference material, not current product-status truth
-- `ARCHITECTURAL_DECISION_RECORD.md`: historical ADR context, not the current feature/status matrix
+- `docs/ARCHITECTURAL_DECISION_RECORD.md`: historical ADR context, not the current feature/status matrix
 
 ## Local setup
 
