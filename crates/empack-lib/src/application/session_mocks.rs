@@ -552,6 +552,9 @@ pub struct MockProcessProvider {
     pub packwiz_version: String,
     pub calls: RefCell<Vec<ProcessCall>>,
     pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
+    materialize_mrpack_exports: bool,
+    files: Option<Arc<Mutex<HashMap<PathBuf, String>>>>,
+    directories: Option<Arc<Mutex<HashSet<PathBuf>>>>,
 }
 
 impl MockProcessProvider {
@@ -561,6 +564,9 @@ impl MockProcessProvider {
             packwiz_version: "1.0.0".to_string(),
             calls: RefCell::new(Vec::new()),
             results: HashMap::new(),
+            materialize_mrpack_exports: false,
+            files: None,
+            directories: None,
         }
     }
 
@@ -591,6 +597,46 @@ impl MockProcessProvider {
     ) -> Self {
         self.results.insert(("packwiz".to_string(), args), result);
         self
+    }
+
+    pub fn with_mrpack_export_side_effects(mut self) -> Self {
+        self.materialize_mrpack_exports = true;
+        self
+    }
+
+    fn connect_filesystem(&mut self, filesystem: &MockFileSystemProvider) {
+        self.files = Some(filesystem.files.clone());
+        self.directories = Some(filesystem.directories.clone());
+    }
+
+    fn maybe_materialize_mrpack_export(&self, command: &str, args: &[&str], output: &ProcessOutput) {
+        if command != "packwiz" || !self.materialize_mrpack_exports || !output.success {
+            return;
+        }
+
+        if !args.contains(&"mr") || !args.contains(&"export") {
+            return;
+        }
+
+        let Some(output_index) = args.iter().position(|arg| *arg == "-o") else {
+            return;
+        };
+        let Some(output_path) = args.get(output_index + 1) else {
+            return;
+        };
+
+        let (Some(files), Some(directories)) = (&self.files, &self.directories) else {
+            return;
+        };
+
+        let output_path = PathBuf::from(output_path);
+        if let Some(parent) = output_path.parent() {
+            directories.lock().unwrap().insert(parent.to_path_buf());
+        }
+        files
+            .lock()
+            .unwrap()
+            .insert(output_path, "mock mrpack artifact".to_string());
     }
 
     /// Get all recorded process calls for verification
@@ -640,7 +686,7 @@ impl ProcessProvider for MockProcessProvider {
             command.to_string(),
             args.iter().map(|s| s.to_string()).collect(),
         );
-        if let Some(result) = self.results.get(&key) {
+        let output = if let Some(result) = self.results.get(&key) {
             match result {
                 Ok(output) => Ok(output.clone()),
                 Err(e) => Err(anyhow::anyhow!("{}", e)),
@@ -652,7 +698,11 @@ impl ProcessProvider for MockProcessProvider {
                 stderr: String::new(),
                 success: true,
             })
-        }
+        }?;
+
+        self.maybe_materialize_mrpack_export(command, args, &output);
+
+        Ok(output)
     }
 
     fn check_packwiz(&self) -> Result<(bool, String)> {
@@ -857,7 +907,7 @@ impl MockCommandSession {
         let multi_progress = MultiProgress::new();
         let display_provider = LiveDisplayProvider::new_with_multi_progress(&multi_progress);
 
-        Self {
+        let mut session = Self {
             multi_progress,
             display_provider,
             filesystem_provider: MockFileSystemProvider::new(),
@@ -865,11 +915,15 @@ impl MockCommandSession {
             process_provider: MockProcessProvider::new(),
             config_provider: MockConfigProvider::new(AppConfig::default()),
             interactive_provider: MockInteractiveProvider::new(),
-        }
+        };
+
+        session.sync_process_provider();
+        session
     }
 
     pub fn with_filesystem(mut self, filesystem: MockFileSystemProvider) -> Self {
         self.filesystem_provider = filesystem;
+        self.sync_process_provider();
         self
     }
 
@@ -880,6 +934,7 @@ impl MockCommandSession {
 
     pub fn with_process(mut self, process: MockProcessProvider) -> Self {
         self.process_provider = process;
+        self.sync_process_provider();
         self
     }
 
@@ -891,6 +946,10 @@ impl MockCommandSession {
     pub fn with_interactive(mut self, interactive: MockInteractiveProvider) -> Self {
         self.interactive_provider = interactive;
         self
+    }
+
+    fn sync_process_provider(&mut self) {
+        self.process_provider.connect_filesystem(&self.filesystem_provider);
     }
 
     /// Get the display provider for this session
