@@ -1,0 +1,111 @@
+[settings]
+windows_default_inline_shell_args = "pwsh -NoProfile -NonInteractive -Command"
+
+# Non-Rust developer tools only.
+# `cargo-nextest` and `cargo-llvm-cov` did not appear in `mise registry`,
+# so install them separately with `cargo install` if needed.
+[tools]
+git-cliff = "latest"
+
+[env]
+CARGO_TERM_COLOR = "always"
+
+# Run
+
+[tasks.run]
+alias = ["r", "rd", "run:debug"]
+description = "Run empack (Debug)"
+run = "BUILD_MODE=debug sh tasks/sh/run.sh"
+run_windows = "$env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\run.ps1"
+
+[tasks."run:profile"]
+alias = "rp"
+description = "Run empack (Profile)"
+run = "BUILD_MODE=profile sh tasks/sh/run.sh"
+run_windows = "$env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\run.ps1"
+
+[tasks."run:release"]
+alias = "rr"
+description = "Run empack (Release)"
+run = "BUILD_MODE=release sh tasks/sh/run.sh"
+run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\run.ps1"
+
+# Build
+
+[tasks.build]
+alias = ["b", "bd", "build:debug"]
+description = "Build workspace (Debug)"
+run = "BUILD_MODE=debug sh tasks/sh/build.sh"
+run_windows = "$env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\build.ps1"
+
+[tasks."build:profile"]
+alias = "bp"
+description = "Build workspace (Profile)"
+run = "BUILD_MODE=profile sh tasks/sh/build.sh"
+run_windows = "$env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\build.ps1"
+
+[tasks."build:release"]
+alias = "br"
+description = "Build workspace (Release)"
+run = "BUILD_MODE=release sh tasks/sh/build.sh"
+run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\build.ps1"
+
+# Test
+
+[tasks.test]
+alias = ["t", "td", "test:debug"]
+description = "Run tests (Debug)"
+run = "BUILD_MODE=debug sh tasks/sh/test.sh"
+run_windows = "$env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\test.ps1"
+
+[tasks."test:profile"]
+alias = "tp"
+description = "Run tests (Profile)"
+run = "BUILD_MODE=profile sh tasks/sh/test.sh"
+run_windows = "$env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\test.ps1"
+
+[tasks."test:release"]
+alias = "tr"
+description = "Run tests (Release)"
+run = "BUILD_MODE=release sh tasks/sh/test.sh"
+run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\test.ps1"
+
+# Coverage
+
+[tasks.coverage]
+alias = ["cov", "covd", "coverage:debug"]
+description = "Run coverage (Debug)"
+run = "BUILD_MODE=debug sh tasks/sh/coverage.sh"
+run_windows = "$env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\coverage.ps1"
+
+[tasks."coverage:profile"]
+alias = "covp"
+description = "Run coverage (Profile)"
+run = "BUILD_MODE=profile sh tasks/sh/coverage.sh"
+run_windows = "$env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\coverage.ps1"
+
+[tasks."coverage:release"]
+alias = "covr"
+description = "Run coverage (Release)"
+run = "BUILD_MODE=release sh tasks/sh/coverage.sh"
+run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\coverage.ps1"
+
+# Maintenance
+
+[tasks.clean]
+alias = "c"
+description = "Remove build artifacts"
+run = "sh tasks/sh/clean.sh"
+run_windows = "& .\\tasks\\pwsh\\clean.ps1"
+
+[tasks.check]
+alias = "chk"
+description = "Run cargo check"
+run = "sh tasks/sh/check.sh"
+run_windows = "& .\\tasks\\pwsh\\check.ps1"
+
+[tasks.clippy]
+alias = "lint"
+description = "Run cargo clippy"
+run = "sh tasks/sh/clippy.sh"
+run_windows = "& .\\tasks\\pwsh\\clippy.ps1"
