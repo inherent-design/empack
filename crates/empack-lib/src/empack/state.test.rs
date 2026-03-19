@@ -1,4 +1,5 @@
 use super::*;
+use crate::application::session::ProcessOutput;
 use crate::empack::config::ConfigManager;
 use std::collections::{HashMap, HashSet};
 
@@ -239,6 +240,49 @@ fn create_progressive_init_test() -> (MockStateProvider, PathBuf) {
     (mock_provider, workdir)
 }
 
+fn successful_process_output() -> ProcessOutput {
+    ProcessOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        success: true,
+    }
+}
+
+fn configured_build_session(
+    workdir: &Path,
+) -> crate::application::session_mocks::MockCommandSession {
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let mrpack_output = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let process = crate::application::session_mocks::MockProcessProvider::new()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                mrpack_output.display().to_string(),
+            ],
+            Ok(successful_process_output()),
+        );
+
+    crate::application::session_mocks::MockCommandSession::new()
+        .with_filesystem(
+            crate::application::session_mocks::MockFileSystemProvider::new()
+                .with_current_dir(workdir.to_path_buf())
+                .with_configured_project(workdir.to_path_buf()),
+        )
+        .with_process(process)
+}
+
 #[test]
 fn test_initial_state_is_uninitialized() {
     let (provider, workdir) = create_uninitialized_test();
@@ -275,22 +319,16 @@ async fn test_transition_to_configured() {
 
 #[tokio::test]
 async fn test_transition_to_built() {
-    let (provider, workdir) = create_configured_test();
-    let manager = PackStateManager::new(workdir.clone(), &provider);
-    let process = crate::application::session_mocks::MockProcessProvider::new();
-
-    // Build from configured state
-    let targets = vec![BuildTarget::Mrpack, BuildTarget::Client];
-    let mock_session = crate::application::session_mocks::MockCommandSession::new();
-    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
+    let workdir = PathBuf::from("/test/configured-project");
+    let session = configured_build_session(&workdir);
+    let manager = PackStateManager::new(workdir.clone(), session.filesystem());
+    let targets = vec![BuildTarget::Mrpack];
+    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
     let result = manager
-        .execute_transition(&process, StateTransition::Build(mock_orchestrator, targets))
+        .execute_transition(session.process(), StateTransition::Build(mock_orchestrator, targets))
         .await
         .unwrap();
     assert_eq!(result, PackState::Built);
-
-    // In the new architecture, we test that the transition logic works correctly
-    // The MockStateProvider handles all I/O operations
 }
 
 #[tokio::test]
@@ -399,6 +437,19 @@ fn test_pure_discover_state_function() {
 }
 
 #[test]
+fn test_discover_state_ignores_legacy_hidden_artifact_root() {
+    let (provider, workdir) = create_configured_test();
+    provider.add_directory(workdir.join(".empack").join("dist"));
+    provider.add_build_artifact(workdir.join(".empack").join("dist").join("legacy.mrpack"));
+
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(state, PackState::Configured);
+
+    let manager = PackStateManager::new(workdir, &provider);
+    assert!(!manager.validate_state(PackState::Built).unwrap());
+}
+
+#[test]
 fn test_pure_can_transition_function() {
     // Test valid transitions
     assert!(can_transition(
@@ -416,6 +467,10 @@ fn test_pure_can_transition_function() {
     assert!(can_transition(
         PackState::Configured,
         PackState::Uninitialized
+    ));
+    assert!(can_transition(
+        PackState::Built,
+        PackState::Building
     ));
 
     // Test same state transitions
@@ -478,13 +533,13 @@ async fn test_pure_execute_transition_function() {
     assert_eq!(result, PackState::Configured);
 
     // Test build transition
-    let (provider, workdir) = create_configured_test();
+    let workdir = PathBuf::from("/test/configured-project");
+    let session = configured_build_session(&workdir);
     let targets = vec![BuildTarget::Mrpack];
-    let mock_session = crate::application::session_mocks::MockCommandSession::new();
-    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
+    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
     let result = execute_transition(
-        &provider,
-        &process,
+        session.filesystem(),
+        session.process(),
         &workdir,
         StateTransition::Build(mock_orchestrator, targets),
     )
@@ -511,6 +566,16 @@ async fn test_pure_execute_transition_function() {
         .await
         .unwrap();
     assert_eq!(result, PackState::Uninitialized);
+}
+
+#[tokio::test]
+async fn test_refresh_transition_rejects_progressive_init_state() {
+    let (provider, workdir) = create_progressive_init_test();
+    let process = crate::application::session_mocks::MockProcessProvider::new();
+
+    let result = execute_transition(&provider, &process, &workdir, StateTransition::RefreshIndex).await;
+
+    assert!(matches!(result, Err(StateError::InvalidTransition { .. })));
 }
 
 #[tokio::test]
@@ -543,6 +608,15 @@ fn test_begin_build_transition_rejects_incomplete_configured_layout() {
 
     let result = manager.begin_state_transition(StateTransition::Building);
     assert!(matches!(result, Err(StateError::InvalidTransition { .. })));
+}
+
+#[test]
+fn test_begin_build_transition_allows_rebuilds_from_built_state() {
+    let (provider, workdir) = create_built_test();
+    let manager = PackStateManager::new(workdir, &provider);
+
+    let result = manager.begin_state_transition(StateTransition::Building);
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -615,15 +689,12 @@ fn test_pure_execute_refresh_index_function() {
 
 #[tokio::test]
 async fn test_pure_execute_build_function() {
-    let (provider, workdir) = create_configured_test();
-    let targets = vec![BuildTarget::Mrpack, BuildTarget::Client];
-    let mock_session = crate::application::session_mocks::MockCommandSession::new();
-    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
+    let workdir = PathBuf::from("/test/configured-project");
+    let session = configured_build_session(&workdir);
+    let targets = vec![BuildTarget::Mrpack];
+    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
     let result = execute_build(mock_orchestrator, &targets).await.unwrap();
     assert_eq!(result, PackState::Built);
-
-    // In the new architecture, the build verification is handled by the orchestrator
-    // The test validates the state transition logic
 }
 
 #[test]
@@ -655,6 +726,18 @@ fn test_pure_clean_functions() {
             .borrow()
             .contains(&workdir.join("pack"))
     );
+}
+
+#[test]
+fn test_clean_build_artifacts_preserves_configuration_metadata() {
+    let (provider, workdir) = create_built_test();
+
+    clean_build_artifacts(&provider, &workdir).unwrap();
+
+    assert!(provider.files.borrow().contains(&workdir.join("empack.yml")));
+    assert!(provider.files.borrow().contains(&workdir.join("pack").join("pack.toml")));
+    assert!(provider.files.borrow().contains(&workdir.join("pack").join("index.toml")));
+    assert!(!provider.directories.borrow().contains(&workdir.join("dist")));
 }
 
 #[test]

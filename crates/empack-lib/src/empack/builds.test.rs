@@ -1,13 +1,12 @@
 use super::*;
-use std::fs;
+use crate::application::session::ProcessOutput;
 use std::path::Path;
 use tempfile::TempDir;
-use crate::application::session_mocks::MockCommandSession;
+use crate::application::session_mocks::{MockCommandSession, MockFileSystemProvider, MockProcessProvider};
 
 // Mock structure for testing build orchestrator without external dependencies
 struct MockBuildOrchestrator {
     temp_dir: TempDir,
-    mock_commands: Vec<String>,
     session: MockCommandSession,
 }
 
@@ -25,7 +24,6 @@ impl MockBuildOrchestrator {
         
         Self {
             temp_dir,
-            mock_commands: Vec::new(),
             session,
         }
     }
@@ -89,20 +87,6 @@ hash = "abcd1234"
         Ok(())
     }
 
-    fn setup_installer_structure(&self) -> Result<(), BuildError> {
-        let workdir = self.temp_dir.path().to_path_buf();
-        let filesystem = self.session.filesystem();
-        
-        let installer_dir = workdir.join("installer");
-        filesystem.create_dir_all(&installer_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
-
-        // Create mock installer jar
-        let installer_jar = installer_dir.join("packwiz-installer-bootstrap.jar");
-        filesystem.write_file(&installer_jar, "mock installer jar content").map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
-
-        Ok(())
-    }
-
     fn setup_templates(&self) -> Result<(), BuildError> {
         let workdir = self.temp_dir.path().to_path_buf();
         let filesystem = self.session.filesystem();
@@ -124,20 +108,6 @@ hash = "abcd1234"
         Ok(())
     }
 
-    fn create_mock_mrpack(&self) -> Result<(), BuildError> {
-        let workdir = self.temp_dir.path().to_path_buf();
-        let filesystem = self.session.filesystem();
-        
-        let dist_dir = workdir.join("dist");
-        filesystem.create_dir_all(&dist_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
-
-        // Create mock mrpack file
-        let mrpack_file = dist_dir.join("TestPack-v1.0.0.mrpack");
-        filesystem.write_file(&mrpack_file, "mock mrpack content").map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
-
-        Ok(())
-    }
-
     fn workdir(&self) -> &Path {
         self.temp_dir.path()
     }
@@ -147,6 +117,14 @@ fn create_test_orchestrator() -> (TempDir, MockCommandSession) {
     let temp_dir = TempDir::new().unwrap();
     let session = MockCommandSession::new();
     (temp_dir, session)
+}
+
+fn successful_process_output() -> ProcessOutput {
+    ProcessOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        success: true,
+    }
 }
 
 #[test]
@@ -401,6 +379,36 @@ fn test_clean_target() {
     assert!(!filesystem.exists(&zip_file));
 }
 
+#[test]
+fn test_clean_target_preserves_mrpack_and_legacy_hidden_outputs() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+
+    let workdir = mock.workdir().to_path_buf();
+    let mut orchestrator = mock.orchestrator();
+
+    orchestrator.load_pack_info().unwrap();
+
+    let filesystem = mock.session.filesystem();
+    let target_dir = workdir.join("dist").join("client");
+    filesystem.create_dir_all(&target_dir).unwrap();
+    filesystem.write_file(&target_dir.join("test.txt"), "content").unwrap();
+
+    let mrpack_file = workdir.join("dist").join("TestPack-v1.0.0.mrpack");
+    filesystem.write_file(&mrpack_file, "mock mrpack content").unwrap();
+
+    let legacy_dir = workdir.join(".empack").join("dist").join("client");
+    filesystem.create_dir_all(&legacy_dir).unwrap();
+    filesystem.write_file(&legacy_dir.join("legacy.txt"), "legacy content").unwrap();
+
+    let result = orchestrator.clean_target(BuildTarget::Client);
+    assert!(result.is_ok());
+
+    assert!(!filesystem.exists(&target_dir.join("test.txt")));
+    assert!(filesystem.exists(&mrpack_file));
+    assert!(filesystem.exists(&legacy_dir.join("legacy.txt")));
+}
+
 // Note: The following tests would require mocking external commands (packwiz, zip, unzip)
 // For now, we test the logic that can be tested without external dependencies
 // In a real implementation, these would use a process mock or dependency injection
@@ -421,6 +429,123 @@ fn test_build_result_structure() {
     assert!(result.output_path.is_some());
     assert!(result.artifacts.is_empty());
     assert!(result.warnings.is_empty());
+}
+
+#[tokio::test]
+async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
+    let workdir = std::path::PathBuf::from("/test/build-project");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let process = MockProcessProvider::new()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(ProcessOutput {
+                stdout: String::new(),
+                stderr: "mr export failed".to_string(),
+                success: false,
+            }),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
+        )
+        .with_process(process);
+    let mut orchestrator = BuildOrchestrator::new(&session).unwrap();
+    let error = orchestrator
+        .execute_build_pipeline(&[BuildTarget::Mrpack])
+        .await
+        .unwrap_err();
+
+    match error {
+        BuildError::CommandFailed { command } => {
+            assert!(command.contains("Build failed for target Mrpack"));
+            assert!(command.contains("packwiz mr export failed"));
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_execute_build_pipeline_rebuilds_from_built_state_before_server_failure() {
+    let workdir = std::path::PathBuf::from("/test/built-project");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let dist_dir = workdir.join("dist").join("server");
+    let process = MockProcessProvider::new()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_result(
+            "mrpack-install".to_string(),
+            vec![
+                "server".to_string(),
+                "fabric".to_string(),
+                "--server-file".to_string(),
+                "srv.jar".to_string(),
+            ],
+            Ok(ProcessOutput {
+                stdout: String::new(),
+                stderr: "download failed".to_string(),
+                success: false,
+            }),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_built_project(workdir.clone()),
+        )
+        .with_process(process);
+    let bootstrap_jar = session.filesystem().get_bootstrap_jar_cache_path().unwrap();
+    session
+        .filesystem()
+        .create_dir_all(bootstrap_jar.parent().unwrap())
+        .unwrap();
+    session
+        .filesystem()
+        .write_file(&bootstrap_jar, "jar")
+        .unwrap();
+
+    let mut orchestrator = BuildOrchestrator::new(&session).unwrap();
+    let error = orchestrator
+        .execute_build_pipeline(&[BuildTarget::Server])
+        .await
+        .unwrap_err();
+
+    match error {
+        BuildError::CommandFailed { command } => {
+            assert!(command.contains("Build failed for target Server"));
+            assert!(command.contains("mrpack-install command failed to download server JAR"));
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+
+    assert!(session.process_provider.verify_call(
+        "mrpack-install",
+        &["server", "fabric", "--server-file", "srv.jar"],
+        &dist_dir
+    ));
 }
 
 #[test]

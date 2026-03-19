@@ -13,6 +13,8 @@ use thiserror::Error;
 /// These functions contain the core state machine logic without side effects
 
 /// Canonical project-local artifact root for build outputs.
+/// Keeping this rooted at `workdir/dist` lets build and clean share one trusted
+/// artifact boundary instead of falling back to historical `.empack/dist` paths.
 pub fn artifact_root(workdir: &Path) -> PathBuf {
     workdir.join("dist")
 }
@@ -113,6 +115,7 @@ pub fn can_transition(from: PackState, to: PackState) -> bool {
         // Can advance through states
         (PackState::Uninitialized, PackState::Configured) => true,
         (PackState::Configured, PackState::Built) => true,
+        (PackState::Built, PackState::Building) => true,
 
         // Can sync within configured state
         (PackState::Configured, PackState::Configured) => true,
@@ -136,6 +139,9 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 
     match transition {
         StateTransition::Initialize(config) => {
+            // Progressive init is only allowed from a transient config-only layout.
+            // Once pack metadata or build artifacts exist, callers must use the
+            // normal configured-state flows instead of re-running init.
             let can_initialize = matches!(current, PackState::Uninitialized)
                 || (current == PackState::Configured && is_progressive_init_state(provider, workdir));
             if !can_initialize {
@@ -170,8 +176,8 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
         }
 
         StateTransition::Build(orchestrator, targets) => {
-            if current != PackState::Configured
-                || !validate_state_layout(provider, workdir, PackState::Configured)
+            if !matches!(current, PackState::Configured | PackState::Built)
+                || !validate_state_layout(provider, workdir, current)
             {
                 return Err(StateError::InvalidTransition {
                     from: current,
@@ -202,7 +208,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
         },
 
         StateTransition::Building => {
-            if current != PackState::Configured {
+            if !matches!(current, PackState::Configured | PackState::Built) {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Building,
@@ -306,47 +312,10 @@ pub async fn execute_build<'a>(
     mut orchestrator: crate::empack::builds::BuildOrchestrator<'a>,
     targets: &[BuildTarget],
 ) -> Result<PackState, StateError> {
-    // Execute build pipeline via builds.rs
-    #[cfg(test)]
-    {
-        // Mock build execution for testing
-        let dist_dir = std::path::PathBuf::from("/test/dist");
-
-        for target in targets {
-            // Create a dummy artifact to simulate successful build
-            let artifact_name = match target {
-                BuildTarget::Mrpack => "test-v1.0.0.mrpack",
-                BuildTarget::Client => "test-v1.0.0-client.zip",
-                BuildTarget::Server => "test-v1.0.0-server.zip",
-                BuildTarget::ClientFull => "test-v1.0.0-client-full.zip",
-                BuildTarget::ServerFull => "test-v1.0.0-server-full.zip",
-            };
-            let artifact_path = dist_dir.join(artifact_name);
-            // In test mode, we'll simulate the build without actually writing files
-            // The test framework will handle the mock filesystem
-        }
-    }
-
-    #[cfg(not(test))]
-    {
-        // Execute build pipeline directly in async context
-        let result = orchestrator.execute_build_pipeline(targets).await;
-
-        let build_results = result.map_err(|e| StateError::BuildError { source: e })?;
-
-        // Check if any builds failed
-        for result in &build_results {
-            if !result.success {
-                eprintln!(
-                    "Build failed for target {:?}: {:?}",
-                    result.target, result.warnings
-                );
-                return Err(StateError::ConfigError {
-                    reason: format!("Build failed for target {:?}", result.target),
-                });
-            }
-        }
-    }
+    orchestrator
+        .execute_build_pipeline(targets)
+        .await
+        .map_err(|e| StateError::BuildError { source: e })?;
 
     Ok(PackState::Built)
 }
@@ -572,8 +541,8 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         // Validate that the transition is allowed
         match transition {
             StateTransition::Building => {
-                if current != PackState::Configured
-                    || !validate_state_layout(self.provider, &self.workdir, PackState::Configured)
+                if !matches!(current, PackState::Configured | PackState::Built)
+                    || !validate_state_layout(self.provider, &self.workdir, current)
                 {
                     return Err(StateError::InvalidTransition {
                         from: current,
