@@ -15,20 +15,20 @@ CARGO_TERM_COLOR = "always"
 [tasks.run]
 alias = ["r", "rd", "run:debug"]
 description = "Run empack (Debug)"
-run = "BUILD_MODE=debug sh tasks/sh/run.sh"
-run_windows = "$env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\run.ps1"
+run = "RUN_AFTER_BUILD=1 BUILD_MODE=debug sh tasks/sh/build.sh"
+run_windows = "$env:RUN_AFTER_BUILD='1'; $env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\build.ps1"
 
 [tasks."run:profile"]
 alias = "rp"
 description = "Run empack (Profile)"
-run = "BUILD_MODE=profile sh tasks/sh/run.sh"
-run_windows = "$env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\run.ps1"
+run = "RUN_AFTER_BUILD=1 BUILD_MODE=profile sh tasks/sh/build.sh"
+run_windows = "$env:RUN_AFTER_BUILD='1'; $env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\build.ps1"
 
 [tasks."run:release"]
 alias = "rr"
 description = "Run empack (Release)"
-run = "BUILD_MODE=release sh tasks/sh/run.sh"
-run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\run.ps1"
+run = "RUN_AFTER_BUILD=1 BUILD_MODE=release sh tasks/sh/build.sh"
+run_windows = "$env:RUN_AFTER_BUILD='1'; $env:BUILD_MODE='release'; & .\\tasks\\pwsh\\build.ps1"
 
 # Build
 
@@ -107,5 +107,5 @@ run_windows = "& .\\tasks\\pwsh\\check.ps1"
 [tasks.clippy]
 alias = "lint"
 description = "Run cargo clippy"
-run = "sh tasks/sh/clippy.sh"
-run_windows = "& .\\tasks\\pwsh\\clippy.ps1"
+run = "CHECK_MODE=clippy sh tasks/sh/check.sh"
+run_windows = "$env:CHECK_MODE='clippy'; & .\\tasks\\pwsh\\check.ps1"
