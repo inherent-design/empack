@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, tasks/**]
+  pull_request:
+    branches: [dev, main]
+    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, tasks/**]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check
+        run: cargo check --workspace --all-targets
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets
+
+  test:
+    name: Test (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON((github.base_ref == 'main' || github.ref == 'refs/heads/main') && '["blacksmith-4vcpu-ubuntu-2404","macos-latest","windows-latest"]' || '["blacksmith-4vcpu-ubuntu-2404"]') }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-nextest
+      - name: cargo nextest
+        run: cargo nextest run --workspace --release --features test-utils
+
+  build-check:
+    if: github.ref == 'refs/heads/main'
+    name: Build check (${{ matrix.target }})
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            use-cross: false
+          - target: aarch64-unknown-linux-gnu
+            use-cross: true
+          - target: x86_64-apple-darwin
+            use-cross: false
+          - target: aarch64-apple-darwin
+            use-cross: false
+          - target: x86_64-pc-windows-msvc
+            use-cross: false
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - if: matrix.use-cross
+        uses: taiki-e/install-action@cross
+      - name: build check
+        run: |
+          if [ "${{ matrix.use-cross }}" = "true" ]; then
+            cross check --workspace --target ${{ matrix.target }}
+          else
+            cargo check --workspace --target ${{ matrix.target }}
+          fi
