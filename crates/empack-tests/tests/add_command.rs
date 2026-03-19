@@ -10,9 +10,9 @@ use empack_lib::application::config::AppConfig;
 use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveNetworkProvider, ProcessOutput,
 };
+use empack_lib::application::session_mocks::MockInteractiveProvider;
 use empack_lib::application::session_mocks::MockProcessProvider;
 use empack_lib::display::{Display, LiveDisplayProvider};
-use empack_lib::application::session_mocks::MockInteractiveProvider;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::fixtures::load_vcr_body_string;
 use indicatif::MultiProgress;
@@ -66,7 +66,13 @@ async fn e2e_add_mod_successfully() -> Result<()> {
 
     // Use a mock process provider that simulates packwiz success
     let mock_process_provider = MockProcessProvider::new().with_packwiz_result(
-        vec!["mr".to_string(), "add".to_string(), "AANobbMI".to_string()],
+        vec![
+            "modrinth".to_string(),
+            "add".to_string(),
+            "--project-id".to_string(),
+            "AANobbMI".to_string(),
+            "-y".to_string(),
+        ],
         Ok(ProcessOutput {
             stdout: String::new(),
             stderr: String::new(),

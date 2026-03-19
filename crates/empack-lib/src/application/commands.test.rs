@@ -478,6 +478,50 @@ mod handle_add_tests {
     }
 
     #[tokio::test]
+    async fn it_rejects_incomplete_project_state() {
+        let workdir = PathBuf::from("/test/incomplete-project");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_file(
+                        workdir.join("empack.yml"),
+                        r#"empack:
+  dependencies:
+    - 'sodium: "Sodium|mod"'
+  minecraft_version: "1.21.1"
+  loader: fabric
+  name: "Test Pack"
+"#
+                        .to_string(),
+                    ),
+            )
+            .with_network(MockNetworkProvider::new().with_project_response(
+                "sodium".to_string(),
+                modrinth_project("AANobbMI", "Sodium"),
+            ))
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "AANobbMI".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_add(&session, vec!["sodium".to_string()], false, None).await;
+
+        assert!(result.is_ok());
+        assert!(session.process_provider.get_calls().is_empty());
+    }
+
+    #[tokio::test]
     async fn it_handles_packwiz_failures() {
         let workdir = PathBuf::from("/test/configured-project");
         let session = MockCommandSession::new()
@@ -644,6 +688,50 @@ mod handle_remove_tests {
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();
         assert!(calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn it_rejects_incomplete_project_state() {
+        let workdir = PathBuf::from("/test/incomplete-project");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_file(
+                        workdir.join("empack.yml"),
+                        r#"empack:
+  dependencies:
+    - 'sodium: "Sodium|mod"'
+  minecraft_version: "1.21.1"
+  loader: fabric
+  name: "Test Pack"
+"#
+                        .to_string(),
+                    ),
+            )
+            .with_network(MockNetworkProvider::new().with_project_response(
+                "Sodium".to_string(),
+                modrinth_project("AANobbMI", "Sodium"),
+            ))
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "AANobbMI".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_sync(&session).await;
+
+        assert!(result.is_ok());
+        assert!(session.process_provider.get_calls().is_empty());
     }
 }
 

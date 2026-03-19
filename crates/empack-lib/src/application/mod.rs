@@ -8,6 +8,7 @@ pub mod config;
 pub mod env;
 pub mod loader;
 pub mod session;
+pub mod sync;
 
 #[cfg(feature = "test-utils")]
 pub mod session_mocks;
