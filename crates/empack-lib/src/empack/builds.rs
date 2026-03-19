@@ -115,7 +115,7 @@ impl<'a> BuildOrchestrator<'a> {
                     .current_dir()
                     .expect("Failed to get current directory")
             });
-        let dist_dir = workdir.join("dist");
+        let dist_dir = crate::empack::state::artifact_root(&workdir);
 
         Ok(Self {
             workdir,
@@ -362,12 +362,7 @@ impl<'a> BuildOrchestrator<'a> {
             })?;
 
         let dist_dir = self.dist_dir.join(target.to_string());
-        let filename = format!(
-            "{}-v{}-{}.zip",
-            pack_info.name,
-            pack_info.version,
-            target
-        );
+        let filename = format!("{}-v{}-{}.zip", pack_info.name, pack_info.version, target);
         let zip_path = self.dist_dir.join(&filename);
 
         // Remove existing zip file
@@ -836,6 +831,19 @@ impl<'a> BuildOrchestrator<'a> {
                 BuildTarget::ClientFull => self.build_client_full_impl(&bootstrap_jar_path)?,
                 BuildTarget::ServerFull => self.build_server_full_impl(&bootstrap_jar_path)?,
             };
+
+            if !result.success {
+                let details = if result.warnings.is_empty() {
+                    "no additional details".to_string()
+                } else {
+                    result.warnings.join("; ")
+                };
+
+                return Err(BuildError::CommandFailed {
+                    command: format!("Build failed for target {:?}: {}", result.target, details),
+                });
+            }
+
             results.push(result);
         }
 
@@ -942,12 +950,9 @@ impl<'a> BuildOrchestrator<'a> {
 
         // Clean zip file (V1 pattern)
         if let Some(info) = pack_info {
-            let zip_file = self.dist_dir.join(format!(
-                "{}-v{}-{}.zip",
-                info.name,
-                info.version,
-                target
-            ));
+            let zip_file = self
+                .dist_dir
+                .join(format!("{}-v{}-{}.zip", info.name, info.version, target));
             if self.session.filesystem().exists(&zip_file) {
                 self.session
                     .filesystem()
