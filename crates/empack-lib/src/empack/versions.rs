@@ -108,6 +108,7 @@ struct FabricLoaderInfo {
 #[derive(Debug, Deserialize)]
 struct NeoForgeVersionResponse {
     #[serde(rename = "isSnapshot")]
+    #[allow(dead_code)]
     is_snapshot: bool,
     versions: Vec<String>,
 }
@@ -124,10 +125,13 @@ struct QuiltLoaderCombination {
 #[derive(Debug, Deserialize)]
 struct QuiltLoaderVersion {
     version: String,
+    #[allow(dead_code)]
     maven: String,
     #[serde(default)]
+    #[allow(dead_code)]
     separator: String,
     #[serde(default)]
+    #[allow(dead_code)]
     build: u32,
 }
 
@@ -196,7 +200,7 @@ fn filter_neoforge_versions_by_minecraft(
     };
 
     // Filter versions matching the expected prefix
-    let mut matching_versions: Vec<String> = all_versions
+    let matching_versions: Vec<String> = all_versions
         .iter()
         .filter(|v| v.starts_with(&expected_prefix))
         .cloned()

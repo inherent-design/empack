@@ -466,19 +466,6 @@ impl LiveNetworkProvider {
         }
     }
 
-    /// Integration test constructor with custom base URLs (for external test crates)
-    #[cfg(feature = "integration-tests")]
-    pub fn new_with_base_urls(
-        modrinth_base_url: Option<String>,
-        curseforge_base_url: Option<String>,
-    ) -> Self {
-        Self {
-            #[cfg(test)]
-            modrinth_base_url,
-            #[cfg(test)]
-            curseforge_base_url,
-        }
-    }
 }
 
 impl NetworkProvider for LiveNetworkProvider {
@@ -544,15 +531,6 @@ impl LiveProcessProvider {
                 Self::with_custom_path(custom_path)
             }
             None => Self::new(),
-        }
-    }
-
-    /// Get the PATH environment variable to use for this provider
-    // TODO: Evaluate removal if ProcessProvider abstraction is complete
-    fn get_path_env(&self) -> String {
-        match &self.custom_path {
-            Some(path) => path.clone(),
-            None => std::env::var("PATH").unwrap_or_default(),
         }
     }
 }
@@ -761,7 +739,9 @@ where
     I: InteractiveProvider,
 {
     /// Owns the progress display infrastructure
-    // TODO: Determine if LiveDisplayProvider fully replaces this field
+    /// TODO(lifecycle): Field is stored for ownership but never read; LiveDisplayProvider
+    /// wraps its own Arc<MultiProgress>. Consider removing in future refactor.
+    #[allow(dead_code)]
     multi_progress: MultiProgress,
     /// Display provider for this session
     display_provider: LiveDisplayProvider,

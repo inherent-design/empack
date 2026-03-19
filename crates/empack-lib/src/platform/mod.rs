@@ -450,6 +450,7 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
     let mut count = std::mem::size_of::<libc::vm_statistics64>() as libc::mach_msg_type_number_t
         / std::mem::size_of::<libc::integer_t>() as libc::mach_msg_type_number_t;
 
+    #[allow(deprecated)]
     let result = unsafe {
         libc::host_statistics64(
             libc::mach_host_self(),
@@ -479,6 +480,7 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
 }
 
 // FreeBSD memory detection using sysctl
+#[cfg(target_os = "freebsd")]
 fn detect_memory_info_freebsd() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
 
@@ -533,6 +535,7 @@ fn detect_memory_info_freebsd() -> Result<(u64, u64), PlatformError> {
 }
 
 // OpenBSD memory detection using sysctl
+#[cfg(target_os = "openbsd")]
 fn detect_memory_info_openbsd() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
 
@@ -560,6 +563,7 @@ fn detect_memory_info_openbsd() -> Result<(u64, u64), PlatformError> {
 }
 
 // NetBSD memory detection using sysctl
+#[cfg(target_os = "netbsd")]
 fn detect_memory_info_netbsd() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
 
@@ -587,6 +591,13 @@ fn detect_memory_info_netbsd() -> Result<(u64, u64), PlatformError> {
 }
 
 // Generic Unix fallback for Solaris, AIX, DragonFly BSD, etc.
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+)))]
 fn detect_memory_info_unix_generic() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
 
