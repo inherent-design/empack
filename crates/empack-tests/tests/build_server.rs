@@ -177,10 +177,12 @@ async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
     .await;
 
     assert!(result.is_err(), "Build should fail when installer JAR is unavailable");
-    let error = result.unwrap_err().to_string();
+    let error = format!("{:#}", result.unwrap_err());
     assert!(
-        error.contains("Failed to execute build pipeline"),
-        "Missing installer should surface as a pipeline failure, got: {error}"
+        error.contains("Mock HTTP client unavailable (test mode)")
+            || (error.contains("Failed to read file:")
+                && error.contains("packwiz-installer-bootstrap.jar")),
+        "Missing installer should fail while resolving the bootstrap JAR, got: {error}"
     );
     assert!(
         !workdir
