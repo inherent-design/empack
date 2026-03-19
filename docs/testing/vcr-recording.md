@@ -1,10 +1,16 @@
 # VCR recording guide
 
+## Navigation
+
+- Project overview and current status: [`../../README.md`](../../README.md)
+- Trusted default verification matrix: [`README.md`](README.md)
+- Contributor workflow: [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md)
+
 ## Current role of VCR fixtures
 
 The repository contains recorded HTTP fixtures under `crates/empack-tests/fixtures/cassettes/` and cassette loader helpers in `crates/empack-tests/src/fixtures.rs`.
 
-These fixtures are useful for:
+These fixtures are useful for VCR-backed maintenance work such as:
 
 - maintaining recorded API examples
 - targeted cassette loader checks

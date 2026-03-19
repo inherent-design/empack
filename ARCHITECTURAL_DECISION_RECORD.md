@@ -4,6 +4,8 @@
 **Status**: APPROVED  
 **Participants**: Atlas-Claude, Atlas-Gemini, Mannie  
 
+> Status note (2026-03): this ADR remains useful historical context for the session-scoped DI shift, but it is not the current source of truth for feature completeness, trusted verification, or release readiness. Use `README.md`, `docs/testing/README.md`, and the accepted spec checkpoints for current status. Sections below that discuss missing commands or active blockers reflect the 2025 decision point.
+
 ## Executive Summary
 
 Following comprehensive architectural analysis of the DisplayProvider compilation crisis and the broader empack ecosystem, we have identified a fundamental impedance mismatch between our desired trait-based architecture and Rust's ownership model. This document formalizes our commitment to the **Session-Scoped Dependency Injection Pattern** as the foundational architecture for resolving the immediate DisplayProvider issues while establishing a robust foundation for completing the remaining feature implementation.

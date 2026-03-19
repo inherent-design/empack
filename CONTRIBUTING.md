@@ -1,102 +1,99 @@
 # Contributing to empack
 
-## Project Guidelines
+## Start from the current source of truth
 
-### **Naming and URLs**
+- Project entry point and current status: [`README.md`](README.md)
+- Current CLI behavior and workflow notes: [`docs/usage.md`](docs/usage.md)
+- Trusted hermetic paths, isolated reruns, deferred gaps, and known caveats: [`docs/testing/README.md`](docs/testing/README.md)
+- VCR-backed maintenance guidance: [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
+- Provider API background only: [`docs/reference/MODRINTH.md`](docs/reference/MODRINTH.md), [`docs/reference/CURSEFORGE.md`](docs/reference/CURSEFORGE.md)
 
-- **Project name**: Always use lowercase "empack" (not "Empack")
-- **Public URL**: https://empack.sh (shorthand: "empack.sh")
-- **Repository**: https://github.com/inherent-design/empack
+## Scope
 
-### **Logging Guidelines**
+This repository currently treats the Rust workspace as the active implementation line. The Bash implementations in `v1/` and `v2/` are historical reference material only.
 
-When implementing features or debugging issues, follow this single guideline for logging:
+## Repository map
 
-### **Clean Logging Strategy**
+- `crates/empack`: CLI entry point
+- `crates/empack-lib`: core application, state, resolver, and build logic
+- `crates/empack-tests`: workflow and integration tests
+- `docs/usage.md`: current command and workflow guidance
+- `docs/testing/README.md`: trusted verification matrix and caveats
+- `docs/testing/vcr-recording.md`: VCR-backed maintenance workflow
+- `docs/reference/*`: provider reference material, not current product-status truth
+- `ARCHITECTURAL_DECISION_RECORD.md`: historical ADR context, not the current feature/status matrix
 
-**Only ERROR and TRACE should remain in production code.**
+## Local setup
 
-1. **Remove debug logging once tested**
-   - Use `debug!()` and `info!()` freely during development
-   - **Always remove them** before committing to main
-   - These are development-only concerns
+### Baseline build checks
 
-2. **Add trace logging for new features/changes**
-   - Add `trace!()` logging for new features in `networking/` and `empack/` modules
-   - **DO NOT** add trace logging to `primitives/`, `terminal/`, or `logger/` modules (makes no sense)
-   - Trace logging should help understand program flow in production
+Run the smallest relevant checks first:
 
-3. **Other log levels have specific purposes:**
-   - **info**: Should be handled as user-facing dialogue instead of logging
-   - **warnings**: Should be handled at compile-time, not runtime
-   - **error**: For actual error conditions that need investigation
-
-### **Result: Clean Release Builds**
-
-When a user runs with verbose logging in a RELEASE build, they should only see:
-
-```
-trace^0: Starting mod resolution
-trace^1: Connecting to Modrinth API
-trace^2: Downloading mod metadata
-...
-trace^n: Mod resolution completed
-error: Failed to resolve dependency 'xyz'
+```bash
+cargo build --workspace --locked
+cargo check --workspace --all-targets --locked
 ```
 
-This provides clarity for debugging without noise from development artifacts.
+### Tooling notes
 
-### **The Goal**
+- `cargo nextest` is the default test runner for trusted workflow paths
+- Live CLI workflows may require external tools such as `packwiz`
+- Hermetic workflow tests use mocked toolchains where possible
+- VCR maintenance uses `curl`, `jq`, and `.env.local.template` or `.env.local` guidance as described in `docs/testing/vcr-recording.md`
 
-Production logging should be **intentional and permanent** - either tracing program flow (`trace`) or reporting problems (`error`). Everything else is temporary development scaffolding that should be cleaned up.
+## Verification expectations
 
-### **Documentation and Content Style**
+Before claiming a workflow is trusted, check it against [`docs/testing/README.md`](docs/testing/README.md).
 
-**Semantic Clarity Over Marketing Language**
+Use these rules:
 
-Documentation and user-facing content should be clear, direct, and functional. Avoid business jargon and marketing superlatives.
+1. Prefer the smallest exact command that proves the touched behavior.
+2. Treat grouped `sync_workflow` reruns as caveated until the `Global configuration already initialized` issue is fixed.
+3. Keep VCR-backed flows separate from the default hermetic matrix.
+4. If a path is deferred or only partially covered, document that directly.
 
-**Avoid These Terms:**
-- ~~"Enterprise-grade"~~ → just describe what it does
-- ~~"Production-ready"~~ → let quality speak for itself  
-- ~~"Intelligent/Intelligence"~~ → "smart" is fine, "AI-powered" is not
-- ~~"Orchestration"~~ → "coordination" or "management"
-- ~~"Comprehensive"~~ → be specific about what's included
-- ~~"Professional distribution"~~ → "distribution"
-- ~~"Workflow automation"~~ → "automation" or just describe the feature
+## Documentation rules
 
-**Use These Instead:**
-- "Minecraft modpack management" not "enterprise modpack orchestration"
-- "Build system" not "build orchestration"
-- "Memory pressure assessment" not "comprehensive pressure analytics"
-- Simple, direct descriptions of actual functionality
+- Always write `empack` in lowercase.
+- Keep prose factual, technical, and concise.
+- Do not add marketing claims, support promises, badges, or release statements that the repo cannot prove.
+- When behavior changes, update the affected docs in the same change when practical.
+- Keep historical Bash content in reference sections only, not in active product guidance.
+- When touching status or architecture notes, label current truth versus historical context directly instead of silently mixing them.
 
-**Why:** 
-- Users want to know what the tool does, not how impressive it sounds
-- Technical accuracy over marketing language
-- Confidence through simplicity, not through adjectives
+## Coding notes
 
-**Example Transformations:**
-```diff
-- Enterprise-grade Minecraft modpack orchestration with intelligent workflow automation
-+ Minecraft modpack management library
+- Follow surrounding Rust patterns unless a narrower contract improvement is clearly better.
+- Keep changes scoped.
+- Avoid broad refactors during feature or docs slices.
+- Remove temporary logging before finishing a change.
+- Prefer trace and error logging where durable logging is needed.
 
-- Comprehensive platform detection with robust error handling
-+ Cross-platform system detection with error handling
+## Commits
 
-- Professional-grade logging infrastructure for production environments  
-+ Structured logging with progress tracking
-```
+Use a short conventional subject line such as:
 
-### **Commit Style Guidelines**
+- `docs: refresh usage guide`
+- `fix: preserve dist metadata on clean`
+- `test: harden sync workflow assertions`
 
-**Subject Line:**
-- Maximum 50 characters
-- Format: `type: description` (lowercase after colon, no period)
-- Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+Guidelines:
 
-**Body Format:**
-- Bullet points describing staged changes
-- Start each bullet with lowercase (except proper nouns)
-- Focus on what changed, not why
-- No summary paragraphs, footers, or AI attribution
+- imperative mood
+- under 72 characters when possible
+- explain why in the body if more context is needed
+
+## VCR and fixture maintenance
+
+If you touch recorded API fixtures or cassette helpers:
+
+1. Read [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md).
+2. Prefer `./scripts/record-vcr-cassettes.sh --dry-run` before a live recording pass.
+3. Re-run the targeted cassette loader checks after updating fixtures.
+
+## Pull request checklist
+
+- [ ] Scope is narrow and explicit
+- [ ] Docs match the current verified behavior
+- [ ] Verification commands are listed in the change summary
+- [ ] Deferred gaps or caveats remain explicit where relevant
