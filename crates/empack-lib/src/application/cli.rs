@@ -54,6 +54,41 @@ pub enum Commands {
         /// Force overwrite existing files
         #[arg(short, long, help = "Force overwrite existing modpack files")]
         force: bool,
+
+        /// Mod loader (neoforge, fabric, forge, quilt)
+        #[arg(
+            long,
+            short = 'm',
+            env = "EMPACK_MODLOADER",
+            help = "Mod loader to use (skips interactive prompt)"
+        )]
+        modloader: Option<String>,
+
+        /// Minecraft version
+        #[arg(
+            long,
+            env = "EMPACK_MC_VERSION",
+            help = "Minecraft version (skips interactive prompt)"
+        )]
+        mc_version: Option<String>,
+
+        /// Author name
+        #[arg(
+            long,
+            short = 'A',
+            env = "EMPACK_AUTHOR",
+            help = "Author name (skips interactive prompt)"
+        )]
+        author: Option<String>,
+
+        /// Modpack name (same as positional argument)
+        #[arg(
+            long,
+            short = 'n',
+            env = "EMPACK_NAME",
+            help = "Modpack name (skips interactive prompt)"
+        )]
+        pack_name: Option<String>,
     },
 
     /// Synchronize empack.yml dependencies with pack.toml reality
@@ -81,7 +116,11 @@ pub enum Commands {
         mods: Vec<String>,
 
         /// Force add even if conflicts exist
-        #[arg(short, long, help = "Force add projects even if version conflicts exist")]
+        #[arg(
+            short,
+            long,
+            help = "Force add projects even if version conflicts exist"
+        )]
         force: bool,
 
         /// Search platform preference

@@ -3,11 +3,11 @@
 //! Tests graceful error handling when a template file is missing during build.
 
 use anyhow::Result;
-use empack_tests::{HermeticSessionBuilder, MockBehavior};
 use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
+use empack_tests::{HermeticSessionBuilder, MockBehavior};
 
 #[tokio::test]
 async fn test_build_with_missing_template() -> Result<()> {
@@ -21,10 +21,7 @@ async fn test_build_with_missing_template() -> Result<()> {
                 stderr: String::new(),
             },
         )?
-        .with_mock_executable(
-            "git",
-            MockBehavior::AlwaysSucceed,
-        )?
+        .with_mock_executable("git", MockBehavior::AlwaysSucceed)?
         .with_mock_executable(
             "which",
             MockBehavior::SucceedWithOutput {
@@ -46,15 +43,25 @@ async fn test_build_with_missing_template() -> Result<()> {
     execute_command_with_session(
         Commands::Init {
             name: None,
+            pack_name: None,
             force: false,
+            modloader: None,
+            mc_version: None,
+            author: None,
         },
         &session,
     )
     .await?;
 
     // First, verify the project was initialized
-    assert!(workdir.join("empack.yml").exists(), "empack.yml should exist");
-    assert!(workdir.join("pack").exists(), "pack/ directory should exist");
+    assert!(
+        workdir.join("empack.yml").exists(),
+        "empack.yml should exist"
+    );
+    assert!(
+        workdir.join("pack").exists(),
+        "pack/ directory should exist"
+    );
 
     // Attempt a build - this should detect missing templates gracefully
     // Note: In the hermetic environment, the build might fail for other reasons
@@ -113,10 +120,7 @@ async fn test_build_template_error_specificity() -> Result<()> {
                 stderr: String::new(),
             },
         )?
-        .with_mock_executable(
-            "git",
-            MockBehavior::AlwaysSucceed,
-        )?
+        .with_mock_executable("git", MockBehavior::AlwaysSucceed)?
         .with_mock_executable(
             "which",
             MockBehavior::SucceedWithOutput {
@@ -136,7 +140,11 @@ async fn test_build_template_error_specificity() -> Result<()> {
     execute_command_with_session(
         Commands::Init {
             name: None,
+            pack_name: None,
             force: false,
+            modloader: None,
+            mc_version: None,
+            author: None,
         },
         &session,
     )
@@ -161,10 +169,7 @@ async fn test_build_template_error_specificity() -> Result<()> {
         Err(e) => {
             let err_msg = format!("{:?}", e);
             // Error should be informative about what failed
-            assert!(
-                !err_msg.is_empty(),
-                "Error message should not be empty"
-            );
+            assert!(!err_msg.is_empty(), "Error message should not be empty");
         }
     }
 
