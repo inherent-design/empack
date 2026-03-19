@@ -78,6 +78,9 @@ async fn initialize_empack_project(
         .clone()
         .expect("hermetic project should configure a workdir");
     std::env::set_current_dir(&workdir)?;
+    unsafe {
+        std::env::set_var("HOME", &test_env.root_path);
+    }
 
     Ok((session, test_env, workdir))
 }
@@ -96,7 +99,7 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
 
     let result = execute_command_with_session(
         Commands::Build {
-            targets: vec!["client".to_string(), "client-full".to_string()],
+            targets: vec!["client-full".to_string()],
             clean: false,
             jobs: None,
         },
@@ -121,6 +124,17 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
         .join("dist")
         .join(format!("{project_name}-v1.0.0-client-full.zip"));
     assert!(archive.exists(), "Client-full archive should be created");
+    assert!(
+        !workdir.join("dist/client").exists(),
+        "Standalone client-full builds should not materialize the client target directory"
+    );
+    assert!(
+        !workdir
+            .join("dist")
+            .join(format!("{project_name}-v1.0.0-client.zip"))
+            .exists(),
+        "Standalone client-full builds should not create a client archive"
+    );
 
     let packwiz_calls = test_env.get_mock_calls("packwiz")?;
     assert!(
@@ -146,7 +160,7 @@ async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
 
     let result = execute_command_with_session(
         Commands::Build {
-            targets: vec!["client".to_string(), "client-full".to_string()],
+            targets: vec!["client-full".to_string()],
             clean: false,
             jobs: None,
         },
@@ -157,8 +171,8 @@ async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
     assert!(result.is_err(), "Build should fail when installer JAR is unavailable");
     let error = result.unwrap_err().to_string();
     assert!(
-        error.contains("Failed to execute build pipeline"),
-        "Missing installer should surface as a pipeline failure, got: {error}"
+        error.contains("Mock HTTP client unavailable (test mode)"),
+        "Missing installer should fail while resolving the bootstrap JAR, got: {error}"
     );
     assert!(
         !workdir
@@ -170,6 +184,17 @@ async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
     assert!(
         !workdir.join("dist/client-full/mods/both-installed.txt").exists(),
         "The full installer step should not run when the installer bootstrap is missing"
+    );
+    assert!(
+        !workdir.join("dist/client").exists(),
+        "Standalone client-full failures should not create the client target directory"
+    );
+    assert!(
+        !workdir
+            .join("dist")
+            .join("workflow-client-full-missing-installer-v1.0.0-client.zip")
+            .exists(),
+        "Standalone client-full failures should not create a client archive"
     );
 
     Ok(())
@@ -197,7 +222,7 @@ async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
 
     let result = execute_command_with_session(
         Commands::Build {
-            targets: vec!["client".to_string(), "client-full".to_string()],
+            targets: vec!["client-full".to_string()],
             clean: false,
             jobs: None,
         },
@@ -223,6 +248,10 @@ async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
             .join(format!("{project_name}-v1.0.0-client-full.zip"))
             .exists(),
         "Client-full archive should be created for the structured pack scenario"
+    );
+    assert!(
+        !workdir.join("dist/client").exists(),
+        "Structured standalone client-full builds should not materialize the client target directory"
     );
 
     Ok(())

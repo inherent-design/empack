@@ -662,6 +662,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         // Step 2: Refresh the pack using packwiz refresh
         self.refresh_pack()?;
+        self.load_pack_info()?;
 
         let dist_dir = self.dist_dir.join("client-full");
         self.session
@@ -1066,6 +1067,15 @@ impl<'a> BuildOrchestrator<'a> {
 
     /// Helper: Create build artifact metadata
     fn create_artifact(&self, path: &Path) -> Result<BuildArtifact, BuildError> {
+        if !self.session.filesystem().exists(path) {
+            return Err(BuildError::ValidationError {
+                reason: format!(
+                    "Build command completed without creating expected artifact: {}",
+                    path.display()
+                ),
+            });
+        }
+
         let name = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -1073,15 +1083,12 @@ impl<'a> BuildOrchestrator<'a> {
             .to_string();
 
         // For mock filesystem, we'll use content length as size
-        let size = if self.session.filesystem().exists(path) {
-            self.session
-                .filesystem()
-                .read_to_string(path)
-                .map(|content| content.len() as u64)
-                .unwrap_or(0)
-        } else {
-            0
-        };
+        let size = self
+            .session
+            .filesystem()
+            .read_to_string(path)
+            .map(|content| content.len() as u64)
+            .unwrap_or(0);
 
         Ok(BuildArtifact {
             name,
