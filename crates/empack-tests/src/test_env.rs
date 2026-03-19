@@ -66,6 +66,37 @@ pub struct ConditionalRule {
     pub behavior: MockBehavior,
 }
 
+const MOCK_CALL_SEPARATOR: char = '\u{1f}';
+
+/// Structured mock invocation captured from a hermetic executable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MockInvocation {
+    pub executable: String,
+    pub args: Vec<String>,
+}
+
+impl MockInvocation {
+    pub fn render(&self) -> String {
+        std::iter::once(self.executable.as_str())
+            .chain(self.args.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    pub fn contains_args(&self, expected: &[&str]) -> bool {
+        if expected.is_empty() {
+            return true;
+        }
+
+        self.args.windows(expected.len()).any(|window| {
+            window
+                .iter()
+                .map(String::as_str)
+                .eq(expected.iter().copied())
+        })
+    }
+}
+
 impl TestEnvironment {
     /// Create a new hermetic test environment
     pub fn new() -> Result<Self> {
@@ -224,6 +255,24 @@ side = "both"
 MODRINTH
 fi
 
+if [[ "$1" == "modrinth" && "$2" == "add" ]]; then
+  for ((i = 1; i <= $#; i++)); do
+    if [[ "${!i}" == "--project-id" ]]; then
+      next=$((i + 1))
+      mod_id="${!next}"
+      if [[ -n "$mod_id" ]]; then
+        mkdir -p mods
+        cat > "mods/$mod_id.pw.toml" <<MODRINTH
+name = "$mod_id"
+filename = "$mod_id.jar"
+side = "both"
+MODRINTH
+      fi
+      break
+    fi
+  done
+fi
+
 if [[ "$1" == "cf" && "$2" == "add" && -n "$3" ]]; then
   mkdir -p mods
   cat > "mods/$3.pw.toml" <<CURSEFORGE
@@ -231,6 +280,24 @@ name = "$3"
 filename = "$3.jar"
 side = "both"
 CURSEFORGE
+fi
+
+if [[ "$1" == "curseforge" && "$2" == "add" ]]; then
+  for ((i = 1; i <= $#; i++)); do
+    if [[ "${!i}" == "--addon-id" ]]; then
+      next=$((i + 1))
+      mod_id="${!next}"
+      if [[ -n "$mod_id" ]]; then
+        mkdir -p mods
+        cat > "mods/$mod_id.pw.toml" <<CURSEFORGE
+name = "$mod_id"
+filename = "$mod_id.jar"
+side = "both"
+CURSEFORGE
+      fi
+      break
+    fi
+  done
 fi
 "#,
                     );
@@ -392,12 +459,16 @@ fi
 # Log all calls to: {}
 
 # Log the call
-echo "$(date '+%Y-%m-%d %H:%M:%S') {} $*" >> "{}"
+printf '%s' "{}" >> "{}"
+for arg in "$@"; do
+  printf '\x1f%s' "$arg" >> "{}"
+done
+printf '\n' >> "{}"
 
 # Execute behavior
 {}
 "#,
-            name, log_path_str, name, log_path_str, behavior_code
+            name, log_path_str, name, log_path_str, log_path_str, log_path_str, behavior_code
         );
 
         Ok(script)
@@ -444,27 +515,56 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') {} $*" >> "{}"
 
     /// Verify that a mock executable was called with specific arguments
     pub fn verify_mock_call(&self, executable_name: &str, args: &[&str]) -> Result<bool> {
+        let expected_args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+        Ok(self
+            .get_mock_invocations(executable_name)?
+            .iter()
+            .any(|call| call.args == expected_args))
+    }
+
+    /// Get all structured invocations made to a mock executable.
+    pub fn get_mock_invocations(&self, executable_name: &str) -> Result<Vec<MockInvocation>> {
         let log_content = self.get_mock_log(executable_name)?;
-        let expected_call = format!("{} {}", executable_name, args.join(" "));
-        Ok(log_content.contains(&expected_call))
+        let calls = log_content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                let mut fields = line.split(MOCK_CALL_SEPARATOR);
+                let executable = fields.next().unwrap_or_default().to_string();
+                let args = fields.map(str::to_string).collect();
+                MockInvocation { executable, args }
+            })
+            .filter(|call| call.executable == executable_name)
+            .collect();
+        Ok(calls)
+    }
+
+    /// Assert that at least one logged call contains the expected argument sequence.
+    pub fn assert_mock_call_contains_args(
+        &self,
+        executable_name: &str,
+        args: &[&str],
+    ) -> Result<()> {
+        let calls = self.get_mock_invocations(executable_name)?;
+        if calls.iter().any(|call| call.contains_args(args)) {
+            return Ok(());
+        }
+
+        Err(anyhow::anyhow!(
+            "Expected `{}` to be called with args {:?}, recorded calls: {:?}",
+            executable_name,
+            args,
+            calls
+        ))
     }
 
     /// Get all calls made to a mock executable
     pub fn get_mock_calls(&self, executable_name: &str) -> Result<Vec<String>> {
-        let log_content = self.get_mock_log(executable_name)?;
-        let calls: Vec<String> = log_content
-            .lines()
-            .filter_map(|line| {
-                // Extract the command part after the timestamp
-                let parts: Vec<&str> = line.split(' ').collect();
-                if parts.len() > 2 {
-                    Some(parts[2..].join(" "))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        Ok(calls)
+        Ok(self
+            .get_mock_invocations(executable_name)?
+            .into_iter()
+            .map(|call| call.render())
+            .collect())
     }
 
     /// Initialize an empack project in the work directory
@@ -836,6 +936,37 @@ mod tests {
                 .expect("Failed to read mock calls"),
             vec!["test-cmd alpha beta".to_string()]
         );
+    }
+
+    #[test]
+    fn test_mock_executable_logging_preserves_argument_boundaries() {
+        let mut env = TestEnvironment::new().expect("Failed to create test environment");
+
+        env.add_mock_executable("test-cmd", MockBehavior::AlwaysSucceed)
+            .expect("Failed to add mock executable");
+
+        let output = std::process::Command::new(env.bin_path.join("test-cmd"))
+            .args(["alpha", "two words", "gamma"])
+            .current_dir(&env.work_path)
+            .env("PATH", env.get_path_env())
+            .output()
+            .expect("Failed to execute mock command");
+
+        assert!(output.status.success());
+        assert_eq!(
+            env.get_mock_invocations("test-cmd")
+                .expect("Failed to read mock invocations"),
+            vec![MockInvocation {
+                executable: "test-cmd".to_string(),
+                args: vec![
+                    "alpha".to_string(),
+                    "two words".to_string(),
+                    "gamma".to_string(),
+                ],
+            }]
+        );
+        env.assert_mock_call_contains_args("test-cmd", &["two words", "gamma"])
+            .expect("Failed to assert mock call args");
     }
 
     #[test]

@@ -9,6 +9,7 @@ use empack_lib::empack::search::ProjectInfo;
 use empack_lib::primitives::ProjectPlatform;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
+use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
 use empack_tests::{HermeticSessionBuilder, MockBehavior};
 use std::fs;
 
@@ -22,6 +23,7 @@ use std::fs;
 /// 5. Verify all operations succeeded
 #[tokio::test]
 async fn test_lifecycle_forge_full() -> Result<()> {
+    let fixture = WorkflowProjectFixture::new("forge-test-pack");
     // Create hermetic session with mocked toolchain and deterministic add results
     let (session, test_env) = HermeticSessionBuilder::new()?
         .with_yes_flag()
@@ -223,15 +225,17 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     let dist_dir = project_dir.join("dist");
     for artifact in [
-        "forge-test-pack-v1.0.0.mrpack",
-        "forge-test-pack-v1.0.0-client.zip",
-        "forge-test-pack-v1.0.0-server.zip",
-        "forge-test-pack-v1.0.0-client-full.zip",
-        "forge-test-pack-v1.0.0-server-full.zip",
+        WorkflowArtifact::Mrpack,
+        WorkflowArtifact::Client,
+        WorkflowArtifact::Server,
+        WorkflowArtifact::ClientFull,
+        WorkflowArtifact::ServerFull,
     ] {
+        let artifact_path = fixture.artifact_path(&project_dir, artifact);
         assert!(
-            dist_dir.join(artifact).exists(),
-            "Lifecycle build should materialize {artifact}"
+            artifact_path.exists(),
+            "Lifecycle build should materialize {}",
+            artifact_path.display()
         );
     }
     assert!(
@@ -268,23 +272,23 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     );
 
     // Verify packwiz was called during workflow
-    let packwiz_calls = test_env.get_mock_calls("packwiz")?;
+    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains(" mr add AANobbMI")),
+            .any(|call| call.contains_args(&["modrinth", "add", "--project-id", "AANobbMI", "-y"])),
         "Lifecycle should add the Modrinth dependency through packwiz: {packwiz_calls:?}"
     );
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains(" cf add 238222")),
+            .any(|call| call.contains_args(&["curseforge", "add", "--addon-id", "238222", "-y"])),
         "Lifecycle should add the CurseForge dependency through packwiz: {packwiz_calls:?}"
     );
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains(" mr export ")),
+            .any(|call| call.contains_args(&["mr", "export"])),
         "Lifecycle should export the mrpack during full builds: {packwiz_calls:?}"
     );
 

@@ -13,53 +13,8 @@ use empack_lib::application::session::{
 use empack_lib::application::session_mocks::{MockInteractiveProvider, MockProcessProvider};
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use std::path::Path;
+use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
 use tempfile::TempDir;
-
-/// Initialize a basic empack project structure for clean testing
-async fn initialize_empack_project(workdir: &Path) -> Result<()> {
-    // Create the basic structure that empack expects
-    std::fs::create_dir_all(workdir.join("pack"))?;
-
-    // Create empack.yml
-    let empack_yml = r#"empack:
-  dependencies: []
-  minecraft_version: "1.21.1"
-  loader: fabric
-  name: "Test Modpack"
-  author: "Test Author"
-  version: "1.0.0"
-"#;
-    std::fs::write(workdir.join("empack.yml"), empack_yml)?;
-
-    // Create pack.toml
-    let pack_toml = r#"name = "Test Modpack"
-author = "Test Author"
-version = "1.0.0"
-pack-format = "packwiz:1.1.0"
-
-[index]
-file = "index.toml"
-hash-format = "sha256"
-hash = ""
-
-[versions]
-minecraft = "1.21.1"
-fabric = "0.15.0"
-"#;
-    std::fs::write(workdir.join("pack").join("pack.toml"), pack_toml)?;
-
-    // Create index.toml
-    let index_toml = r#"hash-format = "sha256"
-
-[[files]]
-file = "pack.toml"
-hash = ""
-"#;
-    std::fs::write(workdir.join("pack").join("index.toml"), index_toml)?;
-
-    Ok(())
-}
 
 /// Test that clean command successfully removes build artifacts
 #[tokio::test]
@@ -67,33 +22,30 @@ async fn e2e_clean_builds_successfully() -> Result<()> {
     // Setup: Create a real temporary directory
     let temp_dir = TempDir::new()?;
     let workdir = temp_dir.path().to_path_buf();
+    let fixture = WorkflowProjectFixture::new("workflow-clean-pack");
 
     // Initialize: Create a real empack project
-    initialize_empack_project(&workdir).await?;
+    let paths = fixture.write_to(&workdir)?;
 
     // Create mock build artifacts that clean should remove
-    let dist_dir = workdir.join("dist");
-    std::fs::create_dir_all(&dist_dir)?;
+    std::fs::create_dir_all(&paths.dist_dir)?;
 
-    let mrpack_file = dist_dir.join("test-modpack-v1.0.0.mrpack");
+    let mrpack_file = fixture.artifact_path(&workdir, WorkflowArtifact::Mrpack);
     std::fs::write(&mrpack_file, "mock mrpack content")?;
 
-    let client_zip = dist_dir.join("test-modpack-v1.0.0-client.zip");
+    let client_zip = fixture.artifact_path(&workdir, WorkflowArtifact::Client);
     std::fs::write(&client_zip, "mock client zip content")?;
 
-    let server_zip = dist_dir.join("test-modpack-v1.0.0-server.zip");
+    let server_zip = fixture.artifact_path(&workdir, WorkflowArtifact::Server);
     std::fs::write(&server_zip, "mock server zip content")?;
 
     // Verify artifacts exist before clean
-    assert!(mrpack_file.exists(), "mrpack file should exist before clean");
     assert!(
-        client_zip.exists(),
-        "client zip should exist before clean"
+        mrpack_file.exists(),
+        "mrpack file should exist before clean"
     );
-    assert!(
-        server_zip.exists(),
-        "server zip should exist before clean"
-    );
+    assert!(client_zip.exists(), "client zip should exist before clean");
+    assert!(server_zip.exists(), "server zip should exist before clean");
 
     // Set working directory for the test
     std::env::set_current_dir(&workdir)?;
@@ -126,20 +78,13 @@ async fn e2e_clean_builds_successfully() -> Result<()> {
     // Assert: Command should succeed
     assert!(result.is_ok(), "Clean command failed: {:?}", result);
 
-    // Verify artifacts were removed (implementation-dependent)
-    // Clean command should remove dist/ directory or its contents
-    if dist_dir.exists() {
-        // If dist/ still exists, verify it's empty or files are gone
-        let remaining_files: Vec<_> = std::fs::read_dir(&dist_dir)?.collect();
-        if !remaining_files.is_empty() {
-            println!(
-                "Note: dist/ directory still has files after clean: {} items",
-                remaining_files.len()
-            );
-        }
-    } else {
-        println!("dist/ directory removed completely (good)");
-    }
+    assert!(
+        !paths.dist_dir.exists(),
+        "Clean should remove the canonical dist/ artifact root"
+    );
+    assert!(paths.empack_yml.exists(), "Clean should preserve empack.yml");
+    assert!(paths.pack_toml.exists(), "Clean should preserve pack metadata");
+    assert!(paths.index_toml.exists(), "Clean should preserve index metadata");
 
     Ok(())
 }
@@ -150,9 +95,10 @@ async fn e2e_clean_no_artifacts() -> Result<()> {
     // Setup: Create a real temporary directory
     let temp_dir = TempDir::new()?;
     let workdir = temp_dir.path().to_path_buf();
+    let fixture = WorkflowProjectFixture::new("workflow-clean-no-artifacts");
 
     // Initialize: Create a real empack project (no build artifacts)
-    initialize_empack_project(&workdir).await?;
+    let paths = fixture.write_to(&workdir)?;
 
     // Set working directory for the test
     std::env::set_current_dir(&workdir)?;
@@ -188,6 +134,12 @@ async fn e2e_clean_no_artifacts() -> Result<()> {
         "Clean command should succeed with no artifacts: {:?}",
         result
     );
+    assert!(paths.empack_yml.exists(), "No-op clean should preserve empack.yml");
+    assert!(paths.pack_toml.exists(), "No-op clean should preserve pack.toml");
+    assert!(
+        !paths.dist_dir.exists(),
+        "No-op clean should not materialize a dist directory"
+    );
 
     Ok(())
 }
@@ -198,24 +150,27 @@ async fn e2e_clean_specific_targets() -> Result<()> {
     // Setup: Create a real temporary directory
     let temp_dir = TempDir::new()?;
     let workdir = temp_dir.path().to_path_buf();
+    let fixture = WorkflowProjectFixture::new("workflow-clean-targets");
 
     // Initialize: Create a real empack project
-    initialize_empack_project(&workdir).await?;
+    let paths = fixture.write_to(&workdir)?;
 
     // Create mock build artifacts for different targets
-    let dist_dir = workdir.join("dist");
-    std::fs::create_dir_all(&dist_dir)?;
+    std::fs::create_dir_all(&paths.dist_dir)?;
 
-    let mrpack_file = dist_dir.join("test-modpack-v1.0.0.mrpack");
+    let mrpack_file = fixture.artifact_path(&workdir, WorkflowArtifact::Mrpack);
     std::fs::write(&mrpack_file, "mock mrpack content")?;
 
-    let client_dir = dist_dir.join("client");
+    let client_dir = paths.dist_dir.join("client");
     std::fs::create_dir_all(&client_dir)?;
     std::fs::write(client_dir.join("instance.cfg"), "mock client config")?;
 
-    let server_dir = dist_dir.join("server");
+    let server_dir = paths.dist_dir.join("server");
     std::fs::create_dir_all(&server_dir)?;
     std::fs::write(server_dir.join("server.properties"), "mock server config")?;
+
+    let readme_path = workdir.join("README.md");
+    std::fs::write(&readme_path, "keep me")?;
 
     // Set working directory for the test
     std::env::set_current_dir(&workdir)?;
@@ -248,8 +203,14 @@ async fn e2e_clean_specific_targets() -> Result<()> {
     // Assert: Command should succeed
     assert!(result.is_ok(), "Clean command failed: {:?}", result);
 
-    // Verify clean operation occurred (implementation-specific behavior)
-    println!("Clean command executed for all build targets");
+    assert!(
+        !paths.dist_dir.exists(),
+        "Cleaning build targets should remove nested dist target directories too"
+    );
+    assert!(
+        readme_path.exists(),
+        "Clean should not remove unrelated project files outside dist/"
+    );
 
     Ok(())
 }

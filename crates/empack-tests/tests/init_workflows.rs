@@ -200,7 +200,7 @@ async fn test_init_with_explicit_flags() -> Result<()> {
     );
 
     // Verify packwiz was called
-    let packwiz_calls = test_env.get_mock_calls("packwiz")?;
+    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
     assert!(
         !packwiz_calls.is_empty(),
         "packwiz should have been called for initialization"
@@ -208,27 +208,27 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 
     let init_call = packwiz_calls
         .iter()
-        .find(|call| call.contains(" init "))
+        .find(|call| call.args.first().map(String::as_str) == Some("init"))
         .expect("packwiz init invocation should be logged");
     assert!(
-        init_call.contains("--name Matrix Fabric"),
-        "packwiz init should receive the explicit pack name: {init_call}"
+        init_call.contains_args(&["--name", "Matrix Fabric"]),
+        "packwiz init should receive the explicit pack name: {init_call:?}"
     );
     assert!(
-        init_call.contains("--author Workflow Test"),
-        "packwiz init should receive the explicit author: {init_call}"
+        init_call.contains_args(&["--author", "Workflow Test"]),
+        "packwiz init should receive the explicit author: {init_call:?}"
     );
     assert!(
-        init_call.contains("--mc-version 1.21.1"),
-        "packwiz init should receive the explicit Minecraft version: {init_call}"
+        init_call.contains_args(&["--mc-version", "1.21.1"]),
+        "packwiz init should receive the explicit Minecraft version: {init_call:?}"
     );
     assert!(
-        init_call.contains("--modloader fabric"),
-        "packwiz init should receive the explicit loader: {init_call}"
+        init_call.contains_args(&["--modloader", "fabric"]),
+        "packwiz init should receive the explicit loader: {init_call:?}"
     );
     assert!(
-        init_call.contains("--fabric-version"),
-        "packwiz init should resolve and pass a Fabric loader version: {init_call}"
+        init_call.args.iter().any(|arg| arg == "--fabric-version"),
+        "packwiz init should resolve and pass a Fabric loader version: {init_call:?}"
     );
 
     Ok(())
@@ -391,10 +391,12 @@ async fn test_init_existing_project_error() -> Result<()> {
     )
     .await;
 
-    // Init should either:
-    // 1. Return error (preferred for non-interactive mode)
-    // 2. Skip initialization gracefully
-    // Either way, the original empack.yml should be unchanged
+    assert!(
+        result.is_ok(),
+        "Existing project without --force should return cleanly after refusing to overwrite"
+    );
+
+    // Existing project should be preserved and init should short-circuit before packwiz runs.
     let empack_yml_content = fs::read_to_string(&empack_yml_path)?;
     assert!(
         empack_yml_content.contains("existing-pack"),
@@ -404,12 +406,14 @@ async fn test_init_existing_project_error() -> Result<()> {
         empack_yml_content.contains("Existing Author"),
         "Original author should be preserved"
     );
-
-    // If result is error, that's expected behavior
-    if result.is_err() {
-        // Error is acceptable for existing project without --force
-        println!("Init correctly detected existing project and returned error");
-    }
+    assert!(
+        test_env.get_mock_calls("packwiz")?.is_empty(),
+        "Existing project detection should refuse early instead of invoking packwiz"
+    );
+    assert!(
+        !workdir.join("pack").exists(),
+        "Refused init should not create pack metadata in an existing project"
+    );
 
     Ok(())
 }

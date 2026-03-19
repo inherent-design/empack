@@ -1412,6 +1412,13 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
         .await
         .context("Failed to execute build pipeline")?;
 
+    if let Some(failed) = results.iter().find(|result| !result.success) {
+        return Err(anyhow::anyhow!(
+            "Build failed for target {:?}",
+            failed.target
+        ));
+    }
+
     session
         .display()
         .status()
