@@ -765,6 +765,16 @@ async fn handle_add(
             .subtle("   Run 'empack init' to set up a modpack project");
         return Ok(());
     }
+    if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
+        session
+            .display()
+            .status()
+            .error("Project initialization is incomplete", "");
+        session.display().status().subtle(
+            "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before adding dependencies",
+        );
+        return Ok(());
+    }
 
     // Create config manager using the session's working directory
     let manager = session.state();
@@ -988,6 +998,8 @@ struct RenderedStatusError {
     details: String,
 }
 
+// Keep command-specific rendering local so the shared add/sync seam can return
+// typed failures without forcing one user-facing message contract on both commands.
 fn render_add_contract_error(error: &AddContractError) -> RenderedStatusError {
     let item = match error {
         AddContractError::ResolveProject { .. } => "Failed to resolve mod",
@@ -1467,6 +1479,16 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .display()
             .status()
             .subtle("   Run 'empack init' to set up a modpack project");
+        return Ok(());
+    }
+    if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
+        session
+            .display()
+            .status()
+            .error("Project initialization is incomplete", "");
+        session.display().status().subtle(
+            "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before synchronizing",
+        );
         return Ok(());
     }
 
