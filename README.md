@@ -71,7 +71,7 @@ See [`docs/testing/README.md`](docs/testing/README.md) for exact command example
 - VCR-backed maintenance: [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
 - Contributor workflow: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Provider reference notes: [`docs/reference/MODRINTH.md`](docs/reference/MODRINTH.md), [`docs/reference/CURSEFORGE.md`](docs/reference/CURSEFORGE.md)
-- Historical architecture context: [`ARCHITECTURAL_DECISION_RECORD.md`](ARCHITECTURAL_DECISION_RECORD.md)
+- Historical architecture context: [`docs/ARCHITECTURAL_DECISION_RECORD.md`](docs/ARCHITECTURAL_DECISION_RECORD.md)
 
 ## Historical context
 
