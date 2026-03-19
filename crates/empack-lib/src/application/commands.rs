@@ -986,7 +986,13 @@ async fn handle_add(
         session
             .display()
             .status()
-            .subtle("💡 Tip: Run 'empack sync' to update empack.yml with new dependencies");
+            .info("Syncing empack.yml with updated pack...");
+        if let Err(e) = handle_sync(session).await {
+            session
+                .display()
+                .status()
+                .error("Auto-sync failed", &e.to_string());
+        }
     }
 
     Ok(())
@@ -1294,11 +1300,17 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         }
     }
 
-    if !removed_mods.is_empty() {
+    if !removed_mods.is_empty() || !removed_orphans.is_empty() {
         session
             .display()
             .status()
-            .subtle("💡 Tip: Run 'empack sync' to update empack.yml after removing dependencies");
+            .info("Syncing empack.yml with updated pack...");
+        if let Err(e) = handle_sync(session).await {
+            session
+                .display()
+                .status()
+                .error("Auto-sync failed", &e.to_string());
+        }
     }
 
     Ok(())
