@@ -2,7 +2,7 @@
 //! Unified empack.yml (user intent) and pack.toml (packwiz reality) handling
 
 use crate::empack::parsing::ModLoader;
-use crate::primitives::ProjectType;
+use crate::primitives::{ProjectPlatform, ProjectType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -62,6 +62,10 @@ pub struct EmpackProjectConfig {
     #[serde(default)]
     pub project_ids: HashMap<String, String>,
 
+    /// Optional project platform mappings for direct lookups
+    #[serde(default)]
+    pub project_platforms: HashMap<String, ProjectPlatform>,
+
     /// Optional version overrides
     #[serde(default)]
     pub version_overrides: HashMap<String, VersionOverride>,
@@ -86,7 +90,7 @@ pub struct EmpackProjectConfig {
 }
 
 /// Version override can be single version or list of compatible versions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum VersionOverride {
     Single(String),
@@ -153,6 +157,9 @@ pub struct ProjectSpec {
     /// Optional project ID for direct lookup
     pub project_id: Option<String>,
 
+    /// Optional project platform for direct lookup
+    pub project_platform: Option<ProjectPlatform>,
+
     /// Optional version override
     pub version_override: Option<VersionOverride>,
 }
@@ -184,14 +191,14 @@ impl<'a> ConfigManager<'a> {
             });
         }
 
-        let content = self
-            .fs_provider
-            .read_to_string(&empack_path)
-            .map_err(|e| ConfigError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
-            })?;
-        let config: EmpackConfig = serde_saphyr::from_str(&content)
-            .map_err(|e| ConfigError::YamlError { source: e })?;
+        let content =
+            self.fs_provider
+                .read_to_string(&empack_path)
+                .map_err(|e| ConfigError::IoError {
+                    source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                })?;
+        let config: EmpackConfig =
+            serde_saphyr::from_str(&content).map_err(|e| ConfigError::YamlError { source: e })?;
 
         Ok(config)
     }
@@ -204,12 +211,12 @@ impl<'a> ConfigManager<'a> {
             return Ok(None);
         }
 
-        let content = self
-            .fs_provider
-            .read_to_string(&pack_path)
-            .map_err(|e| ConfigError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
-            })?;
+        let content =
+            self.fs_provider
+                .read_to_string(&pack_path)
+                .map_err(|e| ConfigError::IoError {
+                    source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                })?;
         let metadata: PackMetadata = toml::from_str(&content)?;
 
         Ok(Some(metadata))
@@ -410,6 +417,9 @@ impl<'a> ConfigManager<'a> {
         // Look up project ID mapping
         let project_id = empack_config.project_ids.get(&key).cloned();
 
+        // Look up project platform mapping
+        let project_platform = empack_config.project_platforms.get(&key).copied();
+
         // Look up version override
         let version_override = empack_config.version_overrides.get(&key).cloned();
 
@@ -420,6 +430,7 @@ impl<'a> ConfigManager<'a> {
             minecraft_version,
             loader,
             project_id,
+            project_platform,
             version_override,
         })
     }
@@ -447,6 +458,7 @@ impl<'a> ConfigManager<'a> {
                     "jade: \"Jade|mod\"".to_string(),
                 ],
                 project_ids: HashMap::new(),
+                project_platforms: HashMap::new(),
                 version_overrides: HashMap::new(),
                 minecraft_version,
                 loader,
@@ -456,8 +468,7 @@ impl<'a> ConfigManager<'a> {
             },
         };
 
-        serde_saphyr::to_string(&config)
-            .map_err(|e| ConfigError::YamlSerError { source: e })
+        serde_saphyr::to_string(&config).map_err(|e| ConfigError::YamlSerError { source: e })
     }
 
     /// Validate empack.yml consistency (pack.toml is optional)
@@ -470,7 +481,8 @@ impl<'a> ConfigManager<'a> {
         if let Ok(Some(pack_metadata)) = self.load_pack_metadata() {
             // Check Minecraft version consistency
             if let Some(empack_mc) = &empack_config.empack.minecraft_version
-                && empack_mc != &pack_metadata.versions.minecraft {
+                && empack_mc != &pack_metadata.versions.minecraft
+            {
                 issues.push(format!(
                     "Minecraft version mismatch: empack.yml has '{}', pack.toml has '{}'",
                     empack_mc, pack_metadata.versions.minecraft
@@ -480,7 +492,8 @@ impl<'a> ConfigManager<'a> {
             // Check loader consistency
             if let Some(empack_loader) = &empack_config.empack.loader {
                 if let Ok(pack_loader) = self.infer_loader_from_metadata(&pack_metadata)
-                    && empack_loader != &pack_loader {
+                    && empack_loader != &pack_loader
+                {
                     issues.push(format!(
                         "Loader mismatch: empack.yml has '{:?}', pack.toml infers '{:?}'",
                         empack_loader, pack_loader

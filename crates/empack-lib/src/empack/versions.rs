@@ -112,11 +112,40 @@ struct NeoForgeVersionResponse {
     versions: Vec<String>,
 }
 
-/// Response from Forge promotions_slim.json API
+/// Response from Quilt API
+/// Endpoint: GET https://meta.quiltmc.org/v3/versions/loader/{minecraft_version}
+/// Returns array of loader combinations (use first element for latest loader)
 #[derive(Debug, Deserialize)]
-struct ForgePromotionsResponse {
-    homepage: String,
-    promos: std::collections::HashMap<String, String>,
+struct QuiltLoaderCombination {
+    loader: QuiltLoaderVersion,
+    // Other fields (hashed, intermediary, launcherMeta) exist but not needed for version resolution
+}
+
+#[derive(Debug, Deserialize)]
+struct QuiltLoaderVersion {
+    version: String,
+    maven: String,
+    #[serde(default)]
+    separator: String,
+    #[serde(default)]
+    build: u32,
+}
+
+/// Response from Forge maven-metadata.xml API
+/// XML structure: <metadata><versioning><versions><version>1.21.11-61.0.3</version>...</versions></versioning></metadata>
+#[derive(Debug, Deserialize)]
+struct ForgeMavenMetadata {
+    versioning: ForgeMavenVersioning,
+}
+
+#[derive(Debug, Deserialize)]
+struct ForgeMavenVersioning {
+    versions: ForgeMavenVersionsList,
+}
+
+#[derive(Debug, Deserialize)]
+struct ForgeMavenVersionsList {
+    version: Vec<String>,
 }
 
 /// Filter NeoForge versions by Minecraft version compatibility
@@ -191,23 +220,49 @@ fn filter_neoforge_versions_by_minecraft(
     Ok(result)
 }
 
-/// Filter Forge versions by Minecraft version from promotions API
+/// Parse Forge maven-metadata.xml and extract version strings
 ///
-/// Forge promotions_slim.json structure:
-/// - Keys: "{mc_version}-latest" or "{mc_version}-recommended"
-/// - Values: Forge version (e.g., "47.4.13" for MC 1.20.1)
+/// XML structure example:
+/// ```xml
+/// <metadata>
+///   <versioning>
+///     <versions>
+///       <version>1.21.11-61.0.3</version>
+///       <version>1.21.11-61.0.2</version>
+///       ...
+///     </versions>
+///   </versioning>
+/// </metadata>
+/// ```
+fn parse_forge_maven_metadata(xml_content: &str) -> Result<Vec<String>> {
+    let metadata: ForgeMavenMetadata =
+        quick_xml::de::from_str(xml_content).context("Failed to parse Forge maven-metadata.xml")?;
+
+    Ok(metadata.versioning.versions.version)
+}
+
+/// Filter Forge versions by Minecraft version from maven-metadata.xml
 ///
-/// Strategy (user requirement: single track, don't distinguish latest/recommended):
-/// - Extract all versions for the given MC version
-/// - Deduplicate (latest and recommended might be same version)
-/// - Return single list sorted newest first
+/// Forge maven-metadata.xml structure:
+/// - Version format: "{mc_version}-{forge_version}"
+/// - Examples: "1.21.11-61.0.3", "1.20.1-47.4.13", "1.7.10-10.13.4.1614"
+///
+/// Strategy:
+/// - Extract all versions matching "{mc_version}-" prefix
+/// - Return sorted newest first (semantic versioning on forge version component)
+///
+/// Artifact URL construction (legacy vs modern):
+/// - DEFERRED: Not implemented here (will be relevant for `empack build`, not `add`)
+/// - Legacy (MC < 1.13): forge-{mc}-{forge}-{mc}-installer.jar (version repeats)
+/// - Modern (MC >= 1.13): forge-{mc}-{forge}-installer.jar (standard pattern)
+/// - Detection heuristic: Forge major version < 20 indicates legacy
 ///
 /// Examples:
-/// - MC "1.20.1" → ["47.4.13", "47.4.10"] (latest=47.4.13, recommended=47.4.10)
-/// - MC "1.16.5" → ["36.2.42", "36.2.34"] (latest=36.2.42, recommended=36.2.34)
-/// - MC "1.20.5" → [] (no 1.20.5 in promotions)
+/// - MC "1.20.1" → All versions starting with "1.20.1-" (e.g., "47.4.13", "47.4.10", ...)
+/// - MC "1.16.4" → All versions starting with "1.16.4-" (e.g., "35.1.37", "35.1.36", ..., "35.0.0")
+/// - MC "1.7.10" → All versions starting with "1.7.10-" (legacy artifact naming applies)
 fn filter_forge_versions_by_minecraft(
-    promotions: &std::collections::HashMap<String, String>,
+    all_versions: &[String],
     mc_version: &str,
 ) -> Result<Vec<String>> {
     // Forge supports very old MC versions (back to 1.1), no minimum check needed
@@ -219,45 +274,38 @@ fn filter_forge_versions_by_minecraft(
         mc_version.to_string()
     };
 
-    // Collect all Forge versions for this MC version
-    let mut versions = Vec::new();
+    // Extract forge version component from full version string
+    // Input: "1.20.1-47.4.13" → Output: "47.4.13"
+    let extract_forge_version = |full_version: &str, prefix: &str| -> Option<String> {
+        full_version.strip_prefix(prefix).map(|v| v.to_string())
+    };
 
-    // Try latest
-    let latest_key = format!("{}-latest", normalized_version);
-    if let Some(forge_version) = promotions.get(&latest_key) {
-        versions.push(forge_version.clone());
-    }
+    // Collect all matching versions (try both normalized and original)
+    let mut matching_versions: Vec<String> = Vec::new();
 
-    // Try recommended
-    let recommended_key = format!("{}-recommended", normalized_version);
-    if let Some(forge_version) = promotions.get(&recommended_key) {
-        // Only add if different from latest (deduplicate)
-        if !versions.contains(forge_version) {
-            versions.push(forge_version.clone());
-        }
-    }
-
-    // Also try without normalization (handle "1.21" directly)
-    if mc_version != normalized_version {
-        let latest_key_unnorm = format!("{}-latest", mc_version);
-        if let Some(forge_version) = promotions.get(&latest_key_unnorm) {
-            if !versions.contains(forge_version) {
-                versions.push(forge_version.clone());
+    for version in all_versions {
+        // Try normalized prefix (e.g., "1.21.0-")
+        let normalized_prefix = format!("{}-", normalized_version);
+        if let Some(forge_ver) = extract_forge_version(version, &normalized_prefix) {
+            if !matching_versions.contains(&forge_ver) {
+                matching_versions.push(forge_ver);
             }
         }
 
-        let recommended_key_unnorm = format!("{}-recommended", mc_version);
-        if let Some(forge_version) = promotions.get(&recommended_key_unnorm) {
-            if !versions.contains(forge_version) {
-                versions.push(forge_version.clone());
+        // Also try original prefix if different (e.g., "1.21-")
+        if mc_version != normalized_version {
+            let original_prefix = format!("{}-", mc_version);
+            if let Some(forge_ver) = extract_forge_version(version, &original_prefix) {
+                if !matching_versions.contains(&forge_ver) {
+                    matching_versions.push(forge_ver);
+                }
             }
         }
     }
 
     // Sort by version (newest first)
     // Forge versions follow semantic versioning: major.minor.patch
-    // Parse and compare numerically
-    versions.sort_by(|a, b| {
+    matching_versions.sort_by(|a, b| {
         let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
         let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
 
@@ -273,7 +321,7 @@ fn filter_forge_versions_by_minecraft(
         std::cmp::Ordering::Equal
     });
 
-    Ok(versions)
+    Ok(matching_versions)
 }
 
 /// Supported mod loaders in priority order
@@ -450,6 +498,12 @@ impl<'a> VersionFetcher<'a> {
                     .await
                     .context("Failed to fetch Fabric loader versions")?;
 
+                // Handle HTTP 400 - unsupported MC version
+                // Return empty vec to hide Fabric from loader selection (matches NeoForge/Forge pattern)
+                if response.status() == 400 {
+                    return Ok(vec![]);
+                }
+
                 if !response.status().is_success() {
                     return Err(anyhow::anyhow!(
                         "Failed to fetch Fabric versions: HTTP {}",
@@ -562,6 +616,14 @@ impl<'a> VersionFetcher<'a> {
     }
 
     /// Fetch Forge versions with proper MC version compatibility
+    ///
+    /// Uses maven-metadata.xml for complete version enumeration (not promotions_slim.json).
+    /// This provides ALL Forge versions for a given MC version, not just latest/recommended.
+    ///
+    /// Smart filtering strategy based on context:
+    /// - Interactive mode (no --modloader flag): Return ALL versions (dialoguer handles pagination)
+    /// - CLI mode with @latest/@recommended: Filter to those specific versions (future implementation)
+    /// - CLI mode with @version_id: Search full list for specific version (future implementation)
     pub async fn fetch_forge_loader_versions(&self, mc_version: &str) -> Result<Vec<String>> {
         let cache_key = format!("forge_loader_{}.json", mc_version);
 
@@ -571,24 +633,24 @@ impl<'a> VersionFetcher<'a> {
             || async {
                 let client = self.network.http_client()?;
 
-                // Fetch promotions_slim.json (contains latest/recommended for all MC versions)
-                let url = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
+                // Fetch maven-metadata.xml (contains ALL Forge versions)
+                // NOTE: Must use maven.minecraftforge.net, NOT files.minecraftforge.net (404)
+                let url =
+                    "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml";
 
-                let response = client
-                    .get(url)
-                    .send()
-                    .await;
+                let response = client.get(url).send().await;
 
                 match response {
                     Ok(resp) if resp.status().is_success() => {
-                        if let Ok(promotions_data) = resp.json::<ForgePromotionsResponse>().await {
-                            // Filter versions by MC version compatibility
-                            let filtered_versions = filter_forge_versions_by_minecraft(
-                                &promotions_data.promos,
-                                mc_version,
-                            )?;
+                        if let Ok(xml_content) = resp.text().await {
+                            // Parse XML to extract version list
+                            let all_versions = parse_forge_maven_metadata(&xml_content)?;
 
-                            // If we found versions, return them
+                            // Filter versions by MC version compatibility
+                            let filtered_versions =
+                                filter_forge_versions_by_minecraft(&all_versions, mc_version)?;
+
+                            // Return all matching versions (dialoguer handles pagination via .max_length(6))
                             if !filtered_versions.is_empty() {
                                 return Ok(filtered_versions);
                             }
@@ -602,18 +664,9 @@ impl<'a> VersionFetcher<'a> {
 
                 // Fallback for network failures or unknown MC versions
                 let fallback_versions = match mc_version {
-                    "1.20.1" => vec![
-                        "47.4.13".to_string(),
-                        "47.4.10".to_string(),
-                    ],
-                    "1.16.5" => vec![
-                        "36.2.42".to_string(),
-                        "36.2.34".to_string(),
-                    ],
-                    "1.21.1" => vec![
-                        "52.1.8".to_string(),
-                        "52.1.0".to_string(),
-                    ],
+                    "1.20.1" => vec!["47.4.13".to_string(), "47.4.10".to_string()],
+                    "1.16.5" => vec!["36.2.42".to_string(), "36.2.34".to_string()],
+                    "1.21.1" => vec!["52.1.8".to_string(), "52.1.0".to_string()],
                     _ => {
                         // For unknown versions, return empty to hide Forge option
                         vec![]
@@ -627,34 +680,46 @@ impl<'a> VersionFetcher<'a> {
     }
 
     /// Fetch Quilt versions from official API
-    pub async fn fetch_quilt_loader_versions(&self, _mc_version: &str) -> Result<Vec<String>> {
-        let client = self.network.http_client()?;
-        let url = "https://meta.quiltmc.org/v3/versions/loader";
+    /// Uses MC-version-specific endpoint: /v3/versions/loader/{mc_version}
+    /// Returns HTTP 404 for unsupported MC versions (returns empty vec, not error)
+    pub async fn fetch_quilt_loader_versions(&self, mc_version: &str) -> Result<Vec<String>> {
+        let cache_key = format!("quilt_loader_{}.json", mc_version);
 
-        let response = client.get(url).send().await;
+        self.fetch_cached_or_network(
+            &cache_key,
+            6, // 6 hour cache (matches Fabric/NeoForge/Forge)
+            || async {
+                let client = self.network.http_client()?;
+                // Use MC-version-specific endpoint (server-side filtering)
+                let url = format!("https://meta.quiltmc.org/v3/versions/loader/{}", mc_version);
 
-        match response {
-            Ok(resp) if resp.status().is_success() => {
-                if let Ok(version_data) = resp.json::<Vec<serde_json::Value>>().await {
-                    let versions: Vec<String> = version_data
-                        .into_iter()
-                        .filter_map(|v| v["version"].as_str().map(|s| s.to_string()))
-                        .collect();
-                    return Ok(versions);
+                match client.get(&url).send().await {
+                    Ok(response) if response.status().is_success() => {
+                        // Parse array response - take first element (latest loader for this MC version)
+                        if let Ok(combinations) =
+                            response.json::<Vec<QuiltLoaderCombination>>().await
+                        {
+                            if !combinations.is_empty() {
+                                return Ok(vec![combinations[0].loader.version.clone()]);
+                            }
+                        }
+                        // Empty array or parse failure - return empty vec
+                        Ok(vec![])
+                    }
+                    Ok(response) if response.status() == 404 => {
+                        // HTTP 404 = MC version not supported by Quilt
+                        // Return empty vec to silently exclude from loader selection
+                        // (Matches Fabric 400 handling pattern from Phase 1)
+                        Ok(vec![])
+                    }
+                    _ => {
+                        // Network error or other HTTP error - return fallback
+                        Ok(vec!["0.25.7".to_string()])
+                    }
                 }
-            }
-            _ => {
-                // API failed, use fallback
-            }
-        }
-
-        // Fallback for network failures
-        let fallback_versions = vec![
-            "0.29.0".to_string(),
-            "0.28.0".to_string(),
-            "0.27.0".to_string(),
-        ];
-        Ok(fallback_versions)
+            },
+        )
+        .await
     }
 
     /// Generic cached fetch with network fallback

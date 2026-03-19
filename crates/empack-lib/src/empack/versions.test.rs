@@ -152,82 +152,144 @@ fn test_filter_neoforge_versions() {
 
 #[test]
 fn test_filter_forge_versions() {
-    use std::collections::HashMap;
+    // Sample maven-metadata.xml versions (realistic subset from actual API)
+    let all_versions = vec![
+        // MC 1.20.1 versions (multiple)
+        "1.20.1-47.4.13".to_string(),
+        "1.20.1-47.4.12".to_string(),
+        "1.20.1-47.4.11".to_string(),
+        "1.20.1-47.4.10".to_string(),
+        "1.20.1-47.4.9".to_string(),
+        // MC 1.16.5 versions (multiple)
+        "1.16.5-36.2.42".to_string(),
+        "1.16.5-36.2.41".to_string(),
+        "1.16.5-36.2.40".to_string(),
+        "1.16.5-36.2.34".to_string(),
+        // MC 1.21.1 versions
+        "1.21.1-52.1.8".to_string(),
+        "1.21.1-52.1.7".to_string(),
+        "1.21.1-52.1.0".to_string(),
+        // MC 1.21 versions (no .0 suffix in some)
+        "1.21-51.0.33".to_string(),
+        "1.21-51.0.32".to_string(),
+        "1.21-51.0.31".to_string(),
+        // MC 1.8 versions (legacy)
+        "1.8-11.14.4.1577".to_string(),
+        "1.8-11.14.4.1563".to_string(),
+        "1.8-11.14.4.1562".to_string(),
+        // MC 1.16.4 versions (larger set)
+        "1.16.4-35.1.37".to_string(),
+        "1.16.4-35.1.36".to_string(),
+        "1.16.4-35.1.35".to_string(),
+        "1.16.4-35.0.1".to_string(),
+        "1.16.4-35.0.0".to_string(),
+    ];
 
-    // Sample promotions (realistic subset from actual promotions_slim.json)
-    let mut promotions = HashMap::new();
-
-    // MC 1.20.1 has both latest and recommended (different versions)
-    promotions.insert("1.20.1-latest".to_string(), "47.4.13".to_string());
-    promotions.insert("1.20.1-recommended".to_string(), "47.4.10".to_string());
-
-    // MC 1.16.5 has both latest and recommended (different versions)
-    promotions.insert("1.16.5-latest".to_string(), "36.2.42".to_string());
-    promotions.insert("1.16.5-recommended".to_string(), "36.2.34".to_string());
-
-    // MC 1.21.1 has both latest and recommended (different versions)
-    promotions.insert("1.21.1-latest".to_string(), "52.1.8".to_string());
-    promotions.insert("1.21.1-recommended".to_string(), "52.1.0".to_string());
-
-    // MC 1.21 has only latest (no .0 suffix)
-    promotions.insert("1.21-latest".to_string(), "51.0.33".to_string());
-
-    // MC 1.8 has both latest and recommended (same version)
-    promotions.insert("1.8-latest".to_string(), "11.14.4.1577".to_string());
-    promotions.insert("1.8-recommended".to_string(), "11.14.4.1563".to_string());
-
-    // Test filtering for MC 1.20.1
-    let filtered_20_1 = filter_forge_versions_by_minecraft(&promotions, "1.20.1").unwrap();
-    assert_eq!(filtered_20_1.len(), 2, "Should find 2 versions for MC 1.20.1 (latest and recommended)");
+    // Test filtering for MC 1.20.1 (should get all 5 versions)
+    let filtered_20_1 = filter_forge_versions_by_minecraft(&all_versions, "1.20.1").unwrap();
+    assert_eq!(filtered_20_1.len(), 5, "Should find all 5 versions for MC 1.20.1");
     assert!(filtered_20_1.contains(&"47.4.13".to_string()), "Should include latest");
     assert!(filtered_20_1.contains(&"47.4.10".to_string()), "Should include recommended");
     // Verify newest first (47.4.13 > 47.4.10)
     assert_eq!(filtered_20_1[0], "47.4.13", "Newest version should be first");
-    assert_eq!(filtered_20_1[1], "47.4.10", "Older version should be second");
+    assert_eq!(filtered_20_1[4], "47.4.9", "Oldest version should be last");
 
     // Test filtering for MC 1.16.5
-    let filtered_16_5 = filter_forge_versions_by_minecraft(&promotions, "1.16.5").unwrap();
-    assert_eq!(filtered_16_5.len(), 2, "Should find 2 versions for MC 1.16.5");
+    let filtered_16_5 = filter_forge_versions_by_minecraft(&all_versions, "1.16.5").unwrap();
+    assert_eq!(filtered_16_5.len(), 4, "Should find 4 versions for MC 1.16.5");
     assert!(filtered_16_5.contains(&"36.2.42".to_string()));
     assert!(filtered_16_5.contains(&"36.2.34".to_string()));
     // Verify newest first
     assert_eq!(filtered_16_5[0], "36.2.42");
 
-    // Test filtering for MC 1.21 (no .0 suffix in promotions)
-    let filtered_21 = filter_forge_versions_by_minecraft(&promotions, "1.21").unwrap();
-    assert_eq!(filtered_21.len(), 1, "Should find 1 version for MC 1.21 (only latest exists)");
+    // Test filtering for MC 1.21 (no .0 suffix in maven-metadata)
+    let filtered_21 = filter_forge_versions_by_minecraft(&all_versions, "1.21").unwrap();
+    assert_eq!(filtered_21.len(), 3, "Should find 3 versions for MC 1.21");
     assert!(filtered_21.contains(&"51.0.33".to_string()));
+    assert_eq!(filtered_21[0], "51.0.33", "Newest first");
 
     // Test filtering for MC 1.21.1
-    let filtered_21_1 = filter_forge_versions_by_minecraft(&promotions, "1.21.1").unwrap();
-    assert_eq!(filtered_21_1.len(), 2, "Should find 2 versions for MC 1.21.1");
+    let filtered_21_1 = filter_forge_versions_by_minecraft(&all_versions, "1.21.1").unwrap();
+    assert_eq!(filtered_21_1.len(), 3, "Should find 3 versions for MC 1.21.1");
     assert_eq!(filtered_21_1[0], "52.1.8", "Newest first");
-    assert_eq!(filtered_21_1[1], "52.1.0", "Older second");
+    assert_eq!(filtered_21_1[2], "52.1.0", "Oldest last");
 
-    // Test filtering for MC 1.8 (different latest and recommended)
-    let filtered_8 = filter_forge_versions_by_minecraft(&promotions, "1.8").unwrap();
-    assert_eq!(filtered_8.len(), 2, "Should find 2 versions for MC 1.8");
+    // Test filtering for MC 1.8 (legacy versions)
+    let filtered_8 = filter_forge_versions_by_minecraft(&all_versions, "1.8").unwrap();
+    assert_eq!(filtered_8.len(), 3, "Should find 3 versions for MC 1.8");
     assert!(filtered_8.contains(&"11.14.4.1577".to_string()));
     assert!(filtered_8.contains(&"11.14.4.1563".to_string()));
+    assert_eq!(filtered_8[0], "11.14.4.1577", "Newest first");
 
-    // Test unsupported MC version (not in promotions)
-    let filtered_unsupported = filter_forge_versions_by_minecraft(&promotions, "1.20.5").unwrap();
-    assert_eq!(filtered_unsupported.len(), 0, "Should return empty for MC version not in promotions");
+    // Test filtering for MC 1.16.4 (larger set - 5 versions)
+    let filtered_16_4 = filter_forge_versions_by_minecraft(&all_versions, "1.16.4").unwrap();
+    assert_eq!(filtered_16_4.len(), 5, "Should find 5 versions for MC 1.16.4");
+    assert_eq!(filtered_16_4[0], "35.1.37", "Newest first");
+    assert_eq!(filtered_16_4[4], "35.0.0", "Oldest last");
 
-    // Test deduplication (when latest and recommended are same)
-    let mut dedup_promotions = HashMap::new();
-    dedup_promotions.insert("1.19-latest".to_string(), "41.1.0".to_string());
-    dedup_promotions.insert("1.19-recommended".to_string(), "41.1.0".to_string());
+    // Test unsupported MC version (not in maven-metadata)
+    let filtered_unsupported = filter_forge_versions_by_minecraft(&all_versions, "1.20.5").unwrap();
+    assert_eq!(filtered_unsupported.len(), 0, "Should return empty for MC version not in maven-metadata");
 
-    let filtered_dedup = filter_forge_versions_by_minecraft(&dedup_promotions, "1.19").unwrap();
-    assert_eq!(filtered_dedup.len(), 1, "Should deduplicate when latest and recommended are same");
+    // Test deduplication (all_versions shouldn't have duplicates, but verify)
+    let dedup_versions = vec![
+        "1.19-41.1.0".to_string(),
+        "1.19-41.1.0".to_string(), // Duplicate
+    ];
+    let filtered_dedup = filter_forge_versions_by_minecraft(&dedup_versions, "1.19").unwrap();
+    assert_eq!(filtered_dedup.len(), 1, "Should deduplicate duplicate version entries");
     assert_eq!(filtered_dedup[0], "41.1.0");
 
-    // Test version normalization (MC "1.21" should also check "1.21.0")
-    let mut norm_promotions = HashMap::new();
-    norm_promotions.insert("1.21.0-latest".to_string(), "51.0.33".to_string());
-
-    let filtered_norm = filter_forge_versions_by_minecraft(&norm_promotions, "1.21").unwrap();
-    assert_eq!(filtered_norm.len(), 1, "Should normalize MC 1.21 to 1.21.0");
+    // Test version normalization (MC "1.21" should also match "1.21.0-" prefix)
+    let norm_versions = vec![
+        "1.21.0-51.0.33".to_string(),
+        "1.21.0-51.0.32".to_string(),
+    ];
+    let filtered_norm = filter_forge_versions_by_minecraft(&norm_versions, "1.21").unwrap();
+    assert_eq!(filtered_norm.len(), 2, "Should normalize MC 1.21 to also match 1.21.0- prefix");
     assert!(filtered_norm.contains(&"51.0.33".to_string()));
+    assert!(filtered_norm.contains(&"51.0.32".to_string()));
 }
+
+#[test]
+fn test_parse_forge_maven_metadata() {
+    // Sample XML structure (minimal, realistic subset)
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>net.minecraftforge</groupId>
+  <artifactId>forge</artifactId>
+  <versioning>
+    <latest>1.21.11-61.0.3</latest>
+    <release>1.21.11-61.0.3</release>
+    <versions>
+      <version>1.21.11-61.0.3</version>
+      <version>1.21.11-61.0.2</version>
+      <version>1.21.11-61.0.1</version>
+      <version>1.21.11-61.0.0</version>
+      <version>1.20.1-47.4.13</version>
+      <version>1.20.1-47.4.10</version>
+    </versions>
+    <lastUpdated>20251215014219</lastUpdated>
+  </versioning>
+</metadata>"#;
+
+    let versions = parse_forge_maven_metadata(xml_content).unwrap();
+    assert_eq!(versions.len(), 6, "Should parse 6 versions from XML");
+    assert!(versions.contains(&"1.21.11-61.0.3".to_string()));
+    assert!(versions.contains(&"1.20.1-47.4.13".to_string()));
+    assert!(versions.contains(&"1.21.11-61.0.0".to_string()));
+}
+
+// NOTE: HTTP 400/404 handling for modloaders is tested via integration tests
+// When API returns error for unsupported MC version:
+// - Fabric HTTP 400 → fetch_fabric_loader_versions() returns Ok(vec![])
+// - Quilt HTTP 404 → fetch_quilt_loader_versions() returns Ok(vec![])
+// - NeoForge MC < 1.20.2 → returns Ok(vec![])
+// - Forge unknown version → returns Ok(vec![])
+// - Empty loader list is handled gracefully (no panic)
+//
+// Integration test: test_init_empty_loader_list_graceful_handling
+// Location: crates/empack-tests/tests/init_error_recovery.rs
+//
+// Manual test: empack init with very old MC version (e.g., 1.7.10)
+// Expected: Incompatible loaders not shown in selection dialog
