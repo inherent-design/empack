@@ -27,3 +27,4 @@ $cargoArgs += @('--workspace', '--features', 'test-utils', '--lcov', '--output-p
 
 Write-Host "+ cargo $($cargoArgs -join ' ')"
 & cargo @cargoArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

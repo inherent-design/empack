@@ -9,17 +9,18 @@ CHECK_MODE=${CHECK_MODE:-check}
 cd "$REPO_ROOT"
 
 case "$CHECK_MODE" in
-  check)
-    echo "+ cargo check --workspace --all-targets"
-    cargo check --workspace --all-targets
-    ;;
-  clippy)
-    echo "+ cargo clippy --workspace --all-targets"
-    cargo clippy --workspace --all-targets
-    ;;
-  *)
-    echo "Unsupported CHECK_MODE: $CHECK_MODE" >&2
-    echo "Expected one of: check, clippy" >&2
-    exit 1
-    ;;
+check)
+	echo "+ cargo check --workspace --all-targets"
+	cargo check --workspace --all-targets
+	;;
+clippy)
+	echo "+ cargo clippy --workspace --all-targets"
+	cargo clippy --workspace --all-targets -- -D warnings
+	;;
+*)
+	echo "Unsupported CHECK_MODE: $CHECK_MODE" >&2
+	echo "Expected one of: check, clippy" >&2
+	exit 1
+	;;
 esac
+

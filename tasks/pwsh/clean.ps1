@@ -7,3 +7,4 @@ Set-Location $repoRoot
 
 Write-Host '+ cargo clean'
 & cargo clean
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

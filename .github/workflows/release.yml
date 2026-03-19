@@ -59,7 +59,7 @@ jobs:
 
       - name: Install cross
         if: ${{ matrix.use_cross }}
-        run: cargo install cross --locked
+        uses: taiki-e/install-action@cross
 
       - name: Build with cargo
         if: ${{ !matrix.use_cross }}

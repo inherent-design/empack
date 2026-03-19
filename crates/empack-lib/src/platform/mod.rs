@@ -517,18 +517,34 @@ fn detect_memory_info_freebsd() -> Result<(u64, u64), PlatformError> {
             reason: format!("Failed to run sysctl vm.stats.vm.v_inactive_count: {}", e),
         })?;
 
+    let pagesize_output = Command::new("sysctl")
+        .arg("-n")
+        .arg("hw.pagesize")
+        .output()
+        .map_err(|e| PlatformError::MemoryDetectionFailed {
+            reason: format!("Failed to run sysctl hw.pagesize: {}", e),
+        })?;
+
     let free_pages: u64 = String::from_utf8_lossy(&free_output.stdout)
         .trim()
         .parse()
-        .unwrap_or(0);
+        .map_err(|e| PlatformError::MemoryDetectionFailed {
+            reason: format!("Failed to parse free pages: {}", e),
+        })?;
 
     let inactive_pages: u64 = String::from_utf8_lossy(&inactive_output.stdout)
         .trim()
         .parse()
-        .unwrap_or(0);
+        .map_err(|e| PlatformError::MemoryDetectionFailed {
+            reason: format!("Failed to parse inactive pages: {}", e),
+        })?;
 
-    // FreeBSD typically uses 4KB pages
-    let page_size = 4096u64;
+    let page_size: u64 = String::from_utf8_lossy(&pagesize_output.stdout)
+        .trim()
+        .parse()
+        .map_err(|e| PlatformError::MemoryDetectionFailed {
+            reason: format!("Failed to parse page size: {}", e),
+        })?;
     let available_memory = (free_pages + inactive_pages) * page_size;
 
     Ok((total_memory, available_memory))
