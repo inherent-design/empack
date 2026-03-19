@@ -4,9 +4,9 @@
 //! terminal-capability-aware styling.
 
 use super::styling::StyleManager;
+use crate::Result;
 use crate::primitives::TerminalColorCaps;
 use crate::terminal::TerminalCapabilities;
-use crate::Result;
 use dialoguer::{
     Confirm, Input, Select,
     theme::{ColorfulTheme, SimpleTheme, Theme},

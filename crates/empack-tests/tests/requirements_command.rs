@@ -46,7 +46,11 @@ async fn e2e_requirements_check_successfully() -> Result<()> {
         )
         .with_result(
             "go".to_string(),
-            vec!["version".to_string(), "-m".to_string(), "/usr/local/bin/packwiz".to_string()],
+            vec![
+                "version".to_string(),
+                "-m".to_string(),
+                "/usr/local/bin/packwiz".to_string(),
+            ],
             Ok(ProcessOutput {
                 stdout: "mod github.com/packwiz/packwiz v0.14.0".to_string(),
                 stderr: String::new(),
@@ -171,7 +175,11 @@ async fn e2e_requirements_check_git() -> Result<()> {
         )
         .with_result(
             "go".to_string(),
-            vec!["version".to_string(), "-m".to_string(), "/usr/local/bin/packwiz".to_string()],
+            vec![
+                "version".to_string(),
+                "-m".to_string(),
+                "/usr/local/bin/packwiz".to_string(),
+            ],
             Ok(ProcessOutput {
                 stdout: "mod github.com/packwiz/packwiz v0.14.0".to_string(),
                 stderr: String::new(),

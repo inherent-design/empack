@@ -40,13 +40,15 @@ impl EnvironmentConfig {
 
         // 2. CLICOLOR=0 (BSD/macOS standard - disable color)
         if let Some(clicolor) = &self.clicolor
-            && clicolor == "0" {
+            && clicolor == "0"
+        {
             color = TerminalCapsDetectIntent::Never;
         }
 
         // 3. NO_COLOR (universal standard - any non-empty value disables color)
         if let Some(no_color) = &self.no_color
-            && !no_color.is_empty() {
+            && !no_color.is_empty()
+        {
             color = TerminalCapsDetectIntent::Never;
         }
 

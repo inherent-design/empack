@@ -70,12 +70,7 @@ pub struct DependencyNode {
 
 impl DependencyNode {
     /// Create a new dependency node
-    pub fn new(
-        mod_id: String,
-        name: String,
-        platform: String,
-        version: Option<String>,
-    ) -> Self {
+    pub fn new(mod_id: String, name: String, platform: String, version: Option<String>) -> Self {
         Self {
             mod_id,
             name,
@@ -130,19 +125,19 @@ impl DependencyGraph {
         to_id: &str,
         dep_type: DependencyType,
     ) -> Result<(), DependencyGraphError> {
-        let from_idx = self
-            .node_map
-            .get(from_id)
-            .ok_or_else(|| DependencyGraphError::NodeNotFound {
-                mod_id: from_id.to_string(),
-            })?;
+        let from_idx =
+            self.node_map
+                .get(from_id)
+                .ok_or_else(|| DependencyGraphError::NodeNotFound {
+                    mod_id: from_id.to_string(),
+                })?;
 
-        let to_idx = self
-            .node_map
-            .get(to_id)
-            .ok_or_else(|| DependencyGraphError::NodeNotFound {
-                mod_id: to_id.to_string(),
-            })?;
+        let to_idx =
+            self.node_map
+                .get(to_id)
+                .ok_or_else(|| DependencyGraphError::NodeNotFound {
+                    mod_id: to_id.to_string(),
+                })?;
 
         // Edge from dependency (to) to dependent (from) - this ensures topological sort
         // returns dependencies before their dependents
@@ -215,11 +210,10 @@ impl DependencyGraph {
             });
         }
 
-        let sorted_indices = toposort(&self.graph, None).map_err(|_| {
-            DependencyGraphError::CircularDependency {
+        let sorted_indices =
+            toposort(&self.graph, None).map_err(|_| DependencyGraphError::CircularDependency {
                 cycle: "unknown".to_string(),
-            }
-        })?;
+            })?;
 
         Ok(sorted_indices
             .into_iter()
@@ -246,10 +240,7 @@ impl DependencyGraph {
     }
 
     /// Get all transitive dependencies (recursively)
-    pub fn get_transitive_dependencies(
-        &self,
-        mod_id: &str,
-    ) -> Option<Vec<DependencyNode>> {
+    pub fn get_transitive_dependencies(&self, mod_id: &str) -> Option<Vec<DependencyNode>> {
         let node_idx = self.node_map.get(mod_id)?;
         let mut visited = HashMap::new();
         let mut result = Vec::new();
@@ -266,7 +257,10 @@ impl DependencyGraph {
         result: &mut Vec<DependencyNode>,
     ) {
         // Follow incoming edges (dependencies)
-        for neighbor in self.graph.neighbors_directed(node, petgraph::Direction::Incoming) {
+        for neighbor in self
+            .graph
+            .neighbors_directed(node, petgraph::Direction::Incoming)
+        {
             if !visited.contains_key(&neighbor) {
                 visited.insert(neighbor, true);
                 result.push(self.graph[neighbor].clone());
@@ -301,19 +295,17 @@ impl DependencyGraph {
     ) -> Result<DependencyNode, DependencyGraphError> {
         trace!("Parsing packwiz file: {}", path.display());
 
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            DependencyGraphError::FileReadError {
+        let content =
+            std::fs::read_to_string(path).map_err(|e| DependencyGraphError::FileReadError {
                 path: path.to_path_buf(),
                 source: e,
-            }
-        })?;
+            })?;
 
-        let toml: Value = toml::from_str(&content).map_err(|e| {
-            DependencyGraphError::TomlParseError {
+        let toml: Value =
+            toml::from_str(&content).map_err(|e| DependencyGraphError::TomlParseError {
                 path: path.to_path_buf(),
                 source: e,
-            }
-        })?;
+            })?;
 
         // Extract project metadata
         let name = toml
@@ -369,10 +361,7 @@ impl DependencyGraph {
                 let (dep_type, _version_constraint) = match dep_value {
                     Value::String(v) => (DependencyType::Required, Some(v.as_str())),
                     Value::Table(t) => {
-                        let optional = t
-                            .get("optional")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
+                        let optional = t.get("optional").and_then(|v| v.as_bool()).unwrap_or(false);
                         let version = t.get("version").and_then(|v| v.as_str());
                         let typ = if optional {
                             DependencyType::Optional
@@ -405,11 +394,9 @@ impl DependencyGraph {
     pub fn build_from_directory(&mut self, dir: &Path) -> Result<(), DependencyGraphError> {
         debug!("Building dependency graph from: {}", dir.display());
 
-        let entries = std::fs::read_dir(dir).map_err(|e| {
-            DependencyGraphError::FileReadError {
-                path: dir.to_path_buf(),
-                source: e,
-            }
+        let entries = std::fs::read_dir(dir).map_err(|e| DependencyGraphError::FileReadError {
+            path: dir.to_path_buf(),
+            source: e,
         })?;
 
         for entry in entries {

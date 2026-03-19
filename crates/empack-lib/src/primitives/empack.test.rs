@@ -74,6 +74,6 @@ fn test_transition_display() {
             loader_version: "0.14.21",
         }
     ).to_string(), "initialize");
-    assert_eq!(StateTransition::Synchronize.to_string(), "synchronize");
+    assert_eq!(StateTransition::RefreshIndex.to_string(), "refresh-index");
     assert_eq!(StateTransition::Clean.to_string(), "clean");
 }

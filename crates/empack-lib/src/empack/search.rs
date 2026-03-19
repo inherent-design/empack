@@ -69,7 +69,6 @@ pub struct ProjectInfo {
     pub project_type: String,
 }
 
-
 /// Modrinth API response structures
 #[derive(Debug, Deserialize)]
 struct ModrinthSearchResponse {
@@ -334,7 +333,8 @@ impl ProjectResolver {
         }
 
         if let Some(loader) = mod_loader
-            && let Some(loader_id) = self.curseforge_loader_id(loader) {
+            && let Some(loader_id) = self.curseforge_loader_id(loader)
+        {
             params.push(("modLoaderType", loader_id.to_string()));
         }
 

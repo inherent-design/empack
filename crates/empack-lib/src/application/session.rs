@@ -3,12 +3,12 @@
 //! Implements the Session-Scoped Dependency Injection Pattern.
 //! Each command execution creates a session that owns all ephemeral state.
 
+use crate::Result;
 use crate::application::config::AppConfig;
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
 use crate::empack::state::PackStateManager;
-use crate::Result;
 use anyhow::Context;
 use indicatif::MultiProgress;
 use reqwest::Client;
@@ -363,11 +363,11 @@ impl FileSystemProvider for LiveFileSystemProvider {
             }
         }
 
-        let output = process
-            .execute("packwiz", &args, &pack_dir)
-            .map_err(|e| crate::empack::state::StateError::CommandFailed {
+        let output = process.execute("packwiz", &args, &pack_dir).map_err(|e| {
+            crate::empack::state::StateError::CommandFailed {
                 command: format!("packwiz init failed: {}", e),
-            })?;
+            }
+        })?;
 
         if !output.success {
             return Err(crate::empack::state::StateError::CommandFailed {
@@ -385,17 +385,22 @@ impl FileSystemProvider for LiveFileSystemProvider {
     ) -> std::result::Result<(), crate::empack::state::StateError> {
         let pack_file = workdir.join("pack").join("pack.toml");
 
-        let pack_file_str = pack_file.to_str().ok_or_else(|| {
-            crate::empack::state::StateError::IoError {
-                source: std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "Invalid UTF-8 in pack.toml path",
-                ),
-            }
-        })?;
+        let pack_file_str =
+            pack_file
+                .to_str()
+                .ok_or_else(|| crate::empack::state::StateError::IoError {
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Invalid UTF-8 in pack.toml path",
+                    ),
+                })?;
 
         let output = process
-            .execute("packwiz", &["--pack-file", pack_file_str, "refresh"], workdir)
+            .execute(
+                "packwiz",
+                &["--pack-file", pack_file_str, "refresh"],
+                workdir,
+            )
             .map_err(|e| crate::empack::state::StateError::CommandFailed {
                 command: format!("packwiz refresh failed: {}", e),
             })?;
@@ -740,8 +745,8 @@ impl InteractiveProvider for LiveInteractiveProvider {
         FuzzySelect::new()
             .with_prompt(prompt)
             .items(options)
-            .max_length(6)  // Show 6 items per page (enables pagination)
-            .interact_opt()  // Allow ESC key to cancel
+            .max_length(6) // Show 6 items per page (enables pagination)
+            .interact_opt() // Allow ESC key to cancel
             .context("Failed to read fuzzy selection")
     }
 }

@@ -16,7 +16,9 @@ pub use packwiz::{PackwizError, PackwizInstaller, PackwizMetadata};
 pub use state::PackStateManager;
 
 // Re-export primitives types for convenience
-pub use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
+pub use crate::primitives::{
+    BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition,
+};
 
 #[cfg(test)]
 mod tests {
