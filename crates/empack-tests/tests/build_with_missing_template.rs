@@ -63,6 +63,15 @@ async fn test_build_with_missing_template() -> Result<()> {
         "pack/ directory should exist"
     );
 
+    // Pre-seed the bootstrap JAR so the build progresses past the download step
+    // to actually test template handling.
+    let jar_cache = test_env.root_path.join("cache").join("empack").join("jars");
+    std::fs::create_dir_all(&jar_cache)?;
+    std::fs::write(
+        jar_cache.join("packwiz-installer-bootstrap.jar"),
+        "mock jar content",
+    )?;
+
     // Attempt a build - this should detect missing templates gracefully
     // Note: In the hermetic environment, the build might fail for other reasons
     // (no packwiz refresh, no actual mods), but we're primarily testing that
