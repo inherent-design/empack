@@ -129,6 +129,7 @@ pub enum Commands {
     },
 
     /// Remove projects from the modpack
+    #[command(alias = "rm")]
     Remove {
         /// Mod names to remove
         #[arg(help = "Mod names to remove")]
