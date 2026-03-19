@@ -27,3 +27,4 @@ $cargoArgs += @('-p', 'empack-lib', '--features', 'test-utils', '-p', 'empack-te
 
 Write-Host "+ cargo $($cargoArgs -join ' ')"
 & cargo @cargoArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

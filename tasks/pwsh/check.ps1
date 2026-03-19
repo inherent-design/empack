@@ -23,3 +23,4 @@ switch ($env:CHECK_MODE) {
 
 Write-Host "+ cargo $($cargoArgs -join ' ')"
 & cargo @cargoArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

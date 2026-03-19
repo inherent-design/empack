@@ -8,6 +8,13 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/coverage.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/coverage.yml'
   workflow_dispatch:
 
 permissions:
@@ -35,7 +42,10 @@ jobs:
 
       - run: cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info
 
-      - uses: codecov/codecov-action@v5
+      - name: Generate coverage summary
+        run: cargo llvm-cov nextest --workspace --features test-utils --summary-only >> $GITHUB_STEP_SUMMARY
+
+      - uses: actions/upload-artifact@v4
         with:
-          files: lcov.info
-          fail_ci_if_error: false
+          name: coverage-lcov
+          path: lcov.info

@@ -34,6 +34,7 @@ switch ($env:BUILD_MODE) {
 
 Write-Host "+ cargo $($buildArgs -join ' ')"
 & cargo @buildArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 switch ($env:RUN_AFTER_BUILD) {
     '0' {
@@ -42,6 +43,7 @@ switch ($env:RUN_AFTER_BUILD) {
         $env:EMPACK_LOG_LEVEL = $logLevel
         Write-Host "+ EMPACK_LOG_LEVEL=$($env:EMPACK_LOG_LEVEL) & $binPath $($args -join ' ')"
         & $binPath @args
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
     default {
         throw "Unsupported RUN_AFTER_BUILD '$($env:RUN_AFTER_BUILD)'. Expected: 0 or 1."
