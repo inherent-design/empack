@@ -4,41 +4,27 @@
 //! display system with indicatif and dialoguer.
 
 use super::providers::*;
-use super::{Display, progress::ProgressTracker as ConcreteProgressTracker};
+use super::Display;
 use indicatif::{MultiProgress, ProgressBar};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Live implementation of DisplayProvider that owns display state for command lifecycle
 pub struct LiveDisplayProvider {
     // Owned state for the entire command duration
     multi_progress: Arc<MultiProgress>,
-    progress_trackers: Arc<Mutex<HashMap<usize, ConcreteProgressTracker<'static>>>>,
-    next_tracker_id: Arc<Mutex<usize>>,
 }
 
 impl LiveDisplayProvider {
     pub fn new() -> Self {
         Self {
             multi_progress: Arc::new(MultiProgress::new()),
-            progress_trackers: Arc::new(Mutex::new(HashMap::new())),
-            next_tracker_id: Arc::new(Mutex::new(0)),
         }
     }
 
     pub fn new_with_multi_progress(multi_progress: &MultiProgress) -> Self {
         Self {
             multi_progress: Arc::new(multi_progress.clone()),
-            progress_trackers: Arc::new(Mutex::new(HashMap::new())),
-            next_tracker_id: Arc::new(Mutex::new(0)),
         }
-    }
-
-    fn get_next_tracker_id(&self) -> usize {
-        let mut id = self.next_tracker_id.lock().unwrap();
-        let current = *id;
-        *id += 1;
-        current
     }
 }
 
@@ -50,8 +36,6 @@ impl DisplayProvider for LiveDisplayProvider {
     fn progress(&self) -> Box<dyn ProgressProvider> {
         Box::new(LiveProgressProvider {
             parent: self.multi_progress.clone(),
-            trackers: self.progress_trackers.clone(),
-            next_id: self.next_tracker_id.clone(),
         })
     }
 
@@ -124,8 +108,6 @@ impl StatusProvider for LiveStatusProvider {
 /// Live implementation of ProgressProvider with owned state
 struct LiveProgressProvider {
     parent: Arc<MultiProgress>,
-    trackers: Arc<Mutex<HashMap<usize, ConcreteProgressTracker<'static>>>>,
-    next_id: Arc<Mutex<usize>>,
 }
 
 impl ProgressProvider for LiveProgressProvider {
@@ -147,65 +129,13 @@ impl ProgressProvider for LiveProgressProvider {
     fn multi(&self) -> Box<dyn MultiProgressProvider> {
         Box::new(LiveMultiProgressProvider {
             parent: self.parent.clone(),
-            trackers: self.trackers.clone(),
-            next_id: self.next_id.clone(),
         })
-    }
-}
-
-/// Owned wrapper around progress tracker that doesn't depend on borrowed data
-// TODO: Remove if SimpleProgressTracker is fully capable
-struct OwnedProgressTracker {
-    tracker: ConcreteProgressTracker<'static>,
-}
-
-impl OwnedProgressTracker {
-    fn new(tracker: ConcreteProgressTracker<'static>) -> Self {
-        Self { tracker }
-    }
-}
-
-impl ProgressTracker for OwnedProgressTracker {
-    fn set_position(&self, pos: u64) {
-        self.tracker.set_position(pos);
-    }
-
-    fn inc(&self) {
-        self.tracker.inc();
-    }
-
-    fn inc_by(&self, n: u64) {
-        self.tracker.inc_by(n);
-    }
-
-    fn set_message(&self, message: &str) {
-        self.tracker.set_message(message);
-    }
-
-    fn tick(&self, item: &str) {
-        self.tracker.tick(item);
-    }
-
-    fn finish(&self, message: &str) {
-        self.tracker.finish(message);
-    }
-
-    fn abandon(&self, message: &str) {
-        self.tracker.abandon(message);
-    }
-
-    fn finish_clear(&self) {
-        self.tracker.finish_clear();
     }
 }
 
 /// Multi-progress provider with owned state
 struct LiveMultiProgressProvider {
     parent: Arc<MultiProgress>,
-    // TODO: Remove if unused in MultiProgressProvider
-    trackers: Arc<Mutex<HashMap<usize, ConcreteProgressTracker<'static>>>>,
-    // TODO: Remove if unused in MultiProgressProvider
-    next_id: Arc<Mutex<usize>>,
 }
 
 impl MultiProgressProvider for LiveMultiProgressProvider {

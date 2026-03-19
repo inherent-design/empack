@@ -196,6 +196,7 @@ impl<'a> BuildOrchestrator<'a> {
     }
 
     /// Register build targets (V1's register_all_build_targets pattern)
+    #[cfg(test)]
     fn create_build_registry() -> HashMap<BuildTarget, BuildConfig> {
         let mut registry = HashMap::new();
 

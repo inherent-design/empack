@@ -20,6 +20,7 @@ pub(crate) struct TerminalEnvConfig {
     /// TERM_PROGRAM environment variable (specific terminal application)
     pub term_program: Option<String>,
     /// TERM_PROGRAM_VERSION environment variable (terminal version)
+    #[allow(dead_code)]
     pub term_program_version: Option<String>,
     /// LANG environment variable (locale information)
     pub lang: Option<String>,
@@ -40,8 +41,10 @@ pub(crate) struct TerminalEnvConfig {
     /// WEZTERM_UNIX_SOCKET environment variable (WezTerm socket)
     pub wezterm_unix_socket: Option<String>,
     /// LINES environment variable (terminal rows)
+    #[allow(dead_code)]
     pub lines: Option<String>,
     /// COLUMNS environment variable (terminal columns)
+    #[allow(dead_code)]
     pub columns: Option<String>,
 }
 
