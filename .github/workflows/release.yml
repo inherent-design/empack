@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  BINARY_NAME: empack
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: blacksmith-4vcpu-ubuntu-2404
+            binary_ext: ""
+            archive_ext: tar.gz
+            use_cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: blacksmith-4vcpu-ubuntu-2404
+            binary_ext: ""
+            archive_ext: tar.gz
+            use_cross: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            binary_ext: ""
+            archive_ext: tar.gz
+            use_cross: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            binary_ext: ""
+            archive_ext: tar.gz
+            use_cross: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            binary_ext: ".exe"
+            archive_ext: zip
+            use_cross: false
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: version
+        shell: bash
+        run: echo "clean=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: ${{ matrix.use_cross }}
+        run: cargo install cross --locked
+
+      - name: Build with cargo
+        if: ${{ !matrix.use_cross }}
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build with cross
+        if: ${{ matrix.use_cross }}
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Package archive (Unix)
+        if: ${{ matrix.archive_ext == 'tar.gz' }}
+        shell: bash
+        run: |
+          archive="${BINARY_NAME}-${{ steps.version.outputs.clean }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          rm -rf package
+          mkdir -p package
+          cp "target/${{ matrix.target }}/release/${BINARY_NAME}${{ matrix.binary_ext }}" "package/${BINARY_NAME}${{ matrix.binary_ext }}"
+          tar -czf "$archive" -C package .
+          echo "ARCHIVE_NAME=$archive" >> "$GITHUB_ENV"
+          echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
+
+      - name: Package archive (Windows)
+        if: ${{ matrix.archive_ext == 'zip' }}
+        shell: pwsh
+        run: |
+          $archive = "${env:BINARY_NAME}-${{ steps.version.outputs.clean }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          if (Test-Path package) { Remove-Item package -Recurse -Force }
+          New-Item -ItemType Directory -Path package | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${env:BINARY_NAME}${{ matrix.binary_ext }}" "package/${env:BINARY_NAME}${{ matrix.binary_ext }}"
+          if (Test-Path $archive) { Remove-Item $archive -Force }
+          Compress-Archive -Path "package/*" -DestinationPath $archive
+          "ARCHIVE_NAME=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ARCHIVE_PATH=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARCHIVE_NAME }}
+          path: ${{ env.ARCHIVE_PATH }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: version
+        run: echo "clean=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - id: channel
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$VERSION" == *"-alpha."* ]]; then
+            echo "level=alpha" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$VERSION" == *"-beta."* ]]; then
+            echo "level=beta" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$VERSION" == *"-rc."* ]]; then
+            echo "level=rc" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "level=stable" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.content }}
+          prerelease: ${{ steps.channel.outputs.prerelease == 'true' }}
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "## Release Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: ${{ steps.version.outputs.clean }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Channel: ${{ steps.channel.outputs.level }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Prerelease: ${{ steps.channel.outputs.prerelease }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Assets:" >> "$GITHUB_STEP_SUMMARY"
+          find dist -maxdepth 1 -type f -printf '  - %f\n' >> "$GITHUB_STEP_SUMMARY"
