@@ -536,8 +536,6 @@ pub struct ProcessCall {
 
 /// Mock process provider for testing with spy pattern
 pub struct MockProcessProvider {
-    pub packwiz_available: bool,
-    pub packwiz_version: String,
     pub calls: RefCell<Vec<ProcessCall>>,
     pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
     materialize_mrpack_exports: bool,
@@ -547,24 +545,66 @@ pub struct MockProcessProvider {
 
 impl MockProcessProvider {
     pub fn new() -> Self {
-        Self {
-            packwiz_available: true,
-            packwiz_version: "1.0.0".to_string(),
+        let mut provider = Self {
             calls: RefCell::new(Vec::new()),
             results: HashMap::new(),
             materialize_mrpack_exports: false,
             files: None,
             directories: None,
-        }
+        };
+        // Default: packwiz is available (which packwiz succeeds)
+        provider.results.insert(
+            ("which".to_string(), vec!["packwiz".to_string()]),
+            Ok(ProcessOutput {
+                stdout: "/usr/local/bin/packwiz\n".to_string(),
+                stderr: String::new(),
+                success: true,
+            }),
+        );
+        provider
     }
 
     pub fn with_packwiz_unavailable(mut self) -> Self {
-        self.packwiz_available = false;
+        self.results.insert(
+            ("which".to_string(), vec!["packwiz".to_string()]),
+            Ok(ProcessOutput {
+                stdout: String::new(),
+                stderr: "packwiz not found".to_string(),
+                success: false,
+            }),
+        );
         self
     }
 
     pub fn with_packwiz_version(mut self, version: String) -> Self {
-        self.packwiz_version = version;
+        // Ensure packwiz is available
+        self.results.insert(
+            ("which".to_string(), vec!["packwiz".to_string()]),
+            Ok(ProcessOutput {
+                stdout: "/usr/local/bin/packwiz\n".to_string(),
+                stderr: String::new(),
+                success: true,
+            }),
+        );
+        // Mock go version -m output for version detection (matches real format with leading tabs)
+        self.results.insert(
+            (
+                "go".to_string(),
+                vec![
+                    "version".to_string(),
+                    "-m".to_string(),
+                    "/usr/local/bin/packwiz".to_string(),
+                ],
+            ),
+            Ok(ProcessOutput {
+                stdout: format!(
+                    "/usr/local/bin/packwiz: go1.21.0\n\tpath\tgithub.com/packwiz/packwiz\n\tmod\tgithub.com/packwiz/packwiz\t{}\th1:abc123=\n",
+                    version
+                ),
+                stderr: String::new(),
+                success: true,
+            }),
+        );
         self
     }
 
@@ -702,18 +742,6 @@ impl ProcessProvider for MockProcessProvider {
         self.maybe_materialize_mrpack_export(command, args, &output);
 
         Ok(output)
-    }
-
-    fn check_packwiz(&self) -> Result<(bool, String)> {
-        Ok((self.packwiz_available, self.packwiz_version.clone()))
-    }
-
-    fn get_packwiz_version(&self) -> Option<String> {
-        if self.packwiz_available {
-            Some(self.packwiz_version.clone())
-        } else {
-            None
-        }
     }
 }
 
@@ -1082,6 +1110,8 @@ mod tests {
 
     #[test]
     fn test_mock_process_provider() {
+        use crate::empack::packwiz::{check_packwiz_available, get_packwiz_version};
+
         let working_dir = PathBuf::from("/test/workdir");
         let provider = MockProcessProvider::new()
             .with_packwiz_version("2.0.0".to_string())
@@ -1092,10 +1122,10 @@ mod tests {
             );
 
         assert_eq!(
-            provider.check_packwiz().unwrap(),
+            check_packwiz_available(&provider).unwrap(),
             (true, "2.0.0".to_string())
         );
-        assert_eq!(provider.get_packwiz_version().unwrap(), "2.0.0");
+        assert_eq!(get_packwiz_version(&provider).unwrap(), "2.0.0");
 
         // Test successful command (uses default behavior)
         let result = provider.execute("packwiz", &["list"], &working_dir);
@@ -1106,13 +1136,12 @@ mod tests {
         let result = provider.execute("packwiz", &["add", "test-mod"], &working_dir);
         assert!(result.is_err());
 
-        // Test spy pattern - verify calls were recorded
-        let calls = provider.get_calls();
-        assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].command, "packwiz");
-        assert_eq!(calls[0].args, vec!["list"]);
-        assert_eq!(calls[1].command, "packwiz");
-        assert_eq!(calls[1].args, vec!["add", "test-mod"]);
+        // Test spy pattern - verify packwiz calls were recorded
+        // (which/go calls from check_packwiz_available are also recorded but filtered out)
+        let packwiz_calls = provider.get_calls_for_command("packwiz");
+        assert_eq!(packwiz_calls.len(), 2);
+        assert_eq!(packwiz_calls[0].args, vec!["list"]);
+        assert_eq!(packwiz_calls[1].args, vec!["add", "test-mod"]);
 
         // Test verification helper
         assert!(provider.verify_call("packwiz", &["list"], &working_dir));
@@ -1122,12 +1151,14 @@ mod tests {
 
     #[test]
     fn test_mock_command_session() {
+        use crate::empack::packwiz::check_packwiz_available;
+
         let session = MockCommandSession::new()
             .with_process(MockProcessProvider::new().with_packwiz_unavailable());
 
         assert_eq!(
-            session.process().check_packwiz().unwrap(),
-            (false, "1.0.0".to_string())
+            check_packwiz_available(session.process()).unwrap(),
+            (false, "not found".to_string())
         );
     }
 }
