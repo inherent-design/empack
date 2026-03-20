@@ -38,7 +38,7 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
         .build()?;
 
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     let workdir = session
         .config()
@@ -121,7 +121,7 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
         .build()?;
 
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    let _ = Display::init(terminal_caps);
+    Display::init_or_get(terminal_caps);
 
     let workdir = session
         .config()
@@ -239,7 +239,7 @@ async fn e2e_build_packwiz_refresh_fails() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    let _ = Display::init(terminal_caps);
+    Display::init_or_get(terminal_caps);
 
     // Mock packwiz refresh failure
     let pack_file = workdir.join("pack/pack.toml");
@@ -310,7 +310,7 @@ async fn e2e_build_packwiz_export_fails() -> Result<()> {
     };
 
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    let _ = Display::init(terminal_caps);
+    Display::init_or_get(terminal_caps);
 
     let pack_file = workdir.join("pack/pack.toml");
     let mrpack_path = fixture.artifact_path(&workdir, WorkflowArtifact::Mrpack);

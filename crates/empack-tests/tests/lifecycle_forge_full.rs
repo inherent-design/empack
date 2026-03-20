@@ -96,7 +96,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     // Initialize display
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    let _ = Display::init(terminal_caps);
+    Display::init_or_get(terminal_caps);
 
     // Use test work directory as working directory
     let workdir = test_env.work_path.clone();
@@ -348,7 +348,7 @@ async fn test_forge_modloader_initialization() -> Result<()> {
 
     // Initialize display
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    let _ = Display::init(terminal_caps);
+    Display::init_or_get(terminal_caps);
 
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;

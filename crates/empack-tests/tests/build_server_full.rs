@@ -26,7 +26,7 @@ fn build_packwiz_output(project_name: &str) -> String {
 
 fn init_display(session: &HermeticSession) -> Result<()> {
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    let _ = Display::init(terminal_caps);
+    Display::init_or_get(terminal_caps);
     Ok(())
 }
 

@@ -4,7 +4,6 @@
 //! adapt to terminal capabilities. Separates concerns between logging (tracing)
 //! and user interaction (status, prompts, progress).
 
-use crate::primitives::ConfigError;
 use crate::terminal::TerminalCapabilities;
 use std::sync::OnceLock;
 
@@ -38,30 +37,29 @@ pub struct Display {
 }
 
 impl Display {
-    /// Initialize global display system with terminal capabilities
-    pub fn init(capabilities: TerminalCapabilities) -> Result<&'static Self, ConfigError> {
-        if GLOBAL_DISPLAY.get().is_some() {
-            return Err(ConfigError::AlreadyInitialized);
-        }
-
-        let styling = styling::StyleManager::new(&capabilities);
-        let display = Display {
-            capabilities,
-            styling,
-        };
-
-        GLOBAL_DISPLAY
-            .set(display)
-            .map_err(|_| ConfigError::AlreadyInitialized)?;
-
-        Ok(GLOBAL_DISPLAY.get().unwrap())
+    /// Initialize global display system with terminal capabilities.
+    /// Idempotent: if already initialized, returns the existing instance.
+    pub fn init_or_get(capabilities: TerminalCapabilities) -> &'static Self {
+        GLOBAL_DISPLAY.get_or_init(|| {
+            let styling = styling::StyleManager::new(&capabilities);
+            Display {
+                capabilities,
+                styling,
+            }
+        })
     }
 
-    /// Get global display reference
+    /// Get global display reference.
+    /// Auto-initializes with minimal capabilities if not yet initialized.
     pub fn global() -> &'static Self {
-        GLOBAL_DISPLAY
-            .get()
-            .expect("Display not initialized - call Display::init() first")
+        GLOBAL_DISPLAY.get_or_init(|| {
+            let capabilities = TerminalCapabilities::minimal();
+            let styling = styling::StyleManager::new(&capabilities);
+            Display {
+                capabilities,
+                styling,
+            }
+        })
     }
 
     /// Status updates with semantic intent

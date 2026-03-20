@@ -58,7 +58,7 @@ async fn e2e_clean_builds_successfully() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     let session = CommandSession::new_with_providers(
         LiveFileSystemProvider,
@@ -122,7 +122,7 @@ async fn e2e_clean_no_artifacts() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     let session = CommandSession::new_with_providers(
         LiveFileSystemProvider,
@@ -202,7 +202,7 @@ async fn e2e_clean_specific_targets() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     let session = CommandSession::new_with_providers(
         LiveFileSystemProvider,

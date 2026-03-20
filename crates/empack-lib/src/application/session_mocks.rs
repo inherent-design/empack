@@ -936,7 +936,7 @@ impl MockCommandSession {
         use crate::terminal::capabilities::TerminalCapabilities;
         let capabilities = TerminalCapabilities::detect_from_config(&AppConfig::default())
             .expect("Failed to detect terminal capabilities for testing");
-        let _ = Display::init(capabilities);
+        Display::init_or_get(capabilities);
 
         let multi_progress = MultiProgress::new();
         let display_provider = LiveDisplayProvider::new_with_multi_progress(&multi_progress);
