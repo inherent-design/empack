@@ -35,6 +35,8 @@ pub struct MockFileSystemProvider {
     pub config_manager_calls: Arc<Mutex<Vec<PathBuf>>>,
     /// In-memory filesystem: path -> content
     pub files: Arc<Mutex<HashMap<PathBuf, String>>>,
+    /// In-memory binary filesystem: path -> bytes
+    pub binary_files: Arc<Mutex<HashMap<PathBuf, Vec<u8>>>>,
     /// Track directories that exist
     pub directories: Arc<Mutex<HashSet<PathBuf>>>,
 }
@@ -47,6 +49,7 @@ impl MockFileSystemProvider {
             state_manager_calls: Arc::new(Mutex::new(Vec::new())),
             config_manager_calls: Arc::new(Mutex::new(Vec::new())),
             files: Arc::new(Mutex::new(HashMap::new())),
+            binary_files: Arc::new(Mutex::new(HashMap::new())),
             directories: Arc::new(Mutex::new(HashSet::new())),
         }
     }
@@ -226,6 +229,7 @@ impl FileSystemProvider for MockFileSystemProvider {
     }
 
     fn write_file(&self, path: &std::path::Path, content: &str) -> Result<()> {
+        self.binary_files.lock().unwrap().remove(path);
         self.files
             .lock()
             .unwrap()
@@ -233,11 +237,25 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(())
     }
 
+    fn write_bytes(&self, path: &std::path::Path, content: &[u8]) -> Result<()> {
+        self.files.lock().unwrap().remove(path);
+        self.binary_files
+            .lock()
+            .unwrap()
+            .insert(path.to_path_buf(), content.to_vec());
+        Ok(())
+    }
+
     fn exists(&self, path: &std::path::Path) -> bool {
         // Check both files and directories
         self.files.lock().unwrap().contains_key(path)
+            || self.binary_files.lock().unwrap().contains_key(path)
             || self.directories.lock().unwrap().contains(path)
             || self.is_directory(path)
+    }
+
+    fn metadata_exists(&self, path: &std::path::Path) -> bool {
+        self.exists(path)
     }
 
     fn is_directory(&self, path: &std::path::Path) -> bool {
@@ -274,13 +292,20 @@ impl FileSystemProvider for MockFileSystemProvider {
     fn get_file_list(
         &self,
         path: &std::path::Path,
-    ) -> std::result::Result<HashSet<PathBuf>, std::io::Error> {
+    ) -> Result<HashSet<PathBuf>> {
         let files = self.files.lock().unwrap();
+        let binary_files = self.binary_files.lock().unwrap();
         let directories = self.directories.lock().unwrap();
         let mut result = HashSet::new();
 
         // Add files that are direct children of the path
         for file_path in files.keys() {
+            if file_path.parent() == Some(path) {
+                result.insert(file_path.clone());
+            }
+        }
+
+        for file_path in binary_files.keys() {
             if file_path.parent() == Some(path) {
                 result.insert(file_path.clone());
             }
@@ -299,10 +324,22 @@ impl FileSystemProvider for MockFileSystemProvider {
     fn has_build_artifacts(
         &self,
         dist_dir: &std::path::Path,
-    ) -> std::result::Result<bool, std::io::Error> {
+    ) -> Result<bool> {
         let files = self.files.lock().unwrap();
+        let binary_files = self.binary_files.lock().unwrap();
 
         for path in files.keys() {
+            if path.starts_with(dist_dir)
+                && let Some(extension) = path.extension()
+            {
+                match extension.to_str() {
+                    Some("mrpack") | Some("zip") | Some("jar") => return Ok(true),
+                    _ => continue,
+                }
+            }
+        }
+
+        for path in binary_files.keys() {
             if path.starts_with(dist_dir)
                 && let Some(extension) = path.extension()
             {
@@ -316,21 +353,42 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(false)
     }
 
-    fn remove_file(&self, path: &std::path::Path) -> std::result::Result<(), std::io::Error> {
+    fn remove_file(&self, path: &std::path::Path) -> Result<()> {
         self.files.lock().unwrap().remove(path);
+        self.binary_files.lock().unwrap().remove(path);
         Ok(())
     }
 
-    fn remove_dir_all(&self, path: &std::path::Path) -> std::result::Result<(), std::io::Error> {
+    fn remove_dir_all(&self, path: &std::path::Path) -> Result<()> {
         let mut files = self.files.lock().unwrap();
+        let mut binary_files = self.binary_files.lock().unwrap();
+        let mut directories = self.directories.lock().unwrap();
         let paths_to_remove: Vec<PathBuf> = files
             .keys()
+            .filter(|p| p.starts_with(path))
+            .cloned()
+            .collect();
+        let binary_paths_to_remove: Vec<PathBuf> = binary_files
+            .keys()
+            .filter(|p| p.starts_with(path))
+            .cloned()
+            .collect();
+        let directories_to_remove: Vec<PathBuf> = directories
+            .iter()
             .filter(|p| p.starts_with(path))
             .cloned()
             .collect();
 
         for path in paths_to_remove {
             files.remove(&path);
+        }
+
+        for path in binary_paths_to_remove {
+            binary_files.remove(&path);
+        }
+
+        for path in directories_to_remove {
+            directories.remove(&path);
         }
 
         Ok(())
@@ -367,19 +425,12 @@ minecraft = "{}"
 "#,
             name, author, version, mc_version, modloader, loader_version
         );
-        self.write_file(&pack_file, &default_pack_toml)
-            .map_err(|e| crate::empack::state::StateError::IoError {
-                source: std::io::Error::other(e),
-            })?;
+        self.write_file(&pack_file, &default_pack_toml)?;
 
         // Also create index.toml
         let index_file = pack_dir.join("index.toml");
         let default_index = DEFAULT_INDEX_TOML;
-        self.write_file(&index_file, default_index).map_err(|e| {
-            crate::empack::state::StateError::IoError {
-                source: std::io::Error::other(e),
-            }
-        })?;
+        self.write_file(&index_file, default_index)?;
 
         Ok(())
     }

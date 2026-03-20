@@ -448,6 +448,22 @@ fn test_installer_download_failure() {
 }
 
 #[test]
+fn test_check_installer_available_uses_filesystem_provider() {
+    let bootstrap_jar_path = PathBuf::from("/cache/packwiz-installer-bootstrap.jar");
+    let installer_jar_path = PathBuf::from("/cache/packwiz-installer.jar");
+
+    let session = MockCommandSession::new().with_filesystem(
+        MockFileSystemProvider::new()
+            .with_current_dir(PathBuf::from("/test/workdir"))
+            .with_file(bootstrap_jar_path.clone(), "jar".to_string()),
+    );
+
+    let installer = PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
+
+    assert!(installer.check_installer_available().unwrap());
+}
+
+#[test]
 fn test_cached_packwiz_check() {
     let mock_process = MockProcessProvider::new()
         .with_packwiz_result(

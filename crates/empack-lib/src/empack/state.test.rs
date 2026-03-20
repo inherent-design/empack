@@ -78,8 +78,17 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         Ok(())
     }
 
+    fn write_bytes(&self, path: &Path, _content: &[u8]) -> anyhow::Result<()> {
+        self.files.borrow_mut().insert(path.to_path_buf());
+        Ok(())
+    }
+
     fn exists(&self, path: &Path) -> bool {
         self.files.borrow().contains(path)
+    }
+
+    fn metadata_exists(&self, path: &Path) -> bool {
+        self.exists(path) || self.is_directory(path)
     }
 
     fn is_directory(&self, path: &Path) -> bool {
@@ -92,7 +101,7 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         Ok(())
     }
 
-    fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>, std::io::Error> {
+    fn get_file_list(&self, path: &Path) -> anyhow::Result<HashSet<PathBuf>> {
         let mut files_in_dir = HashSet::new();
 
         // Return files that are children of the given path
@@ -107,7 +116,7 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         Ok(files_in_dir)
     }
 
-    fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool, std::io::Error> {
+    fn has_build_artifacts(&self, dist_dir: &Path) -> anyhow::Result<bool> {
         // Check if any build artifacts exist in the dist directory
         for artifact in self.build_artifacts.borrow().iter() {
             if let Some(parent) = artifact.parent()
@@ -119,14 +128,14 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         Ok(false)
     }
 
-    fn remove_file(&self, path: &Path) -> Result<(), std::io::Error> {
+    fn remove_file(&self, path: &Path) -> anyhow::Result<()> {
         // Actually remove the file from the mock filesystem
         self.files.borrow_mut().remove(path);
         self.build_artifacts.borrow_mut().remove(path);
         Ok(())
     }
 
-    fn remove_dir_all(&self, path: &Path) -> Result<(), std::io::Error> {
+    fn remove_dir_all(&self, path: &Path) -> anyhow::Result<()> {
         // Actually remove the directory and all its contents from the mock filesystem
         self.directories.borrow_mut().remove(path);
 
