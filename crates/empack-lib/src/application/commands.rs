@@ -1414,6 +1414,53 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
             .complete("Downloaded packwiz-installer-bootstrap.jar");
     }
 
+    // Ensure packwiz-installer.jar is available for builds that need it
+    let installer_jar_path = session.filesystem().get_installer_jar_cache_path()?;
+    let needs_installer_jar = build_targets.iter().any(|target| {
+        matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull)
+    });
+
+    if needs_installer_jar && !session.filesystem().exists(&installer_jar_path) {
+        session
+            .display()
+            .status()
+            .info("Downloading required component: packwiz-installer.jar...");
+
+        // Create cache directory if it doesn't exist
+        if let Some(parent) = installer_jar_path.parent() {
+            session.filesystem().create_dir_all(parent)?;
+        }
+
+        // Use the NetworkProvider to download the file
+        let client = session.network().http_client()?;
+        let url = "https://github.com/packwiz/packwiz-installer/releases/latest/download/packwiz-installer.jar";
+        let response = client
+            .get(url)
+            .send()
+            .await
+            .context("Failed to download packwiz-installer.jar")?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to download packwiz-installer.jar: HTTP {}",
+                response.status()
+            ));
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .context("Failed to read response bytes")?;
+
+        // Use the FileSystemProvider to save the file
+        std::fs::write(&installer_jar_path, bytes).context("Failed to write JAR file to cache")?;
+
+        session
+            .display()
+            .status()
+            .complete("Downloaded packwiz-installer.jar");
+    }
+
     // Create BuildOrchestrator with session
     let mut build_orchestrator = crate::empack::builds::BuildOrchestrator::new(session)
         .context("Failed to create build orchestrator")?;

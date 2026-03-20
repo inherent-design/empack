@@ -337,17 +337,19 @@ fn test_packwiz_unavailable() {
 
 #[test]
 fn test_installer_success() {
-    let jar_path = PathBuf::from("/cache/packwiz-installer-bootstrap.jar");
+    let bootstrap_jar_path = PathBuf::from("/cache/packwiz-installer-bootstrap.jar");
+    let installer_jar_path = PathBuf::from("/cache/packwiz-installer.jar");
     let mock_process = MockProcessProvider::new().with_result(
         "java".to_string(),
         vec![
             "-jar".to_string(),
             "/cache/packwiz-installer-bootstrap.jar".to_string(),
+            "--bootstrap-main-jar".to_string(),
+            "/cache/packwiz-installer.jar".to_string(),
             "-g".to_string(),
             "-s".to_string(),
             "both".to_string(),
-            "--pack-folder".to_string(),
-            "pack".to_string(),
+            "/test/workdir/pack/pack.toml".to_string(),
         ],
         Ok(ProcessOutput {
             stdout: "Downloaded 5 mods".to_string(),
@@ -362,7 +364,8 @@ fn test_installer_success() {
             MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
         );
 
-    let installer = PackwizInstaller::new(&session, jar_path.clone()).unwrap();
+    let installer =
+        PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
     let result = installer.install_mods("both", &PathBuf::from("/test/workdir"));
 
     assert!(result.is_ok());
@@ -371,11 +374,12 @@ fn test_installer_success() {
         &[
             "-jar",
             "/cache/packwiz-installer-bootstrap.jar",
+            "--bootstrap-main-jar",
+            "/cache/packwiz-installer.jar",
             "-g",
             "-s",
             "both",
-            "--pack-folder",
-            "pack"
+            "/test/workdir/pack/pack.toml"
         ],
         &PathBuf::from("/test/workdir")
     ));
@@ -383,11 +387,13 @@ fn test_installer_success() {
 
 #[test]
 fn test_installer_invalid_side() {
-    let jar_path = PathBuf::from("/cache/packwiz-installer-bootstrap.jar");
+    let bootstrap_jar_path = PathBuf::from("/cache/packwiz-installer-bootstrap.jar");
+    let installer_jar_path = PathBuf::from("/cache/packwiz-installer.jar");
 
     let session = MockCommandSession::new();
 
-    let installer = PackwizInstaller::new(&session, jar_path).unwrap();
+    let installer =
+        PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
     let result = installer.install_mods("invalid", &PathBuf::from("/test/workdir"));
 
     assert!(result.is_err());
@@ -401,17 +407,19 @@ fn test_installer_invalid_side() {
 
 #[test]
 fn test_installer_download_failure() {
-    let jar_path = PathBuf::from("/cache/packwiz-installer-bootstrap.jar");
+    let bootstrap_jar_path = PathBuf::from("/cache/packwiz-installer-bootstrap.jar");
+    let installer_jar_path = PathBuf::from("/cache/packwiz-installer.jar");
     let mock_process = MockProcessProvider::new().with_result(
         "java".to_string(),
         vec![
             "-jar".to_string(),
             "/cache/packwiz-installer-bootstrap.jar".to_string(),
+            "--bootstrap-main-jar".to_string(),
+            "/cache/packwiz-installer.jar".to_string(),
             "-g".to_string(),
             "-s".to_string(),
             "client".to_string(),
-            "--pack-folder".to_string(),
-            "pack".to_string(),
+            "/test/workdir/pack/pack.toml".to_string(),
         ],
         Ok(ProcessOutput {
             stdout: String::new(),
@@ -426,7 +434,8 @@ fn test_installer_download_failure() {
             MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
         );
 
-    let installer = PackwizInstaller::new(&session, jar_path).unwrap();
+    let installer =
+        PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
     let result = installer.install_mods("client", &PathBuf::from("/test/workdir"));
 
     assert!(result.is_err());
@@ -510,8 +519,9 @@ fn test_packwiz_malformed_pack_toml() {
         ],
         Ok(ProcessOutput {
             stdout: String::new(),
-            stderr: "Error: failed to parse pack.toml: expected '=' after table key at line 3 column 1"
-                .to_string(),
+            stderr:
+                "Error: failed to parse pack.toml: expected '=' after table key at line 3 column 1"
+                    .to_string(),
             success: false,
         }),
     );

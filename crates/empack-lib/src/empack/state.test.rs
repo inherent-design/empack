@@ -197,6 +197,11 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         // For state tests, return a mock path
         Ok(PathBuf::from("/test/cache/packwiz-installer-bootstrap.jar"))
     }
+
+    fn get_installer_jar_cache_path(&self) -> anyhow::Result<PathBuf> {
+        // For state tests, return a mock path
+        Ok(PathBuf::from("/test/cache/packwiz-installer.jar"))
+    }
 }
 
 /// Helper to create a test setup with uninitialized state

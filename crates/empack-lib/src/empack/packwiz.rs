@@ -301,29 +301,32 @@ impl<'a> PackwizMetadata<'a> {
 
 /// Packwiz-installer wrapper for build-time JAR downloads
 ///
-/// Wraps: `java -jar packwiz-installer-bootstrap.jar -g -s <side> --pack-folder pack`
+/// Wraps: `java -jar packwiz-installer-bootstrap.jar --bootstrap-main-jar packwiz-installer.jar -g -s <side> <pack_toml_path>`
 pub struct PackwizInstaller<'a> {
     process_provider: &'a dyn ProcessProvider,
     bootstrap_jar_path: PathBuf,
+    installer_jar_path: PathBuf,
 }
 
 impl<'a> PackwizInstaller<'a> {
     /// Create a new PackwizInstaller instance
     ///
-    /// Requires explicit bootstrap JAR path (caller is responsible for download/caching)
+    /// Requires explicit bootstrap and installer JAR paths (caller is responsible for download/caching)
     pub fn new(
         session: &'a dyn Session,
         bootstrap_jar_path: PathBuf,
+        installer_jar_path: PathBuf,
     ) -> Result<Self, PackwizError> {
         Ok(Self {
             process_provider: session.process(),
             bootstrap_jar_path,
+            installer_jar_path,
         })
     }
 
     /// Install projects for specified side
     ///
-    /// Executes: `java -jar packwiz-installer-bootstrap.jar -g -s <side> --pack-folder pack`
+    /// Executes: `java -jar packwiz-installer-bootstrap.jar --bootstrap-main-jar packwiz-installer.jar -g -s <side> <pack_toml_path>`
     /// Downloads: Mod JARs from URLs in .pw.toml files
     /// Verifies: SHA-512 hashes
     /// Side: "both" (client+server), "client" (client-only), "server" (server-only)
@@ -339,18 +342,42 @@ impl<'a> PackwizInstaller<'a> {
             });
         }
 
-        let jar_str =
+        let bootstrap_str =
             self.bootstrap_jar_path
                 .to_str()
                 .ok_or_else(|| PackwizError::InvalidPath {
-                    reason: "JAR path contains invalid UTF-8".to_string(),
+                    reason: "Bootstrap JAR path contains invalid UTF-8".to_string(),
                 })?;
+
+        let installer_str =
+            self.installer_jar_path
+                .to_str()
+                .ok_or_else(|| PackwizError::InvalidPath {
+                    reason: "Installer JAR path contains invalid UTF-8".to_string(),
+                })?;
+
+        // Use v1 pattern: --bootstrap-main-jar <installer.jar> -g -s <side> <pack.toml>
+        let pack_toml_path = working_dir.join("pack").join("pack.toml");
+        let pack_toml_str = pack_toml_path
+            .to_str()
+            .ok_or_else(|| PackwizError::InvalidPath {
+                reason: "pack.toml path contains invalid UTF-8".to_string(),
+            })?;
 
         let output = self
             .process_provider
             .execute(
                 "java",
-                &["-jar", jar_str, "-g", "-s", side, "--pack-folder", "pack"],
+                &[
+                    "-jar",
+                    bootstrap_str,
+                    "--bootstrap-main-jar",
+                    installer_str,
+                    "-g",
+                    "-s",
+                    side,
+                    pack_toml_str,
+                ],
                 working_dir,
             )
             .map_err(|e| PackwizError::ProcessFailed {

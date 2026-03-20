@@ -469,12 +469,15 @@ impl<'a> VersionFetcher<'a> {
                     .context("Failed to parse Minecraft version manifest")?;
 
                 // Filter to stable releases only and sort newest first
-                let versions: Vec<String> = manifest
+                let mut versions: Vec<String> = manifest
                     .versions
                     .into_iter()
                     .filter(|v| v.version_type == "release")
                     .map(|v| v.id)
                     .collect();
+
+                // Reverse: API returns oldest first (chronological), we want newest first
+                versions.reverse();
 
                 Ok(versions)
             },
@@ -532,6 +535,35 @@ impl<'a> VersionFetcher<'a> {
                     .filter(|v| !v.loader.stable)
                     .map(|v| v.loader.version.clone())
                     .collect();
+
+                // Sort each group newest first (reverse the ascending order from API)
+                stable_versions.sort_by(|a, b| {
+                    let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
+                    let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
+                    for i in 0..a_parts.len().max(b_parts.len()) {
+                        let a_part = a_parts.get(i).unwrap_or(&0);
+                        let b_part = b_parts.get(i).unwrap_or(&0);
+                        match b_part.cmp(a_part) {
+                            std::cmp::Ordering::Equal => continue,
+                            other => return other,
+                        }
+                    }
+                    std::cmp::Ordering::Equal
+                });
+
+                beta_versions.sort_by(|a, b| {
+                    let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
+                    let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
+                    for i in 0..a_parts.len().max(b_parts.len()) {
+                        let a_part = a_parts.get(i).unwrap_or(&0);
+                        let b_part = b_parts.get(i).unwrap_or(&0);
+                        match b_part.cmp(a_part) {
+                            std::cmp::Ordering::Equal => continue,
+                            other => return other,
+                        }
+                    }
+                    std::cmp::Ordering::Equal
+                });
 
                 // Combine with stable first
                 stable_versions.append(&mut beta_versions);
