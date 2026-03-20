@@ -22,7 +22,11 @@ use tempfile::TempDir;
 async fn e2e_build_mrpack_successfully() -> Result<()> {
     let fixture = WorkflowProjectFixture::new("workflow-build-pack");
     let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_empack_project(&fixture.pack_name, &fixture.minecraft_version, &fixture.loader)?
+        .with_empack_project(
+            &fixture.pack_name,
+            &fixture.minecraft_version,
+            &fixture.loader,
+        )?
         .with_mock_executable(
             "packwiz",
             MockBehavior::SucceedWithOutput {
@@ -65,25 +69,31 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
     );
 
     let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
-    assert!(packwiz_calls.iter().any(|call| {
-        call.args
-            == vec![
-                "--pack-file".to_string(),
-                pack_file.to_string_lossy().to_string(),
-                "refresh".to_string(),
-            ]
-    }), "build should refresh the pack before exporting: {packwiz_calls:?}");
-    assert!(packwiz_calls.iter().any(|call| {
-        call.args
-            == vec![
-                "--pack-file".to_string(),
-                pack_file.to_string_lossy().to_string(),
-                "mr".to_string(),
-                "export".to_string(),
-                "-o".to_string(),
-                mrpack_path.to_string_lossy().to_string(),
-            ]
-    }), "build should export the mrpack artifact through packwiz: {packwiz_calls:?}");
+    assert!(
+        packwiz_calls.iter().any(|call| {
+            call.args
+                == vec![
+                    "--pack-file".to_string(),
+                    pack_file.to_string_lossy().to_string(),
+                    "refresh".to_string(),
+                ]
+        }),
+        "build should refresh the pack before exporting: {packwiz_calls:?}"
+    );
+    assert!(
+        packwiz_calls.iter().any(|call| {
+            call.args
+                == vec![
+                    "--pack-file".to_string(),
+                    pack_file.to_string_lossy().to_string(),
+                    "mr".to_string(),
+                    "export".to_string(),
+                    "-o".to_string(),
+                    mrpack_path.to_string_lossy().to_string(),
+                ]
+        }),
+        "build should export the mrpack artifact through packwiz: {packwiz_calls:?}"
+    );
 
     Ok(())
 }
@@ -93,7 +103,11 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
 async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Result<()> {
     let fixture = WorkflowProjectFixture::new("workflow-build-clean");
     let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_empack_project(&fixture.pack_name, &fixture.minecraft_version, &fixture.loader)?
+        .with_empack_project(
+            &fixture.pack_name,
+            &fixture.minecraft_version,
+            &fixture.loader,
+        )?
         .with_mock_executable(
             "packwiz",
             MockBehavior::SucceedWithOutput {
@@ -174,25 +188,31 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
     );
 
     let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
-    assert!(packwiz_calls.iter().any(|call| {
-        call.args
-            == vec![
-                "--pack-file".to_string(),
-                pack_file.to_string_lossy().to_string(),
-                "refresh".to_string(),
-            ]
-    }), "clean-before-build should refresh the pack after cleaning: {packwiz_calls:?}");
-    assert!(packwiz_calls.iter().any(|call| {
-        call.args
-            == vec![
-                "--pack-file".to_string(),
-                pack_file.to_string_lossy().to_string(),
-                "mr".to_string(),
-                "export".to_string(),
-                "-o".to_string(),
-                mrpack_path.to_string_lossy().to_string(),
-            ]
-    }), "clean-before-build should export the rebuilt mrpack artifact: {packwiz_calls:?}");
+    assert!(
+        packwiz_calls.iter().any(|call| {
+            call.args
+                == vec![
+                    "--pack-file".to_string(),
+                    pack_file.to_string_lossy().to_string(),
+                    "refresh".to_string(),
+                ]
+        }),
+        "clean-before-build should refresh the pack after cleaning: {packwiz_calls:?}"
+    );
+    assert!(
+        packwiz_calls.iter().any(|call| {
+            call.args
+                == vec![
+                    "--pack-file".to_string(),
+                    pack_file.to_string_lossy().to_string(),
+                    "mr".to_string(),
+                    "export".to_string(),
+                    "-o".to_string(),
+                    mrpack_path.to_string_lossy().to_string(),
+                ]
+        }),
+        "clean-before-build should export the rebuilt mrpack artifact: {packwiz_calls:?}"
+    );
 
     Ok(())
 }

@@ -850,7 +850,7 @@ async fn handle_add(
             None,
             resolver.as_ref(),
         )
-            .await
+        .await
         {
             Ok(resolution) => {
                 let status_label = if resolution_intent.direct_project_id.is_some() {
@@ -893,10 +893,8 @@ async fn handle_add(
                         }
                         Ok(output) => {
                             packwiz_result = Err(());
-                            last_error = Some(anyhow::anyhow!(
-                                "Packwiz command failed: {}",
-                                output.stderr
-                            ));
+                            last_error =
+                                Some(anyhow::anyhow!("Packwiz command failed: {}", output.stderr));
                         }
                         Err(error) => {
                             packwiz_result = Err(());
@@ -1419,9 +1417,9 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
 
     // Ensure packwiz-installer.jar is available for builds that need it
     let installer_jar_path = session.filesystem().get_installer_jar_cache_path()?;
-    let needs_installer_jar = build_targets.iter().any(|target| {
-        matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull)
-    });
+    let needs_installer_jar = build_targets
+        .iter()
+        .any(|target| matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull));
 
     if needs_installer_jar && !session.filesystem().exists(&installer_jar_path) {
         session
@@ -1644,10 +1642,10 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     ..
                 } = &resolved
                 {
-                    session.display().status().success(
-                        "Resolved",
-                        &format!("{} on {}", title, resolved_platform),
-                    );
+                    session
+                        .display()
+                        .status()
+                        .success("Resolved", &format!("{} on {}", title, resolved_platform));
                 }
                 planned_actions.push(resolved);
             }
@@ -1755,10 +1753,8 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         }
                         Ok(output) => {
                             result = Err(());
-                            last_error = Some(anyhow::anyhow!(
-                                "Packwiz command failed: {}",
-                                output.stderr
-                            ));
+                            last_error =
+                                Some(anyhow::anyhow!("Packwiz command failed: {}", output.stderr));
                         }
                         Err(error) => {
                             result = Err(());

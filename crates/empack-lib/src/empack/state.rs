@@ -143,7 +143,8 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
             // Once pack metadata or build artifacts exist, callers must use the
             // normal configured-state flows instead of re-running init.
             let can_initialize = matches!(current, PackState::Uninitialized)
-                || (current == PackState::Configured && is_progressive_init_state(provider, workdir));
+                || (current == PackState::Configured
+                    && is_progressive_init_state(provider, workdir));
             if !can_initialize {
                 return Err(StateError::InvalidTransition {
                     from: current,

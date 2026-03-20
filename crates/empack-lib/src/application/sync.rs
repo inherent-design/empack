@@ -39,7 +39,10 @@ pub enum SyncExecutionAction {
         resolved_project_id: String,
         resolved_platform: ProjectPlatform,
     },
-    Remove { key: String, title: String },
+    Remove {
+        key: String,
+        title: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,13 +186,14 @@ pub async fn resolve_add_contract(
         )
     };
 
-    let commands = build_packwiz_add_commands(&project_id, platform, version_override).map_err(
-        |source| AddContractError::PlanPackwizAdd {
-            project_id: project_id.clone(),
-            platform,
-            source,
-        },
-    )?;
+    let commands =
+        build_packwiz_add_commands(&project_id, platform, version_override).map_err(|source| {
+            AddContractError::PlanPackwizAdd {
+                project_id: project_id.clone(),
+                platform,
+                source,
+            }
+        })?;
 
     Ok(AddResolution {
         title,

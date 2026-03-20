@@ -418,10 +418,7 @@ minecraft = "{}"
 
     fn get_installer_jar_cache_path(&self) -> Result<PathBuf> {
         // For testing, return a path in the test directory
-        let jar_path = self
-            .current_dir
-            .join("cache")
-            .join("packwiz-installer.jar");
+        let jar_path = self.current_dir.join("cache").join("packwiz-installer.jar");
 
         // Ensure the mock JAR file exists to prevent network download attempts
         if !self.exists(&jar_path) {
@@ -632,7 +629,12 @@ impl MockProcessProvider {
         self.directories = Some(filesystem.directories.clone());
     }
 
-    fn maybe_materialize_mrpack_export(&self, command: &str, args: &[&str], output: &ProcessOutput) {
+    fn maybe_materialize_mrpack_export(
+        &self,
+        command: &str,
+        args: &[&str],
+        output: &ProcessOutput,
+    ) {
         if command != "packwiz" || !self.materialize_mrpack_exports || !output.success {
             return;
         }
@@ -972,7 +974,8 @@ impl MockCommandSession {
     }
 
     fn sync_process_provider(&mut self) {
-        self.process_provider.connect_filesystem(&self.filesystem_provider);
+        self.process_provider
+            .connect_filesystem(&self.filesystem_provider);
     }
 
     /// Get the display provider for this session

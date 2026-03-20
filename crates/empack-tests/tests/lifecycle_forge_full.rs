@@ -5,9 +5,9 @@
 use anyhow::Result;
 use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;
+use empack_lib::display::Display;
 use empack_lib::empack::search::ProjectInfo;
 use empack_lib::primitives::ProjectPlatform;
-use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
 use empack_tests::{HermeticSessionBuilder, MockBehavior};
@@ -243,11 +243,15 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         "Server build should include extracted override content"
     );
     assert!(
-        dist_dir.join("server-full/mods/server-installed.txt").exists(),
+        dist_dir
+            .join("server-full/mods/server-installed.txt")
+            .exists(),
         "Server-full build should include full install marker"
     );
     assert!(
-        dist_dir.join("client-full/mods/both-installed.txt").exists(),
+        dist_dir
+            .join("client-full/mods/both-installed.txt")
+            .exists(),
         "Client-full build should include full install marker"
     );
 
@@ -274,15 +278,23 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     // Verify packwiz was called during workflow
     let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
     assert!(
-        packwiz_calls
-            .iter()
-            .any(|call| call.contains_args(&["modrinth", "add", "--project-id", "AANobbMI", "-y"])),
+        packwiz_calls.iter().any(|call| call.contains_args(&[
+            "modrinth",
+            "add",
+            "--project-id",
+            "AANobbMI",
+            "-y"
+        ])),
         "Lifecycle should add the Modrinth dependency through packwiz: {packwiz_calls:?}"
     );
     assert!(
-        packwiz_calls
-            .iter()
-            .any(|call| call.contains_args(&["curseforge", "add", "--addon-id", "238222", "-y"])),
+        packwiz_calls.iter().any(|call| call.contains_args(&[
+            "curseforge",
+            "add",
+            "--addon-id",
+            "238222",
+            "-y"
+        ])),
         "Lifecycle should add the CurseForge dependency through packwiz: {packwiz_calls:?}"
     );
     assert!(
