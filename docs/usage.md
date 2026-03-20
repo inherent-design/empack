@@ -22,10 +22,10 @@ This guide describes the current Rust CLI. It does not treat the Bash implementa
 | --- | --- | --- |
 | `empack requirements` | Check external tool availability | Trusted command path with dedicated test coverage |
 | `empack version` | Print version information | CLI help verified |
-| `empack init` | Initialize a project or complete partial setup | Trusted hermetic workflow path |
+| `empack init` | Initialize a project or complete partial setup | Trusted under nextest-backed workflow coverage |
 | `empack add` | Add projects by name, URL, or project ID | Trusted current workflow and command path |
-| `empack sync` | Reconcile declared dependencies with installed state | Trusted in isolated reruns |
-| `empack build` | Produce `mrpack` and other build targets | Trusted for promoted workflow suites |
+| `empack sync` | Reconcile declared dependencies with installed state | Trusted in isolated nextest reruns; grouped `cargo test` is unstable |
+| `empack build` | Produce `mrpack` and other build targets | Trusted under promoted nextest workflow suites |
 | `empack remove` | Remove projects from the current modpack | Available and covered by targeted command tests |
 | `empack clean` | Remove build outputs | Trusted current command and lifecycle path |
 
@@ -89,7 +89,7 @@ Trusted evidence comes from isolated reruns of:
 - `test_sync_workflow_full`
 - `test_sync_dry_run_no_modifications`
 
-See [`docs/testing/README.md`](testing/README.md) for the exact isolated rerun commands and the grouped-workflow caveat.
+See [`docs/testing/README.md`](testing/README.md) for the exact isolated rerun commands and the broader grouped `cargo test` instability notes.
 
 ### Build artifacts
 
@@ -129,18 +129,17 @@ empack clean builds
 
 ## Current caveats
 
-### Known grouped-workflow caveat
+### Known grouped `cargo test` instability
 
-Grouped reruns of `sync_workflow` can fail with:
+Grouped `cargo test` instability is broader than `sync_workflow` alone. Affected workflow files include `sync_workflow`, `build_command`, `build_server_full`, `build_client_full`, `init_workflows`, and related suites.
 
-`Global configuration already initialized`
+Common interference sources include `Display::init` global state and environment variable conflicts.
 
-For touched sync behavior, prefer isolated reruns instead of the grouped file run.
+For touched behavior, prefer targeted `cargo nextest` reruns and the primary release-gate commands documented in [`docs/testing/README.md`](testing/README.md).
 
-### Deferred gaps
+### Remaining explicit gap
 
-- Standalone `client-full` missing-installer propagation remains deferred.
-- Standalone `server-full` missing-installer propagation remains deferred.
+- Broader remove behavior beyond targeted command tests is still not promoted into the main trusted matrix.
 
 ### Historical context only
 
