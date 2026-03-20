@@ -30,7 +30,7 @@ impl<'a> StructuredDisplay<'a> {
     ///     .row(&["Go", "✗", "not found"])
     ///     .render();
     /// ```
-    pub fn table(&self) -> TableDisplay {
+    pub fn table(&self) -> TableDisplay<'_> {
         TableDisplay::new(self.styling, self.capabilities)
     }
 

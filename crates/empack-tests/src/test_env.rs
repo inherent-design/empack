@@ -19,6 +19,14 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use tempfile::TempDir;
 
+type HermeticCommandSession = CommandSession<
+    LiveFileSystemProvider,
+    MockNetworkProvider,
+    LiveProcessProvider,
+    LiveConfigProvider,
+    empack_lib::application::session_mocks::MockInteractiveProvider,
+>;
+
 /// Hermetic test environment with mock executables
 pub struct TestEnvironment {
     /// Temporary directory for the test environment
@@ -717,18 +725,7 @@ impl HermeticSessionBuilder {
     }
 
     /// Build the hermetic session with all configured providers
-    pub fn build(
-        self,
-    ) -> Result<(
-        CommandSession<
-            LiveFileSystemProvider,
-            MockNetworkProvider,
-            LiveProcessProvider,
-            LiveConfigProvider,
-            empack_lib::application::session_mocks::MockInteractiveProvider,
-        >,
-        TestEnvironment,
-    )> {
+    pub fn build(self) -> Result<(HermeticCommandSession, TestEnvironment)> {
         use empack_lib::application::session_mocks::MockInteractiveProvider;
 
         // Set up cross-platform cache directory for test isolation
@@ -822,6 +819,12 @@ impl MockNetworkProvider {
                 project_type: "mod".to_string(),
             },
         );
+    }
+}
+
+impl Default for MockNetworkProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

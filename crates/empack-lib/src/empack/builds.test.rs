@@ -28,7 +28,7 @@ impl MockBuildOrchestrator {
         }
     }
     
-    fn orchestrator(&self) -> BuildOrchestrator {
+    fn orchestrator(&self) -> BuildOrchestrator<'_> {
         BuildOrchestrator::new(&self.session).expect("Failed to create orchestrator")
     }
 
@@ -153,7 +153,7 @@ fn test_build_registry() {
 
 #[test]
 fn test_prepare_build_environment() {
-    let (temp_dir, session) = create_test_orchestrator();
+    let (_temp_dir, session) = create_test_orchestrator();
     let orchestrator = BuildOrchestrator::new(&session).expect("Failed to create orchestrator");
 
     // Should fail without pack directory
@@ -192,7 +192,7 @@ fn test_load_pack_info() {
 
 #[test]
 fn test_load_pack_info_missing_file() {
-    let (temp_dir, session) = create_test_orchestrator();
+    let (_temp_dir, session) = create_test_orchestrator();
     let mut orchestrator = BuildOrchestrator::new(&session).expect("Failed to create orchestrator");
     
     let result = orchestrator.load_pack_info();

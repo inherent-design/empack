@@ -68,13 +68,13 @@ async fn test_init_packwiz_failure() -> Result<()> {
 
     // Test behavior: Init can either fail when packwiz unavailable OR succeed via fallback
     // The MockFileSystemProvider in HermeticSession creates pack.toml directly as fallback
-    if result.is_err() {
+    if let Err(err) = result {
         // If init failed, verify error message is informative
         // Error may come from different sources:
         // - PackwizError::ProcessFailed → contains "packwiz"
         // - StateError::PackwizUnavailable → contains "not found"
         // - Generic wrapper errors may just say "Failed to initialize modpack project"
-        let error_msg = result.unwrap_err().to_string();
+        let error_msg = err.to_string();
 
         // Accept any error as long as init actually failed
         // (error message quality validated in other tests)
@@ -152,8 +152,8 @@ async fn test_init_packwiz_unavailable() -> Result<()> {
 
     // Init should fail or succeed with fallback behavior
     // Either is acceptable depending on implementation strategy
-    if result.is_err() {
-        let error_msg = result.unwrap_err().to_string();
+    if let Err(err) = result {
+        let error_msg = err.to_string();
         // Accept any error - error message quality validated in other tests
         eprintln!("Init failed as expected with error: {}", error_msg);
     } else {
@@ -243,8 +243,8 @@ async fn test_init_filesystem_error() -> Result<()> {
 
     // Init should fail due to permission error
     // Note: In hermetic tests with LiveFileSystemProvider, actual filesystem errors occur
-    if result.is_err() {
-        let error_msg = result.unwrap_err().to_string();
+    if let Err(err) = result {
+        let error_msg = err.to_string();
         assert!(
             error_msg.contains("Permission")
                 || error_msg.contains("denied")

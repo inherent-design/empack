@@ -785,13 +785,13 @@ async fn handle_add(
     let mut dep_graph = crate::api::dependency_graph::DependencyGraph::new();
     let mods_dir = workdir.join("pack").join("mods");
 
-    if mods_dir.exists() {
-        if let Err(e) = dep_graph.build_from_directory(&mods_dir) {
-            session
-                .display()
-                .status()
-                .warning(&format!("Failed to build dependency graph: {}", e));
-        }
+    if mods_dir.exists()
+        && let Err(e) = dep_graph.build_from_directory(&mods_dir)
+    {
+        session
+            .display()
+            .status()
+            .warning(&format!("Failed to build dependency graph: {}", e));
     }
 
     // Try to load existing project plan to get context

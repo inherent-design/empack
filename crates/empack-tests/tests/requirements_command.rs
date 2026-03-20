@@ -26,8 +26,10 @@ async fn e2e_requirements_check_successfully() -> Result<()> {
     std::env::set_current_dir(&workdir)?;
 
     // Create session with mock process provider
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
@@ -90,8 +92,10 @@ async fn e2e_requirements_packwiz_missing() -> Result<()> {
     std::env::set_current_dir(&workdir)?;
 
     // Create session with mock process provider
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
@@ -146,8 +150,10 @@ async fn e2e_requirements_check_git() -> Result<()> {
     std::env::set_current_dir(&workdir)?;
 
     // Create session with mock process provider
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;

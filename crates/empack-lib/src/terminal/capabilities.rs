@@ -51,23 +51,12 @@ pub enum DimensionSource {
     Default,     // 80x24 assumption
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct TerminalInteractivity {
     pub supports_queries: bool,
     pub supports_mouse: bool,
     pub supports_focus_events: bool,
     pub supports_paste_mode: bool,
-}
-
-impl Default for TerminalInteractivity {
-    fn default() -> Self {
-        Self {
-            supports_queries: false,
-            supports_mouse: false,
-            supports_focus_events: false,
-            supports_paste_mode: false,
-        }
-    }
 }
 
 // Terminal-specific capability profiles
@@ -215,9 +204,9 @@ pub(crate) fn setup_raw_mode() -> Result<RawModeGuard, TerminalError> {
     #[cfg(unix)]
     {
         let original_termios = setup_unix_raw_mode()?;
-        return Ok(RawModeGuard {
+        Ok(RawModeGuard {
             original_termios: Some(original_termios),
-        });
+        })
     }
 
     #[cfg(windows)]

@@ -82,6 +82,5 @@ impl ModLoader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     include!("parsing.test.rs");
 }

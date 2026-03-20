@@ -14,7 +14,7 @@ switch ($env:CHECK_MODE) {
         $cargoArgs = @('check', '--workspace', '--all-targets')
     }
     'clippy' {
-        $cargoArgs = @('clippy', '--workspace', '--all-targets')
+        $cargoArgs = @('clippy', '--workspace', '--all-targets', '--', '-D', 'warnings')
     }
     default {
         throw "Unsupported CHECK_MODE '$($env:CHECK_MODE)'. Expected: check or clippy."

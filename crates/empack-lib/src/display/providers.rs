@@ -207,7 +207,7 @@ pub trait DisplayProviderExt: DisplayProvider {
                 summary.successful, summary.failed
             ));
         } else if summary.is_failure() {
-            status.error(&operation, "failed");
+            status.error(operation, "failed");
             status.subtle(&format!(
                 "   ❌ {} operation{} failed",
                 summary.failed,

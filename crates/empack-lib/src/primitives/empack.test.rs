@@ -1,4 +1,4 @@
-use super::*;
+use crate::primitives::{BuildTarget, PackState, StateTransition};
 
 #[test]
 fn test_build_target_display() {

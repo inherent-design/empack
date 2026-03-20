@@ -587,7 +587,6 @@ mod handle_remove_tests {
         assert!(result.is_ok());
 
         // Verify packwiz remove command was called
-        let calls = session.process_provider.get_calls();
         assert!(session.process_provider.verify_call(
             "packwiz",
             &["remove", "test-mod"],
@@ -616,7 +615,6 @@ mod handle_remove_tests {
         assert!(result.is_ok());
 
         // Verify multiple remove commands were called
-        let calls = session.process_provider.get_calls();
         assert!(session.process_provider.verify_call(
             "packwiz",
             &["remove", "mod1"],
@@ -653,7 +651,6 @@ mod handle_remove_tests {
 
         // Verify packwiz remove command was called (without --remove-deps flag)
         // Note: packwiz does not support --remove-deps, orphan detection is implemented separately
-        let calls = session.process_provider.get_calls();
         assert!(session.process_provider.verify_call(
             "packwiz",
             &["remove", "test-mod"],
@@ -1490,10 +1487,7 @@ async fn test_build_target_validation_logic() {
 
     for target in valid_targets {
         // This mimics the validation logic in handle_build
-        let is_valid = match target {
-            "all" | "client" | "server" | "client-full" | "server-full" => true,
-            _ => false,
-        };
+        let is_valid = matches!(target, "all" | "client" | "server" | "client-full" | "server-full");
         assert!(is_valid, "Expected '{}' to be valid", target);
     }
 }
@@ -1504,10 +1498,7 @@ async fn test_project_type_validation() {
     let valid_types = ["mod", "resourcepack", "datapack"];
 
     for project_type in valid_types {
-        let is_valid = match project_type {
-            "mod" | "resourcepack" | "datapack" => true,
-            _ => false,
-        };
+        let is_valid = matches!(project_type, "mod" | "resourcepack" | "datapack");
         assert!(
             is_valid,
             "Expected '{}' to be valid project type",
@@ -1522,10 +1513,7 @@ async fn test_mod_loader_validation() {
     let valid_loaders = ["fabric", "forge", "quilt", "neoforge"];
 
     for loader in valid_loaders {
-        let is_valid = match loader {
-            "fabric" | "forge" | "quilt" | "neoforge" => true,
-            _ => false,
-        };
+        let is_valid = matches!(loader, "fabric" | "forge" | "quilt" | "neoforge");
         assert!(is_valid, "Expected '{}' to be valid mod loader", loader);
     }
 }
@@ -1761,8 +1749,8 @@ async fn test_case_insensitive_build_targets() {
     // Uppercase might not be accepted (implementation dependent)
     let result_uppercase = parse_build_targets(vec!["CLIENT".to_string()]);
     // Don't assert - just test that it either works or gives clear error
-    if result_uppercase.is_err() {
-        let err_msg = format!("{:?}", result_uppercase.unwrap_err());
+    if let Err(err) = result_uppercase {
+        let err_msg = format!("{:?}", err);
         assert!(!err_msg.is_empty(), "Error for uppercase should be clear");
     }
 }

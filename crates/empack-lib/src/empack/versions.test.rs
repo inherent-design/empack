@@ -385,7 +385,7 @@ fn test_neoforge_versions_preserve_api_order_descending() {
 
 #[test]
 fn test_fabric_versions_order_descending() {
-    let api_versions = vec![
+    let api_versions = [
         FabricLoaderVersion {
             loader: FabricLoaderInfo {
                 version: "0.15.0".to_string(),
