@@ -272,10 +272,14 @@ async fn handle_init(
             .checking("Resetting existing project state for --force init");
 
         while current_state != PackState::Uninitialized {
-            current_state = manager
+            let result = manager
                 .execute_transition(session.process(), &*session.packwiz(), StateTransition::Clean)
                 .await
                 .context("Failed to reset existing project before initialization")?;
+            for w in &result.warnings {
+                session.display().status().warning(w);
+            }
+            current_state = result.state;
         }
     }
 
@@ -675,12 +679,15 @@ async fn handle_init(
         mc_version: &minecraft_version,
         loader_version: &loader_version,
     };
-    let result = manager
+    let transition_result = manager
         .execute_transition(session.process(), &*session.packwiz(), StateTransition::Initialize(init_config))
         .await
         .context("Failed to initialize modpack project")?;
+    for w in &transition_result.warnings {
+        session.display().status().warning(w);
+    }
 
-    match result {
+    match transition_result.state {
         PackState::Configured => {
             session
                 .display()
@@ -697,7 +704,7 @@ async fn handle_init(
         _ => {
             return Err(anyhow::anyhow!(
                 "Unexpected state after initialization: {:?}",
-                result
+                transition_result.state
             ));
         }
     }
@@ -1511,10 +1518,13 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
 
         let current_state = manager.discover_state()?;
         if current_state == PackState::Built {
-            manager
+            let result = manager
                 .execute_transition(session.process(), &*session.packwiz(), StateTransition::Clean)
                 .await
                 .context("Failed to clean build artifacts")?;
+            for w in &result.warnings {
+                session.display().status().warning(w);
+            }
             session
                 .display()
                 .status()

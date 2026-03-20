@@ -14,6 +14,14 @@ use thiserror::Error;
 // Pure business logic functions - zero I/O, 100% testable.
 // These functions contain the core state machine logic without side effects.
 
+/// Result of a state transition, carrying the new state and any warnings
+/// that callers should surface through DisplayProvider.
+#[derive(Debug, Clone)]
+pub struct StateTransitionResult {
+    pub state: PackState,
+    pub warnings: Vec<String>,
+}
+
 /// Canonical project-local artifact root for build outputs.
 /// Keeping this rooted at `workdir/dist` lets build and clean share one trusted
 /// artifact boundary instead of falling back to historical `.empack/dist` paths.
@@ -137,8 +145,10 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
     packwiz: &dyn PackwizOps,
     workdir: &Path,
     transition: StateTransition<'_>,
-) -> Result<PackState, StateError> {
+) -> Result<StateTransitionResult, StateError> {
     let current = discover_state(provider, workdir)?;
+
+    let no_warnings = |state| Ok(StateTransitionResult { state, warnings: vec![] });
 
     match transition {
         StateTransition::Initialize(config) => {
@@ -165,6 +175,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                 config.mc_version,
                 config.loader_version,
             )
+            .map(|state| StateTransitionResult { state, warnings: vec![] })
         }
 
         StateTransition::RefreshIndex => {
@@ -188,19 +199,21 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                     to: PackState::Built,
                 });
             }
-            execute_build(orchestrator, &targets).await
+            execute_build(orchestrator, &targets)
+                .await
+                .map(|state| StateTransitionResult { state, warnings: vec![] })
         }
 
         StateTransition::Clean => match current {
             PackState::Built => {
                 clean_build_artifacts(provider, workdir)?;
-                Ok(PackState::Configured)
+                no_warnings(PackState::Configured)
             }
             PackState::Configured => {
                 clean_configuration(provider, workdir)?;
-                Ok(PackState::Uninitialized)
+                no_warnings(PackState::Uninitialized)
             }
-            PackState::Uninitialized => Ok(PackState::Uninitialized),
+            PackState::Uninitialized => no_warnings(PackState::Uninitialized),
             PackState::Building => Err(StateError::InvalidTransition {
                 from: current,
                 to: PackState::Configured,
@@ -218,7 +231,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                     to: PackState::Building,
                 });
             }
-            Ok(PackState::Building)
+            no_warnings(PackState::Building)
         }
 
         StateTransition::Cleaning => {
@@ -228,7 +241,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                     to: PackState::Cleaning,
                 });
             }
-            Ok(PackState::Cleaning)
+            no_warnings(PackState::Cleaning)
         }
     }
 }
@@ -292,21 +305,23 @@ pub fn execute_refresh_index<P: crate::application::session::FileSystemProvider 
     provider: &P,
     packwiz: &dyn PackwizOps,
     workdir: &Path,
-) -> Result<PackState, StateError> {
+) -> Result<StateTransitionResult, StateError> {
     // Validate configuration consistency using session provider
     let config_manager = provider.config_manager(workdir.to_path_buf());
     let issues = config_manager.validate_consistency()?;
 
-    if !issues.is_empty() {
-        for issue in issues {
-            eprintln!("Warning: {}", issue);
-        }
-    }
+    let warnings: Vec<String> = issues
+        .into_iter()
+        .map(|issue| format!("Warning: {}", issue))
+        .collect();
 
     // Run packwiz refresh to sync mods
     packwiz.run_packwiz_refresh(workdir)?;
 
-    Ok(PackState::Configured)
+    Ok(StateTransitionResult {
+        state: PackState::Configured,
+        warnings,
+    })
 }
 
 /// Execute build process (pure function)
@@ -514,7 +529,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         process: &dyn crate::application::session::ProcessProvider,
         packwiz: &dyn PackwizOps,
         transition: StateTransition<'_>,
-    ) -> Result<PackState, StateError> {
+    ) -> Result<StateTransitionResult, StateError> {
         execute_transition(self.provider, process, packwiz, &self.workdir, transition).await
     }
 
