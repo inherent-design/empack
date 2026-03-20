@@ -82,6 +82,19 @@ pub enum CapabilityReliability {
 // ============================================================================
 
 impl TerminalCapabilities {
+    /// Create minimal capabilities for non-interactive/fallback contexts.
+    /// Used by Display::global() auto-init when no explicit init has occurred.
+    pub fn minimal() -> Self {
+        Self {
+            color: TerminalColorCaps::None,
+            unicode: TerminalUnicodeCaps::Ascii,
+            graphics: TerminalGraphicsCaps::None,
+            dimensions: TerminalDimensions::default(),
+            interactivity: TerminalInteractivity::default(),
+            is_tty: false,
+        }
+    }
+
     pub fn detect_from_config(config: &AppConfig) -> Result<Self, TerminalError> {
         // Load environment variables
         let env_config = envy::from_env::<TerminalEnvConfig>()

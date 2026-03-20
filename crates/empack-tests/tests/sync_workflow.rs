@@ -49,7 +49,7 @@ async fn test_sync_workflow_full() -> Result<()> {
         .build()?;
 
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     let workdir = session
         .config()
@@ -122,7 +122,7 @@ async fn test_sync_dry_run_no_modifications() -> Result<()> {
         .build()?;
 
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     let workdir = session
         .config()
@@ -185,7 +185,7 @@ async fn test_sync_normalized_installed_names_noop() -> Result<()> {
         .build()?;
 
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    let _ = Display::init(terminal_caps);
+    Display::init_or_get(terminal_caps);
 
     let workdir = session
         .config()

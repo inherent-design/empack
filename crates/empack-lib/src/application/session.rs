@@ -526,13 +526,15 @@ impl
 {
     /// Create a new command session with owned state (production composition)
     pub fn new(app_config: AppConfig) -> Self {
-        // Initialize display system if not already done
+        // Initialize display and logger systems
         if let Ok(terminal_caps) =
             crate::terminal::TerminalCapabilities::detect_from_config(&app_config)
         {
-            let _ = crate::display::Display::init(terminal_caps.clone());
+            crate::display::Display::init_or_get(terminal_caps.clone());
             let logger_config = app_config.to_logger_config(&terminal_caps);
-            let _ = crate::logger::Logger::init(logger_config);
+            if let Err(e) = crate::logger::Logger::init(logger_config) {
+                eprintln!("empack: logger init failed: {e}");
+            }
         }
 
         let multi_progress = MultiProgress::new();

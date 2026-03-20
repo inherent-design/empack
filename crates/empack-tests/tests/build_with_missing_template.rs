@@ -33,7 +33,7 @@ async fn test_build_with_missing_template() -> Result<()> {
 
     // Initialize display
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Set working directory
     let workdir = test_env.work_path.clone();
@@ -140,7 +140,7 @@ async fn test_build_template_error_specificity() -> Result<()> {
         .build()?;
 
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;

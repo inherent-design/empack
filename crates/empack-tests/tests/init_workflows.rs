@@ -52,7 +52,7 @@ async fn test_init_zero_config() -> Result<()> {
 
     // Initialize display
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Use test work directory as working directory
     let workdir = test_env.work_path.clone();
@@ -138,7 +138,7 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 
     // Initialize display
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Use test work directory
     let workdir = test_env.work_path.clone();
@@ -271,7 +271,7 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
 
     // Initialize display
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Use test work directory
     let workdir = test_env.work_path.clone();
@@ -357,7 +357,7 @@ async fn test_init_existing_project_error() -> Result<()> {
 
     // Initialize display
     let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Use test work directory
     let workdir = test_env.work_path.clone();

@@ -33,7 +33,7 @@ async fn e2e_requirements_check_successfully() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Mock successful which command for packwiz
     let mock_process_provider = MockProcessProvider::new()
@@ -99,7 +99,7 @@ async fn e2e_requirements_packwiz_missing() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Mock which command returning error (packwiz not found)
     let mock_process_provider = MockProcessProvider::new().with_result(
@@ -157,7 +157,7 @@ async fn e2e_requirements_check_git() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Mock both packwiz and git checks
     let mock_process_provider = MockProcessProvider::new()

@@ -40,7 +40,7 @@ async fn e2e_add_mod_successfully() -> Result<()> {
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
-    Display::init(terminal_caps)?;
+    Display::init_or_get(terminal_caps);
 
     // Set up mockito server for Modrinth API
     let mut server = Server::new_async().await;
