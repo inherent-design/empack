@@ -7,6 +7,7 @@ use crate::Result;
 use crate::application::config::AppConfig;
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
+use crate::empack::packwiz::{LivePackwizOps, PackwizOps};
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
 use crate::empack::state::PackStateManager;
 use anyhow::Context;
@@ -23,11 +24,6 @@ use std::path::{Path, PathBuf};
 pub trait FileSystemProvider {
     /// Get current working directory
     fn current_dir(&self) -> Result<PathBuf>;
-
-    // state_manager method removed - create PackStateManager directly
-
-    /// Get list of currently installed mods from packwiz
-    fn get_installed_mods(&self) -> Result<HashSet<String>>;
 
     /// Create a config manager for the given directory
     fn config_manager(&self, workdir: PathBuf) -> ConfigManager<'_>;
@@ -66,33 +62,6 @@ pub trait FileSystemProvider {
 
     /// Remove a directory and all its contents
     fn remove_dir_all(&self, path: &Path) -> Result<()>;
-
-    /// Run packwiz init command
-    #[allow(clippy::too_many_arguments)]
-    fn run_packwiz_init(
-        &self,
-        process: &dyn ProcessProvider,
-        workdir: &Path,
-        name: &str,
-        author: &str,
-        version: &str,
-        modloader: &str,
-        mc_version: &str,
-        loader_version: &str,
-    ) -> std::result::Result<(), crate::empack::state::StateError>;
-
-    /// Run packwiz refresh command
-    fn run_packwiz_refresh(
-        &self,
-        process: &dyn ProcessProvider,
-        workdir: &Path,
-    ) -> std::result::Result<(), crate::empack::state::StateError>;
-
-    /// Get the expected cache path for packwiz-installer-bootstrap.jar
-    fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf>;
-
-    /// Get the expected cache path for packwiz-installer.jar
-    fn get_installer_jar_cache_path(&self) -> Result<PathBuf>;
 }
 
 /// Provider trait for network operations
@@ -170,6 +139,9 @@ pub trait Session {
     /// Get the interactive provider for this session
     fn interactive(&self) -> &dyn InteractiveProvider;
 
+    /// Get the packwiz operations provider for this session
+    fn packwiz(&self) -> Box<dyn PackwizOps + '_>;
+
     /// Get the state manager for this session
     fn state(&self) -> PackStateManager<'_, dyn FileSystemProvider + '_>;
 }
@@ -180,51 +152,6 @@ pub struct LiveFileSystemProvider;
 impl FileSystemProvider for LiveFileSystemProvider {
     fn current_dir(&self) -> Result<PathBuf> {
         env::current_dir().context("Failed to get current directory")
-    }
-
-    // state_manager method removed - create PackStateManager directly
-
-    fn get_installed_mods(&self) -> Result<HashSet<String>> {
-        let pack_dir = self.current_dir()?.join("pack");
-        let output = std::process::Command::new("packwiz")
-            .arg("list")
-            .current_dir(&pack_dir)
-            .output()
-            .context("Failed to execute packwiz list command")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Packwiz list command failed: {}", stderr));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut installed_mods = HashSet::new();
-
-        // Parse packwiz list output - each line should contain a mod name
-        // The format varies, but we're looking for .toml files or project names
-        for line in stdout.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with("Mods:") || line.starts_with("Total:") {
-                continue;
-            }
-
-            // Extract mod name from various formats packwiz might use
-            // Common formats: "- modname" or "modname.pw.toml" or just "modname"
-            let mod_name = if line.starts_with("- ") {
-                line.trim_start_matches("- ").trim()
-            } else if line.ends_with(".pw.toml") {
-                line.trim_end_matches(".pw.toml")
-            } else {
-                line
-            };
-
-            // Convert to a normalized key format (lowercase, replace spaces/dashes with underscores)
-            let normalized_name = mod_name.to_lowercase().replace([' ', '-'], "_");
-
-            installed_mods.insert(normalized_name);
-        }
-
-        Ok(installed_mods)
     }
 
     fn config_manager(&self, workdir: PathBuf) -> ConfigManager<'_> {
@@ -326,153 +253,6 @@ impl FileSystemProvider for LiveFileSystemProvider {
     fn remove_dir_all(&self, path: &Path) -> Result<()> {
         std::fs::remove_dir_all(path)
             .with_context(|| format!("Failed to remove directory: {}", path.display()))
-    }
-
-    fn run_packwiz_init(
-        &self,
-        process: &dyn ProcessProvider,
-        workdir: &Path,
-        name: &str,
-        author: &str,
-        version: &str,
-        modloader: &str,
-        mc_version: &str,
-        loader_version: &str,
-    ) -> std::result::Result<(), crate::empack::state::StateError> {
-        let pack_dir = workdir.join("pack");
-
-        // Ensure pack directory exists before running packwiz
-        if !pack_dir.exists() {
-            return Err(crate::empack::state::StateError::MissingFile {
-                file: pack_dir.to_path_buf(),
-            });
-        }
-
-        // Build packwiz init command with all required parameters
-        let mut args = vec![
-            "init",
-            "--name",
-            name,
-            "--author",
-            author,
-            "--version",
-            version,
-            "--mc-version",
-            mc_version,
-            "--modloader",
-            modloader,
-            "-y", // Non-interactive mode
-        ];
-
-        // Add modloader-specific version arguments
-        match modloader {
-            "neoforge" => {
-                args.push("--neoforge-version");
-                args.push(loader_version);
-            }
-            "fabric" => {
-                args.push("--fabric-version");
-                args.push(loader_version);
-            }
-            "quilt" => {
-                args.push("--quilt-version");
-                args.push(loader_version);
-            }
-            "forge" => {
-                args.push("--forge-version");
-                args.push(loader_version);
-            }
-            _ => {
-                // For vanilla or unknown modloaders, don't add version args
-            }
-        }
-
-        let output = process.execute("packwiz", &args, &pack_dir).map_err(|e| {
-            crate::empack::state::StateError::CommandFailed {
-                command: format!("packwiz init failed: {}", e),
-            }
-        })?;
-
-        if !output.success {
-            return Err(crate::empack::state::StateError::CommandFailed {
-                command: format!("packwiz init returned non-zero: {}", output.stderr),
-            });
-        }
-
-        Ok(())
-    }
-
-    fn run_packwiz_refresh(
-        &self,
-        process: &dyn ProcessProvider,
-        workdir: &Path,
-    ) -> std::result::Result<(), crate::empack::state::StateError> {
-        let pack_file = workdir.join("pack").join("pack.toml");
-
-        let pack_file_str =
-            pack_file
-                .to_str()
-                .ok_or_else(|| crate::empack::state::StateError::IoError {
-                    source: anyhow::anyhow!("Invalid UTF-8 in pack.toml path"),
-                })?;
-
-        let output = process
-            .execute(
-                "packwiz",
-                &["--pack-file", pack_file_str, "refresh"],
-                workdir,
-            )
-            .map_err(|e| crate::empack::state::StateError::CommandFailed {
-                command: format!("packwiz refresh failed: {}", e),
-            })?;
-
-        if !output.success {
-            return Err(crate::empack::state::StateError::CommandFailed {
-                command: format!("packwiz refresh returned non-zero: {}", output.stderr),
-            });
-        }
-
-        Ok(())
-    }
-
-    fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf> {
-        // First check for local installer JAR (for development/testing)
-        let local_jar = std::env::current_dir()
-            .context("Failed to get current directory")?
-            .join("installer")
-            .join("packwiz-installer-bootstrap.jar");
-
-        if local_jar.exists() {
-            return Ok(local_jar);
-        }
-
-        // Return cache directory path
-        let cache_dir = dirs::cache_dir()
-            .context("Failed to determine cache directory")?
-            .join("empack")
-            .join("jars");
-
-        Ok(cache_dir.join("packwiz-installer-bootstrap.jar"))
-    }
-
-    fn get_installer_jar_cache_path(&self) -> Result<PathBuf> {
-        // First check for local installer JAR (for development/testing)
-        let local_jar = std::env::current_dir()
-            .context("Failed to get current directory")?
-            .join("installer")
-            .join("packwiz-installer.jar");
-
-        if local_jar.exists() {
-            return Ok(local_jar);
-        }
-
-        // Return cache directory path
-        let cache_dir = dirs::cache_dir()
-            .context("Failed to determine cache directory")?
-            .join("empack")
-            .join("jars");
-
-        Ok(cache_dir.join("packwiz-installer.jar"))
     }
 }
 
@@ -936,6 +716,10 @@ where
 
     fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
+    }
+
+    fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
+        Box::new(LivePackwizOps::new(self.process(), self.filesystem()))
     }
 
     fn state(&self) -> PackStateManager<'_, dyn FileSystemProvider + '_> {

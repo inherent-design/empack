@@ -8,6 +8,7 @@ use crate::application::config::AppConfig;
 use crate::application::session::{InteractiveProvider, ProcessOutput, Session, *};
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
+use crate::empack::packwiz::{MockPackwizOps, PackwizOps};
 use crate::empack::search::{ProjectInfo, ProjectResolverTrait, SearchError};
 use indicatif::MultiProgress;
 use reqwest::Client;
@@ -205,12 +206,6 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(self.current_dir.clone())
     }
 
-    // state_manager method removed - create PackStateManager directly
-
-    fn get_installed_mods(&self) -> Result<HashSet<String>> {
-        Ok(self.installed_mods.clone())
-    }
-
     fn config_manager(&self, workdir: PathBuf) -> ConfigManager<'_> {
         self.config_manager_calls
             .lock()
@@ -394,104 +389,6 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(())
     }
 
-    fn run_packwiz_init(
-        &self,
-        _process: &dyn crate::application::session::ProcessProvider,
-        workdir: &std::path::Path,
-        name: &str,
-        author: &str,
-        version: &str,
-        modloader: &str,
-        mc_version: &str,
-        loader_version: &str,
-    ) -> std::result::Result<(), crate::empack::state::StateError> {
-        // Mock packwiz init - create expected files in memory
-        let pack_dir = workdir.join("pack");
-        let pack_file = pack_dir.join("pack.toml");
-        let default_pack_toml = format!(
-            r#"name = "{}"
-author = "{}"
-version = "{}"
-pack-format = "packwiz:1.1.0"
-
-[index]
-file = "index.toml"
-hash-format = "sha256"
-hash = ""
-
-[versions]
-minecraft = "{}"
-{} = "{}"
-"#,
-            name, author, version, mc_version, modloader, loader_version
-        );
-        self.write_file(&pack_file, &default_pack_toml)?;
-
-        // Also create index.toml
-        let index_file = pack_dir.join("index.toml");
-        let default_index = DEFAULT_INDEX_TOML;
-        self.write_file(&index_file, default_index)?;
-
-        Ok(())
-    }
-
-    fn run_packwiz_refresh(
-        &self,
-        _process: &dyn crate::application::session::ProcessProvider,
-        workdir: &std::path::Path,
-    ) -> std::result::Result<(), crate::empack::state::StateError> {
-        // Mock packwiz refresh - verify pack.toml exists
-        let pack_file = workdir.join("pack").join("pack.toml");
-        if !self.exists(&pack_file) {
-            return Err(crate::empack::state::StateError::MissingFile {
-                file: pack_file.to_path_buf(),
-            });
-        }
-        Ok(())
-    }
-
-    fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf> {
-        // For testing, return a path in the test directory
-        let jar_path = self
-            .current_dir
-            .join("cache")
-            .join("packwiz-installer-bootstrap.jar");
-
-        // Ensure the mock JAR file exists to prevent network download attempts
-        if !self.exists(&jar_path) {
-            // Create cache directory
-            let cache_dir = jar_path.parent().unwrap().to_path_buf();
-            self.directories.lock().unwrap().insert(cache_dir);
-
-            // Create mock JAR file
-            self.files
-                .lock()
-                .unwrap()
-                .insert(jar_path.clone(), "mock bootstrap jar content".to_string());
-        }
-
-        Ok(jar_path)
-    }
-
-    fn get_installer_jar_cache_path(&self) -> Result<PathBuf> {
-        // For testing, return a path in the test directory
-        let jar_path = self.current_dir.join("cache").join("packwiz-installer.jar");
-
-        // Ensure the mock JAR file exists to prevent network download attempts
-        if !self.exists(&jar_path) {
-            // Create cache directory
-            let cache_dir = jar_path.parent().unwrap().to_path_buf();
-            self.directories.lock().unwrap().insert(cache_dir);
-
-            // Create mock JAR file
-            self.files
-                .lock()
-                .unwrap()
-                .insert(jar_path.clone(), "mock installer jar content".to_string());
-        }
-
-        Ok(jar_path)
-    }
 }
 
 type ResolverCall = (Client, Option<String>);
@@ -1001,6 +898,7 @@ pub struct MockCommandSession {
     pub process_provider: MockProcessProvider,
     pub config_provider: MockConfigProvider,
     pub interactive_provider: MockInteractiveProvider,
+    pub packwiz_provider: MockPackwizOps,
 }
 
 impl MockCommandSession {
@@ -1015,14 +913,20 @@ impl MockCommandSession {
         let multi_progress = MultiProgress::new();
         let display_provider = LiveDisplayProvider::new_with_multi_progress(&multi_progress);
 
+        let filesystem_provider = MockFileSystemProvider::new();
+        let packwiz_provider = MockPackwizOps::new()
+            .with_current_dir(filesystem_provider.current_dir.clone())
+            .with_filesystem(filesystem_provider.files.clone());
+
         let mut session = Self {
             multi_progress,
             display_provider,
-            filesystem_provider: MockFileSystemProvider::new(),
+            filesystem_provider,
             network_provider: MockNetworkProvider::new(),
             process_provider: MockProcessProvider::new(),
             config_provider: MockConfigProvider::new(AppConfig::default()),
             interactive_provider: MockInteractiveProvider::new(),
+            packwiz_provider,
         };
 
         session.sync_process_provider();
@@ -1030,6 +934,10 @@ impl MockCommandSession {
     }
 
     pub fn with_filesystem(mut self, filesystem: MockFileSystemProvider) -> Self {
+        self.packwiz_provider = MockPackwizOps::new()
+            .with_current_dir(filesystem.current_dir.clone())
+            .with_installed_mods(filesystem.installed_mods.clone())
+            .with_filesystem(filesystem.files.clone());
         self.filesystem_provider = filesystem;
         self.sync_process_provider();
         self
@@ -1053,6 +961,11 @@ impl MockCommandSession {
 
     pub fn with_interactive(mut self, interactive: MockInteractiveProvider) -> Self {
         self.interactive_provider = interactive;
+        self
+    }
+
+    pub fn with_packwiz(mut self, packwiz: MockPackwizOps) -> Self {
+        self.packwiz_provider = packwiz;
         self
     }
 
@@ -1123,6 +1036,13 @@ impl Session for MockCommandSession {
         &self.interactive_provider
     }
 
+    fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
+        Box::new(MockPackwizOps::new()
+            .with_current_dir(self.packwiz_provider.current_dir.clone())
+            .with_installed_mods(self.packwiz_provider.installed_mods.clone())
+            .with_filesystem(self.packwiz_provider.filesystem.clone()))
+    }
+
     fn state(&self) -> crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_> {
         let workdir = self
             .filesystem()
@@ -1139,18 +1059,25 @@ mod tests {
 
     #[test]
     fn test_mock_filesystem_provider() {
-        let mut mods = HashSet::new();
-        mods.insert("test_mod".to_string());
-
         let provider = MockFileSystemProvider::new()
-            .with_current_dir(PathBuf::from("/custom/path"))
-            .with_installed_mods(mods.clone());
+            .with_current_dir(PathBuf::from("/custom/path"));
 
         assert_eq!(
             provider.current_dir().unwrap(),
             PathBuf::from("/custom/path")
         );
-        assert_eq!(provider.get_installed_mods().unwrap(), mods);
+    }
+
+    #[test]
+    fn test_mock_packwiz_ops() {
+        let mut mods = HashSet::new();
+        mods.insert("test_mod".to_string());
+
+        let packwiz = MockPackwizOps::new()
+            .with_current_dir(PathBuf::from("/custom/path"))
+            .with_installed_mods(mods.clone());
+
+        assert_eq!(packwiz.get_installed_mods().unwrap(), mods);
     }
 
     #[test]

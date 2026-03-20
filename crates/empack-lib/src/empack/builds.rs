@@ -829,16 +829,16 @@ impl<'a> BuildOrchestrator<'a> {
         // Get bootstrap and installer JAR paths from session
         let bootstrap_jar_path = self
             .session
-            .filesystem()
-            .get_bootstrap_jar_cache_path()
+            .packwiz()
+            .bootstrap_jar_cache_path()
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to get bootstrap JAR path: {}", e),
             })?;
 
         let installer_jar_path = self
             .session
-            .filesystem()
-            .get_installer_jar_cache_path()
+            .packwiz()
+            .installer_jar_cache_path()
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to get installer JAR path: {}", e),
             })?;
