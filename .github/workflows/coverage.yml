@@ -43,7 +43,7 @@ jobs:
       - run: cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info
 
       - name: Generate coverage summary
-        run: cargo llvm-cov nextest --workspace --features test-utils --summary-only >> $GITHUB_STEP_SUMMARY
+        run: cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
