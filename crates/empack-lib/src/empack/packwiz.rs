@@ -269,6 +269,8 @@ pub fn check_packwiz_available(process: &dyn ProcessProvider) -> crate::Result<(
 ///
 /// Takes the packwiz binary path directly and queries version via `go version -m`.
 pub fn get_packwiz_version(process: &dyn ProcessProvider, packwiz_path: &str) -> Option<String> {
+    // cwd is only needed as a required arg to process.execute; go version -m
+    // reads the binary at an absolute path and ignores the working directory.
     let cwd = std::env::current_dir().ok()?;
 
     let go_output = process
