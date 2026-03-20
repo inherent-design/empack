@@ -7,6 +7,7 @@ use crate::Result;
 use crate::application::session::{FileSystemProvider, NetworkProvider};
 use anyhow::Context;
 use directories::ProjectDirs;
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -27,25 +28,47 @@ fn is_stable_minecraft_version(mc_version: &str) -> bool {
         && !mc_version.is_empty()
 }
 
-/// Simple version comparison for Minecraft versions (e.g., "1.20.1" vs "1.20.2")
-fn version_compare(version1: &str, version2: &str) -> i32 {
-    let v1_parts: Vec<u32> = version1.split('.').filter_map(|s| s.parse().ok()).collect();
-    let v2_parts: Vec<u32> = version2.split('.').filter_map(|s| s.parse().ok()).collect();
+/// Parse a version string into a semver::Version, normalizing 2-component
+/// strings like "1.20" to "1.20.0" since Minecraft uses both forms.
+/// Legacy Forge 4+ component numeric versions are mapped into prerelease
+/// identifiers so semver can still compare them numerically.
+pub(crate) fn parse_version(s: &str) -> Option<Version> {
+    let normalized = if s.matches('.').count() == 1 {
+        format!("{s}.0")
+    } else {
+        s.to_string()
+    };
 
-    let max_len = v1_parts.len().max(v2_parts.len());
-
-    for i in 0..max_len {
-        let v1_part = v1_parts.get(i).unwrap_or(&0);
-        let v2_part = v2_parts.get(i).unwrap_or(&0);
-
-        match v1_part.cmp(v2_part) {
-            std::cmp::Ordering::Less => return -1,
-            std::cmp::Ordering::Greater => return 1,
-            std::cmp::Ordering::Equal => continue,
+    Version::parse(&normalized).ok().or_else(|| {
+        let parts: Vec<&str> = s.split('.').collect();
+        if parts.len() > 3
+            && parts
+                .iter()
+                .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+        {
+            Version::parse(&format!(
+                "{}.{}.{}-{}",
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3..].join(".")
+            ))
+            .ok()
+        } else {
+            None
         }
-    }
+    })
+}
 
-    0
+/// Sort version strings in descending order (newest first) using semver.
+/// Unparseable versions sort to the end.
+pub(crate) fn sort_versions_desc(versions: &mut Vec<String>) {
+    versions.sort_by(|a, b| match (parse_version(a), parse_version(b)) {
+        (Some(va), Some(vb)) => vb.cmp(&va),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.cmp(b),
+    });
 }
 
 /// Cached version data with timestamp
@@ -177,7 +200,7 @@ fn filter_neoforge_versions_by_minecraft(
     // Use dynamic algorithm from neoforged.net instead of hardcoded matches
 
     // NeoForge only supports MC 1.20.2+
-    if version_compare(mc_version, "1.20.2") < 0 {
+    if parse_version(mc_version).map_or(true, |v| v < parse_version("1.20.2").unwrap()) {
         return Ok(vec![]);
     }
 
@@ -220,7 +243,8 @@ fn filter_neoforge_versions_by_minecraft(
         matching_versions
     };
 
-    // Versions are already sorted newest-first by the API, preserve order
+    let mut result = result;
+    sort_versions_desc(&mut result);
     Ok(result)
 }
 
@@ -307,23 +331,7 @@ fn filter_forge_versions_by_minecraft(
         }
     }
 
-    // Sort by version (newest first)
-    // Forge versions follow semantic versioning: major.minor.patch
-    matching_versions.sort_by(|a, b| {
-        let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
-        let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
-
-        // Compare major, minor, patch in order (reverse for newest first)
-        for i in 0..a_parts.len().max(b_parts.len()) {
-            let a_part = a_parts.get(i).unwrap_or(&0);
-            let b_part = b_parts.get(i).unwrap_or(&0);
-            match b_part.cmp(a_part) {
-                std::cmp::Ordering::Equal => continue,
-                other => return other,
-            }
-        }
-        std::cmp::Ordering::Equal
-    });
+    sort_versions_desc(&mut matching_versions);
 
     Ok(matching_versions)
 }
@@ -476,8 +484,7 @@ impl<'a> VersionFetcher<'a> {
                     .map(|v| v.id)
                     .collect();
 
-                // Reverse: API returns oldest first (chronological), we want newest first
-                versions.reverse();
+                sort_versions_desc(&mut versions);
 
                 Ok(versions)
             },
@@ -536,34 +543,8 @@ impl<'a> VersionFetcher<'a> {
                     .map(|v| v.loader.version.clone())
                     .collect();
 
-                // Sort each group newest first (reverse the ascending order from API)
-                stable_versions.sort_by(|a, b| {
-                    let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
-                    let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
-                    for i in 0..a_parts.len().max(b_parts.len()) {
-                        let a_part = a_parts.get(i).unwrap_or(&0);
-                        let b_part = b_parts.get(i).unwrap_or(&0);
-                        match b_part.cmp(a_part) {
-                            std::cmp::Ordering::Equal => continue,
-                            other => return other,
-                        }
-                    }
-                    std::cmp::Ordering::Equal
-                });
-
-                beta_versions.sort_by(|a, b| {
-                    let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
-                    let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
-                    for i in 0..a_parts.len().max(b_parts.len()) {
-                        let a_part = a_parts.get(i).unwrap_or(&0);
-                        let b_part = b_parts.get(i).unwrap_or(&0);
-                        match b_part.cmp(a_part) {
-                            std::cmp::Ordering::Equal => continue,
-                            other => return other,
-                        }
-                    }
-                    std::cmp::Ordering::Equal
-                });
+                sort_versions_desc(&mut stable_versions);
+                sort_versions_desc(&mut beta_versions);
 
                 // Combine with stable first
                 stable_versions.append(&mut beta_versions);
@@ -602,7 +583,7 @@ impl<'a> VersionFetcher<'a> {
                                 mc_version,
                             )?;
 
-                            // Return filtered list (newest first, already sorted by API)
+                            // Return filtered list sorted descending
                             if filtered_versions.is_empty() {
                                 // No compatible versions found - fall through to fallback
                             } else {
@@ -617,7 +598,7 @@ impl<'a> VersionFetcher<'a> {
 
                 // CRITICAL: Implement v1 compatibility logic - NeoForge only supports MC 1.20.2+
                 // This restores the API-driven intelligence that was lost in migration
-                if version_compare(mc_version, "1.20.2") < 0 {
+                if parse_version(mc_version).map_or(true, |v| v < parse_version("1.20.2").unwrap()) {
                     // NeoForge definitively does NOT support MC versions before 1.20.2
                     // Return empty vector to indicate incompatibility (matches v1 behavior)
                     return Ok(vec![]);

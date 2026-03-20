@@ -1,4 +1,4 @@
-use super::*;
+use semver::Version;
 use serde_json;
 
 #[cfg(feature = "test-utils")]
@@ -60,21 +60,35 @@ fn test_modloader_enum() {
 }
 
 #[test]
-fn test_version_compare() {
-    // Test equal versions
-    assert_eq!(version_compare("1.20.1", "1.20.1"), 0);
+fn test_parse_version() {
+    assert_eq!(parse_version("1.20"), Some(Version::new(1, 20, 0)));
+    assert_eq!(parse_version("1.20.4"), Some(Version::new(1, 20, 4)));
+    assert_eq!(parse_version("not-a-version"), None);
+    assert!(parse_version("1.20.1") < parse_version("1.20.2"));
+}
 
-    // Test less than
-    assert_eq!(version_compare("1.20.1", "1.20.2"), -1);
-    assert_eq!(version_compare("1.19.4", "1.20.1"), -1);
+#[test]
+fn test_sort_versions_desc_multi_digit() {
+    let mut versions = vec![
+        "21.1.7".to_string(),
+        "21.1.69".to_string(),
+        "21.1.8".to_string(),
+    ];
 
-    // Test greater than
-    assert_eq!(version_compare("1.20.2", "1.20.1"), 1);
-    assert_eq!(version_compare("1.21.1", "1.20.1"), 1);
+    sort_versions_desc(&mut versions);
+    assert_eq!(versions, vec!["21.1.69", "21.1.8", "21.1.7"]);
+}
 
-    // Test different length versions
-    assert_eq!(version_compare("1.20", "1.20.1"), -1);
-    assert_eq!(version_compare("1.20.1", "1.20"), 1);
+#[test]
+fn test_sort_versions_desc_prerelease() {
+    let mut versions = vec![
+        "21.1.67-beta".to_string(),
+        "21.1.67".to_string(),
+        "21.1.69".to_string(),
+    ];
+
+    sort_versions_desc(&mut versions);
+    assert_eq!(versions, vec!["21.1.69", "21.1.67", "21.1.67-beta"]);
 }
 
 #[test]
@@ -319,7 +333,7 @@ fn test_minecraft_versions_order_descending() {
         .map(|v| v.id)
         .collect();
 
-    versions.reverse();
+    sort_versions_desc(&mut versions);
 
     assert_eq!(
         versions[0], "1.21.4",
@@ -334,7 +348,7 @@ fn test_minecraft_versions_order_descending() {
         let current = &versions[i];
         let next = &versions[i + 1];
         assert!(
-            version_compare(current, next) >= 0,
+            parse_version(current).unwrap() >= parse_version(next).unwrap(),
             "Version {} at index {} should be >= next version {} at index {} (not descending)",
             current, i, next, i + 1
         );
@@ -362,7 +376,7 @@ fn test_neoforge_versions_preserve_api_order_descending() {
         let current = &filtered[i];
         let next = &filtered[i + 1];
         assert!(
-            version_compare(current, next) >= 0,
+            parse_version(current).unwrap() >= parse_version(next).unwrap(),
             "NeoForge version {} at index {} should be >= next version {} (not descending)",
             current, i, next
         );
@@ -410,36 +424,10 @@ fn test_fabric_versions_order_descending() {
         .map(|v| v.loader.version.clone())
         .collect();
 
-    stable_versions.sort_by(|a, b| {
-        let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
-        let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
-        for i in 0..a_parts.len().max(b_parts.len()) {
-            let a_part = a_parts.get(i).unwrap_or(&0);
-            let b_part = b_parts.get(i).unwrap_or(&0);
-            match b_part.cmp(a_part) {
-                std::cmp::Ordering::Equal => continue,
-                other => return other,
-            }
-        }
-        std::cmp::Ordering::Equal
-    });
-
-    beta_versions.sort_by(|a, b| {
-        let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
-        let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
-        for i in 0..a_parts.len().max(b_parts.len()) {
-            let a_part = a_parts.get(i).unwrap_or(&0);
-            let b_part = b_parts.get(i).unwrap_or(&0);
-            match b_part.cmp(a_part) {
-                std::cmp::Ordering::Equal => continue,
-                other => return other,
-            }
-        }
-        std::cmp::Ordering::Equal
-    });
+    sort_versions_desc(&mut stable_versions);
+    sort_versions_desc(&mut beta_versions);
 
     let stable_count = stable_versions.len();
-    beta_versions.reverse();
     stable_versions.append(&mut beta_versions);
 
     assert_eq!(
@@ -456,20 +444,6 @@ fn test_fabric_versions_order_descending() {
     );
 
     let beta_start = stable_count;
-    let desc_sort = |a: &str, b: &str| {
-        let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
-        let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
-        for i in 0..a_parts.len().max(b_parts.len()) {
-            let a_part = a_parts.get(i).unwrap_or(&0);
-            let b_part = b_parts.get(i).unwrap_or(&0);
-            match b_part.cmp(a_part) {
-                std::cmp::Ordering::Equal => continue,
-                other => return other,
-            }
-        }
-        std::cmp::Ordering::Equal
-    };
-
     for i in 0..stable_versions.len() - 1 {
         let current = &stable_versions[i];
         let next = &stable_versions[i + 1];
@@ -478,11 +452,8 @@ fn test_fabric_versions_order_descending() {
         if crossing_boundary {
             continue;
         }
-        let (current_stripped, _) = current.split_once('-').unwrap_or((current.as_str(), ""));
-        let (next_stripped, _) = next.split_once('-').unwrap_or((next.as_str(), ""));
         assert!(
-            desc_sort(current_stripped, next_stripped) == std::cmp::Ordering::Less
-                || desc_sort(current_stripped, next_stripped) == std::cmp::Ordering::Equal,
+            parse_version(current).unwrap() >= parse_version(next).unwrap(),
             "Fabric version {} at index {} should be >= next version {} (not descending)",
             current, i, next
         );
