@@ -1407,7 +1407,10 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
             .context("Failed to read response bytes")?;
 
         // Use the FileSystemProvider to save the file
-        std::fs::write(&bootstrap_jar_path, bytes).context("Failed to write JAR file to cache")?;
+        session
+            .filesystem()
+            .write_bytes(&bootstrap_jar_path, bytes.as_ref())
+            .context("Failed to write JAR file to cache")?;
 
         session
             .display()
@@ -1454,7 +1457,10 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
             .context("Failed to read response bytes")?;
 
         // Use the FileSystemProvider to save the file
-        std::fs::write(&installer_jar_path, bytes).context("Failed to write JAR file to cache")?;
+        session
+            .filesystem()
+            .write_bytes(&installer_jar_path, bytes.as_ref())
+            .context("Failed to write JAR file to cache")?;
 
         session
             .display()

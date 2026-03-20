@@ -28,7 +28,7 @@
 //! Future phases may integrate wrapper IF complexity emerges (dependency resolution, transactional behavior).
 //! See phase4-design-documentation report for rationale.
 
-use crate::application::session::{ProcessProvider, Session};
+use crate::application::session::{FileSystemProvider, ProcessProvider, Session};
 use crate::primitives::ProjectPlatform;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -303,6 +303,7 @@ impl<'a> PackwizMetadata<'a> {
 ///
 /// Wraps: `java -jar packwiz-installer-bootstrap.jar --bootstrap-main-jar packwiz-installer.jar -g -s <side> <pack_toml_path>`
 pub struct PackwizInstaller<'a> {
+    filesystem: &'a dyn FileSystemProvider,
     process_provider: &'a dyn ProcessProvider,
     bootstrap_jar_path: PathBuf,
     installer_jar_path: PathBuf,
@@ -318,6 +319,7 @@ impl<'a> PackwizInstaller<'a> {
         installer_jar_path: PathBuf,
     ) -> Result<Self, PackwizError> {
         Ok(Self {
+            filesystem: session.filesystem(),
             process_provider: session.process(),
             bootstrap_jar_path,
             installer_jar_path,
@@ -396,7 +398,7 @@ impl<'a> PackwizInstaller<'a> {
 
     /// Check if packwiz-installer-bootstrap.jar is available
     pub fn check_installer_available(&self) -> Result<bool, PackwizError> {
-        Ok(std::fs::metadata(&self.bootstrap_jar_path).is_ok())
+        Ok(self.filesystem.metadata_exists(&self.bootstrap_jar_path))
     }
 }
 

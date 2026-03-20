@@ -1,3 +1,4 @@
+use anyhow::Context;
 use crate::empack::builds::BuildError;
 use crate::empack::config::ConfigError;
 use crate::primitives::*;
@@ -260,12 +261,10 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
 
         provider
             .write_file(&empack_yml, &default_yml)
-            .map_err(|e| {
+            .inspect_err(|_| {
                 clean_configuration(provider, workdir).ok(); // Cleanup on failure
-                StateError::IoError {
-                    source: std::io::Error::other(e),
-                }
-            })?;
+            })
+            .context("Failed to write empack.yml")?;
     }
 
     // Run packwiz init
@@ -330,23 +329,17 @@ pub fn create_initial_structure<P: crate::application::session::FileSystemProvid
     let pack_dir = workdir.join("pack");
     provider
         .create_dir_all(&pack_dir)
-        .map_err(|e| StateError::IoError {
-            source: std::io::Error::other(e),
-        })?;
+        .context("Failed to create pack directory")?;
 
     let template_dir = workdir.join("templates");
     provider
         .create_dir_all(&template_dir)
-        .map_err(|e| StateError::IoError {
-            source: std::io::Error::other(e),
-        })?;
+        .context("Failed to create templates directory")?;
 
     let installer_dir = workdir.join("installer");
     provider
         .create_dir_all(&installer_dir)
-        .map_err(|e| StateError::IoError {
-            source: std::io::Error::other(e),
-        })?;
+        .context("Failed to create installer directory")?;
 
     Ok(())
 }
@@ -358,11 +351,7 @@ pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider 
 ) -> Result<(), StateError> {
     let dist_dir = artifact_root(workdir);
     if provider.is_directory(&dist_dir) {
-        provider
-            .remove_dir_all(&dist_dir)
-            .map_err(|e| StateError::IoError {
-                source: std::io::Error::other(e),
-            })?;
+        provider.remove_dir_all(&dist_dir).context("Failed to remove dist directory")?;
     }
     Ok(())
 }
@@ -377,27 +366,21 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
     if files.contains(&empack_yml) {
         provider
             .remove_file(&empack_yml)
-            .map_err(|e| StateError::IoError {
-                source: std::io::Error::other(e),
-            })?;
+            .context("Failed to remove empack.yml")?;
     }
 
     let pack_dir = workdir.join("pack");
     if provider.is_directory(&pack_dir) {
         provider
             .remove_dir_all(&pack_dir)
-            .map_err(|e| StateError::IoError {
-                source: std::io::Error::other(e),
-            })?;
+            .context("Failed to remove pack directory")?;
     }
 
     let empack_dir = workdir.join(".empack");
     if provider.is_directory(&empack_dir) {
         provider
             .remove_dir_all(&empack_dir)
-            .map_err(|e| StateError::IoError {
-                source: std::io::Error::other(e),
-            })?;
+            .context("Failed to remove .empack directory")?;
     }
 
     Ok(())
@@ -418,7 +401,7 @@ pub enum StateError {
     #[error("IO error")]
     IoError {
         #[from]
-        source: std::io::Error,
+        source: anyhow::Error,
     },
 
     #[error("Invalid modpack directory: {path}")]
