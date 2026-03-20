@@ -6,7 +6,6 @@
 use crate::Result;
 use crate::application::session::{FileSystemProvider, NetworkProvider};
 use anyhow::Context;
-use directories::ProjectDirs;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -370,10 +369,8 @@ impl<'a> VersionFetcher<'a> {
         network: &'a dyn NetworkProvider,
         filesystem: &'a dyn FileSystemProvider,
     ) -> Result<Self> {
-        // Use cross-platform cache directory via ProjectDirs
-        let cache_dir = ProjectDirs::from("design", "inherent", "empack")
-            .map(|dirs| dirs.cache_dir().to_path_buf())
-            .unwrap_or_else(|| std::env::temp_dir().join("empack-cache"));
+        let cache_dir = crate::platform::cache::cache_root()
+            .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache"));
 
         Ok(Self {
             network,

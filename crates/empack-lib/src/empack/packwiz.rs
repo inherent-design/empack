@@ -223,10 +223,7 @@ impl PackwizOps for LivePackwizOps<'_> {
             return Ok(local_jar);
         }
 
-        let cache_dir = dirs::cache_dir()
-            .context("Failed to determine cache directory")?
-            .join("empack")
-            .join("jars");
+        let cache_dir = crate::platform::cache::cache_root()?.join("jars");
 
         Ok(cache_dir.join("packwiz-installer-bootstrap.jar"))
     }
@@ -242,10 +239,7 @@ impl PackwizOps for LivePackwizOps<'_> {
             return Ok(local_jar);
         }
 
-        let cache_dir = dirs::cache_dir()
-            .context("Failed to determine cache directory")?
-            .join("empack")
-            .join("jars");
+        let cache_dir = crate::platform::cache::cache_root()?.join("jars");
 
         Ok(cache_dir.join("packwiz-installer.jar"))
     }

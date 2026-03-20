@@ -22,7 +22,6 @@ clap = { version = "4.6.0", features = [
 ] }
 dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
 directories = "6.0.0"
-dirs = "6.0.0"
 dotenvy = "0.15.7"
 envy = "0.4.2"
 html-escape = "0.2.13"
