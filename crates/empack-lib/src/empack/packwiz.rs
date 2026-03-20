@@ -251,6 +251,53 @@ impl PackwizOps for LivePackwizOps<'_> {
     }
 }
 
+/// Check if packwiz is available in PATH and return version info.
+///
+/// Routes through ProcessProvider::execute so that custom PATH is respected.
+pub fn check_packwiz_available(process: &dyn ProcessProvider) -> crate::Result<(bool, String)> {
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    match process.execute("which", &["packwiz"], &cwd) {
+        Ok(output) if output.success && !output.stdout.is_empty() => {
+            let version = get_packwiz_version(process).unwrap_or_else(|| "unknown".to_string());
+            Ok((true, version))
+        }
+        _ => Ok((false, "not found".to_string())),
+    }
+}
+
+/// Get packwiz version using go toolchain.
+///
+/// Routes through ProcessProvider::execute so that custom PATH is respected.
+pub fn get_packwiz_version(process: &dyn ProcessProvider) -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+
+    let which_output = process.execute("which", &["packwiz"], &cwd).ok()?;
+    if !which_output.success || which_output.stdout.is_empty() {
+        return None;
+    }
+
+    let packwiz_path = which_output.stdout.trim().to_string();
+
+    let go_output = process
+        .execute("go", &["version", "-m", &packwiz_path], &cwd)
+        .ok()?;
+    if !go_output.success {
+        return None;
+    }
+
+    for line in go_output.stdout.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("mod") {
+            let fields: Vec<&str> = trimmed.split_whitespace().collect();
+            if fields.len() >= 3 {
+                return Some(fields[2].to_string());
+            }
+        }
+    }
+
+    None
+}
+
 /// Mock implementation for unit testing.
 ///
 /// Replicates the mock behavior previously in MockFileSystemProvider:
@@ -454,9 +501,7 @@ impl<'a> PackwizMetadata<'a> {
             return Ok(());
         }
 
-        let (available, _version) = self
-            .process_provider
-            .check_packwiz()
+        let (available, _version) = check_packwiz_available(self.process_provider)
             .map_err(|e| PackwizError::NotAvailable(e.to_string()))?;
 
         if !available {

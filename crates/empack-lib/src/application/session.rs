@@ -89,12 +89,6 @@ pub struct ProcessOutput {
 pub trait ProcessProvider {
     /// Execute a command with given arguments in working directory
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput>;
-
-    /// Check if packwiz is available and return version info
-    fn check_packwiz(&self) -> Result<(bool, String)>;
-
-    /// Get packwiz version using go toolchain
-    fn get_packwiz_version(&self) -> Option<String>;
 }
 
 /// Provider trait for configuration access
@@ -390,74 +384,6 @@ impl ProcessProvider for LiveProcessProvider {
         })
     }
 
-    fn check_packwiz(&self) -> Result<(bool, String)> {
-        // Check if packwiz is available in PATH
-        let mut cmd = std::process::Command::new("which");
-        cmd.arg("packwiz");
-
-        // Set custom PATH if specified
-        if let Some(custom_path) = &self.custom_path {
-            cmd.env("PATH", custom_path);
-        }
-
-        match cmd.output() {
-            Ok(output) if output.status.success() && !output.stdout.is_empty() => {
-                let version = self
-                    .get_packwiz_version()
-                    .unwrap_or_else(|| "unknown".to_string());
-                Ok((true, version))
-            }
-            _ => Ok((false, "not found".to_string())),
-        }
-    }
-
-    fn get_packwiz_version(&self) -> Option<String> {
-        // First, find the absolute path to packwiz
-        let mut cmd = std::process::Command::new("which");
-        cmd.arg("packwiz");
-
-        // Set custom PATH if specified
-        if let Some(custom_path) = &self.custom_path {
-            cmd.env("PATH", custom_path);
-        }
-
-        let packwiz_path_output = cmd.output().ok()?;
-
-        if !packwiz_path_output.status.success() || packwiz_path_output.stdout.is_empty() {
-            return None;
-        }
-
-        let path_str = String::from_utf8_lossy(&packwiz_path_output.stdout)
-            .trim()
-            .to_string();
-
-        // Use go version -m to inspect the binary's module information
-        let output = std::process::Command::new("go")
-            .arg("version")
-            .arg("-m")
-            .arg(&path_str)
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let version_output = String::from_utf8_lossy(&output.stdout);
-
-        // Parse the output to find the version
-        // Looking for the line that starts with "mod" and extract the third field
-        for line in version_output.lines() {
-            if line.starts_with("mod") {
-                let fields: Vec<&str> = line.split_whitespace().collect();
-                if fields.len() >= 3 {
-                    return Some(fields[2].to_string());
-                }
-            }
-        }
-
-        None
-    }
 }
 
 /// Live implementation of ConfigProvider

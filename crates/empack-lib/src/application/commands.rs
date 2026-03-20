@@ -112,7 +112,7 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         .section("🔧 Checking tool dependencies");
 
     // Check packwiz
-    let packwiz = session.process().check_packwiz();
+    let packwiz = crate::empack::packwiz::check_packwiz_available(session.process());
     match packwiz {
         Ok((true, version)) => {
             session.display().status().success("packwiz", &version);
