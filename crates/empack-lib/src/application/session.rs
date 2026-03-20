@@ -389,8 +389,19 @@ impl ProcessProvider for LiveProcessProvider {
     }
 
     fn find_program(&self, program: &str) -> Option<String> {
-        use crate::platform::capabilities::ProgramFinder;
-        ProgramFinder::find(program).path
+        #[cfg(windows)]
+        let locate_cmd = "where";
+        #[cfg(not(windows))]
+        let locate_cmd = "which";
+
+        let cwd = std::env::current_dir().ok()?;
+        let output = self.execute(locate_cmd, &[program], &cwd).ok()?;
+        if output.success {
+            let path = output.stdout.trim().lines().next()?.to_string();
+            if path.is_empty() { None } else { Some(path) }
+        } else {
+            None
+        }
     }
 }
 
