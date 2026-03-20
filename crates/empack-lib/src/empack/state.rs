@@ -98,17 +98,17 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
 
     // Check for interrupted state first (marker file presence)
     let marker_path = workdir.join(STATE_MARKER_FILE);
-    if provider.exists(&marker_path) {
-        if let Ok(content) = provider.read_to_string(&marker_path) {
-            let inner = match content.trim() {
-                "building" => PackState::Building,
-                "cleaning" => PackState::Cleaning,
-                _ => PackState::Building, // default to building if content is unexpected
-            };
-            return Ok(PackState::Interrupted {
-                was: Box::new(inner),
-            });
-        }
+    if provider.exists(&marker_path)
+        && let Ok(content) = provider.read_to_string(&marker_path)
+    {
+        let inner = match content.trim() {
+            "building" => PackState::Building,
+            "cleaning" => PackState::Cleaning,
+            _ => PackState::Building, // default to building if content is unexpected
+        };
+        return Ok(PackState::Interrupted {
+            was: Box::new(inner),
+        });
     }
 
     let empack_yml = workdir.join("empack.yml");
