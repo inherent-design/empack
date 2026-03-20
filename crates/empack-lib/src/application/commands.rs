@@ -940,6 +940,21 @@ async fn handle_add(
                             }
                         }
 
+                        // Atomically update empack.yml with the new dependency
+                        let dep_key = normalize_mod_key(&mod_query);
+                        if let Err(e) = config_manager.add_dependency(
+                            &dep_key,
+                            &resolution.title,
+                            "mod",
+                            Some(&resolution.resolved_project_id),
+                            Some(resolution.resolved_platform),
+                        ) {
+                            session
+                                .display()
+                                .status()
+                                .warning(&format!("Failed to update empack.yml: {}", e));
+                        }
+
                         added_mods.push((mod_query, resolution));
                     }
                     Err(_) => {
@@ -979,19 +994,6 @@ async fn handle_add(
         session.display().status().section("Failed mods");
         for (mod_name, error) in failed_mods {
             session.display().status().error(&mod_name, &error);
-        }
-    }
-
-    if !added_mods.is_empty() {
-        session
-            .display()
-            .status()
-            .info("Syncing empack.yml with updated pack...");
-        if let Err(e) = handle_sync(session).await {
-            session
-                .display()
-                .status()
-                .error("Auto-sync failed", &e.to_string());
         }
     }
 
@@ -1120,6 +1122,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     let manager = session.state();
     let workdir = manager.workdir.clone();
     let mods_dir = workdir.join("pack").join("mods");
+    let config_manager = session.filesystem().config_manager(workdir.clone());
     let mut removed_mods = Vec::new();
     let mut failed_mods = Vec::new();
 
@@ -1147,6 +1150,13 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
         match result {
             Ok(_) => {
+                // Atomically remove from empack.yml
+                if let Err(e) = config_manager.remove_dependency(&mod_name) {
+                    session
+                        .display()
+                        .status()
+                        .warning(&format!("Failed to update empack.yml: {}", e));
+                }
                 session
                     .display()
                     .status()
@@ -1180,7 +1190,6 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                 .warning(&format!("Failed to build dependency graph: {}", e));
         } else {
             // Load empack.yml to get top-level mods
-            let config_manager = session.filesystem().config_manager(workdir.clone());
             let top_level_mods: std::collections::HashSet<String> =
                 match config_manager.create_project_plan() {
                     Ok(plan) => {
@@ -1250,6 +1259,13 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
                         match result {
                             Ok(_) => {
+                                // Atomically remove from empack.yml
+                                if let Err(e) = config_manager.remove_dependency(&orphan) {
+                                    session
+                                        .display()
+                                        .status()
+                                        .warning(&format!("Failed to update empack.yml: {}", e));
+                                }
                                 session
                                     .display()
                                     .status()
@@ -1297,19 +1313,6 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         session.display().status().section("Failed mods");
         for (mod_name, error) in failed_mods {
             session.display().status().error(&mod_name, &error);
-        }
-    }
-
-    if !removed_mods.is_empty() || !removed_orphans.is_empty() {
-        session
-            .display()
-            .status()
-            .info("Syncing empack.yml with updated pack...");
-        if let Err(e) = handle_sync(session).await {
-            session
-                .display()
-                .status()
-                .error("Auto-sync failed", &e.to_string());
         }
     }
 

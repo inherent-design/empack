@@ -1,8 +1,8 @@
 use super::*;
+use crate::application::session::FileSystemProvider;
+use crate::application::session_mocks::MockFileSystemProvider;
 use crate::empack::parsing::ModLoader;
 use crate::primitives::{ProjectPlatform, ProjectType};
-use crate::application::session_mocks::MockFileSystemProvider;
-use crate::application::session::FileSystemProvider;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -11,11 +11,19 @@ fn create_mock_config_provider(workdir: PathBuf) -> MockFileSystemProvider {
     MockFileSystemProvider::new().with_current_dir(workdir)
 }
 
-fn with_empack_yml(provider: MockFileSystemProvider, workdir: &PathBuf, content: &str) -> MockFileSystemProvider {
+fn with_empack_yml(
+    provider: MockFileSystemProvider,
+    workdir: &PathBuf,
+    content: &str,
+) -> MockFileSystemProvider {
     provider.with_file(workdir.join("empack.yml"), content.to_string())
 }
 
-fn with_pack_toml(provider: MockFileSystemProvider, workdir: &PathBuf, content: &str) -> MockFileSystemProvider {
+fn with_pack_toml(
+    provider: MockFileSystemProvider,
+    workdir: &PathBuf,
+    content: &str,
+) -> MockFileSystemProvider {
     provider.with_file(workdir.join("pack").join("pack.toml"), content.to_string())
 }
 
@@ -33,7 +41,7 @@ empack:
   author: "Test Author"
   version: "1.0.0"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -73,7 +81,7 @@ empack:
   dependencies:
     - invalid yaml: [ unclosed bracket
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, invalid_yaml);
     let config_manager = provider.config_manager(workdir);
@@ -101,7 +109,7 @@ hash = ""
 minecraft = "1.20.1"
 fabric = "0.14.21"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_pack_toml(provider, &workdir, pack_content);
     let config_manager = provider.config_manager(workdir);
@@ -115,7 +123,10 @@ fabric = "0.14.21"
     assert_eq!(metadata.author, Some("Test Author".to_string()));
     assert_eq!(metadata.version, Some("1.2.3".to_string()));
     assert_eq!(metadata.versions.minecraft, "1.20.1");
-    assert_eq!(metadata.versions.loader_versions.get("fabric"), Some(&"0.14.21".to_string()));
+    assert_eq!(
+        metadata.versions.loader_versions.get("fabric"),
+        Some(&"0.14.21".to_string())
+    );
 }
 
 #[test]
@@ -136,7 +147,7 @@ fn test_load_pack_metadata_invalid_toml() {
 name = "Test"
 invalid toml: [ unclosed bracket
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_pack_toml(provider, &workdir, invalid_toml);
     let config_manager = provider.config_manager(workdir);
@@ -160,7 +171,7 @@ empack:
   author: "Test Author"
   version: "1.0.0"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -199,7 +210,7 @@ hash = ""
 minecraft = "1.20.1"
 fabric = "0.14.21"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -244,7 +255,7 @@ hash = ""
 minecraft = "1.20.1"
 fabric = "0.14.21"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -270,7 +281,7 @@ empack:
     - "fabric_api: \"Fabric API|mod\""
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -294,7 +305,7 @@ empack:
     - "fabric_api: \"Fabric API|mod\""
   minecraft_version: "1.21"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -331,7 +342,7 @@ hash = ""
 minecraft = "1.21"
 fabric = "0.14.21"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -366,7 +377,7 @@ hash = ""
 minecraft = "1.21"
 forge = "47.1.0"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -401,7 +412,7 @@ hash = ""
 minecraft = "1.21"
 quilt = "0.21.0"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -436,7 +447,7 @@ hash = ""
 minecraft = "1.21"
 neoforge = "21.0.0"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -471,7 +482,7 @@ hash = ""
 minecraft = "1.21"
 unknown_loader = "1.0.0"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -497,7 +508,7 @@ empack:
   minecraft_version: "1.21"
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -525,7 +536,7 @@ empack:
   minecraft_version: "1.21"
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -534,11 +545,11 @@ empack:
     assert!(result.is_ok());
     let plan = result.unwrap();
     assert_eq!(plan.dependencies.len(), 2);
-    
+
     let mod_dep = &plan.dependencies[0];
     assert_eq!(mod_dep.key, "xaeros_minimap");
     assert_eq!(mod_dep.project_type, ProjectType::Mod);
-    
+
     let datapack_dep = &plan.dependencies[1];
     assert_eq!(datapack_dep.key, "vanilla_tweaks");
     assert_eq!(datapack_dep.project_type, ProjectType::Datapack);
@@ -554,7 +565,7 @@ empack:
   minecraft_version: "1.21"
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -578,7 +589,7 @@ empack:
   minecraft_version: "1.21"
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -587,10 +598,10 @@ empack:
     assert!(result.is_ok());
     let plan = result.unwrap();
     assert_eq!(plan.dependencies.len(), 2);
-    
+
     let fabric_dep = &plan.dependencies[0];
     assert_eq!(fabric_dep.loader, ModLoader::Fabric);
-    
+
     let forge_dep = &plan.dependencies[1];
     assert_eq!(forge_dep.loader, ModLoader::Forge);
 }
@@ -607,7 +618,7 @@ empack:
   minecraft_version: "1.21"
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -660,7 +671,7 @@ empack:
   minecraft_version: "1.21"
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -689,7 +700,7 @@ empack:
   minecraft_version: "1.21"
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -722,7 +733,7 @@ hash = ""
 minecraft = "1.21"
 fabric = "0.14.21"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_pack_toml(provider, &workdir, pack_content);
     let config_manager = provider.config_manager(workdir);
@@ -734,7 +745,10 @@ fabric = "0.14.21"
     assert!(yml_content.contains("fabric_api"));
     assert!(yml_content.contains("sodium"));
     assert!(yml_content.contains("lithium"));
-    assert!(yml_content.contains("minecraft_version: '1.21'") || yml_content.contains("minecraft_version: \"1.21\""));
+    assert!(
+        yml_content.contains("minecraft_version: '1.21'")
+            || yml_content.contains("minecraft_version: \"1.21\"")
+    );
     assert!(yml_content.contains("loader: fabric"));
     assert!(yml_content.contains("name: Test Pack") || yml_content.contains("name: \"Test Pack\""));
 }
@@ -779,7 +793,7 @@ hash = ""
 minecraft = "1.21"
 fabric = "0.14.21"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -814,7 +828,7 @@ hash = ""
 minecraft = "1.20.1"
 fabric = "0.14.21"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -852,7 +866,7 @@ hash = ""
 minecraft = "1.21"
 forge = "47.1.0"
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let provider = with_pack_toml(provider, &workdir, pack_content);
@@ -877,7 +891,7 @@ empack:
   minecraft_version: "1.21"
   loader: fabric
 "#;
-    
+
     let provider = create_mock_config_provider(workdir.clone());
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir);
@@ -886,4 +900,224 @@ empack:
     assert!(result.is_ok());
     let issues = result.unwrap();
     assert!(issues.is_empty()); // No issues when no pack.toml
+}
+
+#[test]
+fn test_add_dependency_basic() {
+    let workdir = PathBuf::from("/test/config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    - "fabric_api: \"Fabric API|mod\""
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Add a new dependency
+    let result = config_manager.add_dependency(
+        "appleskin",
+        "AppleSkin",
+        "mod",
+        Some("snDcZxV8"),
+        Some(ProjectPlatform::Modrinth),
+    );
+
+    assert!(result.is_ok());
+
+    // Verify the dependency was added
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 2);
+    assert!(config
+        .empack
+        .dependencies
+        .iter()
+        .any(|d| d.contains("appleskin")));
+
+    // Verify project_id was added
+    assert_eq!(
+        config.empack.project_ids.get("appleskin"),
+        Some(&"snDcZxV8".to_string())
+    );
+
+    // Verify project_platform was added
+    assert_eq!(
+        config.empack.project_platforms.get("appleskin"),
+        Some(&ProjectPlatform::Modrinth)
+    );
+}
+
+#[test]
+fn test_add_dependency_duplicate() {
+    let workdir = PathBuf::from("/test/config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    - "fabric_api: \"Fabric API|mod\""
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Add the same dependency twice
+    let result1 = config_manager.add_dependency("fabric_api", "Fabric API", "mod", None, None);
+    assert!(result1.is_ok());
+
+    let result2 = config_manager.add_dependency("fabric_api", "Fabric API", "mod", None, None);
+    assert!(result2.is_ok());
+
+    // Should still only have one copy
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 1);
+}
+
+#[test]
+fn test_add_dependency_no_existing_file() {
+    let workdir = PathBuf::from("/test/config");
+    let provider = create_mock_config_provider(workdir.clone());
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Add dependency when no empack.yml exists
+    let result = config_manager.add_dependency(
+        "appleskin",
+        "AppleSkin",
+        "mod",
+        Some("snDcZxV8"),
+        Some(ProjectPlatform::Modrinth),
+    );
+
+    assert!(result.is_ok());
+
+    // Verify the dependency was added
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 1);
+    assert!(config.empack.dependencies[0].contains("appleskin"));
+}
+
+#[test]
+fn test_remove_dependency_basic() {
+    let workdir = PathBuf::from("/test/config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    - "fabric_api: \"Fabric API|mod\""
+    - "appleskin: \"AppleSkin|mod\""
+  project_ids:
+    appleskin: "snDcZxV8"
+  project_platforms:
+    appleskin: modrinth
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Remove the dependency
+    let result = config_manager.remove_dependency("appleskin");
+
+    assert!(result.is_ok());
+
+    // Verify the dependency was removed
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 1);
+    assert!(!config
+        .empack
+        .dependencies
+        .iter()
+        .any(|d| d.contains("appleskin")));
+
+    // Verify project_id was removed
+    assert!(!config.empack.project_ids.contains_key("appleskin"));
+
+    // Verify project_platform was removed
+    assert!(!config.empack.project_platforms.contains_key("appleskin"));
+}
+
+#[test]
+fn test_remove_dependency_case_insensitive() {
+    let workdir = PathBuf::from("/test/config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    - "fabric_api: \"Fabric API|mod\""
+    - "appleskin: \"AppleSkin|mod\""
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Remove using different case
+    let result = config_manager.remove_dependency("AppleSkin");
+
+    assert!(result.is_ok());
+
+    // Verify the dependency was removed
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 1);
+    assert!(!config
+        .empack
+        .dependencies
+        .iter()
+        .any(|d| d.contains("appleskin")));
+}
+
+#[test]
+fn test_remove_dependency_with_hyphens() {
+    let workdir = PathBuf::from("/test/config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    - "xaeros_minimap: \"Xaero's Minimap|mod\""
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Remove using with hyphens or underscores
+    let result = config_manager.remove_dependency("xaeros_minimap");
+
+    assert!(result.is_ok());
+
+    // Verify the dependency was removed
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 0);
+}
+
+#[test]
+fn test_remove_nonexistent_dependency() {
+    let workdir = PathBuf::from("/test/config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    - "fabric_api: \"Fabric API|mod\""
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Remove a dependency that doesn't exist
+    let result = config_manager.remove_dependency("nonexistent");
+
+    assert!(result.is_ok()); // Should not error, just do nothing
+
+    // Original dependency should still be there
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 1);
 }

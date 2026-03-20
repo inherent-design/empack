@@ -504,6 +504,149 @@ impl<'a> ConfigManager<'a> {
 
         Ok(issues)
     }
+
+    /// Add a dependency to empack.yml
+    ///
+    /// This is the atomic counterpart to packwiz install. After packwiz successfully
+    /// installs a mod, call this to update empack.yml.
+    ///
+    /// # Arguments
+    /// * `key` - The dependency key (slug format, e.g., "appleskin")
+    /// * `title` - The mod title (e.g., "AppleSkin")
+    /// * `project_type` - The project type (defaults to "mod")
+    /// * `project_id` - Optional project ID to cache for faster lookups
+    /// * `project_platform` - Optional platform the mod was resolved from
+    pub fn add_dependency(
+        &self,
+        key: &str,
+        title: &str,
+        project_type: &str,
+        project_id: Option<&str>,
+        project_platform: Option<ProjectPlatform>,
+    ) -> Result<(), ConfigError> {
+        let empack_path = self.workdir.join("empack.yml");
+
+        // Load existing config or create new one
+        let mut config = match self.load_empack_config() {
+            Ok(cfg) => cfg,
+            Err(ConfigError::MissingField { .. }) => {
+                // Create default config if file doesn't exist
+                EmpackConfig {
+                    empack: EmpackProjectConfig::default(),
+                }
+            }
+            Err(e) => return Err(e),
+        };
+
+        // Build dependency string: "key: \"Title|type\""
+        let dep_string = format!("{}: \"{}|{}\"", key, title, project_type);
+
+        // Only add if not already present
+        if !config.empack.dependencies.contains(&dep_string) {
+            config.empack.dependencies.push(dep_string);
+        }
+
+        // Update project_ids if provided
+        if let Some(pid) = project_id {
+            config.empack.project_ids.insert(key.to_string(), pid.to_string());
+        }
+
+        // Update project_platforms if provided
+        if let Some(platform) = project_platform {
+            config.empack.project_platforms.insert(key.to_string(), platform);
+        }
+
+        // Serialize and write back
+        let yaml_content =
+            serde_saphyr::to_string(&config).map_err(|e| ConfigError::YamlSerError { source: e })?;
+
+        self.fs_provider.write_file(&empack_path, &yaml_content).map_err(|e| {
+            ConfigError::IoError {
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+            }
+        })?;
+
+        Ok(())
+    }
+
+    /// Remove a dependency from empack.yml
+    ///
+    /// This is the atomic counterpart to packwiz remove. After packwiz successfully
+    /// removes a mod, call this to update empack.yml.
+    ///
+    /// This method also cleans up associated entries in project_ids and project_platforms.
+    ///
+    /// # Arguments
+    /// * `key` - The dependency key to remove (will match against existing keys)
+    pub fn remove_dependency(&self, key: &str) -> Result<(), ConfigError> {
+        let empack_path = self.workdir.join("empack.yml");
+
+        // Load existing config
+        let mut config = match self.load_empack_config() {
+            Ok(cfg) => cfg,
+            Err(e) => return Err(e),
+        };
+
+        // Normalize the key for comparison
+        let normalized_key = key.to_lowercase().replace(' ', "_").replace('-', "_");
+
+        // Find and remove the dependency by key
+        let dep_string_to_remove: Option<String> = config
+            .empack
+            .dependencies
+            .iter()
+            .find(|dep| {
+                let parsed_key = self.extract_key_from_dep_string(dep);
+                parsed_key
+                    .map(|k| {
+                        let norm = k.to_lowercase().replace(' ', "_").replace('-', "_");
+                        norm == normalized_key
+                    })
+                    .unwrap_or(false)
+            })
+            .cloned();
+
+        if let Some(dep_string) = dep_string_to_remove {
+            config.empack.dependencies.retain(|d| d != &dep_string);
+        }
+
+        // Clean up project_ids
+        config.empack.project_ids.retain(|k, _| {
+            let norm = k.to_lowercase().replace(' ', "_").replace('-', "_");
+            norm != normalized_key
+        });
+
+        // Clean up project_platforms
+        config.empack.project_platforms.retain(|k, _| {
+            let norm = k.to_lowercase().replace(' ', "_").replace('-', "_");
+            norm != normalized_key
+        });
+
+        // Serialize and write back
+        let yaml_content =
+            serde_saphyr::to_string(&config).map_err(|e| ConfigError::YamlSerError { source: e })?;
+
+        self.fs_provider.write_file(&empack_path, &yaml_content).map_err(|e| {
+            ConfigError::IoError {
+                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+            }
+        })?;
+
+        Ok(())
+    }
+
+    /// Extract the key from a dependency string
+    ///
+    /// Dependency strings are in format: "key: \"Title|type\""
+    fn extract_key_from_dep_string(&self, dep_string: &str) -> Option<String> {
+        let clean = dep_string.trim_start_matches('-').trim();
+        let parts: Vec<&str> = clean.splitn(2, ':').collect();
+        if parts.len() == 2 {
+            Some(parts[0].trim().to_string())
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
