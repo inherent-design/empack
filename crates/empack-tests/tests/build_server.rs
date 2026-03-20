@@ -9,9 +9,7 @@ use empack_lib::application::session::{
 use empack_lib::application::session_mocks::MockInteractiveProvider;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::{
-    HermeticSessionBuilder, MockBehavior, MockNetworkProvider, TestEnvironment,
-};
+use empack_tests::{HermeticSessionBuilder, MockBehavior, MockNetworkProvider, TestEnvironment};
 use std::path::PathBuf;
 
 type HermeticSession = CommandSession<
@@ -23,9 +21,7 @@ type HermeticSession = CommandSession<
 >;
 
 fn build_packwiz_output(project_name: &str) -> String {
-    format!(
-        "Refreshed packwiz index\nExported to {project_name}-v1.0.0.mrpack"
-    )
+    format!("Refreshed packwiz index\nExported to {project_name}-v1.0.0.mrpack")
 }
 
 fn init_display(session: &HermeticSession) -> Result<()> {
@@ -145,7 +141,9 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
 
     let packwiz_calls = test_env.get_mock_calls("packwiz")?;
     assert!(
-        packwiz_calls.iter().any(|call| call.contains(" mr export ")),
+        packwiz_calls
+            .iter()
+            .any(|call| call.contains(" mr export ")),
         "Server build should export an mrpack before extraction: {packwiz_calls:?}"
     );
 
@@ -176,7 +174,10 @@ async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
     )
     .await;
 
-    assert!(result.is_err(), "Build should fail when installer JAR is unavailable");
+    assert!(
+        result.is_err(),
+        "Build should fail when installer JAR is unavailable"
+    );
     let error = format!("{:#}", result.unwrap_err());
     assert!(
         error.contains("Mock HTTP client unavailable (test mode)")
@@ -240,15 +241,24 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
 
     let server_dir = workdir.join("dist/server");
     let properties = std::fs::read_to_string(server_dir.join("server.properties"))?;
-    assert!(properties.contains(project_name), "Server name should be processed");
-    assert!(properties.contains("Test Author"), "Author should be processed");
+    assert!(
+        properties.contains(project_name),
+        "Server name should be processed"
+    );
+    assert!(
+        properties.contains("Test Author"),
+        "Author should be processed"
+    );
     assert!(
         !properties.contains("{{NAME}}"),
         "Template variables should be replaced"
     );
 
     let readme = std::fs::read_to_string(server_dir.join("README.md"))?;
-    assert!(readme.contains(&format!("# {project_name}")), "README should be rendered");
+    assert!(
+        readme.contains(&format!("# {project_name}")),
+        "README should be rendered"
+    );
     assert!(
         !readme.contains("{{VERSION}}"),
         "README template variables should be replaced"
@@ -263,7 +273,10 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
         script.contains("java -jar srv.jar"),
         "Script should contain the server launch command"
     );
-    assert!(server_dir.join("srv.jar").exists(), "Server JAR should exist");
+    assert!(
+        server_dir.join("srv.jar").exists(),
+        "Server JAR should exist"
+    );
     assert!(
         server_dir.join("config/generated.txt").exists(),
         "Override content should be copied into the rendered server build"

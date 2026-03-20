@@ -3,8 +3,8 @@
 //! Production implementation of display providers using the existing
 //! display system with indicatif and dialoguer.
 
-use super::providers::*;
 use super::Display;
+use super::providers::*;
 use indicatif::{MultiProgress, ProgressBar};
 use std::sync::Arc;
 

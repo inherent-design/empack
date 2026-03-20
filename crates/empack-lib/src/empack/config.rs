@@ -548,23 +548,29 @@ impl<'a> ConfigManager<'a> {
 
         // Update project_ids if provided
         if let Some(pid) = project_id {
-            config.empack.project_ids.insert(key.to_string(), pid.to_string());
+            config
+                .empack
+                .project_ids
+                .insert(key.to_string(), pid.to_string());
         }
 
         // Update project_platforms if provided
         if let Some(platform) = project_platform {
-            config.empack.project_platforms.insert(key.to_string(), platform);
+            config
+                .empack
+                .project_platforms
+                .insert(key.to_string(), platform);
         }
 
         // Serialize and write back
-        let yaml_content =
-            serde_saphyr::to_string(&config).map_err(|e| ConfigError::YamlSerError { source: e })?;
+        let yaml_content = serde_saphyr::to_string(&config)
+            .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
-        self.fs_provider.write_file(&empack_path, &yaml_content).map_err(|e| {
-            ConfigError::IoError {
+        self.fs_provider
+            .write_file(&empack_path, &yaml_content)
+            .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::new(std::io::ErrorKind::Other, e),
-            }
-        })?;
+            })?;
 
         Ok(())
     }
@@ -623,14 +629,14 @@ impl<'a> ConfigManager<'a> {
         });
 
         // Serialize and write back
-        let yaml_content =
-            serde_saphyr::to_string(&config).map_err(|e| ConfigError::YamlSerError { source: e })?;
+        let yaml_content = serde_saphyr::to_string(&config)
+            .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
-        self.fs_provider.write_file(&empack_path, &yaml_content).map_err(|e| {
-            ConfigError::IoError {
+        self.fs_provider
+            .write_file(&empack_path, &yaml_content)
+            .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::new(std::io::ErrorKind::Other, e),
-            }
-        })?;
+            })?;
 
         Ok(())
     }

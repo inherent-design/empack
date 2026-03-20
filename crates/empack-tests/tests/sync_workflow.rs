@@ -71,9 +71,13 @@ async fn test_sync_workflow_full() -> Result<()> {
         "sync should inspect installed mods via packwiz list: {packwiz_calls:?}"
     );
     assert!(
-        packwiz_calls
-            .iter()
-            .any(|call| call.contains_args(&["modrinth", "add", "--project-id", "P7dR8mSH", "-y"])),
+        packwiz_calls.iter().any(|call| call.contains_args(&[
+            "modrinth",
+            "add",
+            "--project-id",
+            "P7dR8mSH",
+            "-y"
+        ])),
         "sync should add the missing dependency by project id: {packwiz_calls:?}"
     );
     assert!(
@@ -83,9 +87,13 @@ async fn test_sync_workflow_full() -> Result<()> {
         "sync should remove mods not declared in empack.yml: {packwiz_calls:?}"
     );
     assert!(
-        !packwiz_calls
-            .iter()
-            .any(|call| call.contains_args(&["modrinth", "add", "--project-id", "AANobbMI", "-y"])),
+        !packwiz_calls.iter().any(|call| call.contains_args(&[
+            "modrinth",
+            "add",
+            "--project-id",
+            "AANobbMI",
+            "-y"
+        ])),
         "sync should not re-add dependencies that are already installed: {packwiz_calls:?}"
     );
 

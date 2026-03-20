@@ -82,9 +82,18 @@ async fn e2e_clean_builds_successfully() -> Result<()> {
         !paths.dist_dir.exists(),
         "Clean should remove the canonical dist/ artifact root"
     );
-    assert!(paths.empack_yml.exists(), "Clean should preserve empack.yml");
-    assert!(paths.pack_toml.exists(), "Clean should preserve pack metadata");
-    assert!(paths.index_toml.exists(), "Clean should preserve index metadata");
+    assert!(
+        paths.empack_yml.exists(),
+        "Clean should preserve empack.yml"
+    );
+    assert!(
+        paths.pack_toml.exists(),
+        "Clean should preserve pack metadata"
+    );
+    assert!(
+        paths.index_toml.exists(),
+        "Clean should preserve index metadata"
+    );
 
     Ok(())
 }
@@ -134,8 +143,14 @@ async fn e2e_clean_no_artifacts() -> Result<()> {
         "Clean command should succeed with no artifacts: {:?}",
         result
     );
-    assert!(paths.empack_yml.exists(), "No-op clean should preserve empack.yml");
-    assert!(paths.pack_toml.exists(), "No-op clean should preserve pack.toml");
+    assert!(
+        paths.empack_yml.exists(),
+        "No-op clean should preserve empack.yml"
+    );
+    assert!(
+        paths.pack_toml.exists(),
+        "No-op clean should preserve pack.toml"
+    );
     assert!(
         !paths.dist_dir.exists(),
         "No-op clean should not materialize a dist directory"

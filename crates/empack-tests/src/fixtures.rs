@@ -179,7 +179,8 @@ hash = ""
     }
 
     pub fn artifact_path(&self, workdir: &Path, artifact: WorkflowArtifact) -> PathBuf {
-        self.dist_dir(workdir).join(self.artifact_file_name(artifact))
+        self.dist_dir(workdir)
+            .join(self.artifact_file_name(artifact))
     }
 }
 
@@ -299,9 +300,11 @@ mod tests {
         assert!(paths.empack_yml.exists());
         assert!(paths.pack_toml.exists());
         assert!(paths.index_toml.exists());
-        assert!(std::fs::read_to_string(&paths.pack_toml)
-            .unwrap()
-            .contains("name = \"workflow-fixture-pack\""));
+        assert!(
+            std::fs::read_to_string(&paths.pack_toml)
+                .unwrap()
+                .contains("name = \"workflow-fixture-pack\"")
+        );
     }
 
     #[test]

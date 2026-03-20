@@ -9,9 +9,7 @@ use empack_lib::application::session::{
 use empack_lib::application::session_mocks::MockInteractiveProvider;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::{
-    HermeticSessionBuilder, MockBehavior, MockNetworkProvider, TestEnvironment,
-};
+use empack_tests::{HermeticSessionBuilder, MockBehavior, MockNetworkProvider, TestEnvironment};
 use std::path::PathBuf;
 
 type HermeticSession = CommandSession<
@@ -23,9 +21,7 @@ type HermeticSession = CommandSession<
 >;
 
 fn build_packwiz_output(project_name: &str) -> String {
-    format!(
-        "Refreshed packwiz index\nExported to {project_name}-v1.0.0.mrpack"
-    )
+    format!("Refreshed packwiz index\nExported to {project_name}-v1.0.0.mrpack")
 }
 
 fn init_display(session: &HermeticSession) -> Result<()> {
@@ -132,10 +128,12 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
     assert!(result.is_ok(), "Server-full build failed: {result:?}");
 
     let server_full_dir = workdir.join("dist/server-full");
-    assert!(server_full_dir.exists(), "Server-full build directory should exist");
     assert!(
-        std::fs::read_to_string(server_full_dir.join("server.properties"))?
-            .contains(project_name),
+        server_full_dir.exists(),
+        "Server-full build directory should exist"
+    );
+    assert!(
+        std::fs::read_to_string(server_full_dir.join("server.properties"))?.contains(project_name),
         "Server-full build should process template variables"
     );
     assert!(
@@ -179,9 +177,9 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
 
     let java_calls = test_env.get_mock_calls("java")?;
     assert!(
-        java_calls
-            .iter()
-            .any(|call| call.contains("-s server") && call.contains("--bootstrap-main-jar") && call.contains("pack.toml")),
+        java_calls.iter().any(|call| call.contains("-s server")
+            && call.contains("--bootstrap-main-jar")
+            && call.contains("pack.toml")),
         "server-full build should invoke packwiz installer for server side: {java_calls:?}"
     );
 
@@ -206,7 +204,10 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
     )
     .await;
 
-    assert!(result.is_err(), "Build should fail when installer JAR is unavailable");
+    assert!(
+        result.is_err(),
+        "Build should fail when installer JAR is unavailable"
+    );
     let error = result.unwrap_err().to_string();
     assert!(
         error.contains("Mock HTTP client unavailable (test mode)"),
@@ -283,8 +284,14 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
 
     let server_full_dir = workdir.join("dist/server-full");
     let properties = std::fs::read_to_string(server_full_dir.join("server.properties"))?;
-    assert!(properties.contains(project_name), "Server name should be processed");
-    assert!(properties.contains("Test Author"), "Author should be processed");
+    assert!(
+        properties.contains(project_name),
+        "Server name should be processed"
+    );
+    assert!(
+        properties.contains("Test Author"),
+        "Author should be processed"
+    );
     assert!(
         !properties.contains("{{NAME}}"),
         "Template variables should be replaced"
@@ -292,7 +299,10 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
 
     let eula = std::fs::read_to_string(server_full_dir.join("eula.txt"))?;
     assert!(eula.contains("eula=true"), "EULA should be rendered");
-    assert!(eula.contains(project_name), "EULA comment should be rendered");
+    assert!(
+        eula.contains(project_name),
+        "EULA comment should be rendered"
+    );
 
     let script = std::fs::read_to_string(server_full_dir.join("start.sh"))?;
     assert!(
@@ -303,7 +313,10 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
         script.contains("java -jar srv.jar nogui"),
         "Start script should retain the server launch command"
     );
-    assert!(server_full_dir.join("srv.jar").exists(), "Server JAR should exist");
+    assert!(
+        server_full_dir.join("srv.jar").exists(),
+        "Server JAR should exist"
+    );
     assert!(
         server_full_dir.join("mods/server-installed.txt").exists(),
         "Installer marker should confirm server-full download step"

@@ -3,12 +3,12 @@
 //! Implements the Session-Scoped Dependency Injection Pattern.
 //! Each command execution creates a session that owns all ephemeral state.
 
+use crate::Result;
 use crate::application::config::AppConfig;
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
 use crate::empack::state::PackStateManager;
-use crate::Result;
 use anyhow::Context;
 use indicatif::MultiProgress;
 use reqwest::Client;
