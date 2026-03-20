@@ -199,7 +199,7 @@ impl DependencyGraph {
         }
 
         stack.pop();
-        Some(Vec::new()) // No cycle found in this path
+        None // No cycle found in this path
     }
 
     /// Get topological sort order (installation order)

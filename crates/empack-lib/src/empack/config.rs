@@ -630,6 +630,12 @@ impl<'a> ConfigManager<'a> {
             norm != normalized_key
         });
 
+        // Clean up version_overrides
+        config.empack.version_overrides.retain(|k, _| {
+            let norm = k.to_lowercase().replace([' ', '-'], "_");
+            norm != normalized_key
+        });
+
         // Serialize and write back
         let yaml_content = serde_saphyr::to_string(&config)
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
