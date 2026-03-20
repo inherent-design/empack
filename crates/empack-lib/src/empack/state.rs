@@ -11,6 +11,10 @@ use thiserror::Error;
 
 // LiveStateProvider implementation removed - now using LiveFileSystemProvider from session.rs
 
+/// Marker file written to workdir during Building/Cleaning transitions.
+/// If this file exists on next discovery, we know the previous operation was interrupted.
+const STATE_MARKER_FILE: &str = ".empack-state";
+
 // Pure business logic functions - zero I/O, 100% testable.
 // These functions contain the core state machine logic without side effects.
 
@@ -64,7 +68,7 @@ fn is_progressive_init_state<P: crate::application::session::FileSystemProvider 
 fn validate_state_layout<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
-    expected: PackState,
+    expected: &PackState,
 ) -> bool {
     match expected {
         PackState::Uninitialized => true,
@@ -72,10 +76,11 @@ fn validate_state_layout<P: crate::application::session::FileSystemProvider + ?S
             has_config_file(provider, workdir) && has_pack_metadata(provider, workdir)
         }
         PackState::Built => {
-            validate_state_layout(provider, workdir, PackState::Configured)
+            validate_state_layout(provider, workdir, &PackState::Configured)
                 && has_canonical_build_artifacts(provider, workdir)
         }
         PackState::Cleaning => provider.is_directory(&artifact_root(workdir)),
+        PackState::Interrupted { was } => validate_state_layout(provider, workdir, was),
     }
 }
 
@@ -91,24 +96,35 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
         });
     }
 
+    // Check for interrupted state first (marker file presence)
+    let marker_path = workdir.join(STATE_MARKER_FILE);
+    if provider.exists(&marker_path) {
+        if let Ok(content) = provider.read_to_string(&marker_path) {
+            let inner = match content.trim() {
+                "building" => PackState::Building,
+                "cleaning" => PackState::Cleaning,
+                _ => PackState::Building, // default to building if content is unexpected
+            };
+            return Ok(PackState::Interrupted {
+                was: Box::new(inner),
+            });
+        }
+    }
+
     let empack_yml = workdir.join("empack.yml");
     let pack_toml = workdir.join("pack").join("pack.toml");
     let dist_dir = artifact_root(workdir);
 
     // Check for built state first (most advanced)
-    if provider.is_directory(&dist_dir) {
-        // Check if we have any build artifacts
-        if provider.has_build_artifacts(&dist_dir).unwrap_or(false) {
-            return Ok(PackState::Built);
-        }
+    if provider.is_directory(&dist_dir)
+        && provider.has_build_artifacts(&dist_dir).unwrap_or(false)
+    {
+        return Ok(PackState::Built);
     }
 
-    // Check for configured state
-    if provider.is_directory(empack_yml.parent().unwrap()) {
-        let files = provider.get_file_list(workdir).unwrap_or_default();
-        if files.contains(&empack_yml) || files.contains(&pack_toml) {
-            return Ok(PackState::Configured);
-        }
+    // Check for configured state via direct exists() calls
+    if provider.exists(&empack_yml) || provider.exists(&pack_toml) {
+        return Ok(PackState::Configured);
     }
 
     // Default to uninitialized
@@ -116,7 +132,7 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
 }
 
 /// Check if state transition is valid (pure function)
-pub fn can_transition(from: PackState, to: PackState) -> bool {
+pub fn can_transition(from: &PackState, to: &PackState) -> bool {
     match (from, to) {
         // Can always clean (go backwards)
         (PackState::Built, PackState::Configured) => true,
@@ -130,12 +146,42 @@ pub fn can_transition(from: PackState, to: PackState) -> bool {
         // Can sync within configured state
         (PackState::Configured, PackState::Configured) => true,
 
+        // Interrupted states can be cleaned to recover
+        (PackState::Interrupted { .. }, PackState::Configured) => true,
+        (PackState::Interrupted { .. }, PackState::Uninitialized) => true,
+
         // Same state is always valid
         (a, b) if a == b => true,
 
         // All other transitions are invalid
         _ => false,
     }
+}
+
+/// Write the state marker file to indicate an intermediate operation is in progress.
+fn write_state_marker<P: crate::application::session::FileSystemProvider + ?Sized>(
+    provider: &P,
+    workdir: &Path,
+    state_label: &str,
+) -> Result<(), StateError> {
+    provider
+        .write_file(&workdir.join(STATE_MARKER_FILE), state_label)
+        .context("Failed to write state marker file")?;
+    Ok(())
+}
+
+/// Remove the state marker file after a successful transition.
+fn remove_state_marker<P: crate::application::session::FileSystemProvider + ?Sized>(
+    provider: &P,
+    workdir: &Path,
+) -> Result<(), StateError> {
+    let marker_path = workdir.join(STATE_MARKER_FILE);
+    if provider.exists(&marker_path) {
+        provider
+            .remove_file(&marker_path)
+            .context("Failed to remove state marker file")?;
+    }
+    Ok(())
 }
 
 /// Execute a state transition (pure function)
@@ -180,7 +226,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 
         StateTransition::RefreshIndex => {
             if current != PackState::Configured
-                || !validate_state_layout(provider, workdir, PackState::Configured)
+                || !validate_state_layout(provider, workdir, &PackState::Configured)
             {
                 return Err(StateError::InvalidTransition {
                     from: current,
@@ -192,13 +238,15 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 
         StateTransition::Build(orchestrator, targets) => {
             if !matches!(current, PackState::Configured | PackState::Built)
-                || !validate_state_layout(provider, workdir, current)
+                || !validate_state_layout(provider, workdir, &current)
             {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Built,
                 });
             }
+            // Marker writing is handled by BuildOrchestrator::execute_build_pipeline
+            // via begin_state_transition/complete_state_transition
             execute_build(orchestrator, &targets)
                 .await
                 .map(|state| StateTransitionResult { state, warnings: vec![] })
@@ -206,14 +254,35 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 
         StateTransition::Clean => match current {
             PackState::Built => {
+                write_state_marker(provider, workdir, "cleaning")?;
                 clean_build_artifacts(provider, workdir)?;
+                remove_state_marker(provider, workdir)?;
                 no_warnings(PackState::Configured)
             }
             PackState::Configured => {
                 clean_configuration(provider, workdir)?;
+                remove_state_marker(provider, workdir)?;
                 no_warnings(PackState::Uninitialized)
             }
             PackState::Uninitialized => no_warnings(PackState::Uninitialized),
+            PackState::Interrupted { .. } => {
+                // Recovery: remove the marker and clean from the underlying state
+                remove_state_marker(provider, workdir)?;
+                // After removing the marker, re-discover the actual filesystem state
+                let recovered = discover_state(provider, workdir)?;
+                match recovered {
+                    PackState::Built => {
+                        clean_build_artifacts(provider, workdir)?;
+                        no_warnings(PackState::Configured)
+                    }
+                    PackState::Configured => {
+                        clean_configuration(provider, workdir)?;
+                        no_warnings(PackState::Uninitialized)
+                    }
+                    PackState::Uninitialized => no_warnings(PackState::Uninitialized),
+                    _ => no_warnings(recovered),
+                }
+            }
             PackState::Building => Err(StateError::InvalidTransition {
                 from: current,
                 to: PackState::Configured,
@@ -231,6 +300,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                     to: PackState::Building,
                 });
             }
+            write_state_marker(provider, workdir, "building")?;
             no_warnings(PackState::Building)
         }
 
@@ -241,6 +311,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                     to: PackState::Cleaning,
                 });
             }
+            write_state_marker(provider, workdir, "cleaning")?;
             no_warnings(PackState::Cleaning)
         }
     }
@@ -378,8 +449,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
     workdir: &Path,
 ) -> Result<(), StateError> {
     let empack_yml = workdir.join("empack.yml");
-    let files = provider.get_file_list(workdir).unwrap_or_default();
-    if files.contains(&empack_yml) {
+    if provider.exists(&empack_yml) {
         provider
             .remove_file(&empack_yml)
             .context("Failed to remove empack.yml")?;
@@ -481,6 +551,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
                 // Same as Built - intermediate state
                 self.get_state_files(PackState::Built)
             }
+            PackState::Interrupted { was } => self.get_state_files(*was),
         }
     }
 
@@ -493,33 +564,15 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         }
 
         // Additional validation for configured/built states
-        match expected {
-            PackState::Uninitialized => Ok(true),
-            PackState::Configured => Ok(validate_state_layout(
-                self.provider,
-                &self.workdir,
-                PackState::Configured,
-            )),
-            PackState::Built => Ok(validate_state_layout(
-                self.provider,
-                &self.workdir,
-                PackState::Built,
-            )),
-            PackState::Building => Ok(validate_state_layout(
-                self.provider,
-                &self.workdir,
-                PackState::Building,
-            )),
-            PackState::Cleaning => Ok(validate_state_layout(
-                self.provider,
-                &self.workdir,
-                PackState::Cleaning,
-            )),
-        }
+        Ok(validate_state_layout(
+            self.provider,
+            &self.workdir,
+            &expected,
+        ))
     }
 
     /// Check if state transition is valid
-    pub fn can_transition(&self, from: PackState, to: PackState) -> bool {
+    pub fn can_transition(&self, from: &PackState, to: &PackState) -> bool {
         can_transition(from, to)
     }
 
@@ -544,13 +597,14 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         match transition {
             StateTransition::Building => {
                 if !matches!(current, PackState::Configured | PackState::Built)
-                    || !validate_state_layout(self.provider, &self.workdir, current)
+                    || !validate_state_layout(self.provider, &self.workdir, &current)
                 {
                     return Err(StateError::InvalidTransition {
                         from: current,
                         to: PackState::Building,
                     });
                 }
+                write_state_marker(self.provider, &self.workdir, "building")?;
             }
             StateTransition::Cleaning => {
                 if current != PackState::Built {
@@ -559,6 +613,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
                         to: PackState::Cleaning,
                     });
                 }
+                write_state_marker(self.provider, &self.workdir, "cleaning")?;
             }
             _ => {
                 return Err(StateError::ConfigError {
@@ -569,20 +624,12 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
             }
         }
 
-        // TODO: In a full implementation, we might want to persist the intermediate state
-        // For now, we just validate the transition is allowed
         Ok(())
     }
 
     /// Complete a state transition (for BuildOrchestrator to use)
     pub fn complete_state_transition(&self) -> Result<(), StateError> {
-        // TODO: In a full implementation, we would:
-        // 1. Check the current intermediate state (Building/Cleaning)
-        // 2. Transition to the final state (Built/Configured)
-        // 3. Persist the new state
-
-        // For now, we just validate that the operation completed successfully
-        Ok(())
+        remove_state_marker(self.provider, &self.workdir)
     }
 
     /// Get paths for common modpack files

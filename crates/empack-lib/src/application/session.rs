@@ -137,7 +137,7 @@ pub trait Session {
     fn packwiz(&self) -> Box<dyn PackwizOps + '_>;
 
     /// Get the state manager for this session
-    fn state(&self) -> PackStateManager<'_, dyn FileSystemProvider + '_>;
+    fn state(&self) -> Result<PackStateManager<'_, dyn FileSystemProvider + '_>>;
 }
 
 /// Live implementation of FileSystemProvider
@@ -650,18 +650,11 @@ where
         Box::new(LivePackwizOps::new(self.process(), self.filesystem()))
     }
 
-    fn state(&self) -> PackStateManager<'_, dyn FileSystemProvider + '_> {
-        let workdir = self
-            .config()
-            .app_config()
-            .workdir
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| {
-                self.filesystem()
-                    .current_dir()
-                    .expect("Failed to get current directory")
-            });
-        PackStateManager::new(workdir, self.filesystem())
+    fn state(&self) -> Result<PackStateManager<'_, dyn FileSystemProvider + '_>> {
+        let workdir = match self.config().app_config().workdir.as_ref().cloned() {
+            Some(dir) => dir,
+            None => self.filesystem().current_dir()?,
+        };
+        Ok(PackStateManager::new(workdir, self.filesystem()))
     }
 }

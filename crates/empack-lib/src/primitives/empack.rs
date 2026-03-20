@@ -59,7 +59,7 @@ impl std::str::FromStr for BuildTarget {
 }
 
 /// Filesystem state machine states for modpack development
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PackState {
     /// No empack.yml or pack/ directory exists
@@ -72,6 +72,8 @@ pub enum PackState {
     Building,
     /// Currently cleaning
     Cleaning,
+    /// A previous Building or Cleaning operation was interrupted
+    Interrupted { was: Box<PackState> },
 }
 
 impl fmt::Display for PackState {
@@ -82,6 +84,7 @@ impl fmt::Display for PackState {
             PackState::Built => write!(f, "built"),
             PackState::Building => write!(f, "building"),
             PackState::Cleaning => write!(f, "cleaning"),
+            PackState::Interrupted { was } => write!(f, "interrupted (was: {})", was),
         }
     }
 }

@@ -1071,12 +1071,9 @@ impl Session for MockCommandSession {
             .with_filesystem(self.packwiz_provider.filesystem.clone()))
     }
 
-    fn state(&self) -> crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_> {
-        let workdir = self
-            .filesystem()
-            .current_dir()
-            .expect("Failed to get current directory");
-        crate::empack::state::PackStateManager::new(workdir, self.filesystem())
+    fn state(&self) -> crate::Result<crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_>> {
+        let workdir = self.filesystem().current_dir()?;
+        Ok(crate::empack::state::PackStateManager::new(workdir, self.filesystem()))
     }
 }
 

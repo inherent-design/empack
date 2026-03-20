@@ -819,6 +819,9 @@ impl<'a> BuildOrchestrator<'a> {
         // Begin state transition
         self.session
             .state()
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("Failed to get state manager: {}", e),
+            })?
             .begin_state_transition(crate::primitives::StateTransition::Building)
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to begin build transition: {:?}", e),
@@ -876,6 +879,9 @@ impl<'a> BuildOrchestrator<'a> {
         // Complete state transition on success
         self.session
             .state()
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("Failed to get state manager: {}", e),
+            })?
             .complete_state_transition()
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to complete build transition: {:?}", e),
@@ -892,6 +898,9 @@ impl<'a> BuildOrchestrator<'a> {
         // Begin state transition
         self.session
             .state()
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("Failed to get state manager: {}", e),
+            })?
             .begin_state_transition(crate::primitives::StateTransition::Cleaning)
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to begin clean transition: {:?}", e),
@@ -905,6 +914,9 @@ impl<'a> BuildOrchestrator<'a> {
         // Complete state transition on success
         self.session
             .state()
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("Failed to get state manager: {}", e),
+            })?
             .complete_state_transition()
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to complete clean transition: {:?}", e),

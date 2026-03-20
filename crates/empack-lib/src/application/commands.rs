@@ -755,7 +755,7 @@ async fn handle_add(
         return Ok(());
     }
 
-    let manager = session.state();
+    let manager = session.state()?;
 
     // Verify we're in a configured state
     let current_state = manager
@@ -784,7 +784,7 @@ async fn handle_add(
     }
 
     // Create config manager using the session's working directory
-    let manager = session.state();
+    let manager = session.state()?;
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
 
@@ -1102,7 +1102,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         return Ok(());
     }
 
-    let manager = session.state();
+    let manager = session.state()?;
 
     // Verify we're in a configured state
     let current_state = manager.discover_state()?;
@@ -1124,7 +1124,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         .section(&format!("➖ Removing {} mod(s) from modpack", mods.len()));
 
     // Use the session's working directory
-    let manager = session.state();
+    let manager = session.state()?;
     let workdir = manager.workdir.clone();
     let mods_dir = workdir.join("pack").join("mods");
     let config_manager = session.filesystem().config_manager(workdir.clone());
@@ -1325,7 +1325,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 }
 
 async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) -> Result<()> {
-    let manager = session.state();
+    let manager = session.state()?;
 
     // Verify we're in a configured state
     let current_state = manager.discover_state()?;
@@ -1505,7 +1505,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
 }
 
 async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()> {
-    let manager = session.state();
+    let manager = session.state()?;
 
     if targets.is_empty()
         || targets.contains(&"builds".to_string())
@@ -1549,7 +1549,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
 }
 
 async fn handle_sync(session: &dyn Session) -> Result<()> {
-    let manager = session.state();
+    let manager = session.state()?;
 
     // Verify we're in a configured state
     let current_state = manager.discover_state()?;
@@ -1576,7 +1576,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 
     // Create config manager using the session's working directory
-    let manager = session.state();
+    let manager = session.state()?;
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
 
