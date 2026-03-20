@@ -161,10 +161,10 @@ impl DependencyGraph {
         let mut stack = Vec::new();
 
         for node_idx in self.graph.node_indices() {
-            if !visited.contains_key(&node_idx) {
-                if let Some(cycle) = self.dfs_cycle_detect(node_idx, &mut visited, &mut stack) {
-                    return Some(cycle);
-                }
+            if !visited.contains_key(&node_idx)
+                && let Some(cycle) = self.dfs_cycle_detect(node_idx, &mut visited, &mut stack)
+            {
+                return Some(cycle);
             }
         }
 
@@ -261,8 +261,8 @@ impl DependencyGraph {
             .graph
             .neighbors_directed(node, petgraph::Direction::Incoming)
         {
-            if !visited.contains_key(&neighbor) {
-                visited.insert(neighbor, true);
+            if let std::collections::hash_map::Entry::Vacant(entry) = visited.entry(neighbor) {
+                entry.insert(true);
                 result.push(self.graph[neighbor].clone());
                 self.collect_transitive(neighbor, visited, result);
             }

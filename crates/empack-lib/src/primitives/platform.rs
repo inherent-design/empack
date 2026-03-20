@@ -5,10 +5,10 @@ use thiserror::Error;
 
 use crate::impl_fromstr_for_value_enum;
 
-/// Platform configuration primitives for system resource detection
+// Platform configuration primitives for system resource detection.
 
 /// CPU core detection strategy for resource calculation
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CpuDetectionStrategy {
     /// Use system calls (sysconf on Unix, GetSystemInfo on Windows)
@@ -19,23 +19,19 @@ pub enum CpuDetectionStrategy {
     StandardLibrary,
     /// Try system calls first, fallback to standard library
     #[value(alias = "auto")]
+    #[default]
     Automatic,
 }
 
 impl_fromstr_for_value_enum!(CpuDetectionStrategy, "cpu detection strategy");
 
-impl Default for CpuDetectionStrategy {
-    fn default() -> Self {
-        Self::Automatic
-    }
-}
-
 /// Memory pressure calculation method for resource management
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryPressureMethod {
     /// Calculate based on available vs total memory
     #[value(alias = "available")]
+    #[default]
     Available,
     /// Use platform-specific pressure metrics (Linux: pressure stall info, macOS: VM stats)
     #[value(alias = "platform")]
@@ -47,14 +43,8 @@ pub enum MemoryPressureMethod {
 
 impl_fromstr_for_value_enum!(MemoryPressureMethod, "memory pressure method");
 
-impl Default for MemoryPressureMethod {
-    fn default() -> Self {
-        Self::Available
-    }
-}
-
 /// Resource calculation algorithm variant
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceCalculationAlgorithm {
     /// Basic formula: j = 1 / (memory_pressure * cpu_scaling)
@@ -62,6 +52,7 @@ pub enum ResourceCalculationAlgorithm {
     Basic,
     /// Conservative approach: reduces jobs under memory pressure
     #[value(alias = "conservative")]
+    #[default]
     Conservative,
     /// Aggressive approach: maximizes parallelism when possible
     #[value(alias = "aggressive")]
@@ -76,11 +67,6 @@ impl_fromstr_for_value_enum!(
     "resource calculation algorithm"
 );
 
-impl Default for ResourceCalculationAlgorithm {
-    fn default() -> Self {
-        Self::Conservative
-    }
-}
 
 /// Platform capability flags for feature detection
 #[derive(Debug, Clone, PartialEq, Eq)]

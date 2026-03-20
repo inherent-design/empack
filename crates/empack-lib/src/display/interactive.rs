@@ -46,7 +46,7 @@ impl<'a> InteractiveDisplay<'a> {
     ///     .default(false)
     ///     .interact()?;
     /// ```
-    pub fn confirm(&self, message: &str) -> ConfirmPrompt {
+    pub fn confirm(&self, message: &str) -> ConfirmPrompt<'_> {
         ConfirmPrompt::new(message, &*self.theme)
     }
 
@@ -59,7 +59,7 @@ impl<'a> InteractiveDisplay<'a> {
     ///     .options(&["Fabric", "Quilt", "NeoForge"])
     ///     .interact()?;
     /// ```
-    pub fn select(&self, message: &str) -> SelectPrompt {
+    pub fn select(&self, message: &str) -> SelectPrompt<'_> {
         SelectPrompt::new(message, &*self.theme)
     }
 
@@ -72,7 +72,7 @@ impl<'a> InteractiveDisplay<'a> {
     ///     .default("my-modpack")
     ///     .interact()?;
     /// ```
-    pub fn input(&self, message: &str) -> InputPrompt {
+    pub fn input(&self, message: &str) -> InputPrompt<'_> {
         InputPrompt::new(message, &*self.theme)
     }
 }

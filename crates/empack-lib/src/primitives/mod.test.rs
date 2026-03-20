@@ -1,5 +1,4 @@
 use super::*;
-use std::error::Error;
 
 // =============================================================================
 // LEVEL A: EXHAUSTIVE DATA TYPE TESTING

@@ -99,6 +99,7 @@ impl ProjectPlatform {
     /// assert_eq!(ProjectPlatform::from_str("modrinth").unwrap(), ProjectPlatform::Modrinth);
     /// assert_eq!(ProjectPlatform::from_str("CURSEFORGE").unwrap(), ProjectPlatform::CurseForge);
     /// ```
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s.to_lowercase().as_str() {
             "modrinth" => Ok(ProjectPlatform::Modrinth),

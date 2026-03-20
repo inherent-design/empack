@@ -96,10 +96,10 @@ impl CapabilityProber {
         }
 
         // Fallback to CSI query (cross-platform)
-        if self.raw_mode_guard.is_some() {
-            if let Ok(dims) = self.probe_csi_dimensions() {
-                return Ok(dims);
-            }
+        if self.raw_mode_guard.is_some()
+            && let Ok(dims) = self.probe_csi_dimensions()
+        {
+            return Ok(dims);
         }
 
         // Environment variable fallback
@@ -134,7 +134,7 @@ impl CapabilityProber {
         let query_id = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .subsec_millis() as u32
+            .subsec_millis()
             % 9000
             + 1000;
         let test_sequence = format!("\x1b_Gi={},s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\", query_id);
@@ -155,8 +155,10 @@ impl CapabilityProber {
         &self,
         base_id: u32,
     ) -> Result<KittyGraphicsCaps, TerminalError> {
-        let mut caps = KittyGraphicsCaps::default();
-        caps.detection_method = GraphicsDetectionMethod::ProtocolProbe;
+        let mut caps = KittyGraphicsCaps {
+            detection_method: GraphicsDetectionMethod::ProtocolProbe,
+            ..KittyGraphicsCaps::default()
+        };
 
         // Test file transmission
         if self
@@ -248,7 +250,7 @@ impl CapabilityProber {
                         let last_two = &buffer[buffer.len() - 2..];
                         if last_two == [0x1b, 0x5c] || // ESC \
                            last_two == [0x07, 0x00] || // BEL
-                           (buffer.len() >= 3 && &buffer[buffer.len()-3..] == [0x1b, 0x5c, 0x1b])
+                           (buffer.len() >= 3 && buffer[buffer.len()-3..] == [0x1b, 0x5c, 0x1b])
                         {
                             break;
                         }
@@ -309,50 +311,47 @@ impl CapabilityProber {
 
         if let Ok(response) = self.read_terminal_response_after_send(test_sequence) {
             // Response format: ESC[4;height;widtht
-            if let Some(start) = response.find("[4;") {
-                if let Some(end) = response[start..].find('t') {
-                    let data = &response[start + 3..start + end];
-                    if let Some(semicolon) = data.find(';') {
-                        let height: u16 = data[..semicolon].parse().unwrap_or(24);
-                        let width: u16 = data[semicolon + 1..].parse().unwrap_or(80);
+            if let Some(start) = response.find("[4;")
+                && let Some(end) = response[start..].find('t')
+            {
+                let data = &response[start + 3..start + end];
+                if let Some(semicolon) = data.find(';') {
+                    let height: u16 = data[..semicolon].parse().unwrap_or(24);
+                    let width: u16 = data[semicolon + 1..].parse().unwrap_or(80);
 
-                        // Query character cell size (CSI 18 t)
-                        let cell_query = "\x1b[18t";
-                        if let Ok(cell_response) =
-                            self.read_terminal_response_after_send(cell_query)
+                    // Query character cell size (CSI 18 t)
+                    let cell_query = "\x1b[18t";
+                    if let Ok(cell_response) = self.read_terminal_response_after_send(cell_query) {
+                        // Response format: ESC[8;rows;colst
+                        if let Some(cell_start) = cell_response.find("[8;")
+                            && let Some(cell_end) = cell_response[cell_start..].find('t')
                         {
-                            // Response format: ESC[8;rows;colst
-                            if let Some(cell_start) = cell_response.find("[8;") {
-                                if let Some(cell_end) = cell_response[cell_start..].find('t') {
-                                    let cell_data =
-                                        &cell_response[cell_start + 3..cell_start + cell_end];
-                                    if let Some(cell_semicolon) = cell_data.find(';') {
-                                        let rows: u16 =
-                                            cell_data[..cell_semicolon].parse().unwrap_or(24);
-                                        let cols: u16 =
-                                            cell_data[cell_semicolon + 1..].parse().unwrap_or(80);
+                            let cell_data =
+                                &cell_response[cell_start + 3..cell_start + cell_end];
+                            if let Some(cell_semicolon) = cell_data.find(';') {
+                                let rows: u16 = cell_data[..cell_semicolon].parse().unwrap_or(24);
+                                let cols: u16 =
+                                    cell_data[cell_semicolon + 1..].parse().unwrap_or(80);
 
-                                        return Ok(TerminalDimensions {
-                                            cols,
-                                            rows,
-                                            width_pixels: Some(width),
-                                            height_pixels: Some(height),
-                                            detection_source: DimensionSource::CsiQuery,
-                                        });
-                                    }
-                                }
+                                return Ok(TerminalDimensions {
+                                    cols,
+                                    rows,
+                                    width_pixels: Some(width),
+                                    height_pixels: Some(height),
+                                    detection_source: DimensionSource::CsiQuery,
+                                });
                             }
                         }
-
-                        // Fallback with just pixel dimensions
-                        return Ok(TerminalDimensions {
-                            cols: 80,
-                            rows: 24,
-                            width_pixels: Some(width),
-                            height_pixels: Some(height),
-                            detection_source: DimensionSource::CsiQuery,
-                        });
                     }
+
+                    // Fallback with just pixel dimensions
+                    return Ok(TerminalDimensions {
+                        cols: 80,
+                        rows: 24,
+                        width_pixels: Some(width),
+                        height_pixels: Some(height),
+                        detection_source: DimensionSource::CsiQuery,
+                    });
                 }
             }
         }

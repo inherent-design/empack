@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use super::config::AppConfig;
 
 /// empack CLI - Minecraft modpack management
-#[derive(Debug, Clone, Parser)]
+#[derive(Debug, Clone, Parser, Default)]
 #[command(name = "empack")]
 #[command(about = "A smarter Minecraft modpack manager")]
 #[command(version)]
@@ -206,11 +206,3 @@ impl Commands {
     }
 }
 
-impl Default for Cli {
-    fn default() -> Self {
-        Self {
-            config: AppConfig::default(),
-            command: None,
-        }
-    }
-}

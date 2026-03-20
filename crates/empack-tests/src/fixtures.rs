@@ -244,6 +244,7 @@ pub fn load_fixture(name: &str) -> Result<String> {
 /// Legacy function - deprecated, use load_vcr_response instead
 #[deprecated(note = "Use load_vcr_response instead")]
 pub fn load_fixture_json(name: &str) -> Result<Value> {
+    #[allow(deprecated)]
     let content = load_fixture(name)?;
     serde_json::from_str(&content)
         .map_err(|e| anyhow::anyhow!("Failed to parse fixture '{}' as JSON: {}", name, e))
@@ -264,7 +265,7 @@ mod tests {
         let cassette_path = cassette_path("modrinth/search_sodium.json");
         let json: Value = load_vcr_response(cassette_path.to_str().unwrap()).unwrap();
         assert!(json["hits"].is_array());
-        assert!(json["hits"].as_array().unwrap().len() > 0);
+        assert!(!json["hits"].as_array().unwrap().is_empty());
 
         // Verify it contains sodium project data
         let hits = json["hits"].as_array().unwrap();

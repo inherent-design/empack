@@ -79,7 +79,7 @@ pub enum AddCommandPlanError {
 }
 
 pub fn normalize_mod_key(key: &str) -> String {
-    key.to_lowercase().replace(' ', "_").replace('-', "_")
+    key.to_lowercase().replace([' ', '-'], "_")
 }
 
 pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<String>) -> SyncPlan {
@@ -148,6 +148,7 @@ pub async fn resolve_sync_action(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn resolve_add_contract(
     search_query: &str,
     project_type: ProjectType,

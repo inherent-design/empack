@@ -3,8 +3,7 @@ use crate::application::session::FileSystemProvider;
 use crate::application::session_mocks::MockFileSystemProvider;
 use crate::empack::parsing::ModLoader;
 use crate::primitives::{ProjectPlatform, ProjectType};
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // Helper to create mock filesystem provider with test setup
 fn create_mock_config_provider(workdir: PathBuf) -> MockFileSystemProvider {
@@ -13,7 +12,7 @@ fn create_mock_config_provider(workdir: PathBuf) -> MockFileSystemProvider {
 
 fn with_empack_yml(
     provider: MockFileSystemProvider,
-    workdir: &PathBuf,
+    workdir: &Path,
     content: &str,
 ) -> MockFileSystemProvider {
     provider.with_file(workdir.join("empack.yml"), content.to_string())
@@ -21,7 +20,7 @@ fn with_empack_yml(
 
 fn with_pack_toml(
     provider: MockFileSystemProvider,
-    workdir: &PathBuf,
+    workdir: &Path,
     content: &str,
 ) -> MockFileSystemProvider {
     provider.with_file(workdir.join("pack").join("pack.toml"), content.to_string())
@@ -975,6 +974,47 @@ empack:
     // Should still only have one copy
     let config = config_manager.load_empack_config().unwrap();
     assert_eq!(config.empack.dependencies.len(), 1);
+}
+
+#[test]
+fn test_add_dependency_duplicate_key_uses_existing_entry() {
+    let workdir = PathBuf::from("/test/config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    - "fabric_api: \"Fabric API|mod\""
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    let result = config_manager.add_dependency(
+        "fabric_api",
+        "Fabric API Renamed",
+        "mod",
+        Some("P7dR8mSH"),
+        Some(ProjectPlatform::Modrinth),
+    );
+
+    assert!(result.is_ok());
+
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 1);
+    assert_eq!(
+        config.empack.dependencies[0],
+        "fabric_api: \"Fabric API|mod\""
+    );
+    assert_eq!(
+        config.empack.project_ids.get("fabric_api"),
+        Some(&"P7dR8mSH".to_string())
+    );
+    assert_eq!(
+        config.empack.project_platforms.get("fabric_api"),
+        Some(&ProjectPlatform::Modrinth)
+    );
 }
 
 #[test]

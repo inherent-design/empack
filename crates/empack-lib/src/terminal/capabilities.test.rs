@@ -233,17 +233,8 @@ fn test_capability_prober_new_non_interactive() {
     // - In interactive terminal: Should be Ok(probes)
     // Both are valid outcomes for different environments
     match result {
-        Ok(_) => {
-            // We're in an interactive terminal - probing is available
-            assert!(
-                true,
-                "Capability probing available in interactive environment"
-            );
-        }
-        Err(TerminalError::NotInteractive) => {
-            // We're in a non-interactive environment - expected in CI
-            assert!(true, "Correctly detected non-interactive environment");
-        }
+        Ok(_) => {}
+        Err(TerminalError::NotInteractive) => {}
         Err(other) => {
             panic!("Unexpected error type: {:?}", other);
         }
@@ -301,7 +292,7 @@ fn test_graphics_caps_enum_variants() {
         detection_method: GraphicsDetectionMethod::EnvironmentReliable,
     };
 
-    let kitty_variant = TerminalGraphicsCaps::Kitty(kitty_caps.clone());
+    let kitty_variant = TerminalGraphicsCaps::Kitty(kitty_caps);
     match kitty_variant {
         TerminalGraphicsCaps::Kitty(caps) => {
             assert_eq!(caps.cell_width_pixels, 10);

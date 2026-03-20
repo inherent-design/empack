@@ -1,5 +1,4 @@
-use super::*;
-use crate::empack::parsing::{ResourcePackResolution, ShaderLoader, ModLoader};
+use crate::empack::parsing::{ModLoader, ResourcePackResolution, ShaderLoader};
 
 #[test]
 fn test_resolution_parsing() {

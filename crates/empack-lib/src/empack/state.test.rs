@@ -42,11 +42,6 @@ impl MockStateProvider {
         self.build_artifacts.borrow_mut().insert(path);
     }
 
-    /// Set result for packwiz commands (immutable for test setup)
-    fn with_packwiz_result(mut self, command: &str, result: Result<(), StateError>) -> Self {
-        self.packwiz_results.insert(command.to_string(), result);
-        self
-    }
 }
 
 impl crate::application::session::FileSystemProvider for MockStateProvider {
@@ -102,10 +97,10 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
 
         // Return files that are children of the given path
         for file in self.files.borrow().iter() {
-            if let Some(parent) = file.parent() {
-                if parent == path {
-                    files_in_dir.insert(file.clone());
-                }
+            if let Some(parent) = file.parent()
+                && parent == path
+            {
+                files_in_dir.insert(file.clone());
             }
         }
 
@@ -115,10 +110,10 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
     fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool, std::io::Error> {
         // Check if any build artifacts exist in the dist directory
         for artifact in self.build_artifacts.borrow().iter() {
-            if let Some(parent) = artifact.parent() {
-                if parent == dist_dir {
-                    return Ok(true);
-                }
+            if let Some(parent) = artifact.parent()
+                && parent == dist_dir
+            {
+                return Ok(true);
             }
         }
         Ok(false)

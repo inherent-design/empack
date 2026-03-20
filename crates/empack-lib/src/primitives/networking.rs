@@ -6,10 +6,10 @@ use thiserror::Error;
 
 use crate::impl_fromstr_for_value_enum;
 
-/// Networking configuration primitives for HTTP clients and request handling
+// Networking configuration primitives for HTTP clients and request handling.
 
 /// HTTP client configuration strategy
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum HttpClientStrategy {
     /// Basic client with default settings
@@ -17,6 +17,7 @@ pub enum HttpClientStrategy {
     Basic,
     /// Connection pooling enabled for performance
     #[value(alias = "pooled")]
+    #[default]
     ConnectionPooling,
     /// Enhanced with retry logic and backoff
     #[value(alias = "resilient")]
@@ -28,14 +29,8 @@ pub enum HttpClientStrategy {
 
 impl_fromstr_for_value_enum!(HttpClientStrategy, "HTTP client strategy");
 
-impl Default for HttpClientStrategy {
-    fn default() -> Self {
-        Self::ConnectionPooling
-    }
-}
-
 /// Request timeout strategy for different operations
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TimeoutStrategy {
     /// Fixed timeout for all operations
@@ -43,6 +38,7 @@ pub enum TimeoutStrategy {
     Fixed,
     /// Different timeouts based on operation type
     #[value(alias = "adaptive")]
+    #[default]
     Adaptive,
     /// Progressive timeout with retries
     #[value(alias = "progressive")]
@@ -51,14 +47,8 @@ pub enum TimeoutStrategy {
 
 impl_fromstr_for_value_enum!(TimeoutStrategy, "timeout strategy");
 
-impl Default for TimeoutStrategy {
-    fn default() -> Self {
-        Self::Adaptive
-    }
-}
-
 /// Concurrency control method for parallel requests
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ConcurrencyMethod {
     /// Fixed number of concurrent requests
@@ -72,19 +62,14 @@ pub enum ConcurrencyMethod {
     Adaptive,
     /// Semaphore-controlled with backpressure
     #[value(alias = "semaphore")]
+    #[default]
     Semaphore,
 }
 
 impl_fromstr_for_value_enum!(ConcurrencyMethod, "concurrency method");
 
-impl Default for ConcurrencyMethod {
-    fn default() -> Self {
-        Self::Semaphore
-    }
-}
-
 /// Request tracing level for debugging and monitoring
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RequestTracingLevel {
     /// No request tracing
@@ -92,6 +77,7 @@ pub enum RequestTracingLevel {
     None,
     /// Basic request/response logging
     #[value(alias = "basic")]
+    #[default]
     Basic,
     /// Detailed timing and header information
     #[value(alias = "detailed")]
@@ -102,12 +88,6 @@ pub enum RequestTracingLevel {
 }
 
 impl_fromstr_for_value_enum!(RequestTracingLevel, "request tracing level");
-
-impl Default for RequestTracingLevel {
-    fn default() -> Self {
-        Self::Basic
-    }
-}
 
 /// Networking capability flags for feature detection
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,7 +176,7 @@ pub enum AuthType {
 }
 
 /// Backoff strategy for retries and rate limiting
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BackoffStrategy {
     /// Linear backoff (fixed intervals)
@@ -204,6 +184,7 @@ pub enum BackoffStrategy {
     Linear,
     /// Exponential backoff
     #[value(alias = "exponential")]
+    #[default]
     Exponential,
     /// Fibonacci sequence backoff
     #[value(alias = "fibonacci")]
@@ -215,11 +196,6 @@ pub enum BackoffStrategy {
 
 impl_fromstr_for_value_enum!(BackoffStrategy, "backoff strategy");
 
-impl Default for BackoffStrategy {
-    fn default() -> Self {
-        Self::Exponential
-    }
-}
 
 /// Networking configuration summary
 #[derive(Debug, Clone)]

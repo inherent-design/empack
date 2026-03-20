@@ -51,8 +51,10 @@ async fn e2e_clean_builds_successfully() -> Result<()> {
     std::env::set_current_dir(&workdir)?;
 
     // Create session (no external commands needed for clean)
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
@@ -113,8 +115,10 @@ async fn e2e_clean_no_artifacts() -> Result<()> {
     std::env::set_current_dir(&workdir)?;
 
     // Create session
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
@@ -191,8 +195,10 @@ async fn e2e_clean_specific_targets() -> Result<()> {
     std::env::set_current_dir(&workdir)?;
 
     // Create session
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;

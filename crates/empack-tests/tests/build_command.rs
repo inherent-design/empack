@@ -232,8 +232,10 @@ async fn e2e_build_packwiz_refresh_fails() -> Result<()> {
     std::env::set_current_dir(&workdir)?;
 
     // Create hybrid session with failing packwiz mock
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
@@ -302,8 +304,10 @@ async fn e2e_build_packwiz_export_fails() -> Result<()> {
 
     std::env::set_current_dir(&workdir)?;
 
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
     let _ = Display::init(terminal_caps);
