@@ -824,6 +824,26 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: format!("Failed to begin build transition: {:?}", e),
             })?;
 
+        // Run the pipeline, cleaning up state on failure
+        let result = self.execute_build_pipeline_inner(targets);
+
+        if result.is_err() {
+            // Best-effort cleanup: complete the transition to avoid stuck state
+            let _ = self
+                .session
+                .state()
+                .map(|state| state.complete_state_transition());
+        }
+
+        result
+    }
+
+    /// Inner build pipeline logic, separated so the caller can guarantee
+    /// state cleanup on early returns.
+    fn execute_build_pipeline_inner(
+        &mut self,
+        targets: &[BuildTarget],
+    ) -> Result<Vec<BuildResult>, BuildError> {
         self.prepare_build_environment()?;
 
         // Get bootstrap and installer JAR paths from session
@@ -903,6 +923,26 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: format!("Failed to begin clean transition: {:?}", e),
             })?;
 
+        // Run the pipeline, cleaning up state on failure
+        let result = self.execute_clean_pipeline_inner(targets);
+
+        if result.is_err() {
+            // Best-effort cleanup: complete the transition to avoid stuck state
+            let _ = self
+                .session
+                .state()
+                .map(|state| state.complete_state_transition());
+        }
+
+        result
+    }
+
+    /// Inner clean pipeline logic, separated so the caller can guarantee
+    /// state cleanup on early returns.
+    fn execute_clean_pipeline_inner(
+        &mut self,
+        targets: &[BuildTarget],
+    ) -> Result<(), BuildError> {
         // Clean each target
         for target in targets {
             self.clean_target(*target)?;
