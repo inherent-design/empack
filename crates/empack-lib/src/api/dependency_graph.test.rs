@@ -1,6 +1,7 @@
 // Tests for dependency graph resolution
 
 use super::*;
+use crate::application::session::LiveFileSystemProvider;
 use std::fs;
 use tempfile::TempDir;
 
@@ -424,11 +425,12 @@ fn test_mixed_required_and_optional_dependencies() {
 fn test_parse_simple_packwiz_file() {
     let temp_dir = TempDir::new().unwrap();
     let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
 
     create_simple_mod(temp_dir.path(), "fabric-api", "P7dR8mSH");
 
     graph
-        .parse_packwiz_file(&temp_dir.path().join("fabric-api.pw.toml"))
+        .parse_packwiz_file_with(&temp_dir.path().join("fabric-api.pw.toml"), &fs)
         .unwrap();
 
     assert_eq!(graph.node_count(), 1);
@@ -443,6 +445,7 @@ fn test_parse_simple_packwiz_file() {
 fn test_parse_packwiz_with_dependencies() {
     let temp_dir = TempDir::new().unwrap();
     let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
 
     create_mod_with_deps(
         temp_dir.path(),
@@ -452,7 +455,7 @@ fn test_parse_packwiz_with_dependencies() {
     );
 
     graph
-        .parse_packwiz_file(&temp_dir.path().join("mod-menu.pw.toml"))
+        .parse_packwiz_file_with(&temp_dir.path().join("mod-menu.pw.toml"), &fs)
         .unwrap();
 
     assert_eq!(graph.node_count(), 2); // mod-menu + fabric-api
@@ -465,6 +468,7 @@ fn test_parse_packwiz_with_dependencies() {
 fn test_parse_packwiz_with_optional_dependency() {
     let temp_dir = TempDir::new().unwrap();
     let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
 
     create_mod_with_deps(
         temp_dir.path(),
@@ -474,7 +478,7 @@ fn test_parse_packwiz_with_optional_dependency() {
     );
 
     let node = graph
-        .parse_packwiz_file(&temp_dir.path().join("jei.pw.toml"))
+        .parse_packwiz_file_with(&temp_dir.path().join("jei.pw.toml"), &fs)
         .unwrap();
 
     // The mod_id comes from the parsed node
@@ -491,10 +495,11 @@ fn test_parse_packwiz_with_optional_dependency() {
 fn test_build_from_directory_single_mod() {
     let temp_dir = TempDir::new().unwrap();
     let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
 
     create_simple_mod(temp_dir.path(), "fabric-api", "P7dR8mSH");
 
-    graph.build_from_directory(temp_dir.path()).unwrap();
+    graph.build_from_directory_with(temp_dir.path(), &fs).unwrap();
 
     assert_eq!(graph.node_count(), 1);
     assert!(graph.contains("P7dR8mSH"));
@@ -504,12 +509,13 @@ fn test_build_from_directory_single_mod() {
 fn test_build_from_directory_multiple_mods() {
     let temp_dir = TempDir::new().unwrap();
     let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
 
     create_simple_mod(temp_dir.path(), "fabric-api", "P7dR8mSH");
     create_simple_mod(temp_dir.path(), "sodium", "AANobbMI");
     create_simple_mod(temp_dir.path(), "lithium", "gvQqBUqZ");
 
-    graph.build_from_directory(temp_dir.path()).unwrap();
+    graph.build_from_directory_with(temp_dir.path(), &fs).unwrap();
 
     assert_eq!(graph.node_count(), 3);
     assert!(graph.contains("P7dR8mSH"));
@@ -521,6 +527,7 @@ fn test_build_from_directory_multiple_mods() {
 fn test_build_from_directory_with_dependencies() {
     let temp_dir = TempDir::new().unwrap();
     let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
 
     create_simple_mod(temp_dir.path(), "fabric-api", "P7dR8mSH");
     create_mod_with_deps(
@@ -530,7 +537,7 @@ fn test_build_from_directory_with_dependencies() {
         &[("P7dR8mSH", false)],
     );
 
-    graph.build_from_directory(temp_dir.path()).unwrap();
+    graph.build_from_directory_with(temp_dir.path(), &fs).unwrap();
 
     assert_eq!(graph.node_count(), 2);
     assert_eq!(graph.edge_count(), 1);
@@ -553,12 +560,13 @@ fn test_build_from_directory_with_dependencies() {
 fn test_build_from_directory_ignores_non_pw_files() {
     let temp_dir = TempDir::new().unwrap();
     let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
 
     create_simple_mod(temp_dir.path(), "fabric-api", "P7dR8mSH");
     // Create a non-.pw.toml file
     create_test_toml(temp_dir.path(), "pack.toml", "name = \"test pack\"");
 
-    graph.build_from_directory(temp_dir.path()).unwrap();
+    graph.build_from_directory_with(temp_dir.path(), &fs).unwrap();
 
     assert_eq!(graph.node_count(), 1);
     assert!(graph.contains("P7dR8mSH"));
@@ -668,6 +676,7 @@ fn test_get_dependencies_nonexistent_node() {
 fn test_curseforge_mod_parsing() {
     let temp_dir = TempDir::new().unwrap();
     let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
 
     let content = r#"
 name = "JEI"
@@ -682,7 +691,7 @@ file-id = 5678901
     create_test_toml(temp_dir.path(), "jei.pw.toml", content);
 
     graph
-        .parse_packwiz_file(&temp_dir.path().join("jei.pw.toml"))
+        .parse_packwiz_file_with(&temp_dir.path().join("jei.pw.toml"), &fs)
         .unwrap();
 
     assert_eq!(graph.node_count(), 1);
