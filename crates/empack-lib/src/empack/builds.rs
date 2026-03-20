@@ -1010,7 +1010,9 @@ impl<'a> BuildOrchestrator<'a> {
             .session
             .filesystem()
             .get_file_list(&template_path)
-            .map_err(|e| BuildError::IoError { source: e })?;
+            .map_err(|e| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
         for path in template_files {
             if !self.session.filesystem().is_directory(&path) {
                 let filename = path.file_name().unwrap().to_str().unwrap();

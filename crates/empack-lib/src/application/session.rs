@@ -39,8 +39,14 @@ pub trait FileSystemProvider {
     /// Write string content to file
     fn write_file(&self, path: &Path, content: &str) -> Result<()>;
 
+    /// Write binary content to file
+    fn write_bytes(&self, path: &Path, content: &[u8]) -> Result<()>;
+
     /// Check if path exists
     fn exists(&self, path: &Path) -> bool;
+
+    /// Check whether metadata can be read for a path
+    fn metadata_exists(&self, path: &Path) -> bool;
 
     /// Check if path is a directory
     fn is_directory(&self, path: &Path) -> bool;
@@ -50,16 +56,16 @@ pub trait FileSystemProvider {
 
     // Additional methods for state management
     /// Get list of files and directories in a path
-    fn get_file_list(&self, path: &Path) -> std::result::Result<HashSet<PathBuf>, std::io::Error>;
+    fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>>;
 
     /// Check if directory has build artifacts (mrpack, zip, jar files or build target dirs)
-    fn has_build_artifacts(&self, dist_dir: &Path) -> std::result::Result<bool, std::io::Error>;
+    fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool>;
 
     /// Remove a file
-    fn remove_file(&self, path: &Path) -> std::result::Result<(), std::io::Error>;
+    fn remove_file(&self, path: &Path) -> Result<()>;
 
     /// Remove a directory and all its contents
-    fn remove_dir_all(&self, path: &Path) -> std::result::Result<(), std::io::Error>;
+    fn remove_dir_all(&self, path: &Path) -> Result<()>;
 
     /// Run packwiz init command
     #[allow(clippy::too_many_arguments)]
@@ -235,8 +241,17 @@ impl FileSystemProvider for LiveFileSystemProvider {
             .with_context(|| format!("Failed to write file: {}", path.display()))
     }
 
+    fn write_bytes(&self, path: &Path, content: &[u8]) -> Result<()> {
+        std::fs::write(path, content)
+            .with_context(|| format!("Failed to write file: {}", path.display()))
+    }
+
     fn exists(&self, path: &Path) -> bool {
         path.exists()
+    }
+
+    fn metadata_exists(&self, path: &Path) -> bool {
+        std::fs::metadata(path).is_ok()
     }
 
     fn is_directory(&self, path: &Path) -> bool {
@@ -248,30 +263,33 @@ impl FileSystemProvider for LiveFileSystemProvider {
             .with_context(|| format!("Failed to create directory: {}", path.display()))
     }
 
-    fn get_file_list(&self, path: &Path) -> std::result::Result<HashSet<PathBuf>, std::io::Error> {
+    fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>> {
         let mut files = HashSet::new();
 
         if !path.exists() {
             return Ok(files);
         }
 
-        let entries = std::fs::read_dir(path)?;
+        let entries =
+            std::fs::read_dir(path).with_context(|| format!("Failed to read directory: {}", path.display()))?;
         for entry in entries {
-            let entry = entry?;
+            let entry = entry.with_context(|| format!("Failed to read directory entry: {}", path.display()))?;
             files.insert(entry.path());
         }
 
         Ok(files)
     }
 
-    fn has_build_artifacts(&self, dist_dir: &Path) -> std::result::Result<bool, std::io::Error> {
+    fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool> {
         if !dist_dir.exists() {
             return Ok(false);
         }
 
-        let entries = std::fs::read_dir(dist_dir)?;
+        let entries = std::fs::read_dir(dist_dir)
+            .with_context(|| format!("Failed to read directory: {}", dist_dir.display()))?;
         for entry in entries {
-            let entry = entry?;
+            let entry =
+                entry.with_context(|| format!("Failed to read directory entry: {}", dist_dir.display()))?;
             let path = entry.path();
 
             // Look for common build artifacts (files)
@@ -300,12 +318,14 @@ impl FileSystemProvider for LiveFileSystemProvider {
         Ok(false)
     }
 
-    fn remove_file(&self, path: &Path) -> std::result::Result<(), std::io::Error> {
+    fn remove_file(&self, path: &Path) -> Result<()> {
         std::fs::remove_file(path)
+            .with_context(|| format!("Failed to remove file: {}", path.display()))
     }
 
-    fn remove_dir_all(&self, path: &Path) -> std::result::Result<(), std::io::Error> {
+    fn remove_dir_all(&self, path: &Path) -> Result<()> {
         std::fs::remove_dir_all(path)
+            .with_context(|| format!("Failed to remove directory: {}", path.display()))
     }
 
     fn run_packwiz_init(
@@ -393,10 +413,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
             pack_file
                 .to_str()
                 .ok_or_else(|| crate::empack::state::StateError::IoError {
-                    source: std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "Invalid UTF-8 in pack.toml path",
-                    ),
+                    source: anyhow::anyhow!("Invalid UTF-8 in pack.toml path"),
                 })?;
 
         let output = process
