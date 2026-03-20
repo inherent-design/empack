@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::application::session::FileSystemProvider;
 use crate::empack::config::PackMetadata;
 use anyhow::Context;
 use handlebars::Handlebars;
@@ -120,13 +121,12 @@ impl TemplateEngine {
     }
 
     /// Load V1-compatible variables from pack.toml for build-time rendering
-    pub fn load_from_pack_toml<P: AsRef<Path>>(&mut self, pack_toml_path: P) -> Result<()> {
-        let content = std::fs::read_to_string(&pack_toml_path).with_context(|| {
-            format!(
-                "Failed to read pack.toml: {}",
-                pack_toml_path.as_ref().display()
-            )
-        })?;
+    pub fn load_from_pack_toml<P: AsRef<Path>>(
+        &mut self,
+        pack_toml_path: P,
+        filesystem: &dyn FileSystemProvider,
+    ) -> Result<()> {
+        let content = filesystem.read_to_string(pack_toml_path.as_ref())?;
 
         let pack: PackMetadata = toml::from_str(&content).with_context(|| {
             format!(
@@ -193,21 +193,17 @@ impl TemplateEngine {
 }
 
 /// Template installer for V1-compatible modpack setup
-pub struct TemplateInstaller {
+pub struct TemplateInstaller<'a> {
     engine: TemplateEngine,
+    filesystem: &'a dyn FileSystemProvider,
 }
 
-impl Default for TemplateInstaller {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl TemplateInstaller {
+impl<'a> TemplateInstaller<'a> {
     /// Create new template installer with embedded templates
-    pub fn new() -> Self {
+    pub fn new(filesystem: &'a dyn FileSystemProvider) -> Self {
         Self {
             engine: TemplateEngine::new(),
+            filesystem,
         }
     }
 
@@ -219,7 +215,7 @@ impl TemplateInstaller {
 
     /// Configure template variables from pack.toml for build-time rendering
     pub fn configure_from_pack_toml<P: AsRef<Path>>(&mut self, pack_toml_path: P) -> Result<()> {
-        let content = std::fs::read_to_string(&pack_toml_path)?;
+        let content = self.filesystem.read_to_string(pack_toml_path.as_ref())?;
         let pack: PackMetadata = toml::from_str(&content)?;
 
         // Extract V1-compatible template variables
@@ -265,12 +261,14 @@ impl TemplateInstaller {
 
         // .gitignore
         let gitignore_content = self.engine.render_template("gitignore")?;
-        std::fs::write(base.join(".gitignore"), gitignore_content)?;
+        self.filesystem
+            .write_file(&base.join(".gitignore"), &gitignore_content)?;
 
         // pack/.packwizignore
-        std::fs::create_dir_all(base.join("pack"))?;
+        self.filesystem.create_dir_all(&base.join("pack"))?;
         let packwizignore_content = self.engine.render_template("packwizignore")?;
-        std::fs::write(base.join("pack/.packwizignore"), packwizignore_content)?;
+        self.filesystem
+            .write_file(&base.join("pack/.packwizignore"), &packwizignore_content)?;
 
         Ok(())
     }
@@ -278,12 +276,13 @@ impl TemplateInstaller {
     /// Install GitHub workflow templates
     pub fn install_github_templates<P: AsRef<Path>>(&self, target_dir: P) -> Result<()> {
         let base = target_dir.as_ref();
-        std::fs::create_dir_all(base.join(".github/workflows"))?;
+        self.filesystem
+            .create_dir_all(&base.join(".github/workflows"))?;
 
         let validate_content = self.engine.render_template("validate.yml")?;
-        std::fs::write(
-            base.join(".github/workflows/validate.yml"),
-            validate_content,
+        self.filesystem.write_file(
+            &base.join(".github/workflows/validate.yml"),
+            &validate_content,
         )?;
 
         Ok(())
@@ -292,12 +291,13 @@ impl TemplateInstaller {
     /// Install client build templates
     pub fn install_client_templates<P: AsRef<Path>>(&self, target_dir: P) -> Result<()> {
         let base = target_dir.as_ref();
-        std::fs::create_dir_all(base.join("templates/client"))?;
+        self.filesystem
+            .create_dir_all(&base.join("templates/client"))?;
 
         let instance_content = self.engine.render_template("instance.cfg")?;
-        std::fs::write(
-            base.join("templates/client/instance.cfg.template"),
-            instance_content,
+        self.filesystem.write_file(
+            &base.join("templates/client/instance.cfg.template"),
+            &instance_content,
         )?;
 
         Ok(())
@@ -306,18 +306,19 @@ impl TemplateInstaller {
     /// Install server build templates
     pub fn install_server_templates<P: AsRef<Path>>(&self, target_dir: P) -> Result<()> {
         let base = target_dir.as_ref();
-        std::fs::create_dir_all(base.join("templates/server"))?;
+        self.filesystem
+            .create_dir_all(&base.join("templates/server"))?;
 
         let install_script_content = self.engine.render_template("install_pack.sh")?;
-        std::fs::write(
-            base.join("templates/server/install_pack.sh.template"),
-            install_script_content,
+        self.filesystem.write_file(
+            &base.join("templates/server/install_pack.sh.template"),
+            &install_script_content,
         )?;
 
         let server_props_content = self.engine.render_template("server.properties")?;
-        std::fs::write(
-            base.join("templates/server/server.properties.template"),
-            server_props_content,
+        self.filesystem.write_file(
+            &base.join("templates/server/server.properties.template"),
+            &server_props_content,
         )?;
 
         Ok(())
@@ -336,25 +337,25 @@ impl TemplateInstaller {
         ];
         for dir in &build_dirs {
             let dir_path = base.join(dir);
-            std::fs::create_dir_all(&dir_path)?;
-            std::fs::write(dir_path.join(".gitkeep"), "")?;
+            self.filesystem.create_dir_all(&dir_path)?;
+            self.filesystem.write_file(&dir_path.join(".gitkeep"), "")?;
         }
 
         // Template directories
         let template_dirs = ["templates/client", "templates/server"];
         for dir in &template_dirs {
-            std::fs::create_dir_all(base.join(dir))?;
+            self.filesystem.create_dir_all(&base.join(dir))?;
         }
 
         // GitHub directories
         let github_dirs = [".github/workflows"];
         for dir in &github_dirs {
-            std::fs::create_dir_all(base.join(dir))?;
+            self.filesystem.create_dir_all(&base.join(dir))?;
         }
 
         // Installer and pack directories
-        std::fs::create_dir_all(base.join("installer"))?;
-        std::fs::create_dir_all(base.join("pack"))?;
+        self.filesystem.create_dir_all(&base.join("installer"))?;
+        self.filesystem.create_dir_all(&base.join("pack"))?;
 
         Ok(())
     }
