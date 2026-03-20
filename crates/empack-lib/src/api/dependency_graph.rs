@@ -4,6 +4,7 @@
 //! It parses packwiz `.pw.toml` files, builds a dependency graph, detects cycles,
 //! and provides topological ordering for installation.
 
+use crate::application::session::{FileSystemProvider, LiveFileSystemProvider};
 use petgraph::algo::{is_cyclic_directed, toposort};
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -288,17 +289,28 @@ impl DependencyGraph {
         Some(dependents)
     }
 
-    /// Parse a packwiz `.pw.toml` file and extract dependencies
+    /// Parse a packwiz `.pw.toml` file and extract dependencies using the live filesystem.
+    /// Prefer `parse_packwiz_file_with` when a `FileSystemProvider` is available.
     pub fn parse_packwiz_file(
         &mut self,
         path: &Path,
     ) -> Result<DependencyNode, DependencyGraphError> {
+        self.parse_packwiz_file_with(path, &LiveFileSystemProvider)
+    }
+
+    /// Parse a packwiz `.pw.toml` file and extract dependencies via a provider
+    pub fn parse_packwiz_file_with(
+        &mut self,
+        path: &Path,
+        fs: &dyn FileSystemProvider,
+    ) -> Result<DependencyNode, DependencyGraphError> {
         trace!("Parsing packwiz file: {}", path.display());
 
-        let content =
-            std::fs::read_to_string(path).map_err(|e| DependencyGraphError::FileReadError {
+        let content = fs
+            .read_to_string(path)
+            .map_err(|e| DependencyGraphError::FileReadError {
                 path: path.to_path_buf(),
-                source: e,
+                source: std::io::Error::other(e.to_string()),
             })?;
 
         let toml: Value =
@@ -390,22 +402,28 @@ impl DependencyGraph {
         Ok(node)
     }
 
-    /// Build graph from a directory of packwiz files
+    /// Build graph from a directory of packwiz files using the live filesystem.
+    /// Prefer `build_from_directory_with` when a `FileSystemProvider` is available.
     pub fn build_from_directory(&mut self, dir: &Path) -> Result<(), DependencyGraphError> {
+        self.build_from_directory_with(dir, &LiveFileSystemProvider)
+    }
+
+    /// Build graph from a directory of packwiz files via a provider
+    pub fn build_from_directory_with(
+        &mut self,
+        dir: &Path,
+        fs: &dyn FileSystemProvider,
+    ) -> Result<(), DependencyGraphError> {
         debug!("Building dependency graph from: {}", dir.display());
 
-        let entries = std::fs::read_dir(dir).map_err(|e| DependencyGraphError::FileReadError {
-            path: dir.to_path_buf(),
-            source: e,
-        })?;
+        let entries =
+            fs.get_file_list(dir)
+                .map_err(|e| DependencyGraphError::FileReadError {
+                    path: dir.to_path_buf(),
+                    source: std::io::Error::other(e.to_string()),
+                })?;
 
-        for entry in entries {
-            let entry = entry.map_err(|e| DependencyGraphError::FileReadError {
-                path: dir.to_path_buf(),
-                source: e,
-            })?;
-
-            let path = entry.path();
+        for path in entries {
             if path.extension().and_then(|s| s.to_str()) == Some("toml")
                 && path
                     .file_name()
@@ -413,7 +431,7 @@ impl DependencyGraph {
                     .map(|s| s.ends_with(".pw.toml"))
                     .unwrap_or(false)
             {
-                self.parse_packwiz_file(&path)?;
+                self.parse_packwiz_file_with(&path, fs)?;
             }
         }
 

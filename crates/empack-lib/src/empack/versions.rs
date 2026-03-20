@@ -11,6 +11,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
 /// Check if a Minecraft version is a stable release (not snapshot/pre-release)
 fn is_stable_minecraft_version(mc_version: &str) -> bool {
@@ -765,22 +766,22 @@ impl<'a> VersionFetcher<'a> {
             Ok(versions) => {
                 // Save to cache for next time
                 if let Err(e) = self.save_to_cache(&cache_path, &versions) {
-                    eprintln!("Warning: Failed to save to cache: {}", e);
+                    warn!("Failed to save to cache: {}", e);
                 }
                 Ok(versions)
             }
             Err(network_error) => {
                 // If network fails, try to use expired cache as fallback
                 if let Ok(cached_data) = self.load_from_cache(&cache_path) {
-                    eprintln!(
-                        "Warning: Network fetch failed, using cached data (may be outdated): {}",
+                    warn!(
+                        "Network fetch failed, using cached data (may be outdated): {}",
                         network_error
                     );
                     Ok(cached_data.versions)
                 } else {
                     // Final fallback: use hardcoded defaults
-                    eprintln!(
-                        "Warning: Network and cache failed, using fallback defaults: {}",
+                    warn!(
+                        "Network and cache failed, using fallback defaults: {}",
                         network_error
                     );
                     Ok(Self::get_fallback_versions_for_cache_key(cache_filename))
