@@ -9,37 +9,41 @@
 
 ## Scope
 
-This document is the current high-level verification guide for the Rust implementation. It separates trusted hermetic paths, isolated reruns, VCR-backed maintenance flows, deferred gaps, and the current grouped-workflow caveat.
+This document is the current high-level verification guide for the Rust implementation. It separates the primary nextest-based release gate, narrower grouped-test advisory coverage, targeted isolated reruns, VCR-backed maintenance flows, and the remaining real gaps.
 
-## Trusted hermetic paths
+## Primary trusted release gate
 
-These are the current baseline commands and promoted suites referenced by the spec:
+These are the accepted must-pass commands referenced by the spec:
 
 ```bash
-cargo build --workspace --locked
-cargo check --workspace --all-targets --locked
-cargo nextest run -p empack-lib --features test-utils --lib
-cargo nextest run -p empack-tests --test requirements_command
-cargo nextest run -p empack-tests --test init_workflows
-cargo nextest run -p empack-tests --test lifecycle_forge_full
-cargo nextest run -p empack-tests --test build_command
-cargo nextest run -p empack-tests --test build_server
-cargo nextest run -p empack-tests --test build_server_full
-cargo nextest run -p empack-tests --test build_client_full
+cargo check --workspace --all-targets
+cargo clippy --workspace --all-targets
+cargo nextest run -p empack-lib --features test-utils
+cargo nextest run -p empack-tests
 ```
 
 What these cover today:
 
-- workspace build and type-check health
+- workspace type-check and lint health
+- 351+ passing tests in the accepted nextest checkpoint
 - `empack-lib` contract and regression coverage
-- requirements command behavior
-- hermetic init flows
-- lifecycle init, add, build, and clean behavior
-- promoted build workflow suites and artifact contracts
+- promoted workflow and command coverage across `empack-tests`
+
+CI uses `cargo nextest` exclusively for test execution because grouped `cargo test` is not stable enough to serve as the primary blocker.
+
+## Advisory grouped `cargo test` coverage
+
+Broad grouped trust is narrower than the nextest gate and should be treated as advisory-only:
+
+- grouped `empack-lib` smoke excluding `env::tests` and `capabilities::tests`
+- `config_integration`
+- `empack-tests` lib
+- `add_command`
+- `lifecycle_forge_full`
 
 ## Isolated reruns
 
-Use isolated sync reruns for touched sync behavior. These are trusted targeted checks, not a replacement for the default hermetic matrix:
+Use isolated reruns for touched grouped-unstable workflow behavior. These are trusted targeted nextest checks, not evidence that grouped `cargo test` is stable:
 
 ```bash
 cargo nextest run -p empack-tests --test sync_workflow test_sync_workflow_full
@@ -51,6 +55,8 @@ Use targeted command coverage when touching remove-specific behavior:
 ```bash
 cargo nextest run -p empack-lib --features test-utils --lib handle_remove_tests
 ```
+
+The missing-installer coverage that used to be deferred now exists in the promoted nextest workflow suites and is no longer an open gap.
 
 ## VCR-backed flows
 
@@ -72,21 +78,19 @@ Notes:
 - live recording requires `curl`, `jq`, and a local `.env.local` with `EMPACK_KEY_CURSEFORGE`
 - use [`vcr-recording.md`](vcr-recording.md) for the recording workflow and follow-up checks
 
-## Deferred gaps
+## Remaining explicit gaps
 
-These paths should stay explicit as deferred, not trusted by default:
+These paths should stay explicit, not promoted into the primary trusted matrix:
 
-- standalone `e2e_build_client_full_missing_installer`
-- standalone `e2e_build_server_full_missing_installer`
 - broader remove behavior beyond the targeted command tests listed above
 
-## Known grouped-workflow caveat
+## Known grouped `cargo test` instability
 
-Grouped reruns of `sync_workflow` can still fail with the message:
+Grouped instability is broader than `sync_workflow` alone. The current unstable set includes workflow files such as `sync_workflow`, `build_command`, `build_server`, `build_server_full`, `build_client_full`, `clean_command`, `build_with_missing_template`, `init_error_recovery`, `init_workflows`, and `requirements_command`, plus `env::tests` and `capabilities::tests` in `empack-lib`.
 
-`Global configuration already initialized`
+Common interference sources include `Display::init` global state and environment variable conflicts.
 
-Treat that as known harness isolation debt. Do not promote grouped `sync_workflow` reruns to trusted release evidence until the issue is resolved.
+Treat grouped `cargo test` as advisory-only release evidence until that instability is resolved. Prefer the nextest gate and targeted isolated reruns when verifying touched behavior.
 
 ## Reference-only surfaces
 

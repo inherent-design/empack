@@ -4,7 +4,7 @@
 
 - Project entry point and current status: [`README.md`](README.md)
 - Current CLI behavior and workflow notes: [`docs/usage.md`](docs/usage.md)
-- Trusted hermetic paths, isolated reruns, deferred gaps, and known caveats: [`docs/testing/README.md`](docs/testing/README.md)
+- Trusted release gates, grouped-test caveats, and remaining gaps: [`docs/testing/README.md`](docs/testing/README.md)
 - VCR-backed maintenance guidance: [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
 - Provider API background only: [`docs/reference/MODRINTH.md`](docs/reference/MODRINTH.md), [`docs/reference/CURSEFORGE.md`](docs/reference/CURSEFORGE.md)
 
@@ -36,7 +36,7 @@ cargo check --workspace --all-targets --locked
 
 ### Tooling notes
 
-- `cargo nextest` is the default test runner for trusted workflow paths
+- `cargo nextest` is the default test runner for trusted workflow paths, and CI uses it exclusively for tests
 - Live CLI workflows may require external tools such as `packwiz`
 - Hermetic workflow tests use mocked toolchains where possible
 - VCR maintenance uses `curl`, `jq`, and `.env.local.template` or `.env.local` guidance as described in `docs/testing/vcr-recording.md`
@@ -48,7 +48,7 @@ Before claiming a workflow is trusted, check it against [`docs/testing/README.md
 Use these rules:
 
 1. Prefer the smallest exact command that proves the touched behavior.
-2. Treat grouped `sync_workflow` reruns as caveated until the `Global configuration already initialized` issue is fixed.
+2. Treat grouped `cargo test` workflow runs as advisory-only until the broader global-state and env-conflict instability is fixed.
 3. Keep VCR-backed flows separate from the default hermetic matrix.
 4. If a path is deferred or only partially covered, document that directly.
 
