@@ -326,7 +326,6 @@ fn detect_memory_info_linux() -> Result<(u64, u64), PlatformError> {
 #[cfg(target_os = "linux")]
 fn parse_meminfo_line(line: &str, prefix: &str) -> Option<u64> {
     line.strip_prefix(prefix)?
-        .trim()
         .split_whitespace()
         .next()?
         .parse()
