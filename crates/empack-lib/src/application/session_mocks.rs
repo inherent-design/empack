@@ -191,6 +191,12 @@ fabric = "0.15.0"
     }
 }
 
+impl Default for MockFileSystemProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileSystemProvider for MockFileSystemProvider {
     fn current_dir(&self) -> Result<PathBuf> {
         Ok(self.current_dir.clone())
@@ -363,7 +369,7 @@ minecraft = "{}"
         );
         self.write_file(&pack_file, &default_pack_toml)
             .map_err(|e| crate::empack::state::StateError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
 
         // Also create index.toml
@@ -371,7 +377,7 @@ minecraft = "{}"
         let default_index = DEFAULT_INDEX_TOML;
         self.write_file(&index_file, default_index).map_err(|e| {
             crate::empack::state::StateError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             }
         })?;
 
@@ -437,10 +443,12 @@ minecraft = "{}"
     }
 }
 
+type ResolverCall = (Client, Option<String>);
+
 /// Mock network provider for testing
 pub struct MockNetworkProvider {
     pub client_calls: Arc<Mutex<usize>>,
-    pub resolver_calls: Arc<Mutex<Vec<(Client, Option<String>)>>>,
+    pub resolver_calls: Arc<Mutex<Vec<ResolverCall>>>,
     pub mock_resolver: Arc<MockProjectResolver>,
 }
 
@@ -469,6 +477,12 @@ impl MockNetworkProvider {
             .unwrap()
             .insert(query, Err(error_message));
         self
+    }
+}
+
+impl Default for MockNetworkProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -530,6 +544,12 @@ impl MockProjectResolver {
             .unwrap()
             .insert(query, Err(error_message));
         self
+    }
+}
+
+impl Default for MockProjectResolver {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -691,6 +711,12 @@ impl MockProcessProvider {
     }
 }
 
+impl Default for MockProcessProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcessProvider for MockProcessProvider {
     fn execute(
         &self,
@@ -831,6 +857,12 @@ impl MockInteractiveProvider {
     /// Get recorded fuzzy select calls
     pub fn get_fuzzy_select_calls(&self) -> Vec<String> {
         self.fuzzy_select_calls.lock().unwrap().clone()
+    }
+}
+
+impl Default for MockInteractiveProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1006,6 +1038,12 @@ impl MockCommandSession {
     /// Get the interactive provider for this session
     pub fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
+    }
+}
+
+impl Default for MockCommandSession {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

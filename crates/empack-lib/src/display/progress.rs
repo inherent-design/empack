@@ -32,7 +32,7 @@ impl<'a> ProgressDisplay<'a> {
     ///
     /// progress.finish("Downloaded 25 mods");
     /// ```
-    pub fn bar(&self, total: u64) -> ProgressTracker {
+    pub fn bar(&self, total: u64) -> ProgressTracker<'_> {
         let pb = ProgressBar::new(total);
 
         // Use terminal-appropriate progress style
@@ -69,7 +69,7 @@ impl<'a> ProgressDisplay<'a> {
     ///
     /// spinner.finish("Dependencies resolved");
     /// ```
-    pub fn spinner(&self, message: &str) -> ProgressTracker {
+    pub fn spinner(&self, message: &str) -> ProgressTracker<'_> {
         let pb = ProgressBar::new_spinner();
 
         let style = if self.styling.primitives().checkmark == "✓" {
@@ -92,7 +92,7 @@ impl<'a> ProgressDisplay<'a> {
     }
 
     /// Create a multi-progress manager for parallel operations
-    pub fn multi(&self) -> MultiProgressTracker {
+    pub fn multi(&self) -> MultiProgressTracker<'_> {
         MultiProgressTracker::new(self.styling)
     }
 }
@@ -173,7 +173,7 @@ impl<'a> MultiProgressTracker<'a> {
     }
 
     /// Add a progress bar to the multi-progress
-    pub fn add_bar(&self, total: u64, message: &str) -> ProgressTracker {
+    pub fn add_bar(&self, total: u64, message: &str) -> ProgressTracker<'_> {
         // Show the multi-progress when first bar is added
         if self.multi.is_hidden() {
             self.multi.set_draw_target(ProgressDrawTarget::stderr());
@@ -203,7 +203,7 @@ impl<'a> MultiProgressTracker<'a> {
     }
 
     /// Add a spinner to the multi-progress
-    pub fn add_spinner(&self, message: &str) -> ProgressTracker {
+    pub fn add_spinner(&self, message: &str) -> ProgressTracker<'_> {
         if self.multi.is_hidden() {
             self.multi.set_draw_target(ProgressDrawTarget::stderr());
         }

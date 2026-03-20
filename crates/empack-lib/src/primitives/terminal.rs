@@ -44,18 +44,13 @@ pub enum TerminalUnicodeCaps {
 }
 
 /// Terminal graphics capability levels (shared across all modules)
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize, Default)]
 pub enum TerminalGraphicsCaps {
+    #[default]
     None,
     Kitty(KittyGraphicsCaps),
     Sixel(SixelCaps),
     ITerm2(ITerm2Caps),
-}
-
-impl Default for TerminalGraphicsCaps {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// Kitty graphics protocol capabilities

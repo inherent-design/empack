@@ -157,7 +157,7 @@ impl<'a> PackwizMetadata<'a> {
                 &self.pack_dir,
             )
             .map_err(|e| PackwizError::ProcessFailed {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
 
         if !output.success {
@@ -193,7 +193,7 @@ impl<'a> PackwizMetadata<'a> {
                 &self.pack_dir,
             )
             .map_err(|e| PackwizError::ProcessFailed {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
 
         if !output.success {
@@ -228,7 +228,7 @@ impl<'a> PackwizMetadata<'a> {
                 &self.pack_dir,
             )
             .map_err(|e| PackwizError::ProcessFailed {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
 
         if !output.success {
@@ -285,7 +285,7 @@ impl<'a> PackwizMetadata<'a> {
                 &self.pack_dir,
             )
             .map_err(|e| PackwizError::ProcessFailed {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
 
         if !output.success {
@@ -381,7 +381,7 @@ impl<'a> PackwizInstaller<'a> {
                 working_dir,
             )
             .map_err(|e| PackwizError::ProcessFailed {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
 
         if !output.success {

@@ -244,7 +244,6 @@ impl_fromstr_for_value_enum!(LogOutput, "invalid log output stream");
 
 #[cfg(test)]
 mod empack_tests {
-    use super::*;
     include!("empack.test.rs");
 }
 

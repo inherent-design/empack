@@ -9,8 +9,8 @@ use thiserror::Error;
 
 // LiveStateProvider implementation removed - now using LiveFileSystemProvider from session.rs
 
-/// Pure business logic functions - zero I/O, 100% testable
-/// These functions contain the core state machine logic without side effects
+// Pure business logic functions - zero I/O, 100% testable.
+// These functions contain the core state machine logic without side effects.
 
 /// Canonical project-local artifact root for build outputs.
 /// Keeping this rooted at `workdir/dist` lets build and clean share one trusted
@@ -94,7 +94,7 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
     }
 
     // Check for configured state
-    if provider.is_directory(&empack_yml.parent().unwrap()) {
+    if provider.is_directory(empack_yml.parent().unwrap()) {
         let files = provider.get_file_list(workdir).unwrap_or_default();
         if files.contains(&empack_yml) || files.contains(&pack_toml) {
             return Ok(PackState::Configured);
@@ -231,6 +231,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 }
 
 /// Execute initialization process (pure function)
+#[allow(clippy::too_many_arguments)]
 pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     process: &dyn crate::application::session::ProcessProvider,
@@ -262,7 +263,7 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
             .map_err(|e| {
                 clean_configuration(provider, workdir).ok(); // Cleanup on failure
                 StateError::IoError {
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                    source: std::io::Error::other(e),
                 }
             })?;
     }
@@ -330,21 +331,21 @@ pub fn create_initial_structure<P: crate::application::session::FileSystemProvid
     provider
         .create_dir_all(&pack_dir)
         .map_err(|e| StateError::IoError {
-            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+            source: std::io::Error::other(e),
         })?;
 
     let template_dir = workdir.join("templates");
     provider
         .create_dir_all(&template_dir)
         .map_err(|e| StateError::IoError {
-            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+            source: std::io::Error::other(e),
         })?;
 
     let installer_dir = workdir.join("installer");
     provider
         .create_dir_all(&installer_dir)
         .map_err(|e| StateError::IoError {
-            source: std::io::Error::new(std::io::ErrorKind::Other, e),
+            source: std::io::Error::other(e),
         })?;
 
     Ok(())
@@ -360,7 +361,7 @@ pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider 
         provider
             .remove_dir_all(&dist_dir)
             .map_err(|e| StateError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
     }
     Ok(())
@@ -377,7 +378,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
         provider
             .remove_file(&empack_yml)
             .map_err(|e| StateError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
     }
 
@@ -386,7 +387,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
         provider
             .remove_dir_all(&pack_dir)
             .map_err(|e| StateError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
     }
 
@@ -395,7 +396,7 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
         provider
             .remove_dir_all(&empack_dir)
             .map_err(|e| StateError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
     }
 

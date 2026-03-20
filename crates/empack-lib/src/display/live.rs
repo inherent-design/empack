@@ -28,6 +28,12 @@ impl LiveDisplayProvider {
     }
 }
 
+impl Default for LiveDisplayProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DisplayProvider for LiveDisplayProvider {
     fn status(&self) -> Box<dyn StatusProvider> {
         Box::new(LiveStatusProvider)

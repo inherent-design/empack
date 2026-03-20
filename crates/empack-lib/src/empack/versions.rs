@@ -62,7 +62,7 @@ pub(crate) fn parse_version(s: &str) -> Option<Version> {
 
 /// Sort version strings in descending order (newest first) using semver.
 /// Unparseable versions sort to the end.
-pub(crate) fn sort_versions_desc(versions: &mut Vec<String>) {
+pub(crate) fn sort_versions_desc(versions: &mut [String]) {
     versions.sort_by(|a, b| match (parse_version(a), parse_version(b)) {
         (Some(va), Some(vb)) => vb.cmp(&va),
         (Some(_), None) => std::cmp::Ordering::Less,
@@ -200,7 +200,7 @@ fn filter_neoforge_versions_by_minecraft(
     // Use dynamic algorithm from neoforged.net instead of hardcoded matches
 
     // NeoForge only supports MC 1.20.2+
-    if parse_version(mc_version).map_or(true, |v| v < parse_version("1.20.2").unwrap()) {
+    if parse_version(mc_version).is_none_or(|v| v < parse_version("1.20.2").unwrap()) {
         return Ok(vec![]);
     }
 
@@ -314,19 +314,19 @@ fn filter_forge_versions_by_minecraft(
     for version in all_versions {
         // Try normalized prefix (e.g., "1.21.0-")
         let normalized_prefix = format!("{}-", normalized_version);
-        if let Some(forge_ver) = extract_forge_version(version, &normalized_prefix) {
-            if !matching_versions.contains(&forge_ver) {
-                matching_versions.push(forge_ver);
-            }
+        if let Some(forge_ver) = extract_forge_version(version, &normalized_prefix)
+            && !matching_versions.contains(&forge_ver)
+        {
+            matching_versions.push(forge_ver);
         }
 
         // Also try original prefix if different (e.g., "1.21-")
         if mc_version != normalized_version {
             let original_prefix = format!("{}-", mc_version);
-            if let Some(forge_ver) = extract_forge_version(version, &original_prefix) {
-                if !matching_versions.contains(&forge_ver) {
-                    matching_versions.push(forge_ver);
-                }
+            if let Some(forge_ver) = extract_forge_version(version, &original_prefix)
+                && !matching_versions.contains(&forge_ver)
+            {
+                matching_versions.push(forge_ver);
             }
         }
     }
@@ -598,7 +598,9 @@ impl<'a> VersionFetcher<'a> {
 
                 // CRITICAL: Implement v1 compatibility logic - NeoForge only supports MC 1.20.2+
                 // This restores the API-driven intelligence that was lost in migration
-                if parse_version(mc_version).map_or(true, |v| v < parse_version("1.20.2").unwrap()) {
+                if parse_version(mc_version)
+                    .is_none_or(|v| v < parse_version("1.20.2").unwrap())
+                {
                     // NeoForge definitively does NOT support MC versions before 1.20.2
                     // Return empty vector to indicate incompatibility (matches v1 behavior)
                     return Ok(vec![]);
@@ -715,10 +717,9 @@ impl<'a> VersionFetcher<'a> {
                         // Parse array response - take first element (latest loader for this MC version)
                         if let Ok(combinations) =
                             response.json::<Vec<QuiltLoaderCombination>>().await
+                            && !combinations.is_empty()
                         {
-                            if !combinations.is_empty() {
-                                return Ok(vec![combinations[0].loader.version.clone()]);
-                            }
+                            return Ok(vec![combinations[0].loader.version.clone()]);
                         }
                         // Empty array or parse failure - return empty vec
                         Ok(vec![])
@@ -753,10 +754,10 @@ impl<'a> VersionFetcher<'a> {
         let cache_path = self.cache_dir.join(cache_filename);
 
         // Try to load from cache first
-        if let Ok(cached_data) = self.load_from_cache(&cache_path) {
-            if !cached_data.is_expired(max_age_hours) {
-                return Ok(cached_data.versions);
-            }
+        if let Ok(cached_data) = self.load_from_cache(&cache_path)
+            && !cached_data.is_expired(max_age_hours)
+        {
+            return Ok(cached_data.versions);
         }
 
         // Cache miss or expired - fetch from network
