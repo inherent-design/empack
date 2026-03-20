@@ -94,6 +94,10 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
     std::fs::create_dir_all(&installer_dir)?;
     std::fs::write(
         installer_dir.join("packwiz-installer-bootstrap.jar"),
+        "mock-bootstrap-jar",
+    )?;
+    std::fs::write(
+        installer_dir.join("packwiz-installer.jar"),
         "mock-installer-jar",
     )?;
 
@@ -146,7 +150,7 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
     assert!(
         java_calls
             .iter()
-            .any(|call| call.contains("-s both") && call.contains("--pack-folder pack")),
+            .any(|call| call.contains("-s both") && call.contains("--bootstrap-main-jar") && call.contains("pack.toml")),
         "client-full build should invoke packwiz installer for both sides: {java_calls:?}"
     );
 
@@ -209,6 +213,10 @@ async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
     std::fs::create_dir_all(&installer_dir)?;
     std::fs::write(
         installer_dir.join("packwiz-installer-bootstrap.jar"),
+        "mock-bootstrap-jar",
+    )?;
+    std::fs::write(
+        installer_dir.join("packwiz-installer.jar"),
         "mock-installer-jar",
     )?;
 
