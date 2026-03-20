@@ -345,7 +345,7 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
 
     let result = unsafe {
         libc::sysctlbyname(
-            b"hw.memsize\0".as_ptr() as *const i8,
+            c"hw.memsize".as_ptr(),
             &mut total_memory as *mut _ as *mut libc::c_void,
             &mut size,
             ptr::null_mut(),
@@ -361,87 +361,84 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
     }
 
     // Try using memory_pressure command first (most accurate)
-    if let Ok(output) = Command::new("memory_pressure").output() {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
+    if let Ok(output) = Command::new("memory_pressure").output()
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
 
-            // Look for the official free percentage line
-            for line in output_str.lines() {
-                if line.contains("System-wide memory free percentage:") {
-                    if let Some(percentage_str) = line.split(':').nth(1) {
-                        if let Some(num_str) = percentage_str.trim().strip_suffix('%') {
-                            if let Ok(free_percentage) = num_str.parse::<f64>() {
-                                let available_memory =
-                                    (total_memory as f64 * free_percentage / 100.0) as u64;
-                                return Ok((total_memory, available_memory));
-                            }
-                        }
-                    }
-                }
+        // Look for the official free percentage line
+        for line in output_str.lines() {
+            if line.contains("System-wide memory free percentage:")
+                && let Some(percentage_str) = line.split(':').nth(1)
+                && let Some(num_str) = percentage_str.trim().strip_suffix('%')
+                && let Ok(free_percentage) = num_str.parse::<f64>()
+            {
+                let available_memory = (total_memory as f64 * free_percentage / 100.0) as u64;
+                return Ok((total_memory, available_memory));
             }
+        }
 
-            // Fallback to status-based estimation if percentage not found
-            if let Some(line) = output_str.lines().next() {
-                if line.contains("normal") {
-                    // Low pressure - estimate ~80% available
-                    let available_memory = (total_memory as f64 * 0.8) as u64;
-                    return Ok((total_memory, available_memory));
-                } else if line.contains("warn") {
-                    // Medium pressure - estimate ~30% available
-                    let available_memory = (total_memory as f64 * 0.3) as u64;
-                    return Ok((total_memory, available_memory));
-                } else if line.contains("urgent") || line.contains("critical") {
-                    // High pressure - estimate ~10% available
-                    let available_memory = (total_memory as f64 * 0.1) as u64;
-                    return Ok((total_memory, available_memory));
-                }
+        // Fallback to status-based estimation if percentage not found
+        if let Some(line) = output_str.lines().next() {
+            if line.contains("normal") {
+                // Low pressure - estimate ~80% available
+                let available_memory = (total_memory as f64 * 0.8) as u64;
+                return Ok((total_memory, available_memory));
+            } else if line.contains("warn") {
+                // Medium pressure - estimate ~30% available
+                let available_memory = (total_memory as f64 * 0.3) as u64;
+                return Ok((total_memory, available_memory));
+            } else if line.contains("urgent") || line.contains("critical") {
+                // High pressure - estimate ~10% available
+                let available_memory = (total_memory as f64 * 0.1) as u64;
+                return Ok((total_memory, available_memory));
             }
         }
     }
 
     // Fallback to vm_stat command (more accurate than mach APIs for pressure)
-    if let Ok(output) = Command::new("vm_stat").output() {
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            let mut pages_active = 0u64;
-            let mut pages_free = 0u64;
-            let mut pages_inactive = 0u64;
-            let mut _pages_wired = 0u64;
+    if let Ok(output) = Command::new("vm_stat").output()
+        && output.status.success()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let mut pages_active = 0u64;
+        let mut pages_free = 0u64;
+        let mut pages_inactive = 0u64;
+        let mut _pages_wired = 0u64;
 
-            for line in output_str.lines() {
-                if line.starts_with("Pages active:") {
-                    if let Some(val) = line.split_whitespace().nth(2) {
-                        pages_active = val.trim_end_matches('.').parse().unwrap_or(0);
-                    }
-                } else if line.starts_with("Pages free:") {
-                    if let Some(val) = line.split_whitespace().nth(2) {
-                        pages_free = val.trim_end_matches('.').parse().unwrap_or(0);
-                    }
-                } else if line.starts_with("Pages inactive:") {
-                    if let Some(val) = line.split_whitespace().nth(2) {
-                        pages_inactive = val.trim_end_matches('.').parse().unwrap_or(0);
-                    }
-                } else if line.starts_with("Pages wired down:") {
-                    if let Some(val) = line.split_whitespace().nth(3) {
-                        _pages_wired = val.trim_end_matches('.').parse().unwrap_or(0);
-                    }
+        for line in output_str.lines() {
+            if line.starts_with("Pages active:") {
+                if let Some(val) = line.split_whitespace().nth(2) {
+                    pages_active = val.trim_end_matches('.').parse().unwrap_or(0);
                 }
+            } else if line.starts_with("Pages free:") {
+                if let Some(val) = line.split_whitespace().nth(2) {
+                    pages_free = val.trim_end_matches('.').parse().unwrap_or(0);
+                }
+            } else if line.starts_with("Pages inactive:") {
+                if let Some(val) = line.split_whitespace().nth(2) {
+                    pages_inactive = val.trim_end_matches('.').parse().unwrap_or(0);
+                }
+            } else if line.starts_with("Pages wired down:")
+                && let Some(val) = line.split_whitespace().nth(3)
+            {
+                _pages_wired = val.trim_end_matches('.').parse().unwrap_or(0);
             }
+        }
 
-            if pages_active > 0 || pages_free > 0 {
-                // macOS uses 16KB pages on Apple Silicon, 4KB on Intel
-                let page_size = if std::env::consts::ARCH == "aarch64" {
-                    16384
-                } else {
-                    4096
-                };
+        if pages_active > 0 || pages_free > 0 {
+            // macOS uses 16KB pages on Apple Silicon, 4KB on Intel
+            let page_size = if std::env::consts::ARCH == "aarch64" {
+                16384
+            } else {
+                4096
+            };
 
-                // More conservative calculation: free + half of inactive
-                let available_pages = pages_free + (pages_inactive / 2);
-                let available_memory = available_pages * page_size;
+            // More conservative calculation: free + half of inactive
+            let available_pages = pages_free + (pages_inactive / 2);
+            let available_memory = available_pages * page_size;
 
-                return Ok((total_memory, available_memory));
-            }
+            return Ok((total_memory, available_memory));
         }
     }
 

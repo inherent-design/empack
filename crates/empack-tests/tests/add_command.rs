@@ -12,10 +12,9 @@ use empack_lib::application::session::{
 };
 use empack_lib::application::session_mocks::MockInteractiveProvider;
 use empack_lib::application::session_mocks::MockProcessProvider;
-use empack_lib::display::{Display, LiveDisplayProvider};
+use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::fixtures::load_vcr_body_string;
-use indicatif::MultiProgress;
 use mockito::Server;
 use std::path::Path;
 use tempfile::TempDir;
@@ -34,8 +33,10 @@ async fn e2e_add_mod_successfully() -> Result<()> {
     std::env::set_current_dir(&workdir)?;
 
     // Create hybrid session: Real filesystem + Mock process + Mock network (no live API calls)
-    let mut app_config = AppConfig::default();
-    app_config.workdir = Some(workdir.clone());
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
 
     // Initialize display system
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;

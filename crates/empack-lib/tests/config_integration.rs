@@ -1,6 +1,5 @@
 use empack_lib::application::config::AppConfig;
-use empack_lib::primitives::{ConfigError, TerminalCapsDetectIntent};
-use std::env;
+use empack_lib::primitives::TerminalCapsDetectIntent;
 
 #[test]
 fn test_config_default_creation() {

@@ -16,8 +16,8 @@ use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 
-/// Abstract interface for state management operations
-// StateManager trait removed - using concrete PackStateManager type instead
+// Abstract interface for state management operations.
+// StateManager trait removed - using concrete PackStateManager type instead.
 
 /// Provider trait for filesystem operations
 pub trait FileSystemProvider {
@@ -62,6 +62,7 @@ pub trait FileSystemProvider {
     fn remove_dir_all(&self, path: &Path) -> std::result::Result<(), std::io::Error>;
 
     /// Run packwiz init command
+    #[allow(clippy::too_many_arguments)]
     fn run_packwiz_init(
         &self,
         process: &dyn ProcessProvider,
@@ -274,24 +275,24 @@ impl FileSystemProvider for LiveFileSystemProvider {
             let path = entry.path();
 
             // Look for common build artifacts (files)
-            if path.is_file() && path.extension().is_some() {
-                if let Some(extension) = path.extension() {
-                    match extension.to_str() {
-                        Some("mrpack") | Some("zip") | Some("jar") => return Ok(true),
-                        _ => continue,
-                    }
+            if path.is_file() && path.extension().is_some()
+                && let Some(extension) = path.extension()
+            {
+                match extension.to_str() {
+                    Some("mrpack") | Some("zip") | Some("jar") => return Ok(true),
+                    _ => continue,
                 }
             }
 
             // Also consider build target directories as evidence of build state
-            if path.is_dir() && path.file_name().and_then(|n| n.to_str()).is_some() {
-                if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                    match dir_name {
-                        "mrpack" | "client" | "server" | "client-full" | "server-full" => {
-                            return Ok(true);
-                        }
-                        _ => continue,
+            if path.is_dir() && path.file_name().and_then(|n| n.to_str()).is_some()
+                && let Some(dir_name) = path.file_name().and_then(|n| n.to_str())
+            {
+                match dir_name {
+                    "mrpack" | "client" | "server" | "client-full" | "server-full" => {
+                        return Ok(true);
                     }
+                    _ => continue,
                 }
             }
         }
@@ -490,6 +491,12 @@ impl LiveNetworkProvider {
     }
 }
 
+impl Default for LiveNetworkProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetworkProvider for LiveNetworkProvider {
     fn http_client(&self) -> Result<Client> {
         Client::builder()
@@ -554,6 +561,12 @@ impl LiveProcessProvider {
             }
             None => Self::new(),
         }
+    }
+}
+
+impl Default for LiveProcessProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

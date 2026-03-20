@@ -345,13 +345,13 @@ pub(crate) fn detect_unicode_capabilities(
     // Platform-specific locale detection
     #[cfg(unix)]
     {
-        if let Ok(charset) = get_unix_charset() {
-            if charset.to_lowercase().contains("utf") {
-                if supports_extended_unicode(env_config) {
-                    return Ok(TerminalUnicodeCaps::ExtendedUnicode);
-                }
-                return Ok(TerminalUnicodeCaps::BasicUnicode);
+        if let Ok(charset) = get_unix_charset()
+            && charset.to_lowercase().contains("utf")
+        {
+            if supports_extended_unicode(env_config) {
+                return Ok(TerminalUnicodeCaps::ExtendedUnicode);
             }
+            return Ok(TerminalUnicodeCaps::BasicUnicode);
         }
     }
 
@@ -409,10 +409,10 @@ pub(crate) fn supports_extended_unicode(env_config: &TerminalEnvConfig) -> bool 
     // macOS Terminal.app - generally good unicode support
     #[cfg(target_os = "macos")]
     {
-        if let Some(ref term_program) = env_config.term_program {
-            if term_program == "Terminal.app" || term_program == "Apple_Terminal" {
-                return true;
-            }
+        if let Some(ref term_program) = env_config.term_program
+            && (term_program == "Terminal.app" || term_program == "Apple_Terminal")
+        {
+            return true;
         }
     }
 

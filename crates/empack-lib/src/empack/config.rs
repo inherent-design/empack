@@ -195,7 +195,7 @@ impl<'a> ConfigManager<'a> {
             self.fs_provider
                 .read_to_string(&empack_path)
                 .map_err(|e| ConfigError::IoError {
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                    source: std::io::Error::other(e),
                 })?;
         let config: EmpackConfig =
             serde_saphyr::from_str(&content).map_err(|e| ConfigError::YamlError { source: e })?;
@@ -215,7 +215,7 @@ impl<'a> ConfigManager<'a> {
             self.fs_provider
                 .read_to_string(&pack_path)
                 .map_err(|e| ConfigError::IoError {
-                    source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                    source: std::io::Error::other(e),
                 })?;
         let metadata: PackMetadata = toml::from_str(&content)?;
 
@@ -490,15 +490,14 @@ impl<'a> ConfigManager<'a> {
             }
 
             // Check loader consistency
-            if let Some(empack_loader) = &empack_config.empack.loader {
-                if let Ok(pack_loader) = self.infer_loader_from_metadata(&pack_metadata)
-                    && empack_loader != &pack_loader
-                {
-                    issues.push(format!(
-                        "Loader mismatch: empack.yml has '{:?}', pack.toml infers '{:?}'",
-                        empack_loader, pack_loader
-                    ));
-                }
+            if let Some(empack_loader) = &empack_config.empack.loader
+                && let Ok(pack_loader) = self.infer_loader_from_metadata(&pack_metadata)
+                && empack_loader != &pack_loader
+            {
+                issues.push(format!(
+                    "Loader mismatch: empack.yml has '{:?}', pack.toml infers '{:?}'",
+                    empack_loader, pack_loader
+                ));
             }
         }
 
@@ -541,8 +540,14 @@ impl<'a> ConfigManager<'a> {
         // Build dependency string: "key: \"Title|type\""
         let dep_string = format!("{}: \"{}|{}\"", key, title, project_type);
 
-        // Only add if not already present
-        if !config.empack.dependencies.contains(&dep_string) {
+        // Only add if no dependency with the same key is already present
+        let dependency_prefix = format!("{key}:");
+        if !config
+            .empack
+            .dependencies
+            .iter()
+            .any(|dependency| dependency.starts_with(&dependency_prefix))
+        {
             config.empack.dependencies.push(dep_string);
         }
 
@@ -569,7 +574,7 @@ impl<'a> ConfigManager<'a> {
         self.fs_provider
             .write_file(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
 
         Ok(())
@@ -588,13 +593,10 @@ impl<'a> ConfigManager<'a> {
         let empack_path = self.workdir.join("empack.yml");
 
         // Load existing config
-        let mut config = match self.load_empack_config() {
-            Ok(cfg) => cfg,
-            Err(e) => return Err(e),
-        };
+        let mut config = self.load_empack_config()?;
 
         // Normalize the key for comparison
-        let normalized_key = key.to_lowercase().replace(' ', "_").replace('-', "_");
+        let normalized_key = key.to_lowercase().replace([' ', '-'], "_");
 
         // Find and remove the dependency by key
         let dep_string_to_remove: Option<String> = config
@@ -605,7 +607,7 @@ impl<'a> ConfigManager<'a> {
                 let parsed_key = self.extract_key_from_dep_string(dep);
                 parsed_key
                     .map(|k| {
-                        let norm = k.to_lowercase().replace(' ', "_").replace('-', "_");
+                        let norm = k.to_lowercase().replace([' ', '-'], "_");
                         norm == normalized_key
                     })
                     .unwrap_or(false)
@@ -618,13 +620,13 @@ impl<'a> ConfigManager<'a> {
 
         // Clean up project_ids
         config.empack.project_ids.retain(|k, _| {
-            let norm = k.to_lowercase().replace(' ', "_").replace('-', "_");
+            let norm = k.to_lowercase().replace([' ', '-'], "_");
             norm != normalized_key
         });
 
         // Clean up project_platforms
         config.empack.project_platforms.retain(|k, _| {
-            let norm = k.to_lowercase().replace(' ', "_").replace('-', "_");
+            let norm = k.to_lowercase().replace([' ', '-'], "_");
             norm != normalized_key
         });
 
@@ -635,7 +637,7 @@ impl<'a> ConfigManager<'a> {
         self.fs_provider
             .write_file(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
-                source: std::io::Error::new(std::io::ErrorKind::Other, e),
+                source: std::io::Error::other(e),
             })?;
 
         Ok(())

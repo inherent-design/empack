@@ -3,6 +3,7 @@
 
 use crate::empack::PackwizInstaller;
 use crate::primitives::*;
+#[cfg(test)]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -129,70 +130,71 @@ impl<'a> BuildOrchestrator<'a> {
 
     /// Load pack info from pack.toml (V1's load_pack_info implementation)
     fn load_pack_info(&mut self) -> Result<&PackInfo, BuildError> {
-        if self.pack_info.is_some() {
-            return Ok(self.pack_info.as_ref().unwrap());
-        }
+        if self.pack_info.is_none() {
+            let pack_toml = self.workdir.join("pack").join("pack.toml");
+            let filesystem = self.session.filesystem();
+            if !filesystem.exists(&pack_toml) {
+                return Err(BuildError::PackInfoError {
+                    reason: "pack.toml not found".to_string(),
+                });
+            }
 
-        let pack_toml = self.workdir.join("pack").join("pack.toml");
-        let filesystem = self.session.filesystem();
-        if !filesystem.exists(&pack_toml) {
-            return Err(BuildError::PackInfoError {
-                reason: "pack.toml not found".to_string(),
+            let content =
+                filesystem
+                    .read_to_string(&pack_toml)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: e.to_string(),
+                    })?;
+            let toml_value: toml::Value =
+                toml::from_str(&content).map_err(|e| BuildError::PackInfoError {
+                    reason: format!("TOML parse error: {}", e),
+                })?;
+
+            let author = toml_value
+                .get("author")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
+
+            let name = toml_value
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
+
+            let version = toml_value
+                .get("version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
+
+            let mc_version = toml_value
+                .get("versions")
+                .and_then(|v| v.get("minecraft"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
+
+            let fabric_version = toml_value
+                .get("versions")
+                .and_then(|v| v.get("fabric"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
+
+            self.pack_info = Some(PackInfo {
+                author,
+                name,
+                version,
+                mc_version,
+                fabric_version,
             });
         }
 
-        let content =
-            filesystem
-                .read_to_string(&pack_toml)
-                .map_err(|e| BuildError::ConfigError {
-                    reason: e.to_string(),
-                })?;
-        let toml_value: toml::Value =
-            toml::from_str(&content).map_err(|e| BuildError::PackInfoError {
-                reason: format!("TOML parse error: {}", e),
-            })?;
-
-        let author = toml_value
-            .get("author")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let name = toml_value
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let version = toml_value
-            .get("version")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let mc_version = toml_value
-            .get("versions")
-            .and_then(|v| v.get("minecraft"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let fabric_version = toml_value
-            .get("versions")
-            .and_then(|v| v.get("fabric"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        self.pack_info = Some(PackInfo {
-            author,
-            name,
-            version,
-            mc_version,
-            fabric_version,
-        });
-
-        Ok(self.pack_info.as_ref().unwrap())
+        match self.pack_info.as_ref() {
+            Some(pack_info) => Ok(pack_info),
+            None => unreachable!("pack info should be cached after loading"),
+        }
     }
 
     /// Register build targets (V1's register_all_build_targets pattern)
@@ -616,7 +618,7 @@ impl<'a> BuildOrchestrator<'a> {
                     )],
                 });
             }
-            Err(e) => {
+            Err(_) => {
                 return Ok(BuildResult {
                     target: BuildTarget::Server,
                     success: false,
@@ -950,23 +952,23 @@ impl<'a> BuildOrchestrator<'a> {
                     reason: e.to_string(),
                 })?;
             for file_path in files {
-                if let Some(file_name) = file_path.file_name() {
-                    if file_name != ".gitkeep" {
-                        if self.session.filesystem().is_directory(&file_path) {
-                            self.session
-                                .filesystem()
-                                .remove_dir_all(&file_path)
-                                .map_err(|e| BuildError::ConfigError {
-                                    reason: e.to_string(),
-                                })?;
-                        } else {
-                            self.session
-                                .filesystem()
-                                .remove_file(&file_path)
-                                .map_err(|e| BuildError::ConfigError {
-                                    reason: e.to_string(),
-                                })?;
-                        }
+                if let Some(file_name) = file_path.file_name()
+                    && file_name != ".gitkeep"
+                {
+                    if self.session.filesystem().is_directory(&file_path) {
+                        self.session
+                            .filesystem()
+                            .remove_dir_all(&file_path)
+                            .map_err(|e| BuildError::ConfigError {
+                                reason: e.to_string(),
+                            })?;
+                    } else {
+                        self.session
+                            .filesystem()
+                            .remove_file(&file_path)
+                            .map_err(|e| BuildError::ConfigError {
+                                reason: e.to_string(),
+                            })?;
                     }
                 }
             }
