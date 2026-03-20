@@ -80,7 +80,13 @@ fn validate_state_layout<P: crate::application::session::FileSystemProvider + ?S
                 && has_canonical_build_artifacts(provider, workdir)
         }
         PackState::Cleaning => provider.is_directory(&artifact_root(workdir)),
-        PackState::Interrupted { was } => validate_state_layout(provider, workdir, was),
+        PackState::Interrupted { was } => {
+            let mut inner = was.as_ref();
+            while let PackState::Interrupted { was: nested } = inner {
+                inner = nested;
+            }
+            validate_state_layout(provider, workdir, inner)
+        }
     }
 }
 
@@ -551,7 +557,13 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
                 // Same as Built - intermediate state
                 self.get_state_files(PackState::Built)
             }
-            PackState::Interrupted { was } => self.get_state_files(*was),
+            PackState::Interrupted { was } => {
+                let mut inner = *was;
+                while let PackState::Interrupted { was: nested } = inner {
+                    inner = *nested;
+                }
+                self.get_state_files(inner)
+            }
         }
     }
 

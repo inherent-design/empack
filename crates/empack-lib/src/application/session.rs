@@ -89,6 +89,10 @@ pub struct ProcessOutput {
 pub trait ProcessProvider {
     /// Execute a command with given arguments in working directory
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput>;
+
+    /// Check if a program is available in PATH. Returns the program path if found.
+    /// Cross-platform: uses platform-appropriate lookup (which on Unix, where on Windows).
+    fn find_program(&self, program: &str) -> Option<String>;
 }
 
 /// Provider trait for configuration access
@@ -384,6 +388,10 @@ impl ProcessProvider for LiveProcessProvider {
         })
     }
 
+    fn find_program(&self, program: &str) -> Option<String> {
+        use crate::platform::capabilities::ProgramFinder;
+        ProgramFinder::find(program).path
+    }
 }
 
 /// Live implementation of ConfigProvider
