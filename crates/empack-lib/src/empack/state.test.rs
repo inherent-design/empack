@@ -1,15 +1,17 @@
 use super::*;
-use crate::application::session::ProcessOutput;
+use crate::application::session::{FileSystemProvider, ProcessOutput};
 use crate::empack::config::ConfigManager;
 use crate::empack::packwiz::MockPackwizOps;
 use std::collections::HashSet;
 
 /// Mock implementation of FileSystemProvider for testing - zero I/O
-/// Now supports stateful operations that actually modify the simulated filesystem
+/// Supports stateful operations that actually modify the simulated filesystem
 #[derive(Debug)]
 struct MockStateProvider {
     /// Simulated filesystem as a set of file paths
     files: std::cell::RefCell<HashSet<PathBuf>>,
+    /// Simulated file contents (stored separately so existing tests don't break)
+    file_contents: std::cell::RefCell<std::collections::HashMap<PathBuf, String>>,
     /// Simulated directories
     directories: std::cell::RefCell<HashSet<PathBuf>>,
     /// Files with build artifacts
@@ -20,6 +22,7 @@ impl MockStateProvider {
     fn new() -> Self {
         Self {
             files: std::cell::RefCell::new(HashSet::new()),
+            file_contents: std::cell::RefCell::new(std::collections::HashMap::new()),
             directories: std::cell::RefCell::new(HashSet::new()),
             build_artifacts: std::cell::RefCell::new(HashSet::new()),
         }
@@ -28,6 +31,12 @@ impl MockStateProvider {
     /// Add a file to the mock filesystem
     fn add_file(&self, path: PathBuf) {
         self.files.borrow_mut().insert(path);
+    }
+
+    /// Add a file with specific content to the mock filesystem
+    fn add_file_with_content(&self, path: PathBuf, content: String) {
+        self.files.borrow_mut().insert(path.clone());
+        self.file_contents.borrow_mut().insert(path, content);
     }
 
     /// Add a directory to the mock filesystem
@@ -55,6 +64,10 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
 
     fn read_to_string(&self, path: &Path) -> anyhow::Result<String> {
         if self.files.borrow().contains(path) {
+            // Return stored content if available
+            if let Some(content) = self.file_contents.borrow().get(path) {
+                return Ok(content.clone());
+            }
             // Return valid YAML content for empack.yml files
             if path.file_name().and_then(|n| n.to_str()) == Some("empack.yml") {
                 Ok("empack:\n  name: test-pack\n  minecraft_version: 1.20.1\n".to_string())
@@ -66,9 +79,11 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         }
     }
 
-    fn write_file(&self, path: &Path, _content: &str) -> anyhow::Result<()> {
-        // Actually add the file to the mock filesystem
+    fn write_file(&self, path: &Path, content: &str) -> anyhow::Result<()> {
         self.files.borrow_mut().insert(path.to_path_buf());
+        self.file_contents
+            .borrow_mut()
+            .insert(path.to_path_buf(), content.to_string());
         Ok(())
     }
 
@@ -123,8 +138,8 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
     }
 
     fn remove_file(&self, path: &Path) -> anyhow::Result<()> {
-        // Actually remove the file from the mock filesystem
         self.files.borrow_mut().remove(path);
+        self.file_contents.borrow_mut().remove(path);
         self.build_artifacts.borrow_mut().remove(path);
         Ok(())
     }
@@ -420,40 +435,40 @@ fn test_discover_state_ignores_legacy_hidden_artifact_root() {
 fn test_pure_can_transition_function() {
     // Test valid transitions
     assert!(can_transition(
-        PackState::Uninitialized,
-        PackState::Configured
+        &PackState::Uninitialized,
+        &PackState::Configured
     ));
     assert!(can_transition(
-        PackState::Configured,
-        PackState::Built
+        &PackState::Configured,
+        &PackState::Built
     ));
     assert!(can_transition(
-        PackState::Built,
-        PackState::Configured
+        &PackState::Built,
+        &PackState::Configured
     ));
     assert!(can_transition(
-        PackState::Configured,
-        PackState::Uninitialized
+        &PackState::Configured,
+        &PackState::Uninitialized
     ));
     assert!(can_transition(
-        PackState::Built,
-        PackState::Building
+        &PackState::Built,
+        &PackState::Building
     ));
 
     // Test same state transitions
     assert!(can_transition(
-        PackState::Configured,
-        PackState::Configured
+        &PackState::Configured,
+        &PackState::Configured
     ));
 
     // Test invalid transitions
     assert!(!can_transition(
-        PackState::Uninitialized,
-        PackState::Built
+        &PackState::Uninitialized,
+        &PackState::Built
     ));
     assert!(!can_transition(
-        PackState::Built,
-        PackState::Uninitialized
+        &PackState::Built,
+        &PackState::Uninitialized
     ));
 }
 
@@ -756,11 +771,11 @@ fn test_invalid_state_transition_rejected() {
     assert_eq!(current_state, PackState::Uninitialized);
 
     // Attempt to transition directly to Built state (invalid)
-    let can_build = manager.can_transition(current_state, PackState::Built);
+    let can_build = manager.can_transition(&current_state, &PackState::Built);
     assert!(!can_build, "Should not be able to transition from Uninitialized to Built");
 
     // Verify valid transitions are still allowed
-    let can_configure = manager.can_transition(current_state, PackState::Configured);
+    let can_configure = manager.can_transition(&current_state, &PackState::Configured);
     assert!(can_configure, "Should be able to transition from Uninitialized to Configured");
 }
 
@@ -820,25 +835,25 @@ fn test_state_transition_requires_intermediate_steps() {
 
     // Verify each step is valid individually
     assert!(
-        manager.can_transition(PackState::Uninitialized, PackState::Configured),
-        "Uninitialized → Configured should be valid"
+        manager.can_transition(&PackState::Uninitialized, &PackState::Configured),
+        "Uninitialized -> Configured should be valid"
     );
     assert!(
-        manager.can_transition(PackState::Configured, PackState::Built),
-        "Configured → Built should be valid"
+        manager.can_transition(&PackState::Configured, &PackState::Built),
+        "Configured -> Built should be valid"
     );
     assert!(
-        manager.can_transition(PackState::Built, PackState::Configured),
-        "Built → Configured (clean backwards) should be valid"
+        manager.can_transition(&PackState::Built, &PackState::Configured),
+        "Built -> Configured (clean backwards) should be valid"
     );
 
     // Verify invalid skips are rejected
     assert!(
-        !manager.can_transition(PackState::Uninitialized, PackState::Built),
+        !manager.can_transition(&PackState::Uninitialized, &PackState::Built),
         "Should not skip Configured state"
     );
     assert!(
-        !manager.can_transition(PackState::Uninitialized, PackState::Cleaning),
+        !manager.can_transition(&PackState::Uninitialized, &PackState::Cleaning),
         "Should not skip to Cleaning from Uninitialized"
     );
 }
@@ -890,4 +905,234 @@ file = "index.toml"
         "Error should indicate configuration/YAML issue, got: {}",
         err_msg
     );
+}
+
+// --- Interrupted state detection and marker cleanup tests ---
+
+/// Test: discover_state returns Interrupted when building marker file exists
+#[test]
+fn test_discover_state_detects_interrupted_building() {
+    let workdir = PathBuf::from("/test/interrupted-building");
+    let provider = MockStateProvider::new();
+    provider.add_directory(workdir.clone());
+    // Simulate a configured project
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_directory(workdir.join("pack"));
+    // Simulate an interrupted building state via marker file
+    provider.add_file_with_content(
+        workdir.join(".empack-state"),
+        "building".to_string(),
+    );
+
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(
+        state,
+        PackState::Interrupted {
+            was: Box::new(PackState::Building)
+        }
+    );
+}
+
+/// Test: discover_state returns Interrupted when cleaning marker file exists
+#[test]
+fn test_discover_state_detects_interrupted_cleaning() {
+    let workdir = PathBuf::from("/test/interrupted-cleaning");
+    let provider = MockStateProvider::new();
+    provider.add_directory(workdir.clone());
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_directory(workdir.join("pack"));
+    // Simulate an interrupted cleaning state via marker file
+    provider.add_file_with_content(
+        workdir.join(".empack-state"),
+        "cleaning".to_string(),
+    );
+
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(
+        state,
+        PackState::Interrupted {
+            was: Box::new(PackState::Cleaning)
+        }
+    );
+}
+
+/// Test: marker file is removed after successful clean transition
+#[tokio::test]
+async fn test_clean_removes_marker_on_interrupted_state() {
+    let workdir = PathBuf::from("/test/clean-interrupted");
+    let provider = MockStateProvider::new();
+    let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
+    provider.add_directory(workdir.clone());
+    // Set up a configured project with an interrupted building marker
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_directory(workdir.join("pack"));
+    provider.add_file_with_content(
+        workdir.join(".empack-state"),
+        "building".to_string(),
+    );
+
+    // Verify it's detected as Interrupted
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert!(matches!(state, PackState::Interrupted { .. }));
+
+    // Clean should recover from interrupted state
+    let result = execute_transition(
+        &provider,
+        &process,
+        &packwiz,
+        &workdir,
+        StateTransition::Clean,
+    )
+    .await
+    .unwrap();
+
+    // After cleaning an interrupted-building, the underlying state was Configured
+    // so cleaning from Configured -> Uninitialized
+    assert_eq!(result.state, PackState::Uninitialized);
+
+    // Marker file should be removed
+    assert!(
+        !provider.exists(&workdir.join(".empack-state")),
+        "Marker file should be removed after cleaning"
+    );
+}
+
+/// Test: marker file is written on Building transition via begin_state_transition
+#[test]
+fn test_begin_state_transition_writes_marker() {
+    let workdir = PathBuf::from("/test/marker-write");
+    let provider = MockStateProvider::new();
+    provider.add_directory(workdir.clone());
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_directory(workdir.join("pack"));
+
+    let manager = PackStateManager::new(workdir.clone(), &provider);
+    manager
+        .begin_state_transition(StateTransition::Building)
+        .unwrap();
+
+    // Marker file should exist with "building" content
+    assert!(provider.exists(&workdir.join(".empack-state")));
+    let content = provider
+        .read_to_string(&workdir.join(".empack-state"))
+        .unwrap();
+    assert_eq!(content, "building");
+}
+
+/// Test: marker file is removed on complete_state_transition
+#[test]
+fn test_complete_state_transition_removes_marker() {
+    let workdir = PathBuf::from("/test/marker-cleanup");
+    let provider = MockStateProvider::new();
+    provider.add_directory(workdir.clone());
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_directory(workdir.join("pack"));
+
+    let manager = PackStateManager::new(workdir.clone(), &provider);
+
+    // Begin a building transition (writes marker)
+    manager
+        .begin_state_transition(StateTransition::Building)
+        .unwrap();
+    assert!(provider.exists(&workdir.join(".empack-state")));
+
+    // Complete the transition (removes marker)
+    manager.complete_state_transition().unwrap();
+    assert!(
+        !provider.exists(&workdir.join(".empack-state")),
+        "Marker file should be removed after completing transition"
+    );
+}
+
+/// Test: can_transition allows recovery from Interrupted state
+#[test]
+fn test_can_transition_from_interrupted() {
+    // Interrupted states should be able to clean (recover)
+    assert!(can_transition(
+        &PackState::Interrupted {
+            was: Box::new(PackState::Building)
+        },
+        &PackState::Configured
+    ));
+    assert!(can_transition(
+        &PackState::Interrupted {
+            was: Box::new(PackState::Cleaning)
+        },
+        &PackState::Configured
+    ));
+    assert!(can_transition(
+        &PackState::Interrupted {
+            was: Box::new(PackState::Building)
+        },
+        &PackState::Uninitialized
+    ));
+
+    // Interrupted should NOT be able to advance to Built
+    assert!(!can_transition(
+        &PackState::Interrupted {
+            was: Box::new(PackState::Building)
+        },
+        &PackState::Built
+    ));
+}
+
+/// Test: Interrupted Display formatting
+#[test]
+fn test_interrupted_display() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    assert_eq!(interrupted.to_string(), "interrupted (was: building)");
+
+    let interrupted_clean = PackState::Interrupted {
+        was: Box::new(PackState::Cleaning),
+    };
+    assert_eq!(
+        interrupted_clean.to_string(),
+        "interrupted (was: cleaning)"
+    );
+}
+
+/// Test: discover_state falls through to normal detection when no marker file
+#[test]
+fn test_discover_state_no_marker_returns_normal_state() {
+    let workdir = PathBuf::from("/test/no-marker");
+    let provider = MockStateProvider::new();
+    provider.add_directory(workdir.clone());
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_directory(workdir.join("pack"));
+
+    // No marker file -- should return Configured normally
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(state, PackState::Configured);
+}
+
+/// Test: Cleaning transition via begin_state_transition writes correct marker
+#[test]
+fn test_begin_cleaning_transition_writes_marker() {
+    let workdir = PathBuf::from("/test/cleaning-marker");
+    let provider = MockStateProvider::new();
+    provider.add_directory(workdir.clone());
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_directory(workdir.join("pack"));
+    provider.add_directory(artifact_root(&workdir));
+    provider.add_build_artifact(artifact_root(&workdir).join("test.mrpack"));
+
+    let manager = PackStateManager::new(workdir.clone(), &provider);
+    manager
+        .begin_state_transition(StateTransition::Cleaning)
+        .unwrap();
+
+    let content = provider
+        .read_to_string(&workdir.join(".empack-state"))
+        .unwrap();
+    assert_eq!(content, "cleaning");
 }
