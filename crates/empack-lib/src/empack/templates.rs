@@ -353,8 +353,7 @@ impl<'a> TemplateInstaller<'a> {
             self.filesystem.create_dir_all(&base.join(dir))?;
         }
 
-        // Installer and pack directories
-        self.filesystem.create_dir_all(&base.join("installer"))?;
+        // Pack directory
         self.filesystem.create_dir_all(&base.join("pack"))?;
 
         Ok(())

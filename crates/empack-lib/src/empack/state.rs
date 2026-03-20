@@ -429,11 +429,6 @@ pub fn create_initial_structure<P: crate::application::session::FileSystemProvid
         .create_dir_all(&template_dir)
         .context("Failed to create templates directory")?;
 
-    let installer_dir = workdir.join("installer");
-    provider
-        .create_dir_all(&installer_dir)
-        .context("Failed to create installer directory")?;
-
     Ok(())
 }
 

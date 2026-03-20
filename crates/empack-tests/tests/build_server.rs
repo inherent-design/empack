@@ -74,6 +74,9 @@ async fn initialize_empack_project(
         .clone()
         .expect("hermetic project should configure a workdir");
     std::env::set_current_dir(&workdir)?;
+    unsafe {
+        std::env::set_var("HOME", &test_env.root_path);
+    }
 
     Ok((session, test_env, workdir))
 }
@@ -94,10 +97,10 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
         "#!/bin/bash\necho \"Installing {{NAME}}\"\n",
     )?;
 
-    let installer_dir = workdir.join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
+    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
+    std::fs::create_dir_all(&jar_cache)?;
     std::fs::write(
-        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        jar_cache.join("packwiz-installer-bootstrap.jar"),
         "mock-installer-jar",
     )?;
 
@@ -220,10 +223,10 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
         "#!/bin/bash\necho \"Starting {{NAME}} server\"\njava -jar srv.jar\n",
     )?;
 
-    let installer_dir = workdir.join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
+    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
+    std::fs::create_dir_all(&jar_cache)?;
     std::fs::write(
-        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        jar_cache.join("packwiz-installer-bootstrap.jar"),
         "mock-installer-jar",
     )?;
 

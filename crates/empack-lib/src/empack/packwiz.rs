@@ -213,34 +213,12 @@ impl PackwizOps for LivePackwizOps<'_> {
     }
 
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
-        let local_jar = self
-            .filesystem
-            .current_dir()?
-            .join("installer")
-            .join("packwiz-installer-bootstrap.jar");
-
-        if self.filesystem.exists(&local_jar) {
-            return Ok(local_jar);
-        }
-
         let cache_dir = crate::platform::cache::cache_root()?.join("jars");
-
         Ok(cache_dir.join("packwiz-installer-bootstrap.jar"))
     }
 
     fn installer_jar_cache_path(&self) -> crate::Result<PathBuf> {
-        let local_jar = self
-            .filesystem
-            .current_dir()?
-            .join("installer")
-            .join("packwiz-installer.jar");
-
-        if self.filesystem.exists(&local_jar) {
-            return Ok(local_jar);
-        }
-
         let cache_dir = crate::platform::cache::cache_root()?.join("jars");
-
         Ok(cache_dir.join("packwiz-installer.jar"))
     }
 }

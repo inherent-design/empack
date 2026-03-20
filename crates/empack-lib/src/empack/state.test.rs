@@ -645,12 +645,6 @@ fn test_pure_execute_initialize_function() {
             .borrow()
             .contains(&workdir.join("templates"))
     );
-    assert!(
-        provider
-            .directories
-            .borrow()
-            .contains(&workdir.join("installer"))
-    );
 }
 
 #[test]
@@ -749,12 +743,6 @@ fn test_pure_create_initial_structure_function() {
             .directories
             .borrow()
             .contains(&workdir.join("templates"))
-    );
-    assert!(
-        provider
-            .directories
-            .borrow()
-            .contains(&workdir.join("installer"))
     );
 }
 

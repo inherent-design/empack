@@ -36,7 +36,6 @@ fn test_template_installer_directory_creation() {
     assert!(temp_dir.path().join("templates/server").exists());
     assert!(temp_dir.path().join(".github/workflows").exists());
     assert!(temp_dir.path().join("pack").exists());
-    assert!(temp_dir.path().join("installer").exists());
 }
 
 #[test]

@@ -104,14 +104,14 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
         "#!/bin/bash\necho \"Installing {{NAME}}\"\n",
     )?;
 
-    let installer_dir = workdir.join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
+    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
+    std::fs::create_dir_all(&jar_cache)?;
     std::fs::write(
-        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        jar_cache.join("packwiz-installer-bootstrap.jar"),
         "mock-bootstrap-jar",
     )?;
     std::fs::write(
-        installer_dir.join("packwiz-installer.jar"),
+        jar_cache.join("packwiz-installer.jar"),
         "mock-installer-jar",
     )?;
 
@@ -259,14 +259,14 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
         "#!/bin/bash\necho \"Starting {{NAME}} server-full\"\njava -jar srv.jar nogui\n",
     )?;
 
-    let installer_dir = workdir.join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
+    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
+    std::fs::create_dir_all(&jar_cache)?;
     std::fs::write(
-        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        jar_cache.join("packwiz-installer-bootstrap.jar"),
         "mock-bootstrap-jar",
     )?;
     std::fs::write(
-        installer_dir.join("packwiz-installer.jar"),
+        jar_cache.join("packwiz-installer.jar"),
         "mock-installer-jar",
     )?;
 

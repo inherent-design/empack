@@ -157,10 +157,10 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         "motd={{NAME}}\nmax-players=10\n",
     )?;
 
-    let installer_dir = project_dir.join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
+    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
+    std::fs::create_dir_all(&jar_cache)?;
     std::fs::write(
-        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        jar_cache.join("packwiz-installer-bootstrap.jar"),
         "mock-installer-jar",
     )?;
 

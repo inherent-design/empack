@@ -86,14 +86,14 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
     let project_name = "workflow-client-full";
     let (session, test_env, workdir) = initialize_empack_project(project_name).await?;
 
-    let installer_dir = workdir.join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
+    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
+    std::fs::create_dir_all(&jar_cache)?;
     std::fs::write(
-        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        jar_cache.join("packwiz-installer-bootstrap.jar"),
         "mock-bootstrap-jar",
     )?;
     std::fs::write(
-        installer_dir.join("packwiz-installer.jar"),
+        jar_cache.join("packwiz-installer.jar"),
         "mock-installer-jar",
     )?;
 
@@ -213,14 +213,14 @@ async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
     let project_name = "workflow-client-full-structure";
     let (session, _test_env, workdir) = initialize_empack_project(project_name).await?;
 
-    let installer_dir = workdir.join("installer");
-    std::fs::create_dir_all(&installer_dir)?;
+    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
+    std::fs::create_dir_all(&jar_cache)?;
     std::fs::write(
-        installer_dir.join("packwiz-installer-bootstrap.jar"),
+        jar_cache.join("packwiz-installer-bootstrap.jar"),
         "mock-bootstrap-jar",
     )?;
     std::fs::write(
-        installer_dir.join("packwiz-installer.jar"),
+        jar_cache.join("packwiz-installer.jar"),
         "mock-installer-jar",
     )?;
 
