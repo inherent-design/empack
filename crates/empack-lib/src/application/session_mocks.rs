@@ -538,6 +538,7 @@ pub struct ProcessCall {
 pub struct MockProcessProvider {
     pub calls: RefCell<Vec<ProcessCall>>,
     pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
+    pub programs: HashMap<String, Option<String>>,
     materialize_mrpack_exports: bool,
     files: Option<Arc<Mutex<HashMap<PathBuf, String>>>>,
     directories: Option<Arc<Mutex<HashSet<PathBuf>>>>,
@@ -545,14 +546,21 @@ pub struct MockProcessProvider {
 
 impl MockProcessProvider {
     pub fn new() -> Self {
+        let mut programs = HashMap::new();
+        programs.insert(
+            "packwiz".to_string(),
+            Some("/usr/local/bin/packwiz".to_string()),
+        );
+
         let mut provider = Self {
             calls: RefCell::new(Vec::new()),
             results: HashMap::new(),
+            programs,
             materialize_mrpack_exports: false,
             files: None,
             directories: None,
         };
-        // Default: packwiz is available (which packwiz succeeds)
+        // Backward compat: keep "which" result for any code still using execute("which", ...)
         provider.results.insert(
             ("which".to_string(), vec!["packwiz".to_string()]),
             Ok(ProcessOutput {
@@ -565,6 +573,7 @@ impl MockProcessProvider {
     }
 
     pub fn with_packwiz_unavailable(mut self) -> Self {
+        self.programs.insert("packwiz".to_string(), None);
         self.results.insert(
             ("which".to_string(), vec!["packwiz".to_string()]),
             Ok(ProcessOutput {
@@ -577,7 +586,12 @@ impl MockProcessProvider {
     }
 
     pub fn with_packwiz_version(mut self, version: String) -> Self {
-        // Ensure packwiz is available
+        // Ensure packwiz is available via find_program
+        self.programs.insert(
+            "packwiz".to_string(),
+            Some("/usr/local/bin/packwiz".to_string()),
+        );
+        // Backward compat: keep "which" result
         self.results.insert(
             ("which".to_string(), vec!["packwiz".to_string()]),
             Ok(ProcessOutput {
@@ -742,6 +756,10 @@ impl ProcessProvider for MockProcessProvider {
         self.maybe_materialize_mrpack_export(command, args, &output);
 
         Ok(output)
+    }
+
+    fn find_program(&self, program: &str) -> Option<String> {
+        self.programs.get(program).cloned().flatten()
     }
 }
 
@@ -1102,7 +1120,12 @@ mod tests {
             .with_current_dir(PathBuf::from("/custom/path"))
             .with_installed_mods(mods.clone());
 
-        assert_eq!(packwiz.get_installed_mods().unwrap(), mods);
+        assert_eq!(
+            packwiz
+                .get_installed_mods(&PathBuf::from("/custom/path"))
+                .unwrap(),
+            mods
+        );
     }
 
     #[test]
@@ -1122,7 +1145,10 @@ mod tests {
             check_packwiz_available(&provider).unwrap(),
             (true, "2.0.0".to_string())
         );
-        assert_eq!(get_packwiz_version(&provider).unwrap(), "2.0.0");
+        assert_eq!(
+            get_packwiz_version(&provider, "/usr/local/bin/packwiz").unwrap(),
+            "2.0.0"
+        );
 
         // Test successful command (uses default behavior)
         let result = provider.execute("packwiz", &["list"], &working_dir);
@@ -1134,7 +1160,7 @@ mod tests {
         assert!(result.is_err());
 
         // Test spy pattern - verify packwiz calls were recorded
-        // (which/go calls from check_packwiz_available are also recorded but filtered out)
+        // (go version calls from check_packwiz_available are also recorded but filtered out)
         let packwiz_calls = provider.get_calls_for_command("packwiz");
         assert_eq!(packwiz_calls.len(), 2);
         assert_eq!(packwiz_calls[0].args, vec!["list"]);

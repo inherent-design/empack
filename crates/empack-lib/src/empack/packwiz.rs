@@ -58,7 +58,7 @@ pub trait PackwizOps {
     fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), StateError>;
 
     /// Get list of currently installed mods from packwiz
-    fn get_installed_mods(&self) -> crate::Result<HashSet<String>>;
+    fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>>;
 
     /// Get the expected cache path for packwiz-installer-bootstrap.jar
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf>;
@@ -92,7 +92,7 @@ impl PackwizOps for LivePackwizOps<'_> {
     ) -> Result<(), StateError> {
         let pack_dir = workdir.join("pack");
 
-        if !pack_dir.exists() {
+        if !self.filesystem.exists(&pack_dir) {
             return Err(StateError::MissingFile {
                 file: pack_dir.to_path_buf(),
             });
@@ -178,8 +178,8 @@ impl PackwizOps for LivePackwizOps<'_> {
         Ok(())
     }
 
-    fn get_installed_mods(&self) -> crate::Result<HashSet<String>> {
-        let pack_dir = self.filesystem.current_dir()?.join("pack");
+    fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>> {
+        let pack_dir = workdir.join("pack");
         let output = self
             .process
             .execute("packwiz", &["list"], &pack_dir)
@@ -253,33 +253,26 @@ impl PackwizOps for LivePackwizOps<'_> {
 
 /// Check if packwiz is available in PATH and return version info.
 ///
-/// Routes through ProcessProvider::execute so that custom PATH is respected.
+/// Uses ProcessProvider::find_program for cross-platform program lookup.
 pub fn check_packwiz_available(process: &dyn ProcessProvider) -> crate::Result<(bool, String)> {
-    let cwd = std::env::current_dir().context("Failed to get current directory")?;
-    match process.execute("which", &["packwiz"], &cwd) {
-        Ok(output) if output.success && !output.stdout.is_empty() => {
-            let version = get_packwiz_version(process).unwrap_or_else(|| "unknown".to_string());
+    match process.find_program("packwiz") {
+        Some(path) => {
+            let version =
+                get_packwiz_version(process, &path).unwrap_or_else(|| "unknown".to_string());
             Ok((true, version))
         }
-        _ => Ok((false, "not found".to_string())),
+        None => Ok((false, "not found".to_string())),
     }
 }
 
 /// Get packwiz version using go toolchain.
 ///
-/// Routes through ProcessProvider::execute so that custom PATH is respected.
-pub fn get_packwiz_version(process: &dyn ProcessProvider) -> Option<String> {
+/// Takes the packwiz binary path directly and queries version via `go version -m`.
+pub fn get_packwiz_version(process: &dyn ProcessProvider, packwiz_path: &str) -> Option<String> {
     let cwd = std::env::current_dir().ok()?;
 
-    let which_output = process.execute("which", &["packwiz"], &cwd).ok()?;
-    if !which_output.success || which_output.stdout.is_empty() {
-        return None;
-    }
-
-    let packwiz_path = which_output.stdout.trim().to_string();
-
     let go_output = process
-        .execute("go", &["version", "-m", &packwiz_path], &cwd)
+        .execute("go", &["version", "-m", packwiz_path], &cwd)
         .ok()?;
     if !go_output.success {
         return None;
@@ -413,7 +406,7 @@ minecraft = "{}"
         Ok(())
     }
 
-    fn get_installed_mods(&self) -> crate::Result<HashSet<String>> {
+    fn get_installed_mods(&self, _workdir: &Path) -> crate::Result<HashSet<String>> {
         Ok(self.installed_mods.clone())
     }
 

@@ -1605,7 +1605,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     ));
 
     // Get currently installed mods
-    let installed_mods = match session.packwiz().get_installed_mods() {
+    let installed_mods = match session.packwiz().get_installed_mods(&workdir) {
         Ok(mods) => {
             session
                 .display()
@@ -1629,9 +1629,9 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let sync_plan = build_sync_plan(&project_plan, &installed_mods);
     let mut planned_actions = Vec::new();
 
-    for dep_spec in &project_plan.dependencies {
+    for (i, dep_spec) in project_plan.dependencies.iter().enumerate() {
         session.display().status().step(
-            1,
+            i + 1,
             project_plan.dependencies.len(),
             &format!("Processing dependency: {}", dep_spec.key),
         );
