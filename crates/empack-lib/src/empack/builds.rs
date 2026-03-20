@@ -657,6 +657,7 @@ impl<'a> BuildOrchestrator<'a> {
     fn build_client_full_impl(
         &mut self,
         bootstrap_jar_path: &Path,
+        installer_jar_path: &Path,
     ) -> Result<BuildResult, BuildError> {
         // Step 1: Clean the dist/client-full/ directory
         self.clean_target(BuildTarget::ClientFull)?;
@@ -680,10 +681,14 @@ impl<'a> BuildOrchestrator<'a> {
         self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
 
         // Execute installer with PackwizInstaller abstraction
-        let installer = PackwizInstaller::new(self.session, bootstrap_jar_path.to_owned())
-            .map_err(|e| BuildError::CommandFailed {
-                command: format!("PackwizInstaller initialization: {}", e),
-            })?;
+        let installer = PackwizInstaller::new(
+            self.session,
+            bootstrap_jar_path.to_owned(),
+            installer_jar_path.to_owned(),
+        )
+        .map_err(|e| BuildError::CommandFailed {
+            command: format!("PackwizInstaller initialization: {}", e),
+        })?;
 
         installer
             .install_mods("both", &dist_dir)
@@ -708,6 +713,7 @@ impl<'a> BuildOrchestrator<'a> {
     fn build_server_full_impl(
         &mut self,
         bootstrap_jar_path: &Path,
+        installer_jar_path: &Path,
     ) -> Result<BuildResult, BuildError> {
         // Step 1: Clean the dist/server-full/ directory
         self.clean_target(BuildTarget::ServerFull)?;
@@ -775,10 +781,14 @@ impl<'a> BuildOrchestrator<'a> {
         self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
 
         // Execute installer with PackwizInstaller abstraction
-        let installer = PackwizInstaller::new(self.session, bootstrap_jar_path.to_owned())
-            .map_err(|e| BuildError::CommandFailed {
-                command: format!("PackwizInstaller initialization: {}", e),
-            })?;
+        let installer = PackwizInstaller::new(
+            self.session,
+            bootstrap_jar_path.to_owned(),
+            installer_jar_path.to_owned(),
+        )
+        .map_err(|e| BuildError::CommandFailed {
+            command: format!("PackwizInstaller initialization: {}", e),
+        })?;
 
         installer
             .install_mods("server", &dist_dir)
@@ -814,13 +824,21 @@ impl<'a> BuildOrchestrator<'a> {
 
         self.prepare_build_environment()?;
 
-        // Get bootstrap JAR path from session
+        // Get bootstrap and installer JAR paths from session
         let bootstrap_jar_path = self
             .session
             .filesystem()
             .get_bootstrap_jar_cache_path()
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to get bootstrap JAR path: {}", e),
+            })?;
+
+        let installer_jar_path = self
+            .session
+            .filesystem()
+            .get_installer_jar_cache_path()
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("Failed to get installer JAR path: {}", e),
             })?;
 
         let mut results = Vec::new();
@@ -830,8 +848,12 @@ impl<'a> BuildOrchestrator<'a> {
                 BuildTarget::Mrpack => self.build_mrpack_impl()?,
                 BuildTarget::Client => self.build_client_impl(&bootstrap_jar_path)?,
                 BuildTarget::Server => self.build_server_impl(&bootstrap_jar_path)?,
-                BuildTarget::ClientFull => self.build_client_full_impl(&bootstrap_jar_path)?,
-                BuildTarget::ServerFull => self.build_server_full_impl(&bootstrap_jar_path)?,
+                BuildTarget::ClientFull => {
+                    self.build_client_full_impl(&bootstrap_jar_path, &installer_jar_path)?
+                }
+                BuildTarget::ServerFull => {
+                    self.build_server_full_impl(&bootstrap_jar_path, &installer_jar_path)?
+                }
             };
 
             if !result.success {

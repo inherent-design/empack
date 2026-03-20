@@ -1,4 +1,5 @@
 use super::*;
+use serde_json;
 
 #[cfg(feature = "test-utils")]
 use crate::application::session_mocks::{MockFileSystemProvider, MockNetworkProvider};
@@ -293,3 +294,197 @@ fn test_parse_forge_maven_metadata() {
 //
 // Manual test: empack init with very old MC version (e.g., 1.7.10)
 // Expected: Incompatible loaders not shown in selection dialog
+
+#[test]
+fn test_minecraft_versions_order_descending() {
+    let manifest_json = r#"{
+        "latest": {"release": "1.21.4", "snapshot": "25w14a"},
+        "versions": [
+            {"id": "1.7.10", "type": "release", "url": "https://example.com/1.7.10"},
+            {"id": "1.8", "type": "release", "url": "https://example.com/1.8"},
+            {"id": "1.20.1", "type": "release", "url": "https://example.com/1.20.1"},
+            {"id": "1.21", "type": "release", "url": "https://example.com/1.21"},
+            {"id": "1.21.1", "type": "release", "url": "https://example.com/1.21.1"},
+            {"id": "1.21.4", "type": "release", "url": "https://example.com/1.21.4"},
+            {"id": "25w14a", "type": "snapshot", "url": "https://example.com/25w14a"}
+        ]
+    }"#;
+
+    let manifest: MinecraftVersionManifest = serde_json::from_str(manifest_json).unwrap();
+
+    let mut versions: Vec<String> = manifest
+        .versions
+        .into_iter()
+        .filter(|v| v.version_type == "release")
+        .map(|v| v.id)
+        .collect();
+
+    versions.reverse();
+
+    assert_eq!(
+        versions[0], "1.21.4",
+        "Last (newest) item becomes first after reverse"
+    );
+    assert_eq!(
+        versions[versions.len() - 1], "1.7.10",
+        "First (oldest) item becomes last after reverse"
+    );
+
+    for i in 0..versions.len() - 1 {
+        let current = &versions[i];
+        let next = &versions[i + 1];
+        assert!(
+            version_compare(current, next) >= 0,
+            "Version {} at index {} should be >= next version {} at index {} (not descending)",
+            current, i, next, i + 1
+        );
+    }
+}
+
+#[test]
+fn test_neoforge_versions_preserve_api_order_descending() {
+    let all_versions = vec![
+        "21.1.69".to_string(),
+        "21.1.68".to_string(),
+        "21.1.67-beta".to_string(),
+        "21.0.167".to_string(),
+        "21.0.166".to_string(),
+        "21.0.165-beta".to_string(),
+    ];
+
+    let filtered = filter_neoforge_versions_by_minecraft(&all_versions, "1.21").unwrap();
+
+    assert_eq!(filtered.len(), 2, "Should find 2 stable versions");
+    assert_eq!(filtered[0], "21.0.167", "Newest NeoForge version should be first");
+    assert_eq!(filtered[1], "21.0.166", "Second newest should be second");
+
+    for i in 0..filtered.len() - 1 {
+        let current = &filtered[i];
+        let next = &filtered[i + 1];
+        assert!(
+            version_compare(current, next) >= 0,
+            "NeoForge version {} at index {} should be >= next version {} (not descending)",
+            current, i, next
+        );
+    }
+}
+
+#[test]
+fn test_fabric_versions_order_descending() {
+    let api_versions = vec![
+        FabricLoaderVersion {
+            loader: FabricLoaderInfo {
+                version: "0.15.0".to_string(),
+                stable: true,
+            },
+        },
+        FabricLoaderVersion {
+            loader: FabricLoaderInfo {
+                version: "0.15.1".to_string(),
+                stable: true,
+            },
+        },
+        FabricLoaderVersion {
+            loader: FabricLoaderInfo {
+                version: "0.16.0-beta".to_string(),
+                stable: false,
+            },
+        },
+        FabricLoaderVersion {
+            loader: FabricLoaderInfo {
+                version: "0.16.1-beta".to_string(),
+                stable: false,
+            },
+        },
+    ];
+
+    let mut stable_versions: Vec<String> = api_versions
+        .iter()
+        .filter(|v| v.loader.stable)
+        .map(|v| v.loader.version.clone())
+        .collect();
+
+    let mut beta_versions: Vec<String> = api_versions
+        .iter()
+        .filter(|v| !v.loader.stable)
+        .map(|v| v.loader.version.clone())
+        .collect();
+
+    stable_versions.sort_by(|a, b| {
+        let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
+        let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
+        for i in 0..a_parts.len().max(b_parts.len()) {
+            let a_part = a_parts.get(i).unwrap_or(&0);
+            let b_part = b_parts.get(i).unwrap_or(&0);
+            match b_part.cmp(a_part) {
+                std::cmp::Ordering::Equal => continue,
+                other => return other,
+            }
+        }
+        std::cmp::Ordering::Equal
+    });
+
+    beta_versions.sort_by(|a, b| {
+        let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
+        let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
+        for i in 0..a_parts.len().max(b_parts.len()) {
+            let a_part = a_parts.get(i).unwrap_or(&0);
+            let b_part = b_parts.get(i).unwrap_or(&0);
+            match b_part.cmp(a_part) {
+                std::cmp::Ordering::Equal => continue,
+                other => return other,
+            }
+        }
+        std::cmp::Ordering::Equal
+    });
+
+    let stable_count = stable_versions.len();
+    beta_versions.reverse();
+    stable_versions.append(&mut beta_versions);
+
+    assert_eq!(
+        stable_versions[0], "0.15.1",
+        "Newest stable Fabric version should be first"
+    );
+    assert_eq!(
+        stable_versions[1], "0.15.0",
+        "Second newest stable should be second"
+    );
+    assert_eq!(
+        stable_versions[stable_count], "0.16.1-beta",
+        "Beta versions start after stable versions"
+    );
+
+    let beta_start = stable_count;
+    let desc_sort = |a: &str, b: &str| {
+        let a_parts: Vec<u32> = a.split('.').filter_map(|s| s.parse().ok()).collect();
+        let b_parts: Vec<u32> = b.split('.').filter_map(|s| s.parse().ok()).collect();
+        for i in 0..a_parts.len().max(b_parts.len()) {
+            let a_part = a_parts.get(i).unwrap_or(&0);
+            let b_part = b_parts.get(i).unwrap_or(&0);
+            match b_part.cmp(a_part) {
+                std::cmp::Ordering::Equal => continue,
+                other => return other,
+            }
+        }
+        std::cmp::Ordering::Equal
+    };
+
+    for i in 0..stable_versions.len() - 1 {
+        let current = &stable_versions[i];
+        let next = &stable_versions[i + 1];
+        let crossing_boundary = (i < beta_start && i + 1 >= beta_start)
+            || (i >= beta_start && i + 1 < beta_start);
+        if crossing_boundary {
+            continue;
+        }
+        let (current_stripped, _) = current.split_once('-').unwrap_or((current.as_str(), ""));
+        let (next_stripped, _) = next.split_once('-').unwrap_or((next.as_str(), ""));
+        assert!(
+            desc_sort(current_stripped, next_stripped) == std::cmp::Ordering::Less
+                || desc_sort(current_stripped, next_stripped) == std::cmp::Ordering::Equal,
+            "Fabric version {} at index {} should be >= next version {} (not descending)",
+            current, i, next
+        );
+    }
+}

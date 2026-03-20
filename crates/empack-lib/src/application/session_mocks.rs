@@ -415,6 +415,29 @@ minecraft = "{}"
 
         Ok(jar_path)
     }
+
+    fn get_installer_jar_cache_path(&self) -> Result<PathBuf> {
+        // For testing, return a path in the test directory
+        let jar_path = self
+            .current_dir
+            .join("cache")
+            .join("packwiz-installer.jar");
+
+        // Ensure the mock JAR file exists to prevent network download attempts
+        if !self.exists(&jar_path) {
+            // Create cache directory
+            let cache_dir = jar_path.parent().unwrap().to_path_buf();
+            self.directories.lock().unwrap().insert(cache_dir);
+
+            // Create mock JAR file
+            self.files
+                .lock()
+                .unwrap()
+                .insert(jar_path.clone(), "mock installer jar content".to_string());
+        }
+
+        Ok(jar_path)
+    }
 }
 
 /// Mock network provider for testing

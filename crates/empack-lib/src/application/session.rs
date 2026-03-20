@@ -3,12 +3,12 @@
 //! Implements the Session-Scoped Dependency Injection Pattern.
 //! Each command execution creates a session that owns all ephemeral state.
 
-use crate::Result;
 use crate::application::config::AppConfig;
 use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
 use crate::empack::state::PackStateManager;
+use crate::Result;
 use anyhow::Context;
 use indicatif::MultiProgress;
 use reqwest::Client;
@@ -83,6 +83,9 @@ pub trait FileSystemProvider {
 
     /// Get the expected cache path for packwiz-installer-bootstrap.jar
     fn get_bootstrap_jar_cache_path(&self) -> Result<PathBuf>;
+
+    /// Get the expected cache path for packwiz-installer.jar
+    fn get_installer_jar_cache_path(&self) -> Result<PathBuf>;
 }
 
 /// Provider trait for network operations
@@ -433,6 +436,26 @@ impl FileSystemProvider for LiveFileSystemProvider {
 
         Ok(cache_dir.join("packwiz-installer-bootstrap.jar"))
     }
+
+    fn get_installer_jar_cache_path(&self) -> Result<PathBuf> {
+        // First check for local installer JAR (for development/testing)
+        let local_jar = std::env::current_dir()
+            .context("Failed to get current directory")?
+            .join("installer")
+            .join("packwiz-installer.jar");
+
+        if local_jar.exists() {
+            return Ok(local_jar);
+        }
+
+        // Return cache directory path
+        let cache_dir = dirs::cache_dir()
+            .context("Failed to determine cache directory")?
+            .join("empack")
+            .join("jars");
+
+        Ok(cache_dir.join("packwiz-installer.jar"))
+    }
 }
 
 /// Live implementation of NetworkProvider
@@ -465,7 +488,6 @@ impl LiveNetworkProvider {
             curseforge_base_url,
         }
     }
-
 }
 
 impl NetworkProvider for LiveNetworkProvider {
