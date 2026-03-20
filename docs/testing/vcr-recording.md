@@ -55,7 +55,7 @@ These checks confirm that the recorded file is valid JSON and that the current c
 
 ## Current boundaries
 
-- VCR-backed work is separate from the trusted hermetic workflow matrix.
+- VCR-backed work is separate from the trusted nextest-based release-gate matrix.
 - Recording touches live network services and can fail due to rate limits or API drift.
 - Keep live-recording claims out of the default workflow guidance unless that path is promoted into the trusted matrix.
 
