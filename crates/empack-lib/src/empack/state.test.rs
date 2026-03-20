@@ -279,7 +279,7 @@ async fn test_transition_to_configured() {
         )
         .await
         .unwrap();
-    assert_eq!(result, PackState::Configured);
+    assert_eq!(result.state, PackState::Configured);
 }
 
 #[tokio::test]
@@ -294,7 +294,7 @@ async fn test_transition_to_built() {
         .execute_transition(session.process(), &packwiz, StateTransition::Build(mock_orchestrator, targets))
         .await
         .unwrap();
-    assert_eq!(result, PackState::Built);
+    assert_eq!(result.state, PackState::Built);
 }
 
 #[tokio::test]
@@ -309,14 +309,14 @@ async fn test_clean_transitions() {
         .execute_transition(&process, &packwiz, StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result, PackState::Configured);
+    assert_eq!(result.state, PackState::Configured);
 
     // Clean back to uninitialized
     let result = manager
         .execute_transition(&process, &packwiz, StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result, PackState::Uninitialized);
+    assert_eq!(result.state, PackState::Uninitialized);
 }
 
 #[tokio::test]
@@ -480,7 +480,7 @@ async fn test_pure_execute_transition_function() {
     )
     .await
     .unwrap();
-    assert_eq!(result, PackState::Configured);
+    assert_eq!(result.state, PackState::Configured);
 
     // Test initialize transition for progressive-init state after empack.yml exists
     let (provider, workdir) = create_progressive_init_test();
@@ -500,7 +500,7 @@ async fn test_pure_execute_transition_function() {
     )
     .await
     .unwrap();
-    assert_eq!(result, PackState::Configured);
+    assert_eq!(result.state, PackState::Configured);
 
     // Test build transition
     let workdir = PathBuf::from("/test/configured-project");
@@ -516,27 +516,27 @@ async fn test_pure_execute_transition_function() {
     )
     .await
     .unwrap();
-    assert_eq!(result, PackState::Built);
+    assert_eq!(result.state, PackState::Built);
 
     // Test refresh-index transition (should succeed with valid mock data)
     let (provider, workdir) = create_configured_test();
     let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::RefreshIndex).await;
     // With valid YAML and mock packwiz, refresh-index should succeed
-    assert_eq!(result.unwrap(), PackState::Configured);
+    assert_eq!(result.unwrap().state, PackState::Configured);
 
     // Test clean transition from built
     let (provider, workdir) = create_built_test();
     let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result, PackState::Configured);
+    assert_eq!(result.state, PackState::Configured);
 
     // Test clean transition from configured
     let (provider, workdir) = create_configured_test();
     let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result, PackState::Uninitialized);
+    assert_eq!(result.state, PackState::Uninitialized);
 }
 
 #[tokio::test]
@@ -654,14 +654,11 @@ fn test_pure_execute_refresh_index_function() {
     // With valid YAML and mock packwiz, synchronization should succeed
     // This demonstrates that the pure function correctly calls ConfigManager and packwiz
     match result {
-        Ok(PackState::Configured) => {
-            // Expected: refresh-index returns to Configured state after validation
+        Ok(transition_result) => {
+            assert_eq!(transition_result.state, PackState::Configured);
         }
         Err(e) => {
             panic!("Expected success, got error: {:?}", e);
-        }
-        Ok(other_state) => {
-            panic!("Expected Configured state, got: {:?}", other_state);
         }
     }
 }
@@ -796,16 +793,16 @@ async fn test_invalid_transition_execution_error() {
                 error_msg
             );
         }
-        Ok(PackState::Uninitialized) => {
+        Ok(r) if r.state == PackState::Uninitialized => {
             // Acceptable: no-op clean on already clean state (stays uninitialized)
             eprintln!("Note: Clean on Uninitialized succeeded as no-op (remained uninitialized)");
         }
-        Ok(PackState::Cleaning) => {
+        Ok(r) if r.state == PackState::Cleaning => {
             // Acceptable: transition to Cleaning state (will immediately return to previous state)
             eprintln!("Note: Clean on Uninitialized entered Cleaning state (transient)");
         }
-        Ok(other_state) => {
-            panic!("Unexpected state after invalid transition: {:?}", other_state);
+        Ok(r) => {
+            panic!("Unexpected state after invalid transition: {:?}", r.state);
         }
     }
 }
