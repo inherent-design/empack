@@ -1,5 +1,5 @@
 use super::*;
-use crate::application::session::ProcessOutput;
+use crate::application::session::{ProcessOutput, Session};
 use std::path::Path;
 use tempfile::TempDir;
 use crate::application::session_mocks::{MockCommandSession, MockFileSystemProvider, MockProcessProvider};
@@ -565,7 +565,7 @@ async fn test_execute_build_pipeline_rebuilds_from_built_state_before_server_fai
                 .with_built_project(workdir.clone()),
         )
         .with_process(process);
-    let bootstrap_jar = session.filesystem().get_bootstrap_jar_cache_path().unwrap();
+    let bootstrap_jar = session.packwiz().bootstrap_jar_cache_path().unwrap();
     session
         .filesystem()
         .create_dir_all(bootstrap_jar.parent().unwrap())

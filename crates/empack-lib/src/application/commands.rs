@@ -273,7 +273,7 @@ async fn handle_init(
 
         while current_state != PackState::Uninitialized {
             current_state = manager
-                .execute_transition(session.process(), StateTransition::Clean)
+                .execute_transition(session.process(), &*session.packwiz(), StateTransition::Clean)
                 .await
                 .context("Failed to reset existing project before initialization")?;
         }
@@ -676,7 +676,7 @@ async fn handle_init(
         loader_version: &loader_version,
     };
     let result = manager
-        .execute_transition(session.process(), StateTransition::Initialize(init_config))
+        .execute_transition(session.process(), &*session.packwiz(), StateTransition::Initialize(init_config))
         .await
         .context("Failed to initialize modpack project")?;
 
@@ -1363,7 +1363,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
         .section(&format!("🏗️  Building targets: {:?}", build_targets));
 
     // Ensure packwiz-installer-bootstrap.jar is available for builds that need it
-    let bootstrap_jar_path = session.filesystem().get_bootstrap_jar_cache_path()?;
+    let bootstrap_jar_path = session.packwiz().bootstrap_jar_cache_path()?;
     let needs_bootstrap_jar = build_targets.iter().any(|target| {
         matches!(
             target,
@@ -1419,7 +1419,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
     }
 
     // Ensure packwiz-installer.jar is available for builds that need it
-    let installer_jar_path = session.filesystem().get_installer_jar_cache_path()?;
+    let installer_jar_path = session.packwiz().installer_jar_cache_path()?;
     let needs_installer_jar = build_targets
         .iter()
         .any(|target| matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull));
@@ -1512,7 +1512,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
         let current_state = manager.discover_state()?;
         if current_state == PackState::Built {
             manager
-                .execute_transition(session.process(), StateTransition::Clean)
+                .execute_transition(session.process(), &*session.packwiz(), StateTransition::Clean)
                 .await
                 .context("Failed to clean build artifacts")?;
             session
@@ -1600,7 +1600,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     ));
 
     // Get currently installed mods
-    let installed_mods = match session.filesystem().get_installed_mods() {
+    let installed_mods = match session.packwiz().get_installed_mods() {
         Ok(mods) => {
             session
                 .display()

@@ -1,6 +1,7 @@
 use anyhow::Context;
 use crate::empack::builds::BuildError;
 use crate::empack::config::ConfigError;
+use crate::empack::packwiz::PackwizOps;
 use crate::primitives::*;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -132,7 +133,8 @@ pub fn can_transition(from: PackState, to: PackState) -> bool {
 /// Execute a state transition (pure function)
 pub async fn execute_transition<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
-    process: &dyn crate::application::session::ProcessProvider,
+    _process: &dyn crate::application::session::ProcessProvider,
+    packwiz: &dyn PackwizOps,
     workdir: &Path,
     transition: StateTransition<'_>,
 ) -> Result<PackState, StateError> {
@@ -154,7 +156,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
             }
             execute_initialize(
                 provider,
-                process,
+                packwiz,
                 workdir,
                 config.name,
                 config.author,
@@ -174,7 +176,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                     to: PackState::Configured,
                 });
             }
-            execute_refresh_index(provider, process, workdir)
+            execute_refresh_index(provider, packwiz, workdir)
         }
 
         StateTransition::Build(orchestrator, targets) => {
@@ -235,7 +237,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 #[allow(clippy::too_many_arguments)]
 pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
-    process: &dyn crate::application::session::ProcessProvider,
+    packwiz: &dyn PackwizOps,
     workdir: &Path,
     name: &str,
     author: &str,
@@ -268,9 +270,8 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
     }
 
     // Run packwiz init
-    provider
+    packwiz
         .run_packwiz_init(
-            process,
             workdir,
             name,
             author,
@@ -289,7 +290,7 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
 /// Execute packwiz refresh for an already configured project
 pub fn execute_refresh_index<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
-    process: &dyn crate::application::session::ProcessProvider,
+    packwiz: &dyn PackwizOps,
     workdir: &Path,
 ) -> Result<PackState, StateError> {
     // Validate configuration consistency using session provider
@@ -303,7 +304,7 @@ pub fn execute_refresh_index<P: crate::application::session::FileSystemProvider 
     }
 
     // Run packwiz refresh to sync mods
-    provider.run_packwiz_refresh(process, workdir)?;
+    packwiz.run_packwiz_refresh(workdir)?;
 
     Ok(PackState::Configured)
 }
@@ -511,9 +512,10 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
     pub async fn execute_transition(
         &self,
         process: &dyn crate::application::session::ProcessProvider,
+        packwiz: &dyn PackwizOps,
         transition: StateTransition<'_>,
     ) -> Result<PackState, StateError> {
-        execute_transition(self.provider, process, &self.workdir, transition).await
+        execute_transition(self.provider, process, packwiz, &self.workdir, transition).await
     }
 
     /// Begin a state transition (for BuildOrchestrator to use)

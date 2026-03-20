@@ -29,9 +29,361 @@
 //! See phase4-design-documentation report for rationale.
 
 use crate::application::session::{FileSystemProvider, ProcessProvider, Session};
+use crate::empack::state::StateError;
 use crate::primitives::ProjectPlatform;
+use anyhow::Context;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+/// Trait for packwiz CLI operations extracted from FileSystemProvider.
+///
+/// Separates packwiz-specific orchestration (init, refresh, list, JAR caching)
+/// from pure filesystem I/O, following the Interface Segregation Principle.
+pub trait PackwizOps {
+    /// Run packwiz init command to scaffold a new pack
+    #[allow(clippy::too_many_arguments)]
+    fn run_packwiz_init(
+        &self,
+        workdir: &Path,
+        name: &str,
+        author: &str,
+        version: &str,
+        modloader: &str,
+        mc_version: &str,
+        loader_version: &str,
+    ) -> Result<(), StateError>;
+
+    /// Run packwiz refresh command to sync index
+    fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), StateError>;
+
+    /// Get list of currently installed mods from packwiz
+    fn get_installed_mods(&self) -> crate::Result<HashSet<String>>;
+
+    /// Get the expected cache path for packwiz-installer-bootstrap.jar
+    fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf>;
+
+    /// Get the expected cache path for packwiz-installer.jar
+    fn installer_jar_cache_path(&self) -> crate::Result<PathBuf>;
+}
+
+/// Live implementation that routes all packwiz commands through ProcessProvider
+pub struct LivePackwizOps<'a> {
+    process: &'a dyn ProcessProvider,
+    filesystem: &'a dyn FileSystemProvider,
+}
+
+impl<'a> LivePackwizOps<'a> {
+    pub fn new(process: &'a dyn ProcessProvider, filesystem: &'a dyn FileSystemProvider) -> Self {
+        Self { process, filesystem }
+    }
+}
+
+impl PackwizOps for LivePackwizOps<'_> {
+    fn run_packwiz_init(
+        &self,
+        workdir: &Path,
+        name: &str,
+        author: &str,
+        version: &str,
+        modloader: &str,
+        mc_version: &str,
+        loader_version: &str,
+    ) -> Result<(), StateError> {
+        let pack_dir = workdir.join("pack");
+
+        if !pack_dir.exists() {
+            return Err(StateError::MissingFile {
+                file: pack_dir.to_path_buf(),
+            });
+        }
+
+        let mut args = vec![
+            "init",
+            "--name",
+            name,
+            "--author",
+            author,
+            "--version",
+            version,
+            "--mc-version",
+            mc_version,
+            "--modloader",
+            modloader,
+            "-y",
+        ];
+
+        match modloader {
+            "neoforge" => {
+                args.push("--neoforge-version");
+                args.push(loader_version);
+            }
+            "fabric" => {
+                args.push("--fabric-version");
+                args.push(loader_version);
+            }
+            "quilt" => {
+                args.push("--quilt-version");
+                args.push(loader_version);
+            }
+            "forge" => {
+                args.push("--forge-version");
+                args.push(loader_version);
+            }
+            _ => {}
+        }
+
+        let output = self.process.execute("packwiz", &args, &pack_dir).map_err(|e| {
+            StateError::CommandFailed {
+                command: format!("packwiz init failed: {}", e),
+            }
+        })?;
+
+        if !output.success {
+            return Err(StateError::CommandFailed {
+                command: format!("packwiz init returned non-zero: {}", output.stderr),
+            });
+        }
+
+        Ok(())
+    }
+
+    fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), StateError> {
+        let pack_file = workdir.join("pack").join("pack.toml");
+
+        let pack_file_str =
+            pack_file
+                .to_str()
+                .ok_or_else(|| StateError::IoError {
+                    source: anyhow::anyhow!("Invalid UTF-8 in pack.toml path"),
+                })?;
+
+        let output = self
+            .process
+            .execute(
+                "packwiz",
+                &["--pack-file", pack_file_str, "refresh"],
+                workdir,
+            )
+            .map_err(|e| StateError::CommandFailed {
+                command: format!("packwiz refresh failed: {}", e),
+            })?;
+
+        if !output.success {
+            return Err(StateError::CommandFailed {
+                command: format!("packwiz refresh returned non-zero: {}", output.stderr),
+            });
+        }
+
+        Ok(())
+    }
+
+    fn get_installed_mods(&self) -> crate::Result<HashSet<String>> {
+        let pack_dir = self.filesystem.current_dir()?.join("pack");
+        let output = self
+            .process
+            .execute("packwiz", &["list"], &pack_dir)
+            .context("Failed to execute packwiz list command")?;
+
+        if !output.success {
+            return Err(anyhow::anyhow!("Packwiz list command failed: {}", output.stderr));
+        }
+
+        let mut installed_mods = HashSet::new();
+
+        for line in output.stdout.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("Mods:") || line.starts_with("Total:") {
+                continue;
+            }
+
+            let mod_name = if line.starts_with("- ") {
+                line.trim_start_matches("- ").trim()
+            } else if line.ends_with(".pw.toml") {
+                line.trim_end_matches(".pw.toml")
+            } else {
+                line
+            };
+
+            let normalized_name = mod_name.to_lowercase().replace([' ', '-'], "_");
+            installed_mods.insert(normalized_name);
+        }
+
+        Ok(installed_mods)
+    }
+
+    fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
+        let local_jar = self
+            .filesystem
+            .current_dir()?
+            .join("installer")
+            .join("packwiz-installer-bootstrap.jar");
+
+        if self.filesystem.exists(&local_jar) {
+            return Ok(local_jar);
+        }
+
+        let cache_dir = dirs::cache_dir()
+            .context("Failed to determine cache directory")?
+            .join("empack")
+            .join("jars");
+
+        Ok(cache_dir.join("packwiz-installer-bootstrap.jar"))
+    }
+
+    fn installer_jar_cache_path(&self) -> crate::Result<PathBuf> {
+        let local_jar = self
+            .filesystem
+            .current_dir()?
+            .join("installer")
+            .join("packwiz-installer.jar");
+
+        if self.filesystem.exists(&local_jar) {
+            return Ok(local_jar);
+        }
+
+        let cache_dir = dirs::cache_dir()
+            .context("Failed to determine cache directory")?
+            .join("empack")
+            .join("jars");
+
+        Ok(cache_dir.join("packwiz-installer.jar"))
+    }
+}
+
+/// Mock implementation for unit testing.
+///
+/// Replicates the mock behavior previously in MockFileSystemProvider:
+/// - `run_packwiz_init` creates pack/pack.toml and pack/index.toml in-memory
+/// - `run_packwiz_refresh` verifies pack.toml exists
+/// - `get_installed_mods` returns a configured mock mod set
+/// - JAR cache paths return test-appropriate paths
+#[cfg(feature = "test-utils")]
+pub struct MockPackwizOps {
+    pub installed_mods: HashSet<String>,
+    pub filesystem: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<PathBuf, String>>>,
+    pub current_dir: PathBuf,
+}
+
+#[cfg(feature = "test-utils")]
+impl MockPackwizOps {
+    pub fn new() -> Self {
+        Self {
+            installed_mods: HashSet::new(),
+            filesystem: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            current_dir: PathBuf::from("/test/workdir"),
+        }
+    }
+
+    pub fn with_installed_mods(mut self, mods: HashSet<String>) -> Self {
+        self.installed_mods = mods;
+        self
+    }
+
+    pub fn with_current_dir(mut self, dir: PathBuf) -> Self {
+        self.current_dir = dir;
+        self
+    }
+
+    /// Connect to a MockFileSystemProvider's in-memory files for init/refresh side effects
+    pub fn with_filesystem(
+        mut self,
+        files: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<PathBuf, String>>>,
+    ) -> Self {
+        self.filesystem = files;
+        self
+    }
+}
+
+#[cfg(feature = "test-utils")]
+impl Default for MockPackwizOps {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Default index.toml template for packwiz mock init
+#[cfg(feature = "test-utils")]
+const MOCK_DEFAULT_INDEX_TOML: &str = r#"hash-format = "sha256"
+
+[[files]]
+file = "pack.toml"
+hash = ""
+"#;
+
+#[cfg(feature = "test-utils")]
+impl PackwizOps for MockPackwizOps {
+    fn run_packwiz_init(
+        &self,
+        workdir: &Path,
+        name: &str,
+        author: &str,
+        version: &str,
+        modloader: &str,
+        mc_version: &str,
+        loader_version: &str,
+    ) -> Result<(), StateError> {
+        let pack_dir = workdir.join("pack");
+        let pack_file = pack_dir.join("pack.toml");
+        let default_pack_toml = format!(
+            r#"name = "{}"
+author = "{}"
+version = "{}"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "{}"
+{} = "{}"
+"#,
+            name, author, version, mc_version, modloader, loader_version
+        );
+        self.filesystem
+            .lock()
+            .unwrap()
+            .insert(pack_file, default_pack_toml);
+
+        let index_file = pack_dir.join("index.toml");
+        self.filesystem
+            .lock()
+            .unwrap()
+            .insert(index_file, MOCK_DEFAULT_INDEX_TOML.to_string());
+
+        Ok(())
+    }
+
+    fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), StateError> {
+        let pack_file = workdir.join("pack").join("pack.toml");
+        if !self.filesystem.lock().unwrap().contains_key(&pack_file) {
+            return Err(StateError::MissingFile {
+                file: pack_file.to_path_buf(),
+            });
+        }
+        Ok(())
+    }
+
+    fn get_installed_mods(&self) -> crate::Result<HashSet<String>> {
+        Ok(self.installed_mods.clone())
+    }
+
+    fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
+        Ok(self
+            .current_dir
+            .join("cache")
+            .join("packwiz-installer-bootstrap.jar"))
+    }
+
+    fn installer_jar_cache_path(&self) -> crate::Result<PathBuf> {
+        Ok(self
+            .current_dir
+            .join("cache")
+            .join("packwiz-installer.jar"))
+    }
+}
 
 /// Errors from packwiz operations
 #[derive(Debug, Error)]

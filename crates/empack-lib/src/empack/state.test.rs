@@ -1,7 +1,8 @@
 use super::*;
 use crate::application::session::ProcessOutput;
 use crate::empack::config::ConfigManager;
-use std::collections::{HashMap, HashSet};
+use crate::empack::packwiz::MockPackwizOps;
+use std::collections::HashSet;
 
 /// Mock implementation of FileSystemProvider for testing - zero I/O
 /// Now supports stateful operations that actually modify the simulated filesystem
@@ -13,8 +14,6 @@ struct MockStateProvider {
     directories: std::cell::RefCell<HashSet<PathBuf>>,
     /// Files with build artifacts
     build_artifacts: std::cell::RefCell<HashSet<PathBuf>>,
-    /// Results for packwiz commands
-    packwiz_results: HashMap<String, Result<(), StateError>>,
 }
 
 impl MockStateProvider {
@@ -23,7 +22,6 @@ impl MockStateProvider {
             files: std::cell::RefCell::new(HashSet::new()),
             directories: std::cell::RefCell::new(HashSet::new()),
             build_artifacts: std::cell::RefCell::new(HashSet::new()),
-            packwiz_results: HashMap::new(),
         }
     }
 
@@ -50,10 +48,6 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
     }
 
     // state_manager method removed - create PackStateManager directly
-
-    fn get_installed_mods(&self) -> anyhow::Result<HashSet<String>> {
-        Ok(HashSet::new())
-    }
 
     fn config_manager(&self, workdir: PathBuf) -> ConfigManager<'_> {
         ConfigManager::new(workdir, self)
@@ -163,49 +157,11 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         Ok(())
     }
 
-    fn run_packwiz_init(
-        &self,
-        _process: &dyn crate::application::session::ProcessProvider,
-        _workdir: &Path,
-        _name: &str,
-        _author: &str,
-        _version: &str,
-        _modloader: &str,
-        _mc_version: &str,
-        _loader_version: &str,
-    ) -> Result<(), StateError> {
-        match self.packwiz_results.get("init") {
-            Some(Ok(_)) => Ok(()),
-            Some(Err(_)) => Err(StateError::CommandFailed {
-                command: "packwiz init".to_string(),
-            }),
-            None => Ok(()), // Default success
-        }
-    }
+}
 
-    fn run_packwiz_refresh(
-        &self,
-        _process: &dyn crate::application::session::ProcessProvider,
-        _workdir: &Path,
-    ) -> Result<(), StateError> {
-        match self.packwiz_results.get("refresh") {
-            Some(Ok(_)) => Ok(()),
-            Some(Err(_)) => Err(StateError::CommandFailed {
-                command: "packwiz refresh".to_string(),
-            }),
-            None => Ok(()), // Default success
-        }
-    }
-
-    fn get_bootstrap_jar_cache_path(&self) -> anyhow::Result<PathBuf> {
-        // For state tests, return a mock path
-        Ok(PathBuf::from("/test/cache/packwiz-installer-bootstrap.jar"))
-    }
-
-    fn get_installer_jar_cache_path(&self) -> anyhow::Result<PathBuf> {
-        // For state tests, return a mock path
-        Ok(PathBuf::from("/test/cache/packwiz-installer.jar"))
-    }
+/// Create a MockPackwizOps for state tests that stores pack files via its own in-memory map
+fn mock_packwiz_for_test() -> MockPackwizOps {
+    MockPackwizOps::new()
 }
 
 /// Helper to create a test setup with uninitialized state
@@ -307,9 +263,11 @@ async fn test_transition_to_configured() {
     let manager = PackStateManager::new(workdir, &provider);
     let process = crate::application::session_mocks::MockProcessProvider::new();
 
+    let packwiz = mock_packwiz_for_test();
     let result = manager
         .execute_transition(
             &process,
+            &packwiz,
             StateTransition::Initialize(crate::primitives::InitializationConfig {
                 name: "Test Pack",
                 author: "Test Author",
@@ -322,9 +280,6 @@ async fn test_transition_to_configured() {
         .await
         .unwrap();
     assert_eq!(result, PackState::Configured);
-
-    // Note: In the new architecture, we verify the logic without checking actual files
-    // The MockStateProvider simulates successful file operations
 }
 
 #[tokio::test]
@@ -334,8 +289,9 @@ async fn test_transition_to_built() {
     let manager = PackStateManager::new(workdir.clone(), session.filesystem());
     let targets = vec![BuildTarget::Mrpack];
     let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
+    let packwiz = mock_packwiz_for_test();
     let result = manager
-        .execute_transition(session.process(), StateTransition::Build(mock_orchestrator, targets))
+        .execute_transition(session.process(), &packwiz, StateTransition::Build(mock_orchestrator, targets))
         .await
         .unwrap();
     assert_eq!(result, PackState::Built);
@@ -346,22 +302,21 @@ async fn test_clean_transitions() {
     let (provider, workdir) = create_built_test();
     let manager = PackStateManager::new(workdir, &provider);
     let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
 
     // Start from built state and clean back to configured
     let result = manager
-        .execute_transition(&process, StateTransition::Clean)
+        .execute_transition(&process, &packwiz, StateTransition::Clean)
         .await
         .unwrap();
     assert_eq!(result, PackState::Configured);
 
     // Clean back to uninitialized
     let result = manager
-        .execute_transition(&process, StateTransition::Clean)
+        .execute_transition(&process, &packwiz, StateTransition::Clean)
         .await
         .unwrap();
     assert_eq!(result, PackState::Uninitialized);
-
-    // The MockStateProvider simulates successful cleanup operations
 }
 
 #[tokio::test]
@@ -369,6 +324,7 @@ async fn test_invalid_transitions() {
     let (provider, workdir) = create_uninitialized_test();
     let manager = PackStateManager::new(workdir.clone(), &provider);
     let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
 
     // Can't build from uninitialized
     let mock_session = crate::application::session_mocks::MockCommandSession::new();
@@ -376,6 +332,7 @@ async fn test_invalid_transitions() {
     let result = manager
         .execute_transition(
             &process,
+            &packwiz,
             StateTransition::Build(mock_orchestrator, vec![BuildTarget::Mrpack]),
         )
         .await;
@@ -383,7 +340,7 @@ async fn test_invalid_transitions() {
 
     // Can't sync from uninitialized
     let result = manager
-        .execute_transition(&process, StateTransition::RefreshIndex)
+        .execute_transition(&process, &packwiz, StateTransition::RefreshIndex)
         .await;
     assert!(result.is_err());
 }
@@ -503,12 +460,14 @@ fn test_pure_can_transition_function() {
 #[tokio::test]
 async fn test_pure_execute_transition_function() {
     let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
 
     // Test initialize transition
     let (provider, workdir) = create_uninitialized_test();
     let result = execute_transition(
         &provider,
         &process,
+        &packwiz,
         &workdir,
         StateTransition::Initialize(crate::primitives::InitializationConfig {
             name: "Test Pack",
@@ -528,6 +487,7 @@ async fn test_pure_execute_transition_function() {
     let result = execute_transition(
         &provider,
         &process,
+        &packwiz,
         &workdir,
         StateTransition::Initialize(crate::primitives::InitializationConfig {
             name: "Test Pack",
@@ -550,6 +510,7 @@ async fn test_pure_execute_transition_function() {
     let result = execute_transition(
         session.filesystem(),
         session.process(),
+        &packwiz,
         &workdir,
         StateTransition::Build(mock_orchestrator, targets),
     )
@@ -559,20 +520,20 @@ async fn test_pure_execute_transition_function() {
 
     // Test refresh-index transition (should succeed with valid mock data)
     let (provider, workdir) = create_configured_test();
-    let result = execute_transition(&provider, &process, &workdir, StateTransition::RefreshIndex).await;
+    let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::RefreshIndex).await;
     // With valid YAML and mock packwiz, refresh-index should succeed
     assert_eq!(result.unwrap(), PackState::Configured);
 
     // Test clean transition from built
     let (provider, workdir) = create_built_test();
-    let result = execute_transition(&provider, &process, &workdir, StateTransition::Clean)
+    let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::Clean)
         .await
         .unwrap();
     assert_eq!(result, PackState::Configured);
 
     // Test clean transition from configured
     let (provider, workdir) = create_configured_test();
-    let result = execute_transition(&provider, &process, &workdir, StateTransition::Clean)
+    let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::Clean)
         .await
         .unwrap();
     assert_eq!(result, PackState::Uninitialized);
@@ -582,8 +543,9 @@ async fn test_pure_execute_transition_function() {
 async fn test_refresh_transition_rejects_progressive_init_state() {
     let (provider, workdir) = create_progressive_init_test();
     let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
 
-    let result = execute_transition(&provider, &process, &workdir, StateTransition::RefreshIndex).await;
+    let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::RefreshIndex).await;
 
     assert!(matches!(result, Err(StateError::InvalidTransition { .. })));
 }
@@ -592,10 +554,12 @@ async fn test_refresh_transition_rejects_progressive_init_state() {
 async fn test_initialize_transition_rejects_already_configured_project() {
     let (provider, workdir) = create_configured_test();
     let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
 
     let result = execute_transition(
         &provider,
         &process,
+        &packwiz,
         &workdir,
         StateTransition::Initialize(crate::primitives::InitializationConfig {
             name: "Test Pack",
@@ -632,10 +596,10 @@ fn test_begin_build_transition_allows_rebuilds_from_built_state() {
 #[test]
 fn test_pure_execute_initialize_function() {
     let (provider, workdir) = create_uninitialized_test();
-    let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
     let result = execute_initialize(
         &provider,
-        &process,
+        &packwiz,
         &workdir,
         "Test Pack",
         "Test Author",
@@ -679,8 +643,13 @@ fn test_pure_execute_refresh_index_function() {
     // Test that execute_refresh_index correctly validates configuration and runs packwiz refresh
     // With valid mock data, this should succeed demonstrating the function works correctly
     let (provider, workdir) = create_configured_test();
-    let process = crate::application::session_mocks::MockProcessProvider::new();
-    let result = execute_refresh_index(&provider, &process, &workdir);
+    let packwiz = mock_packwiz_for_test();
+    // Pre-populate the mock packwiz filesystem with pack.toml so refresh finds it
+    packwiz.filesystem.lock().unwrap().insert(
+        workdir.join("pack").join("pack.toml"),
+        "mock".to_string(),
+    );
+    let result = execute_refresh_index(&provider, &packwiz, &workdir);
 
     // With valid YAML and mock packwiz, synchronization should succeed
     // This demonstrates that the pure function correctly calls ConfigManager and packwiz
@@ -806,11 +775,12 @@ async fn test_invalid_transition_execution_error() {
     let (provider, workdir) = create_uninitialized_test();
     let manager = PackStateManager::new(workdir.clone(), &provider);
     let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
 
     // Attempt to execute Cleaning transition from Uninitialized state
     // Cleaning expects Built or Configured state, so this should fail
     let result = manager
-        .execute_transition(&process, StateTransition::Cleaning)
+        .execute_transition(&process, &packwiz, StateTransition::Cleaning)
         .await;
 
     // Transition should fail with error for invalid transition
@@ -902,10 +872,10 @@ file = "index.toml"
             .to_string(),
         );
 
-    let process_provider = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
 
     // Execute refresh-index - should return error due to malformed YAML
-    let result = execute_refresh_index(&fs_provider, &process_provider, &workdir);
+    let result = execute_refresh_index(&fs_provider, &packwiz, &workdir);
 
     // Verify error occurred
     assert!(
