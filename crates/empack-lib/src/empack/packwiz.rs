@@ -473,18 +473,15 @@ impl<'a> PackwizMetadata<'a> {
     /// Extracts workdir from session config and constructs pack_dir path.
     /// Uses standalone construction pattern (not factory) to avoid lifetime issues.
     pub fn new(session: &'a dyn Session) -> Result<Self, PackwizError> {
-        let workdir = session
-            .config()
-            .app_config()
-            .workdir
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| {
-                session
-                    .filesystem()
-                    .current_dir()
-                    .expect("Failed to get current directory")
-            });
+        let workdir = match session.config().app_config().workdir.as_ref().cloned() {
+            Some(w) => w,
+            None => session
+                .filesystem()
+                .current_dir()
+                .map_err(|e| PackwizError::InvalidPath {
+                    reason: format!("Failed to get current directory: {e}"),
+                })?,
+        };
 
         let pack_dir = workdir.join("pack");
 
