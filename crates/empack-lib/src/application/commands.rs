@@ -232,18 +232,13 @@ async fn handle_init(
 
         (potential_dir, Some(name))
     } else {
-        let workdir = session
-            .config()
-            .app_config()
-            .workdir
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| {
-                session
-                    .filesystem()
-                    .current_dir()
-                    .expect("Failed to get current directory")
-            });
+        let workdir = match session.config().app_config().workdir.as_ref().cloned() {
+            Some(w) => w,
+            None => session
+                .filesystem()
+                .current_dir()
+                .context("Failed to get current directory")?,
+        };
         (workdir, None)
     };
 
@@ -311,13 +306,13 @@ async fn handle_init(
     };
 
     // Try to get git user.name as smart default
-    let default_author = std::process::Command::new("git")
-        .args(["config", "user.name"])
-        .output()
+    let default_author = session
+        .process()
+        .execute("git", &["config", "user.name"], &target_dir)
         .ok()
         .and_then(|output| {
-            if output.status.success() {
-                String::from_utf8(output.stdout).ok()
+            if output.success {
+                Some(output.stdout)
             } else {
                 None
             }

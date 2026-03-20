@@ -104,18 +104,15 @@ pub struct BuildArtifact {
 
 impl<'a> BuildOrchestrator<'a> {
     pub fn new(session: &'a dyn crate::application::session::Session) -> Result<Self, BuildError> {
-        let workdir = session
-            .config()
-            .app_config()
-            .workdir
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| {
-                session
-                    .filesystem()
-                    .current_dir()
-                    .expect("Failed to get current directory")
-            });
+        let workdir = match session.config().app_config().workdir.as_ref().cloned() {
+            Some(w) => w,
+            None => session
+                .filesystem()
+                .current_dir()
+                .map_err(|e| BuildError::ConfigError {
+                    reason: format!("Failed to get current directory: {e}"),
+                })?,
+        };
         let dist_dir = crate::empack::state::artifact_root(&workdir);
 
         Ok(Self {
