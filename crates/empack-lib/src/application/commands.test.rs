@@ -231,7 +231,8 @@ mod handle_init_tests {
 
         assert!(result.is_ok());
         assert!(!session.filesystem().exists(&target_dir.join("empack.yml")));
-        assert!(session.filesystem().is_directory(&target_dir));
+        // Directory should NOT exist -- ops-as-values defers mkdir past confirmation
+        assert!(!session.filesystem().is_directory(&target_dir));
         assert_eq!(
             session.interactive_provider.get_confirm_calls(),
             vec![("Create modpack with these settings?".to_string(), true)]
