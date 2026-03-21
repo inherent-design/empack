@@ -431,9 +431,13 @@ async fn handle_init(
             .display()
             .status()
             .info(&format!("Using Minecraft version: {}", mc_ver));
-        // FIXME: Validate MC version exists in minecraft_versions list
-        // FIXME: Handle invalid MC version gracefully (error or fallback?)
-        // FIXME: Should we case-insensitively match versions? (e.g., "1.21.4" vs "1.21.4")
+        if !minecraft_versions.iter().any(|v| v.eq_ignore_ascii_case(&mc_ver)) {
+            anyhow::bail!(
+                "Minecraft version '{}' not found. Available versions include: {}",
+                mc_ver,
+                minecraft_versions.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
         mc_ver
     } else {
         let mc_version_index = session
@@ -484,9 +488,8 @@ async fn handle_init(
         }
     };
 
-    // FIXME: Filter compatible_loaders by MC version compatibility
-    // FIXME: Some loaders may not support certain MC versions (Fabric 400, Quilt 404)
-    // FIXME: Should we pre-filter here or let version fetching handle it?
+    // Loader compatibility is already filtered by fetch_compatible_loaders above.
+    // Loaders that 404 for a given MC version are excluded from the list.
 
     // If no compatible loaders found, inform user and exit gracefully
     if compatible_loaders.is_empty() {
@@ -507,22 +510,25 @@ async fn handle_init(
             .display()
             .status()
             .info(&format!("Using loader: {}", loader_str));
-        // FIXME: Validate loader_str is in compatible_loaders list
-        // FIXME: Parse loader_str (future: support @version syntax like "neoforge@latest")
-        // FIXME: Convert string to ModLoader enum (case-insensitive matching?)
-        // FIXME: What if loader not found in compatible_loaders? Error or proceed anyway?
-
-        // Parse the loader string
         let parsed_loader = ModLoader::parse(&loader_str)
             .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
 
-        // Convert to versions::ModLoader for compatibility with existing code
         let versions_loader = match parsed_loader {
             ModLoader::NeoForge => crate::empack::versions::ModLoader::NeoForge,
             ModLoader::Fabric => crate::empack::versions::ModLoader::Fabric,
             ModLoader::Quilt => crate::empack::versions::ModLoader::Quilt,
             ModLoader::Forge => crate::empack::versions::ModLoader::Forge,
         };
+
+        if !compatible_loaders.contains(&versions_loader) {
+            let available: Vec<&str> = compatible_loaders.iter().map(|l| l.as_str()).collect();
+            anyhow::bail!(
+                "Loader '{}' is not compatible with Minecraft {}. Compatible loaders: {}",
+                loader_str,
+                minecraft_version,
+                available.join(", ")
+            );
+        }
 
         (versions_loader, loader_str)
     } else {
@@ -649,10 +655,8 @@ async fn handle_init(
         }
     };
 
-    // FIXME: This already filters by MC version for some loaders (Fabric, Quilt)
-    // FIXME: Verify NeoForge and Forge filtering is correct
-    // FIXME: What if loader_versions is empty? (unsupported MC version)
-    //        Should we error here or earlier in loader selection?
+    // Each loader's fetch function already filters by MC version.
+    // Empty results are caught by the is_empty() check below.
 
     // Loader version selection with FuzzySelect (pagination enabled, 6 items per page)
     let loader_version = if loader_versions.is_empty() {
@@ -738,14 +742,14 @@ async fn handle_init(
         .filesystem()
         .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
 
-    // FIXME: Final validation checkpoint before calling packwiz
-    // FIXME: Verify MC version + loader + loader version combination is valid
-    // FIXME: Cross-check all compatibility constraints:
-    //        - Does this loader support this MC version?
-    //        - Does this loader version support this MC version?
-    //        - Are we using correct packwiz flag format (--neoforge-version vs --fabric-version)?
-    // FIXME: Consider adding a validate_init_config() function to centralize all checks
-    // FIXME: When using CLI flags, we skip interactive validation - need programmatic validation
+    validate_init_inputs(
+        &minecraft_version,
+        &minecraft_versions,
+        &loader_str,
+        &compatible_loaders,
+        &loader_version,
+        &loader_versions,
+    )?;
 
     // Execute initialization with the collected information
     let init_config = crate::primitives::InitializationConfig {
@@ -785,6 +789,53 @@ async fn handle_init(
                 transition_result.state
             ));
         }
+    }
+
+    Ok(())
+}
+
+/// Validate that all init inputs are consistent with the fetched version lists.
+/// Called as a final checkpoint before executing packwiz init.
+fn validate_init_inputs(
+    mc_version: &str,
+    minecraft_versions: &[String],
+    loader_str: &str,
+    compatible_loaders: &[crate::empack::versions::ModLoader],
+    loader_version: &str,
+    loader_versions: &[String],
+) -> Result<()> {
+    if !minecraft_versions.iter().any(|v| v.eq_ignore_ascii_case(mc_version)) {
+        anyhow::bail!(
+            "Minecraft version '{}' not found in available versions",
+            mc_version
+        );
+    }
+
+    let parsed_loader = ModLoader::parse(loader_str)
+        .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
+    let versions_loader = match parsed_loader {
+        ModLoader::NeoForge => crate::empack::versions::ModLoader::NeoForge,
+        ModLoader::Fabric => crate::empack::versions::ModLoader::Fabric,
+        ModLoader::Quilt => crate::empack::versions::ModLoader::Quilt,
+        ModLoader::Forge => crate::empack::versions::ModLoader::Forge,
+    };
+    if !compatible_loaders.contains(&versions_loader) {
+        let available: Vec<&str> = compatible_loaders.iter().map(|l| l.as_str()).collect();
+        anyhow::bail!(
+            "Loader '{}' is not compatible with Minecraft {}. Compatible: {}",
+            loader_str,
+            mc_version,
+            available.join(", ")
+        );
+    }
+
+    if !loader_versions.iter().any(|v| v == loader_version) {
+        anyhow::bail!(
+            "Loader version '{}' not found for {} on Minecraft {}",
+            loader_version,
+            loader_str,
+            mc_version
+        );
     }
 
     Ok(())

@@ -15,7 +15,7 @@ use std::io;
 
 /// Interactive display manager for prompts and selections
 pub struct InteractiveDisplay<'a> {
-    /// TODO(lifecycle): Field stored but never read; consider removing in future refactor
+    /// Held to keep the StyleManager borrow alive for the display lifetime
     #[allow(dead_code)]
     styling: &'a StyleManager,
     theme: Box<dyn Theme>,

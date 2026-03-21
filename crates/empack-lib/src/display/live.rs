@@ -189,8 +189,7 @@ impl PromptProvider for LivePromptProvider {
     }
 
     fn multi_select(&self, message: &str, options: &[&str]) -> Vec<usize> {
-        // For now, convert single select to multi-select for compatibility
-        // TODO: Implement proper multi-select when needed
+        // Single-select fallback; multi-select not used by any current command
         match self.select(message, options) {
             Some(index) => vec![index],
             None => vec![],
