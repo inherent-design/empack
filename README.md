@@ -1,51 +1,81 @@
+[![Build Status](https://img.shields.io/github/actions/workflow/status/inherent-design/empack/ci.yml?branch=dev&style=flat)](https://github.com/inherent-design/empack/actions/workflows/ci.yml) [![License](https://img.shields.io/github/license/inherent-design/empack?style=flat)](LICENSE)
+
 # empack
 
-empack is a Rust CLI for Minecraft modpack project setup, dependency reconciliation, and build or export workflows around `packwiz`.
+empack is a Rust CLI for Minecraft modpack management. It handles project initialization, mod discovery across Modrinth and CurseForge, dependency reconciliation, and build/export workflows. Build targets include mrpack archives and full client/server distributions. empack uses [packwiz](https://github.com/packwiz/packwiz) as its underlying pack management layer.
 
-## Getting started
+## Getting Started
 
-See [`docs/usage.md`](docs/usage.md) for installation prerequisites, command reference, and typical workflows.
+Verify that external tools are available, then scaffold a new project:
 
-## Command surface
+```bash
+empack requirements          # check for packwiz, java, etc.
+empack init my-pack          # create a new modpack project
+cd my-pack
+empack add sodium            # search and add a mod
+empack sync                  # reconcile dependencies
+empack build all             # produce mrpack, client, and server artifacts
+```
+
+See [Usage Guide](docs/usage.md) for the full command reference, flags, and environment variables.
+
+## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `empack requirements` | Check external tool availability and setup guidance |
+| `empack requirements` | Check external tool availability |
 | `empack version` | Print version information |
 | `empack init` | Create or complete a modpack project |
 | `empack add` | Add mods by name, URL, or project ID |
-| `empack sync` | Reconcile `empack.yml` with installed pack state |
-| `empack build` | Build `mrpack`, `client`, `server`, `client-full`, `server-full`, or `all` |
+| `empack sync` | Reconcile declared dependencies with installed state |
+| `empack build` | Build mrpack, client, server, or all targets |
 | `empack remove` | Remove mods from the current project (alias: `rm`) |
 | `empack clean` | Remove build outputs from `dist/` |
 
-## Current status
+## Project Model
 
-- Active branch: `dev`
-- Test surface: 325 passed, 15 skipped in `empack-lib`; 46 passed in `empack-tests` (371 total)
-- CI uses `cargo nextest`; grouped `cargo test` is advisory-only due to shared global state conflicts. See [`docs/testing/README.md`](docs/testing/README.md) for details.
+Each empack project consists of three parts:
 
-## Project structure
-
-| Path | Contents |
-| --- | --- |
-| `crates/empack` | CLI entry point |
-| `crates/empack-lib` | Application logic, state, resolver, and build system |
-| `crates/empack-tests` | Workflow and integration tests |
-| `docs/usage.md` | Usage and workflow reference |
-| `docs/testing/README.md` | Verification matrix and test caveats |
-| `docs/testing/vcr-recording.md` | VCR fixture maintenance |
-| `docs/reference/` | Provider API reference (Modrinth, CurseForge) |
+- `empack.yml`: project configuration; mod list, loader version, Minecraft version, and build settings.
+- `pack/`: managed packwiz workspace. empack reads and writes this directory; manual edits are overwritten on sync.
+- `dist/`: build artifact output. Contains mrpack archives and client/server distribution folders after a build.
 
 ## Documentation
 
-- [`docs/usage.md`](docs/usage.md): command reference and workflows
-- [`docs/testing/README.md`](docs/testing/README.md): verification matrix
-- [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md): VCR fixture maintenance
-- [`CONTRIBUTING.md`](CONTRIBUTING.md): contributor workflow
-- [`docs/reference/`](docs/reference/): Modrinth and CurseForge API notes
-- [`docs/ARCHITECTURAL_DECISION_RECORD.md`](docs/ARCHITECTURAL_DECISION_RECORD.md): historical architecture context
+| Document | Description |
+| --- | --- |
+| [Usage Guide](docs/usage.md) | Command reference, flags, and environment variables |
+| [Testing](docs/testing.md) | Test strategy, verification matrix, VCR fixtures |
+| [Contributing](CONTRIBUTING.md) | Development setup and workflow |
+| [Provider API: Modrinth](docs/reference/MODRINTH.md) | Modrinth API reference |
+| [Provider API: CurseForge](docs/reference/CURSEFORGE.md) | CurseForge API reference |
+| [Architecture Decision Record](docs/ARCHITECTURAL_DECISION_RECORD.md) | Historical architecture context |
 
-## Historical context
+## Project Structure
 
-The `v1/` and `v2/` directories contain earlier Bash implementations, retained for lineage reference only.
+```
+empack/
+  crates/
+    empack/              CLI entry point
+    empack-lib/          Application logic, resolver, and build system
+    empack-tests/        Workflow and integration tests
+  docs/
+    usage.md             Command reference
+    testing.md           Test strategy and verification
+    reference/           Provider API documentation
+  v1/, v2/               Historical Bash implementations (reference only)
+```
+
+## Development
+
+```bash
+cargo build --workspace
+cargo nextest run -p empack-lib --features test-utils
+cargo nextest run -p empack-tests
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full development setup, testing strategy, and contribution guidelines.
+
+## License
+
+[Apache 2.0](LICENSE)

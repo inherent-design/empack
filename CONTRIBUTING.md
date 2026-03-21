@@ -1,88 +1,140 @@
 # Contributing to empack
 
-## Reference documents
+## Prerequisites
 
-- Project overview and structure: [`README.md`](README.md)
-- Command reference and workflows: [`docs/usage.md`](docs/usage.md)
-- Verification matrix and test caveats: [`docs/testing/README.md`](docs/testing/README.md)
-- VCR fixture maintenance: [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
-- Provider API notes: [`docs/reference/MODRINTH.md`](docs/reference/MODRINTH.md), [`docs/reference/CURSEFORGE.md`](docs/reference/CURSEFORGE.md)
+- [Rust toolchain](https://rustup.rs/) (stable)
+- [cargo-nextest](https://nexte.st/) (test runner; CI uses it exclusively)
+- [packwiz](https://packwiz.infra.link/) (required for live CLI workflows)
+- Optional: `curl`, `jq` (VCR cassette recording)
 
-## Scope
-
-This repository treats the Rust workspace as the active implementation line. The Bash implementations in `v1/` and `v2/` are historical reference material only.
-
-See [`README.md`](README.md) for the repository layout.
-
-## Local setup
-
-Run the smallest relevant checks first:
+## Getting Started
 
 ```bash
-cargo build --workspace --locked
-cargo check --workspace --all-targets --locked
+git clone https://github.com/inherent-design/empack.git
+cd empack
+cargo build --workspace
+cargo check --workspace --all-targets
 ```
 
-Tooling notes:
+## Testing
 
-- `cargo nextest` is the default test runner for trusted workflow paths; CI uses it exclusively
-- Live CLI workflows may require external tools such as `packwiz`
-- Hermetic workflow tests use mocked toolchains where possible
-- VCR maintenance uses `curl`, `jq`, and `.env.local` as described in [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
+CI uses `cargo nextest` exclusively. The trusted release gate:
 
-## Verification expectations
+```bash
+cargo check --workspace --all-targets
+cargo clippy --workspace --all-targets
+cargo nextest run -p empack-lib --features test-utils
+cargo nextest run -p empack-tests
+```
 
-Before claiming a workflow is trusted, check it against [`docs/testing/README.md`](docs/testing/README.md).
+Grouped `cargo test` is advisory-only due to global state conflicts between workflow tests. Prefer nextest and targeted isolated reruns.
 
-Rules:
+Use isolated reruns for touched workflow behavior:
 
-1. Prefer the smallest exact command that proves the touched behavior.
-2. Treat grouped `cargo test` workflow runs as advisory-only until the broader global-state and env-conflict instability is fixed.
-3. Keep VCR-backed flows separate from the default hermetic matrix.
-4. If a path is deferred or only partially covered, document that directly.
+```bash
+cargo nextest run -p empack-tests --test sync_workflow test_sync_workflow_full
+cargo nextest run -p empack-lib --features test-utils --lib handle_remove_tests
+```
 
-## Documentation rules
+See [docs/testing.md](docs/testing.md) for the full verification matrix and VCR fixture maintenance.
 
-- Always write `empack` in lowercase.
-- Keep prose factual, technical, and concise. No em-dashes, no superlatives, no marketing language.
-- Do not add badges, support promises, or release statements the repo cannot prove.
-- When behavior changes, update the affected docs in the same change when practical.
-- Keep historical Bash content in reference sections only, not in active product guidance.
-- Label current truth versus historical context directly instead of mixing them.
+## Development Workflow
 
-## Coding notes
+1. Create a feature branch from `dev`
+2. Make changes
+3. Lint: `cargo clippy --workspace --all-targets`
+4. Test: run the relevant nextest commands above
+5. Submit PR against `dev`
 
-- Follow surrounding Rust patterns unless a narrower contract improvement is clearly better.
-- Keep changes scoped.
-- Avoid broad refactors during feature or docs slices.
-- Remove temporary logging before finishing a change.
-- Prefer trace and error logging where durable logging is needed.
+## Project Structure
+
+```
+empack/
+  crates/
+    empack/              CLI entry point (clap)
+    empack-lib/          Application logic, resolver, build system
+    empack-tests/        Workflow and integration tests
+  docs/
+    usage.md             Command reference
+    testing.md           Test strategy and verification
+    reference/           Provider API documentation (Modrinth, CurseForge)
+  scripts/               VCR recording and utility scripts
+  v1/, v2/               Historical Bash implementations (reference only)
+```
 
 ## Commits
 
-Use a short conventional subject line:
+Conventional-style prefixes: `feat:`, `fix:`, `chore:`, `ci:`, `docs:`, `test:`, `refactor:`
 
-- `docs: refresh usage guide`
-- `fix: preserve dist metadata on clean`
-- `test: harden sync workflow assertions`
+Subject line in imperative mood, under 72 characters. Body explains why, not what.
 
-Guidelines:
+```
+docs: refresh usage guide
+fix: preserve dist metadata on clean
+test: harden sync workflow assertions
+```
 
-- imperative mood
-- under 72 characters when possible
-- explain why in the body if more context is needed
+## Code Style
 
-## VCR and fixture maintenance
+### General
+
+Run `cargo clippy` before submitting. Follow existing patterns in the codebase. When in doubt, match the surrounding code.
+
+### Logging
+
+Use structured logging at appropriate levels:
+- `error!` for failures that affect command outcome
+- `trace!` for operational detail during development
+- Remove temporary `debug!`/`println!` logging before finishing a change
+
+### Comments
+
+Default to no comments. Code should be self-explanatory through naming and structure. Comment when:
+- The "why" is non-obvious (a workaround, an API quirk)
+- The behavior has surprising side effects
+- A constant comes from an external specification
+
+Do not comment what the code already says.
+
+## Documentation
+
+### Where Things Live
+
+**README.md** is the hub document: project description, quick start, command table, and links to `docs/`. Keep it scannable.
+
+**docs/*.md** files are deep reference, one file per topic. These are the source of truth for user-facing documentation.
+
+**CONTRIBUTING.md** covers development workflow, code style, and conventions. Not user-facing.
+
+### When to Update Docs
+
+When behavior changes, update the affected docs in the same change. Treat it as part of the change, not a follow-up.
+
+### Writing Style
+
+Technical reference tone. Use complete sentences with natural compound structure.
+
+**Prohibited in prose:** em-dashes, en-dashes, double-hyphens. Use semicolons, commas, or colons instead. Double-hyphens in CLI flags and code are fine.
+
+**Avoid:** superlatives, fragment-sentence drama, marketing language. Always write `empack` in lowercase.
+
+## VCR Fixture Maintenance
 
 If you touch recorded API fixtures or cassette helpers:
 
-1. Read [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md).
-2. Prefer `./scripts/record-vcr-cassettes.sh --dry-run` before a live recording pass.
-3. Re-run the targeted cassette loader checks after updating fixtures.
+1. Preview first: `./scripts/record-vcr-cassettes.sh --dry-run`
+2. Record: `./scripts/record-vcr-cassettes.sh`
+3. Verify: `cargo test -p empack-tests fixtures::tests::test_load_vcr_cassette -- --exact`
 
-## Pull request checklist
+Live recording requires `curl`, `jq`, and `.env.local` with `EMPACK_KEY_CURSEFORGE`. Copy `.env.local.template` as a starting point.
+
+## Pull Request Checklist
 
 - [ ] Scope is narrow and explicit
 - [ ] Docs match the current verified behavior
 - [ ] Verification commands are listed in the change summary
-- [ ] Deferred gaps or caveats remain explicit where relevant
+- [ ] Tests pass: `cargo nextest run -p empack-lib --features test-utils && cargo nextest run -p empack-tests`
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the [Apache 2.0 License](LICENSE).

@@ -4,8 +4,8 @@
 
 - This page is provider reference material for resolver work and VCR-backed maintenance.
 - It is not the source of truth for current empack feature status or the trusted verification matrix.
-- Start with [`../../README.md`](../../README.md), [`../usage.md`](../usage.md), and [`../testing/README.md`](../testing/README.md) for current product behavior.
-- Use [`../testing/vcr-recording.md`](../testing/vcr-recording.md) when changing recorded provider fixtures.
+- Start with [`../../README.md`](../../README.md), [`../usage.md`](../usage.md), and [`../testing.md`](../testing.md) for current product behavior.
+- Use [`../testing.md`](../testing.md) when changing recorded provider fixtures.
 
 Technical reference for the Modrinth API (Labrinth). This document covers all endpoints, parameters, response schemas, rate limits, authentication, and integration patterns.
 
