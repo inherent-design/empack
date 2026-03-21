@@ -7,7 +7,7 @@
 - Start with [`../../README.md`](../../README.md), [`../usage.md`](../usage.md), and [`../testing/README.md`](../testing/README.md) for current product behavior.
 - Use [`../testing/vcr-recording.md`](../testing/vcr-recording.md) when changing recorded provider fixtures.
 
-Complete technical reference for the Modrinth API (Labrinth). This document covers all endpoints, parameters, response schemas, rate limits, authentication, and integration patterns.
+Technical reference for the Modrinth API (Labrinth). This document covers all endpoints, parameters, response schemas, rate limits, authentication, and integration patterns.
 
 ## Overview
 

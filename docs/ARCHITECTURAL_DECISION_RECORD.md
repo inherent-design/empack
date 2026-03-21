@@ -10,7 +10,7 @@
 
 Following comprehensive architectural analysis of the DisplayProvider compilation crisis and the broader empack ecosystem, we have identified a fundamental impedance mismatch between our desired trait-based architecture and Rust's ownership model. This document formalizes our commitment to the **Session-Scoped Dependency Injection Pattern** as the foundational architecture for resolving the immediate DisplayProvider issues while establishing a robust foundation for completing the remaining feature implementation.
 
-## Current State Assessment
+## State at decision time (January 2025)
 
 ### Infrastructure Maturity (85% Complete)
 - **Strengths**: Robust CLI parsing (clap), configuration management (empack.yml + pack.toml), logging infrastructure, networking layer, terminal capabilities detection
@@ -293,7 +293,7 @@ This architectural decision transforms the current crisis into a strategic advan
 2. Phase 2 extends the pattern to all state management
 3. Phase 3 completes the feature set using established patterns
 
-This is not just a fix—it is the foundation for empack's evolution into a production-ready, professionally architected tool.
+This architecture resolves the DisplayProvider ownership issues and provides a foundation for future subsystem extraction.
 
 ---
 

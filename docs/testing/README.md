@@ -25,7 +25,7 @@ cargo nextest run -p empack-tests
 What these cover today:
 
 - workspace type-check and lint health
-- 351+ passing tests in the accepted nextest checkpoint
+- 371 passing tests in the accepted nextest checkpoint
 - `empack-lib` contract and regression coverage
 - promoted workflow and command coverage across `empack-tests`
 

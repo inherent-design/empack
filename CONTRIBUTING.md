@@ -14,14 +14,7 @@ This repository currently treats the Rust workspace as the active implementation
 
 ## Repository map
 
-- `crates/empack`: CLI entry point
-- `crates/empack-lib`: core application, state, resolver, and build logic
-- `crates/empack-tests`: workflow and integration tests
-- `docs/usage.md`: current command and workflow guidance
-- `docs/testing/README.md`: trusted verification matrix and caveats
-- `docs/testing/vcr-recording.md`: VCR-backed maintenance workflow
-- `docs/reference/*`: provider reference material, not current product-status truth
-- `docs/ARCHITECTURAL_DECISION_RECORD.md`: historical ADR context, not the current feature/status matrix
+See [Repository layout](README.md#repository-layout) for the current crate and directory structure.
 
 ## Local setup
 

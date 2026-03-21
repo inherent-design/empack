@@ -44,7 +44,7 @@ The primary trusted matrix is grounded in the accepted release-gate checkpoint a
 
 - `cargo check --workspace --all-targets`
 - `cargo clippy --workspace --all-targets`
-- `cargo nextest run -p empack-lib --features test-utils` (305 passed, 15 skipped in the accepted checkpoint)
+- `cargo nextest run -p empack-lib --features test-utils` (325 passed, 15 skipped in the accepted checkpoint)
 - `cargo nextest run -p empack-tests` (46 passed in the accepted checkpoint)
 - CI uses `cargo nextest` for tests; grouped `cargo test` remains advisory-only because several workflow suites are unstable when run together
 
