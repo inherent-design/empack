@@ -164,6 +164,17 @@ pub fn can_transition(from: &PackState, to: &PackState) -> bool {
     }
 }
 
+/// Enforced state transition. Returns the target state if the transition is
+/// valid according to the whitelist, or a typed error describing the rejected
+/// transition. This is the `Result`-returning counterpart of `can_transition`.
+pub fn transition(from: PackState, to: PackState) -> Result<PackState, StateError> {
+    if can_transition(&from, &to) {
+        Ok(to)
+    } else {
+        Err(StateError::InvalidTransition { from, to })
+    }
+}
+
 /// Write the state marker file to indicate an intermediate operation is in progress.
 fn write_state_marker<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
