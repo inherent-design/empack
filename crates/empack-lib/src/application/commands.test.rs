@@ -38,6 +38,7 @@ mod handle_version_tests {
 mod handle_requirements_tests {
     use super::*;
     use crate::empack::packwiz::check_packwiz_available;
+    use std::path::Path;
 
     #[tokio::test]
     async fn it_reports_packwiz_available() {
@@ -49,7 +50,7 @@ mod handle_requirements_tests {
         assert!(result.is_ok());
         // Verify that packwiz was checked via the free function
         assert_eq!(
-            check_packwiz_available(session.process()).unwrap(),
+            check_packwiz_available(session.process(), Path::new(".")).unwrap(),
             (true, "1.2.3".to_string())
         );
     }
@@ -64,7 +65,7 @@ mod handle_requirements_tests {
         assert!(result.is_ok());
         // Verify that packwiz was checked and found unavailable
         assert_eq!(
-            check_packwiz_available(session.process()).unwrap(),
+            check_packwiz_available(session.process(), Path::new(".")).unwrap(),
             (false, "not found".to_string())
         );
     }

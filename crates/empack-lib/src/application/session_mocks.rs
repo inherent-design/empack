@@ -1174,7 +1174,7 @@ mod tests {
             );
 
         assert_eq!(
-            check_packwiz_available(&provider).unwrap(),
+            check_packwiz_available(&provider, &working_dir).unwrap(),
             (true, "2.0.0".to_string())
         );
         let packwiz_path = mock_root()
@@ -1183,7 +1183,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
         assert_eq!(
-            get_packwiz_version(&provider, &packwiz_path).unwrap(),
+            get_packwiz_version(&provider, &packwiz_path, &working_dir).unwrap(),
             "2.0.0"
         );
 
@@ -1212,12 +1212,13 @@ mod tests {
     #[test]
     fn test_mock_command_session() {
         use crate::empack::packwiz::check_packwiz_available;
+        use std::path::Path;
 
         let session = MockCommandSession::new()
             .with_process(MockProcessProvider::new().with_packwiz_unavailable());
 
         assert_eq!(
-            check_packwiz_available(session.process()).unwrap(),
+            check_packwiz_available(session.process(), Path::new(".")).unwrap(),
             (false, "not found".to_string())
         );
     }

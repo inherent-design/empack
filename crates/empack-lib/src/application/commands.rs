@@ -113,7 +113,8 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         .section("Checking tool dependencies");
 
     // Check packwiz
-    let packwiz = crate::empack::packwiz::check_packwiz_available(session.process());
+    let workdir = session.filesystem().current_dir().unwrap_or_default();
+    let packwiz = crate::empack::packwiz::check_packwiz_available(session.process(), &workdir);
     match packwiz {
         Ok((true, version)) => {
             session.display().status().success("packwiz", &version);
@@ -1820,22 +1821,37 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let sync_plan = build_sync_plan(&project_plan, &installed_mods);
     let mut planned_actions = Vec::new();
 
-    for (i, dep_spec) in project_plan.dependencies.iter().enumerate() {
-        session.display().status().step(
-            i + 1,
-            project_plan.dependencies.len(),
-            &format!("Processing dependency: {}", dep_spec.key),
-        );
+    let already_installed: Vec<_> = project_plan
+        .dependencies
+        .iter()
+        .filter(|dep| installed_mods.contains(&normalize_mod_key(&dep.key)))
+        .collect();
+    let total_steps = already_installed.len() + sync_plan.actions.len();
+    let mut step = 0;
 
-        if installed_mods.contains(&normalize_mod_key(&dep_spec.key)) {
-            session
-                .display()
-                .status()
-                .success("Already installed", &dep_spec.key);
-        }
+    for dep_spec in &already_installed {
+        step += 1;
+        session
+            .display()
+            .status()
+            .step(step, total_steps, &format!("Processing dependency: {}", dep_spec.key));
+        session
+            .display()
+            .status()
+            .success("Already installed", &dep_spec.key);
     }
 
     for action in &sync_plan.actions {
+        step += 1;
+        let action_label = match action {
+            SyncPlanAction::Add(dep) => dep.search_query.as_str(),
+            SyncPlanAction::Remove { key, .. } => key.as_str(),
+        };
+        session
+            .display()
+            .status()
+            .step(step, total_steps, &format!("Processing dependency: {}", action_label));
+
         match resolve_sync_action(action, resolver.as_ref()).await {
             Ok(resolved) => {
                 if let SyncExecutionAction::Add {
@@ -1852,12 +1868,8 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 planned_actions.push(resolved);
             }
             Err(e) => {
-                let label = match action {
-                    SyncPlanAction::Add(dep) => dep.search_query.as_str(),
-                    SyncPlanAction::Remove { key, .. } => key.as_str(),
-                };
                 session.display().status().error(
-                    &format!("Failed to plan {label}"),
+                    &format!("Failed to plan {action_label}"),
                     &render_add_contract_error_details(&e),
                 );
             }

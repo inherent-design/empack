@@ -724,12 +724,12 @@ impl<'a> VersionFetcher<'a> {
 
                 match client.get(&url).send().await {
                     Ok(response) if response.status().is_success() => {
-                        // Parse array response - take first element (latest loader for this MC version)
+                        // Parse array response - return all loader versions for this MC version
                         if let Ok(combinations) =
                             response.json::<Vec<QuiltLoaderCombination>>().await
                             && !combinations.is_empty()
                         {
-                            return Ok(vec![combinations[0].loader.version.clone()]);
+                            return Ok(combinations.iter().map(|c| c.loader.version.clone()).collect());
                         }
                         // Empty array or parse failure - return empty vec
                         Ok(vec![])
