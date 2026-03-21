@@ -109,7 +109,7 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
     session
         .display()
         .status()
-        .section("🔧 Checking tool dependencies");
+        .section("Checking tool dependencies");
 
     // Check packwiz
     let packwiz = crate::empack::packwiz::check_packwiz_available(session.process());
@@ -281,7 +281,7 @@ async fn handle_init(
     session
         .display()
         .status()
-        .section("🚀 Initializing modpack project");
+        .section("Initializing modpack project");
 
     // Get default name from directory or command line
     let default_name = initial_name.unwrap_or_else(|| {
@@ -343,7 +343,7 @@ async fn handle_init(
     session
         .display()
         .status()
-        .info("🔍 Fetching Minecraft versions...");
+        .info("Fetching Minecraft versions...");
     let minecraft_versions = match version_fetcher.fetch_minecraft_versions().await {
         Ok(versions) => {
             session
@@ -384,7 +384,7 @@ async fn handle_init(
     session
         .display()
         .status()
-        .info("🎯 Finding compatible mod loaders...");
+        .info("Finding compatible mod loaders...");
     let compatible_loaders = match version_fetcher
         .fetch_compatible_loaders(&minecraft_version)
         .await
@@ -480,7 +480,7 @@ async fn handle_init(
 
     // Step 4: Dynamic, Searchable Loader Version Prompt
     session.display().status().info(&format!(
-        "🔍 Fetching {} versions for Minecraft {}...",
+        "Fetching {} versions for Minecraft {}...",
         loader_str, minecraft_version
     ));
     let loader_versions = match &selected_loader {
@@ -607,7 +607,7 @@ async fn handle_init(
     };
 
     // Step 5: Final Confirmation and Execution
-    session.display().status().info("📋 Configuration Summary:");
+    session.display().status().info("Configuration Summary:");
     session
         .display()
         .status()
@@ -690,9 +690,9 @@ async fn handle_init(
                 .complete("Modpack project initialized successfully");
 
             let next_steps = [
-                "📝 Edit empack.yml to configure your dependencies",
-                "🔧 Run 'empack sync' to sync with packwiz",
-                "🏗️  Run 'empack build all' to build distribution packages",
+                "Edit empack.yml to configure your dependencies",
+                "Run 'empack sync' to sync with packwiz",
+                "Run 'empack build all' to build distribution packages",
             ];
             session.display().status().list(&next_steps);
         }
@@ -826,7 +826,7 @@ async fn handle_add(
     session
         .display()
         .status()
-        .section(&format!("➕ Adding {} mod(s) to modpack", mods.len()));
+        .section(&format!("Adding {} mod(s) to modpack", mods.len()));
 
     let mut added_mods = Vec::new();
     let mut failed_mods = Vec::new();
@@ -925,10 +925,12 @@ async fn handle_add(
                             // Check for cycles introduced by new mod
                             if updated_graph.has_cycles() {
                                 if let Some(cycle) = updated_graph.detect_cycle() {
+                                    let p = crate::primitives::terminal::primitives();
+                                    let arrow_sep = format!(" {} ", p.arrow);
                                     session
                                         .display()
                                         .status()
-                                        .error("Circular dependency detected", &cycle.join(" → "));
+                                        .error("Circular dependency detected", &cycle.join(&arrow_sep));
                                     session
                                         .display()
                                         .status()
@@ -980,7 +982,7 @@ async fn handle_add(
     }
 
     // Show summary
-    session.display().status().section("📊 Add Summary");
+    session.display().status().section("Add Summary");
     session
         .display()
         .status()
@@ -1116,7 +1118,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     session
         .display()
         .status()
-        .section(&format!("➖ Removing {} mod(s) from modpack", mods.len()));
+        .section(&format!("Removing {} mod(s) from modpack", mods.len()));
 
     // Use the session's working directory
     let manager = session.state()?;
@@ -1179,7 +1181,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         session
             .display()
             .status()
-            .section("🔍 Detecting orphaned dependencies");
+            .section("Detecting orphaned dependencies");
 
         // Rebuild dependency graph after removals
         let mut dep_graph = crate::api::dependency_graph::DependencyGraph::new();
@@ -1240,7 +1242,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                     .to_lowercase();
 
                 if should_remove == "y" || should_remove == "yes" {
-                    session.display().status().section("🧹 Removing orphans");
+                    session.display().status().section("Removing orphans");
 
                     for orphan in orphans {
                         let result = session
@@ -1293,7 +1295,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     }
 
     // Show summary
-    session.display().status().section("📊 Remove Summary");
+    session.display().status().section("Remove Summary");
     session
         .display()
         .status()
@@ -1362,7 +1364,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
     session
         .display()
         .status()
-        .section(&format!("🏗️  Building targets: {:?}", build_targets));
+        .section(&format!("Building targets: {:?}", build_targets));
 
     // Ensure packwiz-installer-bootstrap.jar is available for builds that need it
     let bootstrap_jar_path = session.packwiz().bootstrap_jar_cache_path()?;
@@ -1494,7 +1496,7 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
     session
         .display()
         .status()
-        .subtle("   📦 Check dist/ directory for build artifacts");
+        .subtle("   Check dist/ directory for build artifacts");
 
     Ok(())
 }
@@ -1598,7 +1600,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     session
         .display()
         .status()
-        .section("🔄 Synchronizing empack.yml with packwiz");
+        .section("Synchronizing empack.yml with packwiz");
     session.display().status().info(&format!(
         "Target: {} v{}",
         project_plan.minecraft_version, project_plan.loader_version
@@ -1610,7 +1612,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             session
                 .display()
                 .status()
-                .info(&format!("📋 Found {} currently installed mods", mods.len()));
+                .info(&format!("Found {} currently installed mods", mods.len()));
             mods
         }
         Err(e) => {
@@ -1682,7 +1684,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         return Ok(());
     }
 
-    session.display().status().section("📋 Planned Actions");
+    session.display().status().section("Planned Actions");
     for action in &planned_actions {
         match action {
             SyncExecutionAction::Add {
@@ -1695,7 +1697,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 session
                     .display()
                     .status()
-                    .info(&format!("➕ Add: {} ({})", title, key));
+                    .info(&format!("Add: {} ({})", title, key));
                 if session.config().app_config().dry_run {
                     for command in commands {
                         session
@@ -1709,7 +1711,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 session
                     .display()
                     .status()
-                    .info(&format!("➖ Remove: {} ({})", title, key));
+                    .info(&format!("Remove: {} ({})", title, key));
                 if session.config().app_config().dry_run {
                     session
                         .display()
@@ -1732,7 +1734,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     session
         .display()
         .status()
-        .section("🚀 Executing sync actions");
+        .section("Executing sync actions");
     let mut success_count = 0;
     let mut failure_count = 0;
 
@@ -1819,7 +1821,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 
     // Show summary
-    session.display().status().section("📊 Sync Summary");
+    session.display().status().section("Sync Summary");
     session
         .display()
         .status()
