@@ -137,41 +137,40 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
     Ok(PackState::Uninitialized)
 }
 
-/// Check if state transition is valid (pure function)
-pub fn can_transition(from: &PackState, to: &PackState) -> bool {
-    match (from, to) {
-        // Can always clean (go backwards)
-        (PackState::Built, PackState::Configured) => true,
-        (PackState::Configured, PackState::Uninitialized) => true,
+/// Check if a state transition is valid. The optional `layout_ok` closure
+/// performs filesystem layout validation when provided; without it, only
+/// the state whitelist is checked (useful for pure/test contexts).
+pub fn can_transition(
+    from: &PackState,
+    kind: TransitionKind,
+    layout_ok: Option<&dyn Fn(&PackState) -> bool>,
+) -> bool {
+    let layout_valid = |state: &PackState| layout_ok.is_none_or(|f| f(state));
 
-        // Can advance through states
-        (PackState::Uninitialized, PackState::Configured) => true,
-        (PackState::Configured, PackState::Built) => true,
-        (PackState::Built, PackState::Building) => true,
+    match (from, kind) {
+        // Initialize: from Uninitialized, or from Configured if progressive init
+        (PackState::Uninitialized, TransitionKind::Initialize) => true,
+        (PackState::Configured, TransitionKind::Initialize) => layout_valid(from),
 
-        // Can sync within configured state
-        (PackState::Configured, PackState::Configured) => true,
+        // RefreshIndex: must be Configured with valid layout
+        (PackState::Configured, TransitionKind::RefreshIndex) => layout_valid(from),
 
-        // Interrupted states can be cleaned to recover
-        (PackState::Interrupted { .. }, PackState::Configured) => true,
-        (PackState::Interrupted { .. }, PackState::Uninitialized) => true,
+        // Build (full): Configured or Built with valid layout
+        (PackState::Configured | PackState::Built, TransitionKind::Build) => layout_valid(from),
 
-        // Same state is always valid
-        (a, b) if a == b => true,
+        // Building (marker): same as Build but entering intermediate state
+        (PackState::Configured | PackState::Built, TransitionKind::Building) => layout_valid(from),
 
-        // All other transitions are invalid
+        // Clean: from Built, Configured, Uninitialized (idempotent), or Interrupted (recovery)
+        (PackState::Built, TransitionKind::Clean) => true,
+        (PackState::Configured, TransitionKind::Clean) => true,
+        (PackState::Uninitialized, TransitionKind::Clean) => true,
+        (PackState::Interrupted { .. }, TransitionKind::Clean) => true,
+
+        // Cleaning (marker): only from Built
+        (PackState::Built, TransitionKind::Cleaning) => true,
+
         _ => false,
-    }
-}
-
-/// Enforced state transition. Returns the target state if the transition is
-/// valid according to the whitelist, or a typed error describing the rejected
-/// transition. This is the `Result`-returning counterpart of `can_transition`.
-pub fn transition(from: PackState, to: PackState) -> Result<PackState, StateError> {
-    if can_transition(&from, &to) {
-        Ok(to)
-    } else {
-        Err(StateError::InvalidTransition { from, to })
     }
 }
 
@@ -257,13 +256,12 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 
     match transition {
         StateTransition::Initialize(config) => {
-            // Progressive init is only allowed from a transient config-only layout.
-            // Once pack metadata or build artifacts exist, callers must use the
-            // normal configured-state flows instead of re-running init.
-            let can_initialize = matches!(current, PackState::Uninitialized)
-                || (current == PackState::Configured
-                    && is_progressive_init_state(provider, workdir));
-            if !can_initialize {
+            // Progressive init needs a layout check beyond the whitelist:
+            // only allow re-init when no pack metadata or build artifacts exist yet.
+            let layout_ok = |state: &PackState| {
+                state == &PackState::Uninitialized || is_progressive_init_state(provider, workdir)
+            };
+            if !can_transition(&current, TransitionKind::Initialize, Some(&layout_ok)) {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Configured,
@@ -284,9 +282,8 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
         }
 
         StateTransition::RefreshIndex => {
-            if current != PackState::Configured
-                || !validate_state_layout(provider, workdir, &PackState::Configured)
-            {
+            let layout_ok = |state: &PackState| validate_state_layout(provider, workdir, state);
+            if !can_transition(&current, TransitionKind::RefreshIndex, Some(&layout_ok)) {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Configured,
@@ -296,9 +293,8 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
         }
 
         StateTransition::Build(orchestrator, targets) => {
-            if !matches!(current, PackState::Configured | PackState::Built)
-                || !validate_state_layout(provider, workdir, &current)
-            {
+            let layout_ok = |state: &PackState| validate_state_layout(provider, workdir, state);
+            if !can_transition(&current, TransitionKind::Build, Some(&layout_ok)) {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Built,
@@ -311,49 +307,50 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                 .map(|state| StateTransitionResult { state, warnings: vec![] })
         }
 
-        StateTransition::Clean => match current {
-            PackState::Built => {
-                write_state_marker(provider, workdir, "cleaning")?;
-                clean_build_artifacts(provider, workdir)?;
-                remove_state_marker(provider, workdir)?;
-                no_warnings(PackState::Configured)
+        StateTransition::Clean => {
+            if !can_transition(&current, TransitionKind::Clean, None) {
+                return Err(StateError::InvalidTransition {
+                    from: current,
+                    to: PackState::Configured,
+                });
             }
-            PackState::Configured => {
-                clean_configuration(provider, workdir)?;
-                remove_state_marker(provider, workdir)?;
-                no_warnings(PackState::Uninitialized)
-            }
-            PackState::Uninitialized => no_warnings(PackState::Uninitialized),
-            PackState::Interrupted { .. } => {
-                // Recovery: remove the marker and clean from the underlying state
-                remove_state_marker(provider, workdir)?;
-                // After removing the marker, re-discover the actual filesystem state
-                let recovered = discover_state(provider, workdir)?;
-                match recovered {
-                    PackState::Built => {
-                        clean_build_artifacts(provider, workdir)?;
-                        no_warnings(PackState::Configured)
-                    }
-                    PackState::Configured => {
-                        clean_configuration(provider, workdir)?;
-                        no_warnings(PackState::Uninitialized)
-                    }
-                    PackState::Uninitialized => no_warnings(PackState::Uninitialized),
-                    _ => no_warnings(recovered),
+            match current {
+                PackState::Built => {
+                    write_state_marker(provider, workdir, "cleaning")?;
+                    clean_build_artifacts(provider, workdir)?;
+                    remove_state_marker(provider, workdir)?;
+                    no_warnings(PackState::Configured)
                 }
+                PackState::Configured => {
+                    clean_configuration(provider, workdir)?;
+                    remove_state_marker(provider, workdir)?;
+                    no_warnings(PackState::Uninitialized)
+                }
+                PackState::Uninitialized => no_warnings(PackState::Uninitialized),
+                PackState::Interrupted { .. } => {
+                    // Recovery: remove the marker and clean from the underlying state
+                    remove_state_marker(provider, workdir)?;
+                    // After removing the marker, re-discover the actual filesystem state
+                    let recovered = discover_state(provider, workdir)?;
+                    match recovered {
+                        PackState::Built => {
+                            clean_build_artifacts(provider, workdir)?;
+                            no_warnings(PackState::Configured)
+                        }
+                        PackState::Configured => {
+                            clean_configuration(provider, workdir)?;
+                            no_warnings(PackState::Uninitialized)
+                        }
+                        PackState::Uninitialized => no_warnings(PackState::Uninitialized),
+                        _ => no_warnings(recovered),
+                    }
+                }
+                _ => unreachable!("can_transition guards this"),
             }
-            PackState::Building => Err(StateError::InvalidTransition {
-                from: current,
-                to: PackState::Configured,
-            }),
-            PackState::Cleaning => Err(StateError::InvalidTransition {
-                from: current,
-                to: PackState::Configured,
-            }),
-        },
+        }
 
         StateTransition::Building => {
-            if !matches!(current, PackState::Configured | PackState::Built) {
+            if !can_transition(&current, TransitionKind::Building, None) {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Building,
@@ -364,7 +361,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
         }
 
         StateTransition::Cleaning => {
-            if current != PackState::Built {
+            if !can_transition(&current, TransitionKind::Cleaning, None) {
                 return Err(StateError::InvalidTransition {
                     from: current,
                     to: PackState::Cleaning,
@@ -631,11 +628,6 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         ))
     }
 
-    /// Check if state transition is valid
-    pub fn can_transition(&self, from: &PackState, to: &PackState) -> bool {
-        can_transition(from, to)
-    }
-
     /// Execute a state transition with full business logic integration
     pub async fn execute_transition(
         &self,
@@ -647,38 +639,31 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
     }
 
     /// Validate a transition and return the state label string for marker files.
+    /// Delegates state-validity checks to `can_transition`.
     fn validate_transition(&self, transition: &StateTransition<'_>) -> Result<&'static str, StateError> {
         let current = self.discover_state()?;
+        let kind = transition.kind();
 
-        match transition {
-            StateTransition::Building => {
-                if !matches!(current, PackState::Configured | PackState::Built)
-                    || !validate_state_layout(self.provider, &self.workdir, &current)
-                {
-                    return Err(StateError::InvalidTransition {
-                        from: current,
-                        to: PackState::Building,
-                    });
-                }
-                Ok("building")
-            }
-            StateTransition::Cleaning => {
-                if current != PackState::Built {
-                    return Err(StateError::InvalidTransition {
-                        from: current,
-                        to: PackState::Cleaning,
-                    });
-                }
-                Ok("cleaning")
-            }
+        let (label, target_state) = match kind {
+            TransitionKind::Building => ("building", PackState::Building),
+            TransitionKind::Cleaning => ("cleaning", PackState::Cleaning),
             _ => {
-                Err(StateError::ConfigError {
-                    reason:
-                        "Only Building and Cleaning transitions are supported"
-                            .to_string(),
-                })
+                return Err(StateError::ConfigError {
+                    reason: "Only Building and Cleaning transitions are supported"
+                        .to_string(),
+                });
             }
+        };
+
+        let layout_ok = |state: &PackState| validate_state_layout(self.provider, &self.workdir, state);
+        if !can_transition(&current, kind, Some(&layout_ok)) {
+            return Err(StateError::InvalidTransition {
+                from: current,
+                to: target_state,
+            });
         }
+
+        Ok(label)
     }
 
     /// Begin a state transition (for BuildOrchestrator to use)
