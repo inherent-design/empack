@@ -88,6 +88,17 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
         Ok(())
     }
 
+    fn read_bytes(&self, path: &Path) -> anyhow::Result<Vec<u8>> {
+        if self.files.borrow().contains(path) {
+            if let Some(content) = self.file_contents.borrow().get(path) {
+                return Ok(content.as_bytes().to_vec());
+            }
+            Ok(b"mock content".to_vec())
+        } else {
+            Err(anyhow::anyhow!("File not found: {}", path.display()))
+        }
+    }
+
     fn write_bytes(&self, path: &Path, _content: &[u8]) -> anyhow::Result<()> {
         self.files.borrow_mut().insert(path.to_path_buf());
         Ok(())

@@ -233,6 +233,19 @@ impl FileSystemProvider for MockFileSystemProvider {
         }
     }
 
+    fn read_bytes(&self, path: &std::path::Path) -> Result<Vec<u8>> {
+        let binary_files = self.binary_files.lock().unwrap();
+        if let Some(content) = binary_files.get(path) {
+            return Ok(content.clone());
+        }
+        drop(binary_files);
+        let files = self.files.lock().unwrap();
+        if let Some(content) = files.get(path) {
+            return Ok(content.as_bytes().to_vec());
+        }
+        Err(anyhow::anyhow!("File not found: {}", path.display()))
+    }
+
     fn write_file(&self, path: &std::path::Path, content: &str) -> Result<()> {
         self.binary_files.lock().unwrap().remove(path);
         self.files
