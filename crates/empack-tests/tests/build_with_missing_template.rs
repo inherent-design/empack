@@ -53,13 +53,21 @@ async fn test_build_with_missing_template() -> Result<()> {
     )
     .await?;
 
+    // When no name is provided via CLI, the interactively-entered name
+    // (defaulting to the directory name) becomes the target subdirectory.
+    let dir_name = workdir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Pack");
+    let project_dir = workdir.join(dir_name);
+
     // First, verify the project was initialized
     assert!(
-        workdir.join("empack.yml").exists(),
+        project_dir.join("empack.yml").exists(),
         "empack.yml should exist"
     );
     assert!(
-        workdir.join("pack").exists(),
+        project_dir.join("pack").exists(),
         "pack/ directory should exist"
     );
 
@@ -71,6 +79,9 @@ async fn test_build_with_missing_template() -> Result<()> {
         jar_cache.join("packwiz-installer-bootstrap.jar"),
         "mock jar content",
     )?;
+
+    // Change to project directory since build needs to find the project
+    std::env::set_current_dir(&project_dir)?;
 
     // Attempt a build - this should detect missing templates gracefully
     // Note: In the hermetic environment, the build might fail for other reasons
@@ -158,6 +169,14 @@ async fn test_build_template_error_specificity() -> Result<()> {
         &session,
     )
     .await?;
+
+    // When no name is provided via CLI, init creates a subdirectory
+    let dir_name = workdir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Pack");
+    let project_dir = workdir.join(dir_name);
+    std::env::set_current_dir(&project_dir)?;
 
     // Try building with a target that might have template dependencies
     let build_result = execute_command_with_session(
