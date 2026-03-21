@@ -112,6 +112,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             modloader: Some("forge".to_string()),
             mc_version: Some("1.21.1".to_string()),
             author: Some("Workflow Test".to_string()),
+            loader_version: None,
         },
         &session,
     )
@@ -364,6 +365,7 @@ async fn test_forge_modloader_initialization() -> Result<()> {
             modloader: None,
             mc_version: None,
             author: None,
+            loader_version: None,
         },
         &session,
     )

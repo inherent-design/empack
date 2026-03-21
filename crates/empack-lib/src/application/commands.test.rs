@@ -91,6 +91,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
         )
         .await;
 
@@ -128,7 +129,7 @@ mod handle_init_tests {
             .read_to_string(&workdir.join("empack.yml"))
             .unwrap();
 
-        let result = handle_init(&session, None, None, false, None, None, None).await;
+        let result = handle_init(&session, None, None, false, None, None, None, None).await;
 
         assert!(result.is_ok());
         assert_eq!(
@@ -160,6 +161,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Overwrite Author".to_string()),
+            None,
         )
         .await;
 
@@ -200,6 +202,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Overwrite Author".to_string()),
+            None,
         )
         .await;
 
@@ -227,6 +230,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Cancel Author".to_string()),
+            None,
         )
         .await;
 
@@ -254,6 +258,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("99.99.99".to_string()),
             Some("Test Author".to_string()),
+            None,
         )
         .await;
 
@@ -281,6 +286,7 @@ mod handle_init_tests {
             Some("notaloader".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
         )
         .await;
 
@@ -290,6 +296,65 @@ mod handle_init_tests {
             err_msg.contains("notaloader"),
             "Expected error about invalid loader, got: {}",
             err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn it_accepts_valid_loader_version_from_cli() {
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(mock_root().join("valid-loader-version")),
+            )
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            None,
+            Some("test-pack".to_string()),
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("TestAuthor".to_string()),
+            Some("0.15.0".to_string()),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "Init with valid loader version should succeed: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn it_rejects_invalid_loader_version_from_cli() {
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(mock_root().join("invalid-loader-version")),
+            )
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            None,
+            Some("test-pack".to_string()),
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("TestAuthor".to_string()),
+            Some("99.99.99".to_string()),
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "Init with invalid loader version should fail"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("99.99.99"),
+            "Error should mention the invalid version: {err_msg}"
         );
     }
 
@@ -312,6 +377,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
         )
         .await;
 

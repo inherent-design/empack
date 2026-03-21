@@ -58,6 +58,7 @@ async fn test_init_packwiz_failure() -> Result<()> {
             modloader: None,
             mc_version: None,
             author: None,
+            loader_version: None,
         },
         &session,
     )
@@ -145,6 +146,7 @@ async fn test_init_packwiz_unavailable() -> Result<()> {
             modloader: None,
             mc_version: None,
             author: None,
+            loader_version: None,
         },
         &session,
     )
@@ -229,6 +231,7 @@ async fn test_init_filesystem_error() -> Result<()> {
             modloader: None,
             mc_version: None,
             author: None,
+            loader_version: None,
         },
         &session,
     )
@@ -331,6 +334,7 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
             modloader: None,
             mc_version: None,
             author: None,
+            loader_version: None,
         },
         &session,
     )

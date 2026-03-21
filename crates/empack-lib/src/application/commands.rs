@@ -82,9 +82,10 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             mc_version,
             author,
             pack_name,
+            loader_version,
         } => {
             handle_init(
-                session, name, pack_name, force, modloader, mc_version, author,
+                session, name, pack_name, force, modloader, mc_version, author, loader_version,
             )
             .await
         }
@@ -201,6 +202,7 @@ async fn handle_version(session: &dyn Session) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_init(
     session: &dyn Session,
     positional_name: Option<String>,
@@ -209,6 +211,7 @@ async fn handle_init(
     cli_modloader: Option<String>,
     cli_mc_version: Option<String>,
     cli_author: Option<String>,
+    cli_loader_version: Option<String>,
 ) -> Result<()> {
     // Handle directory creation case: `empack init <name>` where <name> is a directory
     // Precedence: positional arg > --name flag
@@ -661,6 +664,21 @@ async fn handle_init(
             loader_str,
             minecraft_version
         ));
+    } else if let Some(lv) = cli_loader_version {
+        session
+            .display()
+            .status()
+            .info(&format!("Using {} version: {}", loader_str, lv));
+        if !loader_versions.iter().any(|v| v == &lv) {
+            anyhow::bail!(
+                "Loader version '{}' not found for {} on Minecraft {}. Available versions include: {}",
+                lv,
+                loader_str,
+                minecraft_version,
+                loader_versions.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+        lv
     } else {
         let loader_version_index = session
             .interactive()

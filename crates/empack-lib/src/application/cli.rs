@@ -89,6 +89,14 @@ pub enum Commands {
             help = "Modpack name (skips interactive prompt)"
         )]
         pack_name: Option<String>,
+
+        /// Loader version (e.g., "0.15.0" for Fabric, "21.1.172" for NeoForge)
+        #[arg(
+            long,
+            env = "EMPACK_LOADER_VERSION",
+            help = "Loader version (skips interactive prompt)"
+        )]
+        loader_version: Option<String>,
     },
 
     /// Synchronize empack.yml dependencies with pack.toml reality
