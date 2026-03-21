@@ -339,6 +339,18 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
     use std::ptr;
 
+    /// Query the system page size at runtime via sysconf.
+    fn get_page_size() -> Result<u64, PlatformError> {
+        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        if page_size <= 0 {
+            return Err(PlatformError::SystemCallFailed {
+                call: "sysconf(_SC_PAGESIZE)".to_string(),
+                reason: "Failed to determine system page size".to_string(),
+            });
+        }
+        Ok(page_size as u64)
+    }
+
     // Get total memory via sysctl
     let mut size = mem::size_of::<u64>();
     let mut total_memory: u64 = 0;
@@ -427,12 +439,8 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
         }
 
         if pages_active > 0 || pages_free > 0 {
-            // macOS uses 16KB pages on Apple Silicon, 4KB on Intel
-            let page_size = if std::env::consts::ARCH == "aarch64" {
-                16384
-            } else {
-                4096
-            };
+            // Query actual page size at runtime
+            let page_size = get_page_size()?;
 
             // More conservative calculation: free + half of inactive
             let available_pages = pages_free + (pages_inactive / 2);
@@ -465,11 +473,7 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
     }
 
     // Conservative calculation: only count truly free + half of purgeable
-    let page_size = if std::env::consts::ARCH == "aarch64" {
-        16384
-    } else {
-        4096
-    };
+    let page_size = get_page_size()?;
     let available_pages = vm_stat.free_count + (vm_stat.purgeable_count / 2);
     let available_memory = available_pages as u64 * page_size;
 
