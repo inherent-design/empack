@@ -819,7 +819,7 @@ impl<'a> BuildOrchestrator<'a> {
             reason: format!("Failed to get state manager: {}", e),
         })?;
         let guard = state_mgr
-            .guarded_transition(crate::primitives::StateTransition::Building)
+            .guarded_transition(crate::primitives::MarkerKind::Building)
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to begin build transition: {:?}", e),
             })?;
@@ -902,7 +902,7 @@ impl<'a> BuildOrchestrator<'a> {
             reason: format!("Failed to get state manager: {}", e),
         })?;
         let guard = state_mgr
-            .guarded_transition(crate::primitives::StateTransition::Cleaning)
+            .guarded_transition(crate::primitives::MarkerKind::Cleaning)
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to begin clean transition: {:?}", e),
             })?;

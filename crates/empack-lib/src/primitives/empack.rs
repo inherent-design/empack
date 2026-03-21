@@ -101,10 +101,6 @@ pub enum TransitionKind {
     Build,
     /// Built -> Configured or Configured -> Uninitialized
     Clean,
-    /// Configured/Built -> Building (intermediate marker state)
-    Building,
-    /// Built -> Cleaning (intermediate marker state)
-    Cleaning,
 }
 
 impl fmt::Display for TransitionKind {
@@ -114,8 +110,27 @@ impl fmt::Display for TransitionKind {
             TransitionKind::RefreshIndex => write!(f, "refresh-index"),
             TransitionKind::Build => write!(f, "build"),
             TransitionKind::Clean => write!(f, "clean"),
-            TransitionKind::Building => write!(f, "building"),
-            TransitionKind::Cleaning => write!(f, "cleaning"),
+        }
+    }
+}
+
+/// Internal marker transitions for intermediate build/clean states.
+/// These are `pub(crate)` because marker transitions should only be
+/// initiated from within the crate (by build/clean pipelines), never
+/// by external consumers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MarkerKind {
+    /// Configured/Built -> Building (intermediate marker state)
+    Building,
+    /// Built -> Cleaning (intermediate marker state)
+    Cleaning,
+}
+
+impl fmt::Display for MarkerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MarkerKind::Building => write!(f, "building"),
+            MarkerKind::Cleaning => write!(f, "cleaning"),
         }
     }
 }
@@ -145,10 +160,6 @@ pub enum StateTransition<'a> {
     ),
     /// Clean: Built -> Configured
     Clean,
-    /// Begin building: Configured -> Building
-    Building,
-    /// Begin cleaning: Built -> Cleaning
-    Cleaning,
 }
 
 impl<'a> StateTransition<'a> {
@@ -159,8 +170,6 @@ impl<'a> StateTransition<'a> {
             StateTransition::RefreshIndex => TransitionKind::RefreshIndex,
             StateTransition::Build(_, _) => TransitionKind::Build,
             StateTransition::Clean => TransitionKind::Clean,
-            StateTransition::Building => TransitionKind::Building,
-            StateTransition::Cleaning => TransitionKind::Cleaning,
         }
     }
 }
@@ -182,8 +191,6 @@ impl<'a> fmt::Display for StateTransition<'a> {
                 )
             }
             StateTransition::Clean => write!(f, "clean"),
-            StateTransition::Building => write!(f, "building"),
-            StateTransition::Cleaning => write!(f, "cleaning"),
         }
     }
 }

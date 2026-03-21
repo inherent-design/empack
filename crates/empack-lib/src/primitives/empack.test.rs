@@ -1,4 +1,4 @@
-use crate::primitives::{BuildTarget, PackState, StateTransition, TransitionKind};
+use crate::primitives::{BuildTarget, MarkerKind, PackState, StateTransition, TransitionKind};
 
 #[test]
 fn test_build_target_display() {
@@ -84,8 +84,12 @@ fn test_transition_kind_display() {
     assert_eq!(TransitionKind::RefreshIndex.to_string(), "refresh-index");
     assert_eq!(TransitionKind::Build.to_string(), "build");
     assert_eq!(TransitionKind::Clean.to_string(), "clean");
-    assert_eq!(TransitionKind::Building.to_string(), "building");
-    assert_eq!(TransitionKind::Cleaning.to_string(), "cleaning");
+}
+
+#[test]
+fn test_marker_kind_display() {
+    assert_eq!(MarkerKind::Building.to_string(), "building");
+    assert_eq!(MarkerKind::Cleaning.to_string(), "cleaning");
 }
 
 #[test]
@@ -103,6 +107,12 @@ fn test_state_transition_kind_method() {
     );
     assert_eq!(StateTransition::RefreshIndex.kind(), TransitionKind::RefreshIndex);
     assert_eq!(StateTransition::Clean.kind(), TransitionKind::Clean);
-    assert_eq!(StateTransition::Building.kind(), TransitionKind::Building);
-    assert_eq!(StateTransition::Cleaning.kind(), TransitionKind::Cleaning);
+
+    // Build variant -- use a mock session to construct BuildOrchestrator
+    let mock_session = crate::application::session_mocks::MockCommandSession::new();
+    let orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
+    assert_eq!(
+        StateTransition::Build(orchestrator, vec![]).kind(),
+        TransitionKind::Build,
+    );
 }

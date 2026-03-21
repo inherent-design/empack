@@ -3,7 +3,7 @@ use crate::application::session::{FileSystemProvider, ProcessOutput};
 use crate::application::session_mocks::mock_root;
 use crate::empack::config::ConfigManager;
 use crate::empack::packwiz::MockPackwizOps;
-use crate::primitives::TransitionKind;
+use crate::primitives::{MarkerKind, TransitionKind};
 use std::collections::HashSet;
 
 /// Mock implementation of FileSystemProvider for testing - zero I/O
@@ -446,50 +446,46 @@ fn test_discover_state_ignores_legacy_hidden_artifact_root() {
 
 #[test]
 fn test_pure_can_transition_function() {
-    // Test valid transitions (no layout validator -- pure whitelist)
+    // Test valid orchestrated transitions (pure whitelist)
     assert!(can_transition(
         &PackState::Uninitialized,
         TransitionKind::Initialize,
-        None,
     ));
     assert!(can_transition(
         &PackState::Configured,
         TransitionKind::Build,
-        None,
     ));
     assert!(can_transition(
         &PackState::Built,
         TransitionKind::Clean,
-        None,
     ));
     assert!(can_transition(
         &PackState::Configured,
         TransitionKind::Clean,
-        None,
-    ));
-    assert!(can_transition(
-        &PackState::Built,
-        TransitionKind::Building,
-        None,
     ));
 
     // RefreshIndex from Configured
     assert!(can_transition(
         &PackState::Configured,
         TransitionKind::RefreshIndex,
-        None,
     ));
 
     // Test invalid transitions
     assert!(!can_transition(
         &PackState::Uninitialized,
         TransitionKind::Build,
-        None,
     ));
-    assert!(!can_transition(
+
+    // Test marker transitions via can_enter_marker
+    assert!(can_enter_marker(
+        &PackState::Built,
+        MarkerKind::Building,
+        &|_| true,
+    ));
+    assert!(!can_enter_marker(
         &PackState::Uninitialized,
-        TransitionKind::Building,
-        None,
+        MarkerKind::Building,
+        &|_| true,
     ));
 }
 
@@ -616,7 +612,7 @@ fn test_begin_build_transition_rejects_incomplete_configured_layout() {
     let (provider, workdir) = create_progressive_init_test();
     let manager = PackStateManager::new(workdir, &provider);
 
-    let result = manager.begin_state_transition(StateTransition::Building);
+    let result = manager.begin_state_transition(MarkerKind::Building);
     assert!(matches!(result, Err(StateError::InvalidTransition { .. })));
 }
 
@@ -625,7 +621,7 @@ fn test_begin_build_transition_allows_rebuilds_from_built_state() {
     let (provider, workdir) = create_built_test();
     let manager = PackStateManager::new(workdir, &provider);
 
-    let result = manager.begin_state_transition(StateTransition::Building);
+    let result = manager.begin_state_transition(MarkerKind::Building);
     assert!(result.is_ok());
 }
 
@@ -781,13 +777,13 @@ fn test_invalid_state_transition_rejected() {
 
     // Attempt to build directly from Uninitialized (invalid)
     assert!(
-        !can_transition(&current_state, TransitionKind::Build, None),
+        !can_transition(&current_state, TransitionKind::Build),
         "Should not be able to build from Uninitialized"
     );
 
     // Verify valid transitions are still allowed
     assert!(
-        can_transition(&current_state, TransitionKind::Initialize, None),
+        can_transition(&current_state, TransitionKind::Initialize),
         "Should be able to initialize from Uninitialized"
     );
 }
@@ -802,15 +798,14 @@ async fn test_invalid_transition_execution_error() {
     let process = crate::application::session_mocks::MockProcessProvider::new();
     let packwiz = mock_packwiz_for_test();
 
-    // Attempt to execute Cleaning transition from Uninitialized state
-    // Cleaning expects Built or Configured state, so this should fail
+    // Attempt to execute RefreshIndex from Uninitialized state (invalid --
+    // RefreshIndex requires Configured). Build also requires Configured but
+    // would need a BuildOrchestrator to construct; RefreshIndex is simpler.
     let result = manager
-        .execute_transition(&process, &packwiz, StateTransition::Cleaning)
+        .execute_transition(&process, &packwiz, StateTransition::RefreshIndex)
         .await;
 
     // Transition should fail with error for invalid transition
-    // The state machine should reject transitioning to Cleaning from Uninitialized
-
     match result {
         Err(e) => {
             // Expected: error for invalid transition
@@ -821,16 +816,8 @@ async fn test_invalid_transition_execution_error() {
                 error_msg
             );
         }
-        Ok(r) if r.state == PackState::Uninitialized => {
-            // Acceptable: no-op clean on already clean state (stays uninitialized)
-            eprintln!("Note: Clean on Uninitialized succeeded as no-op (remained uninitialized)");
-        }
-        Ok(r) if r.state == PackState::Cleaning => {
-            // Acceptable: transition to Cleaning state (will immediately return to previous state)
-            eprintln!("Note: Clean on Uninitialized entered Cleaning state (transient)");
-        }
         Ok(r) => {
-            panic!("Unexpected state after invalid transition: {:?}", r.state);
+            panic!("Unexpected success after invalid transition: {:?}", r.state);
         }
     }
 }
@@ -845,25 +832,25 @@ fn test_state_transition_requires_intermediate_steps() {
 
     // Verify each step is valid individually
     assert!(
-        can_transition(&PackState::Uninitialized, TransitionKind::Initialize, None),
+        can_transition(&PackState::Uninitialized, TransitionKind::Initialize),
         "Uninitialized -> Configured (Initialize) should be valid"
     );
     assert!(
-        can_transition(&PackState::Configured, TransitionKind::Build, None),
+        can_transition(&PackState::Configured, TransitionKind::Build),
         "Configured -> Built (Build) should be valid"
     );
     assert!(
-        can_transition(&PackState::Built, TransitionKind::Clean, None),
+        can_transition(&PackState::Built, TransitionKind::Clean),
         "Built -> Configured (Clean) should be valid"
     );
 
     // Verify invalid skips are rejected
     assert!(
-        !can_transition(&PackState::Uninitialized, TransitionKind::Build, None),
+        !can_transition(&PackState::Uninitialized, TransitionKind::Build),
         "Should not skip Configured state"
     );
     assert!(
-        !can_transition(&PackState::Uninitialized, TransitionKind::Cleaning, None),
+        !can_enter_marker(&PackState::Uninitialized, MarkerKind::Cleaning, &|_| true),
         "Should not skip to Cleaning from Uninitialized"
     );
 }
@@ -1023,7 +1010,7 @@ fn test_begin_state_transition_writes_marker() {
 
     let manager = PackStateManager::new(workdir.clone(), &provider);
     manager
-        .begin_state_transition(StateTransition::Building)
+        .begin_state_transition(MarkerKind::Building)
         .unwrap();
 
     // Marker file should exist with "building" content
@@ -1048,7 +1035,7 @@ fn test_complete_state_transition_removes_marker() {
 
     // Begin a building transition (writes marker)
     manager
-        .begin_state_transition(StateTransition::Building)
+        .begin_state_transition(MarkerKind::Building)
         .unwrap();
     assert!(provider.exists(&workdir.join(".empack-state")));
 
@@ -1069,14 +1056,12 @@ fn test_can_transition_from_interrupted() {
             was: Box::new(PackState::Building)
         },
         TransitionKind::Clean,
-        None,
     ));
     assert!(can_transition(
         &PackState::Interrupted {
             was: Box::new(PackState::Cleaning)
         },
         TransitionKind::Clean,
-        None,
     ));
 
     // Interrupted should NOT be able to build
@@ -1085,7 +1070,6 @@ fn test_can_transition_from_interrupted() {
             was: Box::new(PackState::Building)
         },
         TransitionKind::Build,
-        None,
     ));
 }
 
@@ -1135,7 +1119,7 @@ fn test_begin_cleaning_transition_writes_marker() {
 
     let manager = PackStateManager::new(workdir.clone(), &provider);
     manager
-        .begin_state_transition(StateTransition::Cleaning)
+        .begin_state_transition(MarkerKind::Cleaning)
         .unwrap();
 
     let content = provider
@@ -1149,28 +1133,27 @@ fn test_begin_cleaning_transition_writes_marker() {
 #[test]
 fn test_can_transition_with_layout_rejection() {
     // Build from Configured should fail if layout says no
-    assert!(!can_transition(
+    assert!(!can_transition_with_layout(
         &PackState::Configured,
         TransitionKind::Build,
-        Some(&|_| false),
+        &|_| false,
     ));
 }
 
 #[test]
 fn test_can_transition_with_layout_acceptance() {
-    assert!(can_transition(
+    assert!(can_transition_with_layout(
         &PackState::Configured,
         TransitionKind::Build,
-        Some(&|_| true),
+        &|_| true,
     ));
 }
 
 #[test]
 fn test_can_transition_layout_not_consulted_for_clean() {
-    // Clean transitions skip layout validation entirely
+    // Clean transitions skip layout validation entirely -- pure whitelist sufficient
     assert!(can_transition(
         &PackState::Built,
         TransitionKind::Clean,
-        Some(&|_| false),
     ));
 }
