@@ -475,23 +475,18 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Input;
 
-        loop {
-            match Input::new()
-                .with_prompt(prompt)
-                .default(default.clone())
-                .interact_text()
+        match Input::new()
+            .with_prompt(prompt)
+            .default(default.clone())
+            .interact_text()
+        {
+            Ok(val) => Ok(val),
+            Err(dialoguer::Error::IO(ref io_err))
+                if io_err.kind() == std::io::ErrorKind::Interrupted =>
             {
-                Ok(val) => return Ok(val),
-                Err(dialoguer::Error::IO(ref io_err))
-                    if io_err.kind() == std::io::ErrorKind::Interrupted =>
-                {
-                    if crate::terminal::cursor::sigint_received() {
-                        self.handle_interrupt()
-                    }
-                    continue;
-                }
-                Err(e) => return Err(e).context("Failed to read text input"),
+                self.handle_interrupt()
             }
+            Err(e) => Err(e).context("Failed to read text input"),
         }
     }
 
@@ -504,23 +499,18 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Confirm;
 
-        loop {
-            match Confirm::new()
-                .with_prompt(prompt)
-                .default(default)
-                .interact()
+        match Confirm::new()
+            .with_prompt(prompt)
+            .default(default)
+            .interact()
+        {
+            Ok(val) => Ok(val),
+            Err(dialoguer::Error::IO(ref io_err))
+                if io_err.kind() == std::io::ErrorKind::Interrupted =>
             {
-                Ok(val) => return Ok(val),
-                Err(dialoguer::Error::IO(ref io_err))
-                    if io_err.kind() == std::io::ErrorKind::Interrupted =>
-                {
-                    if crate::terminal::cursor::sigint_received() {
-                        self.handle_interrupt()
-                    }
-                    continue;
-                }
-                Err(e) => return Err(e).context("Failed to read confirmation"),
+                self.handle_interrupt()
             }
+            Err(e) => Err(e).context("Failed to read confirmation"),
         }
     }
 
@@ -533,23 +523,18 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Select;
 
-        loop {
-            match Select::new()
-                .with_prompt(prompt)
-                .items(options)
-                .interact()
+        match Select::new()
+            .with_prompt(prompt)
+            .items(options)
+            .interact()
+        {
+            Ok(val) => Ok(val),
+            Err(dialoguer::Error::IO(ref io_err))
+                if io_err.kind() == std::io::ErrorKind::Interrupted =>
             {
-                Ok(val) => return Ok(val),
-                Err(dialoguer::Error::IO(ref io_err))
-                    if io_err.kind() == std::io::ErrorKind::Interrupted =>
-                {
-                    if crate::terminal::cursor::sigint_received() {
-                        self.handle_interrupt()
-                    }
-                    continue;
-                }
-                Err(e) => return Err(e).context("Failed to read selection"),
+                self.handle_interrupt()
             }
+            Err(e) => Err(e).context("Failed to read selection"),
         }
     }
 
@@ -562,24 +547,19 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::FuzzySelect;
 
-        loop {
-            match FuzzySelect::new()
-                .with_prompt(prompt)
-                .items(options)
-                .max_length(6) // Show 6 items per page (enables pagination)
-                .interact_opt()
+        match FuzzySelect::new()
+            .with_prompt(prompt)
+            .items(options)
+            .max_length(6) // Show 6 items per page (enables pagination)
+            .interact_opt()
+        {
+            Ok(val) => Ok(val),
+            Err(dialoguer::Error::IO(ref io_err))
+                if io_err.kind() == std::io::ErrorKind::Interrupted =>
             {
-                Ok(val) => return Ok(val),
-                Err(dialoguer::Error::IO(ref io_err))
-                    if io_err.kind() == std::io::ErrorKind::Interrupted =>
-                {
-                    if crate::terminal::cursor::sigint_received() {
-                        self.handle_interrupt()
-                    }
-                    continue;
-                }
-                Err(e) => return Err(e).context("Failed to read fuzzy selection"),
+                self.handle_interrupt()
             }
+            Err(e) => Err(e).context("Failed to read fuzzy selection"),
         }
     }
 }
