@@ -395,38 +395,74 @@ impl ProcessProvider for LiveProcessProvider {
             .spawn()
             .with_context(|| format!("Failed to spawn command: {}", command))?;
 
-        // Share the Child handle between the wait thread and the timeout
-        // handler so we can call Child::kill() directly instead of raw
-        // libc::kill, avoiding PID-recycling races.
-        let child_handle = Arc::new(Mutex::new(Some(child)));
+        // Share the Child between the wait thread and the timeout handler.
+        // Uses try_wait() polling so the mutex is NOT held while blocking,
+        // allowing the timeout handler to acquire the lock and call kill().
+        let child_handle = Arc::new(Mutex::new(child));
         let child_for_timeout = Arc::clone(&child_handle);
         let cmd_name = command.to_string();
 
-        let (tx, rx) = std::sync::mpsc::channel();
+        // Take stdout/stderr pipes up front so we can drain them on
+        // separate threads (avoids deadlock if pipe buffers fill).
+        let stdout_pipe = child_handle.lock().unwrap().stdout.take();
+        let stderr_pipe = child_handle.lock().unwrap().stderr.take();
+
+        let stdout_thread = std::thread::spawn(move || {
+            let mut s = String::new();
+            if let Some(mut pipe) = stdout_pipe {
+                use std::io::Read;
+                let _ = pipe.read_to_string(&mut s);
+            }
+            s
+        });
+        let stderr_thread = std::thread::spawn(move || {
+            let mut s = String::new();
+            if let Some(mut pipe) = stderr_pipe {
+                use std::io::Read;
+                let _ = pipe.read_to_string(&mut s);
+            }
+            s
+        });
+
+        let (tx, rx) = std::sync::mpsc::channel::<anyhow::Result<ProcessOutput>>();
         std::thread::spawn(move || {
-            let mut guard = child_handle.lock().unwrap();
-            if let Some(child) = guard.take() {
-                let result = child.wait_with_output();
-                let _ = tx.send(result);
+            loop {
+                {
+                    let mut guard = child_handle.lock().unwrap();
+                    match guard.try_wait() {
+                        Ok(Some(status)) => {
+                            drop(guard);
+                            let stdout = stdout_thread.join().unwrap_or_default();
+                            let stderr = stderr_thread.join().unwrap_or_default();
+                            let _ = tx.send(Ok(ProcessOutput {
+                                stdout,
+                                stderr,
+                                success: status.success(),
+                            }));
+                            return;
+                        }
+                        Ok(None) => {
+                            // Still running -- release lock and poll again
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(e.into()));
+                            return;
+                        }
+                    }
+                } // Lock released here so timeout handler can acquire it
+                std::thread::sleep(std::time::Duration::from_millis(50));
             }
         });
 
         match rx.recv_timeout(PROCESS_TIMEOUT) {
             Ok(result) => {
-                let output = result
-                    .with_context(|| format!("Failed to execute command: {}", cmd_name))?;
-                Ok(ProcessOutput {
-                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                    success: output.status.success(),
-                })
+                result.with_context(|| format!("Failed to execute command: {}", cmd_name))
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // Kill via Child handle -- safe against PID recycling
-                if let Ok(mut guard) = child_for_timeout.lock()
-                    && let Some(ref mut child) = *guard
-                {
-                    let _ = child.kill();
+                // Kill via Child handle -- child is still in the mutex
+                if let Ok(mut guard) = child_for_timeout.lock() {
+                    let _ = guard.kill();
+                    let _ = guard.wait(); // Reap zombie process
                 }
                 anyhow::bail!(
                     "Command '{}' timed out after {} seconds (process killed)",
