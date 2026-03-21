@@ -1150,10 +1150,21 @@ fn test_can_transition_with_layout_acceptance() {
 }
 
 #[test]
-fn test_can_transition_layout_not_consulted_for_clean() {
-    // Clean transitions skip layout validation entirely -- pure whitelist sufficient
-    assert!(can_transition(
+fn test_can_enter_marker_cleaning_calls_layout() {
+    // Cleaning now requires layout validation, consistent with Building
+    assert!(can_enter_marker(
         &PackState::Built,
-        TransitionKind::Clean,
+        MarkerKind::Cleaning,
+        &|_| true,
+    ));
+}
+
+#[test]
+fn test_can_enter_marker_cleaning_rejects_bad_layout() {
+    // Layout returning false should reject the transition
+    assert!(!can_enter_marker(
+        &PackState::Built,
+        MarkerKind::Cleaning,
+        &|_| false,
     ));
 }

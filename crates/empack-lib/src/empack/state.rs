@@ -195,8 +195,8 @@ pub(crate) fn can_enter_marker(
     match (from, marker) {
         // Building: same states as Build, but layout always checked
         (PackState::Configured | PackState::Built, MarkerKind::Building) => layout_ok(from),
-        // Cleaning: only from Built
-        (PackState::Built, MarkerKind::Cleaning) => true,
+        // Cleaning: only from Built, layout must confirm built state
+        (PackState::Built, MarkerKind::Cleaning) => layout_ok(from),
         _ => false,
     }
 }
