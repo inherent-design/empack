@@ -17,6 +17,8 @@ impl Default for CursorGuard {
 
 impl CursorGuard {
     pub fn new() -> Self {
+        let _ = io::stdout().write_all(b"\x1b[?25l");
+        let _ = io::stdout().flush();
         CURSOR_HIDDEN.store(true, Ordering::SeqCst);
         Self
     }
@@ -40,6 +42,7 @@ pub fn show_cursor() {
 /// Used in panic hooks and signal handlers where the AtomicBool
 /// may not reflect reality (e.g. recovery from a prior crash).
 pub fn force_show_cursor() {
+    CURSOR_HIDDEN.store(false, Ordering::SeqCst);
     let _ = io::stdout().write_all(b"\x1b[?25h");
     let _ = io::stdout().flush();
 }

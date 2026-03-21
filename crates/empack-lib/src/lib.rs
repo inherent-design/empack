@@ -59,6 +59,7 @@ pub async fn main() -> Result<()> {
 
     // Load CLI configuration
     let config = CliConfig::load()?;
+    let workdir = config.app_config.workdir.clone();
 
     // Run command with signal handling
     tokio::select! {
@@ -69,9 +70,10 @@ pub async fn main() -> Result<()> {
         _ = tokio::signal::ctrl_c() => {
             terminal::cursor::force_show_cursor();
 
-            // Best-effort state marker cleanup
-            if let Ok(cwd) = std::env::current_dir() {
-                let marker = cwd.join(empack::state::STATE_MARKER_FILE);
+            // Best-effort state marker cleanup using configured workdir
+            let marker_dir = workdir.or_else(|| std::env::current_dir().ok());
+            if let Some(dir) = &marker_dir {
+                let marker = dir.join(empack::state::STATE_MARKER_FILE);
                 let _ = std::fs::remove_file(marker);
             }
 
