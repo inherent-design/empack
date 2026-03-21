@@ -395,6 +395,7 @@ impl ProcessProvider for LiveProcessProvider {
             .spawn()
             .with_context(|| format!("Failed to spawn command: {}", command))?;
 
+        let child_id = child.id();
         let cmd_name = command.to_string();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -411,11 +412,30 @@ impl ProcessProvider for LiveProcessProvider {
                     success: output.status.success(),
                 })
             }
-            Err(_) => {
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Best-effort kill of the hung child process
+                #[cfg(unix)]
+                {
+                    // SAFETY: libc::kill sends a signal to a process by PID.
+                    // child_id is a valid PID from a process we just spawned.
+                    unsafe { libc::kill(child_id as libc::pid_t, libc::SIGKILL); }
+                }
+                #[cfg(windows)]
+                {
+                    // On Windows, we cannot easily kill by PID without opening the process.
+                    // The background thread will clean up when the process exits or parent dies.
+                    let _ = child_id;
+                }
                 anyhow::bail!(
-                    "Command '{}' timed out after {} seconds",
+                    "Command '{}' timed out after {} seconds (process killed)",
                     cmd_name,
                     PROCESS_TIMEOUT.as_secs()
+                )
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                anyhow::bail!(
+                    "Command '{}' execution thread terminated unexpectedly",
+                    cmd_name
                 )
             }
         }
