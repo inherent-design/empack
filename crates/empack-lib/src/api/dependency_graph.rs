@@ -206,8 +206,10 @@ impl DependencyGraph {
     /// Returns error if graph has cycles
     pub fn topological_sort(&self) -> Result<Vec<DependencyNode>, DependencyGraphError> {
         if let Some(cycle) = self.detect_cycle() {
+            let p = crate::primitives::terminal::primitives();
+            let arrow_sep = format!(" {} ", p.arrow);
             return Err(DependencyGraphError::CircularDependency {
-                cycle: cycle.join(" → "),
+                cycle: cycle.join(&arrow_sep),
             });
         }
 

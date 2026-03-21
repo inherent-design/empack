@@ -192,24 +192,27 @@ pub trait DisplayProviderExt: DisplayProvider {
     /// Display an operation summary with appropriate status
     fn display_summary(&self, operation: &str, summary: &OperationSummary) {
         let status = self.status();
+        let p = crate::primitives::terminal::primitives();
 
         if summary.is_success() {
             status.complete(&format!("{} completed successfully", operation));
             status.subtle(&format!(
-                "   ✅ {} operation{} successful",
+                "   {} {} operation{} successful",
+                p.checkmark,
                 summary.successful,
                 if summary.successful == 1 { "" } else { "s" }
             ));
         } else if summary.is_partial_success() {
             status.warning(&format!("{} completed with issues", operation));
             status.subtle(&format!(
-                "   ✅ {} successful, ❌ {} failed",
-                summary.successful, summary.failed
+                "   {} {} successful, {} {} failed",
+                p.checkmark, summary.successful, p.cross, summary.failed
             ));
         } else if summary.is_failure() {
             status.error(operation, "failed");
             status.subtle(&format!(
-                "   ❌ {} operation{} failed",
+                "   {} {} operation{} failed",
+                p.cross,
                 summary.failed,
                 if summary.failed == 1 { "" } else { "s" }
             ));
