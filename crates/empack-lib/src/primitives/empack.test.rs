@@ -1,4 +1,4 @@
-use crate::primitives::{BuildTarget, PackState, StateTransition};
+use crate::primitives::{BuildTarget, PackState, StateTransition, TransitionKind};
 
 #[test]
 fn test_build_target_display() {
@@ -76,4 +76,33 @@ fn test_transition_display() {
     ).to_string(), "initialize");
     assert_eq!(StateTransition::RefreshIndex.to_string(), "refresh-index");
     assert_eq!(StateTransition::Clean.to_string(), "clean");
+}
+
+#[test]
+fn test_transition_kind_display() {
+    assert_eq!(TransitionKind::Initialize.to_string(), "initialize");
+    assert_eq!(TransitionKind::RefreshIndex.to_string(), "refresh-index");
+    assert_eq!(TransitionKind::Build.to_string(), "build");
+    assert_eq!(TransitionKind::Clean.to_string(), "clean");
+    assert_eq!(TransitionKind::Building.to_string(), "building");
+    assert_eq!(TransitionKind::Cleaning.to_string(), "cleaning");
+}
+
+#[test]
+fn test_state_transition_kind_method() {
+    assert_eq!(
+        StateTransition::Initialize(crate::primitives::InitializationConfig {
+            name: "Test",
+            author: "Test",
+            version: "1.0.0",
+            modloader: "fabric",
+            mc_version: "1.20.1",
+            loader_version: "0.14.21",
+        }).kind(),
+        TransitionKind::Initialize,
+    );
+    assert_eq!(StateTransition::RefreshIndex.kind(), TransitionKind::RefreshIndex);
+    assert_eq!(StateTransition::Clean.kind(), TransitionKind::Clean);
+    assert_eq!(StateTransition::Building.kind(), TransitionKind::Building);
+    assert_eq!(StateTransition::Cleaning.kind(), TransitionKind::Cleaning);
 }

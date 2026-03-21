@@ -3,6 +3,7 @@ use crate::application::session::{FileSystemProvider, ProcessOutput};
 use crate::application::session_mocks::mock_root;
 use crate::empack::config::ConfigManager;
 use crate::empack::packwiz::MockPackwizOps;
+use crate::primitives::TransitionKind;
 use std::collections::HashSet;
 
 /// Mock implementation of FileSystemProvider for testing - zero I/O
@@ -445,42 +446,50 @@ fn test_discover_state_ignores_legacy_hidden_artifact_root() {
 
 #[test]
 fn test_pure_can_transition_function() {
-    // Test valid transitions
+    // Test valid transitions (no layout validator -- pure whitelist)
     assert!(can_transition(
         &PackState::Uninitialized,
-        &PackState::Configured
+        TransitionKind::Initialize,
+        None,
     ));
     assert!(can_transition(
         &PackState::Configured,
-        &PackState::Built
+        TransitionKind::Build,
+        None,
     ));
     assert!(can_transition(
         &PackState::Built,
-        &PackState::Configured
+        TransitionKind::Clean,
+        None,
     ));
     assert!(can_transition(
         &PackState::Configured,
-        &PackState::Uninitialized
+        TransitionKind::Clean,
+        None,
     ));
     assert!(can_transition(
         &PackState::Built,
-        &PackState::Building
+        TransitionKind::Building,
+        None,
     ));
 
-    // Test same state transitions
+    // RefreshIndex from Configured
     assert!(can_transition(
         &PackState::Configured,
-        &PackState::Configured
+        TransitionKind::RefreshIndex,
+        None,
     ));
 
     // Test invalid transitions
     assert!(!can_transition(
         &PackState::Uninitialized,
-        &PackState::Built
+        TransitionKind::Build,
+        None,
     ));
     assert!(!can_transition(
-        &PackState::Built,
-        &PackState::Uninitialized
+        &PackState::Uninitialized,
+        TransitionKind::Building,
+        None,
     ));
 }
 
@@ -761,7 +770,7 @@ fn test_pure_create_initial_structure_function() {
 /// Test: Invalid state transition is rejected
 ///
 /// Validates that can_transition() correctly rejects invalid state transitions
-/// Example: Uninitialized → Built (must go through Configured first)
+/// Example: Uninitialized -> Built (must go through Configured first)
 #[test]
 fn test_invalid_state_transition_rejected() {
     let (_provider, workdir) = create_uninitialized_test();
@@ -770,13 +779,17 @@ fn test_invalid_state_transition_rejected() {
     let current_state = manager.discover_state().unwrap();
     assert_eq!(current_state, PackState::Uninitialized);
 
-    // Attempt to transition directly to Built state (invalid)
-    let can_build = manager.can_transition(&current_state, &PackState::Built);
-    assert!(!can_build, "Should not be able to transition from Uninitialized to Built");
+    // Attempt to build directly from Uninitialized (invalid)
+    assert!(
+        !can_transition(&current_state, TransitionKind::Build, None),
+        "Should not be able to build from Uninitialized"
+    );
 
     // Verify valid transitions are still allowed
-    let can_configure = manager.can_transition(&current_state, &PackState::Configured);
-    assert!(can_configure, "Should be able to transition from Uninitialized to Configured");
+    assert!(
+        can_transition(&current_state, TransitionKind::Initialize, None),
+        "Should be able to initialize from Uninitialized"
+    );
 }
 
 /// Test: Invalid state transitions return appropriate errors
@@ -827,33 +840,30 @@ async fn test_invalid_transition_execution_error() {
 /// Validates that transitions requiring intermediate steps are rejected
 #[test]
 fn test_state_transition_requires_intermediate_steps() {
-    let (_provider, workdir) = create_uninitialized_test();
-    let manager = PackStateManager::new(workdir, &_provider);
-
     // Valid state transition chain:
-    // Uninitialized → Configured → Built → Cleaning (backwards)
+    // Uninitialized -> Configured -> Built -> Cleaning (backwards)
 
     // Verify each step is valid individually
     assert!(
-        manager.can_transition(&PackState::Uninitialized, &PackState::Configured),
-        "Uninitialized -> Configured should be valid"
+        can_transition(&PackState::Uninitialized, TransitionKind::Initialize, None),
+        "Uninitialized -> Configured (Initialize) should be valid"
     );
     assert!(
-        manager.can_transition(&PackState::Configured, &PackState::Built),
-        "Configured -> Built should be valid"
+        can_transition(&PackState::Configured, TransitionKind::Build, None),
+        "Configured -> Built (Build) should be valid"
     );
     assert!(
-        manager.can_transition(&PackState::Built, &PackState::Configured),
-        "Built -> Configured (clean backwards) should be valid"
+        can_transition(&PackState::Built, TransitionKind::Clean, None),
+        "Built -> Configured (Clean) should be valid"
     );
 
     // Verify invalid skips are rejected
     assert!(
-        !manager.can_transition(&PackState::Uninitialized, &PackState::Built),
+        !can_transition(&PackState::Uninitialized, TransitionKind::Build, None),
         "Should not skip Configured state"
     );
     assert!(
-        !manager.can_transition(&PackState::Uninitialized, &PackState::Cleaning),
+        !can_transition(&PackState::Uninitialized, TransitionKind::Cleaning, None),
         "Should not skip to Cleaning from Uninitialized"
     );
 }
@@ -1050,7 +1060,7 @@ fn test_complete_state_transition_removes_marker() {
     );
 }
 
-/// Test: can_transition allows recovery from Interrupted state
+/// Test: can_transition allows recovery from Interrupted state via Clean
 #[test]
 fn test_can_transition_from_interrupted() {
     // Interrupted states should be able to clean (recover)
@@ -1058,27 +1068,24 @@ fn test_can_transition_from_interrupted() {
         &PackState::Interrupted {
             was: Box::new(PackState::Building)
         },
-        &PackState::Configured
+        TransitionKind::Clean,
+        None,
     ));
     assert!(can_transition(
         &PackState::Interrupted {
             was: Box::new(PackState::Cleaning)
         },
-        &PackState::Configured
-    ));
-    assert!(can_transition(
-        &PackState::Interrupted {
-            was: Box::new(PackState::Building)
-        },
-        &PackState::Uninitialized
+        TransitionKind::Clean,
+        None,
     ));
 
-    // Interrupted should NOT be able to advance to Built
+    // Interrupted should NOT be able to build
     assert!(!can_transition(
         &PackState::Interrupted {
             was: Box::new(PackState::Building)
         },
-        &PackState::Built
+        TransitionKind::Build,
+        None,
     ));
 }
 
@@ -1137,86 +1144,33 @@ fn test_begin_cleaning_transition_writes_marker() {
     assert_eq!(content, "cleaning");
 }
 
-// ── transition() enforced free function tests ──────────────────────────────
+// ── can_transition layout closure tests ─────────────────────────────────────
 
 #[test]
-fn test_transition_valid_forward() {
-    let result = transition(PackState::Uninitialized, PackState::Configured);
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), PackState::Configured);
+fn test_can_transition_with_layout_rejection() {
+    // Build from Configured should fail if layout says no
+    assert!(!can_transition(
+        &PackState::Configured,
+        TransitionKind::Build,
+        Some(&|_| false),
+    ));
 }
 
 #[test]
-fn test_transition_valid_configure_to_built() {
-    let result = transition(PackState::Configured, PackState::Built);
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), PackState::Built);
+fn test_can_transition_with_layout_acceptance() {
+    assert!(can_transition(
+        &PackState::Configured,
+        TransitionKind::Build,
+        Some(&|_| true),
+    ));
 }
 
 #[test]
-fn test_transition_valid_clean_backwards() {
-    let result = transition(PackState::Built, PackState::Configured);
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), PackState::Configured);
-}
-
-#[test]
-fn test_transition_valid_same_state() {
-    let result = transition(PackState::Configured, PackState::Configured);
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), PackState::Configured);
-}
-
-#[test]
-fn test_transition_invalid_skip_state() {
-    let result = transition(PackState::Uninitialized, PackState::Built);
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(
-        err.to_string().contains("transition"),
-        "Error should mention transition, got: {}",
-        err
-    );
-}
-
-#[test]
-fn test_transition_invalid_building_not_in_whitelist() {
-    // Building is a transient state managed by the orchestrator, not a
-    // direct target from Uninitialized
-    let result = transition(PackState::Uninitialized, PackState::Building);
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_transition_invalid_cleaning_from_uninitialized() {
-    let result = transition(PackState::Uninitialized, PackState::Cleaning);
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_transition_interrupted_can_recover_to_configured() {
-    let state = PackState::Interrupted {
-        was: Box::new(PackState::Building),
-    };
-    let result = transition(state, PackState::Configured);
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), PackState::Configured);
-}
-
-#[test]
-fn test_transition_interrupted_can_recover_to_uninitialized() {
-    let state = PackState::Interrupted {
-        was: Box::new(PackState::Building),
-    };
-    let result = transition(state, PackState::Uninitialized);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_transition_interrupted_cannot_skip_to_built() {
-    let state = PackState::Interrupted {
-        was: Box::new(PackState::Building),
-    };
-    let result = transition(state, PackState::Built);
-    assert!(result.is_err());
+fn test_can_transition_layout_not_consulted_for_clean() {
+    // Clean transitions skip layout validation entirely
+    assert!(can_transition(
+        &PackState::Built,
+        TransitionKind::Clean,
+        Some(&|_| false),
+    ));
 }

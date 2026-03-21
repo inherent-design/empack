@@ -89,6 +89,37 @@ impl fmt::Display for PackState {
     }
 }
 
+/// Pure identity of a state transition, without execution payload.
+/// Used by the validation whitelist to determine if a transition is legal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TransitionKind {
+    /// Uninitialized -> Configured
+    Initialize,
+    /// Configured -> Configured (refresh metadata)
+    RefreshIndex,
+    /// Configured/Built -> Built (full build)
+    Build,
+    /// Built -> Configured or Configured -> Uninitialized
+    Clean,
+    /// Configured/Built -> Building (intermediate marker state)
+    Building,
+    /// Built -> Cleaning (intermediate marker state)
+    Cleaning,
+}
+
+impl fmt::Display for TransitionKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TransitionKind::Initialize => write!(f, "initialize"),
+            TransitionKind::RefreshIndex => write!(f, "refresh-index"),
+            TransitionKind::Build => write!(f, "build"),
+            TransitionKind::Clean => write!(f, "clean"),
+            TransitionKind::Building => write!(f, "building"),
+            TransitionKind::Cleaning => write!(f, "cleaning"),
+        }
+    }
+}
+
 /// Initialization parameters for packwiz init
 #[derive(Debug)]
 pub struct InitializationConfig<'a> {
@@ -118,6 +149,20 @@ pub enum StateTransition<'a> {
     Building,
     /// Begin cleaning: Built -> Cleaning
     Cleaning,
+}
+
+impl<'a> StateTransition<'a> {
+    /// Extract the pure transition identity, discarding execution payload.
+    pub fn kind(&self) -> TransitionKind {
+        match self {
+            StateTransition::Initialize(_) => TransitionKind::Initialize,
+            StateTransition::RefreshIndex => TransitionKind::RefreshIndex,
+            StateTransition::Build(_, _) => TransitionKind::Build,
+            StateTransition::Clean => TransitionKind::Clean,
+            StateTransition::Building => TransitionKind::Building,
+            StateTransition::Cleaning => TransitionKind::Cleaning,
+        }
+    }
 }
 
 impl<'a> fmt::Display for StateTransition<'a> {
