@@ -294,7 +294,7 @@ mod handle_init_tests {
     }
 
     #[tokio::test]
-    async fn it_rejects_incompatible_loader_for_mc_version() {
+    async fn it_accepts_compatible_loader_fallback_for_mc_version() {
         let workdir = mock_root().join("incompatible-loader");
         // Quilt is in the fallback all-loaders list, but fetch_compatible_loaders
         // may exclude it for certain MC versions. Since the mock network fails,

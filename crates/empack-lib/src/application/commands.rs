@@ -530,6 +530,7 @@ async fn handle_init(
             );
         }
 
+        let loader_str = versions_loader.as_str().to_string();
         (versions_loader, loader_str)
     } else {
         let loader_names: Vec<String> = compatible_loaders
@@ -709,6 +710,15 @@ async fn handle_init(
         return Ok(());
     }
 
+    validate_init_inputs(
+        &minecraft_version,
+        &minecraft_versions,
+        &loader_str,
+        &compatible_loaders,
+        &loader_version,
+        &loader_versions,
+    )?;
+
     // === Execute phase: all filesystem mutations happen below this line ===
 
     // Create directory if needed (deferred from path resolution)
@@ -741,15 +751,6 @@ async fn handle_init(
     session
         .filesystem()
         .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
-
-    validate_init_inputs(
-        &minecraft_version,
-        &minecraft_versions,
-        &loader_str,
-        &compatible_loaders,
-        &loader_version,
-        &loader_versions,
-    )?;
 
     // Execute initialization with the collected information
     let init_config = crate::primitives::InitializationConfig {
