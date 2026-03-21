@@ -3,7 +3,7 @@
 use super::*;
 use crate::application::session::ProcessOutput;
 use crate::application::session_mocks::{
-    MockCommandSession, MockFileSystemProvider, MockProcessProvider,
+    mock_root, MockCommandSession, MockFileSystemProvider, MockProcessProvider,
 };
 use std::path::PathBuf;
 
@@ -12,7 +12,7 @@ fn test_add_mod_modrinth_success() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "modrinth".to_string(),
             "add".to_string(),
             "--project-id".to_string(),
@@ -29,25 +29,26 @@ fn test_add_mod_modrinth_success() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
     let result = metadata.add_mod("AANobbMI", ProjectPlatform::Modrinth);
 
     assert!(result.is_ok());
+    let pack_file_str = mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
         "packwiz",
         &[
             "--pack-file",
-            "/test/workdir/pack/pack.toml",
+            &pack_file_str,
             "modrinth",
             "add",
             "--project-id",
             "AANobbMI",
             "-y"
         ],
-        &PathBuf::from("/test/workdir/pack")
+        &mock_root().join("workdir").join("pack")
     ));
 }
 
@@ -56,7 +57,7 @@ fn test_add_mod_curseforge_success() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "curseforge".to_string(),
             "add".to_string(),
             "--addon-id".to_string(),
@@ -73,7 +74,7 @@ fn test_add_mod_curseforge_success() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -87,7 +88,7 @@ fn test_add_mod_failure() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "modrinth".to_string(),
             "add".to_string(),
             "--project-id".to_string(),
@@ -104,7 +105,7 @@ fn test_add_mod_failure() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -124,7 +125,7 @@ fn test_remove_mod_success() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "remove".to_string(),
             "sodium".to_string(),
             "-y".to_string(),
@@ -139,23 +140,24 @@ fn test_remove_mod_success() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
     let result = metadata.remove_mod("sodium");
 
     assert!(result.is_ok());
+    let pack_file_str = mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
         "packwiz",
         &[
             "--pack-file",
-            "/test/workdir/pack/pack.toml",
+            &pack_file_str,
             "remove",
             "sodium",
             "-y"
         ],
-        &PathBuf::from("/test/workdir/pack")
+        &mock_root().join("workdir").join("pack")
     ));
 }
 
@@ -164,7 +166,7 @@ fn test_remove_mod_not_found() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "remove".to_string(),
             "nonexistent".to_string(),
             "-y".to_string(),
@@ -179,7 +181,7 @@ fn test_remove_mod_not_found() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -193,7 +195,7 @@ fn test_refresh_index_success() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -206,7 +208,7 @@ fn test_refresh_index_success() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -220,7 +222,7 @@ fn test_refresh_index_hash_mismatch() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -233,7 +235,7 @@ fn test_refresh_index_hash_mismatch() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -253,7 +255,7 @@ fn test_refresh_index_pack_format_error() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -266,7 +268,7 @@ fn test_refresh_index_pack_format_error() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -284,15 +286,15 @@ fn test_refresh_index_pack_format_error() {
 
 #[test]
 fn test_export_mrpack_success() {
-    let output_path = PathBuf::from("/test/workdir/dist/pack.mrpack");
+    let output_path = mock_root().join("workdir/dist/pack.mrpack");
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "modrinth".to_string(),
             "export".to_string(),
             "-o".to_string(),
-            "/test/workdir/dist/pack.mrpack".to_string(),
+            mock_root().join("workdir/dist/pack.mrpack").to_string_lossy().to_string(),
         ],
         Ok(ProcessOutput {
             stdout: "Exported pack.mrpack".to_string(),
@@ -304,7 +306,7 @@ fn test_export_mrpack_success() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -320,7 +322,7 @@ fn test_packwiz_unavailable() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -349,7 +351,7 @@ fn test_installer_success() {
             "-g".to_string(),
             "-s".to_string(),
             "both".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
         ],
         Ok(ProcessOutput {
             stdout: "Downloaded 5 mods".to_string(),
@@ -361,14 +363,15 @@ fn test_installer_success() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let installer =
         PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
-    let result = installer.install_mods("both", &PathBuf::from("/test/workdir"));
+    let result = installer.install_mods("both", &mock_root().join("workdir"));
 
     assert!(result.is_ok());
+    let pack_file_str = mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
         "java",
         &[
@@ -379,9 +382,9 @@ fn test_installer_success() {
             "-g",
             "-s",
             "both",
-            "/test/workdir/pack/pack.toml"
+            &pack_file_str
         ],
-        &PathBuf::from("/test/workdir")
+        &mock_root().join("workdir")
     ));
 }
 
@@ -394,7 +397,7 @@ fn test_installer_invalid_side() {
 
     let installer =
         PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
-    let result = installer.install_mods("invalid", &PathBuf::from("/test/workdir"));
+    let result = installer.install_mods("invalid", &mock_root().join("workdir"));
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -419,7 +422,7 @@ fn test_installer_download_failure() {
             "-g".to_string(),
             "-s".to_string(),
             "client".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
         ],
         Ok(ProcessOutput {
             stdout: String::new(),
@@ -431,12 +434,12 @@ fn test_installer_download_failure() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let installer =
         PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
-    let result = installer.install_mods("client", &PathBuf::from("/test/workdir"));
+    let result = installer.install_mods("client", &mock_root().join("workdir"));
 
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -454,7 +457,7 @@ fn test_check_installer_available_uses_filesystem_provider() {
 
     let session = MockCommandSession::new().with_filesystem(
         MockFileSystemProvider::new()
-            .with_current_dir(PathBuf::from("/test/workdir"))
+            .with_current_dir(mock_root().join("workdir"))
             .with_file(bootstrap_jar_path.clone(), "jar".to_string()),
     );
 
@@ -469,7 +472,7 @@ fn test_cached_packwiz_check() {
         .with_packwiz_result(
             vec![
                 "--pack-file".to_string(),
-                "/test/workdir/pack/pack.toml".to_string(),
+                mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
                 "modrinth".to_string(),
                 "add".to_string(),
                 "--project-id".to_string(),
@@ -485,7 +488,7 @@ fn test_cached_packwiz_check() {
         .with_packwiz_result(
             vec![
                 "--pack-file".to_string(),
-                "/test/workdir/pack/pack.toml".to_string(),
+                mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
                 "modrinth".to_string(),
                 "add".to_string(),
                 "--project-id".to_string(),
@@ -502,7 +505,7 @@ fn test_cached_packwiz_check() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -530,7 +533,7 @@ fn test_packwiz_malformed_pack_toml() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -545,7 +548,7 @@ fn test_packwiz_malformed_pack_toml() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
@@ -572,11 +575,11 @@ fn test_packwiz_pack_toml_missing_fields() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "modrinth".to_string(),
             "export".to_string(),
             "-o".to_string(),
-            "/test/pack.mrpack".to_string(),
+            mock_root().join("pack.mrpack").to_string_lossy().to_string(),
         ],
         Ok(ProcessOutput {
             stdout: String::new(),
@@ -588,11 +591,11 @@ fn test_packwiz_pack_toml_missing_fields() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();
-    let result = metadata.export_mrpack(&PathBuf::from("/test/pack.mrpack"));
+    let result = metadata.export_mrpack(&mock_root().join("pack.mrpack"));
 
     // Should propagate error from packwiz
     assert!(result.is_err());
@@ -615,7 +618,7 @@ fn test_packwiz_invalid_toml_syntax() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            "/test/workdir/pack/pack.toml".to_string(),
+            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -628,7 +631,7 @@ fn test_packwiz_invalid_toml_syntax() {
     let session = MockCommandSession::new()
         .with_process(mock_process)
         .with_filesystem(
-            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/workdir")),
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
     let mut metadata = PackwizMetadata::new(&session).unwrap();

@@ -4,7 +4,6 @@ use crate::application::session_mocks::*;
 use crate::empack::search::ProjectInfo;
 use crate::primitives::{BuildTarget, ProjectPlatform};
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 fn modrinth_project(project_id: &str, title: &str) -> ProjectInfo {
     ProjectInfo {
@@ -77,7 +76,7 @@ mod handle_init_tests {
 
     #[tokio::test]
     async fn it_initializes_new_project() {
-        let workdir = PathBuf::from("/test/empty-project");
+        let workdir = mock_root().join("empty-project");
         let target_dir = workdir.join("test-pack");
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
@@ -116,7 +115,7 @@ mod handle_init_tests {
 
     #[tokio::test]
     async fn it_refuses_to_overwrite_existing_without_force() {
-        let workdir = PathBuf::from("/test/existing-project");
+        let workdir = mock_root().join("existing-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -143,7 +142,7 @@ mod handle_init_tests {
 
     #[tokio::test]
     async fn it_overwrites_existing_with_force() {
-        let workdir = PathBuf::from("/test/force-pack");
+        let workdir = mock_root().join("force-pack");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -183,7 +182,7 @@ mod handle_init_tests {
 
     #[tokio::test]
     async fn it_force_reinitializes_built_projects_from_a_clean_state() {
-        let workdir = PathBuf::from("/test/force-built-pack");
+        let workdir = mock_root().join("force-built-pack");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -210,12 +209,12 @@ mod handle_init_tests {
 
     #[tokio::test]
     async fn it_handles_user_cancellation_at_confirmation() {
-        let target_dir = PathBuf::from("/test/new-project/cancel-test");
+        let target_dir = mock_root().join("new-project").join("cancel-test");
         let interactive = MockInteractiveProvider::new().with_confirm(false);
 
         let session = MockCommandSession::new()
             .with_filesystem(
-                MockFileSystemProvider::new().with_current_dir(PathBuf::from("/test/new-project")),
+                MockFileSystemProvider::new().with_current_dir(mock_root().join("new-project")),
             )
             .with_interactive(interactive);
 
@@ -247,7 +246,7 @@ mod handle_add_tests {
 
     #[tokio::test]
     async fn it_adds_single_mod_successfully() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
 
         // Create a mock project info for successful resolution
         let mock_project = modrinth_project("test-mod-id", "Test Mod");
@@ -301,7 +300,7 @@ mod handle_add_tests {
 
     #[tokio::test]
     async fn it_adds_multiple_mods_successfully() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -377,7 +376,7 @@ mod handle_add_tests {
 
     #[tokio::test]
     async fn it_uses_modrinth_direct_ids_without_resolving_search() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -411,7 +410,7 @@ mod handle_add_tests {
 
     #[tokio::test]
     async fn it_uses_curseforge_direct_ids_when_platform_is_explicit() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -466,7 +465,7 @@ mod handle_add_tests {
     async fn it_handles_uninitialized_project() {
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
-                .with_current_dir(PathBuf::from("/test/uninitialized-project")),
+                .with_current_dir(mock_root().join("uninitialized-project")),
         );
 
         let result = handle_add(&session, vec!["test-mod".to_string()], false, None).await;
@@ -480,7 +479,7 @@ mod handle_add_tests {
 
     #[tokio::test]
     async fn it_rejects_incomplete_project_state() {
-        let workdir = PathBuf::from("/test/incomplete-project");
+        let workdir = mock_root().join("incomplete-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -524,7 +523,7 @@ mod handle_add_tests {
 
     #[tokio::test]
     async fn it_handles_packwiz_failures() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -567,7 +566,7 @@ mod handle_remove_tests {
 
     #[tokio::test]
     async fn it_removes_single_mod_successfully() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -597,7 +596,7 @@ mod handle_remove_tests {
 
     #[tokio::test]
     async fn it_removes_multiple_mods_successfully() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -630,7 +629,7 @@ mod handle_remove_tests {
 
     #[tokio::test]
     async fn it_removes_mod_with_dependencies() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -676,7 +675,7 @@ mod handle_remove_tests {
     async fn it_handles_uninitialized_project() {
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
-                .with_current_dir(PathBuf::from("/test/uninitialized-project")),
+                .with_current_dir(mock_root().join("uninitialized-project")),
         );
 
         let result = handle_remove(&session, vec!["test-mod".to_string()], false).await;
@@ -690,7 +689,7 @@ mod handle_remove_tests {
 
     #[tokio::test]
     async fn it_rejects_incomplete_project_state() {
-        let workdir = PathBuf::from("/test/incomplete-project");
+        let workdir = mock_root().join("incomplete-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -742,7 +741,7 @@ mod handle_sync_tests {
     async fn it_adds_missing_mod() {
         let installed_mods = HashSet::new();
 
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -818,7 +817,7 @@ mod handle_sync_tests {
         installed_mods.insert("sodium".to_string());
         installed_mods.insert("extra_mod".to_string());
 
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -854,7 +853,7 @@ mod handle_sync_tests {
         installed_mods.insert("fabric_api".to_string());
         installed_mods.insert("sodium".to_string());
 
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -873,7 +872,7 @@ mod handle_sync_tests {
         let mut installed_mods = HashSet::new();
         installed_mods.insert("extra_mod".to_string());
 
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let mut session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
@@ -905,7 +904,7 @@ mod handle_sync_tests {
 
     #[tokio::test]
     async fn it_preserves_curseforge_direct_id_and_version_override() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let empack_yml = r#"empack:
   dependencies:
     - 'jei: "Just Enough Items|mod"'
@@ -979,7 +978,7 @@ forge = "47.3.0"
 
     #[tokio::test]
     async fn it_tries_multiple_version_overrides_until_one_succeeds() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let empack_yml = r#"empack:
   dependencies:
     - 'sodium: "Sodium|mod"'
@@ -1089,7 +1088,7 @@ fabric = "0.16.0"
     async fn it_handles_uninitialized_project() {
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
-                .with_current_dir(PathBuf::from("/test/uninitialized-project")),
+                .with_current_dir(mock_root().join("uninitialized-project")),
         );
 
         let result = handle_sync(&session).await;
@@ -1109,7 +1108,7 @@ mod handle_build_tests {
 
     #[tokio::test]
     async fn it_builds_single_target() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1147,7 +1146,7 @@ mod handle_build_tests {
 
     #[tokio::test]
     async fn it_builds_multiple_targets() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1182,7 +1181,7 @@ mod handle_build_tests {
 
     #[tokio::test]
     async fn it_builds_all_targets() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1212,7 +1211,7 @@ mod handle_build_tests {
 
     #[tokio::test]
     async fn it_cleans_before_build_when_requested() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1244,7 +1243,7 @@ mod handle_build_tests {
     async fn it_handles_uninitialized_project() {
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
-                .with_current_dir(PathBuf::from("/test/uninitialized-project")),
+                .with_current_dir(mock_root().join("uninitialized-project")),
         );
 
         let result = handle_build(&session, vec!["client".to_string()], false).await;
@@ -1255,7 +1254,7 @@ mod handle_build_tests {
 
     #[tokio::test]
     async fn it_rejects_incomplete_project_state() {
-        let workdir = PathBuf::from("/test/incomplete-project");
+        let workdir = mock_root().join("incomplete-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1273,7 +1272,7 @@ mod handle_build_tests {
 
     #[tokio::test]
     async fn it_preserves_configuration_when_cleaning_before_build() {
-        let workdir = PathBuf::from("/test/built-project");
+        let workdir = mock_root().join("built-project");
         let pack_file = workdir.join("pack").join("pack.toml");
         let rebuilt_mrpack = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
         let session = MockCommandSession::new()
@@ -1322,7 +1321,7 @@ mod handle_clean_tests {
 
     #[tokio::test]
     async fn it_cleans_build_artifacts() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1337,7 +1336,7 @@ mod handle_clean_tests {
 
     #[tokio::test]
     async fn it_cleans_all_when_requested() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1352,7 +1351,7 @@ mod handle_clean_tests {
 
     #[tokio::test]
     async fn it_cleans_cache_when_requested() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1369,7 +1368,7 @@ mod handle_clean_tests {
 
     #[tokio::test]
     async fn it_handles_empty_targets() {
-        let workdir = PathBuf::from("/test/configured-project");
+        let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
@@ -1776,7 +1775,7 @@ async fn test_all_valid_build_targets_individually() {
 #[tokio::test]
 async fn test_build_with_uninitialized_project() {
     // Test building before project initialization
-    let workdir = PathBuf::from("/test/uninitialized-project");
+    let workdir = mock_root().join("uninitialized-project");
     let session = MockCommandSession::new()
         .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir));
 
@@ -1806,7 +1805,7 @@ async fn test_build_with_uninitialized_project() {
 #[tokio::test]
 async fn test_build_with_invalid_target_string() {
     // Test build command with invalid target that parse_build_targets would reject
-    let workdir = PathBuf::from("/test/configured-project");
+    let workdir = mock_root().join("configured-project");
     let session = MockCommandSession::new().with_filesystem(
         MockFileSystemProvider::new()
             .with_current_dir(workdir.clone())
@@ -1831,7 +1830,7 @@ async fn test_build_with_invalid_target_string() {
 #[tokio::test]
 async fn test_build_cleans_before_build_when_flag_set() {
     // Test that --clean flag triggers cleanup before build
-    let workdir = PathBuf::from("/test/configured-project");
+    let workdir = mock_root().join("configured-project");
     let session = MockCommandSession::new().with_filesystem(
         MockFileSystemProvider::new()
             .with_current_dir(workdir.clone())

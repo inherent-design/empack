@@ -20,6 +20,16 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+/// Returns a platform-appropriate absolute path root for mock/test paths.
+/// On Unix: `/test`, on Windows: `C:\test`
+pub fn mock_root() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from("C:\\test")
+    } else {
+        PathBuf::from("/test")
+    }
+}
+
 /// Default index.toml template for packwiz integration tests
 const DEFAULT_INDEX_TOML: &str = r#"hash-format = "sha256"
 
@@ -45,7 +55,7 @@ pub struct MockFileSystemProvider {
 impl MockFileSystemProvider {
     pub fn new() -> Self {
         Self {
-            current_dir: PathBuf::from("/test/workdir"),
+            current_dir: mock_root().join("workdir"),
             installed_mods: HashSet::new(),
             state_manager_calls: Arc::new(Mutex::new(Vec::new())),
             config_manager_calls: Arc::new(Mutex::new(Vec::new())),
@@ -546,11 +556,14 @@ pub struct MockProcessProvider {
 
 impl MockProcessProvider {
     pub fn new() -> Self {
+        let packwiz_path = mock_root()
+            .join("bin")
+            .join("packwiz")
+            .to_string_lossy()
+            .to_string();
+
         let mut programs = HashMap::new();
-        programs.insert(
-            "packwiz".to_string(),
-            Some("/usr/local/bin/packwiz".to_string()),
-        );
+        programs.insert("packwiz".to_string(), Some(packwiz_path.clone()));
 
         let mut provider = Self {
             calls: RefCell::new(Vec::new()),
@@ -564,7 +577,7 @@ impl MockProcessProvider {
         provider.results.insert(
             ("which".to_string(), vec!["packwiz".to_string()]),
             Ok(ProcessOutput {
-                stdout: "/usr/local/bin/packwiz\n".to_string(),
+                stdout: format!("{}\n", packwiz_path),
                 stderr: String::new(),
                 success: true,
             }),
@@ -586,16 +599,22 @@ impl MockProcessProvider {
     }
 
     pub fn with_packwiz_version(mut self, version: String) -> Self {
+        let packwiz_path = mock_root()
+            .join("bin")
+            .join("packwiz")
+            .to_string_lossy()
+            .to_string();
+
         // Ensure packwiz is available via find_program
         self.programs.insert(
             "packwiz".to_string(),
-            Some("/usr/local/bin/packwiz".to_string()),
+            Some(packwiz_path.clone()),
         );
         // Backward compat: keep "which" result
         self.results.insert(
             ("which".to_string(), vec!["packwiz".to_string()]),
             Ok(ProcessOutput {
-                stdout: "/usr/local/bin/packwiz\n".to_string(),
+                stdout: format!("{}\n", packwiz_path),
                 stderr: String::new(),
                 success: true,
             }),
@@ -607,13 +626,13 @@ impl MockProcessProvider {
                 vec![
                     "version".to_string(),
                     "-m".to_string(),
-                    "/usr/local/bin/packwiz".to_string(),
+                    packwiz_path.clone(),
                 ],
             ),
             Ok(ProcessOutput {
                 stdout: format!(
-                    "/usr/local/bin/packwiz: go1.21.0\n\tpath\tgithub.com/packwiz/packwiz\n\tmod\tgithub.com/packwiz/packwiz\t{}\th1:abc123=\n",
-                    version
+                    "{}: go1.21.0\n\tpath\tgithub.com/packwiz/packwiz\n\tmod\tgithub.com/packwiz/packwiz\t{}\th1:abc123=\n",
+                    packwiz_path, version
                 ),
                 stderr: String::new(),
                 success: true,
@@ -1132,7 +1151,7 @@ mod tests {
     fn test_mock_process_provider() {
         use crate::empack::packwiz::{check_packwiz_available, get_packwiz_version};
 
-        let working_dir = PathBuf::from("/test/workdir");
+        let working_dir = mock_root().join("workdir");
         let provider = MockProcessProvider::new()
             .with_packwiz_version("2.0.0".to_string())
             .with_result(
@@ -1145,8 +1164,13 @@ mod tests {
             check_packwiz_available(&provider).unwrap(),
             (true, "2.0.0".to_string())
         );
+        let packwiz_path = mock_root()
+            .join("bin")
+            .join("packwiz")
+            .to_string_lossy()
+            .to_string();
         assert_eq!(
-            get_packwiz_version(&provider, "/usr/local/bin/packwiz").unwrap(),
+            get_packwiz_version(&provider, &packwiz_path).unwrap(),
             "2.0.0"
         );
 

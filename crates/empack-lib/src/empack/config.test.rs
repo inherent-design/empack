@@ -1,6 +1,6 @@
 use super::*;
 use crate::application::session::FileSystemProvider;
-use crate::application::session_mocks::MockFileSystemProvider;
+use crate::application::session_mocks::{mock_root, MockFileSystemProvider};
 use crate::empack::parsing::ModLoader;
 use crate::primitives::{ProjectPlatform, ProjectType};
 use std::path::{Path, PathBuf};
@@ -28,7 +28,7 @@ fn with_pack_toml(
 
 #[test]
 fn test_load_empack_config_success() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -58,7 +58,7 @@ empack:
 
 #[test]
 fn test_load_empack_config_missing_file() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let provider = create_mock_config_provider(workdir.clone());
     let config_manager = provider.config_manager(workdir);
     let result = config_manager.load_empack_config();
@@ -74,7 +74,7 @@ fn test_load_empack_config_missing_file() {
 
 #[test]
 fn test_load_empack_config_invalid_yaml() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let invalid_yaml = r#"
 empack:
   dependencies:
@@ -92,7 +92,7 @@ empack:
 
 #[test]
 fn test_load_pack_metadata_success() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let pack_content = r#"
 name = "Test Modpack"
 author = "Test Author"
@@ -130,7 +130,7 @@ fabric = "0.14.21"
 
 #[test]
 fn test_load_pack_metadata_missing_file() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let provider = create_mock_config_provider(workdir.clone());
     let config_manager = provider.config_manager(workdir);
     let result = config_manager.load_pack_metadata();
@@ -141,7 +141,7 @@ fn test_load_pack_metadata_missing_file() {
 
 #[test]
 fn test_load_pack_metadata_invalid_toml() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let invalid_toml = r#"
 name = "Test"
 invalid toml: [ unclosed bracket
@@ -158,7 +158,7 @@ invalid toml: [ unclosed bracket
 
 #[test]
 fn test_create_project_plan_empack_only() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -188,7 +188,7 @@ empack:
 
 #[test]
 fn test_create_project_plan_pack_fallback() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -228,7 +228,7 @@ fabric = "0.14.21"
 
 #[test]
 fn test_create_project_plan_empack_precedence() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -273,7 +273,7 @@ fabric = "0.14.21"
 
 #[test]
 fn test_create_project_plan_missing_minecraft_version() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -297,7 +297,7 @@ empack:
 
 #[test]
 fn test_create_project_plan_missing_loader() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -321,7 +321,7 @@ empack:
 
 #[test]
 fn test_infer_loader_from_metadata_fabric() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -356,7 +356,7 @@ fabric = "0.14.21"
 
 #[test]
 fn test_infer_loader_from_metadata_forge() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -391,7 +391,7 @@ forge = "47.1.0"
 
 #[test]
 fn test_infer_loader_from_metadata_quilt() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -426,7 +426,7 @@ quilt = "0.21.0"
 
 #[test]
 fn test_infer_loader_from_metadata_neoforge() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -461,7 +461,7 @@ neoforge = "21.0.0"
 
 #[test]
 fn test_infer_loader_from_metadata_unknown() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -499,7 +499,7 @@ unknown_loader = "1.0.0"
 
 #[test]
 fn test_parse_dependency_spec_basic() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -526,7 +526,7 @@ empack:
 
 #[test]
 fn test_parse_dependency_spec_with_type() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -556,7 +556,7 @@ empack:
 
 #[test]
 fn test_parse_dependency_spec_with_minecraft_version() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -579,7 +579,7 @@ empack:
 
 #[test]
 fn test_parse_dependency_spec_with_loader() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -607,7 +607,7 @@ empack:
 
 #[test]
 fn test_parse_dependency_spec_with_project_ids() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -633,7 +633,7 @@ empack:
 
 #[test]
 fn test_parse_dependency_spec_with_project_platforms() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -660,7 +660,7 @@ empack:
 
 #[test]
 fn test_parse_dependency_spec_with_version_overrides() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -691,7 +691,7 @@ empack:
 
 #[test]
 fn test_parse_dependency_spec_invalid_format() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -716,7 +716,7 @@ empack:
 
 #[test]
 fn test_generate_default_empack_yml() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let pack_content = r#"
 name = "Test Pack"
 author = "Test Author"
@@ -754,7 +754,7 @@ fabric = "0.14.21"
 
 #[test]
 fn test_generate_default_empack_yml_no_pack() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let provider = create_mock_config_provider(workdir.clone());
     let config_manager = provider.config_manager(workdir);
     let result = config_manager.generate_default_empack_yml();
@@ -771,7 +771,7 @@ fn test_generate_default_empack_yml_no_pack() {
 
 #[test]
 fn test_validate_consistency_matching() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -806,7 +806,7 @@ fabric = "0.14.21"
 
 #[test]
 fn test_validate_consistency_minecraft_mismatch() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -844,7 +844,7 @@ fabric = "0.14.21"
 
 #[test]
 fn test_validate_consistency_loader_mismatch() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -882,7 +882,7 @@ forge = "47.1.0"
 
 #[test]
 fn test_validate_consistency_no_pack_toml() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -903,7 +903,7 @@ empack:
 
 #[test]
 fn test_add_dependency_basic() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -951,7 +951,7 @@ empack:
 
 #[test]
 fn test_add_dependency_duplicate() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -978,7 +978,7 @@ empack:
 
 #[test]
 fn test_add_dependency_duplicate_key_uses_existing_entry() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -1019,7 +1019,7 @@ empack:
 
 #[test]
 fn test_add_dependency_no_existing_file() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let provider = create_mock_config_provider(workdir.clone());
     let config_manager = provider.config_manager(workdir.clone());
 
@@ -1042,7 +1042,7 @@ fn test_add_dependency_no_existing_file() {
 
 #[test]
 fn test_remove_dependency_basic() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -1083,7 +1083,7 @@ empack:
 
 #[test]
 fn test_remove_dependency_case_insensitive() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -1114,7 +1114,7 @@ empack:
 
 #[test]
 fn test_remove_dependency_with_hyphens() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
@@ -1139,7 +1139,7 @@ empack:
 
 #[test]
 fn test_remove_nonexistent_dependency() {
-    let workdir = PathBuf::from("/test/config");
+    let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:

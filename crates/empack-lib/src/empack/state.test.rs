@@ -1,5 +1,6 @@
 use super::*;
 use crate::application::session::{FileSystemProvider, ProcessOutput};
+use crate::application::session_mocks::mock_root;
 use crate::empack::config::ConfigManager;
 use crate::empack::packwiz::MockPackwizOps;
 use std::collections::HashSet;
@@ -53,7 +54,7 @@ impl MockStateProvider {
 
 impl crate::application::session::FileSystemProvider for MockStateProvider {
     fn current_dir(&self) -> anyhow::Result<PathBuf> {
-        Ok(PathBuf::from("/test"))
+        Ok(mock_root())
     }
 
     // state_manager method removed - create PackStateManager directly
@@ -182,7 +183,7 @@ fn mock_packwiz_for_test() -> MockPackwizOps {
 /// Helper to create a test setup with uninitialized state
 fn create_uninitialized_test() -> (MockStateProvider, PathBuf) {
     let mock_provider = MockStateProvider::new();
-    let workdir = PathBuf::from("/test/workdir");
+    let workdir = mock_root().join("workdir");
     mock_provider.add_directory(workdir.clone());
     (mock_provider, workdir)
 }
@@ -299,7 +300,7 @@ async fn test_transition_to_configured() {
 
 #[tokio::test]
 async fn test_transition_to_built() {
-    let workdir = PathBuf::from("/test/configured-project");
+    let workdir = mock_root().join("configured-project");
     let session = configured_build_session(&workdir);
     let manager = PackStateManager::new(workdir.clone(), session.filesystem());
     let targets = vec![BuildTarget::Mrpack];
@@ -518,7 +519,7 @@ async fn test_pure_execute_transition_function() {
     assert_eq!(result.state, PackState::Configured);
 
     // Test build transition
-    let workdir = PathBuf::from("/test/configured-project");
+    let workdir = mock_root().join("configured-project");
     let session = configured_build_session(&workdir);
     let targets = vec![BuildTarget::Mrpack];
     let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
@@ -674,7 +675,7 @@ fn test_pure_execute_refresh_index_function() {
 
 #[tokio::test]
 async fn test_pure_execute_build_function() {
-    let workdir = PathBuf::from("/test/configured-project");
+    let workdir = mock_root().join("configured-project");
     let session = configured_build_session(&workdir);
     let targets = vec![BuildTarget::Mrpack];
     let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
@@ -851,7 +852,7 @@ fn test_state_transition_requires_intermediate_steps() {
 /// Validates error recovery when empack.yml is corrupted or has invalid YAML syntax.
 #[test]
 fn test_execute_refresh_index_malformed_yaml() {
-    let workdir = PathBuf::from("/test/malformed-yaml");
+    let workdir = mock_root().join("malformed-yaml");
 
     // Load malformed empack.yml directly into the mock filesystem so config validation
     // sees the same contents the test is asserting on.
@@ -900,7 +901,7 @@ file = "index.toml"
 /// Test: discover_state returns Interrupted when building marker file exists
 #[test]
 fn test_discover_state_detects_interrupted_building() {
-    let workdir = PathBuf::from("/test/interrupted-building");
+    let workdir = mock_root().join("interrupted-building");
     let provider = MockStateProvider::new();
     provider.add_directory(workdir.clone());
     // Simulate a configured project
@@ -925,7 +926,7 @@ fn test_discover_state_detects_interrupted_building() {
 /// Test: discover_state returns Interrupted when cleaning marker file exists
 #[test]
 fn test_discover_state_detects_interrupted_cleaning() {
-    let workdir = PathBuf::from("/test/interrupted-cleaning");
+    let workdir = mock_root().join("interrupted-cleaning");
     let provider = MockStateProvider::new();
     provider.add_directory(workdir.clone());
     provider.add_file(workdir.join("empack.yml"));
@@ -949,7 +950,7 @@ fn test_discover_state_detects_interrupted_cleaning() {
 /// Test: marker file is removed after successful clean transition
 #[tokio::test]
 async fn test_clean_removes_marker_on_interrupted_state() {
-    let workdir = PathBuf::from("/test/clean-interrupted");
+    let workdir = mock_root().join("clean-interrupted");
     let provider = MockStateProvider::new();
     let process = crate::application::session_mocks::MockProcessProvider::new();
     let packwiz = mock_packwiz_for_test();
@@ -992,7 +993,7 @@ async fn test_clean_removes_marker_on_interrupted_state() {
 /// Test: marker file is written on Building transition via begin_state_transition
 #[test]
 fn test_begin_state_transition_writes_marker() {
-    let workdir = PathBuf::from("/test/marker-write");
+    let workdir = mock_root().join("marker-write");
     let provider = MockStateProvider::new();
     provider.add_directory(workdir.clone());
     provider.add_file(workdir.join("empack.yml"));
@@ -1015,7 +1016,7 @@ fn test_begin_state_transition_writes_marker() {
 /// Test: marker file is removed on complete_state_transition
 #[test]
 fn test_complete_state_transition_removes_marker() {
-    let workdir = PathBuf::from("/test/marker-cleanup");
+    let workdir = mock_root().join("marker-cleanup");
     let provider = MockStateProvider::new();
     provider.add_directory(workdir.clone());
     provider.add_file(workdir.join("empack.yml"));
@@ -1090,7 +1091,7 @@ fn test_interrupted_display() {
 /// Test: discover_state falls through to normal detection when no marker file
 #[test]
 fn test_discover_state_no_marker_returns_normal_state() {
-    let workdir = PathBuf::from("/test/no-marker");
+    let workdir = mock_root().join("no-marker");
     let provider = MockStateProvider::new();
     provider.add_directory(workdir.clone());
     provider.add_file(workdir.join("empack.yml"));
@@ -1105,7 +1106,7 @@ fn test_discover_state_no_marker_returns_normal_state() {
 /// Test: Cleaning transition via begin_state_transition writes correct marker
 #[test]
 fn test_begin_cleaning_transition_writes_marker() {
-    let workdir = PathBuf::from("/test/cleaning-marker");
+    let workdir = mock_root().join("cleaning-marker");
     let provider = MockStateProvider::new();
     provider.add_directory(workdir.clone());
     provider.add_file(workdir.join("empack.yml"));

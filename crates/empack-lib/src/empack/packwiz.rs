@@ -285,7 +285,7 @@ impl MockPackwizOps {
         Self {
             installed_mods: HashSet::new(),
             filesystem: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            current_dir: PathBuf::from("/test/workdir"),
+            current_dir: crate::application::session_mocks::mock_root().join("workdir"),
         }
     }
 

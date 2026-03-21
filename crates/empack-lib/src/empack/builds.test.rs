@@ -1,8 +1,8 @@
 use super::*;
 use crate::application::session::{ProcessOutput, Session};
+use crate::application::session_mocks::{mock_root, MockCommandSession, MockFileSystemProvider, MockProcessProvider};
 use std::path::Path;
 use tempfile::TempDir;
-use crate::application::session_mocks::{MockCommandSession, MockFileSystemProvider, MockProcessProvider};
 
 // Mock structure for testing build orchestrator without external dependencies
 struct MockBuildOrchestrator {
@@ -419,7 +419,7 @@ fn test_build_result_structure() {
     let result = BuildResult {
         target: BuildTarget::Mrpack,
         success: true,
-        output_path: Some(PathBuf::from("/test/path")),
+        output_path: Some(mock_root().join("path")),
         artifacts: vec![],
         warnings: vec![],
     };
@@ -433,7 +433,7 @@ fn test_build_result_structure() {
 
 #[tokio::test]
 async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
-    let workdir = std::path::PathBuf::from("/test/build-project");
+    let workdir = mock_root().join("build-project");
     let pack_file = workdir.join("pack").join("pack.toml");
     let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
     let process = MockProcessProvider::new()
@@ -484,7 +484,7 @@ async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
 
 #[tokio::test]
 async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_export() {
-    let workdir = std::path::PathBuf::from("/test/build-project");
+    let workdir = mock_root().join("build-project");
     let pack_file = workdir.join("pack").join("pack.toml");
     let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
     let process = MockProcessProvider::new()
@@ -531,7 +531,7 @@ async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_e
 
 #[tokio::test]
 async fn test_execute_build_pipeline_rebuilds_from_built_state_before_server_failure() {
-    let workdir = std::path::PathBuf::from("/test/built-project");
+    let workdir = mock_root().join("built-project");
     let pack_file = workdir.join("pack").join("pack.toml");
     let dist_dir = workdir.join("dist").join("server");
     let process = MockProcessProvider::new()
@@ -600,12 +600,12 @@ async fn test_execute_build_pipeline_rebuilds_from_built_state_before_server_fai
 fn test_build_artifact_structure() {
     let artifact = BuildArtifact {
         name: "test.mrpack".to_string(),
-        path: PathBuf::from("/test/test.mrpack"),
+        path: mock_root().join("test.mrpack"),
         size: 1024,
     };
     
     assert_eq!(artifact.name, "test.mrpack");
-    assert_eq!(artifact.path, PathBuf::from("/test/test.mrpack"));
+    assert_eq!(artifact.path, mock_root().join("test.mrpack"));
     assert_eq!(artifact.size, 1024);
 }
 
