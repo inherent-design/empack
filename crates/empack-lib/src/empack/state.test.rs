@@ -1136,3 +1136,87 @@ fn test_begin_cleaning_transition_writes_marker() {
         .unwrap();
     assert_eq!(content, "cleaning");
 }
+
+// ── transition() enforced free function tests ──────────────────────────────
+
+#[test]
+fn test_transition_valid_forward() {
+    let result = transition(PackState::Uninitialized, PackState::Configured);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), PackState::Configured);
+}
+
+#[test]
+fn test_transition_valid_configure_to_built() {
+    let result = transition(PackState::Configured, PackState::Built);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), PackState::Built);
+}
+
+#[test]
+fn test_transition_valid_clean_backwards() {
+    let result = transition(PackState::Built, PackState::Configured);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), PackState::Configured);
+}
+
+#[test]
+fn test_transition_valid_same_state() {
+    let result = transition(PackState::Configured, PackState::Configured);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), PackState::Configured);
+}
+
+#[test]
+fn test_transition_invalid_skip_state() {
+    let result = transition(PackState::Uninitialized, PackState::Built);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("transition"),
+        "Error should mention transition, got: {}",
+        err
+    );
+}
+
+#[test]
+fn test_transition_invalid_building_not_in_whitelist() {
+    // Building is a transient state managed by the orchestrator, not a
+    // direct target from Uninitialized
+    let result = transition(PackState::Uninitialized, PackState::Building);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_transition_invalid_cleaning_from_uninitialized() {
+    let result = transition(PackState::Uninitialized, PackState::Cleaning);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_transition_interrupted_can_recover_to_configured() {
+    let state = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    let result = transition(state, PackState::Configured);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), PackState::Configured);
+}
+
+#[test]
+fn test_transition_interrupted_can_recover_to_uninitialized() {
+    let state = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    let result = transition(state, PackState::Uninitialized);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_transition_interrupted_cannot_skip_to_built() {
+    let state = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    let result = transition(state, PackState::Built);
+    assert!(result.is_err());
+}
