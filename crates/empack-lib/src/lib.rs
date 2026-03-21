@@ -53,9 +53,29 @@ pub type Result<T> = anyhow::Result<T>;
 use application::CliConfig;
 
 pub async fn main() -> Result<()> {
+    // Recover cursor from prior crashed runs
+    terminal::cursor::force_show_cursor();
+    terminal::cursor::install_panic_hook();
+
     // Load CLI configuration
     let config = CliConfig::load()?;
 
-    // Execute the command
-    execute_command(config).await
+    // Run command with signal handling
+    tokio::select! {
+        result = execute_command(config) => {
+            terminal::cursor::force_show_cursor();
+            result
+        }
+        _ = tokio::signal::ctrl_c() => {
+            terminal::cursor::force_show_cursor();
+
+            // Best-effort state marker cleanup
+            if let Ok(cwd) = std::env::current_dir() {
+                let marker = cwd.join(empack::state::STATE_MARKER_FILE);
+                let _ = std::fs::remove_file(marker);
+            }
+
+            std::process::exit(130)
+        }
+    }
 }
