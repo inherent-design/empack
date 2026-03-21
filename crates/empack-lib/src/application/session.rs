@@ -32,6 +32,9 @@ pub trait FileSystemProvider {
     /// Read entire file contents as string
     fn read_to_string(&self, path: &Path) -> Result<String>;
 
+    /// Read entire file contents as bytes
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>>;
+
     /// Write string content to file
     fn write_file(&self, path: &Path, content: &str) -> Result<()>;
 
@@ -158,6 +161,11 @@ impl FileSystemProvider for LiveFileSystemProvider {
 
     fn read_to_string(&self, path: &Path) -> Result<String> {
         std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read file: {}", path.display()))
+    }
+
+    fn read_bytes(&self, path: &Path) -> Result<Vec<u8>> {
+        std::fs::read(path)
             .with_context(|| format!("Failed to read file: {}", path.display()))
     }
 
@@ -449,11 +457,20 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Input;
 
-        Input::new()
+        match Input::new()
             .with_prompt(prompt)
             .default(default.clone())
             .interact_text()
-            .context("Failed to read text input")
+        {
+            Ok(val) => Ok(val),
+            Err(dialoguer::Error::IO(ref io_err))
+                if io_err.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                crate::terminal::cursor::force_show_cursor();
+                std::process::exit(130);
+            }
+            Err(e) => Err(e).context("Failed to read text input"),
+        }
     }
 
     fn confirm(&self, prompt: &str, default: bool) -> Result<bool> {
@@ -465,11 +482,20 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Confirm;
 
-        Confirm::new()
+        match Confirm::new()
             .with_prompt(prompt)
             .default(default)
             .interact()
-            .context("Failed to read confirmation")
+        {
+            Ok(val) => Ok(val),
+            Err(dialoguer::Error::IO(ref io_err))
+                if io_err.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                crate::terminal::cursor::force_show_cursor();
+                std::process::exit(130);
+            }
+            Err(e) => Err(e).context("Failed to read confirmation"),
+        }
     }
 
     fn select(&self, prompt: &str, options: &[&str]) -> Result<usize> {
@@ -481,11 +507,20 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Select;
 
-        Select::new()
+        match Select::new()
             .with_prompt(prompt)
             .items(options)
             .interact()
-            .context("Failed to read selection")
+        {
+            Ok(val) => Ok(val),
+            Err(dialoguer::Error::IO(ref io_err))
+                if io_err.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                crate::terminal::cursor::force_show_cursor();
+                std::process::exit(130);
+            }
+            Err(e) => Err(e).context("Failed to read selection"),
+        }
     }
 
     fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<Option<usize>> {
@@ -497,12 +532,21 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::FuzzySelect;
 
-        FuzzySelect::new()
+        match FuzzySelect::new()
             .with_prompt(prompt)
             .items(options)
             .max_length(6) // Show 6 items per page (enables pagination)
-            .interact_opt() // Allow ESC key to cancel
-            .context("Failed to read fuzzy selection")
+            .interact_opt()
+        {
+            Ok(val) => Ok(val),
+            Err(dialoguer::Error::IO(ref io_err))
+                if io_err.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                crate::terminal::cursor::force_show_cursor();
+                std::process::exit(130);
+            }
+            Err(e) => Err(e).context("Failed to read fuzzy selection"),
+        }
     }
 }
 
