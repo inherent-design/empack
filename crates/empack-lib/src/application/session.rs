@@ -433,17 +433,35 @@ impl ConfigProvider for LiveConfigProvider {
 /// Live implementation of InteractiveProvider
 pub struct LiveInteractiveProvider {
     yes_mode: bool,
+    workdir: Option<PathBuf>,
 }
 
 impl LiveInteractiveProvider {
-    pub fn new(yes_mode: bool) -> Self {
-        Self { yes_mode }
+    pub fn new(yes_mode: bool, workdir: Option<PathBuf>) -> Self {
+        Self { yes_mode, workdir }
     }
 
     /// Check if we're in a TTY environment suitable for interactive prompts
     fn is_tty() -> bool {
         use std::io::IsTerminal;
         std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+    }
+
+    fn handle_interrupt(&self) -> ! {
+        crate::terminal::cursor::force_show_cursor();
+
+        // Best-effort state marker cleanup
+        let marker_dir = self
+            .workdir
+            .as_ref()
+            .cloned()
+            .or_else(|| std::env::current_dir().ok());
+        if let Some(dir) = &marker_dir {
+            let marker = dir.join(crate::empack::state::STATE_MARKER_FILE);
+            let _ = std::fs::remove_file(marker);
+        }
+
+        std::process::exit(130)
     }
 }
 
@@ -466,8 +484,7 @@ impl InteractiveProvider for LiveInteractiveProvider {
             Err(dialoguer::Error::IO(ref io_err))
                 if io_err.kind() == std::io::ErrorKind::Interrupted =>
             {
-                crate::terminal::cursor::force_show_cursor();
-                std::process::exit(130);
+                self.handle_interrupt()
             }
             Err(e) => Err(e).context("Failed to read text input"),
         }
@@ -491,8 +508,7 @@ impl InteractiveProvider for LiveInteractiveProvider {
             Err(dialoguer::Error::IO(ref io_err))
                 if io_err.kind() == std::io::ErrorKind::Interrupted =>
             {
-                crate::terminal::cursor::force_show_cursor();
-                std::process::exit(130);
+                self.handle_interrupt()
             }
             Err(e) => Err(e).context("Failed to read confirmation"),
         }
@@ -516,8 +532,7 @@ impl InteractiveProvider for LiveInteractiveProvider {
             Err(dialoguer::Error::IO(ref io_err))
                 if io_err.kind() == std::io::ErrorKind::Interrupted =>
             {
-                crate::terminal::cursor::force_show_cursor();
-                std::process::exit(130);
+                self.handle_interrupt()
             }
             Err(e) => Err(e).context("Failed to read selection"),
         }
@@ -542,8 +557,7 @@ impl InteractiveProvider for LiveInteractiveProvider {
             Err(dialoguer::Error::IO(ref io_err))
                 if io_err.kind() == std::io::ErrorKind::Interrupted =>
             {
-                crate::terminal::cursor::force_show_cursor();
-                std::process::exit(130);
+                self.handle_interrupt()
             }
             Err(e) => Err(e).context("Failed to read fuzzy selection"),
         }
@@ -610,7 +624,7 @@ impl
             network_provider: LiveNetworkProvider::new(),
             process_provider: LiveProcessProvider::new(),
             config_provider: LiveConfigProvider::new(app_config.clone()),
-            interactive_provider: LiveInteractiveProvider::new(app_config.yes),
+            interactive_provider: LiveInteractiveProvider::new(app_config.yes, app_config.workdir.clone()),
         }
     }
 }

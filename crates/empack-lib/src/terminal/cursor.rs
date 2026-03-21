@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static CURSOR_HIDDEN: AtomicBool = AtomicBool::new(false);
@@ -17,8 +17,10 @@ impl Default for CursorGuard {
 
 impl CursorGuard {
     pub fn new() -> Self {
-        let _ = io::stdout().write_all(b"\x1b[?25l");
-        let _ = io::stdout().flush();
+        if io::stdout().is_terminal() {
+            let _ = io::stdout().write_all(b"\x1b[?25l");
+            let _ = io::stdout().flush();
+        }
         CURSOR_HIDDEN.store(true, Ordering::SeqCst);
         Self
     }
@@ -32,7 +34,7 @@ impl Drop for CursorGuard {
 
 /// Show cursor if it was hidden via `CursorGuard`. Safe to call multiple times.
 pub fn show_cursor() {
-    if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) {
+    if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) && io::stdout().is_terminal() {
         let _ = io::stdout().write_all(b"\x1b[?25h");
         let _ = io::stdout().flush();
     }
@@ -43,8 +45,10 @@ pub fn show_cursor() {
 /// may not reflect reality (e.g. recovery from a prior crash).
 pub fn force_show_cursor() {
     CURSOR_HIDDEN.store(false, Ordering::SeqCst);
-    let _ = io::stdout().write_all(b"\x1b[?25h");
-    let _ = io::stdout().flush();
+    if io::stdout().is_terminal() {
+        let _ = io::stdout().write_all(b"\x1b[?25h");
+        let _ = io::stdout().flush();
+    }
 }
 
 /// Install panic hook that restores cursor before the default handler runs.
