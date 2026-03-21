@@ -426,10 +426,15 @@ impl ProcessProvider for LiveProcessProvider {
                     // The background thread will clean up when the process exits or parent dies.
                     let _ = child_id;
                 }
+                #[cfg(unix)]
+                let kill_status = "process killed";
+                #[cfg(windows)]
+                let kill_status = "process may still be running";
                 anyhow::bail!(
-                    "Command '{}' timed out after {} seconds (process killed)",
+                    "Command '{}' timed out after {} seconds ({})",
                     cmd_name,
-                    PROCESS_TIMEOUT.as_secs()
+                    PROCESS_TIMEOUT.as_secs(),
+                    kill_status
                 )
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
