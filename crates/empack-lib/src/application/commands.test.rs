@@ -26,9 +26,10 @@ mod handle_version_tests {
         let session = MockCommandSession::new();
         let result = handle_version(&session).await;
 
+        // handle_version is a pure display function -- LiveDisplayProvider writes to indicatif
+        // MultiProgress which is not capturable in unit tests. Verifying no error is the
+        // meaningful assertion here.
         assert!(result.is_ok());
-        // In a real implementation, we'd verify the display calls
-        // For now, we test that the function completes without error
     }
 }
 
@@ -1109,135 +1110,127 @@ mod handle_build_tests {
 
     #[tokio::test]
     async fn it_builds_single_target() {
-        let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new()
-                .with_current_dir(workdir.clone())
-                .with_configured_project(workdir),
-        );
+        let workdir = mock_root().join("built-project");
+        let pack_file = workdir.join("pack").join("pack.toml");
+        let built_mrpack = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["client".to_string()], false).await;
+        let result = handle_build(&session, vec!["mrpack".to_string()], false).await;
 
-        // Command handler should not panic and should attempt to delegate to BuildOrchestrator
-        // Actual build success depends on external tools (packwiz, unzip, etc.) which may not exist in test environment
-        // E2E tests validate the actual build functionality with proper tool setup
+        assert!(result.is_ok(), "mrpack build should succeed: {result:?}");
+        assert!(session.filesystem().exists(&built_mrpack));
 
-        // The key test is that we don't get a panic or unhandled error - the build process should gracefully handle missing tools
-        match result {
-            Ok(_) => {
-                // Build succeeded in mock environment - good
-            }
-            Err(e) => {
-                // Build failed, but this is expected in mock environment without external tools
-                // Verify it's a reasonable error related to missing tools or configuration
-                let error_string = format!("{}", e);
-                assert!(
-                    error_string.contains("Failed to execute build pipeline")
-                        || error_string.contains("No such file or directory")
-                        || error_string.contains("command not found")
-                        || error_string.contains("Failed to create build orchestrator")
-                        || error_string.contains("ConfigError")
-                        || error_string.contains("CommandFailed"),
-                    "Unexpected error type: {}",
-                    error_string
-                );
-            }
-        }
+        let pack_file_arg = pack_file.display().to_string();
+        let built_mrpack_arg = built_mrpack.display().to_string();
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "refresh"],
+            &workdir
+        ));
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
+            &workdir
+        ));
     }
 
     #[tokio::test]
     async fn it_builds_multiple_targets() {
-        let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new()
-                .with_current_dir(workdir.clone())
-                .with_configured_project(workdir),
-        );
+        let workdir = mock_root().join("built-project");
+        let pack_file = workdir.join("pack").join("pack.toml");
+        let built_mrpack = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(
-            &session,
-            vec!["client".to_string(), "server".to_string()],
-            false,
-        )
-        .await;
+        // Multi-target parsing is tested by parse_build_targets tests; here we verify
+        // the build pipeline executes correctly with a mockable target
+        let result = handle_build(&session, vec!["mrpack".to_string()], false).await;
 
-        // Command handler should gracefully handle missing external tools
-        match result {
-            Ok(_) => { /* Build succeeded */ }
-            Err(e) => {
-                let error_string = format!("{}", e);
-                assert!(
-                    error_string.contains("Failed to execute build pipeline")
-                        || error_string.contains("No such file or directory")
-                        || error_string.contains("command not found")
-                        || error_string.contains("Failed to create build orchestrator")
-                        || error_string.contains("ConfigError")
-                        || error_string.contains("CommandFailed"),
-                    "Unexpected error type: {}",
-                    error_string
-                );
-            }
-        }
+        assert!(result.is_ok(), "mrpack build should succeed: {result:?}");
+        assert!(session.filesystem().exists(&built_mrpack));
+
+        let pack_file_arg = pack_file.display().to_string();
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "refresh"],
+            &workdir
+        ));
     }
 
     #[tokio::test]
     async fn it_builds_all_targets() {
-        let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new()
-                .with_current_dir(workdir.clone())
-                .with_configured_project(workdir),
-        );
+        let workdir = mock_root().join("built-project");
+        let pack_file = workdir.join("pack").join("pack.toml");
+        let built_mrpack = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["all".to_string()], false).await;
+        // "all" target expansion is tested by parse_build_targets; here we verify
+        // the build pipeline runs correctly with a mockable target
+        let result = handle_build(&session, vec!["mrpack".to_string()], false).await;
 
-        // Command handler should gracefully handle missing external tools
-        match result {
-            Ok(_) => { /* Build succeeded */ }
-            Err(e) => {
-                let error_string = format!("{}", e);
-                assert!(
-                    error_string.contains("Failed to execute build pipeline")
-                        || error_string.contains("No such file or directory")
-                        || error_string.contains("command not found")
-                        || error_string.contains("Failed to create build orchestrator")
-                        || error_string.contains("ConfigError")
-                        || error_string.contains("CommandFailed"),
-                    "Unexpected error type: {}",
-                    error_string
-                );
-            }
-        }
+        assert!(result.is_ok(), "mrpack build should succeed: {result:?}");
+        assert!(session.filesystem().exists(&built_mrpack));
+
+        let pack_file_arg = pack_file.display().to_string();
+        let built_mrpack_arg = built_mrpack.display().to_string();
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
+            &workdir
+        ));
     }
 
     #[tokio::test]
     async fn it_cleans_before_build_when_requested() {
-        let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new()
-                .with_current_dir(workdir.clone())
-                .with_configured_project(workdir),
-        );
+        let workdir = mock_root().join("built-project");
+        let pack_file = workdir.join("pack").join("pack.toml");
+        let rebuilt_mrpack = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["client".to_string()], true).await;
+        let result = handle_build(&session, vec!["mrpack".to_string()], true).await;
 
-        // Command handler should gracefully handle missing external tools
-        match result {
-            Ok(_) => { /* Build succeeded */ }
-            Err(e) => {
-                let error_string = format!("{}", e);
-                assert!(
-                    error_string.contains("Failed to execute build pipeline")
-                        || error_string.contains("No such file or directory")
-                        || error_string.contains("command not found")
-                        || error_string.contains("Failed to create build orchestrator")
-                        || error_string.contains("ConfigError")
-                        || error_string.contains("CommandFailed"),
-                    "Unexpected error type: {}",
-                    error_string
-                );
-            }
-        }
+        assert!(result.is_ok(), "clean-before-build should succeed: {result:?}");
+        // Original artifacts should be cleaned
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")));
+        // Rebuilt artifact should exist
+        assert!(session.filesystem().exists(&rebuilt_mrpack));
+
+        let pack_file_arg = pack_file.display().to_string();
+        let rebuilt_mrpack_arg = rebuilt_mrpack.display().to_string();
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "refresh"],
+            &workdir
+        ));
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "mr", "export", "-o", &rebuilt_mrpack_arg],
+            &workdir
+        ));
     }
 
     #[tokio::test]
@@ -1322,32 +1315,34 @@ mod handle_clean_tests {
 
     #[tokio::test]
     async fn it_cleans_build_artifacts() {
-        let workdir = mock_root().join("configured-project");
+        let workdir = mock_root().join("built-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
-                .with_configured_project(workdir),
+                .with_built_project(workdir.clone()),
         );
 
         let result = handle_clean(&session, vec!["builds".to_string()]).await;
 
-        // Should complete successfully - command handler delegates to state manager
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "handle_clean should succeed: {result:?}");
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")));
     }
 
     #[tokio::test]
     async fn it_cleans_all_when_requested() {
-        let workdir = mock_root().join("configured-project");
+        let workdir = mock_root().join("built-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
-                .with_configured_project(workdir),
+                .with_built_project(workdir.clone()),
         );
 
         let result = handle_clean(&session, vec!["all".to_string()]).await;
 
-        // Should complete successfully - command handler delegates to state manager
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "handle_clean with 'all' should succeed: {result:?}");
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")));
     }
 
     #[tokio::test]
@@ -1361,25 +1356,25 @@ mod handle_clean_tests {
 
         let result = handle_clean(&session, vec!["cache".to_string()]).await;
 
+        // Cache cleaning is not yet implemented -- this test verifies the code path does not error
         assert!(result.is_ok());
-
-        // Cache cleaning doesn't use state manager currently
-        // In a real implementation, we'd verify the cache cleaning logic
     }
 
     #[tokio::test]
     async fn it_handles_empty_targets() {
-        let workdir = mock_root().join("configured-project");
+        let workdir = mock_root().join("built-project");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(workdir.clone())
-                .with_configured_project(workdir),
+                .with_built_project(workdir.clone()),
         );
 
         let result = handle_clean(&session, vec![]).await;
 
-        // Should complete successfully - command handler delegates to state manager
-        assert!(result.is_ok());
+        // Empty targets triggers the builds branch (targets.is_empty() check in handle_clean)
+        assert!(result.is_ok(), "handle_clean with empty targets should succeed: {result:?}");
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")));
     }
 }
 
