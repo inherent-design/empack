@@ -1161,9 +1161,15 @@ mod handle_build_tests {
         assert!(session.filesystem().exists(&built_mrpack));
 
         let pack_file_arg = pack_file.display().to_string();
+        let built_mrpack_arg = built_mrpack.display().to_string();
         assert!(session.process_provider.verify_call(
             "packwiz",
             &["--pack-file", &pack_file_arg, "refresh"],
+            &workdir
+        ));
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
             &workdir
         ));
     }
@@ -1190,6 +1196,11 @@ mod handle_build_tests {
 
         let pack_file_arg = pack_file.display().to_string();
         let built_mrpack_arg = built_mrpack.display().to_string();
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["--pack-file", &pack_file_arg, "refresh"],
+            &workdir
+        ));
         assert!(session.process_provider.verify_call(
             "packwiz",
             &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
