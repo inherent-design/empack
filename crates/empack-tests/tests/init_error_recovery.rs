@@ -169,6 +169,7 @@ async fn test_init_packwiz_unavailable() -> Result<()> {
 /// Workflow:
 /// 1. Attempt to create project in read-only or inaccessible location
 /// 2. Verify error is caught and reported
+#[cfg(unix)]
 #[tokio::test]
 async fn test_init_filesystem_error() -> Result<()> {
     use std::fs;

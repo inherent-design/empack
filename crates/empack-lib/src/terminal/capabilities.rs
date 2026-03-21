@@ -1,6 +1,7 @@
 use crate::application::AppConfig;
 use crate::primitives::*;
 use std::io::{self, IsTerminal};
+#[cfg(unix)]
 use std::mem;
 use std::time::Duration;
 
@@ -204,6 +205,7 @@ pub(crate) struct RawModeGuard {
     #[cfg(unix)]
     original_termios: Option<libc::termios>,
     #[cfg(not(unix))]
+    #[allow(dead_code)]
     original_termios: Option<()>,
 }
 

@@ -1,5 +1,6 @@
 use crate::primitives::*;
 use std::io::{self, IsTerminal, Read, Write};
+#[cfg(unix)]
 use std::mem;
 use std::time::{Duration, Instant};
 

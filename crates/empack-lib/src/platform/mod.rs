@@ -250,6 +250,7 @@ fn detect_memory_info() -> Result<(u64, u64), PlatformError> {
 }
 
 // Unix memory detection with platform optimizations
+#[cfg(target_family = "unix")]
 fn detect_memory_info_unix() -> Result<(u64, u64), PlatformError> {
     // Platform-specific implementations with conditional compilation
     #[cfg(target_os = "macos")]
@@ -608,13 +609,16 @@ fn detect_memory_info_netbsd() -> Result<(u64, u64), PlatformError> {
 }
 
 // Generic Unix fallback for Solaris, AIX, DragonFly BSD, etc.
-#[cfg(not(any(
-    target_os = "macos",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-)))]
+#[cfg(all(
+    target_family = "unix",
+    not(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))
+))]
 fn detect_memory_info_unix_generic() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
 

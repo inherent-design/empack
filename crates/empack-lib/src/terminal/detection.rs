@@ -1,5 +1,6 @@
 use crate::primitives::*;
 use serde::Deserialize;
+#[cfg(unix)]
 use std::process::Command;
 
 use super::capabilities::*;
@@ -315,6 +316,7 @@ pub(crate) fn detect_color_from_environment(
     terminal_specific.expected_color
 }
 
+#[allow(unreachable_code)]
 pub(crate) fn detect_unicode_capabilities(
     env_config: &TerminalEnvConfig,
     is_tty: bool,
