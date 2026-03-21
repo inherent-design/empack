@@ -217,8 +217,9 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> StateMarke
 
     /// Complete the guarded operation successfully: remove the marker and disarm.
     pub(crate) fn complete(mut self) -> Result<(), StateError> {
+        remove_state_marker(self.provider, &self.workdir)?;
         self.active = false;
-        remove_state_marker(self.provider, &self.workdir)
+        Ok(())
     }
 }
 
