@@ -22,6 +22,10 @@ impl CursorGuard {
             let _ = io::stdout().write_all(b"\x1b[?25l");
             let _ = io::stdout().flush();
         }
+        if io::stderr().is_terminal() {
+            let _ = io::stderr().write_all(b"\x1b[?25l");
+            let _ = io::stderr().flush();
+        }
         CURSOR_HIDDEN.store(true, Ordering::SeqCst);
         Self
     }
@@ -35,9 +39,15 @@ impl Drop for CursorGuard {
 
 /// Show cursor if it was hidden via `CursorGuard`. Safe to call multiple times.
 pub fn show_cursor() {
-    if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) && io::stdout().is_terminal() {
-        let _ = io::stdout().write_all(b"\x1b[?25h");
-        let _ = io::stdout().flush();
+    if CURSOR_HIDDEN.swap(false, Ordering::SeqCst) {
+        if io::stdout().is_terminal() {
+            let _ = io::stdout().write_all(b"\x1b[?25h");
+            let _ = io::stdout().flush();
+        }
+        if io::stderr().is_terminal() {
+            let _ = io::stderr().write_all(b"\x1b[?25h");
+            let _ = io::stderr().flush();
+        }
     }
 }
 
@@ -49,6 +59,10 @@ pub fn force_show_cursor() {
     if io::stdout().is_terminal() {
         let _ = io::stdout().write_all(b"\x1b[?25h");
         let _ = io::stdout().flush();
+    }
+    if io::stderr().is_terminal() {
+        let _ = io::stderr().write_all(b"\x1b[?25h");
+        let _ = io::stderr().flush();
     }
 }
 
