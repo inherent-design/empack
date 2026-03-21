@@ -690,8 +690,9 @@ async fn handle_init(
                 .complete("Modpack project initialized successfully");
 
             let next_steps = [
-                "Edit empack.yml to configure your dependencies",
-                "Run 'empack sync' to sync with packwiz",
+                "Run 'empack add <mod>' to add mods interactively",
+                "Or edit empack.yml directly for bulk dependency configuration",
+                "Run 'empack sync' to resolve and download dependencies",
                 "Run 'empack build all' to build distribution packages",
             ];
             session.display().status().list(&next_steps);
