@@ -75,15 +75,23 @@ async fn test_init_zero_config() -> Result<()> {
     // Verify init succeeded
     assert!(result.is_ok(), "Init command failed: {:?}", result);
 
-    // Verify empack.yml was created
-    let empack_yml_path = workdir.join("empack.yml");
+    // When no name is provided via CLI, the interactively-entered name
+    // (defaulting to the directory name) becomes the target subdirectory.
+    let dir_name = workdir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Pack");
+    let project_dir = workdir.join(dir_name);
+
+    // Verify empack.yml was created inside the subdirectory
+    let empack_yml_path = project_dir.join("empack.yml");
     assert!(
         empack_yml_path.exists(),
-        "empack.yml should be created in work directory"
+        "empack.yml should be created in subdirectory named after the modpack"
     );
 
-    // Verify pack/ directory was created
-    let pack_dir = workdir.join("pack");
+    // Verify pack/ directory was created inside the subdirectory
+    let pack_dir = project_dir.join("pack");
     assert!(pack_dir.exists(), "pack/ directory should be created");
 
     // Verify packwiz init was called
