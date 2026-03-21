@@ -572,7 +572,7 @@ async fn test_execute_build_pipeline_rebuilds_from_built_state_before_server_fai
         .unwrap();
     session
         .filesystem()
-        .write_file(&bootstrap_jar, "jar")
+        .write_bytes(&bootstrap_jar, b"jar")
         .unwrap();
 
     let mut orchestrator = BuildOrchestrator::new(&session).unwrap();

@@ -507,13 +507,13 @@ impl<'a> BuildOrchestrator<'a> {
         let bootstrap_content = self
             .session
             .filesystem()
-            .read_to_string(bootstrap_jar_path)
+            .read_bytes(bootstrap_jar_path)
             .map_err(|e| BuildError::ConfigError {
                 reason: e.to_string(),
             })?;
         self.session
             .filesystem()
-            .write_file(
+            .write_bytes(
                 &minecraft_dir.join("packwiz-installer-bootstrap.jar"),
                 &bootstrap_content,
             )
@@ -573,13 +573,13 @@ impl<'a> BuildOrchestrator<'a> {
         let bootstrap_content = self
             .session
             .filesystem()
-            .read_to_string(bootstrap_jar_path)
+            .read_bytes(bootstrap_jar_path)
             .map_err(|e| BuildError::ConfigError {
                 reason: e.to_string(),
             })?;
         self.session
             .filesystem()
-            .write_file(
+            .write_bytes(
                 &dist_dir.join("packwiz-installer-bootstrap.jar"),
                 &bootstrap_content,
             )
