@@ -513,12 +513,7 @@ async fn handle_init(
         let parsed_loader = ModLoader::parse(&loader_str)
             .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
 
-        let versions_loader = match parsed_loader {
-            ModLoader::NeoForge => crate::empack::versions::ModLoader::NeoForge,
-            ModLoader::Fabric => crate::empack::versions::ModLoader::Fabric,
-            ModLoader::Quilt => crate::empack::versions::ModLoader::Quilt,
-            ModLoader::Forge => crate::empack::versions::ModLoader::Forge,
-        };
+        let versions_loader: crate::empack::versions::ModLoader = parsed_loader.into();
 
         if !compatible_loaders.contains(&versions_loader) {
             let available: Vec<&str> = compatible_loaders.iter().map(|l| l.as_str()).collect();
@@ -814,12 +809,7 @@ fn validate_init_inputs(
 
     let parsed_loader = ModLoader::parse(loader_str)
         .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
-    let versions_loader = match parsed_loader {
-        ModLoader::NeoForge => crate::empack::versions::ModLoader::NeoForge,
-        ModLoader::Fabric => crate::empack::versions::ModLoader::Fabric,
-        ModLoader::Quilt => crate::empack::versions::ModLoader::Quilt,
-        ModLoader::Forge => crate::empack::versions::ModLoader::Forge,
-    };
+    let versions_loader: crate::empack::versions::ModLoader = parsed_loader.into();
     if !compatible_loaders.contains(&versions_loader) {
         let available: Vec<&str> = compatible_loaders.iter().map(|l| l.as_str()).collect();
         anyhow::bail!(

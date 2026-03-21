@@ -295,12 +295,11 @@ mod handle_init_tests {
 
     #[tokio::test]
     async fn it_accepts_compatible_loader_fallback_for_mc_version() {
-        let workdir = mock_root().join("incompatible-loader");
-        // Quilt is in the fallback all-loaders list, but fetch_compatible_loaders
-        // may exclude it for certain MC versions. Since the mock network fails,
-        // the fallback includes all 4 loaders -- so this test validates via the
-        // final checkpoint instead: provide a valid loader but a version not in
-        // the fetched loader_versions list.
+        let workdir = mock_root().join("compatible-loader-fallback");
+        // When a compatible loader is provided via CLI flags, the init flow
+        // succeeds through the fallback path. The mock network fails, so the
+        // fallback includes all 4 loaders. The loader version is not in the
+        // fetched list, but init still succeeds because it falls back gracefully.
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
             .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
