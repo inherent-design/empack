@@ -13,7 +13,7 @@ use thiserror::Error;
 
 /// Marker file written to workdir during Building/Cleaning transitions.
 /// If this file exists on next discovery, we know the previous operation was interrupted.
-const STATE_MARKER_FILE: &str = ".empack-state";
+pub(crate) const STATE_MARKER_FILE: &str = ".empack-state";
 
 // Pure business logic functions - zero I/O, 100% testable.
 // These functions contain the core state machine logic without side effects.
