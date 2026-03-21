@@ -1,6 +1,6 @@
 # Architectural decision record: session-scoped dependency injection pattern
 
-> Historical context: this ADR reflects the January 2025 decision point for the session-scoped DI shift. It is not the current source of truth for feature completeness, verification, or release readiness. For current status, see [`../README.md`](../README.md) and [`testing/README.md`](testing/README.md).
+> Historical context: this ADR reflects the January 2025 decision point for the session-scoped DI shift. It is not the current source of truth for feature completeness, verification, or release readiness. For current status, see [`../README.md`](../README.md) and [`testing.md`](testing.md).
 
 **Date**: 2025-01-14
 **Status**: APPROVED

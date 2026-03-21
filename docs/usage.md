@@ -1,21 +1,118 @@
-# empack usage
+# empack usage guide
 
-## Scope
+This is the command reference for the empack CLI. For development setup, see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-This guide describes the current Rust CLI. The Bash implementations in `v1/` and `v2/` are historical reference only. For project structure and repository layout, see [`../README.md`](../README.md).
+## Quick start
 
-## Command overview
+A typical workflow from project creation through build:
 
-| Command | Purpose |
-| --- | --- |
-| `empack requirements` | Check external tool availability |
-| `empack version` | Print version information |
-| `empack init` | Initialize a project or complete partial setup |
-| `empack add` | Add projects by name, URL, or project ID |
-| `empack sync` | Reconcile declared dependencies with installed state |
-| `empack build` | Produce `mrpack` and other build targets |
-| `empack remove` | Remove projects from the current modpack (alias: `rm`) |
-| `empack clean` | Remove build outputs |
+```bash
+empack requirements
+empack init my-pack --pack-name "My Pack" --modloader fabric --mc-version 1.21.1 --author "Your Name" -y
+empack add sodium
+empack sync
+empack build mrpack
+```
+
+## Commands
+
+### empack requirements
+
+Check availability of external tools (packwiz, java). Run this before first use to verify the host environment.
+
+```bash
+empack requirements
+```
+
+### empack version
+
+Print version information.
+
+```bash
+empack version
+```
+
+### empack init
+
+Create a new modpack project or complete a partial setup.
+
+```bash
+empack init my-pack \
+  --pack-name "My Pack" \
+  --modloader fabric \
+  --mc-version 1.21.1 \
+  --author "Your Name" \
+  -y
+```
+
+Without arguments, empack prompts interactively for each field.
+
+| Flag | Short | Env var | Description |
+| --- | --- | --- | --- |
+| `--pack-name` | `-n` | `EMPACK_NAME` | Modpack display name |
+| `--modloader` | `-m` | `EMPACK_MODLOADER` | Mod loader: `neoforge`, `fabric`, `forge`, `quilt` |
+| `--mc-version` | | `EMPACK_MC_VERSION` | Minecraft version |
+| `--author` | `-A` | `EMPACK_AUTHOR` | Author name |
+| `--force` | `-f` | | Overwrite existing project files |
+
+The `--force` flag overwrites existing project files:
+
+```bash
+empack init my-pack --force
+```
+
+### empack add
+
+Add mods by name, URL, or project ID. empack searches Modrinth and CurseForge by default.
+
+```bash
+empack add sodium
+empack add jei --platform curseforge
+empack add sodium --force
+```
+
+The `--platform` flag restricts search to `modrinth`, `curseforge`, or `both` (default). The `--force` flag adds projects even when version conflicts exist.
+
+### empack sync
+
+Reconcile declared dependencies in `empack.yml` with the installed pack state.
+
+```bash
+empack sync
+empack sync --dry-run
+```
+
+### empack build
+
+Produce build artifacts under `dist/`. Available targets: `mrpack`, `client`, `server`, `client-full`, `server-full`, `all`.
+
+```bash
+empack build mrpack
+empack build --clean all
+empack build -j 4 all
+```
+
+The `--clean` flag removes previous build outputs before building. The `-j` flag controls the number of parallel build processes.
+
+### empack remove
+
+Remove mods from the current project. Alias: `rm`.
+
+```bash
+empack remove sodium
+empack remove sodium --deps
+empack rm sodium
+```
+
+The `--deps` flag offers to clean up orphaned dependencies.
+
+### empack clean
+
+Remove build outputs from the `dist/` directory. Project configuration and pack metadata are not affected. Available targets: `builds`, `cache`, `all`.
+
+```bash
+empack clean builds
+```
 
 ## Global flags
 
@@ -35,9 +132,13 @@ These flags apply to all commands:
 
 ## Environment variables
 
-Configuration precedence (highest to lowest): CLI flags, environment variables, `.env` file, defaults.
+### Configuration precedence
 
-Standard color environment variables are also respected:
+CLI flags > environment variables > `.env` file > defaults.
+
+### Color control
+
+Standard color environment variables are respected:
 
 | Variable | Effect |
 | --- | --- |
@@ -46,7 +147,7 @@ Standard color environment variables are also respected:
 | `CLICOLOR` | `0` disables color (BSD/macOS convention) |
 | `CI` | Any value disables color and interactive features |
 
-API keys:
+### API keys
 
 | Variable | Purpose |
 | --- | --- |
@@ -54,119 +155,8 @@ API keys:
 | `EMPACK_KEY_MODRINTH` | Modrinth API key (optional) |
 | `EMPACK_ID_MODRINTH` | Modrinth API client ID (optional) |
 
-## Typical workflow
-
-### Local prerequisites
-
-```bash
-empack requirements
-```
-
-### Project initialization
-
-```bash
-empack init my-pack \
-  --pack-name "My Pack" \
-  --modloader fabric \
-  --mc-version 1.21.1 \
-  --author "Your Name" \
-  -y
-```
-
-The `--force` flag overwrites existing project files:
-
-```bash
-empack init my-pack --force
-```
-
-### Adding dependencies
-
-By name:
-
-```bash
-empack add sodium
-```
-
-With a platform preference:
-
-```bash
-empack add jei --platform curseforge
-```
-
-The `--platform` flag accepts `modrinth`, `curseforge`, or `both`.
-
-The `--force` flag adds projects even if version conflicts exist:
-
-```bash
-empack add sodium --force
-```
-
-### Reconciling declared and installed state
-
-```bash
-empack sync
-```
-
-Preview changes without applying them:
-
-```bash
-empack sync --dry-run
-```
-
-### Building artifacts
-
-Build a single target:
-
-```bash
-empack build mrpack
-```
-
-Build all targets after cleaning previous outputs:
-
-```bash
-empack build --clean all
-```
-
-Control parallel build processes with `--jobs`:
-
-```bash
-empack build -j 4 all
-```
-
-Build outputs appear under the project-local `dist/` directory.
-
-### Removing dependencies
-
-```bash
-empack remove sodium
-```
-
-Remove a project and offer orphan dependency cleanup:
-
-```bash
-empack remove sodium --deps
-```
-
-The `rm` alias is equivalent:
-
-```bash
-empack rm sodium
-```
-
-### Cleaning build artifacts
-
-```bash
-empack clean builds
-```
-
-`clean` targets the artifact tree under `dist/`, leaving `empack.yml` and pack metadata intact.
-
 ## Project model
 
-- `empack.yml`: declared project configuration
-- `pack/`: managed `packwiz` workspace
-- `dist/`: build artifact root
-
-## Remaining gaps
-
-Broader remove behavior beyond targeted command tests is not yet promoted into the main verification matrix.
+- `empack.yml`: project configuration (declared dependencies, metadata, build settings)
+- `pack/`: managed packwiz workspace (tracks installed state)
+- `dist/`: build artifact output
