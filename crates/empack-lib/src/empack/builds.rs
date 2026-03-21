@@ -275,7 +275,7 @@ impl<'a> BuildOrchestrator<'a> {
             .process()
             .execute(
                 "packwiz",
-                &["--pack-file", pack_file.to_str().unwrap(), "refresh"],
+                &["--pack-file", &pack_file.to_string_lossy(), "refresh"],
                 &self.workdir,
             )
             .map_err(|e| BuildError::CommandFailed {
@@ -332,9 +332,9 @@ impl<'a> BuildOrchestrator<'a> {
                 "unzip",
                 &[
                     "-q",
-                    mrpack_file.to_str().unwrap(),
+                    &mrpack_file.to_string_lossy(),
                     "-d",
-                    temp_extract_dir.to_str().unwrap(),
+                    &temp_extract_dir.to_string_lossy(),
                 ],
                 &self.workdir,
             )
@@ -393,7 +393,7 @@ impl<'a> BuildOrchestrator<'a> {
         let output = self
             .session
             .process()
-            .execute("zip", &["-r0", zip_path.to_str().unwrap(), "./"], &dist_dir)
+            .execute("zip", &["-r0", &zip_path.to_string_lossy(), "./"], &dist_dir)
             .map_err(|e| BuildError::CommandFailed {
                 command: format!("zip {}: {}", filename, e),
             })?;
@@ -443,11 +443,11 @@ impl<'a> BuildOrchestrator<'a> {
                 "packwiz",
                 &[
                     "--pack-file",
-                    pack_file.to_str().unwrap(),
+                    &pack_file.to_string_lossy(),
                     "mr",
                     "export",
                     "-o",
-                    output_file.to_str().unwrap(),
+                    &output_file.to_string_lossy(),
                 ],
                 &self.workdir,
             )
@@ -1032,11 +1032,12 @@ impl<'a> BuildOrchestrator<'a> {
             })?;
         for path in template_files {
             if !self.session.filesystem().is_directory(&path) {
-                let filename = path.file_name().unwrap().to_str().unwrap();
+                let raw_name = path.file_name().unwrap();
+                let filename = raw_name.to_string_lossy();
                 let target_file = if let Some(stripped) = filename.strip_suffix(".template") {
                     target_dir.join(stripped)
                 } else {
-                    target_dir.join(filename)
+                    target_dir.join(&*filename)
                 };
 
                 let content = self
