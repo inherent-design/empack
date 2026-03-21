@@ -21,10 +21,8 @@ impl LiveDisplayProvider {
         }
     }
 
-    pub fn new_with_multi_progress(multi_progress: &MultiProgress) -> Self {
-        Self {
-            multi_progress: Arc::new(multi_progress.clone()),
-        }
+    pub fn new_with_arc(multi_progress: Arc<MultiProgress>) -> Self {
+        Self { multi_progress }
     }
 }
 
