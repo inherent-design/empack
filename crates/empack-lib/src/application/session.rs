@@ -331,6 +331,10 @@ impl NetworkProvider for LiveNetworkProvider {
     }
 }
 
+/// Default timeout for child process execution (5 minutes).
+/// Prevents indefinite hangs from packwiz or java processes.
+const PROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
 /// Live implementation of ProcessProvider
 pub struct LiveProcessProvider {
     /// Custom PATH override for hermetic testing
@@ -381,20 +385,40 @@ impl ProcessProvider for LiveProcessProvider {
         let mut cmd = Command::new(command);
         cmd.args(args).current_dir(working_dir);
 
-        // Set custom PATH if specified
         if let Some(custom_path) = &self.custom_path {
             cmd.env("PATH", custom_path);
         }
 
-        let output = cmd
-            .output()
-            .with_context(|| format!("Failed to execute command: {}", command))?;
+        let child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .with_context(|| format!("Failed to spawn command: {}", command))?;
 
-        Ok(ProcessOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            success: output.status.success(),
-        })
+        let cmd_name = command.to_string();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(child.wait_with_output());
+        });
+
+        match rx.recv_timeout(PROCESS_TIMEOUT) {
+            Ok(result) => {
+                let output = result
+                    .with_context(|| format!("Failed to execute command: {}", cmd_name))?;
+                Ok(ProcessOutput {
+                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                    success: output.status.success(),
+                })
+            }
+            Err(_) => {
+                anyhow::bail!(
+                    "Command '{}' timed out after {} seconds",
+                    cmd_name,
+                    PROCESS_TIMEOUT.as_secs()
+                )
+            }
+        }
     }
 
     fn find_program(&self, program: &str) -> Option<String> {
