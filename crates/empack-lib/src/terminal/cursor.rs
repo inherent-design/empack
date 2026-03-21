@@ -2,7 +2,6 @@ use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static CURSOR_HIDDEN: AtomicBool = AtomicBool::new(false);
-static SIGINT_RECEIVED: AtomicBool = AtomicBool::new(false);
 
 /// RAII guard that shows the cursor on Drop.
 ///
@@ -64,16 +63,6 @@ pub fn force_show_cursor() {
         let _ = io::stderr().write_all(b"\x1b[?25h");
         let _ = io::stderr().flush();
     }
-}
-
-/// Mark that SIGINT (Ctrl+C) was received.
-pub fn set_sigint_received() {
-    SIGINT_RECEIVED.store(true, Ordering::SeqCst);
-}
-
-/// Check if SIGINT was received. Used to discriminate SIGINT from other EINTR.
-pub fn sigint_received() -> bool {
-    SIGINT_RECEIVED.load(Ordering::SeqCst)
 }
 
 /// Install panic hook that restores cursor before the default handler runs.
