@@ -16,6 +16,7 @@ use reqwest::Client;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 // Abstract interface for state management operations.
 // StateManager trait removed - using concrete PackStateManager type instead.
@@ -573,11 +574,8 @@ where
     C: ConfigProvider,
     I: InteractiveProvider,
 {
-    /// Owns the progress display infrastructure
-    /// TODO(lifecycle): Field is stored for ownership but never read; LiveDisplayProvider
-    /// wraps its own Arc<MultiProgress>. Consider removing in future refactor.
-    #[allow(dead_code)]
-    multi_progress: MultiProgress,
+    /// Shared progress display infrastructure (also held by display_provider)
+    multi_progress: Arc<MultiProgress>,
     /// Display provider for this session
     display_provider: LiveDisplayProvider,
     /// Filesystem operations provider
@@ -614,8 +612,8 @@ impl
             }
         }
 
-        let multi_progress = MultiProgress::new();
-        let display_provider = LiveDisplayProvider::new_with_multi_progress(&multi_progress);
+        let multi_progress = Arc::new(MultiProgress::new());
+        let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
 
         Self {
             multi_progress,
@@ -646,8 +644,8 @@ where
         config_provider: C,
         interactive_provider: I,
     ) -> Self {
-        let multi_progress = MultiProgress::new();
-        let display_provider = LiveDisplayProvider::new_with_multi_progress(&multi_progress);
+        let multi_progress = Arc::new(MultiProgress::new());
+        let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
 
         Self {
             multi_progress,
@@ -733,5 +731,22 @@ where
             None => self.filesystem().current_dir()?,
         };
         Ok(PackStateManager::new(workdir, self.filesystem()))
+    }
+}
+
+impl<F, N, P, C, I> Drop for CommandSession<F, N, P, C, I>
+where
+    F: FileSystemProvider,
+    N: NetworkProvider,
+    P: ProcessProvider,
+    C: ConfigProvider,
+    I: InteractiveProvider,
+{
+    fn drop(&mut self) {
+        // Ordered teardown:
+        // 1. Clear any lingering progress bars from the shared MultiProgress
+        let _ = self.multi_progress.clear();
+        // 2. Restore cursor visibility (defense-in-depth, complements panic hook + signal handler)
+        crate::terminal::cursor::force_show_cursor();
     }
 }

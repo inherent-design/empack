@@ -969,7 +969,7 @@ impl InteractiveProvider for MockInteractiveProvider {
 
 /// Mock command session for testing
 pub struct MockCommandSession {
-    pub multi_progress: MultiProgress,
+    pub multi_progress: Arc<MultiProgress>,
     pub display_provider: LiveDisplayProvider,
     pub filesystem_provider: MockFileSystemProvider,
     pub network_provider: MockNetworkProvider,
@@ -988,8 +988,8 @@ impl MockCommandSession {
             .expect("Failed to detect terminal capabilities for testing");
         Display::init_or_get(capabilities);
 
-        let multi_progress = MultiProgress::new();
-        let display_provider = LiveDisplayProvider::new_with_multi_progress(&multi_progress);
+        let multi_progress = Arc::new(MultiProgress::new());
+        let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
 
         let filesystem_provider = MockFileSystemProvider::new();
         let packwiz_provider = MockPackwizOps::new()
