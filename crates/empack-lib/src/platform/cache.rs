@@ -10,7 +10,9 @@ use directories::ProjectDirs;
 /// 2. `ProjectDirs` for platform-standard cache location
 /// 3. Temp directory fallback when ProjectDirs is unavailable
 pub fn cache_root() -> Result<PathBuf> {
-    if let Ok(dir) = std::env::var("EMPACK_CACHE_DIR") {
+    if let Ok(dir) = std::env::var("EMPACK_CACHE_DIR")
+        && !dir.is_empty()
+    {
         return Ok(PathBuf::from(dir));
     }
 

@@ -16,7 +16,7 @@ use reqwest::Client;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 // Abstract interface for state management operations.
 // StateManager trait removed - using concrete PackStateManager type instead.
@@ -395,11 +395,20 @@ impl ProcessProvider for LiveProcessProvider {
             .spawn()
             .with_context(|| format!("Failed to spawn command: {}", command))?;
 
-        let child_id = child.id();
+        // Share the Child handle between the wait thread and the timeout
+        // handler so we can call Child::kill() directly instead of raw
+        // libc::kill, avoiding PID-recycling races.
+        let child_handle = Arc::new(Mutex::new(Some(child)));
+        let child_for_timeout = Arc::clone(&child_handle);
         let cmd_name = command.to_string();
+
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(child.wait_with_output());
+            let mut guard = child_handle.lock().unwrap();
+            if let Some(child) = guard.take() {
+                let result = child.wait_with_output();
+                let _ = tx.send(result);
+            }
         });
 
         match rx.recv_timeout(PROCESS_TIMEOUT) {
@@ -413,28 +422,16 @@ impl ProcessProvider for LiveProcessProvider {
                 })
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // Best-effort kill of the hung child process
-                #[cfg(unix)]
+                // Kill via Child handle -- safe against PID recycling
+                if let Ok(mut guard) = child_for_timeout.lock()
+                    && let Some(ref mut child) = *guard
                 {
-                    // SAFETY: libc::kill sends a signal to a process by PID.
-                    // child_id is a valid PID from a process we just spawned.
-                    unsafe { libc::kill(child_id as libc::pid_t, libc::SIGKILL); }
+                    let _ = child.kill();
                 }
-                #[cfg(windows)]
-                {
-                    // On Windows, we cannot easily kill by PID without opening the process.
-                    // The background thread will clean up when the process exits or parent dies.
-                    let _ = child_id;
-                }
-                #[cfg(unix)]
-                let kill_status = "process killed";
-                #[cfg(windows)]
-                let kill_status = "process may still be running";
                 anyhow::bail!(
-                    "Command '{}' timed out after {} seconds ({})",
+                    "Command '{}' timed out after {} seconds (process killed)",
                     cmd_name,
-                    PROCESS_TIMEOUT.as_secs(),
-                    kill_status
+                    PROCESS_TIMEOUT.as_secs()
                 )
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {

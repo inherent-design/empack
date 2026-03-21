@@ -1655,6 +1655,10 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
         .context("Failed to execute build pipeline")?;
 
     if let Some(failed) = results.iter().find(|result| !result.success) {
+        session
+            .display()
+            .status()
+            .info("If the build left partial artifacts, run 'empack clean --builds' to reset");
         return Err(anyhow::anyhow!(
             "Build failed for target {:?}",
             failed.target
@@ -2008,14 +2012,17 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .display()
             .status()
             .complete("empack.yml synchronized successfully with packwiz");
+        Ok(())
     } else {
         session
             .display()
             .status()
             .warning(&format!("Sync completed with {} failures", failure_count));
+        anyhow::bail!(
+            "Sync completed with {} failed action(s); review warnings above",
+            failure_count
+        )
     }
-
-    Ok(())
 }
 
 // Helper functions
