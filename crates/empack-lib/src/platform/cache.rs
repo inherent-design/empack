@@ -5,10 +5,15 @@ use directories::ProjectDirs;
 
 /// Returns the platform-appropriate cache root for empack.
 ///
-/// Primary: Uses `ProjectDirs` for platform-standard cache location.
-/// Fallback: Uses temp directory with a warning when ProjectDirs is unavailable
-/// (e.g., in containers without home directories).
+/// Resolution order:
+/// 1. `EMPACK_CACHE_DIR` env var (for testing and custom deployments)
+/// 2. `ProjectDirs` for platform-standard cache location
+/// 3. Temp directory fallback when ProjectDirs is unavailable
 pub fn cache_root() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("EMPACK_CACHE_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+
     if let Some(proj_dirs) = ProjectDirs::from("design", "inherent", "empack") {
         Ok(proj_dirs.cache_dir().to_path_buf())
     } else {

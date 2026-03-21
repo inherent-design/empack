@@ -1,6 +1,8 @@
 [profile.default]
 # Don't fail fast locally - let all tests run to see complete picture
 fail-fast = false
+# Default 100ms is too tight for TempDir cleanup on slower disks/CI runners
+leak-timeout = "500ms"
 
 [profile.ci]  
 # Don't fail fast in CI either to see all failures

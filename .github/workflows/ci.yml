@@ -45,7 +45,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-nextest
       - name: cargo nextest
-        run: cargo nextest run --workspace --release --features test-utils
+        run: cargo nextest run --release -p empack-lib --features test-utils -p empack-tests
 
   build-check:
     if: github.ref == 'refs/heads/main'

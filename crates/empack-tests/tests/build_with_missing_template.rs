@@ -73,7 +73,7 @@ async fn test_build_with_missing_template() -> Result<()> {
 
     // Pre-seed the bootstrap JAR so the build progresses past the download step
     // to actually test template handling.
-    let jar_cache = test_env.root_path.join("cache").join("empack").join("jars");
+    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
     std::fs::create_dir_all(&jar_cache)?;
     std::fs::write(
         jar_cache.join("packwiz-installer-bootstrap.jar"),

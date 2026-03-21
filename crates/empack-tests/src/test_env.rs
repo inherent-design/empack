@@ -738,6 +738,10 @@ impl HermeticSessionBuilder {
         // Tests run sequentially or in isolated processes, so no concurrent modification
         let path_env = self.test_env.get_path_env();
         unsafe {
+            // Override empack's cache_root() to use the hermetic temp directory.
+            // This works on all platforms (unlike XDG_CACHE_HOME which macOS ignores).
+            std::env::set_var("EMPACK_CACHE_DIR", &cache_dir);
+
             // Unix-like systems use XDG_CACHE_HOME
             #[cfg(unix)]
             std::env::set_var("XDG_CACHE_HOME", &cache_dir);
@@ -745,11 +749,6 @@ impl HermeticSessionBuilder {
             // Ensure all command paths, including direct std::process::Command
             // calls inside live providers, resolve to the hermetic mock tools.
             std::env::set_var("PATH", &path_env);
-
-            // Windows uses LocalAppData for cache (not typically overridden, using temp dir pattern)
-            // macOS respects XDG when set, but also uses ~/Library/Caches
-            // For hermetic testing, we rely on ProjectDirs::from("com", "inherent.design", "empack-test")
-            // falling back to our controlled temp directory in test environment
         }
 
         // Use provided interactive provider or create default one with yes_mode from config
@@ -875,12 +874,6 @@ impl ProjectResolverTrait for MockProjectResolver {
         };
 
         Box::pin(async move { result })
-    }
-}
-
-impl Drop for TestEnvironment {
-    fn drop(&mut self) {
-        // Cleanup is handled by TempDir automatically
     }
 }
 
