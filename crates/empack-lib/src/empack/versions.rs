@@ -356,6 +356,18 @@ impl ModLoader {
     }
 }
 
+impl From<crate::empack::parsing::ModLoader> for ModLoader {
+    fn from(loader: crate::empack::parsing::ModLoader) -> Self {
+        use crate::empack::parsing::ModLoader as P;
+        match loader {
+            P::NeoForge => Self::NeoForge,
+            P::Fabric => Self::Fabric,
+            P::Quilt => Self::Quilt,
+            P::Forge => Self::Forge,
+        }
+    }
+}
+
 /// Dynamic version fetcher with caching
 pub struct VersionFetcher<'a> {
     network: &'a dyn NetworkProvider,
