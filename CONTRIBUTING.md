@@ -1,24 +1,20 @@
 # Contributing to empack
 
-## Start from the current source of truth
+## Reference documents
 
-- Project entry point and current status: [`README.md`](README.md)
-- Current CLI behavior and workflow notes: [`docs/usage.md`](docs/usage.md)
-- Trusted release gates, grouped-test caveats, and remaining gaps: [`docs/testing/README.md`](docs/testing/README.md)
-- VCR-backed maintenance guidance: [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
-- Provider API background only: [`docs/reference/MODRINTH.md`](docs/reference/MODRINTH.md), [`docs/reference/CURSEFORGE.md`](docs/reference/CURSEFORGE.md)
+- Project overview and structure: [`README.md`](README.md)
+- Command reference and workflows: [`docs/usage.md`](docs/usage.md)
+- Verification matrix and test caveats: [`docs/testing/README.md`](docs/testing/README.md)
+- VCR fixture maintenance: [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
+- Provider API notes: [`docs/reference/MODRINTH.md`](docs/reference/MODRINTH.md), [`docs/reference/CURSEFORGE.md`](docs/reference/CURSEFORGE.md)
 
 ## Scope
 
-This repository currently treats the Rust workspace as the active implementation line. The Bash implementations in `v1/` and `v2/` are historical reference material only.
+This repository treats the Rust workspace as the active implementation line. The Bash implementations in `v1/` and `v2/` are historical reference material only.
 
-## Repository map
-
-See [Repository layout](README.md#repository-layout) for the current crate and directory structure.
+See [`README.md`](README.md) for the repository layout.
 
 ## Local setup
-
-### Baseline build checks
 
 Run the smallest relevant checks first:
 
@@ -27,18 +23,18 @@ cargo build --workspace --locked
 cargo check --workspace --all-targets --locked
 ```
 
-### Tooling notes
+Tooling notes:
 
-- `cargo nextest` is the default test runner for trusted workflow paths, and CI uses it exclusively for tests
+- `cargo nextest` is the default test runner for trusted workflow paths; CI uses it exclusively
 - Live CLI workflows may require external tools such as `packwiz`
 - Hermetic workflow tests use mocked toolchains where possible
-- VCR maintenance uses `curl`, `jq`, and `.env.local.template` or `.env.local` guidance as described in `docs/testing/vcr-recording.md`
+- VCR maintenance uses `curl`, `jq`, and `.env.local` as described in [`docs/testing/vcr-recording.md`](docs/testing/vcr-recording.md)
 
 ## Verification expectations
 
 Before claiming a workflow is trusted, check it against [`docs/testing/README.md`](docs/testing/README.md).
 
-Use these rules:
+Rules:
 
 1. Prefer the smallest exact command that proves the touched behavior.
 2. Treat grouped `cargo test` workflow runs as advisory-only until the broader global-state and env-conflict instability is fixed.
@@ -48,11 +44,11 @@ Use these rules:
 ## Documentation rules
 
 - Always write `empack` in lowercase.
-- Keep prose factual, technical, and concise.
-- Do not add marketing claims, support promises, badges, or release statements that the repo cannot prove.
+- Keep prose factual, technical, and concise. No em-dashes, no superlatives, no marketing language.
+- Do not add badges, support promises, or release statements the repo cannot prove.
 - When behavior changes, update the affected docs in the same change when practical.
 - Keep historical Bash content in reference sections only, not in active product guidance.
-- When touching status or architecture notes, label current truth versus historical context directly instead of silently mixing them.
+- Label current truth versus historical context directly instead of mixing them.
 
 ## Coding notes
 
@@ -64,7 +60,7 @@ Use these rules:
 
 ## Commits
 
-Use a short conventional subject line such as:
+Use a short conventional subject line:
 
 - `docs: refresh usage guide`
 - `fix: preserve dist metadata on clean`

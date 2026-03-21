@@ -1,19 +1,12 @@
 # Testing and verification matrix
 
-## Navigation
-
-- Project overview and current command surface: [`../../README.md`](../../README.md)
-- Current usage guidance: [`../usage.md`](../usage.md)
-- Contributor workflow: [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md)
-- VCR-backed maintenance guidance: [`vcr-recording.md`](vcr-recording.md)
-
 ## Scope
 
-This document is the current high-level verification guide for the Rust implementation. It separates the primary nextest-based release gate, narrower grouped-test advisory coverage, targeted isolated reruns, VCR-backed maintenance flows, and the remaining real gaps.
+This document is the verification reference for the Rust implementation. It covers the primary nextest-based release gate, grouped-test advisory coverage, targeted isolated reruns, VCR-backed maintenance flows, and remaining gaps.
 
 ## Primary trusted release gate
 
-These are the accepted must-pass commands referenced by the spec:
+These are the accepted must-pass commands:
 
 ```bash
 cargo check --workspace --all-targets
@@ -22,14 +15,14 @@ cargo nextest run -p empack-lib --features test-utils
 cargo nextest run -p empack-tests
 ```
 
-What these cover today:
+What these cover:
 
-- workspace type-check and lint health
-- 371 passing tests in the accepted nextest checkpoint
+- Workspace type-check and lint health
+- 371 passing tests in the accepted nextest checkpoint (325 in `empack-lib`, 15 skipped; 46 in `empack-tests`)
 - `empack-lib` contract and regression coverage
-- promoted workflow and command coverage across `empack-tests`
+- Promoted workflow and command coverage across `empack-tests`
 
-CI uses `cargo nextest` exclusively for test execution because grouped `cargo test` is not stable enough to serve as the primary blocker.
+CI uses `cargo nextest` exclusively for test execution because grouped `cargo test` is not stable enough to serve as the primary gate.
 
 ## Advisory grouped `cargo test` coverage
 

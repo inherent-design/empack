@@ -1,45 +1,68 @@
 # empack usage
 
-## Navigation
-
-- Project overview and current status: [`../README.md`](../README.md)
-- Trusted verification matrix and exact rerun commands: [`testing/README.md`](testing/README.md)
-- Contributor workflow and maintenance expectations: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
-
 ## Scope
 
-This guide describes the current Rust CLI. It does not treat the Bash implementations in `v1/` or `v2/` as active product guidance.
-
-## Project layout
-
-- `empack.yml`: declared project configuration
-- `pack/`: managed `packwiz` workspace
-- `dist/`: canonical build artifact root
+This guide describes the current Rust CLI. The Bash implementations in `v1/` and `v2/` are historical reference only. For project structure and repository layout, see [`../README.md`](../README.md).
 
 ## Command overview
 
-| Command | Purpose | Current verification note |
-| --- | --- | --- |
-| `empack requirements` | Check external tool availability | Trusted command path with dedicated test coverage |
-| `empack version` | Print version information | CLI help verified |
-| `empack init` | Initialize a project or complete partial setup | Trusted under nextest-backed workflow coverage |
-| `empack add` | Add projects by name, URL, or project ID | Trusted current workflow and command path |
-| `empack sync` | Reconcile declared dependencies with installed state | Trusted in isolated nextest reruns; grouped `cargo test` is unstable |
-| `empack build` | Produce `mrpack` and other build targets | Trusted under promoted nextest workflow suites |
-| `empack remove` | Remove projects from the current modpack | Available and covered by targeted command tests |
-| `empack clean` | Remove build outputs | Trusted current command and lifecycle path |
+| Command | Purpose |
+| --- | --- |
+| `empack requirements` | Check external tool availability |
+| `empack version` | Print version information |
+| `empack init` | Initialize a project or complete partial setup |
+| `empack add` | Add projects by name, URL, or project ID |
+| `empack sync` | Reconcile declared dependencies with installed state |
+| `empack build` | Produce `mrpack` and other build targets |
+| `empack remove` | Remove projects from the current modpack (alias: `rm`) |
+| `empack clean` | Remove build outputs |
+
+## Global flags
+
+These flags apply to all commands:
+
+| Flag | Env var | Default | Description |
+| --- | --- | --- | --- |
+| `-y`, `--yes` | `EMPACK_YES` | `false` | Skip prompts and use defaults |
+| `--dry-run` | `EMPACK_DRY_RUN` | `false` | Preview operations without executing |
+| `-w`, `--workdir <PATH>` | `EMPACK_WORKDIR` | current directory | Working directory for modpack operations |
+| `-j`, `--cpu-jobs <N>` | `EMPACK_CPU_JOBS` | `2` | Number of parallel API requests |
+| `-t`, `--net-timeout <SECS>` | `EMPACK_NET_TIMEOUT` | `30` | API timeout in seconds |
+| `-c`, `--color <MODE>` | `EMPACK_COLOR` | `auto` | Color output: `auto`, `always`, `never` |
+| `--log-level <N>` | `EMPACK_LOG_LEVEL` | `0` | Verbosity: 0=error, 1=warn, 2=info, 3=debug, 4=trace |
+| `--log-format <FMT>` | `EMPACK_LOG_FORMAT` | `text` | Output format: `text`, `json`, `yaml` |
+| `--log-output <DEST>` | `EMPACK_LOG_OUTPUT` | `stderr` | Log destination: `stderr`, `stdout` |
+
+## Environment variables
+
+Configuration precedence (highest to lowest): CLI flags, environment variables, `.env` file, defaults.
+
+Standard color environment variables are also respected:
+
+| Variable | Effect |
+| --- | --- |
+| `NO_COLOR` | Any non-empty value disables color output |
+| `FORCE_COLOR` | `0`/`false` disables, `1`/`2`/`3`/`true` enables color |
+| `CLICOLOR` | `0` disables color (BSD/macOS convention) |
+| `CI` | Any value disables color and interactive features |
+
+API keys:
+
+| Variable | Purpose |
+| --- | --- |
+| `EMPACK_KEY_CURSEFORGE` | CurseForge API key (has a built-in default) |
+| `EMPACK_KEY_MODRINTH` | Modrinth API key (optional) |
+| `EMPACK_ID_MODRINTH` | Modrinth API client ID (optional) |
 
 ## Typical workflow
 
-### Check local prerequisites
+### Local prerequisites
 
 ```bash
 empack requirements
 ```
 
-Verified by command help and `crates/empack-tests/tests/requirements_command.rs`.
-
-### Initialize a project
+### Project initialization
 
 ```bash
 empack init my-pack \
@@ -50,97 +73,100 @@ empack init my-pack \
   -y
 ```
 
-Trusted evidence:
+The `--force` flag overwrites existing project files:
 
-- `crates/empack-tests/tests/init_workflows.rs`
-- `crates/empack-tests/tests/lifecycle_forge_full.rs`
+```bash
+empack init my-pack --force
+```
 
-### Add a dependency
+### Adding dependencies
+
+By name:
 
 ```bash
 empack add sodium
 ```
 
-Optional platform preference:
+With a platform preference:
 
 ```bash
 empack add jei --platform curseforge
 ```
 
-Trusted evidence:
+The `--platform` flag accepts `modrinth`, `curseforge`, or `both`.
 
-- `crates/empack-tests/tests/add_command.rs`
-- add and sync parity coverage in the `empack-lib` command tests
+The `--force` flag adds projects even if version conflicts exist:
 
-### Reconcile declared and installed state
+```bash
+empack add sodium --force
+```
+
+### Reconciling declared and installed state
 
 ```bash
 empack sync
 ```
 
-Preview only:
+Preview changes without applying them:
 
 ```bash
 empack sync --dry-run
 ```
 
-Trusted evidence comes from isolated reruns of:
+### Building artifacts
 
-- `test_sync_workflow_full`
-- `test_sync_dry_run_no_modifications`
-
-See [`docs/testing/README.md`](testing/README.md) for the exact isolated rerun commands and the broader grouped `cargo test` instability notes.
-
-### Build artifacts
+Build a single target:
 
 ```bash
 empack build mrpack
 ```
 
-Build all configured targets after cleaning existing artifacts:
+Build all targets after cleaning previous outputs:
 
 ```bash
 empack build --clean all
 ```
 
-Current trusted coverage includes promoted suites for `mrpack`, `server`, `server-full`, `client-full`, and lifecycle-driven build flows. Build outputs are expected under the project-local `dist/` artifact root.
+Control parallel build processes with `--jobs`:
 
-### Remove dependencies
+```bash
+empack build -j 4 all
+```
+
+Build outputs appear under the project-local `dist/` directory.
+
+### Removing dependencies
 
 ```bash
 empack remove sodium
 ```
 
-Remove a project and then offer orphan cleanup logic:
+Remove a project and offer orphan dependency cleanup:
 
 ```bash
 empack remove sodium --deps
 ```
 
-This command exists and is covered by targeted command tests in `crates/empack-lib/src/application/commands.test.rs`, but it is not currently described as a promoted workflow gate in the trusted matrix.
+The `rm` alias is equivalent:
 
-### Clean build artifacts
+```bash
+empack rm sodium
+```
+
+### Cleaning build artifacts
 
 ```bash
 empack clean builds
 ```
 
-`clean` targets the artifact tree under `dist/`. Current tests verify build cleanup behavior without treating `empack.yml` or pack metadata as disposable artifacts.
+`clean` targets the artifact tree under `dist/`, leaving `empack.yml` and pack metadata intact.
 
-## Current caveats
+## Project model
 
-### Known grouped `cargo test` instability
+- `empack.yml`: declared project configuration
+- `pack/`: managed `packwiz` workspace
+- `dist/`: build artifact root
 
-Grouped `cargo test` instability is broader than `sync_workflow` alone. Affected workflow files include `sync_workflow`, `build_command`, `build_server_full`, `build_client_full`, `init_workflows`, and related suites.
+## Remaining gaps
 
-Common interference sources include `Display::init` global state and environment variable conflicts.
-
-For touched behavior, prefer targeted `cargo nextest` reruns and the primary release-gate commands documented in [`docs/testing/README.md`](testing/README.md).
-
-### Remaining explicit gap
-
-- Broader remove behavior beyond targeted command tests is still not promoted into the main trusted matrix.
-
-### Historical context only
-
-`v1/` and `v2/` remain useful when tracing product lineage, but they are not the release target and should not be used to describe the current CLI.
+Broader remove behavior beyond targeted command tests is not yet promoted into the main verification matrix.

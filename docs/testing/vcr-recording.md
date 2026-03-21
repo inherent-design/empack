@@ -1,10 +1,6 @@
 # VCR recording guide
 
-## Navigation
-
-- Project overview and current status: [`../../README.md`](../../README.md)
-- Trusted default verification matrix: [`README.md`](README.md)
-- Contributor workflow: [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md)
+For the default verification matrix, see [`README.md`](README.md).
 
 ## Current role of VCR fixtures
 
@@ -16,7 +12,7 @@ These fixtures are useful for VCR-backed maintenance work such as:
 - targeted cassette loader checks
 - future higher-fidelity provider tests
 
-They are not the default release gate. The trusted default matrix is documented in the [root README](../../README.md) and the [testing matrix](README.md).
+They are not the default release gate. The trusted default matrix is documented in the [testing matrix](README.md).
 
 ## Prerequisites
 
