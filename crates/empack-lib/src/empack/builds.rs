@@ -808,34 +808,29 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Execute V1's proven 5-target build pipeline with state management
+    /// Execute V1's proven 5-target build pipeline with state management.
+    /// Uses an RAII guard so the state marker is removed on both success and
+    /// failure (including panics) without manual cleanup.
     pub async fn execute_build_pipeline(
         &mut self,
         targets: &[BuildTarget],
     ) -> Result<Vec<BuildResult>, BuildError> {
-        // Begin state transition
-        self.session
-            .state()
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to get state manager: {}", e),
-            })?
-            .begin_state_transition(crate::primitives::StateTransition::Building)
+        let state_mgr = self.session.state().map_err(|e| BuildError::ConfigError {
+            reason: format!("Failed to get state manager: {}", e),
+        })?;
+        let guard = state_mgr
+            .guarded_transition(crate::primitives::StateTransition::Building)
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to begin build transition: {:?}", e),
             })?;
 
-        // Run the pipeline, cleaning up state on failure
-        let result = self.execute_build_pipeline_inner(targets);
+        let result = self.execute_build_pipeline_inner(targets)?;
 
-        if result.is_err() {
-            // Best-effort cleanup: complete the transition to avoid stuck state
-            let _ = self
-                .session
-                .state()
-                .map(|state| state.complete_state_transition());
-        }
+        guard.complete().map_err(|e| BuildError::ConfigError {
+            reason: format!("Failed to complete build transition: {:?}", e),
+        })?;
 
-        result
+        Ok(result)
     }
 
     /// Inner build pipeline logic, separated so the caller can guarantee
@@ -893,48 +888,32 @@ impl<'a> BuildOrchestrator<'a> {
             results.push(result);
         }
 
-        // Complete state transition on success
-        self.session
-            .state()
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to get state manager: {}", e),
-            })?
-            .complete_state_transition()
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to complete build transition: {:?}", e),
-            })?;
-
         Ok(results)
     }
 
-    /// Execute clean pipeline with state management
+    /// Execute clean pipeline with state management.
+    /// Uses an RAII guard so the state marker is removed on both success and
+    /// failure (including panics) without manual cleanup.
     pub async fn execute_clean_pipeline(
         &mut self,
         targets: &[BuildTarget],
     ) -> Result<(), BuildError> {
-        // Begin state transition
-        self.session
-            .state()
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to get state manager: {}", e),
-            })?
-            .begin_state_transition(crate::primitives::StateTransition::Cleaning)
+        let state_mgr = self.session.state().map_err(|e| BuildError::ConfigError {
+            reason: format!("Failed to get state manager: {}", e),
+        })?;
+        let guard = state_mgr
+            .guarded_transition(crate::primitives::StateTransition::Cleaning)
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("Failed to begin clean transition: {:?}", e),
             })?;
 
-        // Run the pipeline, cleaning up state on failure
-        let result = self.execute_clean_pipeline_inner(targets);
+        self.execute_clean_pipeline_inner(targets)?;
 
-        if result.is_err() {
-            // Best-effort cleanup: complete the transition to avoid stuck state
-            let _ = self
-                .session
-                .state()
-                .map(|state| state.complete_state_transition());
-        }
+        guard.complete().map_err(|e| BuildError::ConfigError {
+            reason: format!("Failed to complete clean transition: {:?}", e),
+        })?;
 
-        result
+        Ok(())
     }
 
     /// Inner clean pipeline logic, separated so the caller can guarantee
@@ -947,17 +926,6 @@ impl<'a> BuildOrchestrator<'a> {
         for target in targets {
             self.clean_target(*target)?;
         }
-
-        // Complete state transition on success
-        self.session
-            .state()
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to get state manager: {}", e),
-            })?
-            .complete_state_transition()
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to complete clean transition: {:?}", e),
-            })?;
 
         Ok(())
     }
