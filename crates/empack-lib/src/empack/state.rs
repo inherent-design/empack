@@ -190,6 +190,46 @@ fn remove_state_marker<P: crate::application::session::FileSystemProvider + ?Siz
     Ok(())
 }
 
+/// RAII guard that writes a state marker file on creation and removes it on Drop.
+/// Call `complete()` after successful operations to remove the marker explicitly.
+/// If the guard is dropped without calling `complete()` (e.g., due to error or panic),
+/// it performs best-effort marker removal to avoid stuck Interrupted state.
+pub(crate) struct StateMarkerGuard<'a, P: crate::application::session::FileSystemProvider + ?Sized> {
+    provider: &'a P,
+    workdir: PathBuf,
+    active: bool,
+}
+
+impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> StateMarkerGuard<'a, P> {
+    /// Create a new guard, writing the state marker immediately.
+    pub(crate) fn new(
+        provider: &'a P,
+        workdir: PathBuf,
+        state_label: &str,
+    ) -> Result<Self, StateError> {
+        write_state_marker(provider, &workdir, state_label)?;
+        Ok(Self {
+            provider,
+            workdir,
+            active: true,
+        })
+    }
+
+    /// Complete the guarded operation successfully: remove the marker and disarm.
+    pub(crate) fn complete(mut self) -> Result<(), StateError> {
+        self.active = false;
+        remove_state_marker(self.provider, &self.workdir)
+    }
+}
+
+impl<P: crate::application::session::FileSystemProvider + ?Sized> Drop for StateMarkerGuard<'_, P> {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = remove_state_marker(self.provider, &self.workdir);
+        }
+    }
+}
+
 /// Execute a state transition (pure function)
 pub async fn execute_transition<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
@@ -637,6 +677,47 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
     /// Complete a state transition (for BuildOrchestrator to use)
     pub fn complete_state_transition(&self) -> Result<(), StateError> {
         remove_state_marker(self.provider, &self.workdir)
+    }
+
+    /// Begin a state transition with RAII guard. The returned guard removes the
+    /// marker on Drop if not explicitly completed, preventing stuck Interrupted state.
+    pub(crate) fn guarded_transition(
+        &self,
+        transition: StateTransition<'_>,
+    ) -> Result<StateMarkerGuard<'_, P>, StateError> {
+        let current = self.discover_state()?;
+
+        let state_label = match transition {
+            StateTransition::Building => {
+                if !matches!(current, PackState::Configured | PackState::Built)
+                    || !validate_state_layout(self.provider, &self.workdir, &current)
+                {
+                    return Err(StateError::InvalidTransition {
+                        from: current,
+                        to: PackState::Building,
+                    });
+                }
+                "building"
+            }
+            StateTransition::Cleaning => {
+                if current != PackState::Built {
+                    return Err(StateError::InvalidTransition {
+                        from: current,
+                        to: PackState::Cleaning,
+                    });
+                }
+                "cleaning"
+            }
+            _ => {
+                return Err(StateError::ConfigError {
+                    reason:
+                        "guarded_transition only supports Building and Cleaning transitions"
+                            .to_string(),
+                });
+            }
+        };
+
+        StateMarkerGuard::new(self.provider, self.workdir.clone(), state_label)
     }
 
     /// Get paths for common modpack files
