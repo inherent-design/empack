@@ -303,10 +303,17 @@ async fn handle_init(
             .text_input("Modpack name", default_name)?
     };
 
-    // Try to get git user.name as smart default
+    // Try to get git user.name as smart default.
+    // Use parent dir (or target_dir itself) as cwd because target_dir
+    // may not exist yet when needs_mkdir is true.
+    let git_cwd = if needs_mkdir {
+        target_dir.parent().unwrap_or(&target_dir).to_path_buf()
+    } else {
+        target_dir.clone()
+    };
     let default_author = session
         .process()
-        .execute("git", &["config", "user.name"], &target_dir)
+        .execute("git", &["config", "user.name"], &git_cwd)
         .ok()
         .and_then(|output| {
             if output.success {
