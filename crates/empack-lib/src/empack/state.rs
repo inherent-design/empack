@@ -194,6 +194,7 @@ fn remove_state_marker<P: crate::application::session::FileSystemProvider + ?Siz
 /// Call `complete()` after successful operations to remove the marker explicitly.
 /// If the guard is dropped without calling `complete()` (e.g., due to error or panic),
 /// it performs best-effort marker removal to avoid stuck Interrupted state.
+#[must_use = "dropping the guard immediately removes the marker, leaving the pipeline unguarded"]
 pub(crate) struct StateMarkerGuard<'a, P: crate::application::session::FileSystemProvider + ?Sized> {
     provider: &'a P,
     workdir: PathBuf,
@@ -634,14 +635,10 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         execute_transition(self.provider, process, packwiz, &self.workdir, transition).await
     }
 
-    /// Begin a state transition (for BuildOrchestrator to use)
-    pub fn begin_state_transition(
-        &self,
-        transition: StateTransition<'_>,
-    ) -> Result<(), StateError> {
+    /// Validate a transition and return the state label string for marker files.
+    fn validate_transition(&self, transition: &StateTransition<'_>) -> Result<&'static str, StateError> {
         let current = self.discover_state()?;
 
-        // Validate that the transition is allowed
         match transition {
             StateTransition::Building => {
                 if !matches!(current, PackState::Configured | PackState::Built)
@@ -652,7 +649,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
                         to: PackState::Building,
                     });
                 }
-                write_state_marker(self.provider, &self.workdir, "building")?;
+                Ok("building")
             }
             StateTransition::Cleaning => {
                 if current != PackState::Built {
@@ -661,18 +658,25 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
                         to: PackState::Cleaning,
                     });
                 }
-                write_state_marker(self.provider, &self.workdir, "cleaning")?;
+                Ok("cleaning")
             }
             _ => {
-                return Err(StateError::ConfigError {
+                Err(StateError::ConfigError {
                     reason:
-                        "begin_state_transition only supports Building and Cleaning transitions"
+                        "Only Building and Cleaning transitions are supported"
                             .to_string(),
-                });
+                })
             }
         }
+    }
 
-        Ok(())
+    /// Begin a state transition (for BuildOrchestrator to use)
+    pub fn begin_state_transition(
+        &self,
+        transition: StateTransition<'_>,
+    ) -> Result<(), StateError> {
+        let state_label = self.validate_transition(&transition)?;
+        write_state_marker(self.provider, &self.workdir, state_label)
     }
 
     /// Complete a state transition (for BuildOrchestrator to use)
@@ -686,38 +690,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         &self,
         transition: StateTransition<'_>,
     ) -> Result<StateMarkerGuard<'_, P>, StateError> {
-        let current = self.discover_state()?;
-
-        let state_label = match transition {
-            StateTransition::Building => {
-                if !matches!(current, PackState::Configured | PackState::Built)
-                    || !validate_state_layout(self.provider, &self.workdir, &current)
-                {
-                    return Err(StateError::InvalidTransition {
-                        from: current,
-                        to: PackState::Building,
-                    });
-                }
-                "building"
-            }
-            StateTransition::Cleaning => {
-                if current != PackState::Built {
-                    return Err(StateError::InvalidTransition {
-                        from: current,
-                        to: PackState::Cleaning,
-                    });
-                }
-                "cleaning"
-            }
-            _ => {
-                return Err(StateError::ConfigError {
-                    reason:
-                        "guarded_transition only supports Building and Cleaning transitions"
-                            .to_string(),
-                });
-            }
-        };
-
+        let state_label = self.validate_transition(&transition)?;
         StateMarkerGuard::new(self.provider, self.workdir.clone(), state_label)
     }
 
