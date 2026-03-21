@@ -1649,21 +1649,16 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
         .context("Failed to create build orchestrator")?;
 
     // Execute build pipeline with state management
-    let results = build_orchestrator
+    build_orchestrator
         .execute_build_pipeline(&build_targets)
         .await
+        .inspect_err(|_| {
+            session
+                .display()
+                .status()
+                .info("If the build left partial artifacts, run 'empack clean --builds' to reset");
+        })
         .context("Failed to execute build pipeline")?;
-
-    if let Some(failed) = results.iter().find(|result| !result.success) {
-        session
-            .display()
-            .status()
-            .info("If the build left partial artifacts, run 'empack clean --builds' to reset");
-        return Err(anyhow::anyhow!(
-            "Build failed for target {:?}",
-            failed.target
-        ));
-    }
 
     session
         .display()

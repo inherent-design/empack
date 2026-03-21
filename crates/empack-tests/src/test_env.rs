@@ -253,59 +253,59 @@ fi
                 if name == "packwiz" {
                     code.push_str(
                         r#"
-# Create mock mod metadata when add commands are requested
-if [[ "$1" == "mr" && "$2" == "add" && -n "$3" ]]; then
-  mkdir -p mods
-  cat > "mods/$3.pw.toml" <<MODRINTH
-name = "$3"
-filename = "$3.jar"
-side = "both"
-MODRINTH
-fi
-
-if [[ "$1" == "modrinth" && "$2" == "add" ]]; then
+# Create mock mod metadata when add commands are requested.
+# Args may be prefixed with --pack-file <path>, so scan all args
+# instead of assuming $1/$2 positions.
+if [[ "$*" == *"mr add"* || "$*" == *"modrinth add"* ]]; then
   for ((i = 1; i <= $#; i++)); do
     if [[ "${!i}" == "--project-id" ]]; then
       next=$((i + 1))
       mod_id="${!next}"
-      if [[ -n "$mod_id" ]]; then
-        mkdir -p mods
-        cat > "mods/$mod_id.pw.toml" <<MODRINTH
+    fi
+    # Short form: mr add <id>
+    if [[ "${!i}" == "mr" ]]; then
+      next=$((i + 1))
+      if [[ "${!next}" == "add" ]]; then
+        id_idx=$((i + 2))
+        # Only use positional id if no --project-id flag found
+        : "${mod_id:=${!id_idx}}"
+      fi
+    fi
+  done
+  if [[ -n "$mod_id" ]]; then
+    mkdir -p mods
+    cat > "mods/$mod_id.pw.toml" <<MODRINTH
 name = "$mod_id"
 filename = "$mod_id.jar"
 side = "both"
 MODRINTH
-      fi
-      break
-    fi
-  done
+  fi
 fi
 
-if [[ "$1" == "cf" && "$2" == "add" && -n "$3" ]]; then
-  mkdir -p mods
-  cat > "mods/$3.pw.toml" <<CURSEFORGE
-name = "$3"
-filename = "$3.jar"
-side = "both"
-CURSEFORGE
-fi
-
-if [[ "$1" == "curseforge" && "$2" == "add" ]]; then
+if [[ "$*" == *"cf add"* || "$*" == *"curseforge add"* ]]; then
+  cf_mod=""
   for ((i = 1; i <= $#; i++)); do
     if [[ "${!i}" == "--addon-id" ]]; then
       next=$((i + 1))
-      mod_id="${!next}"
-      if [[ -n "$mod_id" ]]; then
-        mkdir -p mods
-        cat > "mods/$mod_id.pw.toml" <<CURSEFORGE
-name = "$mod_id"
-filename = "$mod_id.jar"
-side = "both"
-CURSEFORGE
+      cf_mod="${!next}"
+    fi
+    # Short form: cf add <name>
+    if [[ "${!i}" == "cf" ]]; then
+      next=$((i + 1))
+      if [[ "${!next}" == "add" ]]; then
+        id_idx=$((i + 2))
+        : "${cf_mod:=${!id_idx}}"
       fi
-      break
     fi
   done
+  if [[ -n "$cf_mod" ]]; then
+    mkdir -p mods
+    cat > "mods/$cf_mod.pw.toml" <<CURSEFORGE
+name = "$cf_mod"
+filename = "$cf_mod.jar"
+side = "both"
+CURSEFORGE
+  fi
 fi
 "#,
                     );
