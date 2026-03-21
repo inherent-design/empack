@@ -63,6 +63,7 @@ pub async fn main() -> Result<()> {
 
     // Run command with signal handling
     tokio::select! {
+        biased;
         result = execute_command(config) => {
             terminal::cursor::force_show_cursor();
             result
