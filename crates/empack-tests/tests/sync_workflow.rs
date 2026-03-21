@@ -29,6 +29,7 @@ fn sync_project_config() -> &'static str {
 }
 
 /// Test: empack sync executes the planned add/remove actions hermetically.
+#[cfg(unix)]
 #[tokio::test]
 async fn test_sync_workflow_full() -> Result<()> {
     let (session, test_env) = HermeticSessionBuilder::new()?
@@ -101,6 +102,7 @@ async fn test_sync_workflow_full() -> Result<()> {
 }
 
 /// Test: empack sync --dry-run plans actions without mutating packwiz state.
+#[cfg(unix)]
 #[tokio::test]
 async fn test_sync_dry_run_no_modifications() -> Result<()> {
     let (session, test_env) = HermeticSessionBuilder::new()?
@@ -165,6 +167,7 @@ async fn test_sync_dry_run_no_modifications() -> Result<()> {
 }
 
 /// Test: sync treats hyphenated installed filenames as already matching normalized dependency keys.
+#[cfg(unix)]
 #[tokio::test]
 async fn test_sync_normalized_installed_names_noop() -> Result<()> {
     let (session, test_env) = HermeticSessionBuilder::new()?

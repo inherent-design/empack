@@ -9,6 +9,7 @@ use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::{HermeticSessionBuilder, MockBehavior};
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_build_with_missing_template() -> Result<()> {
     // Create hermetic session with basic project setup
@@ -126,6 +127,7 @@ async fn test_build_with_missing_template() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_build_template_error_specificity() -> Result<()> {
     // This test validates that template-related errors are specific

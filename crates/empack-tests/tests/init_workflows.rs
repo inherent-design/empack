@@ -22,6 +22,7 @@ use std::fs;
 /// 3. Verify pack/ directory created
 /// 4. Verify packwiz init was called
 /// 5. Verify project structure matches expected layout
+#[cfg(unix)]
 #[tokio::test]
 async fn test_init_zero_config() -> Result<()> {
     // Create hermetic session with mock packwiz and --yes flag
@@ -117,6 +118,7 @@ async fn test_init_zero_config() -> Result<()> {
 /// 1. Run `empack init matrix-fabric --pack-name "Matrix Fabric" --modloader fabric --mc-version 1.21.1`
 /// 2. Verify the generated empack.yml reflects the explicit inputs
 /// 3. Verify the packwiz invocation received the expected progressive-init flags
+#[cfg(unix)]
 #[tokio::test]
 async fn test_init_with_explicit_flags() -> Result<()> {
     let (session, test_env) = HermeticSessionBuilder::new()?
@@ -249,6 +251,7 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 /// 2. Verify my-pack/ directory was created
 /// 3. Verify empack.yml exists inside my-pack/
 /// 4. Verify pack/ directory created inside my-pack/
+#[cfg(unix)]
 #[tokio::test]
 async fn test_init_creates_directory_from_name() -> Result<()> {
     // Create hermetic session with --yes flag
@@ -335,6 +338,7 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
 /// 3. Verify appropriate error handling (either prompt or fail gracefully)
 ///
 /// Note: Without --force flag, init should detect existing project
+#[cfg(unix)]
 #[tokio::test]
 async fn test_init_existing_project_error() -> Result<()> {
     // Create hermetic session with --yes flag

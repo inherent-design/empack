@@ -81,6 +81,7 @@ async fn initialize_empack_project(
     Ok((session, test_env, workdir))
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
     let project_name = "workflow-client-full";
@@ -109,17 +110,17 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
 
     assert!(result.is_ok(), "Client-full build failed: {result:?}");
 
-    let client_full_dir = workdir.join("dist/client-full");
+    let client_full_dir = workdir.join("dist").join("client-full");
     assert!(
         client_full_dir.exists(),
         "Client-full build directory should exist"
     );
     assert!(
-        client_full_dir.join("pack/pack.toml").exists(),
+        client_full_dir.join("pack").join("pack.toml").exists(),
         "Pack metadata should be copied into client-full output"
     );
     assert!(
-        client_full_dir.join("mods/both-installed.txt").exists(),
+        client_full_dir.join("mods").join("both-installed.txt").exists(),
         "Mock installer should leave a deterministic install marker"
     );
 
@@ -128,7 +129,7 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
         .join(format!("{project_name}-v1.0.0-client-full.zip"));
     assert!(archive.exists(), "Client-full archive should be created");
     assert!(
-        !workdir.join("dist/client").exists(),
+        !workdir.join("dist").join("client").exists(),
         "Standalone client-full builds should not materialize the client target directory"
     );
     assert!(
@@ -156,6 +157,7 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
     let (session, _test_env, workdir) =
@@ -189,12 +191,12 @@ async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
     );
     assert!(
         !workdir
-            .join("dist/client-full/mods/both-installed.txt")
+            .join("dist").join("client-full").join("mods").join("both-installed.txt")
             .exists(),
         "The full installer step should not run when the installer bootstrap is missing"
     );
     assert!(
-        !workdir.join("dist/client").exists(),
+        !workdir.join("dist").join("client").exists(),
         "Standalone client-full failures should not create the client target directory"
     );
     assert!(
@@ -208,6 +210,7 @@ async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
     let project_name = "workflow-client-full-structure";
@@ -244,19 +247,19 @@ async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
 
     assert!(result.is_ok(), "Client-full build failed: {result:?}");
 
-    let client_full_dir = workdir.join("dist/client-full");
+    let client_full_dir = workdir.join("dist").join("client-full");
     assert!(
         client_full_dir.exists(),
         "Client-full build directory should exist"
     );
     assert!(
         client_full_dir
-            .join("pack/mods/example-mod.pw.toml")
+            .join("pack").join("mods").join("example-mod.pw.toml")
             .exists(),
         "Existing pack structure should be copied into client-full output"
     );
     assert!(
-        client_full_dir.join("mods/both-installed.txt").exists(),
+        client_full_dir.join("mods").join("both-installed.txt").exists(),
         "Installer marker should confirm the mocked full download step"
     );
     assert!(
@@ -267,7 +270,7 @@ async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
         "Client-full archive should be created for the structured pack scenario"
     );
     assert!(
-        !workdir.join("dist/client").exists(),
+        !workdir.join("dist").join("client").exists(),
         "Structured standalone client-full builds should not materialize the client target directory"
     );
 

@@ -204,8 +204,8 @@ mod handle_init_tests {
         .await;
 
         assert!(result.is_ok());
-        assert!(!session.filesystem().exists(&workdir.join("dist/test-pack.mrpack")));
-        assert!(session.filesystem().exists(&workdir.join("pack/pack.toml")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
+        assert!(session.filesystem().exists(&workdir.join("pack").join("pack.toml")));
     }
 
     #[tokio::test]
@@ -1385,7 +1385,7 @@ mod handle_build_tests {
 
         assert!(result.is_ok(), "clean-before-build should succeed: {result:?}");
         assert!(session.filesystem().exists(&workdir.join("empack.yml")));
-        assert!(session.filesystem().exists(&workdir.join("pack/pack.toml")));
+        assert!(session.filesystem().exists(&workdir.join("pack").join("pack.toml")));
         assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
         assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")));
         assert!(session.filesystem().exists(&rebuilt_mrpack));

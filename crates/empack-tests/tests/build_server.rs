@@ -81,12 +81,13 @@ async fn initialize_empack_project(
     Ok((session, test_env, workdir))
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_successfully() -> anyhow::Result<()> {
     let project_name = "workflow-server";
     let (session, test_env, workdir) = initialize_empack_project(project_name).await?;
 
-    let templates_dir = workdir.join("templates/server");
+    let templates_dir = workdir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
     std::fs::write(
         templates_dir.join("server.properties.template"),
@@ -116,7 +117,7 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
 
     assert!(result.is_ok(), "Server build failed: {result:?}");
 
-    let server_dir = workdir.join("dist/server");
+    let server_dir = workdir.join("dist").join("server");
     assert!(server_dir.exists(), "Server build directory should exist");
     assert!(
         std::fs::read_to_string(server_dir.join("server.properties"))?.contains(project_name),
@@ -131,7 +132,7 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
         "Server build should materialize the server JAR"
     );
     assert!(
-        server_dir.join("config/generated.txt").exists(),
+        server_dir.join("config").join("generated.txt").exists(),
         "Mock unzip should supply deterministic override content"
     );
     assert!(
@@ -159,12 +160,13 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
     let (session, _test_env, workdir) =
         initialize_empack_project("workflow-server-missing-installer").await?;
 
-    let templates_dir = workdir.join("templates/server");
+    let templates_dir = workdir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
 
     let result = execute_command_with_session(
@@ -196,19 +198,20 @@ async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
         "No server archive should be produced when the installer is missing"
     );
     assert!(
-        !workdir.join("dist/server/srv.jar").exists(),
+        !workdir.join("dist").join("server").join("srv.jar").exists(),
         "The server jar should not be materialized when the installer bootstrap is missing"
     );
 
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
     let project_name = "workflow-server-templates";
     let (session, _test_env, workdir) = initialize_empack_project(project_name).await?;
 
-    let templates_dir = workdir.join("templates/server");
+    let templates_dir = workdir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
     std::fs::write(
         templates_dir.join("server.properties.template"),
@@ -242,7 +245,7 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
 
     assert!(result.is_ok(), "Server build failed: {result:?}");
 
-    let server_dir = workdir.join("dist/server");
+    let server_dir = workdir.join("dist").join("server");
     let properties = std::fs::read_to_string(server_dir.join("server.properties"))?;
     assert!(
         properties.contains(project_name),
@@ -281,7 +284,7 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
         "Server JAR should exist"
     );
     assert!(
-        server_dir.join("config/generated.txt").exists(),
+        server_dir.join("config").join("generated.txt").exists(),
         "Override content should be copied into the rendered server build"
     );
 

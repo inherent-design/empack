@@ -908,6 +908,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_mock_executable_logging() {
         let mut env = TestEnvironment::new().expect("Failed to create test environment");
@@ -934,6 +935,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_mock_executable_logging_preserves_argument_boundaries() {
         let mut env = TestEnvironment::new().expect("Failed to create test environment");

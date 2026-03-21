@@ -18,6 +18,7 @@ use empack_tests::{HermeticSessionBuilder, MockBehavior};
 use tempfile::TempDir;
 
 /// Test that the build command works end-to-end with mock packwiz
+#[cfg(unix)]
 #[tokio::test]
 async fn e2e_build_mrpack_successfully() -> Result<()> {
     let fixture = WorkflowProjectFixture::new("workflow-build-pack");
@@ -60,7 +61,7 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
 
     assert!(result.is_ok(), "Build command failed: {:?}", result);
 
-    let pack_file = workdir.join("pack/pack.toml");
+    let pack_file = workdir.join("pack").join("pack.toml");
     let mrpack_path = fixture.artifact_path(&workdir, WorkflowArtifact::Mrpack);
     assert!(
         mrpack_path.exists(),
@@ -99,6 +100,7 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
 }
 
 /// Test that clean-before-build rebuilds the mrpack artifact without removing config files
+#[cfg(unix)]
 #[tokio::test]
 async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Result<()> {
     let fixture = WorkflowProjectFixture::new("workflow-build-clean");
@@ -131,7 +133,7 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
         .expect("hermetic project should configure a workdir");
     std::env::set_current_dir(&workdir)?;
 
-    let stale_server_dir = workdir.join("dist/server");
+    let stale_server_dir = workdir.join("dist").join("server");
     std::fs::create_dir_all(&stale_server_dir)?;
     std::fs::write(stale_server_dir.join("stale.txt"), "stale build output")?;
 
@@ -141,7 +143,7 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
     let sentinel = workdir.join("sentinel.txt");
     std::fs::write(&sentinel, "preserve me")?;
 
-    let pack_file = workdir.join("pack/pack.toml");
+    let pack_file = workdir.join("pack").join("pack.toml");
     let result = execute_command_with_session(
         Commands::Build {
             targets: vec!["mrpack".to_string()],
@@ -175,11 +177,11 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
         "clean-before-build should preserve empack.yml"
     );
     assert!(
-        workdir.join("pack/pack.toml").exists(),
+        workdir.join("pack").join("pack.toml").exists(),
         "clean-before-build should preserve pack.toml"
     );
     assert!(
-        workdir.join("pack/index.toml").exists(),
+        workdir.join("pack").join("index.toml").exists(),
         "clean-before-build should preserve index.toml"
     );
     assert!(
@@ -242,7 +244,7 @@ async fn e2e_build_packwiz_refresh_fails() -> Result<()> {
     Display::init_or_get(terminal_caps);
 
     // Mock packwiz refresh failure
-    let pack_file = workdir.join("pack/pack.toml");
+    let pack_file = workdir.join("pack").join("pack.toml");
     let mock_process_provider = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -312,7 +314,7 @@ async fn e2e_build_packwiz_export_fails() -> Result<()> {
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
     Display::init_or_get(terminal_caps);
 
-    let pack_file = workdir.join("pack/pack.toml");
+    let pack_file = workdir.join("pack").join("pack.toml");
     let mrpack_path = fixture.artifact_path(&workdir, WorkflowArtifact::Mrpack);
     let mock_process_provider = MockProcessProvider::new()
         .with_packwiz_result(

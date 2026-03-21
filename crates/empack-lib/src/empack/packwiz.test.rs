@@ -12,7 +12,7 @@ fn test_add_mod_modrinth_success() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "modrinth".to_string(),
             "add".to_string(),
             "--project-id".to_string(),
@@ -36,7 +36,7 @@ fn test_add_mod_modrinth_success() {
     let result = metadata.add_mod("AANobbMI", ProjectPlatform::Modrinth);
 
     assert!(result.is_ok());
-    let pack_file_str = mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string();
+    let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
         "packwiz",
         &[
@@ -57,7 +57,7 @@ fn test_add_mod_curseforge_success() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "curseforge".to_string(),
             "add".to_string(),
             "--addon-id".to_string(),
@@ -88,7 +88,7 @@ fn test_add_mod_failure() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "modrinth".to_string(),
             "add".to_string(),
             "--project-id".to_string(),
@@ -125,7 +125,7 @@ fn test_remove_mod_success() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "remove".to_string(),
             "sodium".to_string(),
             "-y".to_string(),
@@ -147,7 +147,7 @@ fn test_remove_mod_success() {
     let result = metadata.remove_mod("sodium");
 
     assert!(result.is_ok());
-    let pack_file_str = mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string();
+    let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
         "packwiz",
         &[
@@ -166,7 +166,7 @@ fn test_remove_mod_not_found() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "remove".to_string(),
             "nonexistent".to_string(),
             "-y".to_string(),
@@ -195,7 +195,7 @@ fn test_refresh_index_success() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -222,7 +222,7 @@ fn test_refresh_index_hash_mismatch() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -255,7 +255,7 @@ fn test_refresh_index_pack_format_error() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -286,15 +286,15 @@ fn test_refresh_index_pack_format_error() {
 
 #[test]
 fn test_export_mrpack_success() {
-    let output_path = mock_root().join("workdir/dist/pack.mrpack");
+    let output_path = mock_root().join("workdir").join("dist").join("pack.mrpack");
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "modrinth".to_string(),
             "export".to_string(),
             "-o".to_string(),
-            mock_root().join("workdir/dist/pack.mrpack").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("dist").join("pack.mrpack").to_string_lossy().to_string(),
         ],
         Ok(ProcessOutput {
             stdout: "Exported pack.mrpack".to_string(),
@@ -351,7 +351,7 @@ fn test_installer_success() {
             "-g".to_string(),
             "-s".to_string(),
             "both".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
         ],
         Ok(ProcessOutput {
             stdout: "Downloaded 5 mods".to_string(),
@@ -371,7 +371,7 @@ fn test_installer_success() {
     let result = installer.install_mods("both", &mock_root().join("workdir"));
 
     assert!(result.is_ok());
-    let pack_file_str = mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string();
+    let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
         "java",
         &[
@@ -422,7 +422,7 @@ fn test_installer_download_failure() {
             "-g".to_string(),
             "-s".to_string(),
             "client".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
         ],
         Ok(ProcessOutput {
             stdout: String::new(),
@@ -472,7 +472,7 @@ fn test_cached_packwiz_check() {
         .with_packwiz_result(
             vec![
                 "--pack-file".to_string(),
-                mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+                mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
                 "modrinth".to_string(),
                 "add".to_string(),
                 "--project-id".to_string(),
@@ -488,7 +488,7 @@ fn test_cached_packwiz_check() {
         .with_packwiz_result(
             vec![
                 "--pack-file".to_string(),
-                mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+                mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
                 "modrinth".to_string(),
                 "add".to_string(),
                 "--project-id".to_string(),
@@ -533,7 +533,7 @@ fn test_packwiz_malformed_pack_toml() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {
@@ -575,7 +575,7 @@ fn test_packwiz_pack_toml_missing_fields() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "modrinth".to_string(),
             "export".to_string(),
             "-o".to_string(),
@@ -618,7 +618,7 @@ fn test_packwiz_invalid_toml_syntax() {
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
-            mock_root().join("workdir/pack/pack.toml").to_string_lossy().to_string(),
+            mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string(),
             "refresh".to_string(),
         ],
         Ok(ProcessOutput {

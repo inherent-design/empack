@@ -88,12 +88,13 @@ async fn initialize_empack_project(
     Ok((session, test_env, workdir))
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
     let project_name = "workflow-server-full";
     let (session, test_env, workdir) = initialize_empack_project(project_name).await?;
 
-    let templates_dir = workdir.join("templates/server");
+    let templates_dir = workdir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
     std::fs::write(
         templates_dir.join("server.properties.template"),
@@ -127,7 +128,7 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
 
     assert!(result.is_ok(), "Server-full build failed: {result:?}");
 
-    let server_full_dir = workdir.join("dist/server-full");
+    let server_full_dir = workdir.join("dist").join("server-full");
     assert!(
         server_full_dir.exists(),
         "Server-full build directory should exist"
@@ -137,7 +138,7 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
         "Server-full build should process template variables"
     );
     assert!(
-        server_full_dir.join("pack/pack.toml").exists(),
+        server_full_dir.join("pack").join("pack.toml").exists(),
         "Pack contents should be copied into server-full output"
     );
     assert!(
@@ -145,7 +146,7 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
         "Server-full build should materialize the server JAR"
     );
     assert!(
-        server_full_dir.join("mods/server-installed.txt").exists(),
+        server_full_dir.join("mods").join("server-installed.txt").exists(),
         "Mock installer should leave a deterministic server install marker"
     );
     assert!(
@@ -156,7 +157,7 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
         "Server-full archive should be created"
     );
     assert!(
-        !workdir.join("dist/server").exists(),
+        !workdir.join("dist").join("server").exists(),
         "Standalone server-full builds should not materialize the server target directory"
     );
     assert!(
@@ -186,12 +187,13 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
     let (session, _test_env, workdir) =
         initialize_empack_project("workflow-server-full-missing-installer").await?;
 
-    let templates_dir = workdir.join("templates/server");
+    let templates_dir = workdir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
 
     let result = execute_command_with_session(
@@ -221,11 +223,11 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
         "No server-full archive should be produced when the installer is missing"
     );
     assert!(
-        !workdir.join("dist/server-full/srv.jar").exists(),
+        !workdir.join("dist").join("server-full").join("srv.jar").exists(),
         "The full server jar should not be materialized when the installer bootstrap is missing"
     );
     assert!(
-        !workdir.join("dist/server").exists(),
+        !workdir.join("dist").join("server").exists(),
         "Standalone server-full failures should not create the server target directory"
     );
     assert!(
@@ -239,12 +241,13 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
     let project_name = "workflow-server-full-templates";
     let (session, _test_env, workdir) = initialize_empack_project(project_name).await?;
 
-    let templates_dir = workdir.join("templates/server");
+    let templates_dir = workdir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
     std::fs::write(
         templates_dir.join("server.properties.template"),
@@ -282,7 +285,7 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
 
     assert!(result.is_ok(), "Server-full build failed: {result:?}");
 
-    let server_full_dir = workdir.join("dist/server-full");
+    let server_full_dir = workdir.join("dist").join("server-full");
     let properties = std::fs::read_to_string(server_full_dir.join("server.properties"))?;
     assert!(
         properties.contains(project_name),
@@ -318,7 +321,7 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
         "Server JAR should exist"
     );
     assert!(
-        server_full_dir.join("mods/server-installed.txt").exists(),
+        server_full_dir.join("mods").join("server-installed.txt").exists(),
         "Installer marker should confirm server-full download step"
     );
 

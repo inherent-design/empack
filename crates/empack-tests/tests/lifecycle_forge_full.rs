@@ -21,6 +21,7 @@ use std::fs;
 /// 3. Build all targets
 /// 4. Clean builds
 /// 5. Verify all operations succeeded
+#[cfg(unix)]
 #[tokio::test]
 async fn test_lifecycle_forge_full() -> Result<()> {
     let fixture = WorkflowProjectFixture::new("forge-test-pack");
@@ -150,7 +151,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     // Run the remaining lifecycle steps from inside the initialized project.
     std::env::set_current_dir(&project_dir)?;
 
-    let templates_dir = project_dir.join("templates/server");
+    let templates_dir = project_dir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
     std::fs::write(
         templates_dir.join("server.properties.template"),
@@ -183,7 +184,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         "Add sodium should resolve and succeed in the hermetic lifecycle: {add_sodium_result:?}"
     );
     assert!(
-        project_dir.join("pack/mods/AANobbMI.pw.toml").exists(),
+        project_dir.join("pack").join("mods").join("AANobbMI.pw.toml").exists(),
         "Modrinth add should leave deterministic mod metadata"
     );
 
@@ -203,7 +204,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         "Add JEI should resolve and succeed in the hermetic lifecycle: {add_jei_result:?}"
     );
     assert!(
-        project_dir.join("pack/mods/238222.pw.toml").exists(),
+        project_dir.join("pack").join("mods").join("238222.pw.toml").exists(),
         "CurseForge add should leave deterministic mod metadata"
     );
 
@@ -239,18 +240,18 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         );
     }
     assert!(
-        dist_dir.join("server/config/generated.txt").exists(),
+        dist_dir.join("server").join("config").join("generated.txt").exists(),
         "Server build should include extracted override content"
     );
     assert!(
         dist_dir
-            .join("server-full/mods/server-installed.txt")
+            .join("server-full").join("mods").join("server-installed.txt")
             .exists(),
         "Server-full build should include full install marker"
     );
     assert!(
         dist_dir
-            .join("client-full/mods/both-installed.txt")
+            .join("client-full").join("mods").join("both-installed.txt")
             .exists(),
         "Client-full build should include full install marker"
     );
@@ -311,6 +312,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 ///
 /// This test specifically validates that Forge modloader can be initialized
 /// and that the modloader choice propagates through the configuration.
+#[cfg(unix)]
 #[tokio::test]
 async fn test_forge_modloader_initialization() -> Result<()> {
     use empack_lib::application::session_mocks::MockInteractiveProvider;

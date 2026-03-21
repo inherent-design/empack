@@ -30,11 +30,11 @@ fn test_template_installer_directory_creation() {
 
     installer.create_directory_structure(temp_dir.path()).unwrap();
 
-    assert!(temp_dir.path().join("dist/client").exists());
-    assert!(temp_dir.path().join("dist/server").exists());
-    assert!(temp_dir.path().join("templates/client").exists());
-    assert!(temp_dir.path().join("templates/server").exists());
-    assert!(temp_dir.path().join(".github/workflows").exists());
+    assert!(temp_dir.path().join("dist").join("client").exists());
+    assert!(temp_dir.path().join("dist").join("server").exists());
+    assert!(temp_dir.path().join("templates").join("client").exists());
+    assert!(temp_dir.path().join("templates").join("server").exists());
+    assert!(temp_dir.path().join(".github").join("workflows").exists());
     assert!(temp_dir.path().join("pack").exists());
 }
 
@@ -49,16 +49,16 @@ fn test_template_installer_full_install() {
 
     // Verify key files were created
     assert!(temp_dir.path().join(".gitignore").exists());
-    assert!(temp_dir.path().join("pack/.packwizignore").exists());
-    assert!(temp_dir.path().join(".github/workflows/validate.yml").exists());
-    assert!(temp_dir.path().join("templates/client/instance.cfg.template").exists());
-    assert!(temp_dir.path().join("templates/server/install_pack.sh.template").exists());
+    assert!(temp_dir.path().join("pack").join(".packwizignore").exists());
+    assert!(temp_dir.path().join(".github").join("workflows").join("validate.yml").exists());
+    assert!(temp_dir.path().join("templates").join("client").join("instance.cfg.template").exists());
+    assert!(temp_dir.path().join("templates").join("server").join("install_pack.sh.template").exists());
 
     // Verify content substitution
     let gitignore_content = std::fs::read_to_string(temp_dir.path().join(".gitignore")).unwrap();
     assert!(gitignore_content.contains("dist/"));
 
-    let instance_content = std::fs::read_to_string(temp_dir.path().join("templates/client/instance.cfg.template")).unwrap();
+    let instance_content = std::fs::read_to_string(temp_dir.path().join("templates").join("client").join("instance.cfg.template")).unwrap();
     assert!(instance_content.contains("name=Test Pack"));
     assert!(instance_content.contains("ExportAuthor=TestAuthor"));
 }
@@ -134,7 +134,7 @@ minecraft = "1.21.1"
     installer.install_server_templates(temp_dir.path()).unwrap();
 
     let install_script = std::fs::read_to_string(
-        temp_dir.path().join("templates/server/install_pack.sh.template")
+        temp_dir.path().join("templates").join("server").join("install_pack.sh.template")
     ).unwrap();
 
     assert!(install_script.contains("# MyModpack v2.1.0 Server Installer"));
