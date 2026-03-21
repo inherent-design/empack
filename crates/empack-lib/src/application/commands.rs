@@ -213,7 +213,7 @@ async fn handle_init(
     // Handle directory creation case: `empack init <name>` where <name> is a directory
     // Precedence: positional arg > --name flag
     let name = positional_name.or(cli_pack_name.clone());
-    let (target_dir, initial_name) = if let Some(name) = name {
+    let (target_dir, initial_name, needs_mkdir) = if let Some(name) = name {
         let potential_dir = session
             .config()
             .app_config()
@@ -222,15 +222,8 @@ async fn handle_init(
             .unwrap_or(&session.filesystem().current_dir()?)
             .join(&name);
 
-        if !session.filesystem().exists(&potential_dir) {
-            session
-                .display()
-                .status()
-                .info(&format!("Creating directory: {}", name));
-            session.filesystem().create_dir_all(&potential_dir)?;
-        }
-
-        (potential_dir, Some(name))
+        let needs_mkdir = !session.filesystem().exists(&potential_dir);
+        (potential_dir, Some(name), needs_mkdir)
     } else {
         let workdir = match session.config().app_config().workdir.as_ref().cloned() {
             Some(w) => w,
@@ -239,42 +232,47 @@ async fn handle_init(
                 .current_dir()
                 .context("Failed to get current directory")?,
         };
-        (workdir, None)
+        (workdir, None, false)
     };
 
-    // Create state manager for the target directory
-    let manager =
-        crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
+    // Check state only if the directory already exists
+    if !needs_mkdir {
+        let manager =
+            crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
 
-    // Check if already initialized
-    let mut current_state = manager.discover_state()?;
-    if current_state != PackState::Uninitialized {
-        if !force {
-            session
-                .display()
-                .status()
-                .error("Directory already contains a modpack project", "");
-            session
-                .display()
-                .status()
-                .subtle("   Use --force to overwrite existing files");
-            return Ok(());
-        }
-
-        session
-            .display()
-            .status()
-            .checking("Resetting existing project state for --force init");
-
-        while current_state != PackState::Uninitialized {
-            let result = manager
-                .execute_transition(session.process(), &*session.packwiz(), StateTransition::Clean)
-                .await
-                .context("Failed to reset existing project before initialization")?;
-            for w in &result.warnings {
-                session.display().status().warning(w);
+        let mut current_state = manager.discover_state()?;
+        if current_state != PackState::Uninitialized {
+            if !force {
+                session
+                    .display()
+                    .status()
+                    .error("Directory already contains a modpack project", "");
+                session
+                    .display()
+                    .status()
+                    .subtle("   Use --force to overwrite existing files");
+                return Ok(());
             }
-            current_state = result.state;
+
+            session
+                .display()
+                .status()
+                .checking("Resetting existing project state for --force init");
+
+            while current_state != PackState::Uninitialized {
+                let result = manager
+                    .execute_transition(
+                        session.process(),
+                        &*session.packwiz(),
+                        StateTransition::Clean,
+                    )
+                    .await
+                    .context("Failed to reset existing project before initialization")?;
+                for w in &result.warnings {
+                    session.display().status().warning(w);
+                }
+                current_state = result.state;
+            }
         }
     }
 
@@ -641,6 +639,25 @@ async fn handle_init(
             .info("Modpack initialization cancelled");
         return Ok(());
     }
+
+    // === Execute phase: all filesystem mutations happen below this line ===
+
+    // Create directory if needed (deferred from path resolution)
+    if needs_mkdir {
+        let dir_name = target_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("target");
+        session
+            .display()
+            .status()
+            .info(&format!("Creating directory: {}", dir_name));
+        session.filesystem().create_dir_all(&target_dir)?;
+    }
+
+    // Create state manager for the (now-existing) target directory
+    let manager =
+        crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
 
     // Create the empack.yml file with the collected configuration FIRST
     let empack_yml_content = format_empack_yml(
