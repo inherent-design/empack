@@ -7,8 +7,8 @@ use crate::Result;
 use crate::application::cli::SearchPlatform;
 use crate::application::session::{CommandSession, Session};
 use crate::application::sync::{
-    AddContractError, SyncExecutionAction, SyncPlanAction, build_sync_plan, normalize_mod_key,
-    resolve_add_contract, resolve_sync_action,
+    AddContractError, AddResolution, SyncExecutionAction, SyncPlanAction, build_sync_plan,
+    normalize_mod_key, resolve_add_contract, resolve_sync_action,
 };
 use crate::application::{CliConfig, Commands};
 use crate::empack::parsing::ModLoader;
@@ -847,7 +847,12 @@ async fn handle_add(
         .section(&format!("Adding {} mod(s) to modpack", mods.len()));
 
     let mut added_mods = Vec::new();
-    let mut failed_mods = Vec::new();
+    let mut failed_mods: Vec<(String, String)> = Vec::new();
+
+    // === Gather phase: resolve all mods, no side effects ===
+    let mut resolved_mods: Vec<ResolvedMod> = Vec::new();
+    let mut batch_project_ids: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     for mod_query in mods {
         let resolution_intent = AddResolutionIntent::from_cli_input(&mod_query, platform.clone());
@@ -889,7 +894,7 @@ async fn handle_add(
                         .info(&format!("Confidence: {}%", confidence));
                 }
 
-                // Check for duplicate mod (unless --force flag is set)
+                // Check for duplicate mod in existing dep graph (unless --force flag is set)
                 if !force && dep_graph.contains(&resolution.resolved_project_id) {
                     session.display().status().warning(&format!(
                         "Mod already installed: {} (use --force to reinstall)",
@@ -898,95 +903,22 @@ async fn handle_add(
                     continue; // Skip this mod
                 }
 
-                let mut packwiz_result = Ok(());
-                let mut last_error = None;
-                for command in &resolution.commands {
-                    match session.process().execute(
-                        "packwiz",
-                        &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                        &workdir.join("pack"),
-                    ) {
-                        Ok(output) if output.success => {
-                            packwiz_result = Ok(());
-                            last_error = None;
-                            break;
-                        }
-                        Ok(output) => {
-                            packwiz_result = Err(());
-                            last_error =
-                                Some(anyhow::anyhow!("Packwiz command failed: {}", output.stderr));
-                        }
-                        Err(error) => {
-                            packwiz_result = Err(());
-                            last_error = Some(anyhow::anyhow!(error));
-                        }
-                    }
+                // Check for duplicate within this batch
+                if !force && batch_project_ids.contains(&resolution.resolved_project_id) {
+                    session.display().status().warning(&format!(
+                        "Duplicate in batch: {} (already queued for addition)",
+                        resolution.title
+                    ));
+                    continue;
                 }
 
-                match packwiz_result {
-                    Ok(_) => {
-                        session
-                            .display()
-                            .status()
-                            .success("Successfully added to pack", "");
-
-                        // Update dependency graph with newly added mod
-                        // Rebuild from directory to capture new .pw.toml files
-                        let mut updated_graph =
-                            crate::api::dependency_graph::DependencyGraph::new();
-                        if let Err(e) = updated_graph.build_from_directory(&mods_dir) {
-                            session
-                                .display()
-                                .status()
-                                .warning(&format!("Failed to update dependency graph: {}", e));
-                        } else {
-                            // Check for cycles introduced by new mod
-                            if updated_graph.has_cycles() {
-                                if let Some(cycle) = updated_graph.detect_cycle() {
-                                    let p = crate::primitives::terminal::primitives();
-                                    let arrow_sep = format!(" {} ", p.arrow);
-                                    session
-                                        .display()
-                                        .status()
-                                        .error("Circular dependency detected", &cycle.join(&arrow_sep));
-                                    session
-                                        .display()
-                                        .status()
-                                        .warning("Installation may fail - consider removing conflicting mods");
-                                }
-                            } else {
-                                // Update our graph for next iteration
-                                dep_graph = updated_graph;
-                            }
-                        }
-
-                        // Atomically update empack.yml with the new dependency
-                        let dep_key = normalize_mod_key(&mod_query);
-                        if let Err(e) = config_manager.add_dependency(
-                            &dep_key,
-                            &resolution.title,
-                            "mod",
-                            Some(&resolution.resolved_project_id),
-                            Some(resolution.resolved_platform),
-                        ) {
-                            session
-                                .display()
-                                .status()
-                                .warning(&format!("Failed to update empack.yml: {}", e));
-                        }
-
-                        added_mods.push((mod_query, resolution));
-                    }
-                    Err(_) => {
-                        let e = last_error
-                            .unwrap_or_else(|| anyhow::anyhow!("Unknown packwiz add failure"));
-                        session
-                            .display()
-                            .status()
-                            .error("Failed to add to pack", &e.to_string());
-                        failed_mods.push((mod_query, format!("Packwiz error: {}", e)));
-                    }
-                }
+                batch_project_ids.insert(resolution.resolved_project_id.clone());
+                let dep_key = normalize_mod_key(&mod_query);
+                resolved_mods.push(ResolvedMod {
+                    query: mod_query,
+                    resolution,
+                    dep_key,
+                });
             }
             Err(e) => {
                 let rendered = render_add_contract_error(&e);
@@ -995,6 +927,95 @@ async fn handle_add(
                     .status()
                     .error(&rendered.item, &rendered.details);
                 failed_mods.push((mod_query, rendered.details));
+            }
+        }
+    }
+
+    // === Execute phase: all side effects happen below this line ===
+    for resolved in resolved_mods {
+        let mut packwiz_result: std::result::Result<(), ()> = Ok(());
+        let mut last_error = None;
+        for command in &resolved.resolution.commands {
+            match session.process().execute(
+                "packwiz",
+                &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                &workdir.join("pack"),
+            ) {
+                Ok(output) if output.success => {
+                    packwiz_result = Ok(());
+                    last_error = None;
+                    break;
+                }
+                Ok(output) => {
+                    packwiz_result = Err(());
+                    last_error =
+                        Some(anyhow::anyhow!("Packwiz command failed: {}", output.stderr));
+                }
+                Err(error) => {
+                    packwiz_result = Err(());
+                    last_error = Some(anyhow::anyhow!(error));
+                }
+            }
+        }
+
+        match packwiz_result {
+            Ok(_) => {
+                session
+                    .display()
+                    .status()
+                    .success("Successfully added to pack", "");
+
+                // Update dependency graph with newly added mod
+                // Rebuild from directory to capture new .pw.toml files
+                let mut updated_graph =
+                    crate::api::dependency_graph::DependencyGraph::new();
+                if let Err(e) = updated_graph.build_from_directory(&mods_dir) {
+                    session
+                        .display()
+                        .status()
+                        .warning(&format!("Failed to update dependency graph: {}", e));
+                } else {
+                    // Check for cycles introduced by new mod
+                    if updated_graph.has_cycles()
+                        && let Some(cycle) = updated_graph.detect_cycle()
+                    {
+                        let p = crate::primitives::terminal::primitives();
+                        let arrow_sep = format!(" {} ", p.arrow);
+                        session
+                            .display()
+                            .status()
+                            .error("Circular dependency detected", &cycle.join(&arrow_sep));
+                        session
+                            .display()
+                            .status()
+                            .warning("Installation may fail - consider removing conflicting mods");
+                    }
+                }
+
+                // Atomically update empack.yml with the new dependency
+                if let Err(e) = config_manager.add_dependency(
+                    &resolved.dep_key,
+                    &resolved.resolution.title,
+                    "mod",
+                    Some(&resolved.resolution.resolved_project_id),
+                    Some(resolved.resolution.resolved_platform),
+                ) {
+                    session
+                        .display()
+                        .status()
+                        .warning(&format!("Failed to update empack.yml: {}", e));
+                }
+
+                added_mods.push((resolved.query, resolved.resolution));
+            }
+            Err(_) => {
+                let e = last_error
+                    .unwrap_or_else(|| anyhow::anyhow!("Unknown packwiz add failure"));
+                session
+                    .display()
+                    .status()
+                    .error("Failed to add to pack", &e.to_string());
+                failed_mods.push((resolved.query, format!("Packwiz error: {}", e)));
             }
         }
     }
@@ -1091,6 +1112,15 @@ impl AddResolutionIntent {
     }
 }
 
+/// Holds a fully-resolved mod ready for the execute phase of handle_add.
+/// Separating resolution (network + user interaction) from execution (file writes)
+/// ensures that a Ctrl+C during the gather phase leaves no files modified.
+struct ResolvedMod {
+    query: String,
+    resolution: AddResolution,
+    dep_key: String,
+}
+
 fn is_modrinth_project_id(value: &str) -> bool {
     value.len() == 8
         && value.chars().all(|c| c.is_ascii_alphanumeric())
@@ -1146,7 +1176,24 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     let mut removed_mods = Vec::new();
     let mut failed_mods = Vec::new();
 
-    for mod_name in mods {
+    // === Gather phase: validate mod names, no side effects ===
+    let validated_mods: Vec<String> = mods
+        .into_iter()
+        .filter(|name| {
+            if name.trim().is_empty() {
+                session
+                    .display()
+                    .status()
+                    .warning("Skipping empty mod name");
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    // === Execute phase: all side effects happen below this line ===
+    for mod_name in validated_mods {
         session
             .display()
             .status()
