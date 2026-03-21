@@ -228,7 +228,7 @@ impl CapabilityProber {
         // Reset colors and formatting
         io::stdout().write_all(b"\x1b[0m")?; // Reset all attributes (colors, styles)
         // Defense-in-depth: unconditionally show cursor after probing.
-        // The application-level CursorGuard (lib.rs) is the primary safety
+        // The startup force_show_cursor() call in lib.rs is the primary safety
         // net; this covers the probing phase specifically.
         io::stdout().write_all(b"\x1b[?25h")?;
         io::stdout().write_all(b"\x1b[49m")?; // Reset background color specifically
