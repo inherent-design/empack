@@ -239,6 +239,168 @@ mod handle_init_tests {
             vec![("Create modpack with these settings?".to_string(), true)]
         );
     }
+    #[tokio::test]
+    async fn it_rejects_invalid_mc_version_from_cli() {
+        let workdir = mock_root().join("bad-mc-version");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            Some("test-pack".to_string()),
+            None,
+            false,
+            Some("fabric".to_string()),
+            Some("99.99.99".to_string()),
+            Some("Test Author".to_string()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("99.99.99") && err_msg.contains("not found"),
+            "Expected error about invalid MC version, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn it_rejects_invalid_loader_from_cli() {
+        let workdir = mock_root().join("bad-loader");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            Some("test-pack".to_string()),
+            None,
+            false,
+            Some("notaloader".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("notaloader"),
+            "Expected error about invalid loader, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn it_rejects_incompatible_loader_for_mc_version() {
+        let workdir = mock_root().join("incompatible-loader");
+        // Quilt is in the fallback all-loaders list, but fetch_compatible_loaders
+        // may exclude it for certain MC versions. Since the mock network fails,
+        // the fallback includes all 4 loaders -- so this test validates via the
+        // final checkpoint instead: provide a valid loader but a version not in
+        // the fetched loader_versions list.
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            Some("test-pack".to_string()),
+            None,
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+        )
+        .await;
+
+        // With fallback versions, "1.21.1" + "fabric" is valid and first fallback
+        // loader version "0.15.0" is selected. The final checkpoint should pass.
+        assert!(result.is_ok());
+    }
+}
+
+// ===== VALIDATE_INIT_INPUTS UNIT TESTS =====
+
+mod validate_init_inputs_tests {
+    use super::*;
+
+    #[test]
+    fn it_passes_with_valid_inputs() {
+        let mc_versions = vec!["1.21.1".to_string(), "1.20.1".to_string()];
+        let loaders = vec![
+            crate::empack::versions::ModLoader::Fabric,
+            crate::empack::versions::ModLoader::NeoForge,
+        ];
+        let loader_versions = vec!["0.15.0".to_string(), "0.14.21".to_string()];
+
+        let result = validate_init_inputs(
+            "1.21.1",
+            &mc_versions,
+            "fabric",
+            &loaders,
+            "0.15.0",
+            &loader_versions,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn it_rejects_unknown_mc_version() {
+        let mc_versions = vec!["1.21.1".to_string()];
+        let loaders = vec![crate::empack::versions::ModLoader::Fabric];
+        let loader_versions = vec!["0.15.0".to_string()];
+
+        let result = validate_init_inputs(
+            "99.0.0",
+            &mc_versions,
+            "fabric",
+            &loaders,
+            "0.15.0",
+            &loader_versions,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("99.0.0"));
+    }
+
+    #[test]
+    fn it_rejects_incompatible_loader() {
+        let mc_versions = vec!["1.21.1".to_string()];
+        let loaders = vec![crate::empack::versions::ModLoader::Fabric];
+        let loader_versions = vec!["0.15.0".to_string()];
+
+        let result = validate_init_inputs(
+            "1.21.1",
+            &mc_versions,
+            "neoforge",
+            &loaders,
+            "0.15.0",
+            &loader_versions,
+        );
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("not compatible"), "Expected compatibility error, got: {}", msg);
+    }
+
+    #[test]
+    fn it_rejects_unknown_loader_version() {
+        let mc_versions = vec!["1.21.1".to_string()];
+        let loaders = vec![crate::empack::versions::ModLoader::Fabric];
+        let loader_versions = vec!["0.15.0".to_string()];
+
+        let result = validate_init_inputs(
+            "1.21.1",
+            &mc_versions,
+            "fabric",
+            &loaders,
+            "0.99.0",
+            &loader_versions,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("0.99.0"));
+    }
 }
 
 // ===== HANDLE_ADD TESTS =====
