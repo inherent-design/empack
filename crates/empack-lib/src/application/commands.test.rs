@@ -1132,80 +1132,12 @@ mod handle_build_tests {
             "packwiz",
             &["--pack-file", &pack_file_arg, "refresh"],
             &workdir
-        ));
+        ), "expected packwiz refresh call");
         assert!(session.process_provider.verify_call(
             "packwiz",
             &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
             &workdir
-        ));
-    }
-
-    #[tokio::test]
-    async fn it_builds_multiple_targets() {
-        let workdir = mock_root().join("built-project");
-        let pack_file = workdir.join("pack").join("pack.toml");
-        let built_mrpack = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_built_project(workdir.clone()),
-            )
-            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
-
-        // Multi-target parsing is tested by parse_build_targets tests; here we verify
-        // the build pipeline executes correctly with a mockable target
-        let result = handle_build(&session, vec!["mrpack".to_string()], false).await;
-
-        assert!(result.is_ok(), "mrpack build should succeed: {result:?}");
-        assert!(session.filesystem().exists(&built_mrpack));
-
-        let pack_file_arg = pack_file.display().to_string();
-        let built_mrpack_arg = built_mrpack.display().to_string();
-        assert!(session.process_provider.verify_call(
-            "packwiz",
-            &["--pack-file", &pack_file_arg, "refresh"],
-            &workdir
-        ));
-        assert!(session.process_provider.verify_call(
-            "packwiz",
-            &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
-            &workdir
-        ));
-    }
-
-    #[tokio::test]
-    async fn it_builds_all_targets() {
-        let workdir = mock_root().join("built-project");
-        let pack_file = workdir.join("pack").join("pack.toml");
-        let built_mrpack = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_built_project(workdir.clone()),
-            )
-            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
-
-        // "all" target expansion is tested by parse_build_targets; here we verify
-        // the build pipeline runs correctly with a mockable target
-        let result = handle_build(&session, vec!["mrpack".to_string()], false).await;
-
-        assert!(result.is_ok(), "mrpack build should succeed: {result:?}");
-        assert!(session.filesystem().exists(&built_mrpack));
-
-        let pack_file_arg = pack_file.display().to_string();
-        let built_mrpack_arg = built_mrpack.display().to_string();
-        assert!(session.process_provider.verify_call(
-            "packwiz",
-            &["--pack-file", &pack_file_arg, "refresh"],
-            &workdir
-        ));
-        assert!(session.process_provider.verify_call(
-            "packwiz",
-            &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
-            &workdir
-        ));
+        ), "expected packwiz mr export call");
     }
 
     #[tokio::test]
@@ -1236,12 +1168,12 @@ mod handle_build_tests {
             "packwiz",
             &["--pack-file", &pack_file_arg, "refresh"],
             &workdir
-        ));
+        ), "expected packwiz refresh call");
         assert!(session.process_provider.verify_call(
             "packwiz",
             &["--pack-file", &pack_file_arg, "mr", "export", "-o", &rebuilt_mrpack_arg],
             &workdir
-        ));
+        ), "expected packwiz mr export call");
     }
 
     #[tokio::test]
