@@ -370,7 +370,9 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                         _ => no_warnings(recovered),
                     }
                 }
-                _ => unreachable!("can_transition guards this"),
+                PackState::Building | PackState::Cleaning => {
+                    unreachable!("can_transition rejects Building/Cleaning for Clean")
+                }
             }
         }
 
