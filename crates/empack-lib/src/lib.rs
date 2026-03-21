@@ -69,7 +69,6 @@ pub async fn main() -> Result<()> {
             result
         }
         _ = tokio::signal::ctrl_c() => {
-            terminal::cursor::set_sigint_received();
             terminal::cursor::force_show_cursor();
 
             // Best-effort state marker cleanup using configured workdir
