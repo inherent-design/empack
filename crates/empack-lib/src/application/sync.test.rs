@@ -130,6 +130,7 @@ async fn test_resolve_add_contract_matches_sync_search_resolution() {
         "",
         ProjectPlatform::Modrinth,
         None,
+        None,
         &resolver,
     )
     .await
@@ -180,6 +181,7 @@ async fn test_resolve_add_contract_matches_sync_curseforge_version_pin() {
         "238222",
         ProjectPlatform::CurseForge,
         Some("5678901"),
+        None,
         &resolver,
     )
     .await
@@ -230,6 +232,7 @@ async fn test_resolve_add_contract_matches_sync_modrinth_version_pin() {
         "AANobbMI",
         ProjectPlatform::Modrinth,
         Some("good-version"),
+        None,
         &resolver,
     )
     .await
@@ -277,6 +280,7 @@ async fn test_resolve_add_contract_wraps_resolver_failures() {
         Some(ModLoader::Fabric),
         "",
         ProjectPlatform::Modrinth,
+        None,
         None,
         &resolver,
     )

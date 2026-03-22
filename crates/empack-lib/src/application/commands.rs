@@ -1002,6 +1002,7 @@ async fn handle_add(
             direct_project_id,
             direct_platform,
             None,
+            resolution_intent.preferred_platform,
             resolver.as_ref(),
         )
         .await
@@ -1212,6 +1213,7 @@ struct AddResolutionIntent {
     search_query: String,
     direct_project_id: Option<String>,
     direct_platform: Option<ProjectPlatform>,
+    preferred_platform: Option<ProjectPlatform>,
 }
 
 impl AddResolutionIntent {
@@ -1239,6 +1241,7 @@ impl AddResolutionIntent {
             search_query: mod_query.to_string(),
             direct_project_id,
             direct_platform,
+            preferred_platform,
         }
     }
 }
@@ -1256,9 +1259,6 @@ fn is_modrinth_project_id(value: &str) -> bool {
     value.len() == 8
         && value.chars().all(|c| c.is_ascii_alphanumeric())
         && !value.chars().all(|c| c.is_ascii_digit())
-        && value
-            .chars()
-            .any(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 
 fn is_curseforge_project_id(value: &str) -> bool {

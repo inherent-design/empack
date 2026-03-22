@@ -310,10 +310,11 @@ fn filter_forge_versions_by_minecraft(
 
     // Collect all matching versions (try both normalized and original)
     let mut matching_versions: Vec<String> = Vec::new();
+    let normalized_prefix = format!("{}-", normalized_version);
+    let original_prefix = format!("{}-", mc_version);
 
     for version in all_versions {
         // Try normalized prefix (e.g., "1.21.0-")
-        let normalized_prefix = format!("{}-", normalized_version);
         if let Some(forge_ver) = extract_forge_version(version, &normalized_prefix)
             && !matching_versions.contains(&forge_ver)
         {
@@ -321,13 +322,11 @@ fn filter_forge_versions_by_minecraft(
         }
 
         // Also try original prefix if different (e.g., "1.21-")
-        if mc_version != normalized_version {
-            let original_prefix = format!("{}-", mc_version);
-            if let Some(forge_ver) = extract_forge_version(version, &original_prefix)
-                && !matching_versions.contains(&forge_ver)
-            {
-                matching_versions.push(forge_ver);
-            }
+        if mc_version != normalized_version
+            && let Some(forge_ver) = extract_forge_version(version, &original_prefix)
+            && !matching_versions.contains(&forge_ver)
+        {
+            matching_versions.push(forge_ver);
         }
     }
 

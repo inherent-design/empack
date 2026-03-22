@@ -127,6 +127,7 @@ pub async fn resolve_sync_action(
                 &dep.project_id,
                 dep.project_platform,
                 dep.version_pin.as_deref(),
+                None,
                 resolver,
             )
             .await?;
@@ -151,6 +152,7 @@ pub async fn resolve_add_contract(
     direct_project_id: &str,
     direct_platform: ProjectPlatform,
     version_pin: Option<&str>,
+    preferred_platform: Option<ProjectPlatform>,
     resolver: &dyn ProjectResolverTrait,
 ) -> std::result::Result<AddResolution, AddContractError> {
     // With the new schema, project_id and platform are always present.
@@ -169,7 +171,7 @@ pub async fn resolve_add_contract(
                 Some(project_type_arg(project_type)),
                 minecraft_version,
                 loader.map(loader_arg),
-                None,
+                preferred_platform,
             )
             .await
             .map_err(|source| AddContractError::ResolveProject {
