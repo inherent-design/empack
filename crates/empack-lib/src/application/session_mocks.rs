@@ -104,8 +104,18 @@ impl MockFileSystemProvider {
         let empack_yml = format!(
             r#"empack:
   dependencies:
-    - 'fabric_api: "Fabric API|mod"'
-    - 'sodium: "Sodium|mod"'
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
   minecraft_version: "{}"
   loader: {}
   name: "{}"
@@ -150,8 +160,18 @@ minecraft = "{}"
     pub fn with_configured_project(self, workdir: PathBuf) -> Self {
         let empack_yml = r#"empack:
   dependencies:
-    - 'fabric_api: "Fabric API|mod"'
-    - 'sodium: "Sodium|mod"'
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
   minecraft_version: "1.21.1"
   loader: fabric
   name: "Test Pack"
@@ -531,6 +551,7 @@ impl ProjectResolverTrait for MockProjectResolver {
         _project_type: Option<&str>,
         _minecraft_version: Option<&str>,
         _mod_loader: Option<&str>,
+        _preferred_platform: Option<crate::primitives::ProjectPlatform>,
     ) -> Pin<Box<dyn Future<Output = std::result::Result<ProjectInfo, SearchError>> + Send + '_>>
     {
         let responses = self.responses.clone();

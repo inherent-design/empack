@@ -718,7 +718,12 @@ mod handle_add_tests {
                         workdir.join("empack.yml"),
                         r#"empack:
   dependencies:
-    - 'sodium: "Sodium|mod"'
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
   minecraft_version: "1.21.1"
   loader: fabric
   name: "Test Pack"
@@ -928,7 +933,12 @@ mod handle_remove_tests {
                         workdir.join("empack.yml"),
                         r#"empack:
   dependencies:
-    - 'sodium: "Sodium|mod"'
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
   minecraft_version: "1.21.1"
   loader: fabric
   name: "Test Pack"
@@ -979,17 +989,7 @@ mod handle_sync_tests {
                     .with_configured_project(workdir.clone())
                     .with_installed_mods(installed_mods),
             )
-            .with_network(
-                MockNetworkProvider::new()
-                    .with_project_response(
-                        "Fabric API".to_string(),
-                        modrinth_project("fabric-api-id", "Fabric API"),
-                    )
-                    .with_project_response(
-                        "Sodium".to_string(),
-                        modrinth_project("sodium-id", "Sodium"),
-                    ),
-            )
+            .with_network(MockNetworkProvider::new())
             .with_process(
                 MockProcessProvider::new()
                     .with_packwiz_result(
@@ -997,7 +997,7 @@ mod handle_sync_tests {
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
-                            "fabric-api-id".to_string(),
+                            "P7dR8mSH".to_string(),
                             "-y".to_string(),
                         ],
                         Ok(ProcessOutput {
@@ -1011,7 +1011,7 @@ mod handle_sync_tests {
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
-                            "sodium-id".to_string(),
+                            "AANobbMI".to_string(),
                             "-y".to_string(),
                         ],
                         Ok(ProcessOutput {
@@ -1030,12 +1030,12 @@ mod handle_sync_tests {
         assert_eq!(calls.len(), 2);
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["modrinth", "add", "--project-id", "fabric-api-id", "-y"],
+            &["modrinth", "add", "--project-id", "P7dR8mSH", "-y"],
             &workdir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["modrinth", "add", "--project-id", "sodium-id", "-y"],
+            &["modrinth", "add", "--project-id", "AANobbMI", "-y"],
             &workdir.join("pack")
         ));
     }
@@ -1133,17 +1133,17 @@ mod handle_sync_tests {
     }
 
     #[tokio::test]
-    async fn it_preserves_curseforge_direct_id_and_version_override() {
+    async fn it_preserves_curseforge_direct_id_and_version_pin() {
         let workdir = mock_root().join("configured-project");
         let empack_yml = r#"empack:
   dependencies:
-    - 'jei: "Just Enough Items|mod"'
-  project_ids:
-    jei: "238222"
-  project_platforms:
-    jei: curseforge
-  version_overrides:
-    jei: "5678901"
+    jei:
+      status: resolved
+      title: Just Enough Items
+      platform: curseforge
+      project_id: "238222"
+      type: mod
+      version: "5678901"
   minecraft_version: "1.21.1"
   loader: forge
   name: "Test Pack"
@@ -1207,19 +1207,17 @@ forge = "47.3.0"
     }
 
     #[tokio::test]
-    async fn it_tries_multiple_version_overrides_until_one_succeeds() {
+    async fn it_uses_version_pin_for_modrinth_add() {
         let workdir = mock_root().join("configured-project");
         let empack_yml = r#"empack:
   dependencies:
-    - 'sodium: "Sodium|mod"'
-  project_ids:
-    sodium: "AANobbMI"
-  project_platforms:
-    sodium: modrinth
-  version_overrides:
     sodium:
-      - "bad-version"
-      - "good-version"
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
+      version: good-version
   minecraft_version: "1.21.1"
   loader: fabric
   name: "Test Pack"
@@ -1247,60 +1245,28 @@ fabric = "0.16.0"
                     .with_file(workdir.join("empack.yml"), empack_yml.to_string())
                     .with_file(workdir.join("pack").join("pack.toml"), pack_toml.to_string()),
             )
-            .with_process(
-                MockProcessProvider::new()
-                    .with_packwiz_result(
-                        vec![
-                            "modrinth".to_string(),
-                            "add".to_string(),
-                            "--project-id".to_string(),
-                            "AANobbMI".to_string(),
-                            "--version-id".to_string(),
-                            "bad-version".to_string(),
-                            "-y".to_string(),
-                        ],
-                        Ok(ProcessOutput {
-                            stdout: String::new(),
-                            stderr: "not found".to_string(),
-                            success: false,
-                        }),
-                    )
-                    .with_packwiz_result(
-                        vec![
-                            "modrinth".to_string(),
-                            "add".to_string(),
-                            "--project-id".to_string(),
-                            "AANobbMI".to_string(),
-                            "--version-id".to_string(),
-                            "good-version".to_string(),
-                            "-y".to_string(),
-                        ],
-                        Ok(ProcessOutput {
-                            stdout: String::new(),
-                            stderr: String::new(),
-                            success: true,
-                        }),
-                    ),
-            );
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "AANobbMI".to_string(),
+                    "--version-id".to_string(),
+                    "good-version".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
 
         let result = handle_sync(&session).await;
 
         assert!(result.is_ok());
         let calls = session.process_provider.get_calls();
-        assert_eq!(calls.len(), 2);
-        assert!(session.process_provider.verify_call(
-            "packwiz",
-            &[
-                "modrinth",
-                "add",
-                "--project-id",
-                "AANobbMI",
-                "--version-id",
-                "bad-version",
-                "-y",
-            ],
-            &workdir.join("pack")
-        ));
+        assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
             "packwiz",
             &[
@@ -1667,11 +1633,11 @@ fn test_render_add_contract_error_for_plan_failures() {
     let rendered = render_add_contract_error(&AddContractError::PlanPackwizAdd {
         project_id: "AANobbMI".to_string(),
         platform: ProjectPlatform::Modrinth,
-        source: crate::application::sync::AddCommandPlanError::EmptyVersionOverrideList,
+        source: crate::application::sync::AddCommandPlanError::InvalidPlan,
     });
 
     assert_eq!(rendered.item, "Failed to prepare add command");
-    assert_eq!(rendered.details, "modrinth project AANobbMI: version override list cannot be empty");
+    assert_eq!(rendered.details, "modrinth project AANobbMI: invalid packwiz add command plan");
 }
 
 // ===== BUILD TARGET VALIDATION TESTS (Slice 3) =====

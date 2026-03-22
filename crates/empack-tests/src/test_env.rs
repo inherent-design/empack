@@ -590,8 +590,18 @@ printf '\n' >> "{}"
         let empack_yml = format!(
             r#"empack:
   dependencies:
-    - fabric_api: "Fabric API|mod"
-    - sodium: "Sodium|mod"
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
   minecraft_version: "{}"
   loader: {}
   name: "{}"
@@ -864,6 +874,7 @@ impl ProjectResolverTrait for MockProjectResolver {
         _project_type: Option<&str>,
         _minecraft_version: Option<&str>,
         _mod_loader: Option<&str>,
+        _preferred_platform: Option<ProjectPlatform>,
     ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>> {
         let result = if let Some(project_info) = self.search_results.get(title) {
             Ok(project_info.clone())

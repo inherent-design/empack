@@ -1,4 +1,4 @@
-use crate::empack::config::{ProjectPlan, ProjectSpec, VersionOverride};
+use crate::empack::config::{ProjectPlan, ProjectSpec};
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::{ProjectResolverTrait, SearchError};
 use crate::primitives::{ProjectPlatform, ProjectType};
@@ -20,14 +20,13 @@ pub enum SyncPlanAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncDependencyPlan {
     pub key: String,
-    pub normalized_key: String,
     pub search_query: String,
     pub project_type: ProjectType,
     pub minecraft_version: String,
     pub loader: ModLoader,
-    pub project_id: Option<String>,
-    pub project_platform: Option<ProjectPlatform>,
-    pub version_override: Option<VersionOverride>,
+    pub project_id: String,
+    pub project_platform: ProjectPlatform,
+    pub version_pin: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,12 +73,8 @@ pub enum AddContractError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum AddCommandPlanError {
-    #[error("version override list cannot be empty")]
-    EmptyVersionOverrideList,
-}
-
-pub fn normalize_mod_key(key: &str) -> String {
-    key.to_lowercase().replace([' ', '-'], "_")
+    #[error("invalid packwiz add command plan")]
+    InvalidPlan,
 }
 
 pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<String>) -> SyncPlan {
@@ -87,16 +82,15 @@ pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<Stri
     let mut actions = Vec::new();
 
     for dep_spec in &project_plan.dependencies {
-        let normalized_key = normalize_mod_key(&dep_spec.key);
-        expected_mods.insert(normalized_key.clone());
+        let slug = dep_spec.key.clone();
+        expected_mods.insert(slug.clone());
 
-        if installed_mods.contains(&normalized_key) {
+        if installed_mods.contains(&slug) {
             continue;
         }
 
         actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(
             dep_spec,
-            normalized_key,
         )));
     }
 
@@ -130,9 +124,9 @@ pub async fn resolve_sync_action(
                 dep.project_type,
                 Some(dep.minecraft_version.as_str()),
                 Some(dep.loader),
-                dep.project_id.as_deref(),
+                &dep.project_id,
                 dep.project_platform,
-                dep.version_override.as_ref(),
+                dep.version_pin.as_deref(),
                 resolver,
             )
             .await?;
@@ -154,23 +148,17 @@ pub async fn resolve_add_contract(
     project_type: ProjectType,
     minecraft_version: Option<&str>,
     loader: Option<ModLoader>,
-    direct_project_id: Option<&str>,
-    direct_platform: Option<ProjectPlatform>,
-    version_override: Option<&VersionOverride>,
+    direct_project_id: &str,
+    direct_platform: ProjectPlatform,
+    version_pin: Option<&str>,
     resolver: &dyn ProjectResolverTrait,
 ) -> std::result::Result<AddResolution, AddContractError> {
-    let (project_id, platform, title, confidence) = if let Some(project_id) = direct_project_id {
-        let platform = direct_platform.ok_or_else(|| AddContractError::ResolveProject {
-            query: search_query.to_string(),
-            source: SearchError::Other(anyhow::anyhow!(
-                "project_id '{}' is pinned in empack.yml but project_platform is not set; \
-                 add `project_platform: modrinth` or `project_platform: curseforge`",
-                project_id
-            )),
-        })?;
+    // With the new schema, project_id and platform are always present.
+    // Use them directly for resolution.
+    let (project_id, platform, title, confidence) = if !direct_project_id.is_empty() {
         (
-            project_id.to_string(),
-            platform,
+            direct_project_id.to_string(),
+            direct_platform,
             search_query.to_string(),
             None,
         )
@@ -181,6 +169,7 @@ pub async fn resolve_add_contract(
                 Some(project_type_arg(project_type)),
                 minecraft_version,
                 loader.map(loader_arg),
+                None,
             )
             .await
             .map_err(|source| AddContractError::ResolveProject {
@@ -196,7 +185,7 @@ pub async fn resolve_add_contract(
     };
 
     let commands =
-        build_packwiz_add_commands(&project_id, platform, version_override).map_err(|source| {
+        build_packwiz_add_commands(&project_id, platform, version_pin).map_err(|source| {
             AddContractError::PlanPackwizAdd {
                 project_id: project_id.clone(),
                 platform,
@@ -216,7 +205,7 @@ pub async fn resolve_add_contract(
 pub fn build_packwiz_add_commands(
     project_id: &str,
     platform: ProjectPlatform,
-    version_override: Option<&VersionOverride>,
+    version_pin: Option<&str>,
 ) -> std::result::Result<Vec<Vec<String>>, AddCommandPlanError> {
     let (platform_cmd, id_flag, version_flag) = match platform {
         ProjectPlatform::Modrinth => ("modrinth", "--project-id", "--version-id"),
@@ -230,18 +219,11 @@ pub fn build_packwiz_add_commands(
         project_id.to_string(),
     ];
 
-    match version_override {
+    match version_pin {
         None => Ok(vec![append_yes(base)]),
-        Some(VersionOverride::Single(version)) => {
+        Some(version) => {
             Ok(vec![append_yes(with_version(base, version_flag, version))])
         }
-        Some(VersionOverride::Multiple(versions)) if versions.is_empty() => {
-            Err(AddCommandPlanError::EmptyVersionOverrideList)
-        }
-        Some(VersionOverride::Multiple(versions)) => Ok(versions
-            .iter()
-            .map(|version| append_yes(with_version(base.clone(), version_flag, version)))
-            .collect()),
     }
 }
 
@@ -257,7 +239,7 @@ fn with_version(command: Vec<String>, version_flag: &str, version: &str) -> Vec<
     command
 }
 
-fn project_type_arg(project_type: ProjectType) -> &'static str {
+pub fn project_type_arg(project_type: ProjectType) -> &'static str {
     match project_type {
         ProjectType::Mod => "mod",
         ProjectType::Datapack => "datapack",
@@ -266,7 +248,7 @@ fn project_type_arg(project_type: ProjectType) -> &'static str {
     }
 }
 
-fn loader_arg(loader: ModLoader) -> &'static str {
+pub fn loader_arg(loader: ModLoader) -> &'static str {
     match loader {
         ModLoader::Fabric => "fabric",
         ModLoader::Forge => "forge",
@@ -276,17 +258,16 @@ fn loader_arg(loader: ModLoader) -> &'static str {
 }
 
 impl SyncDependencyPlan {
-    fn from_spec(dep_spec: &ProjectSpec, normalized_key: String) -> Self {
+    fn from_spec(dep_spec: &ProjectSpec) -> Self {
         Self {
             key: dep_spec.key.clone(),
-            normalized_key,
             search_query: dep_spec.search_query.clone(),
             project_type: dep_spec.project_type,
             minecraft_version: dep_spec.minecraft_version.clone(),
             loader: dep_spec.loader,
             project_id: dep_spec.project_id.clone(),
             project_platform: dep_spec.project_platform,
-            version_override: dep_spec.version_override.clone(),
+            version_pin: dep_spec.version_pin.clone(),
         }
     }
 }

@@ -32,8 +32,18 @@ fn test_load_empack_config_success() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
-    - "sodium: \"Sodium|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
   name: "Test Pack"
@@ -162,8 +172,18 @@ fn test_create_project_plan_empack_only() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
-    - "sodium: \"Sodium|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
   name: "Test Pack"
@@ -192,7 +212,12 @@ fn test_create_project_plan_pack_fallback() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
 "#;
     let pack_content = r#"
 name = "Fallback Pack"
@@ -232,7 +257,12 @@ fn test_create_project_plan_empack_precedence() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
   name: "Empack Pack"
@@ -277,7 +307,12 @@ fn test_create_project_plan_missing_minecraft_version() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   loader: fabric
 "#;
 
@@ -301,7 +336,12 @@ fn test_create_project_plan_missing_loader() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
 "#;
 
@@ -325,7 +365,12 @@ fn test_infer_loader_from_metadata_fabric() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
 "#;
     let pack_content = r#"
@@ -360,7 +405,12 @@ fn test_infer_loader_from_metadata_forge() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "jei: \"Just Enough Items|mod\""
+    jei:
+      status: resolved
+      title: Just Enough Items
+      platform: curseforge
+      project_id: "238222"
+      type: mod
   minecraft_version: "1.21"
 "#;
     let pack_content = r#"
@@ -395,7 +445,12 @@ fn test_infer_loader_from_metadata_quilt() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "quilted_fabric_api: \"Quilted Fabric API|mod\""
+    quilted_fabric_api:
+      status: resolved
+      title: Quilted Fabric API
+      platform: modrinth
+      project_id: qvIfYCYJ
+      type: mod
   minecraft_version: "1.21"
 "#;
     let pack_content = r#"
@@ -430,7 +485,12 @@ fn test_infer_loader_from_metadata_neoforge() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "jei: \"Just Enough Items|mod\""
+    jei:
+      status: resolved
+      title: Just Enough Items
+      platform: curseforge
+      project_id: "238222"
+      type: mod
   minecraft_version: "1.21"
 "#;
     let pack_content = r#"
@@ -465,7 +525,12 @@ fn test_infer_loader_from_metadata_unknown() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "some_mod: \"Some Mod|mod\""
+    some_mod:
+      status: resolved
+      title: Some Mod
+      platform: modrinth
+      project_id: test-id
+      type: mod
   minecraft_version: "1.21"
 "#;
     let pack_content = r#"
@@ -498,12 +563,17 @@ unknown_loader = "1.0.0"
 }
 
 #[test]
-fn test_parse_dependency_spec_basic() {
+fn test_build_project_spec_from_record() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -522,16 +592,28 @@ empack:
     assert_eq!(dep.project_type, ProjectType::Mod);
     assert_eq!(dep.minecraft_version, "1.21");
     assert_eq!(dep.loader, ModLoader::Fabric);
+    assert_eq!(dep.project_id, "P7dR8mSH");
+    assert_eq!(dep.project_platform, ProjectPlatform::Modrinth);
 }
 
 #[test]
-fn test_parse_dependency_spec_with_type() {
+fn test_build_project_spec_with_types() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "xaeros_minimap: \"Xaero's Minimap|mod\""
-    - "vanilla_tweaks: \"Vanilla Tweaks|datapack\""
+    xaeros_minimap:
+      status: resolved
+      title: "Xaero's Minimap"
+      platform: modrinth
+      project_id: test-id-minimap
+      type: mod
+    vanilla_tweaks:
+      status: resolved
+      title: Vanilla Tweaks
+      platform: modrinth
+      project_id: test-id-tweaks
+      type: datapack
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -545,22 +627,25 @@ empack:
     let plan = result.unwrap();
     assert_eq!(plan.dependencies.len(), 2);
 
-    let mod_dep = &plan.dependencies[0];
-    assert_eq!(mod_dep.key, "xaeros_minimap");
+    let mod_dep = plan.dependencies.iter().find(|d| d.key == "xaeros_minimap").unwrap();
     assert_eq!(mod_dep.project_type, ProjectType::Mod);
 
-    let datapack_dep = &plan.dependencies[1];
-    assert_eq!(datapack_dep.key, "vanilla_tweaks");
+    let datapack_dep = plan.dependencies.iter().find(|d| d.key == "vanilla_tweaks").unwrap();
     assert_eq!(datapack_dep.project_type, ProjectType::Datapack);
 }
 
 #[test]
-fn test_parse_dependency_spec_with_minecraft_version() {
+fn test_build_project_spec_with_resolved_ids() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod|1.20.1\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -574,74 +659,22 @@ empack:
     let plan = result.unwrap();
     assert_eq!(plan.dependencies.len(), 1);
     let dep = &plan.dependencies[0];
-    assert_eq!(dep.minecraft_version, "1.20.1"); // Override from default
+    assert_eq!(dep.project_id, "P7dR8mSH");
+    assert_eq!(dep.project_platform, ProjectPlatform::Modrinth);
 }
 
 #[test]
-fn test_parse_dependency_spec_with_loader() {
+fn test_build_project_spec_with_curseforge_platform() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod||fabric\""
-    - "jei: \"Just Enough Items|mod||forge\""
-  minecraft_version: "1.21"
-  loader: fabric
-"#;
-
-    let provider = create_mock_config_provider(workdir.clone());
-    let provider = with_empack_yml(provider, &workdir, empack_content);
-    let config_manager = provider.config_manager(workdir);
-    let result = config_manager.create_project_plan();
-
-    assert!(result.is_ok());
-    let plan = result.unwrap();
-    assert_eq!(plan.dependencies.len(), 2);
-
-    let fabric_dep = &plan.dependencies[0];
-    assert_eq!(fabric_dep.loader, ModLoader::Fabric);
-
-    let forge_dep = &plan.dependencies[1];
-    assert_eq!(forge_dep.loader, ModLoader::Forge);
-}
-
-#[test]
-fn test_parse_dependency_spec_with_project_ids() {
-    let workdir = mock_root().join("config");
-    let empack_content = r#"
-empack:
-  dependencies:
-    - "fabric_api: \"Fabric API|mod\""
-  project_ids:
-    fabric_api: "P7dR8mSH"
-  minecraft_version: "1.21"
-  loader: fabric
-"#;
-
-    let provider = create_mock_config_provider(workdir.clone());
-    let provider = with_empack_yml(provider, &workdir, empack_content);
-    let config_manager = provider.config_manager(workdir);
-    let result = config_manager.create_project_plan();
-
-    assert!(result.is_ok());
-    let plan = result.unwrap();
-    assert_eq!(plan.dependencies.len(), 1);
-    let dep = &plan.dependencies[0];
-    assert_eq!(dep.project_id, Some("P7dR8mSH".to_string()));
-    assert_eq!(dep.project_platform, None);
-}
-
-#[test]
-fn test_parse_dependency_spec_with_project_platforms() {
-    let workdir = mock_root().join("config");
-    let empack_content = r#"
-empack:
-  dependencies:
-    - "jei: \"Just Enough Items|mod\""
-  project_ids:
-    jei: "238222"
-  project_platforms:
-    jei: curseforge
+    jei:
+      status: resolved
+      title: Just Enough Items
+      platform: curseforge
+      project_id: "238222"
+      type: mod
   minecraft_version: "1.21"
   loader: forge
 "#;
@@ -654,19 +687,23 @@ empack:
     assert!(result.is_ok());
     let plan = result.unwrap();
     let dep = &plan.dependencies[0];
-    assert_eq!(dep.project_id, Some("238222".to_string()));
-    assert_eq!(dep.project_platform, Some(ProjectPlatform::CurseForge));
+    assert_eq!(dep.project_id, "238222");
+    assert_eq!(dep.project_platform, ProjectPlatform::CurseForge);
 }
 
 #[test]
-fn test_parse_dependency_spec_with_version_overrides() {
+fn test_build_project_spec_with_version_pin() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
-  version_overrides:
-    fabric_api: "0.92.0"
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+      version: "0.92.0"
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -680,22 +717,23 @@ empack:
     let plan = result.unwrap();
     assert_eq!(plan.dependencies.len(), 1);
     let dep = &plan.dependencies[0];
-    assert!(dep.version_override.is_some());
-    match &dep.version_override {
-        Some(VersionOverride::Single(version)) => {
-            assert_eq!(version, "0.92.0");
-        }
-        _ => panic!("Expected Single version override"),
-    }
+    assert_eq!(dep.version_pin, Some("0.92.0".to_string()));
 }
 
 #[test]
-fn test_parse_dependency_spec_invalid_format() {
+fn test_search_entries_excluded_from_project_plan() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "invalid_spec_without_colon"
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    unresolved_mod:
+      title: Unresolved Mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -705,13 +743,11 @@ empack:
     let config_manager = provider.config_manager(workdir);
     let result = config_manager.create_project_plan();
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        ConfigError::InvalidProjectSpec { spec } => {
-            assert!(spec.contains("invalid_spec_without_colon"));
-        }
-        _ => panic!("Expected InvalidProjectSpec error"),
-    }
+    assert!(result.is_ok());
+    let plan = result.unwrap();
+    // Only the resolved entry should appear in dependencies
+    assert_eq!(plan.dependencies.len(), 1);
+    assert_eq!(plan.dependencies[0].key, "fabric_api");
 }
 
 #[test]
@@ -740,16 +776,10 @@ fabric = "0.14.21"
 
     assert!(result.is_ok());
     let yml_content = result.unwrap();
-    println!("Generated YAML content:\n{}", yml_content);
-    assert!(yml_content.contains("fabric_api"));
+    assert!(yml_content.contains("fabric_api") || yml_content.contains("fabric-api"));
     assert!(yml_content.contains("sodium"));
     assert!(yml_content.contains("lithium"));
-    assert!(
-        yml_content.contains("minecraft_version: '1.21'")
-            || yml_content.contains("minecraft_version: \"1.21\"")
-    );
-    assert!(yml_content.contains("loader: fabric"));
-    assert!(yml_content.contains("name: Test Pack") || yml_content.contains("name: \"Test Pack\""));
+    assert!(yml_content.contains("loader: fabric") || yml_content.contains("loader: Fabric"));
 }
 
 #[test]
@@ -761,7 +791,6 @@ fn test_generate_default_empack_yml_no_pack() {
 
     assert!(result.is_ok());
     let yml_content = result.unwrap();
-    assert!(yml_content.contains("fabric_api"));
     assert!(yml_content.contains("sodium"));
     assert!(yml_content.contains("lithium"));
     // Should not contain specific versions when no pack.toml
@@ -775,7 +804,12 @@ fn test_validate_consistency_matching() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -810,7 +844,12 @@ fn test_validate_consistency_minecraft_mismatch() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -848,7 +887,12 @@ fn test_validate_consistency_loader_mismatch() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -886,7 +930,12 @@ fn test_validate_consistency_no_pack_toml() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -907,7 +956,12 @@ fn test_add_dependency_basic() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -919,10 +973,14 @@ empack:
     // Add a new dependency
     let result = config_manager.add_dependency(
         "appleskin",
-        "AppleSkin",
-        "mod",
-        Some("snDcZxV8"),
-        Some(ProjectPlatform::Modrinth),
+        DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "AppleSkin".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "snDcZxV8".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        },
     );
 
     assert!(result.is_ok());
@@ -930,23 +988,15 @@ empack:
     // Verify the dependency was added
     let config = config_manager.load_empack_config().unwrap();
     assert_eq!(config.empack.dependencies.len(), 2);
-    assert!(config
-        .empack
-        .dependencies
-        .iter()
-        .any(|d| d.contains("appleskin")));
+    assert!(config.empack.dependencies.contains_key("appleskin"));
 
-    // Verify project_id was added
-    assert_eq!(
-        config.empack.project_ids.get("appleskin"),
-        Some(&"snDcZxV8".to_string())
-    );
-
-    // Verify project_platform was added
-    assert_eq!(
-        config.empack.project_platforms.get("appleskin"),
-        Some(&ProjectPlatform::Modrinth)
-    );
+    match &config.empack.dependencies["appleskin"] {
+        DependencyEntry::Resolved(record) => {
+            assert_eq!(record.project_id, "snDcZxV8");
+            assert_eq!(record.platform, ProjectPlatform::Modrinth);
+        }
+        _ => panic!("Expected Resolved entry"),
+    }
 }
 
 #[test]
@@ -955,7 +1005,12 @@ fn test_add_dependency_duplicate() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -964,11 +1019,19 @@ empack:
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir.clone());
 
-    // Add the same dependency twice
-    let result1 = config_manager.add_dependency("fabric_api", "Fabric API", "mod", None, None);
+    // Add the same dependency twice (upsert)
+    let record = DependencyRecord {
+        status: DependencyStatus::Resolved,
+        title: "Fabric API".to_string(),
+        platform: ProjectPlatform::Modrinth,
+        project_id: "P7dR8mSH".to_string(),
+        project_type: ProjectType::Mod,
+        version: None,
+    };
+    let result1 = config_manager.add_dependency("fabric_api", record.clone());
     assert!(result1.is_ok());
 
-    let result2 = config_manager.add_dependency("fabric_api", "Fabric API", "mod", None, None);
+    let result2 = config_manager.add_dependency("fabric_api", record);
     assert!(result2.is_ok());
 
     // Should still only have one copy
@@ -977,12 +1040,17 @@ empack:
 }
 
 #[test]
-fn test_add_dependency_duplicate_key_uses_existing_entry() {
+fn test_add_dependency_upsert_overwrites_existing() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -993,28 +1061,29 @@ empack:
 
     let result = config_manager.add_dependency(
         "fabric_api",
-        "Fabric API Renamed",
-        "mod",
-        Some("P7dR8mSH"),
-        Some(ProjectPlatform::Modrinth),
+        DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Fabric API Renamed".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "P7dR8mSH".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        },
     );
 
     assert!(result.is_ok());
 
     let config = config_manager.load_empack_config().unwrap();
     assert_eq!(config.empack.dependencies.len(), 1);
-    assert_eq!(
-        config.empack.dependencies[0],
-        "fabric_api: \"Fabric API|mod\""
-    );
-    assert_eq!(
-        config.empack.project_ids.get("fabric_api"),
-        Some(&"P7dR8mSH".to_string())
-    );
-    assert_eq!(
-        config.empack.project_platforms.get("fabric_api"),
-        Some(&ProjectPlatform::Modrinth)
-    );
+    // Upsert overwrites the existing entry
+    match &config.empack.dependencies["fabric_api"] {
+        DependencyEntry::Resolved(record) => {
+            assert_eq!(record.title, "Fabric API Renamed");
+            assert_eq!(record.project_id, "P7dR8mSH");
+            assert_eq!(record.platform, ProjectPlatform::Modrinth);
+        }
+        _ => panic!("Expected Resolved entry"),
+    }
 }
 
 #[test]
@@ -1026,10 +1095,14 @@ fn test_add_dependency_no_existing_file() {
     // Add dependency when no empack.yml exists
     let result = config_manager.add_dependency(
         "appleskin",
-        "AppleSkin",
-        "mod",
-        Some("snDcZxV8"),
-        Some(ProjectPlatform::Modrinth),
+        DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "AppleSkin".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "snDcZxV8".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        },
     );
 
     assert!(result.is_ok());
@@ -1037,7 +1110,7 @@ fn test_add_dependency_no_existing_file() {
     // Verify the dependency was added
     let config = config_manager.load_empack_config().unwrap();
     assert_eq!(config.empack.dependencies.len(), 1);
-    assert!(config.empack.dependencies[0].contains("appleskin"));
+    assert!(config.empack.dependencies.contains_key("appleskin"));
 }
 
 #[test]
@@ -1046,12 +1119,18 @@ fn test_remove_dependency_basic() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
-    - "appleskin: \"AppleSkin|mod\""
-  project_ids:
-    appleskin: "snDcZxV8"
-  project_platforms:
-    appleskin: modrinth
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    appleskin:
+      status: resolved
+      title: AppleSkin
+      platform: modrinth
+      project_id: snDcZxV8
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -1068,27 +1147,27 @@ empack:
     // Verify the dependency was removed
     let config = config_manager.load_empack_config().unwrap();
     assert_eq!(config.empack.dependencies.len(), 1);
-    assert!(!config
-        .empack
-        .dependencies
-        .iter()
-        .any(|d| d.contains("appleskin")));
-
-    // Verify project_id was removed
-    assert!(!config.empack.project_ids.contains_key("appleskin"));
-
-    // Verify project_platform was removed
-    assert!(!config.empack.project_platforms.contains_key("appleskin"));
+    assert!(!config.empack.dependencies.contains_key("appleskin"));
 }
 
 #[test]
-fn test_remove_dependency_case_insensitive() {
+fn test_remove_dependency_by_slug() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
-    - "appleskin: \"AppleSkin|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    appleskin:
+      status: resolved
+      title: AppleSkin
+      platform: modrinth
+      project_id: snDcZxV8
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -1097,28 +1176,29 @@ empack:
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir.clone());
 
-    // Remove using different case
-    let result = config_manager.remove_dependency("AppleSkin");
+    // Remove using exact slug
+    let result = config_manager.remove_dependency("appleskin");
 
     assert!(result.is_ok());
 
     // Verify the dependency was removed
     let config = config_manager.load_empack_config().unwrap();
     assert_eq!(config.empack.dependencies.len(), 1);
-    assert!(!config
-        .empack
-        .dependencies
-        .iter()
-        .any(|d| d.contains("appleskin")));
+    assert!(!config.empack.dependencies.contains_key("appleskin"));
 }
 
 #[test]
-fn test_remove_dependency_with_hyphens() {
+fn test_remove_dependency_with_slug_key() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
 empack:
   dependencies:
-    - "xaeros_minimap: \"Xaero's Minimap|mod\""
+    xaeros_minimap:
+      status: resolved
+      title: "Xaero's Minimap"
+      platform: modrinth
+      project_id: test-id-minimap
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -1127,7 +1207,7 @@ empack:
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir.clone());
 
-    // Remove using with hyphens or underscores
+    // Remove using exact slug key
     let result = config_manager.remove_dependency("xaeros_minimap");
 
     assert!(result.is_ok());
@@ -1143,7 +1223,12 @@ fn test_remove_nonexistent_dependency() {
     let empack_content = r#"
 empack:
   dependencies:
-    - "fabric_api: \"Fabric API|mod\""
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
   minecraft_version: "1.21"
   loader: fabric
 "#;

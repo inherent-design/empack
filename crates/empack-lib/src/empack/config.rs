@@ -43,6 +43,12 @@ pub enum ConfigError {
 
     #[error("Configuration validation error: {reason}")]
     ValidationError { reason: String },
+
+    #[error("Ambiguous removal: '{query}' matches multiple dependencies: {matches:?}")]
+    AmbiguousRemoval {
+        query: String,
+        matches: Vec<String>,
+    },
 }
 
 /// Top-level empack.yml configuration
@@ -51,24 +57,91 @@ pub struct EmpackConfig {
     pub empack: EmpackProjectConfig,
 }
 
+/// Discriminator for resolved dependency entries
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DependencyStatus {
+    Resolved,
+}
+
+/// A fully resolved dependency entry in empack.yml
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DependencyRecord {
+    /// Status discriminator (always "resolved")
+    pub status: DependencyStatus,
+
+    /// Display name for UI (e.g., "Sodium")
+    pub title: String,
+
+    /// Canonical provider: modrinth or curseforge
+    pub platform: ProjectPlatform,
+
+    /// Canonical provider project ID (e.g., "AANobbMI" or "306612")
+    pub project_id: String,
+
+    /// Resource type
+    #[serde(default = "default_project_type")]
+    #[serde(rename = "type")]
+    pub project_type: ProjectType,
+
+    /// Optional pinned version ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+/// Hand-written search stub, resolved to DependencyRecord on sync
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DependencySearch {
+    pub title: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type")]
+    pub project_type: Option<ProjectType>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<ProjectPlatform>,
+}
+
+/// A dependency entry that is either a resolved record or a search stub
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DependencyEntry {
+    Resolved(DependencyRecord),
+    Search(DependencySearch),
+}
+
+/// Common accessors for any dependency variant
+pub trait Dependency {
+    fn title(&self) -> &str;
+    fn project_type(&self) -> Option<ProjectType>;
+}
+
+impl Dependency for DependencyEntry {
+    fn title(&self) -> &str {
+        match self {
+            DependencyEntry::Resolved(r) => &r.title,
+            DependencyEntry::Search(s) => &s.title,
+        }
+    }
+
+    fn project_type(&self) -> Option<ProjectType> {
+        match self {
+            DependencyEntry::Resolved(r) => Some(r.project_type),
+            DependencyEntry::Search(s) => s.project_type,
+        }
+    }
+}
+
+fn default_project_type() -> ProjectType {
+    ProjectType::Mod
+}
+
 /// Project configuration within empack.yml
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EmpackProjectConfig {
-    /// User-defined dependencies with search specifications
+    /// Dependencies keyed by slug (= packwiz .pw.toml filename stem)
     #[serde(default)]
-    pub dependencies: Vec<String>,
-
-    /// Optional project ID mappings for performance
-    #[serde(default)]
-    pub project_ids: HashMap<String, String>,
-
-    /// Optional project platform mappings for direct lookups
-    #[serde(default)]
-    pub project_platforms: HashMap<String, ProjectPlatform>,
-
-    /// Optional version overrides
-    #[serde(default)]
-    pub version_overrides: HashMap<String, VersionOverride>,
+    pub dependencies: HashMap<String, DependencyEntry>,
 
     /// Target Minecraft version (if not specified, extracted from pack.toml)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -87,14 +160,6 @@ pub struct EmpackProjectConfig {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-}
-
-/// Version override can be single version or list of compatible versions
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum VersionOverride {
-    Single(String),
-    Multiple(Vec<String>),
 }
 
 /// Packwiz pack.toml metadata for fallback values
@@ -136,13 +201,13 @@ pub struct ProjectPlan {
     pub dependencies: Vec<ProjectSpec>,
 }
 
-/// Project specification parsed from dependency string
+/// Project specification derived from a DependencyRecord + plan context
 #[derive(Debug, Clone)]
 pub struct ProjectSpec {
-    /// Internal reference key
+    /// Slug key (= packwiz filename stem)
     pub key: String,
 
-    /// Search query for Modrinth
+    /// Search query (= title from record)
     pub search_query: String,
 
     /// Project type filter
@@ -154,14 +219,14 @@ pub struct ProjectSpec {
     /// Target mod loader (defaults to plan loader)
     pub loader: ModLoader,
 
-    /// Optional project ID for direct lookup
-    pub project_id: Option<String>,
+    /// Required project ID (from DependencyRecord)
+    pub project_id: String,
 
-    /// Optional project platform for direct lookup
-    pub project_platform: Option<ProjectPlatform>,
+    /// Required project platform (from DependencyRecord)
+    pub project_platform: ProjectPlatform,
 
-    /// Optional version override
-    pub version_override: Option<VersionOverride>,
+    /// Optional pinned version
+    pub version_pin: Option<String>,
 }
 
 /// Configuration manager bridging empack.yml and pack.toml
@@ -273,16 +338,18 @@ impl<'a> ConfigManager<'a> {
             "latest".to_string() // Fallback when no pack.toml
         };
 
-        // Parse dependency specifications
+        // Build project specs from resolved dependency records only
         let mut dependencies = Vec::new();
-        for dep_string in &empack_config.empack.dependencies {
-            let spec = self.parse_dependency_spec(
-                dep_string,
-                &minecraft_version,
-                &loader,
-                &empack_config.empack,
-            )?;
-            dependencies.push(spec);
+        for (slug, entry) in &empack_config.empack.dependencies {
+            if let DependencyEntry::Resolved(record) = entry {
+                let spec = self.build_project_spec_from_record(
+                    slug,
+                    record,
+                    &minecraft_version,
+                    &loader,
+                );
+                dependencies.push(spec);
+            }
         }
 
         Ok(ProjectPlan {
@@ -348,91 +415,24 @@ impl<'a> ConfigManager<'a> {
             })
     }
 
-    /// Parse dependency specification string
-    /// Format: "key: search_query|project_type|minecraft_version|loader"
-    fn parse_dependency_spec(
+    /// Build a ProjectSpec from a DependencyRecord and plan defaults
+    fn build_project_spec_from_record(
         &self,
-        dep_string: &str,
+        slug: &str,
+        record: &DependencyRecord,
         default_minecraft: &str,
         default_loader: &ModLoader,
-        empack_config: &EmpackProjectConfig,
-    ) -> Result<ProjectSpec, ConfigError> {
-        // Handle YAML array format: "- key: value"
-        let clean_string = dep_string.trim_start_matches('-').trim();
-
-        // Split on colon to get key and value
-        let parts: Vec<&str> = clean_string.splitn(2, ':').collect();
-        if parts.len() != 2 {
-            return Err(ConfigError::InvalidProjectSpec {
-                spec: dep_string.to_string(),
-            });
+    ) -> ProjectSpec {
+        ProjectSpec {
+            key: slug.to_string(),
+            search_query: record.title.clone(),
+            project_type: record.project_type,
+            minecraft_version: default_minecraft.to_string(),
+            loader: *default_loader,
+            project_id: record.project_id.clone(),
+            project_platform: record.platform,
+            version_pin: record.version.clone(),
         }
-
-        let key = parts[0].trim().to_string();
-        let value = parts[1].trim().trim_matches('"');
-
-        // Parse value components separated by pipes
-        let components: Vec<&str> = value.split('|').collect();
-        if components.is_empty() {
-            return Err(ConfigError::InvalidProjectSpec {
-                spec: dep_string.to_string(),
-            });
-        }
-
-        let search_query = components[0].trim().to_string();
-
-        // Parse project type (default to mod)
-        let project_type = if components.len() > 1 {
-            match components[1].trim().to_lowercase().as_str() {
-                "mod" => ProjectType::Mod,
-                "datapack" => ProjectType::Datapack,
-                "resourcepack" | "resource_pack" => ProjectType::ResourcePack,
-                "shader" => ProjectType::Shader,
-                _ => ProjectType::Mod, // Default fallback
-            }
-        } else {
-            ProjectType::Mod
-        };
-
-        // Parse Minecraft version (default to plan version)
-        let minecraft_version = if components.len() > 2 && !components[2].trim().is_empty() {
-            components[2].trim().to_string()
-        } else {
-            default_minecraft.to_string()
-        };
-
-        // Parse loader (default to plan loader)
-        let loader = if components.len() > 3 && !components[3].trim().is_empty() {
-            match components[3].trim().to_lowercase().as_str() {
-                "fabric" => ModLoader::Fabric,
-                "forge" => ModLoader::Forge,
-                "quilt" => ModLoader::Quilt,
-                "neoforge" => ModLoader::NeoForge,
-                _ => *default_loader,
-            }
-        } else {
-            *default_loader
-        };
-
-        // Look up project ID mapping
-        let project_id = empack_config.project_ids.get(&key).cloned();
-
-        // Look up project platform mapping
-        let project_platform = empack_config.project_platforms.get(&key).copied();
-
-        // Look up version override
-        let version_override = empack_config.version_overrides.get(&key).cloned();
-
-        Ok(ProjectSpec {
-            key,
-            search_query,
-            project_type,
-            minecraft_version,
-            loader,
-            project_id,
-            project_platform,
-            version_override,
-        })
     }
 
     /// Generate default empack.yml content based on available metadata
@@ -448,18 +448,35 @@ impl<'a> ConfigManager<'a> {
             (None, None) // Let user specify
         };
 
+        let mut deps = HashMap::new();
+        deps.insert("sodium".to_string(), DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Sodium".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        }));
+        deps.insert("lithium".to_string(), DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Lithium".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "gvQqBUqZ".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        }));
+        deps.insert("fabric-api".to_string(), DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Fabric API".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "P7dR8mSH".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        }));
+
         let config = EmpackConfig {
             empack: EmpackProjectConfig {
-                dependencies: vec![
-                    "fabric_api: \"Fabric API|mod\"".to_string(),
-                    "sodium: \"Sodium|mod\"".to_string(),
-                    "lithium: \"Lithium|mod\"".to_string(),
-                    "appleskin: \"AppleSkin|mod\"".to_string(),
-                    "jade: \"Jade|mod\"".to_string(),
-                ],
-                project_ids: HashMap::new(),
-                project_platforms: HashMap::new(),
-                version_overrides: HashMap::new(),
+                dependencies: deps,
                 minecraft_version,
                 loader,
                 name: pack_metadata.as_ref().map(|m| m.name.clone()),
@@ -506,30 +523,15 @@ impl<'a> ConfigManager<'a> {
 
     /// Add a dependency to empack.yml
     ///
-    /// This is the atomic counterpart to packwiz install. After packwiz successfully
-    /// installs a mod, call this to update empack.yml.
-    ///
-    /// # Arguments
-    /// * `key` - The dependency key (slug format, e.g., "appleskin")
-    /// * `title` - The mod title (e.g., "AppleSkin")
-    /// * `project_type` - The project type (defaults to "mod")
-    /// * `project_id` - Optional project ID to cache for faster lookups
-    /// * `project_platform` - Optional platform the mod was resolved from
-    pub fn add_dependency(
-        &self,
-        key: &str,
-        title: &str,
-        project_type: &str,
-        project_id: Option<&str>,
-        project_platform: Option<ProjectPlatform>,
-    ) -> Result<(), ConfigError> {
+    /// Inserts a DependencyRecord keyed by slug. If the slug already exists,
+    /// it is overwritten (upsert).
+    pub fn add_dependency(&self, slug: &str, record: DependencyRecord) -> Result<(), ConfigError> {
         let empack_path = self.workdir.join("empack.yml");
 
         // Load existing config or create new one
         let mut config = match self.load_empack_config() {
             Ok(cfg) => cfg,
             Err(ConfigError::MissingField { .. }) => {
-                // Create default config if file doesn't exist
                 EmpackConfig {
                     empack: EmpackProjectConfig::default(),
                 }
@@ -537,35 +539,10 @@ impl<'a> ConfigManager<'a> {
             Err(e) => return Err(e),
         };
 
-        // Build dependency string: "key: \"Title|type\""
-        let dep_string = format!("{}: \"{}|{}\"", key, title, project_type);
-
-        // Only add if no dependency with the same key is already present
-        let dependency_prefix = format!("{key}:");
-        if !config
+        config
             .empack
             .dependencies
-            .iter()
-            .any(|dependency| dependency.starts_with(&dependency_prefix))
-        {
-            config.empack.dependencies.push(dep_string);
-        }
-
-        // Update project_ids if provided
-        if let Some(pid) = project_id {
-            config
-                .empack
-                .project_ids
-                .insert(key.to_string(), pid.to_string());
-        }
-
-        // Update project_platforms if provided
-        if let Some(platform) = project_platform {
-            config
-                .empack
-                .project_platforms
-                .insert(key.to_string(), platform);
-        }
+            .insert(slug.to_string(), DependencyEntry::Resolved(record));
 
         // Serialize and write back
         let yaml_content = serde_saphyr::to_string(&config)
@@ -580,61 +557,40 @@ impl<'a> ConfigManager<'a> {
         Ok(())
     }
 
-    /// Remove a dependency from empack.yml
+    /// Remove a dependency from empack.yml by slug or display title
     ///
-    /// This is the atomic counterpart to packwiz remove. After packwiz successfully
-    /// removes a mod, call this to update empack.yml.
-    ///
-    /// This method also cleans up associated entries in project_ids and project_platforms.
-    ///
-    /// # Arguments
-    /// * `key` - The dependency key to remove (will match against existing keys)
-    pub fn remove_dependency(&self, key: &str) -> Result<(), ConfigError> {
+    /// Tries direct slug lookup first (O(1)). If that misses, falls back to a
+    /// case-insensitive scan over `Dependency::title()`. Returns an error when
+    /// multiple titles match (ambiguous).
+    pub fn remove_dependency(&self, slug_or_title: &str) -> Result<(), ConfigError> {
         let empack_path = self.workdir.join("empack.yml");
 
-        // Load existing config
         let mut config = self.load_empack_config()?;
 
-        // Normalize the key for comparison
-        let normalized_key = key.to_lowercase().replace([' ', '-'], "_");
+        // Try direct slug lookup first
+        if config.empack.dependencies.remove(slug_or_title).is_none() {
+            // Fallback: case-insensitive title scan
+            let matches: Vec<String> = config
+                .empack
+                .dependencies
+                .iter()
+                .filter(|(_, entry)| entry.title().eq_ignore_ascii_case(slug_or_title))
+                .map(|(key, _)| key.clone())
+                .collect();
 
-        // Find and remove the dependency by key
-        let dep_string_to_remove: Option<String> = config
-            .empack
-            .dependencies
-            .iter()
-            .find(|dep| {
-                let parsed_key = self.extract_key_from_dep_string(dep);
-                parsed_key
-                    .map(|k| {
-                        let norm = k.to_lowercase().replace([' ', '-'], "_");
-                        norm == normalized_key
-                    })
-                    .unwrap_or(false)
-            })
-            .cloned();
-
-        if let Some(dep_string) = dep_string_to_remove {
-            config.empack.dependencies.retain(|d| d != &dep_string);
+            match matches.len() {
+                0 => return Ok(()), // Nothing to remove, same as before
+                1 => {
+                    config.empack.dependencies.remove(&matches[0]);
+                }
+                _ => {
+                    return Err(ConfigError::AmbiguousRemoval {
+                        query: slug_or_title.to_string(),
+                        matches,
+                    });
+                }
+            }
         }
-
-        // Clean up project_ids
-        config.empack.project_ids.retain(|k, _| {
-            let norm = k.to_lowercase().replace([' ', '-'], "_");
-            norm != normalized_key
-        });
-
-        // Clean up project_platforms
-        config.empack.project_platforms.retain(|k, _| {
-            let norm = k.to_lowercase().replace([' ', '-'], "_");
-            norm != normalized_key
-        });
-
-        // Clean up version_overrides
-        config.empack.version_overrides.retain(|k, _| {
-            let norm = k.to_lowercase().replace([' ', '-'], "_");
-            norm != normalized_key
-        });
 
         // Serialize and write back
         let yaml_content = serde_saphyr::to_string(&config)
@@ -647,19 +603,6 @@ impl<'a> ConfigManager<'a> {
             })?;
 
         Ok(())
-    }
-
-    /// Extract the key from a dependency string
-    ///
-    /// Dependency strings are in format: "key: \"Title|type\""
-    fn extract_key_from_dep_string(&self, dep_string: &str) -> Option<String> {
-        let clean = dep_string.trim_start_matches('-').trim();
-        let parts: Vec<&str> = clean.splitn(2, ':').collect();
-        if parts.len() == 2 {
-            Some(parts[0].trim().to_string())
-        } else {
-            None
-        }
     }
 }
 

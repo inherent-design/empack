@@ -11,7 +11,10 @@ pub mod versions;
 
 // Re-export main types for convenience
 pub use builds::{BuildOrchestrator, BuildResult, PackInfo};
-pub use config::{ConfigManager, EmpackConfig, ProjectPlan, ProjectSpec};
+pub use config::{
+    ConfigManager, Dependency, DependencyEntry, DependencyRecord, DependencySearch,
+    DependencyStatus, EmpackConfig, ProjectPlan, ProjectSpec,
+};
 pub use packwiz::{PackwizError, PackwizInstaller, PackwizMetadata, PackwizOps};
 #[cfg(feature = "test-utils")]
 pub use packwiz::MockPackwizOps;

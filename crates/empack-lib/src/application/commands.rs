@@ -8,12 +8,13 @@ use crate::application::cli::SearchPlatform;
 use crate::application::session::{CommandSession, Session};
 use crate::application::sync::{
     AddContractError, AddResolution, SyncExecutionAction, SyncPlanAction, build_sync_plan,
-    normalize_mod_key, resolve_add_contract, resolve_sync_action,
+    loader_arg, project_type_arg, resolve_add_contract, resolve_sync_action,
 };
+use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
 use crate::application::{CliConfig, Commands};
 use crate::empack::parsing::ModLoader;
 use crate::platform::{ArchiverCapabilities, GoCapabilities};
-use crate::primitives::{BuildTarget, PackState, ProjectPlatform, StateTransition};
+use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
 use std::collections::HashSet;
 
@@ -989,13 +990,17 @@ async fn handle_add(
         let minecraft_version = project_plan.as_ref().map(|p| p.minecraft_version.as_str());
         let mod_loader = project_plan.as_ref().map(|p| p.loader);
 
+        // For CLI add, we resolve via search (empty project_id triggers search path)
+        let direct_project_id = resolution_intent.direct_project_id.as_deref().unwrap_or("");
+        let direct_platform = resolution_intent.direct_platform.unwrap_or(ProjectPlatform::Modrinth);
+
         match resolve_add_contract(
             &resolution_intent.search_query,
             crate::primitives::ProjectType::Mod,
             minecraft_version,
             mod_loader,
-            resolution_intent.direct_project_id.as_deref(),
-            resolution_intent.direct_platform,
+            direct_project_id,
+            direct_platform,
             None,
             resolver.as_ref(),
         )
@@ -1037,7 +1042,8 @@ async fn handle_add(
                 }
 
                 batch_project_ids.insert(resolution.resolved_project_id.clone());
-                let dep_key = normalize_mod_key(&mod_query);
+                // Use the mod query lowercased as slug key
+                let dep_key = mod_query.to_lowercase().replace(' ', "-");
                 resolved_mods.push(ResolvedMod {
                     query: mod_query,
                     resolution,
@@ -1117,12 +1123,17 @@ async fn handle_add(
                 }
 
                 // Atomically update empack.yml with the new dependency
+                let record = DependencyRecord {
+                    status: DependencyStatus::Resolved,
+                    title: resolved.resolution.title.clone(),
+                    platform: resolved.resolution.resolved_platform,
+                    project_id: resolved.resolution.resolved_project_id.clone(),
+                    project_type: crate::primitives::ProjectType::Mod,
+                    version: None,
+                };
                 if let Err(e) = config_manager.add_dependency(
                     &resolved.dep_key,
-                    &resolved.resolution.title,
-                    "mod",
-                    Some(&resolved.resolution.resolved_project_id),
-                    Some(resolved.resolution.resolved_platform),
+                    record,
                 ) {
                     session
                         .display()
@@ -1757,11 +1768,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
 
-    // Load project plan from empack.yml
-    let project_plan = config_manager
-        .create_project_plan()
-        .context("Failed to load empack.yml configuration")?;
-
     // Create HTTP client for API requests
     let client = session.network().http_client()?;
 
@@ -1776,6 +1782,125 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let resolver = session
         .network()
         .project_resolver(client, curseforge_api_key);
+
+    // Phase 1: Resolve any Search entries before building the project plan
+    let empack_config = config_manager
+        .load_empack_config()
+        .context("Failed to load empack.yml configuration")?;
+
+    let search_entries: Vec<(String, crate::empack::config::DependencySearch)> = empack_config
+        .empack
+        .dependencies
+        .iter()
+        .filter_map(|(slug, entry)| {
+            if let DependencyEntry::Search(search) = entry {
+                Some((slug.clone(), search.clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if !search_entries.is_empty() {
+        session
+            .display()
+            .status()
+            .section("Resolving search entries");
+
+        let pack_metadata = config_manager
+            .load_pack_metadata()
+            .context("Failed to load pack metadata")?;
+
+        let minecraft_version_opt = empack_config
+            .empack
+            .minecraft_version
+            .as_deref()
+            .or(pack_metadata.as_ref().map(|p| p.versions.minecraft.as_str()));
+
+        let mod_loader_opt = empack_config.empack.loader.or_else(|| {
+            pack_metadata.as_ref().and_then(|p| {
+                if p.versions.loader_versions.contains_key("fabric") {
+                    Some(crate::empack::parsing::ModLoader::Fabric)
+                } else if p.versions.loader_versions.contains_key("forge") {
+                    Some(crate::empack::parsing::ModLoader::Forge)
+                } else if p.versions.loader_versions.contains_key("quilt") {
+                    Some(crate::empack::parsing::ModLoader::Quilt)
+                } else if p.versions.loader_versions.contains_key("neoforge") {
+                    Some(crate::empack::parsing::ModLoader::NeoForge)
+                } else {
+                    None
+                }
+            })
+        });
+
+        for (slug, search) in &search_entries {
+            session
+                .display()
+                .status()
+                .checking(&format!("Resolving: {}", search.title));
+
+            let pt_str = search.project_type.map(project_type_arg);
+            let loader_str = mod_loader_opt.map(loader_arg);
+
+            match resolver
+                .resolve_project(
+                    &search.title,
+                    pt_str,
+                    minecraft_version_opt,
+                    loader_str,
+                    search.platform,
+                )
+                .await
+            {
+                Ok(project_info) => {
+                    let resolved_project_type = match project_info.project_type.as_str() {
+                        "resourcepack" => ProjectType::ResourcePack,
+                        "shader" => ProjectType::Shader,
+                        "datapack" => ProjectType::Datapack,
+                        _ => ProjectType::Mod,
+                    };
+
+                    let record = DependencyRecord {
+                        status: DependencyStatus::Resolved,
+                        title: project_info.title.clone(),
+                        platform: project_info.platform,
+                        project_id: project_info.project_id.clone(),
+                        project_type: search.project_type.unwrap_or(resolved_project_type),
+                        version: None,
+                    };
+
+                    // Remove old search entry if slug differs from resolved slug
+                    let resolved_slug = slug.clone();
+                    if let Err(e) = config_manager.add_dependency(&resolved_slug, record) {
+                        session.display().status().warning(&format!(
+                            "Failed to update empack.yml for '{}': {}",
+                            search.title, e
+                        ));
+                        continue;
+                    }
+
+                    session.display().status().success(
+                        "Resolved",
+                        &format!(
+                            "{} -> {} on {}",
+                            search.title, project_info.title, project_info.platform
+                        ),
+                    );
+                }
+                Err(e) => {
+                    session.display().status().warning(&format!(
+                        "Could not resolve '{}': {}",
+                        search.title, e
+                    ));
+                }
+            }
+        }
+    }
+
+    // Phase 2: Build project plan (now all resolvable entries are Resolved)
+    let project_plan = config_manager
+        .create_project_plan()
+        .context("Failed to load empack.yml configuration")?;
 
     session
         .display()
@@ -1814,7 +1939,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let already_installed: Vec<_> = project_plan
         .dependencies
         .iter()
-        .filter(|dep| installed_mods.contains(&normalize_mod_key(&dep.key)))
+        .filter(|dep| installed_mods.contains(&dep.key))
         .collect();
     let total_steps = already_installed.len() + sync_plan.actions.len();
     let mut step = 0;

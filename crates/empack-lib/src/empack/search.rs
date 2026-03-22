@@ -52,12 +52,16 @@ pub enum SearchError {
 /// Trait for project resolution across project platforms
 pub trait ProjectResolverTrait: Send + Sync {
     /// Resolve project with platform priority: Modrinth first, then CurseForge, then Forge
+    ///
+    /// When `preferred_platform` is `Some(CurseForge)`, tries CurseForge first.
+    /// Otherwise keeps the default Modrinth-first order.
     fn resolve_project(
         &self,
         title: &str,
         project_type: Option<&str>,
         minecraft_version: Option<&str>,
         mod_loader: Option<&str>,
+        preferred_platform: Option<ProjectPlatform>,
     ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>>;
 }
 
@@ -143,81 +147,168 @@ impl ProjectResolver {
         }
     }
 
-    /// Resolve project with platform priority: Modrinth first, then CurseForge, then Forge
+    /// Resolve project with platform priority: Modrinth first, then CurseForge
+    ///
+    /// When `project_type` is `Some`, searches only that type.
+    /// When `None`, tries each type in tier order (mod, resourcepack, shader, datapack)
+    /// and returns the first high-confidence match.
+    ///
+    /// When `preferred_platform` is `Some(CurseForge)`, tries CurseForge first.
+    /// Otherwise keeps the default Modrinth-first order.
     pub async fn resolve_project(
         &self,
         title: &str,
         project_type: Option<&str>,
         minecraft_version: Option<&str>,
         mod_loader: Option<&str>,
+        preferred_platform: Option<ProjectPlatform>,
     ) -> Result<ProjectInfo, SearchError> {
-        let project_type = project_type.unwrap_or("mod");
-
-        debug!("Resolving project: {} ({})", title, project_type);
-
-        // Try Modrinth first (preferred platform)
-        match self
-            .search_modrinth(title, project_type, minecraft_version, mod_loader)
-            .await
-        {
-            Ok(mut project) => {
-                let confidence =
-                    self.calculate_confidence(title, &project.title, project.downloads);
-                project.confidence = confidence;
-
-                if !self.has_extra_words(title, &project.title)
-                    && confidence >= MODRINTH_CONFIDENCE_THRESHOLD
-                {
-                    debug!(
-                        "High confidence Modrinth match: {}% for '{}'",
-                        confidence, project.title
-                    );
-                    return Ok(project);
-                } else {
-                    warn!(
-                        "Modrinth match rejected: confidence {}% or extra words",
-                        confidence
-                    );
-                }
-            }
-            Err(e) => {
-                debug!("Modrinth search failed: {}", e);
-            }
+        if let Some(pt) = project_type {
+            return self
+                .resolve_project_for_type(title, pt, minecraft_version, mod_loader, preferred_platform)
+                .await;
         }
 
-        // Fallback to CurseForge with lower threshold
-        match self
-            .search_curseforge(title, project_type, minecraft_version, mod_loader)
-            .await
-        {
-            Ok(mut project) => {
-                let confidence =
-                    self.calculate_confidence(title, &project.title, project.downloads);
-                project.confidence = confidence;
+        // No type specified: tiered search across all types
+        let type_tiers = ["mod", "resourcepack", "shader", "datapack"];
 
-                if !self.has_extra_words(title, &project.title)
-                    && confidence >= CURSEFORGE_CONFIDENCE_THRESHOLD
-                {
-                    debug!(
-                        "Acceptable CurseForge match: {}% for '{}'",
-                        confidence, project.title
-                    );
-                    return Ok(project);
-                } else {
-                    warn!(
-                        "CurseForge match rejected: confidence {}% or extra words",
-                        confidence
-                    );
+        debug!(
+            "Resolving project with tiered search: {} (trying {:?})",
+            title, type_tiers
+        );
+
+        for project_type in &type_tiers {
+            match self
+                .resolve_project_for_type(title, project_type, minecraft_version, mod_loader, preferred_platform)
+                .await
+            {
+                Ok(result) => return Ok(result),
+                Err(SearchError::NoResults { .. })
+                | Err(SearchError::LowConfidence { .. })
+                | Err(SearchError::ExtraWords { .. }) => {
+                    debug!("No match for type '{}', trying next tier", project_type);
+                    continue;
                 }
-            }
-            Err(e) => {
-                debug!("CurseForge search failed: {}", e);
+                Err(e) => {
+                    // Network/API errors should not be swallowed
+                    return Err(e);
+                }
             }
         }
 
         Err(SearchError::NoResults {
             query: title.to_string(),
         })
+    }
+
+    /// Resolve project for a specific type with platform priority
+    ///
+    /// Default order: Modrinth first, then CurseForge.
+    /// When `preferred_platform` is `Some(CurseForge)`, tries CurseForge first.
+    async fn resolve_project_for_type(
+        &self,
+        title: &str,
+        project_type: &str,
+        minecraft_version: Option<&str>,
+        mod_loader: Option<&str>,
+        preferred_platform: Option<ProjectPlatform>,
+    ) -> Result<ProjectInfo, SearchError> {
+        debug!("Resolving project: {} ({})", title, project_type);
+
+        if preferred_platform == Some(ProjectPlatform::CurseForge) {
+            // CurseForge-first order when explicitly preferred
+            if let Some(result) = self
+                .try_platform_search(
+                    title, project_type, minecraft_version, mod_loader,
+                    ProjectPlatform::CurseForge,
+                )
+                .await
+            {
+                return Ok(result);
+            }
+            if let Some(result) = self
+                .try_platform_search(
+                    title, project_type, minecraft_version, mod_loader,
+                    ProjectPlatform::Modrinth,
+                )
+                .await
+            {
+                return Ok(result);
+            }
+        } else {
+            // Default: Modrinth first, CurseForge fallback
+            if let Some(result) = self
+                .try_platform_search(
+                    title, project_type, minecraft_version, mod_loader,
+                    ProjectPlatform::Modrinth,
+                )
+                .await
+            {
+                return Ok(result);
+            }
+            if let Some(result) = self
+                .try_platform_search(
+                    title, project_type, minecraft_version, mod_loader,
+                    ProjectPlatform::CurseForge,
+                )
+                .await
+            {
+                return Ok(result);
+            }
+        }
+
+        Err(SearchError::NoResults {
+            query: title.to_string(),
+        })
+    }
+
+    /// Try searching a single platform, returning Some on high-confidence match.
+    async fn try_platform_search(
+        &self,
+        title: &str,
+        project_type: &str,
+        minecraft_version: Option<&str>,
+        mod_loader: Option<&str>,
+        platform: ProjectPlatform,
+    ) -> Option<ProjectInfo> {
+        let (search_result, threshold, label) = match platform {
+            ProjectPlatform::Modrinth => (
+                self.search_modrinth(title, project_type, minecraft_version, mod_loader).await,
+                MODRINTH_CONFIDENCE_THRESHOLD,
+                "Modrinth",
+            ),
+            ProjectPlatform::CurseForge => (
+                self.search_curseforge(title, project_type, minecraft_version, mod_loader).await,
+                CURSEFORGE_CONFIDENCE_THRESHOLD,
+                "CurseForge",
+            ),
+        };
+
+        match search_result {
+            Ok(mut project) => {
+                let confidence =
+                    self.calculate_confidence(title, &project.title, project.downloads);
+                project.confidence = confidence;
+
+                if !self.has_extra_words(title, &project.title) && confidence >= threshold {
+                    debug!(
+                        "High confidence {} match: {}% for '{}'",
+                        label, confidence, project.title
+                    );
+                    Some(project)
+                } else {
+                    warn!(
+                        "{} match rejected: confidence {}% or extra words",
+                        label, confidence
+                    );
+                    None
+                }
+            }
+            Err(e) => {
+                debug!("{} search failed: {}", label, e);
+                None
+            }
+        }
     }
 
     /// Search Modrinth API for project
@@ -520,6 +611,7 @@ impl ProjectResolverTrait for ProjectResolver {
         project_type: Option<&str>,
         minecraft_version: Option<&str>,
         mod_loader: Option<&str>,
+        preferred_platform: Option<ProjectPlatform>,
     ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>> {
         let title = title.to_string();
         let project_type = project_type.map(|s| s.to_string());
@@ -532,6 +624,7 @@ impl ProjectResolverTrait for ProjectResolver {
                 project_type.as_deref(),
                 minecraft_version.as_deref(),
                 mod_loader.as_deref(),
+                preferred_platform,
             )
             .await
         })

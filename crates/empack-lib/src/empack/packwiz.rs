@@ -179,34 +179,29 @@ impl PackwizOps for LivePackwizOps<'_> {
     }
 
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>> {
-        let pack_dir = workdir.join("pack");
-        let output = self
-            .process
-            .execute("packwiz", &["list"], &pack_dir)
-            .context("Failed to execute packwiz list command")?;
+        let mods_dir = workdir.join("pack").join("mods");
 
-        if !output.success {
-            return Err(anyhow::anyhow!("Packwiz list command failed: {}", output.stderr));
+        if !mods_dir.exists() {
+            return Ok(HashSet::new());
         }
 
         let mut installed_mods = HashSet::new();
 
-        for line in output.stdout.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with("Mods:") || line.starts_with("Total:") {
-                continue;
+        for entry in std::fs::read_dir(&mods_dir)
+            .with_context(|| format!("Failed to read mods directory: {}", mods_dir.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.extension().and_then(|e| e.to_str()) == Some("toml")
+                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            {
+                // Files are named like fabric-api.pw.toml
+                // file_stem() strips .toml -> "fabric-api.pw"
+                // Then strip ".pw" suffix to get the slug: "fabric-api"
+                let slug = stem.strip_suffix(".pw").unwrap_or(stem);
+                installed_mods.insert(slug.to_string());
             }
-
-            let mod_name = if line.starts_with("- ") {
-                line.trim_start_matches("- ").trim()
-            } else if line.ends_with(".pw.toml") {
-                line.trim_end_matches(".pw.toml")
-            } else {
-                line
-            };
-
-            let normalized_name = mod_name.to_lowercase().replace([' ', '-'], "_");
-            installed_mods.insert(normalized_name);
         }
 
         Ok(installed_mods)
