@@ -1214,6 +1214,8 @@ forge = "47.3.0"
     - 'sodium: "Sodium|mod"'
   project_ids:
     sodium: "AANobbMI"
+  project_platforms:
+    sodium: modrinth
   version_overrides:
     sodium:
       - "bad-version"

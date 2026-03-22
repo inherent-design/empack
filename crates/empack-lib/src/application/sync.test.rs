@@ -183,10 +183,10 @@ async fn test_resolve_add_contract_matches_sync_search_resolution() {
 }
 
 #[tokio::test]
-async fn test_resolve_add_contract_matches_sync_direct_id_defaults() {
+async fn test_resolve_add_contract_rejects_pinned_id_without_platform() {
     let resolver = MockProjectResolver::new();
 
-    let add_resolution = resolve_add_contract(
+    let result = resolve_add_contract(
         "Sodium",
         ProjectType::Mod,
         Some("1.21.1"),
@@ -196,10 +196,21 @@ async fn test_resolve_add_contract_matches_sync_direct_id_defaults() {
         None,
         &resolver,
     )
-    .await
-    .unwrap();
+    .await;
 
-    let sync_resolution = resolve_sync_action(
+    assert!(result.is_err(), "Should reject pinned project_id without project_platform");
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("project_platform is not set"),
+        "Error should mention missing platform: {err_msg}"
+    );
+}
+
+#[tokio::test]
+async fn test_resolve_sync_action_rejects_pinned_id_without_platform() {
+    let resolver = MockProjectResolver::new();
+
+    let result = resolve_sync_action(
         &SyncPlanAction::Add(SyncDependencyPlan {
             key: "sodium".to_string(),
             normalized_key: "sodium".to_string(),
@@ -213,23 +224,9 @@ async fn test_resolve_add_contract_matches_sync_direct_id_defaults() {
         }),
         &resolver,
     )
-    .await
-    .unwrap();
+    .await;
 
-    match sync_resolution {
-        SyncExecutionAction::Add {
-            commands,
-            resolved_project_id,
-            resolved_platform,
-            ..
-        } => {
-            assert_eq!(commands, add_resolution.commands);
-            assert_eq!(resolved_project_id, add_resolution.resolved_project_id);
-            assert_eq!(resolved_platform, ProjectPlatform::Modrinth);
-            assert_eq!(resolved_platform, add_resolution.resolved_platform);
-        }
-        other => panic!("expected add action, got {other:?}"),
-    }
+    assert!(result.is_err(), "Should reject pinned project_id without project_platform");
 }
 
 #[tokio::test]
@@ -298,7 +295,7 @@ async fn test_resolve_add_contract_matches_sync_multiple_version_overrides() {
         Some("1.21.1"),
         Some(ModLoader::Fabric),
         Some("AANobbMI"),
-        None,
+        Some(ProjectPlatform::Modrinth),
         Some(&version_override),
         &resolver,
     )
@@ -314,7 +311,7 @@ async fn test_resolve_add_contract_matches_sync_multiple_version_overrides() {
             minecraft_version: "1.21.1".to_string(),
             loader: ModLoader::Fabric,
             project_id: Some("AANobbMI".to_string()),
-            project_platform: None,
+            project_platform: Some(ProjectPlatform::Modrinth),
             version_override: Some(version_override.clone()),
         }),
         &resolver,
@@ -373,7 +370,7 @@ async fn test_resolve_add_contract_wraps_plan_failures() {
         Some("1.21.1"),
         Some(ModLoader::Fabric),
         Some("AANobbMI"),
-        None,
+        Some(ProjectPlatform::Modrinth),
         Some(&VersionOverride::Multiple(vec![])),
         &resolver,
     )

@@ -160,9 +160,17 @@ pub async fn resolve_add_contract(
     resolver: &dyn ProjectResolverTrait,
 ) -> std::result::Result<AddResolution, AddContractError> {
     let (project_id, platform, title, confidence) = if let Some(project_id) = direct_project_id {
+        let platform = direct_platform.ok_or_else(|| AddContractError::ResolveProject {
+            query: search_query.to_string(),
+            source: SearchError::Other(anyhow::anyhow!(
+                "project_id '{}' is pinned in empack.yml but project_platform is not set; \
+                 add `project_platform: modrinth` or `project_platform: curseforge`",
+                project_id
+            )),
+        })?;
         (
             project_id.to_string(),
-            direct_platform.unwrap_or(ProjectPlatform::Modrinth),
+            platform,
             search_query.to_string(),
             None,
         )

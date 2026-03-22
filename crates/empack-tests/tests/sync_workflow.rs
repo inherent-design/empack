@@ -25,6 +25,9 @@ fn sync_project_config() -> &'static str {
   project_ids:
     sodium: "AANobbMI"
     fabric_api: "P7dR8mSH"
+  project_platforms:
+    sodium: modrinth
+    fabric_api: modrinth
 "#
 }
 

@@ -1211,21 +1211,17 @@ impl AddResolutionIntent {
             Some(SearchPlatform::Both) | None => None,
         };
 
-        let direct_project_id = match preferred_platform {
+        let (direct_project_id, direct_platform) = match preferred_platform {
             Some(ProjectPlatform::CurseForge) if is_curseforge_project_id(mod_query) => {
-                Some(mod_query.to_string())
+                (Some(mod_query.to_string()), Some(ProjectPlatform::CurseForge))
             }
             Some(ProjectPlatform::Modrinth) if is_modrinth_project_id(mod_query) => {
-                Some(mod_query.to_string())
+                (Some(mod_query.to_string()), Some(ProjectPlatform::Modrinth))
             }
-            None if is_modrinth_project_id(mod_query) => Some(mod_query.to_string()),
-            _ => None,
-        };
-
-        let direct_platform = if direct_project_id.is_some() {
-            preferred_platform
-        } else {
-            None
+            None if is_modrinth_project_id(mod_query) => {
+                (Some(mod_query.to_string()), Some(ProjectPlatform::Modrinth))
+            }
+            _ => (None, None),
         };
 
         Self {

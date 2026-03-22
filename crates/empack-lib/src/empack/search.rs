@@ -44,6 +44,9 @@ pub enum SearchError {
 
     #[error("API key missing for platform: {platform}")]
     MissingApiKey { platform: String },
+
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }
 
 /// Trait for project resolution across project platforms
