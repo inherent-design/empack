@@ -110,7 +110,14 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
         let inner = match content.trim() {
             "building" => PackState::Building,
             "cleaning" => PackState::Cleaning,
-            _ => PackState::Building, // default to building if content is unexpected
+            other => {
+                return Err(StateError::IoError {
+                    source: anyhow::anyhow!(
+                        "Unknown state marker content: '{}'",
+                        other
+                    ),
+                });
+            }
         };
         return Ok(PackState::Interrupted {
             was: Box::new(inner),

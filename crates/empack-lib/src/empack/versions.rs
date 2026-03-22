@@ -200,7 +200,7 @@ fn filter_neoforge_versions_by_minecraft(
     // Use dynamic algorithm from neoforged.net instead of hardcoded matches
 
     // NeoForge only supports MC 1.20.2+
-    if parse_version(mc_version).is_none_or(|v| v < parse_version("1.20.2").unwrap()) {
+    if parse_version(mc_version).is_none_or(|v| v < parse_version("1.20.2").expect("hardcoded version must parse")) {
         return Ok(vec![]);
     }
 
@@ -609,7 +609,7 @@ impl<'a> VersionFetcher<'a> {
                 // CRITICAL: Implement v1 compatibility logic - NeoForge only supports MC 1.20.2+
                 // This restores the API-driven intelligence that was lost in migration
                 if parse_version(mc_version)
-                    .is_none_or(|v| v < parse_version("1.20.2").unwrap())
+                    .is_none_or(|v| v < parse_version("1.20.2").expect("hardcoded version must parse"))
                 {
                     // NeoForge definitively does NOT support MC versions before 1.20.2
                     // Return empty vector to indicate incompatibility (matches v1 behavior)
@@ -840,6 +840,10 @@ impl<'a> VersionFetcher<'a> {
             Self::get_fallback_loader_versions("fabric", "")
         } else if cache_filename.starts_with("neoforge_loader_") {
             Self::get_fallback_loader_versions("neoforge", "")
+        } else if cache_filename.starts_with("quilt_loader_") {
+            Self::get_fallback_loader_versions("quilt", "")
+        } else if cache_filename.starts_with("forge_loader_") {
+            Self::get_fallback_loader_versions("forge", "")
         } else {
             vec!["latest".to_string()]
         }

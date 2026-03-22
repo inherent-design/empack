@@ -922,8 +922,6 @@ async fn handle_add(
         return Ok(());
     }
 
-    // Create config manager using the session's working directory
-    let manager = session.state()?;
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
 
@@ -1294,8 +1292,6 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         .status()
         .section(&format!("Removing {} mod(s) from modpack", mods.len()));
 
-    // Use the session's working directory
-    let manager = session.state()?;
     let workdir = manager.workdir.clone();
     let mods_dir = workdir.join("pack").join("mods");
     let config_manager = session.filesystem().config_manager(workdir.clone());
@@ -1762,8 +1758,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         return Ok(());
     }
 
-    // Create config manager using the session's working directory
-    let manager = session.state()?;
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
 
