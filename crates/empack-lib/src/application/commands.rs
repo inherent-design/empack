@@ -1801,6 +1801,9 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         })
         .collect();
 
+    // Track slugs whose Search resolution fails so we can protect them from removal
+    let mut unresolved_slugs: HashSet<String> = HashSet::new();
+
     if !search_entries.is_empty() {
         session
             .display()
@@ -1892,6 +1895,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         "Could not resolve '{}': {}",
                         search.title, e
                     ));
+                    unresolved_slugs.insert(slug.clone());
                 }
             }
         }
@@ -1934,6 +1938,17 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     };
 
     let sync_plan = build_sync_plan(&project_plan, &installed_mods);
+
+    // Protect installed mods whose Search entries failed resolution from removal
+    let protected_actions: Vec<_> = sync_plan
+        .actions
+        .into_iter()
+        .filter(|action| match action {
+            SyncPlanAction::Remove { key, .. } => !unresolved_slugs.contains(key),
+            _ => true,
+        })
+        .collect();
+
     let mut planned_actions = Vec::new();
 
     let already_installed: Vec<_> = project_plan
@@ -1941,7 +1956,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         .iter()
         .filter(|dep| installed_mods.contains(&dep.key))
         .collect();
-    let total_steps = already_installed.len() + sync_plan.actions.len();
+    let total_steps = already_installed.len() + protected_actions.len();
     let mut step = 0;
 
     for dep_spec in &already_installed {
@@ -1956,7 +1971,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .success("Already installed", &dep_spec.key);
     }
 
-    for action in &sync_plan.actions {
+    for action in &protected_actions {
         step += 1;
         let action_label = match action {
             SyncPlanAction::Add(dep) => dep.search_query.as_str(),
@@ -1993,10 +2008,18 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     // Show planned actions
     if planned_actions.is_empty() {
-        session
-            .display()
-            .status()
-            .complete("No changes needed - empack.yml already in sync");
+        if !unresolved_slugs.is_empty() {
+            session.display().status().warning(&format!(
+                "{} search {} could not be resolved. Run sync again to retry.",
+                unresolved_slugs.len(),
+                if unresolved_slugs.len() == 1 { "entry" } else { "entries" }
+            ));
+        } else {
+            session
+                .display()
+                .status()
+                .complete("No changes needed - empack.yml already in sync");
+        }
         return Ok(());
     }
 

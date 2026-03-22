@@ -246,11 +246,11 @@ fn remove_state_marker<P: crate::application::session::FileSystemProvider + ?Siz
     }
 }
 
-/// RAII guard that writes a state marker file on creation and removes it on Drop.
+/// RAII guard that writes a state marker file on creation.
 /// Call `complete()` after successful operations to remove the marker explicitly.
 /// If the guard is dropped without calling `complete()` (e.g., due to error or panic),
-/// it performs best-effort marker removal to avoid stuck Interrupted state.
-#[must_use = "dropping the guard immediately removes the marker, leaving the pipeline unguarded"]
+/// it leaves the marker in place so `discover_state()` correctly reports `Interrupted`.
+#[must_use = "dropping the guard without complete() leaves the marker, signalling interruption"]
 pub(crate) struct StateMarkerGuard<'a, P: crate::application::session::FileSystemProvider + ?Sized> {
     provider: &'a P,
     workdir: PathBuf,
@@ -283,7 +283,12 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> StateMarke
 impl<P: crate::application::session::FileSystemProvider + ?Sized> Drop for StateMarkerGuard<'_, P> {
     fn drop(&mut self) {
         if self.active {
-            let _ = remove_state_marker(self.provider, &self.workdir);
+            // Marker left in place intentionally: the operation did not complete
+            // successfully, so discover_state() should report Interrupted.
+            tracing::warn!(
+                "State marker left in place at {:?} -- operation did not complete",
+                self.workdir.join(STATE_MARKER_FILE)
+            );
         }
     }
 }
@@ -700,8 +705,8 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
         remove_state_marker(self.provider, &self.workdir)
     }
 
-    /// Begin a marker transition with RAII guard. The returned guard removes the
-    /// marker on Drop if not explicitly completed, preventing stuck Interrupted state.
+    /// Begin a marker transition with RAII guard. The returned guard leaves the
+    /// marker on Drop if not explicitly completed, so `discover_state()` reports `Interrupted`.
     pub(crate) fn guarded_transition(
         &self,
         marker: MarkerKind,

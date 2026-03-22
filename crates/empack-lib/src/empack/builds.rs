@@ -898,8 +898,8 @@ impl<'a> BuildOrchestrator<'a> {
     }
 
     /// Execute clean pipeline with state management.
-    /// Uses an RAII guard so the state marker is removed on both success and
-    /// failure (including panics) without manual cleanup.
+    /// Uses an RAII guard: on success `complete()` removes the marker; on failure
+    /// or panic the marker persists so `discover_state()` reports `Interrupted`.
     pub async fn execute_clean_pipeline(
         &mut self,
         targets: &[BuildTarget],
