@@ -93,7 +93,7 @@ async fn test_sync_workflow_full() -> Result<()> {
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains_args(&["remove", "old-mod"])),
+            .any(|call| call.contains_args(&["remove", "-y", "old-mod"])),
         "sync should remove mods not declared in empack.yml: {packwiz_calls:?}"
     );
     assert!(

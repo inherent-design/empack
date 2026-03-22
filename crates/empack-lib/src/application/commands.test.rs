@@ -809,7 +809,7 @@ mod handle_remove_tests {
                     .with_configured_project(workdir),
             )
             .with_process(MockProcessProvider::new().with_packwiz_result(
-                vec!["remove".to_string(), "test-mod".to_string()],
+                vec!["remove".to_string(), "-y".to_string(), "test-mod".to_string()],
                 Ok(ProcessOutput {
                     stdout: String::new(),
                     stderr: String::new(),
@@ -824,7 +824,7 @@ mod handle_remove_tests {
         // Verify packwiz remove command was called
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["remove", "test-mod"],
+            &["remove", "-y", "test-mod"],
             &session.filesystem_provider.current_dir.join("pack")
         ));
     }
@@ -852,12 +852,12 @@ mod handle_remove_tests {
         // Verify multiple remove commands were called
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["remove", "mod1"],
+            &["remove", "-y", "mod1"],
             &session.filesystem_provider.current_dir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["remove", "mod2"],
+            &["remove", "-y", "mod2"],
             &session.filesystem_provider.current_dir.join("pack")
         ));
     }
@@ -872,7 +872,7 @@ mod handle_remove_tests {
                     .with_configured_project(workdir),
             )
             .with_process(MockProcessProvider::new().with_packwiz_result(
-                vec!["remove".to_string(), "test-mod".to_string()],
+                vec!["remove".to_string(), "-y".to_string(), "test-mod".to_string()],
                 Ok(ProcessOutput {
                     stdout: String::new(),
                     stderr: String::new(),
@@ -888,7 +888,7 @@ mod handle_remove_tests {
         // Note: packwiz does not support --remove-deps, orphan detection is implemented separately
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["remove", "test-mod"],
+            &["remove", "-y", "test-mod"],
             &session.filesystem_provider.current_dir.join("pack")
         ));
     }
@@ -1056,7 +1056,7 @@ mod handle_sync_tests {
                     .with_installed_mods(installed_mods),
             )
             .with_process(MockProcessProvider::new().with_packwiz_result(
-                vec!["remove".to_string(), "extra_mod".to_string()],
+                vec!["remove".to_string(), "-y".to_string(), "extra_mod".to_string()],
                 Ok(ProcessOutput {
                     stdout: String::new(),
                     stderr: String::new(),
@@ -1072,7 +1072,7 @@ mod handle_sync_tests {
         assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
             "packwiz",
-            &["remove", "extra_mod"],
+            &["remove", "-y", "extra_mod"],
             &workdir.join("pack")
         ));
     }

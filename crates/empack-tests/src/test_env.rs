@@ -156,6 +156,11 @@ impl TestEnvironment {
         Ok(())
     }
 
+    /// Escape a string for use inside single-quoted shell strings.
+    fn escape_shell_single_quote(s: &str) -> String {
+        s.replace('\'', "'\\''")
+    }
+
     /// Generate mock script content for an executable
     fn generate_mock_script(
         &self,
@@ -168,7 +173,8 @@ impl TestEnvironment {
         let behavior_code = match behavior {
             MockBehavior::AlwaysSucceed => "exit 0".to_string(),
             MockBehavior::AlwaysFail { error } => {
-                format!("echo '{}' >&2\nexit 1", error)
+                let escaped = Self::escape_shell_single_quote(error);
+                format!("echo '{}' >&2\nexit 1", escaped)
             }
             MockBehavior::SucceedWithOutput { stdout, stderr } => {
                 let mut code = String::new();
@@ -437,10 +443,12 @@ fi
                 }
 
                 if !stdout.is_empty() {
-                    code.push_str(&format!("echo '{}'\n", stdout));
+                    let escaped = Self::escape_shell_single_quote(stdout);
+                    code.push_str(&format!("echo '{}'\n", escaped));
                 }
                 if !stderr.is_empty() {
-                    code.push_str(&format!("echo '{}' >&2\n", stderr));
+                    let escaped = Self::escape_shell_single_quote(stderr);
+                    code.push_str(&format!("echo '{}' >&2\n", escaped));
                 }
                 code.push_str("exit 0");
                 code
@@ -492,14 +500,19 @@ printf '\n' >> "{}"
     fn generate_behavior_code(&self, behavior: &MockBehavior) -> String {
         match behavior {
             MockBehavior::AlwaysSucceed => "exit 0".to_string(),
-            MockBehavior::AlwaysFail { error } => format!("echo '{}' >&2; exit 1", error),
+            MockBehavior::AlwaysFail { error } => {
+                let escaped = Self::escape_shell_single_quote(error);
+                format!("echo '{}' >&2; exit 1", escaped)
+            }
             MockBehavior::SucceedWithOutput { stdout, stderr } => {
                 let mut code = String::new();
                 if !stdout.is_empty() {
-                    code.push_str(&format!("echo '{}'; ", stdout));
+                    let escaped = Self::escape_shell_single_quote(stdout);
+                    code.push_str(&format!("echo '{}'; ", escaped));
                 }
                 if !stderr.is_empty() {
-                    code.push_str(&format!("echo '{}' >&2; ", stderr));
+                    let escaped = Self::escape_shell_single_quote(stderr);
+                    code.push_str(&format!("echo '{}' >&2; ", escaped));
                 }
                 code.push_str("exit 0");
                 code

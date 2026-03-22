@@ -1331,7 +1331,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         // Execute packwiz remove command
         // Note: packwiz does not support --remove-deps flag
         // Orphan detection must be implemented using DependencyGraph
-        let packwiz_args = vec!["remove", &mod_name];
+        let packwiz_args = vec!["remove", "-y", &mod_name];
 
         let result = session
             .process()
@@ -1441,7 +1441,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                     for orphan in orphans {
                         let result = session
                             .process()
-                            .execute("packwiz", &["remove", &orphan], &workdir.join("pack"))
+                            .execute("packwiz", &["remove", "-y", &orphan], &workdir.join("pack"))
                             .and_then(|output| {
                                 if output.success {
                                     Ok(())
@@ -1879,6 +1879,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                             "Failed to update empack.yml for '{}': {}",
                             search.title, e
                         ));
+                        unresolved_slugs.insert(slug.clone());
                         continue;
                     }
 
@@ -2134,7 +2135,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     .checking(&format!("Removing: {}", key));
                 let result = session
                     .process()
-                    .execute("packwiz", &["remove", &key], &workdir.join("pack"))
+                    .execute("packwiz", &["remove", "-y", &key], &workdir.join("pack"))
                     .and_then(|output| {
                         if output.success {
                             Ok(())

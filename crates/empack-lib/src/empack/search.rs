@@ -310,7 +310,8 @@ impl ProjectResolver {
             Err(e) => match &e {
                 SearchError::NoResults { .. }
                 | SearchError::LowConfidence { .. }
-                | SearchError::ExtraWords { .. } => {
+                | SearchError::ExtraWords { .. }
+                | SearchError::MissingApiKey { .. } => {
                     debug!("{} search: {}", label, e);
                     Ok(None)
                 }
