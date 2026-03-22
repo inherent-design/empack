@@ -449,7 +449,13 @@ fi
                 let mut code = String::new();
                 for rule in rules {
                     let pattern = rule.args_pattern.join(" ");
-                    code.push_str(&format!("if [ \"$*\" = \"{}\" ]; then\n", pattern));
+                    // Escape shell-sensitive characters in the pattern
+                    let escaped = pattern
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('$', "\\$")
+                        .replace('`', "\\`");
+                    code.push_str(&format!("if [ \"$*\" = \"{}\" ]; then\n", escaped));
                     code.push_str(&format!(
                         "  {}\n",
                         self.generate_behavior_code(&rule.behavior)

@@ -187,7 +187,8 @@ fn test_load_pack_info() {
     assert_eq!(pack_info.author, "TestAuthor");
     assert_eq!(pack_info.version, "1.0.0");
     assert_eq!(pack_info.mc_version, "1.21");
-    assert_eq!(pack_info.fabric_version, "0.15.11");
+    assert_eq!(pack_info.loader_version, "0.15.11");
+    assert_eq!(pack_info.loader_type, "fabric");
 }
 
 #[test]
@@ -616,12 +617,14 @@ fn test_pack_info_structure() {
         name: "TestPack".to_string(),
         version: "1.0.0".to_string(),
         mc_version: "1.21".to_string(),
-        fabric_version: "0.15.11".to_string(),
+        loader_version: "0.15.11".to_string(),
+        loader_type: "fabric".to_string(),
     };
-    
+
     assert_eq!(pack_info.author, "TestAuthor");
     assert_eq!(pack_info.name, "TestPack");
     assert_eq!(pack_info.version, "1.0.0");
     assert_eq!(pack_info.mc_version, "1.21");
-    assert_eq!(pack_info.fabric_version, "0.15.11");
+    assert_eq!(pack_info.loader_version, "0.15.11");
+    assert_eq!(pack_info.loader_type, "fabric");
 }

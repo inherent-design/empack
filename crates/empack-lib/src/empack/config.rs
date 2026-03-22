@@ -449,30 +449,34 @@ impl<'a> ConfigManager<'a> {
         };
 
         let mut deps = HashMap::new();
-        deps.insert("sodium".to_string(), DependencyEntry::Resolved(DependencyRecord {
-            status: DependencyStatus::Resolved,
-            title: "Sodium".to_string(),
-            platform: ProjectPlatform::Modrinth,
-            project_id: "AANobbMI".to_string(),
-            project_type: ProjectType::Mod,
-            version: None,
-        }));
-        deps.insert("lithium".to_string(), DependencyEntry::Resolved(DependencyRecord {
-            status: DependencyStatus::Resolved,
-            title: "Lithium".to_string(),
-            platform: ProjectPlatform::Modrinth,
-            project_id: "gvQqBUqZ".to_string(),
-            project_type: ProjectType::Mod,
-            version: None,
-        }));
-        deps.insert("fabric-api".to_string(), DependencyEntry::Resolved(DependencyRecord {
-            status: DependencyStatus::Resolved,
-            title: "Fabric API".to_string(),
-            platform: ProjectPlatform::Modrinth,
-            project_id: "P7dR8mSH".to_string(),
-            project_type: ProjectType::Mod,
-            version: None,
-        }));
+        if loader == Some(ModLoader::Fabric) || loader == Some(ModLoader::Quilt) {
+            deps.insert("sodium".to_string(), DependencyEntry::Resolved(DependencyRecord {
+                status: DependencyStatus::Resolved,
+                title: "Sodium".to_string(),
+                platform: ProjectPlatform::Modrinth,
+                project_id: "AANobbMI".to_string(),
+                project_type: ProjectType::Mod,
+                version: None,
+            }));
+            deps.insert("lithium".to_string(), DependencyEntry::Resolved(DependencyRecord {
+                status: DependencyStatus::Resolved,
+                title: "Lithium".to_string(),
+                platform: ProjectPlatform::Modrinth,
+                project_id: "gvQqBUqZ".to_string(),
+                project_type: ProjectType::Mod,
+                version: None,
+            }));
+            if loader == Some(ModLoader::Fabric) {
+                deps.insert("fabric-api".to_string(), DependencyEntry::Resolved(DependencyRecord {
+                    status: DependencyStatus::Resolved,
+                    title: "Fabric API".to_string(),
+                    platform: ProjectPlatform::Modrinth,
+                    project_id: "P7dR8mSH".to_string(),
+                    project_type: ProjectType::Mod,
+                    version: None,
+                }));
+            }
+        }
 
         let config = EmpackConfig {
             empack: EmpackProjectConfig {

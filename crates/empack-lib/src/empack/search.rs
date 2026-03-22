@@ -222,7 +222,7 @@ impl ProjectResolver {
                     title, project_type, minecraft_version, mod_loader,
                     ProjectPlatform::CurseForge,
                 )
-                .await
+                .await?
             {
                 return Ok(result);
             }
@@ -231,7 +231,7 @@ impl ProjectResolver {
                     title, project_type, minecraft_version, mod_loader,
                     ProjectPlatform::Modrinth,
                 )
-                .await
+                .await?
             {
                 return Ok(result);
             }
@@ -242,7 +242,7 @@ impl ProjectResolver {
                     title, project_type, minecraft_version, mod_loader,
                     ProjectPlatform::Modrinth,
                 )
-                .await
+                .await?
             {
                 return Ok(result);
             }
@@ -251,7 +251,7 @@ impl ProjectResolver {
                     title, project_type, minecraft_version, mod_loader,
                     ProjectPlatform::CurseForge,
                 )
-                .await
+                .await?
             {
                 return Ok(result);
             }
@@ -263,6 +263,9 @@ impl ProjectResolver {
     }
 
     /// Try searching a single platform, returning Some on high-confidence match.
+    ///
+    /// Returns `Ok(None)` for low-confidence or no-results (try next platform).
+    /// Returns `Err` for network/API failures (should propagate).
     async fn try_platform_search(
         &self,
         title: &str,
@@ -270,7 +273,7 @@ impl ProjectResolver {
         minecraft_version: Option<&str>,
         mod_loader: Option<&str>,
         platform: ProjectPlatform,
-    ) -> Option<ProjectInfo> {
+    ) -> Result<Option<ProjectInfo>, SearchError> {
         let (search_result, threshold, label) = match platform {
             ProjectPlatform::Modrinth => (
                 self.search_modrinth(title, project_type, minecraft_version, mod_loader).await,
@@ -295,19 +298,27 @@ impl ProjectResolver {
                         "High confidence {} match: {}% for '{}'",
                         label, confidence, project.title
                     );
-                    Some(project)
+                    Ok(Some(project))
                 } else {
                     warn!(
                         "{} match rejected: confidence {}% or extra words",
                         label, confidence
                     );
-                    None
+                    Ok(None)
                 }
             }
-            Err(e) => {
-                debug!("{} search failed: {}", label, e);
-                None
-            }
+            Err(e) => match &e {
+                SearchError::NoResults { .. }
+                | SearchError::LowConfidence { .. }
+                | SearchError::ExtraWords { .. } => {
+                    debug!("{} search: {}", label, e);
+                    Ok(None)
+                }
+                _ => {
+                    debug!("{} search failed: {}", label, e);
+                    Err(e)
+                }
+            },
         }
     }
 

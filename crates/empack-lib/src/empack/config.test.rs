@@ -791,8 +791,10 @@ fn test_generate_default_empack_yml_no_pack() {
 
     assert!(result.is_ok());
     let yml_content = result.unwrap();
-    assert!(yml_content.contains("sodium"));
-    assert!(yml_content.contains("lithium"));
+    // No pack.toml means no loader detected, so no default deps
+    assert!(!yml_content.contains("sodium"));
+    assert!(!yml_content.contains("lithium"));
+    assert!(!yml_content.contains("fabric-api"));
     // Should not contain specific versions when no pack.toml
     assert!(!yml_content.contains("minecraft_version"));
     assert!(!yml_content.contains("loader"));

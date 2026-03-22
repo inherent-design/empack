@@ -104,9 +104,12 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
 
     // Check for interrupted state first (marker file presence)
     let marker_path = workdir.join(STATE_MARKER_FILE);
-    if provider.exists(&marker_path)
-        && let Ok(content) = provider.read_to_string(&marker_path)
-    {
+    if provider.exists(&marker_path) {
+        let content = provider
+            .read_to_string(&marker_path)
+            .map_err(|e| StateError::IoError {
+                source: anyhow::anyhow!("Failed to read state marker file: {}", e),
+            })?;
         let inner = match content.trim() {
             "building" => PackState::Building,
             "cleaning" => PackState::Cleaning,
@@ -221,17 +224,26 @@ fn write_state_marker<P: crate::application::session::FileSystemProvider + ?Size
 }
 
 /// Remove the state marker file after a successful transition.
+/// Treats "not found" as success to avoid TOCTOU races.
 fn remove_state_marker<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
     let marker_path = workdir.join(STATE_MARKER_FILE);
-    if provider.exists(&marker_path) {
-        provider
-            .remove_file(&marker_path)
-            .context("Failed to remove state marker file")?;
+    match provider.remove_file(&marker_path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // If the file was already gone, that's fine -- the goal is absence.
+            if let Some(io_err) = e.downcast_ref::<std::io::Error>()
+                && io_err.kind() == std::io::ErrorKind::NotFound
+            {
+                return Ok(());
+            }
+            Err(StateError::IoError {
+                source: e.context("Failed to remove state marker file"),
+            })
+        }
     }
-    Ok(())
 }
 
 /// RAII guard that writes a state marker file on creation and removes it on Drop.

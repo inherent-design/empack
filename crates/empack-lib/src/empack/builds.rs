@@ -72,7 +72,8 @@ pub struct PackInfo {
     pub name: String,
     pub version: String,
     pub mc_version: String,
-    pub fabric_version: String,
+    pub loader_version: String,
+    pub loader_type: String,
 }
 
 /// Build configuration for a specific target (V1's register_build_target pattern)
@@ -172,19 +173,30 @@ impl<'a> BuildOrchestrator<'a> {
                 .unwrap_or("Unknown")
                 .to_string();
 
-            let fabric_version = toml_value
-                .get("versions")
-                .and_then(|v| v.get("fabric"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown")
-                .to_string();
+            let versions_table = toml_value.get("versions");
+            let (loader_type, loader_version) = if let Some(versions) = versions_table {
+                if let Some(v) = versions.get("fabric").and_then(|v| v.as_str()) {
+                    ("fabric".to_string(), v.to_string())
+                } else if let Some(v) = versions.get("neoforge").and_then(|v| v.as_str()) {
+                    ("neoforge".to_string(), v.to_string())
+                } else if let Some(v) = versions.get("forge").and_then(|v| v.as_str()) {
+                    ("forge".to_string(), v.to_string())
+                } else if let Some(v) = versions.get("quilt").and_then(|v| v.as_str()) {
+                    ("quilt".to_string(), v.to_string())
+                } else {
+                    ("vanilla".to_string(), String::new())
+                }
+            } else {
+                ("vanilla".to_string(), String::new())
+            };
 
             self.pack_info = Some(PackInfo {
                 author,
                 name,
                 version,
                 mc_version,
-                fabric_version,
+                loader_version,
+                loader_type,
             });
         }
 
@@ -589,10 +601,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         // Step 6: Execute mrpack-install to download the appropriate Minecraft server JAR
         let pack_info = self.load_pack_info()?.clone();
-        let server_type = match pack_info.fabric_version.as_str() {
-            "" => "vanilla",
-            _ => "fabric",
-        };
+        let server_type = &pack_info.loader_type;
         let result = self.session.process().execute(
             "mrpack-install",
             &["server", server_type, "--server-file", "srv.jar"],
@@ -733,10 +742,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         // Step 4: Execute mrpack-install to download the Minecraft server JAR
         let pack_info = self.load_pack_info()?.clone();
-        let server_type = match pack_info.fabric_version.as_str() {
-            "" => "vanilla",
-            _ => "fabric",
-        };
+        let server_type = &pack_info.loader_type;
         let result = self.session.process().execute(
             "mrpack-install",
             &["server", server_type, "--server-file", "srv.jar"],
@@ -1054,7 +1060,7 @@ impl<'a> BuildOrchestrator<'a> {
                     .replace("{{NAME}}", &pack_info.name)
                     .replace("{{AUTHOR}}", &pack_info.author)
                     .replace("{{MC_VERSION}}", &pack_info.mc_version)
-                    .replace("{{FABRIC_VERSION}}", &pack_info.fabric_version);
+                    .replace("{{FABRIC_VERSION}}", &pack_info.loader_version);
 
                 self.session
                     .filesystem()

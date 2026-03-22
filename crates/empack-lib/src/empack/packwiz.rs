@@ -31,7 +31,6 @@
 use crate::application::session::{FileSystemProvider, ProcessProvider, Session};
 use crate::empack::state::StateError;
 use crate::primitives::ProjectPlatform;
-use anyhow::Context;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -181,18 +180,14 @@ impl PackwizOps for LivePackwizOps<'_> {
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>> {
         let mods_dir = workdir.join("pack").join("mods");
 
-        if !mods_dir.exists() {
+        if !self.filesystem.exists(&mods_dir) {
             return Ok(HashSet::new());
         }
 
+        let file_list = self.filesystem.get_file_list(&mods_dir)?;
         let mut installed_mods = HashSet::new();
 
-        for entry in std::fs::read_dir(&mods_dir)
-            .with_context(|| format!("Failed to read mods directory: {}", mods_dir.display()))?
-        {
-            let entry = entry?;
-            let path = entry.path();
-
+        for path in &file_list {
             if path.extension().and_then(|e| e.to_str()) == Some("toml")
                 && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
             {

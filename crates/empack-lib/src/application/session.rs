@@ -471,6 +471,11 @@ impl ProcessProvider for LiveProcessProvider {
                 )
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                // Kill orphan child process before returning
+                if let Ok(mut guard) = child_for_timeout.lock() {
+                    let _ = guard.kill();
+                    let _ = guard.wait();
+                }
                 anyhow::bail!(
                     "Command '{}' execution thread terminated unexpectedly",
                     cmd_name
