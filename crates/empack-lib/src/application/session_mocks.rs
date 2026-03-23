@@ -584,6 +584,8 @@ pub struct MockProcessProvider {
     pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
     pub programs: HashMap<String, Option<String>>,
     materialize_mrpack_exports: bool,
+    /// Maps project_id -> slug for simulating .pw.toml creation on packwiz add
+    packwiz_add_slugs: HashMap<String, String>,
     files: Option<Arc<Mutex<HashMap<PathBuf, String>>>>,
     directories: Option<Arc<Mutex<HashSet<PathBuf>>>>,
 }
@@ -604,6 +606,7 @@ impl MockProcessProvider {
             results: HashMap::new(),
             programs,
             materialize_mrpack_exports: false,
+            packwiz_add_slugs: HashMap::new(),
             files: None,
             directories: None,
         };
@@ -699,6 +702,13 @@ impl MockProcessProvider {
         self
     }
 
+    /// Register a side effect: when packwiz add succeeds for `project_id`,
+    /// create `mods/{slug}.pw.toml` in the mock filesystem.
+    pub fn with_packwiz_add_slug(mut self, project_id: String, slug: String) -> Self {
+        self.packwiz_add_slugs.insert(project_id, slug);
+        self
+    }
+
     fn connect_filesystem(&mut self, filesystem: &MockFileSystemProvider) {
         self.files = Some(filesystem.files.clone());
         self.directories = Some(filesystem.directories.clone());
@@ -737,6 +747,53 @@ impl MockProcessProvider {
             .lock()
             .unwrap()
             .insert(output_path, "mock mrpack artifact".to_string());
+    }
+
+    /// When a `packwiz {platform} add --project-id {id}` command succeeds and we
+    /// have a registered slug for that project_id, create `{workdir}/mods/{slug}.pw.toml`
+    /// in the mock filesystem. This simulates what real packwiz does.
+    fn maybe_materialize_pw_toml(
+        &self,
+        command: &str,
+        args: &[&str],
+        working_dir: &std::path::Path,
+        output: &ProcessOutput,
+    ) {
+        if command != "packwiz" || self.packwiz_add_slugs.is_empty() || !output.success {
+            return;
+        }
+
+        if !args.contains(&"add") {
+            return;
+        }
+
+        // Extract project_id from --project-id or --addon-id flag
+        let project_id = args
+            .iter()
+            .position(|arg| *arg == "--project-id" || *arg == "--addon-id")
+            .and_then(|i| args.get(i + 1));
+
+        let Some(project_id) = project_id else {
+            return;
+        };
+
+        let Some(slug) = self.packwiz_add_slugs.get(*project_id) else {
+            return;
+        };
+
+        let (Some(files), Some(directories)) = (&self.files, &self.directories) else {
+            return;
+        };
+
+        // packwiz runs inside {workdir}/pack, creates files at {workdir}/pack/mods/{slug}.pw.toml
+        // but handle_add passes working_dir as workdir.join("pack"), so mods/ is relative to that
+        let mods_dir = working_dir.join("mods");
+        directories.lock().unwrap().insert(mods_dir.clone());
+        let pw_toml_path = mods_dir.join(format!("{}.pw.toml", slug));
+        files
+            .lock()
+            .unwrap()
+            .insert(pw_toml_path, format!("name = \"{}\"\n", slug));
     }
 
     /// Get all recorded process calls for verification
@@ -807,6 +864,7 @@ impl ProcessProvider for MockProcessProvider {
         }?;
 
         self.maybe_materialize_mrpack_export(command, args, &output);
+        self.maybe_materialize_pw_toml(command, args, working_dir, &output);
 
         Ok(output)
     }

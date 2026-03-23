@@ -5,7 +5,7 @@
 
 use crate::Result;
 use crate::application::cli::SearchPlatform;
-use crate::application::session::{CommandSession, Session};
+use crate::application::session::{CommandSession, FileSystemProvider, Session};
 use crate::application::sync::{
     AddContractError, AddResolution, SyncExecutionAction, SyncPlanAction, build_sync_plan,
     loader_arg, project_type_arg, resolve_add_contract, resolve_sync_action,
@@ -1064,6 +1064,9 @@ async fn handle_add(
 
     // === Execute phase: all side effects happen below this line ===
     for resolved in resolved_mods {
+        // Snapshot .pw.toml slugs before packwiz add so we can diff after
+        let before_slugs = scan_pw_toml_slugs(session.filesystem(), &mods_dir);
+
         let mut packwiz_result: std::result::Result<(), ()> = Ok(());
         let mut last_error = None;
         for command in &resolved.resolution.commands {
@@ -1095,6 +1098,16 @@ async fn handle_add(
                     .display()
                     .status()
                     .success("Successfully added to pack", "");
+
+                // Derive dep_key from the actual .pw.toml file that packwiz created,
+                // rather than from user input which may diverge from the registry slug.
+                let dep_key = discover_dep_key(
+                    session.filesystem(),
+                    &mods_dir,
+                    &before_slugs,
+                    &resolved.dep_key,
+                    session.display(),
+                );
 
                 // Update dependency graph with newly added mod
                 // Rebuild from directory to capture new .pw.toml files
@@ -1133,7 +1146,7 @@ async fn handle_add(
                     version: None,
                 };
                 if let Err(e) = config_manager.add_dependency(
-                    &resolved.dep_key,
+                    &dep_key,
                     record,
                 ) {
                     session
@@ -1234,6 +1247,9 @@ impl AddResolutionIntent {
             None if is_modrinth_project_id(mod_query) => {
                 (Some(mod_query.to_string()), Some(ProjectPlatform::Modrinth))
             }
+            None if is_curseforge_project_id(mod_query) => {
+                (Some(mod_query.to_string()), Some(ProjectPlatform::CurseForge))
+            }
             _ => (None, None),
         };
 
@@ -1242,6 +1258,67 @@ impl AddResolutionIntent {
             direct_project_id,
             direct_platform,
             preferred_platform,
+        }
+    }
+}
+
+/// Scan a directory for `.pw.toml` files and extract their slugs.
+///
+/// Replicates the slug-extraction logic from `PackwizOps::get_installed_mods`
+/// but operates directly on the filesystem provider so we can snapshot before/after
+/// a packwiz command without requiring stateful mocks.
+fn scan_pw_toml_slugs(
+    filesystem: &dyn FileSystemProvider,
+    mods_dir: &std::path::Path,
+) -> HashSet<String> {
+    if !filesystem.exists(mods_dir) {
+        return HashSet::new();
+    }
+    let file_list = match filesystem.get_file_list(mods_dir) {
+        Ok(list) => list,
+        Err(_) => return HashSet::new(),
+    };
+    let mut slugs = HashSet::new();
+    for path in &file_list {
+        if path.extension().and_then(|e| e.to_str()) == Some("toml")
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            let slug = stem.strip_suffix(".pw").unwrap_or(stem);
+            slugs.insert(slug.to_string());
+        }
+    }
+    slugs
+}
+
+/// After a successful `packwiz add`, discover the dep_key by diffing the `.pw.toml`
+/// files before and after the command. Falls back to the input-derived key if the
+/// diff is empty or ambiguous.
+fn discover_dep_key(
+    filesystem: &dyn FileSystemProvider,
+    mods_dir: &std::path::Path,
+    before_slugs: &HashSet<String>,
+    fallback_key: &str,
+    display: &dyn crate::display::DisplayProvider,
+) -> String {
+    let after_slugs = scan_pw_toml_slugs(filesystem, mods_dir);
+    let new_slugs: Vec<&String> = after_slugs.difference(before_slugs).collect();
+    match new_slugs.len() {
+        1 => new_slugs[0].clone(),
+        0 => {
+            // No new file detected — packwiz may have updated an existing file
+            display.status().subtle(&format!(
+                "Could not detect new .pw.toml file; using '{}' as dependency key",
+                fallback_key
+            ));
+            fallback_key.to_string()
+        }
+        _ => {
+            // Multiple new files — ambiguous, use fallback
+            display.status().subtle(&format!(
+                "Multiple new .pw.toml files detected; using '{}' as dependency key",
+                fallback_key
+            ));
+            fallback_key.to_string()
         }
     }
 }
