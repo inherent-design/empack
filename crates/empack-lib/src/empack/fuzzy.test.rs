@@ -109,3 +109,11 @@ fn test_levenshtein_distance() {
 fn test_levenshtein_unicode() {
     assert_eq!(levenshtein_distance("café", "cafe"), 1);
 }
+
+#[test]
+fn test_calculate_confidence_unicode_lowercase_expansion() {
+    // Turkish İ (U+0130) lowercases to "i\u{0307}" (2 chars) — max_len must use
+    // lowercased strings to avoid distance > max_len underflow.
+    let result = calculate_confidence("İ", "i", 0);
+    assert!(result <= 100, "confidence must not overflow: got {result}");
+}

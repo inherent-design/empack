@@ -27,7 +27,7 @@ pub fn calculate_confidence(query: &str, found_title: &str, downloads: u64) -> u
     }
 
     let distance = levenshtein_distance(&query_lower, &found_lower);
-    let max_len = std::cmp::max(query.chars().count(), found_title.chars().count());
+    let max_len = std::cmp::max(query_lower.chars().count(), found_lower.chars().count());
 
     if max_len == 0 {
         return 0;
