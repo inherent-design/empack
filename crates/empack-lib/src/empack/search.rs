@@ -6,7 +6,7 @@
 use crate::networking::cache::HttpCache;
 use crate::networking::rate_limit::RateLimiterManager;
 use crate::primitives::ProjectPlatform;
-use percent_encoding::{CONTROLS, utf8_percent_encode};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -538,8 +538,8 @@ impl ProjectResolver {
         let url = format!(
             "{}/v2/search?query={}&facets={}",
             self.modrinth_base_url,
-            utf8_percent_encode(title, CONTROLS),
-            utf8_percent_encode(&facets_json, CONTROLS)
+            utf8_percent_encode(title, NON_ALPHANUMERIC),
+            utf8_percent_encode(&facets_json, NON_ALPHANUMERIC)
         );
 
         trace!("Modrinth search URL: {}", url);
@@ -629,7 +629,7 @@ impl ProjectResolver {
 
         let query_string = params
             .iter()
-            .map(|(k, v)| format!("{}={}", k, utf8_percent_encode(v, CONTROLS)))
+            .map(|(k, v)| format!("{}={}", k, utf8_percent_encode(v, NON_ALPHANUMERIC)))
             .collect::<Vec<_>>()
             .join("&");
 
@@ -687,13 +687,21 @@ impl ProjectResolver {
         }
     }
 
-    /// Get CurseForge class ID for project type
+    /// Get CurseForge class ID for project type.
+    ///
+    /// Falls back to classId 6 (Mods) for unmapped types. This is intentional:
+    /// most CurseForge shader packs (e.g. Iris Shaders, Complementary) are
+    /// distributed as mods under classId 6. The CurseForge API does not expose
+    /// a confirmed shader-specific class ID via /v1/categories.
     fn curseforge_class_id(&self, project_type: &str) -> u32 {
         match project_type {
             "mod" => 6,
             "resourcepack" => 12,
             "datapack" => 17,
-            _ => 6, // Default to mod
+            other => {
+                debug!("No dedicated CurseForge classId for '{}', falling back to 6 (Mods)", other);
+                6
+            }
         }
     }
 

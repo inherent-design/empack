@@ -278,14 +278,14 @@ async fn test_tiered_search_first_fails_second_succeeds() {
 
     // First call (mod): empty. Second call (resourcepack): hit.
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.mod%22".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Amod%22".to_string()))
         .with_status(200)
         .with_body(modrinth_empty_json())
         .create_async()
         .await;
 
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.resourcepack".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Aresourcepack".to_string()))
         .with_status(200)
         .with_body(modrinth_hit_json("RP456", "Faithful", 30_000))
         .create_async()
@@ -314,21 +314,21 @@ async fn test_tiered_search_third_tier_shader_succeeds() {
     let mut mr_server = mockito::Server::new_async().await;
 
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.mod%22".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Amod%22".to_string()))
         .with_status(200)
         .with_body(modrinth_empty_json())
         .create_async()
         .await;
 
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.resourcepack".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Aresourcepack".to_string()))
         .with_status(200)
         .with_body(modrinth_empty_json())
         .create_async()
         .await;
 
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.shader".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Ashader".to_string()))
         .with_status(200)
         .with_body(modrinth_hit_json("SH789", "BSL Shaders", 20_000))
         .create_async()
@@ -541,7 +541,7 @@ async fn test_error_propagation_low_confidence_swallowed_next_tier_succeeds() {
 
     // Mod tier: returns result with wrong title → low confidence → swallowed
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.mod%22".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Amod%22".to_string()))
         .with_status(200)
         .with_body(modrinth_hit_json("WRONG1", "Totally Different Name XYZ", 100))
         .create_async()
@@ -549,7 +549,7 @@ async fn test_error_propagation_low_confidence_swallowed_next_tier_succeeds() {
 
     // Resourcepack tier: returns exact match → high confidence → accepted
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.resourcepack".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Aresourcepack".to_string()))
         .with_status(200)
         .with_body(modrinth_hit_json("RP999", "Faithful", 30_000))
         .create_async()

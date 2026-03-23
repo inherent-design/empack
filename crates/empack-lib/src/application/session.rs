@@ -279,7 +279,10 @@ impl LiveNetworkProvider {
     /// Production constructor - uses default API URLs
     pub fn new() -> Self {
         let cache_dir = std::env::temp_dir().join("empack").join("http_cache");
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("Failed to build HTTP client");
         Self {
             cache: Arc::new(HttpCache::new(cache_dir)),
             rate_limiter: Arc::new(RateLimiterManager::new(client)),
@@ -297,7 +300,10 @@ impl LiveNetworkProvider {
         curseforge_base_url: Option<String>,
     ) -> Self {
         let cache_dir = std::env::temp_dir().join("empack-test").join("http_cache");
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("Failed to build HTTP client");
         Self {
             cache: Arc::new(HttpCache::new(cache_dir)),
             rate_limiter: Arc::new(RateLimiterManager::new(client)),
