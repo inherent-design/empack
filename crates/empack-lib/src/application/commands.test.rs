@@ -71,6 +71,89 @@ mod handle_requirements_tests {
     }
 }
 
+// ===== FORMAT_EMPACK_YML TESTS =====
+
+mod format_empack_yml_tests {
+    use super::*;
+
+    /// Minimal struct for round-trip deserialization of init output.
+    #[derive(serde::Deserialize)]
+    struct InitYml {
+        empack: InitFields,
+    }
+    #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
+    struct InitFields {
+        name: String,
+        author: String,
+        version: String,
+        minecraft_version: String,
+        loader_version: String,
+    }
+
+    /// Helper: serialize then deserialize, returning parsed fields.
+    fn round_trip(
+        name: &str,
+        author: &str,
+        version: &str,
+        mc_version: &str,
+        loader: &str,
+        loader_version: &str,
+    ) -> InitYml {
+        let yaml = format_empack_yml(name, author, version, mc_version, loader, loader_version);
+        serde_saphyr::from_str(&yaml)
+            .unwrap_or_else(|e| panic!("produced invalid YAML: {e}\n---\n{yaml}"))
+    }
+
+    #[test]
+    fn it_produces_valid_yaml_for_normal_input() {
+        let result = format_empack_yml(
+            "test-pack",
+            "Test Author",
+            "1.0.0",
+            "1.21.1",
+            "fabric",
+            "0.18.4",
+        );
+        // serde_saphyr omits quotes for plain strings
+        assert!(result.contains("name: test-pack"));
+        assert!(result.contains("author: Test Author"));
+        assert!(result.contains("version: 1.0.0"));
+        assert!(result.contains("minecraft_version: 1.21.1"));
+        assert!(result.contains("loader: fabric"));
+        assert!(result.contains("loader_version: 0.18.4"));
+        assert!(result.contains("dependencies: {}"));
+    }
+
+    /// Round-trip: name containing double quotes
+    #[test]
+    fn yaml_injection_double_quotes_in_name() {
+        let parsed = round_trip("My \"Pack\"", "Author", "1.0.0", "1.21.1", "fabric", "0.1");
+        assert_eq!(parsed.empack.name, "My \"Pack\"");
+    }
+
+    /// Round-trip: name containing backslash
+    #[test]
+    fn yaml_injection_backslash_in_name() {
+        let parsed = round_trip("My \\ Pack", "Author", "1.0.0", "1.21.1", "fabric", "0.1");
+        assert_eq!(parsed.empack.name, "My \\ Pack");
+    }
+
+    /// Round-trip: author with YAML special characters (colon, hash, apostrophe)
+    #[test]
+    fn yaml_injection_special_chars_in_author() {
+        let parsed = round_trip("pack", "O'Brien: #1 Author", "1.0.0", "1.21.1", "fabric", "0.1");
+        assert_eq!(parsed.empack.author, "O'Brien: #1 Author");
+    }
+
+    /// Round-trip: name containing newline
+    #[test]
+    fn yaml_injection_newline_in_name() {
+        let parsed = round_trip("Pack\nName", "Author", "1.0.0", "1.21.1", "fabric", "0.1");
+        assert_eq!(parsed.empack.name, "Pack\nName");
+    }
+}
+
 // ===== HANDLE_INIT TESTS =====
 
 mod handle_init_tests {
@@ -103,9 +186,9 @@ mod handle_init_tests {
             .filesystem()
             .read_to_string(&target_dir.join("empack.yml"))
             .unwrap();
-        assert!(empack_yml.contains("name: \"test-pack\""));
-        assert!(empack_yml.contains("author: \"Test Author\""));
-        assert!(empack_yml.contains("minecraft_version: \"1.21.1\""));
+        assert!(empack_yml.contains("name: test-pack"));
+        assert!(empack_yml.contains("author: Test Author"));
+        assert!(empack_yml.contains("minecraft_version: 1.21.1"));
 
         let pack_toml = session
             .filesystem()
@@ -172,8 +255,8 @@ mod handle_init_tests {
             .filesystem()
             .read_to_string(&workdir.join("empack.yml"))
             .unwrap();
-        assert!(empack_yml.contains("name: \"force-pack\""));
-        assert!(empack_yml.contains("author: \"Overwrite Author\""));
+        assert!(empack_yml.contains("name: force-pack"));
+        assert!(empack_yml.contains("author: Overwrite Author"));
 
         let pack_toml = session
             .filesystem()
@@ -1468,6 +1551,221 @@ fabric = "0.16.0"
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();
         assert!(calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn it_returns_error_when_all_planning_resolutions_fail() {
+        // Deps with empty project_id force the resolver path, which returns errors
+        let workdir = mock_root().join("all-fail-sync");
+        let empack_yml = r#"empack:
+  dependencies:
+    mod_a:
+      status: resolved
+      title: Mod A
+      platform: modrinth
+      project_id: ""
+      type: mod
+    mod_b:
+      status: resolved
+      title: Mod B
+      platform: modrinth
+      project_id: ""
+      type: mod
+  minecraft_version: "1.21.1"
+  loader: fabric
+  name: "Test Pack"
+  author: "Test Author"
+  version: "1.0.0"
+"#;
+        let pack_toml = r#"name = "Test Pack"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.0"
+"#;
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_file(workdir.join("empack.yml"), empack_yml.to_string())
+                    .with_file(workdir.join("pack").join("pack.toml"), pack_toml.to_string())
+                    .with_file(
+                        workdir.join("pack").join("index.toml"),
+                        "hash-format = \"sha256\"\n".to_string(),
+                    ),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_error_response("Mod A".to_string(), "network timeout".to_string())
+                    .with_error_response("Mod B".to_string(), "network timeout".to_string()),
+            );
+
+        let result = handle_sync(&session).await;
+
+        assert!(result.is_err(), "handle_sync should fail when all resolutions fail");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("failed during resolution"),
+            "Error should mention resolution failures, got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("2"),
+            "Error should mention the count of 2 failures, got: {}",
+            err_msg
+        );
+        // No packwiz commands should have been executed
+        assert!(session.process_provider.get_calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn it_proceeds_with_warning_when_some_planning_resolutions_fail() {
+        // mod_a has empty project_id (resolver fails), mod_b has real project_id (succeeds)
+        let workdir = mock_root().join("partial-fail-sync");
+        let empack_yml = r#"empack:
+  dependencies:
+    mod_a:
+      status: resolved
+      title: Mod A
+      platform: modrinth
+      project_id: ""
+      type: mod
+    mod_b:
+      status: resolved
+      title: Mod B
+      platform: modrinth
+      project_id: BBNobbMI
+      type: mod
+  minecraft_version: "1.21.1"
+  loader: fabric
+  name: "Test Pack"
+  author: "Test Author"
+  version: "1.0.0"
+"#;
+        let pack_toml = r#"name = "Test Pack"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.0"
+"#;
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_file(workdir.join("empack.yml"), empack_yml.to_string())
+                    .with_file(workdir.join("pack").join("pack.toml"), pack_toml.to_string())
+                    .with_file(
+                        workdir.join("pack").join("index.toml"),
+                        "hash-format = \"sha256\"\n".to_string(),
+                    ),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_error_response("Mod A".to_string(), "network timeout".to_string()),
+            )
+            .with_process(
+                MockProcessProvider::new().with_packwiz_result(
+                    vec![
+                        "modrinth".to_string(),
+                        "add".to_string(),
+                        "--project-id".to_string(),
+                        "BBNobbMI".to_string(),
+                        "-y".to_string(),
+                    ],
+                    Ok(ProcessOutput {
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        success: true,
+                    }),
+                ),
+            );
+
+        let result = handle_sync(&session).await;
+
+        assert!(result.is_ok(), "handle_sync should succeed for partial failure: {result:?}");
+        // Only the successful resolution should have been executed
+        let calls = session.process_provider.get_calls();
+        assert_eq!(
+            calls.len(),
+            1,
+            "Only the successfully resolved action should execute, got {} calls",
+            calls.len()
+        );
+        assert!(session.process_provider.verify_call(
+            "packwiz",
+            &["modrinth", "add", "--project-id", "BBNobbMI", "-y"],
+            &workdir.join("pack")
+        ));
+    }
+
+    #[tokio::test]
+    async fn it_succeeds_normally_when_no_planning_resolutions_fail() {
+        // Regression test: all resolutions succeed, no warnings, normal execution
+        let installed_mods = HashSet::new();
+        let workdir = mock_root().join("configured-project");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone())
+                    .with_installed_mods(installed_mods),
+            )
+            .with_network(MockNetworkProvider::new())
+            .with_process(
+                MockProcessProvider::new()
+                    .with_packwiz_result(
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "P7dR8mSH".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    .with_packwiz_result(
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "AANobbMI".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    ),
+            );
+
+        let result = handle_sync(&session).await;
+
+        assert!(result.is_ok(), "handle_sync should succeed when all resolutions pass: {result:?}");
+        let calls = session.process_provider.get_calls();
+        assert_eq!(calls.len(), 2, "Both resolved actions should execute");
     }
 }
 

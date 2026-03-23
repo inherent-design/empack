@@ -188,15 +188,15 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 
     let empack_yml = fs::read_to_string(&empack_yml_path)?;
     assert!(
-        empack_yml.contains("name: \"Matrix Fabric\""),
+        empack_yml.contains("name: Matrix Fabric"),
         "empack.yml should persist the explicit pack name"
     );
     assert!(
-        empack_yml.contains("author: \"Workflow Test\""),
+        empack_yml.contains("author: Workflow Test"),
         "empack.yml should persist the explicit author"
     );
     assert!(
-        empack_yml.contains("minecraft_version: \"1.21.1\""),
+        empack_yml.contains("minecraft_version: 1.21.1"),
         "empack.yml should persist the explicit Minecraft version"
     );
     assert!(

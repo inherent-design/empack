@@ -16,20 +16,9 @@ use crate::empack::parsing::ModLoader;
 use crate::platform::{ArchiverCapabilities, GoCapabilities};
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-/// Default template for empack.yml configuration file
-const DEFAULT_EMPACK_YML_TEMPLATE: &str = r#"empack:
-  name: "{name}"
-  author: "{author}"
-  version: "{version}"
-  minecraft_version: "{minecraft_version}"
-  loader: {loader}
-  loader_version: "{loader_version}"
-  dependencies: []
-"#;
-
-/// Format empack.yml template with provided configuration values
+/// Build an empack.yml string via serde serialization (injection-safe).
 fn format_empack_yml(
     name: &str,
     author: &str,
@@ -38,13 +27,41 @@ fn format_empack_yml(
     loader: &str,
     loader_version: &str,
 ) -> String {
-    DEFAULT_EMPACK_YML_TEMPLATE
-        .replace("{name}", name)
-        .replace("{author}", author)
-        .replace("{version}", version)
-        .replace("{minecraft_version}", minecraft_version)
-        .replace("{loader}", loader)
-        .replace("{loader_version}", loader_version)
+    let loader_enum = ModLoader::parse(loader).ok();
+
+    // Dedicated struct for init output: includes loader_version (which
+    // EmpackProjectConfig doesn't carry) and always emits an empty
+    // dependencies map.
+    #[derive(serde::Serialize)]
+    struct InitEmpackYml<'a> {
+        empack: InitFields<'a>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct InitFields<'a> {
+        name: &'a str,
+        author: &'a str,
+        version: &'a str,
+        minecraft_version: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        loader: Option<ModLoader>,
+        loader_version: &'a str,
+        dependencies: HashMap<String, DependencyEntry>,
+    }
+
+    let config = InitEmpackYml {
+        empack: InitFields {
+            name,
+            author,
+            version,
+            minecraft_version,
+            loader: loader_enum,
+            loader_version,
+            dependencies: HashMap::new(),
+        },
+    };
+
+    serde_saphyr::to_string(&config).expect("serializing init config should never fail")
 }
 
 /// Execute CLI commands using the new session-based architecture
@@ -2041,6 +2058,8 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .success("Already installed", &dep_spec.key);
     }
 
+    let mut planning_failure_count: usize = 0;
+
     for action in &protected_actions {
         step += 1;
         let action_label = match action {
@@ -2068,6 +2087,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 planned_actions.push(resolved);
             }
             Err(e) => {
+                planning_failure_count += 1;
                 session.display().status().error(
                     &format!("Failed to plan {action_label}"),
                     &render_add_contract_error_details(&e),
@@ -2078,7 +2098,12 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     // Show planned actions
     if planned_actions.is_empty() {
-        if !unresolved_slugs.is_empty() {
+        if planning_failure_count > 0 {
+            anyhow::bail!(
+                "All {} planned action(s) failed during resolution. Check warnings above.",
+                planning_failure_count
+            );
+        } else if !unresolved_slugs.is_empty() {
             session.display().status().warning(&format!(
                 "{} search {} could not be resolved. Run sync again to retry.",
                 unresolved_slugs.len(),
@@ -2091,6 +2116,13 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 .complete("No changes needed - empack.yml already in sync");
         }
         return Ok(());
+    }
+
+    if planning_failure_count > 0 {
+        session.display().status().warning(&format!(
+            "{} action(s) failed during resolution and will be skipped. Proceeding with {} resolved action(s).",
+            planning_failure_count, planned_actions.len()
+        ));
     }
 
     session.display().status().section("Planned Actions");
