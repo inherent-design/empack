@@ -459,7 +459,7 @@ impl ProjectResolver {
         platform: ProjectPlatform,
     ) -> Result<(u16, Vec<u8>), SearchError> {
         use crate::networking::cache::CachedResponse;
-        use std::time::{Duration, SystemTime};
+        use std::time::SystemTime;
 
         // Check cache first
         if let Some(cache) = &self.cache
@@ -473,7 +473,7 @@ impl ProjectResolver {
         // Send through rate limiter or directly
         let response = if let Some(rate_limiter) = &self.rate_limiter {
             let rl_client = rate_limiter.client_for_platform(platform);
-            let mut req_builder = rl_client.client().get(url);
+            let mut req_builder = self.client.get(url);
             for (key, value) in headers {
                 req_builder = req_builder.header(*key, *value);
             }
@@ -497,7 +497,7 @@ impl ProjectResolver {
             let cached_response = CachedResponse {
                 data: bytes.clone(),
                 etag: None,
-                expires: SystemTime::now() + Duration::from_secs(300),
+                expires: SystemTime::now() + cache.default_ttl(),
                 status,
             };
             cache.put(url.to_string(), cached_response).await;

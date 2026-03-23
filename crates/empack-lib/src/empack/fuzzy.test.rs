@@ -104,3 +104,8 @@ fn test_levenshtein_distance() {
     assert_eq!(levenshtein_distance("kitten", "sitting"), 3);
     assert_eq!(levenshtein_distance("saturday", "sunday"), 3);
 }
+
+#[test]
+fn test_levenshtein_unicode() {
+    assert_eq!(levenshtein_distance("café", "cafe"), 1);
+}

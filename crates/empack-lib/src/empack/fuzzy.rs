@@ -27,7 +27,7 @@ pub fn calculate_confidence(query: &str, found_title: &str, downloads: u64) -> u
     }
 
     let distance = levenshtein_distance(&query_lower, &found_lower);
-    let max_len = std::cmp::max(query.len(), found_title.len());
+    let max_len = std::cmp::max(query.chars().count(), found_title.chars().count());
 
     if max_len == 0 {
         return 0;
@@ -59,13 +59,13 @@ pub fn has_extra_words(query: &str, found_title: &str) -> bool {
         return false;
     }
 
-    let ratio = (norm_found.len() * 100) / norm_query.len();
+    let ratio = (norm_found.chars().count() * 100) / norm_query.chars().count();
     ratio > EXTRA_WORDS_MAX_RATIO as usize
 }
 
 pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
-    let len1 = s1.len();
-    let len2 = s2.len();
+    let len1 = s1.chars().count();
+    let len2 = s2.chars().count();
     let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
 
     for (i, row) in matrix.iter_mut().enumerate().take(len1 + 1) {

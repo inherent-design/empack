@@ -71,6 +71,10 @@ impl HttpCache {
         &self.cache_dir
     }
 
+    pub fn default_ttl(&self) -> Duration {
+        self.default_ttl
+    }
+
     /// Load cache from disk
     pub async fn load_from_disk(&self) -> Result<(), NetworkingError> {
         // Ensure cache directory exists
