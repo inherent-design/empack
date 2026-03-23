@@ -206,6 +206,17 @@ impl<'a> BuildOrchestrator<'a> {
         }
     }
 
+    /// Maps empack's internal loader names to mrpack-install's accepted server types.
+    /// mrpack-install accepts: vanilla, fabric, quilt, forge, paper
+    fn mrpack_install_server_type(loader_type: &str) -> &'static str {
+        match loader_type {
+            "fabric" => "fabric",
+            "quilt" => "quilt",
+            "forge" | "neoforge" => "forge",
+            _ => "vanilla",
+        }
+    }
+
     /// Register build targets (V1's register_all_build_targets pattern)
     #[cfg(test)]
     fn create_build_registry() -> HashMap<BuildTarget, BuildConfig> {
@@ -601,7 +612,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         // Step 6: Execute mrpack-install to download the appropriate Minecraft server JAR
         let pack_info = self.load_pack_info()?.clone();
-        let server_type = &pack_info.loader_type;
+        let server_type = Self::mrpack_install_server_type(&pack_info.loader_type);
         let result = self.session.process().execute(
             "mrpack-install",
             &["server", server_type, "--server-file", "srv.jar"],
@@ -742,7 +753,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         // Step 4: Execute mrpack-install to download the Minecraft server JAR
         let pack_info = self.load_pack_info()?.clone();
-        let server_type = &pack_info.loader_type;
+        let server_type = Self::mrpack_install_server_type(&pack_info.loader_type);
         let result = self.session.process().execute(
             "mrpack-install",
             &["server", server_type, "--server-file", "srv.jar"],

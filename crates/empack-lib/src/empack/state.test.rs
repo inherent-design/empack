@@ -1064,10 +1064,18 @@ fn test_can_transition_from_interrupted() {
         TransitionKind::Clean,
     ));
 
-    // Interrupted should NOT be able to build
-    assert!(!can_transition(
+    // Interrupted { was: Building } CAN retry a build
+    assert!(can_transition(
         &PackState::Interrupted {
             was: Box::new(PackState::Building)
+        },
+        TransitionKind::Build,
+    ));
+
+    // Interrupted { was: Cleaning } should NOT be able to build
+    assert!(!can_transition(
+        &PackState::Interrupted {
+            was: Box::new(PackState::Cleaning)
         },
         TransitionKind::Build,
     ));
@@ -1167,4 +1175,102 @@ fn test_can_enter_marker_cleaning_rejects_bad_layout() {
         MarkerKind::Cleaning,
         &|_| false,
     ));
+}
+
+// ── Interrupted build recovery tests ─────────────────────────────────────
+
+/// Test: can_transition allows Build from Interrupted { was: Building }
+#[test]
+fn test_interrupted_build_allows_build_retry() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    assert!(
+        can_transition(&interrupted, TransitionKind::Build),
+        "Build retry should be allowed from Interrupted {{ was: Building }}"
+    );
+}
+
+/// Test: can_transition rejects Build from Interrupted { was: Cleaning }
+#[test]
+fn test_interrupted_clean_rejects_build() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Cleaning),
+    };
+    assert!(
+        !can_transition(&interrupted, TransitionKind::Build),
+        "Build should NOT be allowed from Interrupted {{ was: Cleaning }}"
+    );
+}
+
+/// Test: can_transition still allows Clean from Interrupted { was: Building }
+#[test]
+fn test_interrupted_build_still_allows_clean() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    assert!(
+        can_transition(&interrupted, TransitionKind::Clean),
+        "Clean should still be allowed from Interrupted {{ was: Building }}"
+    );
+}
+
+/// Test: can_enter_marker allows Building from Interrupted { was: Building }
+#[test]
+fn test_can_enter_marker_building_from_interrupted_build() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    assert!(
+        can_enter_marker(&interrupted, MarkerKind::Building, &|_| true),
+        "Building marker should be allowed from Interrupted {{ was: Building }}"
+    );
+}
+
+/// Test: can_enter_marker rejects Building from Interrupted { was: Cleaning }
+#[test]
+fn test_can_enter_marker_building_from_interrupted_clean_rejected() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Cleaning),
+    };
+    assert!(
+        !can_enter_marker(&interrupted, MarkerKind::Building, &|_| true),
+        "Building marker should NOT be allowed from Interrupted {{ was: Cleaning }}"
+    );
+}
+
+/// Test: can_enter_marker respects layout check for interrupted build retry
+#[test]
+fn test_can_enter_marker_interrupted_build_respects_layout() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    assert!(
+        !can_enter_marker(&interrupted, MarkerKind::Building, &|_| false),
+        "Building marker from Interrupted should fail when layout is invalid"
+    );
+}
+
+/// Test: RefreshIndex allowed from Interrupted { was: Building }
+#[test]
+fn test_interrupted_build_allows_refresh_index() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Building),
+    };
+    assert!(
+        can_transition(&interrupted, TransitionKind::RefreshIndex),
+        "RefreshIndex should be allowed from Interrupted {{ was: Building }}"
+    );
+}
+
+/// Test: RefreshIndex rejected from Interrupted { was: Cleaning }
+#[test]
+fn test_interrupted_clean_rejects_refresh_index() {
+    let interrupted = PackState::Interrupted {
+        was: Box::new(PackState::Cleaning),
+    };
+    assert!(
+        !can_transition(&interrupted, TransitionKind::RefreshIndex),
+        "RefreshIndex should NOT be allowed from Interrupted {{ was: Cleaning }}"
+    );
 }

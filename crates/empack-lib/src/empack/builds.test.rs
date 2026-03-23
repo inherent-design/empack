@@ -628,3 +628,19 @@ fn test_pack_info_structure() {
     assert_eq!(pack_info.loader_version, "0.15.11");
     assert_eq!(pack_info.loader_type, "fabric");
 }
+
+#[test]
+fn test_mrpack_install_server_type_loader_mapping() {
+    // Known loader types pass through correctly
+    assert_eq!(BuildOrchestrator::mrpack_install_server_type("fabric"), "fabric");
+    assert_eq!(BuildOrchestrator::mrpack_install_server_type("quilt"), "quilt");
+    assert_eq!(BuildOrchestrator::mrpack_install_server_type("forge"), "forge");
+
+    // NeoForge maps to Forge (NeoForge is a Forge fork, same server install path)
+    assert_eq!(BuildOrchestrator::mrpack_install_server_type("neoforge"), "forge");
+
+    // Unknown/missing loaders fall back to vanilla
+    assert_eq!(BuildOrchestrator::mrpack_install_server_type("vanilla"), "vanilla");
+    assert_eq!(BuildOrchestrator::mrpack_install_server_type(""), "vanilla");
+    assert_eq!(BuildOrchestrator::mrpack_install_server_type("unknown"), "vanilla");
+}

@@ -155,11 +155,15 @@ pub fn can_transition(from: &PackState, kind: TransitionKind) -> bool {
         (PackState::Uninitialized, TransitionKind::Initialize) => true,
         (PackState::Configured, TransitionKind::Initialize) => true,
 
-        // RefreshIndex: must be Configured
+        // RefreshIndex: must be Configured, or recovering from interrupted build
         (PackState::Configured, TransitionKind::RefreshIndex) => true,
+        (PackState::Interrupted { was }, TransitionKind::RefreshIndex)
+            if matches!(was.as_ref(), PackState::Building) => true,
 
-        // Build (full): Configured or Built
+        // Build (full): Configured, Built, or retry after interrupted build
         (PackState::Configured | PackState::Built, TransitionKind::Build) => true,
+        (PackState::Interrupted { was }, TransitionKind::Build)
+            if matches!(was.as_ref(), PackState::Building) => true,
 
         // Clean: from Built, Configured, Uninitialized (idempotent), or Interrupted (recovery)
         (PackState::Built, TransitionKind::Clean) => true,
@@ -205,6 +209,9 @@ pub(crate) fn can_enter_marker(
     match (from, marker) {
         // Building: same states as Build, but layout always checked
         (PackState::Configured | PackState::Built, MarkerKind::Building) => layout_ok(from),
+        // Building retry: allow re-entering Building after an interrupted build
+        (PackState::Interrupted { was }, MarkerKind::Building)
+            if matches!(was.as_ref(), PackState::Building) => layout_ok(from),
         // Cleaning: only from Built, layout must confirm built state
         (PackState::Built, MarkerKind::Cleaning) => layout_ok(from),
         _ => false,
