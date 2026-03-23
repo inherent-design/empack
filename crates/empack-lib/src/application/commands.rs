@@ -16,7 +16,7 @@ use crate::empack::parsing::ModLoader;
 use crate::platform::{ArchiverCapabilities, GoCapabilities};
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 /// Build an empack.yml string via serde serialization (injection-safe).
 fn format_empack_yml(
@@ -46,7 +46,7 @@ fn format_empack_yml(
         #[serde(skip_serializing_if = "Option::is_none")]
         loader: Option<ModLoader>,
         loader_version: &'a str,
-        dependencies: HashMap<String, DependencyEntry>,
+        dependencies: BTreeMap<String, DependencyEntry>,
     }
 
     let config = InitEmpackYml {
@@ -57,7 +57,7 @@ fn format_empack_yml(
             minecraft_version,
             loader: loader_enum,
             loader_version,
-            dependencies: HashMap::new(),
+            dependencies: BTreeMap::new(),
         },
     };
 
@@ -1918,19 +1918,9 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .or(pack_metadata.as_ref().map(|p| p.versions.minecraft.as_str()));
 
         let mod_loader_opt = empack_config.empack.loader.or_else(|| {
-            pack_metadata.as_ref().and_then(|p| {
-                if p.versions.loader_versions.contains_key("fabric") {
-                    Some(crate::empack::parsing::ModLoader::Fabric)
-                } else if p.versions.loader_versions.contains_key("forge") {
-                    Some(crate::empack::parsing::ModLoader::Forge)
-                } else if p.versions.loader_versions.contains_key("quilt") {
-                    Some(crate::empack::parsing::ModLoader::Quilt)
-                } else if p.versions.loader_versions.contains_key("neoforge") {
-                    Some(crate::empack::parsing::ModLoader::NeoForge)
-                } else {
-                    None
-                }
-            })
+            pack_metadata
+                .as_ref()
+                .and_then(|p| config_manager.infer_loader_from_metadata(p).ok())
         });
 
         for (slug, search) in &search_entries {

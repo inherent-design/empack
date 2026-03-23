@@ -1683,7 +1683,7 @@ fn test_empack_config_round_trip_multiple_dependencies() {
     let config = EmpackConfig {
         empack: EmpackProjectConfig {
             dependencies: {
-                let mut deps = HashMap::new();
+                let mut deps = BTreeMap::new();
                 deps.insert(
                     "sodium".to_string(),
                     DependencyEntry::Resolved(DependencyRecord {
@@ -1718,6 +1718,7 @@ fn test_empack_config_round_trip_multiple_dependencies() {
             },
             minecraft_version: Some("1.21".to_string()),
             loader: Some(ModLoader::Fabric),
+            loader_version: None,
             name: Some("Test Pack".to_string()),
             author: Some("Tester".to_string()),
             version: Some("1.0.0".to_string()),
@@ -1926,5 +1927,204 @@ empack:
             project_type: ProjectType::Mod,
             version: None,
         })
+    );
+}
+
+// ─── loader_version round-trip tests ──────────────────────────────────────
+
+#[test]
+fn test_loader_version_preserved_after_add_dependency() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+  loader_version: "0.16.14"
+  name: "Test Pack"
+  author: "Test Author"
+  version: "1.0.0"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Verify loader_version was parsed
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.loader_version, Some("0.16.14".to_string()));
+
+    // Add a new dependency (triggers round-trip: deserialize -> modify -> serialize)
+    let result = config_manager.add_dependency(
+        "sodium",
+        DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Sodium".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        },
+    );
+    assert!(result.is_ok());
+
+    // Reload and verify loader_version survived the round-trip
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.loader_version, Some("0.16.14".to_string()));
+    assert_eq!(config.empack.dependencies.len(), 2);
+}
+
+#[test]
+fn test_loader_version_absent_stays_absent_after_add_dependency() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Add a dependency
+    let result = config_manager.add_dependency(
+        "sodium",
+        DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Sodium".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        },
+    );
+    assert!(result.is_ok());
+
+    // loader_version should remain None (not injected by round-trip)
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.loader_version, None);
+}
+
+#[test]
+fn test_create_project_plan_uses_empack_loader_version() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+  loader_version: "0.16.14"
+"#;
+    // pack.toml has a different loader version
+    let pack_content = r#"
+name = "Test Pack"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21"
+fabric = "0.14.21"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let provider = with_pack_toml(provider, &workdir, pack_content);
+    let config_manager = provider.config_manager(workdir);
+    let plan = config_manager.create_project_plan().unwrap();
+
+    // empack.yml loader_version should take precedence over pack.toml
+    assert_eq!(plan.loader_version, "0.16.14");
+}
+
+// ─── BTreeMap deterministic ordering tests ────────────────────────────────
+
+#[test]
+fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
+    let mut deps = BTreeMap::new();
+    // Insert in non-alphabetical order
+    deps.insert(
+        "zebra".to_string(),
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Zebra Mod".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "zebra-id".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        }),
+    );
+    deps.insert(
+        "alpha".to_string(),
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Alpha Mod".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "alpha-id".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        }),
+    );
+    deps.insert(
+        "middle".to_string(),
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Middle Mod".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "middle-id".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        }),
+    );
+
+    let config = EmpackConfig {
+        empack: EmpackProjectConfig {
+            dependencies: deps,
+            minecraft_version: Some("1.21".to_string()),
+            loader: Some(ModLoader::Fabric),
+            loader_version: None,
+            name: None,
+            author: None,
+            version: None,
+        },
+    };
+
+    let yaml = serde_saphyr::to_string(&config).unwrap();
+
+    // Keys must appear in alphabetical order: alpha < middle < zebra
+    let alpha_pos = yaml.find("alpha:").expect("alpha key missing");
+    let middle_pos = yaml.find("middle:").expect("middle key missing");
+    let zebra_pos = yaml.find("zebra:").expect("zebra key missing");
+
+    assert!(
+        alpha_pos < middle_pos,
+        "alpha ({alpha_pos}) should come before middle ({middle_pos}) in YAML output"
+    );
+    assert!(
+        middle_pos < zebra_pos,
+        "middle ({middle_pos}) should come before zebra ({zebra_pos}) in YAML output"
     );
 }

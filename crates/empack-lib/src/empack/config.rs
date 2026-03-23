@@ -4,7 +4,7 @@
 use crate::empack::parsing::ModLoader;
 use crate::primitives::{ProjectPlatform, ProjectType};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -141,7 +141,7 @@ fn default_project_type() -> ProjectType {
 pub struct EmpackProjectConfig {
     /// Dependencies keyed by slug (= packwiz .pw.toml filename stem)
     #[serde(default)]
-    pub dependencies: HashMap<String, DependencyEntry>,
+    pub dependencies: BTreeMap<String, DependencyEntry>,
 
     /// Target Minecraft version (if not specified, extracted from pack.toml)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -150,6 +150,10 @@ pub struct EmpackProjectConfig {
     /// Target mod loader (if not specified, extracted from pack.toml)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loader: Option<ModLoader>,
+
+    /// Mod loader version (if not specified, extracted from pack.toml)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loader_version: Option<String>,
 
     /// Optional modpack metadata (if not specified, extracted from pack.toml)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -332,11 +336,16 @@ impl<'a> ConfigManager<'a> {
             });
         };
 
-        let loader_version = if let Some(pack_meta) = &pack_metadata {
-            self.get_loader_version_from_metadata(pack_meta, &loader)?
-        } else {
-            "latest".to_string() // Fallback when no pack.toml
-        };
+        let loader_version = empack_config
+            .empack
+            .loader_version
+            .clone()
+            .or_else(|| {
+                pack_metadata.as_ref().and_then(|p| {
+                    self.get_loader_version_from_metadata(p, &loader).ok()
+                })
+            })
+            .unwrap_or_else(|| "latest".to_string());
 
         // Build project specs from resolved dependency records only
         let mut dependencies = Vec::new();
@@ -364,7 +373,7 @@ impl<'a> ConfigManager<'a> {
     }
 
     /// Infer mod loader from pack metadata
-    fn infer_loader_from_metadata(
+    pub(crate) fn infer_loader_from_metadata(
         &self,
         pack_metadata: &PackMetadata,
     ) -> Result<ModLoader, ConfigError> {
@@ -448,7 +457,7 @@ impl<'a> ConfigManager<'a> {
             (None, None) // Let user specify
         };
 
-        let mut deps = HashMap::new();
+        let mut deps = BTreeMap::new();
         if loader == Some(ModLoader::Fabric) || loader == Some(ModLoader::Quilt) {
             deps.insert("sodium".to_string(), DependencyEntry::Resolved(DependencyRecord {
                 status: DependencyStatus::Resolved,
@@ -478,11 +487,16 @@ impl<'a> ConfigManager<'a> {
             }
         }
 
+        let loader_version = pack_metadata.as_ref().and_then(|p| {
+            loader.and_then(|l| self.get_loader_version_from_metadata(p, &l).ok())
+        });
+
         let config = EmpackConfig {
             empack: EmpackProjectConfig {
                 dependencies: deps,
                 minecraft_version,
                 loader,
+                loader_version,
                 name: pack_metadata.as_ref().map(|m| m.name.clone()),
                 author: pack_metadata.as_ref().and_then(|m| m.author.clone()),
                 version: pack_metadata.as_ref().and_then(|m| m.version.clone()),
