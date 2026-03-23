@@ -6,8 +6,7 @@ use tracing::{trace, warn};
 
 use super::NetworkingError;
 
-// Re-export ModPlatform as Platform for backward compatibility
-pub use crate::primitives::ModPlatform as Platform;
+pub use crate::primitives::ProjectPlatform as Platform;
 
 /// Backoff strategy for rate limiting
 #[derive(Debug, Clone)]

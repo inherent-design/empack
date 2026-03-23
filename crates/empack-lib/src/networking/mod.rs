@@ -6,6 +6,9 @@ use tracing::trace;
 
 use crate::platform::SystemResources;
 
+pub mod cache;
+pub mod rate_limit;
+
 /// Networking errors for project resolution and API communication
 #[derive(Debug, Error)]
 pub enum NetworkingError {

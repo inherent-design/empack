@@ -13,7 +13,7 @@ cargo nextest run -p empack-lib --features test-utils
 cargo nextest run -p empack-tests
 ```
 
-Current checkpoint: 371 tests (325 in `empack-lib`, 15 skipped; 46 in `empack-tests`).
+Current checkpoint: 539 tests (489 in `empack-lib`, 15 skipped; 50 in `empack-tests`).
 
 CI uses `cargo nextest` exclusively. Grouped `cargo test` is advisory-only due to global state conflicts between workflow tests.
 
