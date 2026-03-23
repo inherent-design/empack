@@ -1248,3 +1248,683 @@ empack:
     let config = config_manager.load_empack_config().unwrap();
     assert_eq!(config.empack.dependencies.len(), 1);
 }
+
+// ─── DependencyEntry serde round-trip tests ───────────────────────────────
+
+#[test]
+fn test_serde_round_trip_resolved_modrinth_mod_no_version() {
+    let entry = DependencyEntry::Resolved(DependencyRecord {
+        status: DependencyStatus::Resolved,
+        title: "Sodium".to_string(),
+        platform: ProjectPlatform::Modrinth,
+        project_id: "AANobbMI".to_string(),
+        project_type: ProjectType::Mod,
+        version: None,
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Sodium".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_resolved_curseforge_with_version() {
+    let entry = DependencyEntry::Resolved(DependencyRecord {
+        status: DependencyStatus::Resolved,
+        title: "Just Enough Items".to_string(),
+        platform: ProjectPlatform::CurseForge,
+        project_id: "238222".to_string(),
+        project_type: ProjectType::Mod,
+        version: Some("4.7.0".to_string()),
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Just Enough Items".to_string(),
+            platform: ProjectPlatform::CurseForge,
+            project_id: "238222".to_string(),
+            project_type: ProjectType::Mod,
+            version: Some("4.7.0".to_string()),
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_resolved_project_type_datapack() {
+    let entry = DependencyEntry::Resolved(DependencyRecord {
+        status: DependencyStatus::Resolved,
+        title: "Vanilla Tweaks".to_string(),
+        platform: ProjectPlatform::Modrinth,
+        project_id: "test-dp".to_string(),
+        project_type: ProjectType::Datapack,
+        version: None,
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Vanilla Tweaks".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "test-dp".to_string(),
+            project_type: ProjectType::Datapack,
+            version: None,
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_resolved_project_type_resourcepack() {
+    let entry = DependencyEntry::Resolved(DependencyRecord {
+        status: DependencyStatus::Resolved,
+        title: "Faithful".to_string(),
+        platform: ProjectPlatform::CurseForge,
+        project_id: "test-rp".to_string(),
+        project_type: ProjectType::ResourcePack,
+        version: None,
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Faithful".to_string(),
+            platform: ProjectPlatform::CurseForge,
+            project_id: "test-rp".to_string(),
+            project_type: ProjectType::ResourcePack,
+            version: None,
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_resolved_project_type_shader() {
+    let entry = DependencyEntry::Resolved(DependencyRecord {
+        status: DependencyStatus::Resolved,
+        title: "Complementary Shaders".to_string(),
+        platform: ProjectPlatform::Modrinth,
+        project_id: "test-sh".to_string(),
+        project_type: ProjectType::Shader,
+        version: None,
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Complementary Shaders".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "test-sh".to_string(),
+            project_type: ProjectType::Shader,
+            version: None,
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_resolved_unicode_title() {
+    let entry = DependencyEntry::Resolved(DependencyRecord {
+        status: DependencyStatus::Resolved,
+        title: "Xaero's Minimap".to_string(),
+        platform: ProjectPlatform::Modrinth,
+        project_id: "1bokaNcj".to_string(),
+        project_type: ProjectType::Mod,
+        version: None,
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Xaero's Minimap".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "1bokaNcj".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_resolved_special_chars_project_id() {
+    let entry = DependencyEntry::Resolved(DependencyRecord {
+        status: DependencyStatus::Resolved,
+        title: "Test Mod".to_string(),
+        platform: ProjectPlatform::Modrinth,
+        project_id: "A-B_c.123".to_string(),
+        project_type: ProjectType::Mod,
+        version: None,
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Test Mod".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "A-B_c.123".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        })
+    );
+}
+
+// ─── DependencySearch serde round-trip tests ──────────────────────────────
+
+#[test]
+fn test_serde_round_trip_search_title_only() {
+    let entry = DependencyEntry::Search(DependencySearch {
+        title: "Some Mod".to_string(),
+        project_type: None,
+        platform: None,
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Search(DependencySearch {
+            title: "Some Mod".to_string(),
+            project_type: None,
+            platform: None,
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_search_with_type_hint() {
+    let entry = DependencyEntry::Search(DependencySearch {
+        title: "BSL Shaders".to_string(),
+        project_type: Some(ProjectType::Shader),
+        platform: None,
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Search(DependencySearch {
+            title: "BSL Shaders".to_string(),
+            project_type: Some(ProjectType::Shader),
+            platform: None,
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_search_with_platform_hint() {
+    let entry = DependencyEntry::Search(DependencySearch {
+        title: "Optifine".to_string(),
+        project_type: None,
+        platform: Some(ProjectPlatform::Modrinth),
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Search(DependencySearch {
+            title: "Optifine".to_string(),
+            project_type: None,
+            platform: Some(ProjectPlatform::Modrinth),
+        })
+    );
+}
+
+#[test]
+fn test_serde_round_trip_search_with_both_hints() {
+    let entry = DependencyEntry::Search(DependencySearch {
+        title: "Iris Shaders".to_string(),
+        project_type: Some(ProjectType::Shader),
+        platform: Some(ProjectPlatform::CurseForge),
+    });
+
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(
+        deserialized,
+        DependencyEntry::Search(DependencySearch {
+            title: "Iris Shaders".to_string(),
+            project_type: Some(ProjectType::Shader),
+            platform: Some(ProjectPlatform::CurseForge),
+        })
+    );
+}
+
+// ─── Untagged discrimination tests ────────────────────────────────────────
+
+#[test]
+fn test_untagged_yaml_with_status_parses_as_resolved() {
+    let yaml = r#"
+status: resolved
+title: Sodium
+platform: modrinth
+project_id: AANobbMI
+type: mod
+"#;
+
+    let entry: DependencyEntry = serde_saphyr::from_str(yaml).unwrap();
+
+    assert_eq!(
+        entry,
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Sodium".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        })
+    );
+}
+
+#[test]
+fn test_untagged_yaml_without_status_parses_as_search() {
+    let yaml = r#"
+title: Unresolved Mod
+"#;
+
+    let entry: DependencyEntry = serde_saphyr::from_str(yaml).unwrap();
+
+    assert_eq!(
+        entry,
+        DependencyEntry::Search(DependencySearch {
+            title: "Unresolved Mod".to_string(),
+            project_type: None,
+            platform: None,
+        })
+    );
+}
+
+#[test]
+fn test_untagged_yaml_resolved_missing_platform_fails() {
+    // status: resolved but missing required platform field —
+    // should fail Resolved and also fail Search (which requires no status).
+    // With untagged, serde tries Resolved first (fails: missing platform),
+    // then Search (succeeds: title is present, extra fields ignored).
+    let yaml = r#"
+status: resolved
+title: Broken Mod
+project_id: test-id
+type: mod
+"#;
+
+    let result: Result<DependencyEntry, _> = serde_saphyr::from_str(yaml);
+    // serde untagged: Resolved fails (missing platform), Search succeeds
+    // because DependencySearch only requires `title` and ignores unknown fields
+    match result {
+        Ok(DependencyEntry::Search(s)) => {
+            assert_eq!(s.title, "Broken Mod");
+        }
+        Ok(DependencyEntry::Resolved(_)) => {
+            panic!("Should not parse as Resolved without platform field");
+        }
+        Err(e) => {
+            // Also acceptable if serde rejects it entirely
+            assert!(
+                e.to_string().contains("data did not match any variant"),
+                "Unexpected error: {e}"
+            );
+        }
+    }
+}
+
+// ─── EmpackConfig edge case tests ─────────────────────────────────────────
+
+#[test]
+fn test_empack_config_empty_dependencies() {
+    let yaml = r#"
+empack:
+  dependencies: {}
+"#;
+
+    let config: EmpackConfig = serde_saphyr::from_str(yaml).unwrap();
+    assert!(config.empack.dependencies.is_empty());
+    assert_eq!(config.empack.minecraft_version, None);
+    assert_eq!(config.empack.loader, None);
+    assert_eq!(config.empack.name, None);
+    assert_eq!(config.empack.author, None);
+    assert_eq!(config.empack.version, None);
+}
+
+#[test]
+fn test_empack_config_mixed_resolved_and_search() {
+    let yaml = r#"
+empack:
+  dependencies:
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
+    unknown_mod:
+      title: Unknown Mod
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let config: EmpackConfig = serde_saphyr::from_str(yaml).unwrap();
+    assert_eq!(config.empack.dependencies.len(), 2);
+
+    assert_eq!(
+        config.empack.dependencies["sodium"],
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Sodium".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        })
+    );
+
+    assert_eq!(
+        config.empack.dependencies["unknown_mod"],
+        DependencyEntry::Search(DependencySearch {
+            title: "Unknown Mod".to_string(),
+            project_type: None,
+            platform: None,
+        })
+    );
+}
+
+#[test]
+fn test_empack_config_minimal_required_fields() {
+    // EmpackConfig only requires the `empack` key; everything inside is optional/default
+    let yaml = r#"
+empack: {}
+"#;
+
+    let config: EmpackConfig = serde_saphyr::from_str(yaml).unwrap();
+    assert!(config.empack.dependencies.is_empty());
+    assert_eq!(config.empack.minecraft_version, None);
+    assert_eq!(config.empack.loader, None);
+    assert_eq!(config.empack.name, None);
+}
+
+#[test]
+fn test_empack_config_round_trip_multiple_dependencies() {
+    let config = EmpackConfig {
+        empack: EmpackProjectConfig {
+            dependencies: {
+                let mut deps = HashMap::new();
+                deps.insert(
+                    "sodium".to_string(),
+                    DependencyEntry::Resolved(DependencyRecord {
+                        status: DependencyStatus::Resolved,
+                        title: "Sodium".to_string(),
+                        platform: ProjectPlatform::Modrinth,
+                        project_id: "AANobbMI".to_string(),
+                        project_type: ProjectType::Mod,
+                        version: None,
+                    }),
+                );
+                deps.insert(
+                    "iris".to_string(),
+                    DependencyEntry::Search(DependencySearch {
+                        title: "Iris Shaders".to_string(),
+                        project_type: Some(ProjectType::Mod),
+                        platform: None,
+                    }),
+                );
+                deps.insert(
+                    "complementary".to_string(),
+                    DependencyEntry::Resolved(DependencyRecord {
+                        status: DependencyStatus::Resolved,
+                        title: "Complementary Shaders".to_string(),
+                        platform: ProjectPlatform::CurseForge,
+                        project_id: "431203".to_string(),
+                        project_type: ProjectType::Shader,
+                        version: Some("4.7.2".to_string()),
+                    }),
+                );
+                deps
+            },
+            minecraft_version: Some("1.21".to_string()),
+            loader: Some(ModLoader::Fabric),
+            name: Some("Test Pack".to_string()),
+            author: Some("Tester".to_string()),
+            version: Some("1.0.0".to_string()),
+        },
+    };
+
+    let yaml = serde_saphyr::to_string(&config).unwrap();
+    let deserialized: EmpackConfig = serde_saphyr::from_str(&yaml).unwrap();
+
+    assert_eq!(deserialized.empack.dependencies.len(), 3);
+    assert_eq!(
+        deserialized.empack.dependencies["sodium"],
+        config.empack.dependencies["sodium"]
+    );
+    assert_eq!(
+        deserialized.empack.dependencies["iris"],
+        config.empack.dependencies["iris"]
+    );
+    assert_eq!(
+        deserialized.empack.dependencies["complementary"],
+        config.empack.dependencies["complementary"]
+    );
+    assert_eq!(deserialized.empack.minecraft_version, Some("1.21".to_string()));
+    assert_eq!(deserialized.empack.loader, Some(ModLoader::Fabric));
+    assert_eq!(deserialized.empack.name, Some("Test Pack".to_string()));
+    assert_eq!(deserialized.empack.author, Some("Tester".to_string()));
+    assert_eq!(deserialized.empack.version, Some("1.0.0".to_string()));
+}
+
+// ─── remove_dependency additional tests ───────────────────────────────────
+
+#[test]
+fn test_remove_dependency_by_case_insensitive_title() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Remove by title (case-insensitive) — "SODIUM" should match title "Sodium"
+    let result = config_manager.remove_dependency("SODIUM");
+    assert!(result.is_ok());
+
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 1);
+    assert!(config.empack.dependencies.contains_key("fabric_api"));
+    assert!(!config.empack.dependencies.contains_key("sodium"));
+}
+
+#[test]
+fn test_remove_dependency_ambiguous_title_returns_error() {
+    let workdir = mock_root().join("config");
+    // Two different slugs but same title
+    let empack_content = r#"
+empack:
+  dependencies:
+    sodium_modrinth:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
+    sodium_curseforge:
+      status: resolved
+      title: Sodium
+      platform: curseforge
+      project_id: "394468"
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // "Sodium" matches two entries by title — should be ambiguous
+    let result = config_manager.remove_dependency("Sodium");
+    assert!(result.is_err());
+
+    match result.unwrap_err() {
+        ConfigError::AmbiguousRemoval { query, matches } => {
+            assert_eq!(query, "Sodium");
+            assert_eq!(matches.len(), 2);
+            assert!(matches.contains(&"sodium_modrinth".to_string()));
+            assert!(matches.contains(&"sodium_curseforge".to_string()));
+        }
+        other => panic!("Expected AmbiguousRemoval, got: {other:?}"),
+    }
+
+    // Map should be unchanged
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 2);
+}
+
+#[test]
+fn test_remove_dependency_not_found_by_slug_or_title() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Neither slug nor title matches
+    let result = config_manager.remove_dependency("totally_absent");
+    // Current implementation returns Ok(()) for not-found
+    assert!(result.is_ok());
+
+    // Map should be unchanged
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 1);
+    assert!(config.empack.dependencies.contains_key("fabric_api"));
+}
+
+#[test]
+fn test_remove_dependency_then_verify_remaining() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
+    lithium:
+      status: resolved
+      title: Lithium
+      platform: modrinth
+      project_id: gvQqBUqZ
+      type: mod
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    // Remove lithium by slug
+    let result = config_manager.remove_dependency("lithium");
+    assert!(result.is_ok());
+
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 2);
+    assert!(config.empack.dependencies.contains_key("sodium"));
+    assert!(config.empack.dependencies.contains_key("fabric_api"));
+    assert!(!config.empack.dependencies.contains_key("lithium"));
+
+    // Verify remaining entries have correct data
+    assert_eq!(
+        config.empack.dependencies["sodium"],
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Sodium".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        })
+    );
+    assert_eq!(
+        config.empack.dependencies["fabric_api"],
+        DependencyEntry::Resolved(DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: "Fabric API".to_string(),
+            platform: ProjectPlatform::Modrinth,
+            project_id: "P7dR8mSH".to_string(),
+            project_type: ProjectType::Mod,
+            version: None,
+        })
+    );
+}

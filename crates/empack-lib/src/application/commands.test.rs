@@ -792,6 +792,169 @@ mod handle_add_tests {
             &workdir.join("pack")
         ));
     }
+
+    #[tokio::test]
+    async fn it_uses_packwiz_slug_as_dep_key_when_input_diverges() {
+        // User types "iris_shaders" (underscore) but packwiz creates "iris.pw.toml" (different slug).
+        // The dep_key stored in empack.yml must match the .pw.toml slug, not user input.
+        let workdir = mock_root().join("configured-project");
+        let mock_project = modrinth_project("YL57xq9U", "Iris Shaders");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_project_response("iris_shaders".to_string(), mock_project),
+            )
+            .with_process(
+                MockProcessProvider::new()
+                    .with_packwiz_result(
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "YL57xq9U".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    // Simulate packwiz creating iris.pw.toml (not iris_shaders.pw.toml)
+                    .with_packwiz_add_slug("YL57xq9U".to_string(), "iris".to_string()),
+            );
+
+        let result = handle_add(&session, vec!["iris_shaders".to_string()], false, None).await;
+        assert!(result.is_ok(), "handle_add should succeed: {result:?}");
+
+        // Verify empack.yml was updated with "iris" (from .pw.toml), NOT "iris_shaders" (from input)
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("iris:"),
+            "empack.yml should contain 'iris:' as the dep key (from .pw.toml slug), got:\n{}",
+            empack_yml
+        );
+        assert!(
+            !empack_yml.contains("iris_shaders:"),
+            "empack.yml should NOT contain 'iris_shaders:' (from user input), got:\n{}",
+            empack_yml
+        );
+    }
+
+    #[tokio::test]
+    async fn it_falls_back_to_input_key_when_no_new_pw_toml_detected() {
+        // When packwiz doesn't create a new .pw.toml (edge case), fall back to input-derived key.
+        let workdir = mock_root().join("configured-project");
+        let mock_project = modrinth_project("test-mod-id", "Test Mod");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_project_response("test-mod".to_string(), mock_project),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "test-mod-id".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+        // Note: No with_packwiz_add_slug → no .pw.toml created → fallback
+
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None).await;
+        assert!(result.is_ok());
+
+        // Verify empack.yml was updated with the fallback key "test-mod"
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("test-mod:"),
+            "empack.yml should contain 'test-mod:' as fallback dep key, got:\n{}",
+            empack_yml
+        );
+    }
+
+    #[tokio::test]
+    async fn it_handles_slug_discovery_with_pre_existing_pw_toml_files() {
+        // When mods/ already has .pw.toml files, only the NEW file should be used as dep_key.
+        let workdir = mock_root().join("configured-project");
+        let mock_project = modrinth_project("new-mod-id", "New Mod");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone())
+                    // Pre-existing .pw.toml for sodium
+                    .with_file(
+                        mods_dir.join("sodium.pw.toml"),
+                        "name = \"sodium\"\n".to_string(),
+                    ),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_project_response("New Mod".to_string(), mock_project),
+            )
+            .with_process(
+                MockProcessProvider::new()
+                    .with_packwiz_result(
+                        vec![
+                            "modrinth".to_string(),
+                            "add".to_string(),
+                            "--project-id".to_string(),
+                            "new-mod-id".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    // packwiz creates "new-mod.pw.toml" — different from "new_mod" (query normalized)
+                    .with_packwiz_add_slug("new-mod-id".to_string(), "new-mod".to_string()),
+            );
+
+        let result = handle_add(&session, vec!["New Mod".to_string()], false, None).await;
+        assert!(result.is_ok(), "handle_add should succeed: {result:?}");
+
+        // The dep_key should be "new-mod" (from the newly created .pw.toml),
+        // not "new-mod" from input normalization (they happen to match here, but
+        // the mechanism is what matters — it came from filesystem diff)
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("new-mod:"),
+            "empack.yml should contain 'new-mod:' as dep key, got:\n{}",
+            empack_yml
+        );
+    }
 }
 
 // ===== HANDLE_REMOVE TESTS =====
@@ -1640,6 +1803,83 @@ fn test_render_add_contract_error_for_plan_failures() {
     assert_eq!(rendered.details, "modrinth project AANobbMI: invalid packwiz add command plan");
 }
 
+#[test]
+fn test_render_add_contract_error_network_error() {
+    // NetworkError inside ResolveProject → details mention query and network failure
+    let rendered = render_add_contract_error(&AddContractError::ResolveProject {
+        query: "iris".to_string(),
+        source: crate::empack::search::SearchError::NetworkError {
+            source: crate::networking::NetworkingError::PlatformError {
+                source: crate::platform::PlatformError::UnsupportedPlatform {
+                    platform: "test".to_string(),
+                },
+            },
+        },
+    });
+
+    assert_eq!(rendered.item, "Failed to resolve mod");
+    assert!(
+        rendered.details.contains("iris"),
+        "Details should contain the search query; got: {}",
+        rendered.details
+    );
+    assert!(
+        rendered.details.contains("Platform"),
+        "Details should mention the network/platform error; got: {}",
+        rendered.details
+    );
+}
+
+#[test]
+fn test_render_add_contract_error_missing_api_key() {
+    let rendered = render_add_contract_error(&AddContractError::ResolveProject {
+        query: "jei".to_string(),
+        source: crate::empack::search::SearchError::MissingApiKey {
+            platform: "CurseForge".to_string(),
+        },
+    });
+
+    assert_eq!(rendered.item, "Failed to resolve mod");
+    assert!(
+        rendered.details.contains("jei"),
+        "Details should contain the query; got: {}",
+        rendered.details
+    );
+    assert!(
+        rendered.details.contains("CurseForge"),
+        "Details should mention the platform missing the API key; got: {}",
+        rendered.details
+    );
+}
+
+#[test]
+fn test_render_add_contract_error_low_confidence() {
+    let rendered = render_add_contract_error(&AddContractError::ResolveProject {
+        query: "sodium".to_string(),
+        source: crate::empack::search::SearchError::LowConfidence {
+            confidence: 60,
+            threshold: 90,
+        },
+    });
+
+    assert_eq!(rendered.item, "Failed to resolve mod");
+    assert!(
+        rendered.details.contains("sodium"),
+        "Details should contain the query; got: {}",
+        rendered.details
+    );
+    assert!(
+        rendered.details.contains("60%"),
+        "Details should contain the confidence value; got: {}",
+        rendered.details
+    );
+    assert!(
+        rendered.details.contains("90%"),
+        "Details should contain the threshold; got: {}",
+        rendered.details
+    );
+}
+
 // ===== BUILD TARGET VALIDATION TESTS (Slice 3) =====
 
 #[tokio::test]
@@ -1801,5 +2041,248 @@ async fn test_build_cleans_before_build_when_flag_set() {
             // Just verify error is informative
             assert!(!err_msg.is_empty(), "Error should be informative");
         }
+    }
+}
+
+// ===== IS_MODRINTH_PROJECT_ID TESTS =====
+
+mod is_modrinth_project_id_tests {
+    use super::*;
+
+    #[test]
+    fn canonical_valid_id() {
+        assert!(is_modrinth_project_id("AANobbMI"));
+    }
+
+    #[test]
+    fn all_lowercase_alpha_8_chars() {
+        assert!(is_modrinth_project_id("abcdefgh"));
+    }
+
+    #[test]
+    fn all_uppercase_alpha_8_chars() {
+        assert!(is_modrinth_project_id("ABCDEFGH"));
+    }
+
+    #[test]
+    fn mixed_alphanumeric_8_chars() {
+        assert!(is_modrinth_project_id("A1B2C3D4"));
+    }
+
+    #[test]
+    fn mostly_digits_with_letter() {
+        assert!(is_modrinth_project_id("1234567a"));
+    }
+
+    #[test]
+    fn all_digits_8_chars_is_curseforge_not_modrinth() {
+        assert!(!is_modrinth_project_id("12345678"));
+    }
+
+    #[test]
+    fn too_short_7_chars() {
+        assert!(!is_modrinth_project_id("ABC1234"));
+    }
+
+    #[test]
+    fn too_long_9_chars() {
+        assert!(!is_modrinth_project_id("ABC123456"));
+    }
+
+    #[test]
+    fn empty_string() {
+        assert!(!is_modrinth_project_id(""));
+    }
+
+    #[test]
+    fn special_char_in_middle() {
+        assert!(!is_modrinth_project_id("ABC-1234"));
+    }
+}
+
+// ===== IS_CURSEFORGE_PROJECT_ID TESTS =====
+
+mod is_curseforge_project_id_tests {
+    use super::*;
+
+    #[test]
+    fn canonical_valid_id() {
+        assert!(is_curseforge_project_id("238222"));
+    }
+
+    #[test]
+    fn single_digit() {
+        assert!(is_curseforge_project_id("1"));
+    }
+
+    #[test]
+    fn large_number() {
+        assert!(is_curseforge_project_id("999999999"));
+    }
+
+    #[test]
+    fn leading_zeros() {
+        assert!(is_curseforge_project_id("00012345"));
+    }
+
+    #[test]
+    fn empty_string() {
+        assert!(!is_curseforge_project_id(""));
+    }
+
+    #[test]
+    fn has_letter() {
+        assert!(!is_curseforge_project_id("23822A"));
+    }
+
+    #[test]
+    fn has_dash() {
+        assert!(!is_curseforge_project_id("-238222"));
+    }
+
+    #[test]
+    fn has_space() {
+        assert!(!is_curseforge_project_id(" 238222"));
+    }
+}
+
+// ===== FROM_CLI_INPUT MATRIX TESTS =====
+
+mod from_cli_input_tests {
+    use super::*;
+    use crate::application::cli::SearchPlatform;
+
+    // --- Platform = None ---
+
+    #[test]
+    fn modrinth_id_no_platform() {
+        let intent = AddResolutionIntent::from_cli_input("AANobbMI", None);
+        assert_eq!(intent.direct_project_id, Some("AANobbMI".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.preferred_platform, None);
+        assert_eq!(intent.search_query, "AANobbMI");
+    }
+
+    #[test]
+    fn curseforge_id_no_platform() {
+        let intent = AddResolutionIntent::from_cli_input("306612", None);
+        assert_eq!(intent.direct_project_id, Some("306612".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::CurseForge));
+        assert_eq!(intent.preferred_platform, None);
+        assert_eq!(intent.search_query, "306612");
+    }
+
+    #[test]
+    fn search_query_no_platform() {
+        let intent = AddResolutionIntent::from_cli_input("sodium", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.preferred_platform, None);
+        assert_eq!(intent.search_query, "sodium");
+    }
+
+    // --- Platform = Modrinth ---
+
+    #[test]
+    fn modrinth_id_with_modrinth_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("AANobbMI", Some(SearchPlatform::Modrinth));
+        assert_eq!(intent.direct_project_id, Some("AANobbMI".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.preferred_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.search_query, "AANobbMI");
+    }
+
+    #[test]
+    fn curseforge_id_with_modrinth_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("306612", Some(SearchPlatform::Modrinth));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.preferred_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.search_query, "306612");
+    }
+
+    #[test]
+    fn search_query_with_modrinth_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("sodium", Some(SearchPlatform::Modrinth));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.preferred_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.search_query, "sodium");
+    }
+
+    // --- Platform = Curseforge ---
+
+    #[test]
+    fn curseforge_id_with_curseforge_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("306612", Some(SearchPlatform::Curseforge));
+        assert_eq!(intent.direct_project_id, Some("306612".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::CurseForge));
+        assert_eq!(
+            intent.preferred_platform,
+            Some(ProjectPlatform::CurseForge)
+        );
+        assert_eq!(intent.search_query, "306612");
+    }
+
+    #[test]
+    fn modrinth_id_with_curseforge_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("AANobbMI", Some(SearchPlatform::Curseforge));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(
+            intent.preferred_platform,
+            Some(ProjectPlatform::CurseForge)
+        );
+        assert_eq!(intent.search_query, "AANobbMI");
+    }
+
+    #[test]
+    fn search_query_with_curseforge_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("sodium", Some(SearchPlatform::Curseforge));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(
+            intent.preferred_platform,
+            Some(ProjectPlatform::CurseForge)
+        );
+        assert_eq!(intent.search_query, "sodium");
+    }
+
+    // --- Platform = Both ---
+
+    #[test]
+    fn modrinth_id_with_both_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("AANobbMI", Some(SearchPlatform::Both));
+        assert_eq!(intent.direct_project_id, Some("AANobbMI".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.preferred_platform, None);
+        assert_eq!(intent.search_query, "AANobbMI");
+    }
+
+    #[test]
+    fn curseforge_id_with_both_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("306612", Some(SearchPlatform::Both));
+        assert_eq!(intent.direct_project_id, Some("306612".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::CurseForge));
+        assert_eq!(intent.preferred_platform, None);
+        assert_eq!(intent.search_query, "306612");
+    }
+
+    #[test]
+    fn search_query_with_both_platform() {
+        let intent =
+            AddResolutionIntent::from_cli_input("sodium", Some(SearchPlatform::Both));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.preferred_platform, None);
+        assert_eq!(intent.search_query, "sodium");
     }
 }
