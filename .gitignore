@@ -102,5 +102,6 @@ $RECYCLE.BIN/
 .env*
 !.env*template
 
-# Claude
+# AI 
 .claude
+.intent
