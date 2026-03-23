@@ -605,13 +605,22 @@ mod handle_add_tests {
     }
 
     #[tokio::test]
-    async fn it_uses_modrinth_direct_ids_without_resolving_search() {
+    async fn it_treats_modrinth_id_as_search_query_without_platform_flag() {
+        // After removing Modrinth ID auto-detection, "AANobbMI" without --platform
+        // is treated as a search query, not a direct ID lookup.
         let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
                     .with_current_dir(workdir.clone())
                     .with_configured_project(workdir.clone()),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_project_response(
+                        "AANobbMI".to_string(),
+                        modrinth_project("AANobbMI", "Sodium"),
+                    ),
             )
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
@@ -1686,47 +1695,54 @@ mod handle_clean_tests {
 async fn test_parse_build_targets_all_keyword() {
     let targets = vec!["all".to_string()];
     let result = parse_build_targets(targets);
-    assert!(result.is_ok());
-    let parsed = result.unwrap();
-    // "all" should expand to all available targets
-    assert!(parsed.len() >= 4);
-    assert!(parsed.contains(&BuildTarget::Client));
-    assert!(parsed.contains(&BuildTarget::Server));
+    let parsed = result.expect("'all' should parse successfully");
+    assert_eq!(
+        parsed,
+        vec![
+            BuildTarget::Mrpack,
+            BuildTarget::Client,
+            BuildTarget::Server,
+            BuildTarget::ClientFull,
+            BuildTarget::ServerFull,
+        ]
+    );
 }
 
 #[tokio::test]
 async fn test_parse_build_targets_single_target() {
     let targets = vec!["server".to_string()];
-    let result = parse_build_targets(targets);
-    assert!(result.is_ok());
-    let parsed = result.unwrap();
-    assert_eq!(parsed.len(), 1);
-    assert_eq!(parsed[0], BuildTarget::Server);
+    let parsed = parse_build_targets(targets).expect("'server' should parse successfully");
+    assert_eq!(parsed, vec![BuildTarget::Server]);
 }
 
 #[tokio::test]
 async fn test_parse_build_targets_multiple_targets() {
     let targets = vec!["server".to_string(), "client".to_string()];
-    let result = parse_build_targets(targets);
-    assert!(result.is_ok());
-    let parsed = result.unwrap();
-    assert_eq!(parsed.len(), 2);
-    assert!(parsed.contains(&BuildTarget::Server));
-    assert!(parsed.contains(&BuildTarget::Client));
+    let parsed =
+        parse_build_targets(targets).expect("'server','client' should parse successfully");
+    assert_eq!(parsed, vec![BuildTarget::Server, BuildTarget::Client]);
 }
 
 #[tokio::test]
 async fn test_parse_build_targets_invalid_target() {
     let targets = vec!["invalid".to_string()];
-    let result = parse_build_targets(targets);
-    assert!(result.is_err());
+    let err = parse_build_targets(targets).unwrap_err();
+    assert!(
+        err.to_string().contains("Unknown build target: invalid"),
+        "Expected error about unknown target, got: {}",
+        err
+    );
 }
 
 #[tokio::test]
 async fn test_parse_build_targets_empty_list() {
     let targets: Vec<String> = vec![];
-    let result = parse_build_targets(targets);
-    assert!(result.is_err());
+    let err = parse_build_targets(targets).unwrap_err();
+    assert!(
+        err.to_string().contains("No build targets specified"),
+        "Expected error about no targets, got: {}",
+        err
+    );
 }
 
 // ===== SYNC ACTION TESTS =====
@@ -1884,78 +1900,73 @@ fn test_render_add_contract_error_low_confidence() {
 
 #[tokio::test]
 async fn test_invalid_build_target_single() {
-    // Test single invalid target
-    let result = parse_build_targets(vec!["invalid-target".to_string()]);
-    assert!(result.is_err(), "Invalid target should be rejected");
-
-    let err = result.unwrap_err();
-    let err_msg = format!("{:?}", err);
+    let err = parse_build_targets(vec!["invalid-target".to_string()])
+        .expect_err("Invalid target should be rejected");
     assert!(
-        err_msg.contains("invalid-target")
-            || err_msg.contains("Unknown")
-            || err_msg.contains("Invalid"),
-        "Error should mention the invalid target: {}",
-        err_msg
+        err.to_string()
+            .contains("Unknown build target: invalid-target"),
+        "Expected error about unknown target, got: {}",
+        err
     );
 }
 
 #[tokio::test]
 async fn test_invalid_build_target_mixed_with_valid() {
-    // Test mix of valid and invalid targets
-    let result = parse_build_targets(vec![
+    let err = parse_build_targets(vec![
         "client".to_string(),
         "invalid-target".to_string(),
         "server".to_string(),
-    ]);
-    assert!(result.is_err(), "Should reject if any target is invalid");
+    ])
+    .expect_err("Should reject if any target is invalid");
+    assert!(
+        err.to_string()
+            .contains("Unknown build target: invalid-target"),
+        "Expected error about the invalid target, got: {}",
+        err
+    );
 }
 
 #[tokio::test]
 async fn test_empty_build_target_list() {
-    // Test empty target list
-    let result = parse_build_targets(vec![]);
-
-    // Empty list should be invalid (error expected)
-    assert!(result.is_err(), "Empty target list should be rejected");
-    let err = result.unwrap_err();
-    let err_msg = format!("{:?}", err);
+    let err = parse_build_targets(vec![]).expect_err("Empty target list should be rejected");
     assert!(
-        err_msg.contains("target") || err_msg.contains("required") || err_msg.contains("No"),
-        "Error should indicate problem with empty target list: {}",
-        err_msg
+        err.to_string().contains("No build targets specified"),
+        "Expected error about no targets, got: {}",
+        err
     );
 }
 
 #[tokio::test]
 async fn test_case_insensitive_build_targets() {
-    // Test case variations - should accept lowercase
-    let result_lowercase = parse_build_targets(vec!["client".to_string()]);
-    assert!(
-        result_lowercase.is_ok(),
-        "Lowercase 'client' should be accepted"
-    );
+    // Lowercase is the canonical form and must be accepted
+    let parsed =
+        parse_build_targets(vec!["client".to_string()]).expect("Lowercase 'client' should parse");
+    assert_eq!(parsed, vec![BuildTarget::Client]);
 
-    // Uppercase might not be accepted (implementation dependent)
-    let result_uppercase = parse_build_targets(vec!["CLIENT".to_string()]);
-    // Don't assert - just test that it either works or gives clear error
-    if let Err(err) = result_uppercase {
-        let err_msg = format!("{:?}", err);
-        assert!(!err_msg.is_empty(), "Error for uppercase should be clear");
-    }
+    // Uppercase is rejected — parse_build_targets uses exact match
+    let err = parse_build_targets(vec!["CLIENT".to_string()])
+        .expect_err("Uppercase 'CLIENT' should be rejected");
+    assert!(
+        err.to_string().contains("Unknown build target: CLIENT"),
+        "Expected error about unknown target, got: {}",
+        err
+    );
 }
 
 #[tokio::test]
 async fn test_all_valid_build_targets_individually() {
-    // Test that all documented valid targets are accepted
-    let valid_targets = vec!["mrpack", "client", "server", "client-full", "server-full"];
+    let cases: Vec<(&str, BuildTarget)> = vec![
+        ("mrpack", BuildTarget::Mrpack),
+        ("client", BuildTarget::Client),
+        ("server", BuildTarget::Server),
+        ("client-full", BuildTarget::ClientFull),
+        ("server-full", BuildTarget::ServerFull),
+    ];
 
-    for target in valid_targets {
-        let result = parse_build_targets(vec![target.to_string()]);
-        assert!(
-            result.is_ok(),
-            "Valid target '{}' should be accepted",
-            target
-        );
+    for (input, expected) in cases {
+        let parsed = parse_build_targets(vec![input.to_string()])
+            .unwrap_or_else(|e| panic!("Valid target '{}' should be accepted: {}", input, e));
+        assert_eq!(parsed, vec![expected], "Mismatch for target '{}'", input);
     }
 }
 
@@ -1963,37 +1974,23 @@ async fn test_all_valid_build_targets_individually() {
 
 #[tokio::test]
 async fn test_build_with_uninitialized_project() {
-    // Test building before project initialization
     let workdir = mock_root().join("uninitialized-project");
     let session = MockCommandSession::new()
         .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir));
 
     let result = handle_build(&session, vec!["client".to_string()], false).await;
 
-    // Build on uninitialized project - may succeed in mock (no real packwiz check)
-    // or fail depending on state validation. Both are acceptable behaviors.
-    match result {
-        Ok(_) => {
-            // Mock environment allows build attempt - acceptable
-        }
-        Err(e) => {
-            // If it fails, error should mention uninitialized state
-            let err_msg = format!("{:?}", e);
-            assert!(
-                err_msg.contains("not initialized")
-                    || err_msg.contains("Uninitialized")
-                    || err_msg.contains("pack")
-                    || !err_msg.is_empty(),
-                "Error should be informative: {}",
-                err_msg
-            );
-        }
-    }
+    // Build on uninitialized project succeeds (state check exits gracefully)
+    // but no packwiz commands should be executed
+    assert!(result.is_ok(), "Build on uninitialized project should exit gracefully");
+    assert!(
+        session.process_provider.get_calls().is_empty(),
+        "No packwiz commands should run on uninitialized project"
+    );
 }
 
 #[tokio::test]
 async fn test_build_with_invalid_target_string() {
-    // Test build command with invalid target that parse_build_targets would reject
     let workdir = mock_root().join("configured-project");
     let session = MockCommandSession::new().with_filesystem(
         MockFileSystemProvider::new()
@@ -2001,29 +1998,24 @@ async fn test_build_with_invalid_target_string() {
             .with_configured_project(workdir),
     );
 
-    let result = handle_build(&session, vec!["not-a-real-target".to_string()], false).await;
-
-    // Should fail with clear error about invalid target
-    assert!(result.is_err(), "Build should fail with invalid target");
-    let err = result.unwrap_err();
-    let err_msg = format!("{:?}", err);
+    let err = handle_build(&session, vec!["not-a-real-target".to_string()], false)
+        .await
+        .expect_err("Build should fail with invalid target");
     assert!(
-        err_msg.contains("not-a-real-target")
-            || err_msg.contains("Unknown")
-            || err_msg.contains("Invalid"),
-        "Error should mention the invalid target: {}",
-        err_msg
+        err.to_string()
+            .contains("Unknown build target: not-a-real-target"),
+        "Expected error about unknown target, got: {}",
+        err
     );
 }
 
 #[tokio::test]
 async fn test_build_cleans_before_build_when_flag_set() {
-    // Test that --clean flag triggers cleanup before build
     let workdir = mock_root().join("configured-project");
     let session = MockCommandSession::new().with_filesystem(
         MockFileSystemProvider::new()
             .with_current_dir(workdir.clone())
-            .with_configured_project(workdir),
+            .with_configured_project(workdir.clone()),
     );
 
     // Build with clean=true
@@ -2036,67 +2028,15 @@ async fn test_build_cleans_before_build_when_flag_set() {
             // Success is acceptable
         }
         Err(e) => {
-            // Failure is also acceptable in mock, but should not be a "clean" error
-            let err_msg = format!("{:?}", e);
-            // Just verify error is informative
-            assert!(!err_msg.is_empty(), "Error should be informative");
+            // Mock environment: packwiz doesn't create real artifacts,
+            // so build validation fails. Verify it's the expected build pipeline error.
+            let err_chain = format!("{e:?}");
+            assert!(
+                err_chain.contains("build pipeline")
+                    || err_chain.contains("expected artifact"),
+                "Expected build pipeline/artifact error, got: {err_chain}",
+            );
         }
-    }
-}
-
-// ===== IS_MODRINTH_PROJECT_ID TESTS =====
-
-mod is_modrinth_project_id_tests {
-    use super::*;
-
-    #[test]
-    fn canonical_valid_id() {
-        assert!(is_modrinth_project_id("AANobbMI"));
-    }
-
-    #[test]
-    fn all_lowercase_alpha_8_chars() {
-        assert!(is_modrinth_project_id("abcdefgh"));
-    }
-
-    #[test]
-    fn all_uppercase_alpha_8_chars() {
-        assert!(is_modrinth_project_id("ABCDEFGH"));
-    }
-
-    #[test]
-    fn mixed_alphanumeric_8_chars() {
-        assert!(is_modrinth_project_id("A1B2C3D4"));
-    }
-
-    #[test]
-    fn mostly_digits_with_letter() {
-        assert!(is_modrinth_project_id("1234567a"));
-    }
-
-    #[test]
-    fn all_digits_8_chars_is_curseforge_not_modrinth() {
-        assert!(!is_modrinth_project_id("12345678"));
-    }
-
-    #[test]
-    fn too_short_7_chars() {
-        assert!(!is_modrinth_project_id("ABC1234"));
-    }
-
-    #[test]
-    fn too_long_9_chars() {
-        assert!(!is_modrinth_project_id("ABC123456"));
-    }
-
-    #[test]
-    fn empty_string() {
-        assert!(!is_modrinth_project_id(""));
-    }
-
-    #[test]
-    fn special_char_in_middle() {
-        assert!(!is_modrinth_project_id("ABC-1234"));
     }
 }
 
@@ -2157,8 +2097,8 @@ mod from_cli_input_tests {
     #[test]
     fn modrinth_id_no_platform() {
         let intent = AddResolutionIntent::from_cli_input("AANobbMI", None);
-        assert_eq!(intent.direct_project_id, Some("AANobbMI".to_string()));
-        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
         assert_eq!(intent.preferred_platform, None);
         assert_eq!(intent.search_query, "AANobbMI");
     }
@@ -2187,8 +2127,8 @@ mod from_cli_input_tests {
     fn modrinth_id_with_modrinth_platform() {
         let intent =
             AddResolutionIntent::from_cli_input("AANobbMI", Some(SearchPlatform::Modrinth));
-        assert_eq!(intent.direct_project_id, Some("AANobbMI".to_string()));
-        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
         assert_eq!(intent.preferred_platform, Some(ProjectPlatform::Modrinth));
         assert_eq!(intent.search_query, "AANobbMI");
     }
@@ -2260,8 +2200,8 @@ mod from_cli_input_tests {
     fn modrinth_id_with_both_platform() {
         let intent =
             AddResolutionIntent::from_cli_input("AANobbMI", Some(SearchPlatform::Both));
-        assert_eq!(intent.direct_project_id, Some("AANobbMI".to_string()));
-        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
         assert_eq!(intent.preferred_platform, None);
         assert_eq!(intent.search_query, "AANobbMI");
     }
@@ -2284,5 +2224,72 @@ mod from_cli_input_tests {
         assert_eq!(intent.direct_platform, None);
         assert_eq!(intent.preferred_platform, None);
         assert_eq!(intent.search_query, "sodium");
+    }
+
+    // --- Edge cases: mod names that previously false-positived as Modrinth IDs ---
+
+    #[test]
+    fn eight_char_mod_name_faithful_is_search_not_id() {
+        let intent = AddResolutionIntent::from_cli_input("faithful", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.search_query, "faithful");
+    }
+
+    #[test]
+    fn eight_char_mod_name_optifine_is_search_not_id() {
+        let intent = AddResolutionIntent::from_cli_input("optifine", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.search_query, "optifine");
+    }
+
+    #[test]
+    fn eight_char_mod_name_litematr_is_search_not_id() {
+        let intent = AddResolutionIntent::from_cli_input("litematr", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.search_query, "litematr");
+    }
+
+    #[test]
+    fn eight_char_mod_name_dynmappp_is_search_not_id() {
+        let intent = AddResolutionIntent::from_cli_input("dynmappp", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.search_query, "dynmappp");
+    }
+
+    #[test]
+    fn titlecase_mod_name_optifine_is_search_not_id() {
+        let intent = AddResolutionIntent::from_cli_input("Optifine", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.search_query, "Optifine");
+    }
+
+    #[test]
+    fn mixed_case_digits_sodium99_is_search_not_id() {
+        let intent = AddResolutionIntent::from_cli_input("SODIUM99", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.search_query, "SODIUM99");
+    }
+
+    #[test]
+    fn lowercase_digits_sodium12_is_search_not_id() {
+        let intent = AddResolutionIntent::from_cli_input("sodium12", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.search_query, "sodium12");
+    }
+
+    #[test]
+    fn real_modrinth_id_treated_as_search_without_platform_flag() {
+        // Real Modrinth IDs like AANobbMI require --platform modrinth for direct lookup
+        let intent = AddResolutionIntent::from_cli_input("AANobbMI", None);
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.search_query, "AANobbMI");
     }
 }

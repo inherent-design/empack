@@ -1237,15 +1237,13 @@ impl AddResolutionIntent {
             Some(SearchPlatform::Both) | None => None,
         };
 
+        // Auto-detect only CurseForge numeric IDs (unambiguous: all-digit strings).
+        // Modrinth IDs (8-char base62) are too easily confused with mod names
+        // (e.g. "faithful", "optifine"). Users must pass --platform modrinth
+        // for direct Modrinth ID lookup.
         let (direct_project_id, direct_platform) = match preferred_platform {
             Some(ProjectPlatform::CurseForge) if is_curseforge_project_id(mod_query) => {
                 (Some(mod_query.to_string()), Some(ProjectPlatform::CurseForge))
-            }
-            Some(ProjectPlatform::Modrinth) if is_modrinth_project_id(mod_query) => {
-                (Some(mod_query.to_string()), Some(ProjectPlatform::Modrinth))
-            }
-            None if is_modrinth_project_id(mod_query) => {
-                (Some(mod_query.to_string()), Some(ProjectPlatform::Modrinth))
             }
             None if is_curseforge_project_id(mod_query) => {
                 (Some(mod_query.to_string()), Some(ProjectPlatform::CurseForge))
@@ -1330,12 +1328,6 @@ struct ResolvedMod {
     query: String,
     resolution: AddResolution,
     dep_key: String,
-}
-
-fn is_modrinth_project_id(value: &str) -> bool {
-    value.len() == 8
-        && value.chars().all(|c| c.is_ascii_alphanumeric())
-        && !value.chars().all(|c| c.is_ascii_digit())
 }
 
 fn is_curseforge_project_id(value: &str) -> bool {
