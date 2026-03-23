@@ -1,8 +1,6 @@
 use clap::ValueEnum;
 use serde::Deserialize;
 use std::str::FromStr;
-use thiserror::Error;
-
 use crate::impl_fromstr_for_value_enum;
 
 // Platform configuration primitives for system resource detection.
@@ -156,45 +154,6 @@ impl Default for ResourceScalingConfig {
             min_jobs: 1,
             max_memory_pressure: 0.9,
             memory_pressure_cpu_scaling: 0.5,
-        }
-    }
-}
-
-/// Platform detection error categories
-#[derive(Debug, Error)]
-pub enum PlatformDetectionError {
-    #[error("CPU detection failed: {reason}")]
-    CpuDetectionFailed { reason: String },
-
-    #[error("Memory detection failed: {reason}")]
-    MemoryDetectionFailed { reason: String },
-
-    #[error("Platform not supported: {platform}")]
-    UnsupportedPlatform { platform: String },
-
-    #[error("System call failed: {call} - {reason}")]
-    SystemCallFailed { call: String, reason: String },
-
-    #[error("Resource calculation invalid: {reason}")]
-    InvalidResourceCalculation { reason: String },
-}
-
-/// Convert platform module errors to shared primitive errors
-impl From<crate::platform::PlatformError> for PlatformDetectionError {
-    fn from(err: crate::platform::PlatformError) -> Self {
-        match err {
-            crate::platform::PlatformError::CpuDetectionFailed { reason } => {
-                Self::CpuDetectionFailed { reason }
-            }
-            crate::platform::PlatformError::MemoryDetectionFailed { reason } => {
-                Self::MemoryDetectionFailed { reason }
-            }
-            crate::platform::PlatformError::UnsupportedPlatform { platform } => {
-                Self::UnsupportedPlatform { platform }
-            }
-            crate::platform::PlatformError::SystemCallFailed { call, reason } => {
-                Self::SystemCallFailed { call, reason }
-            }
         }
     }
 }

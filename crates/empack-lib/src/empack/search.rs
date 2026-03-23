@@ -13,7 +13,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 
 /// Search and resolution errors
 #[derive(Debug, Error)]
@@ -734,65 +734,6 @@ impl ProjectResolverTrait for ProjectResolver {
             .await
         })
     }
-}
-
-/// Resolve a single project using the modern resolver
-pub async fn resolve_modrinth_mod(client: Client, mod_slug: String) -> Result<String, SearchError> {
-    trace!("Resolving Modrinth mod: {}", mod_slug);
-
-    let url = format!("https://api.modrinth.com/v2/project/{}", mod_slug);
-
-    let response = client
-        .get(&url)
-        .header("User-Agent", "empack/0.1.0")
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        error!("Modrinth API request failed: {}", response.status());
-        return Err(SearchError::NetworkError {
-            source: crate::networking::NetworkingError::RequestFailed {
-                source: response.error_for_status().unwrap_err(),
-            },
-        });
-    }
-
-    let mod_data = response.text().await?;
-    trace!("Successfully resolved Modrinth mod: {}", mod_slug);
-
-    Ok(mod_data)
-}
-
-/// Resolve CurseForge project by ID
-pub async fn resolve_curseforge_mod(
-    client: Client,
-    project_id: String,
-    api_key: &str,
-) -> Result<String, SearchError> {
-    trace!("Resolving CurseForge mod: {}", project_id);
-
-    let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
-
-    let response = client
-        .get(&url)
-        .header("x-api-key", api_key)
-        .header("User-Agent", "empack/0.1.0")
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        error!("CurseForge API request failed: {}", response.status());
-        return Err(SearchError::NetworkError {
-            source: crate::networking::NetworkingError::RequestFailed {
-                source: response.error_for_status().unwrap_err(),
-            },
-        });
-    }
-
-    let mod_data = response.text().await?;
-    trace!("Successfully resolved CurseForge mod: {}", project_id);
-
-    Ok(mod_data)
 }
 
 #[cfg(test)]
