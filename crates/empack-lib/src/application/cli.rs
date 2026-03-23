@@ -97,6 +97,15 @@ pub enum Commands {
             help = "Loader version (skips interactive prompt)"
         )]
         loader_version: Option<String>,
+
+        /// Pack version string (e.g., "1.0.0")
+        #[arg(
+            long,
+            short = 'V',
+            env = "EMPACK_PACK_VERSION",
+            help = "Pack version (skips interactive prompt)"
+        )]
+        pack_version: Option<String>,
     },
 
     /// Synchronize empack.yml dependencies with pack.toml reality

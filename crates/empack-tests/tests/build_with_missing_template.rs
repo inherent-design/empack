@@ -50,6 +50,7 @@ async fn test_build_with_missing_template() -> Result<()> {
             mc_version: None,
             author: None,
             loader_version: None,
+            pack_version: None,
         },
         &session,
     )
@@ -169,6 +170,7 @@ async fn test_build_template_error_specificity() -> Result<()> {
             mc_version: None,
             author: None,
             loader_version: None,
+            pack_version: None,
         },
         &session,
     )

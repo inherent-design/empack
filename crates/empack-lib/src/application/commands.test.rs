@@ -176,6 +176,7 @@ mod handle_init_tests {
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
             None,
+            None,
         )
         .await;
 
@@ -213,7 +214,7 @@ mod handle_init_tests {
             .read_to_string(&workdir.join("empack.yml"))
             .unwrap();
 
-        let result = handle_init(&session, None, None, false, None, None, None, None).await;
+        let result = handle_init(&session, None, None, false, None, None, None, None, None).await;
 
         assert!(result.is_ok());
         assert_eq!(
@@ -245,6 +246,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Overwrite Author".to_string()),
+            None,
             None,
         )
         .await;
@@ -287,6 +289,7 @@ mod handle_init_tests {
             Some("1.21.1".to_string()),
             Some("Overwrite Author".to_string()),
             None,
+            None,
         )
         .await;
 
@@ -314,6 +317,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Cancel Author".to_string()),
+            None,
             None,
         )
         .await;
@@ -343,6 +347,7 @@ mod handle_init_tests {
             Some("99.99.99".to_string()),
             Some("Test Author".to_string()),
             None,
+            None,
         )
         .await;
 
@@ -370,6 +375,7 @@ mod handle_init_tests {
             Some("notaloader".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
             None,
         )
         .await;
@@ -401,6 +407,7 @@ mod handle_init_tests {
             Some("1.21.1".to_string()),
             Some("TestAuthor".to_string()),
             Some("0.15.0".to_string()),
+            None,
         )
         .await;
 
@@ -428,6 +435,7 @@ mod handle_init_tests {
             Some("1.21.1".to_string()),
             Some("TestAuthor".to_string()),
             Some("99.99.99".to_string()),
+            None,
         )
         .await;
 
@@ -462,12 +470,47 @@ mod handle_init_tests {
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
             None,
+            None,
         )
         .await;
 
         // With fallback versions, "1.21.1" + "fabric" is valid and first fallback
         // loader version "0.15.0" is selected. The final checkpoint should pass.
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn it_uses_pack_version_from_cli_flag() {
+        let workdir = mock_root().join("pack-version-flag");
+        let target_dir = workdir.join("test-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            Some("test-pack".to_string()),
+            None,
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            Some("2.0.0".to_string()),
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("version: 2.0.0"),
+            "empack.yml should contain the CLI-provided version '2.0.0', got:\n{}",
+            empack_yml
+        );
     }
 }
 

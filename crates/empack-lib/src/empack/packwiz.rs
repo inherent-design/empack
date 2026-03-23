@@ -188,13 +188,10 @@ impl PackwizOps for LivePackwizOps<'_> {
         let mut installed_mods = HashSet::new();
 
         for path in &file_list {
-            if path.extension().and_then(|e| e.to_str()) == Some("toml")
-                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
+                && let Some(slug) = file_name.strip_suffix(".pw.toml")
+                && !slug.is_empty()
             {
-                // Files are named like fabric-api.pw.toml
-                // file_stem() strips .toml -> "fabric-api.pw"
-                // Then strip ".pw" suffix to get the slug: "fabric-api"
-                let slug = stem.strip_suffix(".pw").unwrap_or(stem);
                 installed_mods.insert(slug.to_string());
             }
         }

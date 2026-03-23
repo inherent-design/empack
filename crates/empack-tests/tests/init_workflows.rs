@@ -69,6 +69,7 @@ async fn test_init_zero_config() -> Result<()> {
             mc_version: None,
             author: None,
             loader_version: None,
+            pack_version: None,
         },
         &session,
     )
@@ -165,6 +166,7 @@ async fn test_init_with_explicit_flags() -> Result<()> {
             mc_version: Some("1.21.1".to_string()),
             author: Some("Workflow Test".to_string()),
             loader_version: None,
+            pack_version: None,
         },
         &session,
     )
@@ -300,6 +302,7 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
             mc_version: None,
             author: None,
             loader_version: None,
+            pack_version: None,
         },
         &session,
     )
@@ -402,6 +405,7 @@ async fn test_init_existing_project_error() -> Result<()> {
             mc_version: None,
             author: None, // No force flag - should fail or prompt
             loader_version: None,
+            pack_version: None,
         },
         &session,
     )

@@ -650,3 +650,37 @@ fn test_packwiz_invalid_toml_syntax() {
         err_msg
     );
 }
+
+// ── get_installed_mods .pw.toml filter tests ───────────────────────────
+
+#[test]
+fn test_get_installed_mods_only_includes_pw_toml_files() {
+    let workdir = mock_root().join("workdir");
+    let mods_dir = workdir.join("pack").join("mods");
+
+    let fs = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        // Valid .pw.toml files — should be included
+        .with_file(mods_dir.join("fabric-api.pw.toml"), "name = \"Fabric API\"".to_string())
+        .with_file(mods_dir.join("sodium.pw.toml"), "name = \"Sodium\"".to_string())
+        // Plain .toml files — should NOT be included
+        .with_file(mods_dir.join("config.toml"), "key = \"value\"".to_string())
+        .with_file(mods_dir.join("mod-settings.toml"), "setting = true".to_string())
+        // Empty slug (.pw.toml with no prefix) — should NOT be included
+        .with_file(mods_dir.join(".pw.toml"), "empty = true".to_string())
+        // Non-toml file — should NOT be included
+        .with_file(mods_dir.join("some-file.txt"), "text".to_string());
+
+    let process = MockProcessProvider::new();
+    let ops = LivePackwizOps::new(&process, &fs);
+
+    let installed = ops.get_installed_mods(&workdir).unwrap();
+
+    assert_eq!(installed.len(), 2, "expected exactly 2 mods, got: {:?}", installed);
+    assert!(installed.contains("fabric-api"), "should contain fabric-api");
+    assert!(installed.contains("sodium"), "should contain sodium");
+    assert!(!installed.contains("config"), "should NOT contain config");
+    assert!(!installed.contains("mod-settings"), "should NOT contain mod-settings");
+    assert!(!installed.contains(""), "should NOT contain empty slug");
+    assert!(!installed.contains("some-file"), "should NOT contain non-toml files");
+}

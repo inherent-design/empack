@@ -101,9 +101,11 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             author,
             pack_name,
             loader_version,
+            pack_version,
         } => {
             handle_init(
                 session, name, pack_name, force, modloader, mc_version, author, loader_version,
+                pack_version,
             )
             .await
         }
@@ -231,6 +233,7 @@ async fn handle_init(
     cli_mc_version: Option<String>,
     cli_author: Option<String>,
     cli_loader_version: Option<String>,
+    cli_pack_version: Option<String>,
 ) -> Result<()> {
     // Handle directory creation case: `empack init <name>` where <name> is a directory
     // Precedence: positional arg > --name flag
@@ -416,9 +419,17 @@ async fn handle_init(
         session.interactive().text_input("Author", default_author)?
     };
 
-    let version = session
-        .interactive()
-        .text_input("Version", "1.0.0".to_string())?;
+    let version = if let Some(v) = cli_pack_version {
+        session
+            .display()
+            .status()
+            .info(&format!("Using pack version: {}", v));
+        v
+    } else {
+        session
+            .interactive()
+            .text_input("Version", "1.0.0".to_string())?
+    };
 
     // Create version fetcher for dynamic version discovery
     let version_fetcher =
