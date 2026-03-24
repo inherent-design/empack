@@ -431,6 +431,7 @@ impl ProjectResolver {
         }
 
         let scored = Self::score_results(title, all_results);
+        let best_confidence = scored.first().map(|p| p.confidence).unwrap_or(0);
 
         let candidates: Vec<ProjectInfo> = scored
             .into_iter()
@@ -439,7 +440,7 @@ impl ProjectResolver {
 
         if candidates.is_empty() {
             return Err(SearchError::LowConfidence {
-                confidence: 0,
+                confidence: best_confidence,
                 threshold: min_confidence,
             });
         }
@@ -488,6 +489,11 @@ impl ProjectResolver {
         };
 
         let status = response.status().as_u16();
+        let etag = response
+            .headers()
+            .get("etag")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
         let bytes = response.bytes().await?.to_vec();
 
         // Cache successful responses
@@ -496,7 +502,7 @@ impl ProjectResolver {
         {
             let cached_response = CachedResponse {
                 data: bytes.clone(),
-                etag: None,
+                etag,
                 expires: SystemTime::now() + cache.default_ttl(),
                 status,
             };
