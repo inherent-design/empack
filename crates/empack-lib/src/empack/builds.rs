@@ -339,6 +339,7 @@ impl<'a> BuildOrchestrator<'a> {
             })?;
         let hash = format!("{:x}", Sha1::digest(&jar_bytes));
         if hash != version_meta.downloads.server.sha1 {
+            let _ = self.session.filesystem().remove_file(&jar_path);
             return Err(BuildError::ValidationError {
                 reason: format!(
                     "SHA1 mismatch for server JAR: expected {}, got {}",
@@ -608,12 +609,10 @@ impl<'a> BuildOrchestrator<'a> {
 
     /// Fetch raw bytes from a URL using the session HTTP client.
     ///
-    /// Runs the HTTP request on a dedicated thread with its own tokio runtime
-    /// to avoid conflicts with the caller's async context. Works with both
-    /// single-threaded and multi-threaded tokio runtimes.
+    /// Uses the shared `reqwest::Client` from the session and the existing
+    /// tokio multi-thread runtime via `block_in_place` + `Handle::current()`.
     fn fetch_url_bytes(&self, url: &str) -> Result<Vec<u8>, BuildError> {
-        // Gate on session network availability (respects test mocking)
-        let _ = self
+        let client = self
             .session
             .network()
             .http_client()
@@ -622,59 +621,38 @@ impl<'a> BuildOrchestrator<'a> {
             })?;
 
         let url_owned = url.to_string();
-        let self_timeout = self.session.config().app_config().net_timeout;
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|e| BuildError::ConfigError {
-                        reason: format!("failed to create HTTP runtime: {}", e),
+        let timeout = self.session.config().app_config().net_timeout;
+
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let resp = client
+                    .get(&url_owned)
+                    .timeout(std::time::Duration::from_secs(timeout))
+                    .send()
+                    .await
+                    .map_err(|e| BuildError::CommandFailed {
+                        command: format!("HTTP GET {} failed: {}", url_owned, e),
                     })?;
 
-                rt.block_on(async {
-                    let timeout = self_timeout;
-                    let client = reqwest::Client::builder()
-                        .timeout(std::time::Duration::from_secs(timeout))
-                        .build()
-                        .map_err(|e| BuildError::ConfigError {
-                            reason: format!("failed to create HTTP client: {}", e),
-                        })?;
+                if !resp.status().is_success() {
+                    return Err(BuildError::CommandFailed {
+                        command: format!(
+                            "HTTP GET {} returned status {}",
+                            url_owned,
+                            resp.status()
+                        ),
+                    });
+                }
 
-                    let resp = client
-                        .get(&url_owned)
-                        .send()
-                        .await
-                        .map_err(|e| BuildError::CommandFailed {
-                            command: format!("HTTP GET {} failed: {}", url_owned, e),
-                        })?;
-
-                    if !resp.status().is_success() {
-                        return Err(BuildError::CommandFailed {
-                            command: format!(
-                                "HTTP GET {} returned status {}",
-                                url_owned,
-                                resp.status()
-                            ),
-                        });
-                    }
-
-                    resp.bytes()
-                        .await
-                        .map(|b| b.to_vec())
-                        .map_err(|e| BuildError::CommandFailed {
-                            command: format!(
-                                "failed to read response body from {}: {}",
-                                url_owned, e
-                            ),
-                        })
-                })
-            })
-            .join()
-            .unwrap_or_else(|_| {
-                Err(BuildError::CommandFailed {
-                    command: "HTTP request thread panicked".to_string(),
-                })
+                resp.bytes()
+                    .await
+                    .map(|b| b.to_vec())
+                    .map_err(|e| BuildError::CommandFailed {
+                        command: format!(
+                            "failed to read response body from {}: {}",
+                            url_owned, e
+                        ),
+                    })
             })
         })
     }

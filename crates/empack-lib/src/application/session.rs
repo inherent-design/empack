@@ -267,6 +267,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
 
 /// Live implementation of NetworkProvider
 pub struct LiveNetworkProvider {
+    client: Client,
     cache: Arc<HttpCache>,
     rate_limiter: Arc<RateLimiterManager>,
     #[cfg(feature = "test-utils")]
@@ -284,6 +285,7 @@ impl LiveNetworkProvider {
             .build()
             .expect("Failed to build HTTP client");
         Self {
+            client: client.clone(),
             cache: Arc::new(HttpCache::new(cache_dir)),
             rate_limiter: Arc::new(RateLimiterManager::new(client)),
             #[cfg(feature = "test-utils")]
@@ -305,6 +307,7 @@ impl LiveNetworkProvider {
             .build()
             .expect("Failed to build HTTP client");
         Self {
+            client: client.clone(),
             cache: Arc::new(HttpCache::new(cache_dir)),
             rate_limiter: Arc::new(RateLimiterManager::new(client)),
             modrinth_base_url,
@@ -321,10 +324,7 @@ impl Default for LiveNetworkProvider {
 
 impl NetworkProvider for LiveNetworkProvider {
     fn http_client(&self) -> Result<Client> {
-        Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .context("Failed to create HTTP client")
+        Ok(self.client.clone())
     }
 
     fn project_resolver(
