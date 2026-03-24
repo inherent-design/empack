@@ -372,30 +372,6 @@ JAVAINSTALL
                     );
                 }
 
-                if name == "mrpack-install" {
-                    code.push_str(
-                        r#"
-SERVER_FILE="srv.jar"
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --server-file)
-      SERVER_FILE="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-
-cat > "$SERVER_FILE" <<SERVERJAR
-mock server jar
-SERVERJAR
-"#,
-                    );
-                }
-
                 if name == "zip" {
                     code.push_str(
                         r#"
