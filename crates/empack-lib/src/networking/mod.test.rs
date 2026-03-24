@@ -39,14 +39,3 @@ async fn test_job_calculation_with_limit() {
     assert!(manager.optimal_jobs() <= 2, "Should respect max jobs limit");
     assert!(manager.optimal_jobs() > 0, "Should have at least 1 job");
 }
-
-#[test]
-fn test_mock_mod_resolution() {
-    // Test the resolver function signature works
-    let mock_resolver = |_client: Client, mod_id: String| async move {
-        Ok::<String, NetworkingError>(format!("resolved_{}", mod_id))
-    };
-
-    // This just verifies the function signature compiles
-    let _test: fn(Client, String) -> _ = mock_resolver;
-}

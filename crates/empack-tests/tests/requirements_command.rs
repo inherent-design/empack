@@ -101,16 +101,8 @@ async fn e2e_requirements_packwiz_missing() -> Result<()> {
     let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
     Display::init_or_get(terminal_caps);
 
-    // Mock which command returning error (packwiz not found)
-    let mock_process_provider = MockProcessProvider::new().with_result(
-        "which".to_string(),
-        vec!["packwiz".to_string()],
-        Ok(ProcessOutput {
-            stdout: String::new(),
-            stderr: String::new(),
-            success: false, // which returns non-zero when not found
-        }),
-    );
+    // Simulate packwiz missing via find_program returning None
+    let mock_process_provider = MockProcessProvider::new().with_packwiz_unavailable();
 
     let session = CommandSession::new_with_providers(
         LiveFileSystemProvider,
@@ -120,21 +112,14 @@ async fn e2e_requirements_packwiz_missing() -> Result<()> {
         MockInteractiveProvider::new(),
     );
 
-    // Execute the requirements command
     let result = execute_command_with_session(Commands::Requirements, &session).await;
 
-    // Assert: Command should complete but report missing tool
-    // Implementation may succeed (reporting missing) or fail (hard requirement)
-    match result {
-        Ok(_) => {
-            // Acceptable: requirements command reports missing tools but doesn't fail
-            println!("Requirements command completed (reported missing packwiz)");
-        }
-        Err(e) => {
-            // Also acceptable: requirements command fails when critical tool missing
-            println!("Requirements command failed as expected: {}", e);
-        }
-    }
+    // handle_requirements always returns Ok; it reports status via display
+    assert!(
+        result.is_ok(),
+        "Requirements command should succeed even when packwiz is missing: {:?}",
+        result
+    );
 
     Ok(())
 }
