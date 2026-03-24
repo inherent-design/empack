@@ -269,6 +269,7 @@ pub struct MockPackwizOps {
     pub installed_mods: HashSet<String>,
     pub filesystem: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<PathBuf, String>>>,
     pub current_dir: PathBuf,
+    pub fail_init: bool,
 }
 
 #[cfg(feature = "test-utils")]
@@ -278,7 +279,13 @@ impl MockPackwizOps {
             installed_mods: HashSet::new(),
             filesystem: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             current_dir: crate::application::session_mocks::mock_root().join("workdir"),
+            fail_init: false,
         }
+    }
+
+    pub fn with_failing_init(mut self) -> Self {
+        self.fail_init = true;
+        self
     }
 
     pub fn with_installed_mods(mut self, mods: HashSet<String>) -> Self {
@@ -329,6 +336,11 @@ impl PackwizOps for MockPackwizOps {
         mc_version: &str,
         loader_version: &str,
     ) -> Result<(), StateError> {
+        if self.fail_init {
+            return Err(StateError::IoError {
+                source: anyhow::anyhow!("mock packwiz init failure"),
+            });
+        }
         let pack_dir = workdir.join("pack");
         let pack_file = pack_dir.join("pack.toml");
         let default_pack_toml = format!(

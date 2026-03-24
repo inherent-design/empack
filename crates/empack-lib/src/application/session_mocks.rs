@@ -1194,10 +1194,12 @@ impl Session for MockCommandSession {
     }
 
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
-        Box::new(MockPackwizOps::new()
+        let mut mock = MockPackwizOps::new()
             .with_current_dir(self.packwiz_provider.current_dir.clone())
             .with_installed_mods(self.packwiz_provider.installed_mods.clone())
-            .with_filesystem(self.packwiz_provider.filesystem.clone()))
+            .with_filesystem(self.packwiz_provider.filesystem.clone());
+        mock.fail_init = self.packwiz_provider.fail_init;
+        Box::new(mock)
     }
 
     fn state(&self) -> crate::Result<crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_>> {
