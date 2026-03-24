@@ -508,7 +508,7 @@ async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_e
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_vanilla_server_sha1_mismatch_returns_validation_error() {
     let mut server = mockito::Server::new_async().await;
     let jar_bytes = b"fake server jar";
@@ -563,7 +563,7 @@ async fn test_vanilla_server_sha1_mismatch_returns_validation_error() {
     assert_ne!(actual_hash, wrong_sha1, "hashes should not match for this test");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_download_server_jar_vanilla_fetches_mojang_manifest() {
     let mut server = mockito::Server::new_async().await;
     let jar_bytes = b"fake server jar content";
@@ -627,7 +627,7 @@ async fn test_download_server_jar_vanilla_fetches_mojang_manifest() {
     assert_eq!(actual_hash, jar_sha1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_download_server_jar_fabric_constructs_correct_url() {
     let mut server = mockito::Server::new_async().await;
 
@@ -680,7 +680,7 @@ async fn test_download_server_jar_fabric_constructs_correct_url() {
     assert!(mock.session.filesystem().exists(&dist_dir.join("srv.jar")));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_download_server_jar_quilt_parses_maven_and_invokes_java() {
     let mut server = mockito::Server::new_async().await;
 
@@ -722,7 +722,7 @@ async fn test_download_server_jar_quilt_parses_maven_and_invokes_java() {
     assert!(mock.session.filesystem().exists(&installer_path));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_download_server_jar_neoforge_downloads_and_runs_installer() {
     let mut server = mockito::Server::new_async().await;
     let _m = server.mock("GET", "/releases/net/neoforged/neoforge/21.1.86/neoforge-21.1.86-installer.jar")
@@ -805,7 +805,7 @@ async fn test_download_server_jar_neoforge_mc_1_20_1_uses_forge_namespace() {
     assert_eq!(filename, "forge-1.20.1-47.3.0-installer.jar");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_download_server_jar_forge_downloads_and_runs_installer() {
     let mut server = mockito::Server::new_async().await;
     let _m = server.mock("GET", "/net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar")
