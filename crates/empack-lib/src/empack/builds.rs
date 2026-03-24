@@ -8,6 +8,73 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+use serde::Deserialize;
+use sha1::{Digest, Sha1};
+
+#[derive(Deserialize)]
+struct MojangVersionManifest {
+    versions: Vec<MojangVersionEntry>,
+}
+
+#[derive(Deserialize)]
+struct MojangVersionEntry {
+    id: String,
+    url: String,
+}
+
+#[derive(Deserialize)]
+struct MojangVersionMeta {
+    downloads: MojangDownloads,
+}
+
+#[derive(Deserialize)]
+struct MojangDownloads {
+    server: MojangDownloadInfo,
+}
+
+#[derive(Deserialize)]
+struct MojangDownloadInfo {
+    url: String,
+    sha1: String,
+}
+
+#[derive(Deserialize)]
+struct FabricLoaderEntry {
+    loader: FabricLoaderInfo,
+}
+
+#[derive(Deserialize)]
+struct FabricLoaderInfo {
+    version: String,
+    stable: bool,
+}
+
+#[derive(Deserialize)]
+struct FabricInstallerEntry {
+    version: String,
+    stable: bool,
+}
+
+/// Quilt Maven metadata for resolving the latest installer version.
+///
+/// XML structure:
+/// ```xml
+/// <metadata>
+///   <versioning>
+///     <release>0.12.0</release>
+///   </versioning>
+/// </metadata>
+/// ```
+#[derive(Deserialize)]
+struct QuiltMavenMetadata {
+    versioning: QuiltMavenVersioning,
+}
+
+#[derive(Deserialize)]
+struct QuiltMavenVersioning {
+    release: String,
+}
+
 /// Build system errors
 #[derive(Debug, Error)]
 pub enum BuildError {
@@ -206,15 +273,408 @@ impl<'a> BuildOrchestrator<'a> {
         }
     }
 
-    /// Maps empack's internal loader names to mrpack-install's accepted server types.
-    /// mrpack-install accepts: vanilla, fabric, quilt, forge, paper
-    fn mrpack_install_server_type(loader_type: &str) -> &'static str {
-        match loader_type {
-            "fabric" => "fabric",
-            "quilt" => "quilt",
-            "forge" | "neoforge" => "forge",
-            _ => "vanilla",
+    /// Download or install the Minecraft server JAR into `dist_dir`.
+    ///
+    /// Dispatches per loader type; each arm calls a dedicated provider method.
+    fn download_server_jar(
+        &self,
+        dist_dir: &Path,
+        pack_info: &PackInfo,
+    ) -> Result<(), BuildError> {
+        match pack_info.loader_type.as_str() {
+            "vanilla" => self.install_vanilla_server(dist_dir, pack_info),
+            "fabric" => self.install_fabric_server(dist_dir, pack_info),
+            "quilt" => self.install_quilt_server(dist_dir, pack_info),
+            "neoforge" => self.install_neoforge_server(dist_dir, pack_info),
+            "forge" => self.install_forge_server(dist_dir, pack_info),
+            other => Err(BuildError::ConfigError {
+                reason: format!("unsupported loader type for server builds: {}", other),
+            }),
         }
+    }
+
+    /// Download the vanilla Minecraft server JAR from Mojang.
+    ///
+    /// Resolves the version manifest, fetches per-version metadata, downloads
+    /// the server JAR, and verifies its SHA1 hash.
+    fn install_vanilla_server(
+        &self,
+        dist_dir: &Path,
+        pack_info: &PackInfo,
+    ) -> Result<(), BuildError> {
+        let manifest_text = self.fetch_url_text(
+            "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+        )?;
+        let manifest: MojangVersionManifest =
+            serde_json::from_str(&manifest_text).map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to parse Mojang version manifest: {}", e),
+            })?;
+
+        let entry = manifest
+            .versions
+            .iter()
+            .find(|v| v.id == pack_info.mc_version)
+            .ok_or_else(|| BuildError::ConfigError {
+                reason: format!(
+                    "Minecraft version {} not found in Mojang manifest",
+                    pack_info.mc_version
+                ),
+            })?;
+
+        let version_meta_text = self.fetch_url_text(&entry.url)?;
+        let version_meta: MojangVersionMeta =
+            serde_json::from_str(&version_meta_text).map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to parse Mojang version metadata: {}", e),
+            })?;
+
+        let jar_path = dist_dir.join("srv.jar");
+        self.download_file(&version_meta.downloads.server.url, &jar_path)?;
+
+        let jar_bytes = self
+            .session
+            .filesystem()
+            .read_bytes(&jar_path)
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to read downloaded server JAR: {}", e),
+            })?;
+        let hash = format!("{:x}", Sha1::digest(&jar_bytes));
+        if hash != version_meta.downloads.server.sha1 {
+            return Err(BuildError::ValidationError {
+                reason: format!(
+                    "SHA1 mismatch for server JAR: expected {}, got {}",
+                    version_meta.downloads.server.sha1, hash
+                ),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Download a pre-built Fabric server JAR from the Fabric Meta API.
+    ///
+    /// Resolves the loader and installer versions, then downloads the merged
+    /// server JAR directly (no Java required).
+    fn install_fabric_server(
+        &self,
+        dist_dir: &Path,
+        pack_info: &PackInfo,
+    ) -> Result<(), BuildError> {
+        let mc = &pack_info.mc_version;
+
+        let loader_version = if pack_info.loader_version.is_empty() {
+            let url = format!("https://meta.fabricmc.net/v2/versions/loader/{}", mc);
+            let text = self.fetch_url_text(&url)?;
+            let entries: Vec<FabricLoaderEntry> =
+                serde_json::from_str(&text).map_err(|e| BuildError::ConfigError {
+                    reason: format!("failed to parse Fabric loader versions: {}", e),
+                })?;
+            entries
+                .iter()
+                .find(|e| e.loader.stable)
+                .map(|e| e.loader.version.clone())
+                .ok_or_else(|| BuildError::ConfigError {
+                    reason: "no stable Fabric loader version found".to_string(),
+                })?
+        } else {
+            pack_info.loader_version.clone()
+        };
+
+        let installer_text =
+            self.fetch_url_text("https://meta.fabricmc.net/v2/versions/installer")?;
+        let installers: Vec<FabricInstallerEntry> =
+            serde_json::from_str(&installer_text).map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to parse Fabric installer versions: {}", e),
+            })?;
+        let installer_version = installers
+            .iter()
+            .find(|e| e.stable)
+            .map(|e| e.version.clone())
+            .ok_or_else(|| BuildError::ConfigError {
+                reason: "no stable Fabric installer version found".to_string(),
+            })?;
+
+        let jar_url = format!(
+            "https://meta.fabricmc.net/v2/versions/loader/{}/{}/{}/server/jar",
+            mc, loader_version, installer_version
+        );
+        self.download_file(&jar_url, &dist_dir.join("srv.jar"))
+    }
+
+    /// Download and run the Quilt server installer.
+    ///
+    /// Fetches the latest installer version from Maven, downloads the
+    /// installer JAR, then invokes it with `java -jar` to install the
+    /// Quilt server.
+    fn install_quilt_server(
+        &self,
+        dist_dir: &Path,
+        pack_info: &PackInfo,
+    ) -> Result<(), BuildError> {
+        let maven_xml = self.fetch_url_text(
+            "https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/maven-metadata.xml",
+        )?;
+        let metadata: QuiltMavenMetadata =
+            quick_xml::de::from_str(&maven_xml).map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to parse Quilt Maven metadata: {}", e),
+            })?;
+        let installer_version = &metadata.versioning.release;
+
+        let installer_filename = format!("quilt-installer-{}.jar", installer_version);
+        let installer_url = format!(
+            "https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-installer/{v}/{f}",
+            v = installer_version,
+            f = installer_filename
+        );
+        let installer_path = dist_dir.join(&installer_filename);
+        self.download_file(&installer_url, &installer_path)?;
+
+        let install_dir_flag = format!("--install-dir={}", dist_dir.to_string_lossy());
+        let output = self
+            .session
+            .process()
+            .execute(
+                "java",
+                &[
+                    "-jar",
+                    &installer_path.to_string_lossy(),
+                    "install",
+                    "server",
+                    &pack_info.mc_version,
+                    &install_dir_flag,
+                    "--create-scripts",
+                    "--download-server",
+                ],
+                dist_dir,
+            )
+            .map_err(|_| BuildError::MissingTool {
+                tool: "java".to_string(),
+            })?;
+
+        if !output.success {
+            return Err(BuildError::CommandFailed {
+                command: format!("quilt installer failed: {}", output.stderr),
+            });
+        }
+
+        // Quilt creates quilt-server-launch.jar and server.jar; rename
+        // server.jar to srv.jar for consistency across loaders.
+        let server_jar = dist_dir.join("server.jar");
+        let srv_jar = dist_dir.join("srv.jar");
+        if self.session.filesystem().exists(&server_jar) && !self.session.filesystem().exists(&srv_jar) {
+            let bytes = self
+                .session
+                .filesystem()
+                .read_bytes(&server_jar)
+                .map_err(|e| BuildError::ConfigError {
+                    reason: format!("failed to read server.jar for rename: {}", e),
+                })?;
+            self.session
+                .filesystem()
+                .write_bytes(&srv_jar, &bytes)
+                .map_err(|e| BuildError::ConfigError {
+                    reason: format!("failed to write srv.jar: {}", e),
+                })?;
+            let _ = self.session.filesystem().remove_file(&server_jar);
+        }
+
+        let _ = self.session.filesystem().remove_file(&installer_path);
+        Ok(())
+    }
+
+    /// Download and run the NeoForge server installer.
+    ///
+    /// MC 1.20.1 uses the `forge` namespace on the NeoForged Maven as a special case.
+    fn install_neoforge_server(
+        &self,
+        dist_dir: &Path,
+        pack_info: &PackInfo,
+    ) -> Result<(), BuildError> {
+        let version = &pack_info.loader_version;
+        let mc = &pack_info.mc_version;
+
+        let (url, installer_filename) = if mc == "1.20.1" {
+            (
+                format!(
+                    "https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-{v}/forge-1.20.1-{v}-installer.jar",
+                    v = version
+                ),
+                format!("forge-1.20.1-{}-installer.jar", version),
+            )
+        } else {
+            (
+                format!(
+                    "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
+                    v = version
+                ),
+                format!("neoforge-{}-installer.jar", version),
+            )
+        };
+
+        let installer_path = dist_dir.join(&installer_filename);
+        self.download_file(&url, &installer_path)?;
+
+        let output = self
+            .session
+            .process()
+            .execute(
+                "java",
+                &[
+                    "-jar",
+                    &installer_path.to_string_lossy(),
+                    "--install-server",
+                    &dist_dir.to_string_lossy(),
+                ],
+                dist_dir,
+            )
+            .map_err(|_| BuildError::MissingTool {
+                tool: "java".to_string(),
+            })?;
+
+        if !output.success {
+            return Err(BuildError::CommandFailed {
+                command: format!("neoforge installer failed: {}", output.stderr),
+            });
+        }
+
+        // Clean up installer JAR from the distribution
+        let _ = self.session.filesystem().remove_file(&installer_path);
+        Ok(())
+    }
+
+    /// Download and run the Forge server installer.
+    fn install_forge_server(
+        &self,
+        dist_dir: &Path,
+        pack_info: &PackInfo,
+    ) -> Result<(), BuildError> {
+        let mc = &pack_info.mc_version;
+        let version = &pack_info.loader_version;
+        let composite = format!("{}-{}", mc, version);
+
+        let url = format!(
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/{c}/forge-{c}-installer.jar",
+            c = composite
+        );
+        let installer_filename = format!("forge-{}-installer.jar", composite);
+        let installer_path = dist_dir.join(&installer_filename);
+
+        self.download_file(&url, &installer_path)?;
+
+        let output = self
+            .session
+            .process()
+            .execute(
+                "java",
+                &[
+                    "-jar",
+                    &installer_path.to_string_lossy(),
+                    "--installServer",
+                    &dist_dir.to_string_lossy(),
+                ],
+                dist_dir,
+            )
+            .map_err(|_| BuildError::MissingTool {
+                tool: "java".to_string(),
+            })?;
+
+        if !output.success {
+            return Err(BuildError::CommandFailed {
+                command: format!("forge installer failed: {}", output.stderr),
+            });
+        }
+
+        let _ = self.session.filesystem().remove_file(&installer_path);
+        Ok(())
+    }
+
+    /// Download a file from `url` and write it to `dest` using reqwest.
+    fn download_file(&self, url: &str, dest: &Path) -> Result<(), BuildError> {
+        let bytes = self.fetch_url_bytes(url)?;
+        self.session
+            .filesystem()
+            .write_bytes(dest, &bytes)
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to write downloaded file to {}: {}", dest.display(), e),
+            })
+    }
+
+    /// Fetch URL content as a String.
+    fn fetch_url_text(&self, url: &str) -> Result<String, BuildError> {
+        let bytes = self.fetch_url_bytes(url)?;
+        String::from_utf8(bytes).map_err(|e| BuildError::ConfigError {
+            reason: format!("response from {} is not valid UTF-8: {}", url, e),
+        })
+    }
+
+    /// Fetch raw bytes from a URL using the session HTTP client.
+    ///
+    /// Runs the HTTP request on a dedicated thread with its own tokio runtime
+    /// to avoid conflicts with the caller's async context. Works with both
+    /// single-threaded and multi-threaded tokio runtimes.
+    fn fetch_url_bytes(&self, url: &str) -> Result<Vec<u8>, BuildError> {
+        // Gate on session network availability (respects test mocking)
+        let _ = self
+            .session
+            .network()
+            .http_client()
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("HTTP client unavailable: {}", e),
+            })?;
+
+        let url_owned = url.to_string();
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: format!("failed to create HTTP runtime: {}", e),
+                    })?;
+
+                rt.block_on(async {
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(60))
+                        .build()
+                        .map_err(|e| BuildError::ConfigError {
+                            reason: format!("failed to create HTTP client: {}", e),
+                        })?;
+
+                    let resp = client
+                        .get(&url_owned)
+                        .send()
+                        .await
+                        .map_err(|e| BuildError::CommandFailed {
+                            command: format!("HTTP GET {} failed: {}", url_owned, e),
+                        })?;
+
+                    if !resp.status().is_success() {
+                        return Err(BuildError::CommandFailed {
+                            command: format!(
+                                "HTTP GET {} returned status {}",
+                                url_owned,
+                                resp.status()
+                            ),
+                        });
+                    }
+
+                    resp.bytes()
+                        .await
+                        .map(|b| b.to_vec())
+                        .map_err(|e| BuildError::CommandFailed {
+                            command: format!(
+                                "failed to read response body from {}: {}",
+                                url_owned, e
+                            ),
+                        })
+                })
+            })
+            .join()
+            .unwrap_or_else(|_| {
+                Err(BuildError::CommandFailed {
+                    command: "HTTP request thread panicked".to_string(),
+                })
+            })
+        })
     }
 
     /// Register build targets (V1's register_all_build_targets pattern)
@@ -610,43 +1070,16 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        // Step 6: Execute mrpack-install to download the appropriate Minecraft server JAR
+        // Step 6: Download the appropriate Minecraft server JAR
         let pack_info = self.load_pack_info()?.clone();
-        let server_type = Self::mrpack_install_server_type(&pack_info.loader_type);
-        let result = self.session.process().execute(
-            "mrpack-install",
-            &["server", server_type, "--server-file", "srv.jar"],
-            &dist_dir,
-        );
-
-        match result {
-            Ok(output) if output.success => {
-                // Server JAR downloaded successfully
-            }
-            Ok(output) => {
-                return Ok(BuildResult {
-                    target: BuildTarget::Server,
-                    success: false,
-                    output_path: None,
-                    artifacts: vec![],
-                    warnings: vec![format!(
-                        "mrpack-install command failed to download server JAR: {}",
-                        output.stderr
-                    )],
-                });
-            }
-            Err(_) => {
-                return Ok(BuildResult {
-                    target: BuildTarget::Server,
-                    success: false,
-                    output_path: None,
-                    artifacts: vec![],
-                    warnings: vec![
-                        "mrpack-install command not found - ensure it's installed and in PATH"
-                            .to_string(),
-                    ],
-                });
-            }
+        if let Err(e) = self.download_server_jar(&dist_dir, &pack_info) {
+            return Ok(BuildResult {
+                target: BuildTarget::Server,
+                success: false,
+                output_path: None,
+                artifacts: vec![],
+                warnings: vec![format!("failed to download server JAR: {}", e)],
+            });
         }
 
         // Step 7: Extract the .mrpack file (building it first if necessary)
@@ -751,43 +1184,16 @@ impl<'a> BuildOrchestrator<'a> {
         // Step 3: Process templates from templates/server/ into dist/server-full/
         self.process_build_templates("templates/server", &dist_dir)?;
 
-        // Step 4: Execute mrpack-install to download the Minecraft server JAR
+        // Step 4: Download the appropriate Minecraft server JAR
         let pack_info = self.load_pack_info()?.clone();
-        let server_type = Self::mrpack_install_server_type(&pack_info.loader_type);
-        let result = self.session.process().execute(
-            "mrpack-install",
-            &["server", server_type, "--server-file", "srv.jar"],
-            &dist_dir,
-        );
-
-        match result {
-            Ok(output) if output.success => {
-                // Server JAR downloaded successfully
-            }
-            Ok(output) => {
-                return Ok(BuildResult {
-                    target: BuildTarget::ServerFull,
-                    success: false,
-                    output_path: None,
-                    artifacts: vec![],
-                    warnings: vec![format!(
-                        "mrpack-install command failed to download server JAR: {}",
-                        output.stderr
-                    )],
-                });
-            }
-            Err(e) => {
-                return Ok(BuildResult {
-                    target: BuildTarget::ServerFull,
-                    success: false,
-                    output_path: None,
-                    artifacts: vec![],
-                    warnings: vec![format!(
-                        "mrpack-install command not found - ensure it's installed and in PATH: {}",
-                        e
-                    )],
-                });
-            }
+        if let Err(e) = self.download_server_jar(&dist_dir, &pack_info) {
+            return Ok(BuildResult {
+                target: BuildTarget::ServerFull,
+                success: false,
+                output_path: None,
+                artifacts: vec![],
+                warnings: vec![format!("failed to download server JAR: {}", e)],
+            });
         }
 
         // Step 5: Execute packwiz-installer-bootstrap.jar with -g and -s server flags
@@ -1071,7 +1477,7 @@ impl<'a> BuildOrchestrator<'a> {
                     .replace("{{NAME}}", &pack_info.name)
                     .replace("{{AUTHOR}}", &pack_info.author)
                     .replace("{{MC_VERSION}}", &pack_info.mc_version)
-                    .replace("{{FABRIC_VERSION}}", &pack_info.loader_version);
+                    .replace("{{LOADER_VERSION}}", &pack_info.loader_version);
 
                 self.session
                     .filesystem()

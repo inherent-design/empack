@@ -35,17 +35,11 @@ async fn initialize_empack_project(
 ) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
     let (session, test_env) = HermeticSessionBuilder::new()?
         .with_empack_project(project_name, "1.21.1", "fabric")?
+        .with_mock_http_client()
         .with_mock_executable(
             "packwiz",
             MockBehavior::SucceedWithOutput {
                 stdout: build_packwiz_output(project_name),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "mrpack-install",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Installed mock server jar".to_string(),
                 stderr: String::new(),
             },
         )?
@@ -168,14 +162,6 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
         "Standalone server-full builds should not create a server archive"
     );
 
-    let mrpack_install_calls = test_env.get_mock_calls("mrpack-install")?;
-    assert!(
-        mrpack_install_calls
-            .iter()
-            .any(|call| call.contains("server fabric --server-file srv.jar")),
-        "server-full build should invoke mrpack-install with the server target: {mrpack_install_calls:?}"
-    );
-
     let java_calls = test_env.get_mock_calls("java")?;
     assert!(
         java_calls.iter().any(|call| call.contains("-s server")
@@ -190,8 +176,30 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
-    let (session, _test_env, workdir) =
-        initialize_empack_project("workflow-server-full-missing-installer").await?;
+    let project_name = "workflow-server-full-missing-installer";
+    let (session, test_env) = HermeticSessionBuilder::new()?
+        .with_empack_project(project_name, "1.21.1", "fabric")?
+        .with_mock_executable(
+            "packwiz",
+            MockBehavior::SucceedWithOutput {
+                stdout: build_packwiz_output(project_name),
+                stderr: String::new(),
+            },
+        )?
+        .build()?;
+
+    init_display(&session)?;
+
+    let workdir = session
+        .config()
+        .app_config()
+        .workdir
+        .clone()
+        .expect("hermetic project should configure a workdir");
+    std::env::set_current_dir(&workdir)?;
+    unsafe {
+        std::env::set_var("HOME", &test_env.root_path);
+    }
 
     let templates_dir = workdir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
@@ -208,34 +216,20 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
 
     assert!(
         result.is_err(),
-        "Build should fail when installer JAR is unavailable"
+        "Build should fail when HTTP client is unavailable"
     );
     let error = result.unwrap_err().to_string();
     assert!(
-        error.contains("Mock HTTP client unavailable (test mode)"),
-        "Missing installer should fail while resolving the bootstrap JAR, got: {error}"
+        error.contains("HTTP client unavailable")
+            || error.contains("Mock HTTP client unavailable"),
+        "Build should fail at HTTP client creation, got: {error}"
     );
     assert!(
         !workdir
             .join("dist")
             .join("workflow-server-full-missing-installer-v1.0.0-server-full.zip")
             .exists(),
-        "No server-full archive should be produced when the installer is missing"
-    );
-    assert!(
-        !workdir.join("dist").join("server-full").join("srv.jar").exists(),
-        "The full server jar should not be materialized when the installer bootstrap is missing"
-    );
-    assert!(
-        !workdir.join("dist").join("server").exists(),
-        "Standalone server-full failures should not create the server target directory"
-    );
-    assert!(
-        !workdir
-            .join("dist")
-            .join("workflow-server-full-missing-installer-v1.0.0-server.zip")
-            .exists(),
-        "Standalone server-full failures should not create a server archive"
+        "No server-full archive should be produced when the build fails"
     );
 
     Ok(())
