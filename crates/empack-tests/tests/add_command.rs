@@ -100,15 +100,17 @@ async fn e2e_add_mod_successfully() -> Result<()> {
     )
     .await;
 
-    // Assert: Check that the command succeeded
     assert!(result.is_ok(), "Add command failed: {:?}", result);
 
-    // Verify that the mock server was called (no live network requests)
     mock_modrinth.assert_async().await;
 
-    // Verify that the mock process provider was called
-    // Note: We can't access the private fields directly, so we'll verify through the result
-    // The test passing indicates that the mock process provider was called correctly
+    // Verify empack.yml still exists and was not corrupted by the add
+    let empack_yml = std::fs::read_to_string(workdir.join("empack.yml"))?;
+    assert!(
+        empack_yml.contains("loader: fabric"),
+        "empack.yml should preserve its existing loader field after add, got: {}",
+        empack_yml
+    );
 
     Ok(())
 }

@@ -81,6 +81,20 @@ fn test_add_mod_curseforge_success() {
     let result = metadata.add_mod("123456", ProjectPlatform::CurseForge);
 
     assert!(result.is_ok());
+    let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
+    assert!(session.process_provider.verify_call(
+        "packwiz",
+        &[
+            "--pack-file",
+            &pack_file_str,
+            "curseforge",
+            "add",
+            "--addon-id",
+            "123456",
+            "-y"
+        ],
+        &mock_root().join("workdir").join("pack")
+    ));
 }
 
 #[test]
@@ -188,6 +202,16 @@ fn test_remove_mod_not_found() {
     let result = metadata.remove_mod("nonexistent");
 
     assert!(result.is_err());
+    match result.unwrap_err() {
+        PackwizError::CommandFailed { stderr, .. } => {
+            assert!(
+                stderr.contains("not found"),
+                "Error should indicate mod not found, got: {}",
+                stderr
+            );
+        }
+        other => panic!("Expected CommandFailed error, got: {:?}", other),
+    }
 }
 
 #[test]
@@ -215,6 +239,16 @@ fn test_refresh_index_success() {
     let result = metadata.refresh_index();
 
     assert!(result.is_ok());
+    let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
+    assert!(session.process_provider.verify_call(
+        "packwiz",
+        &[
+            "--pack-file",
+            &pack_file_str,
+            "refresh"
+        ],
+        &mock_root().join("workdir").join("pack")
+    ));
 }
 
 #[test]
@@ -313,6 +347,20 @@ fn test_export_mrpack_success() {
     let result = metadata.export_mrpack(&output_path);
 
     assert!(result.is_ok());
+    let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
+    let output_str = output_path.to_string_lossy().to_string();
+    assert!(session.process_provider.verify_call(
+        "packwiz",
+        &[
+            "--pack-file",
+            &pack_file_str,
+            "modrinth",
+            "export",
+            "-o",
+            &output_str
+        ],
+        &mock_root().join("workdir").join("pack")
+    ));
 }
 
 #[test]

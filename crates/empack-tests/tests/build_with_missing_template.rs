@@ -195,15 +195,29 @@ async fn test_build_template_error_specificity() -> Result<()> {
     )
     .await;
 
-    // Similar to above - we expect either success or informative error
+    // Without a pre-seeded bootstrap JAR, the server build should fail
+    // attempting to download packwiz-installer-bootstrap.jar via
+    // MockNetworkProvider (which returns Err from http_client()).
+    // On hosts where the JAR is cached from prior runs, the build may
+    // progress further and fail on a different step or succeed.
     match build_result {
         Ok(_) => {
-            // Build succeeded - acceptable
+            assert!(
+                project_dir.join("dist").exists(),
+                "Successful build must produce a dist/ directory"
+            );
         }
         Err(e) => {
             let err_msg = format!("{:?}", e);
-            // Error should be informative about what failed
-            assert!(!err_msg.is_empty(), "Error message should not be empty");
+            assert!(
+                err_msg.contains("build")
+                    || err_msg.contains("Build")
+                    || err_msg.contains("download")
+                    || err_msg.contains("HTTP")
+                    || err_msg.contains("packwiz"),
+                "Error should mention build, download, or packwiz, got: {}",
+                err_msg
+            );
         }
     }
 

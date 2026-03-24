@@ -512,6 +512,67 @@ mod handle_init_tests {
             empack_yml
         );
     }
+
+    #[tokio::test]
+    async fn it_cleans_up_created_directory_on_failure() {
+        let workdir = mock_root().join("empty-init-fail");
+        let target_dir = workdir.join("fail-pack");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+        session.packwiz_provider.fail_init = true;
+
+        let result = handle_init(
+            &session,
+            Some("fail-pack".to_string()),
+            None,
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "init should fail when packwiz fails");
+        assert!(
+            !session.filesystem().is_directory(&target_dir),
+            "created directory should be removed after init failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn it_preserves_existing_directory_on_force_init_failure() {
+        let workdir = mock_root().join("force-init-fail");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+        session.packwiz_provider.fail_init = true;
+
+        let result = handle_init(
+            &session,
+            None,
+            None,
+            true,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "force init should fail when packwiz fails");
+        assert!(
+            session.filesystem().is_directory(&workdir),
+            "pre-existing directory should NOT be removed on force init failure"
+        );
+    }
 }
 
 // ===== VALIDATE_INIT_INPUTS UNIT TESTS =====
@@ -1090,6 +1151,32 @@ mod handle_add_tests {
             empack_yml
         );
     }
+
+    #[tokio::test]
+    async fn it_skips_side_effects_in_dry_run() {
+        let workdir = mock_root().join("configured-project");
+        let mock_project = modrinth_project("test-mod-id", "Test Mod");
+
+        let mut session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_project_response("test-mod".to_string(), mock_project),
+            );
+        session.config_provider.app_config.dry_run = true;
+
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None).await;
+
+        assert!(result.is_ok());
+        assert!(
+            session.process_provider.get_calls().is_empty(),
+            "Dry-run mode should not execute packwiz commands"
+        );
+    }
 }
 
 // ===== HANDLE_REMOVE TESTS =====
@@ -1223,13 +1310,12 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_rejects_incomplete_project_state() {
         let workdir = mock_root().join("incomplete-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_file(
-                        workdir.join("empack.yml"),
-                        r#"empack:
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(
+                    workdir.join("empack.yml"),
+                    r#"empack:
   dependencies:
     sodium:
       status: resolved
@@ -1241,32 +1327,34 @@ mod handle_remove_tests {
   loader: fabric
   name: "Test Pack"
 "#
-                        .to_string(),
-                    ),
-            )
-            .with_network(MockNetworkProvider::new().with_project_response(
-                "Sodium".to_string(),
-                modrinth_project("AANobbMI", "Sodium"),
-            ))
-            .with_process(MockProcessProvider::new().with_packwiz_result(
-                vec![
-                    "modrinth".to_string(),
-                    "add".to_string(),
-                    "--project-id".to_string(),
-                    "AANobbMI".to_string(),
-                    "-y".to_string(),
-                ],
-                Ok(ProcessOutput {
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    success: true,
-                }),
-            ));
+                    .to_string(),
+                ),
+        );
 
-        let result = handle_sync(&session).await;
+        let result = handle_remove(&session, vec!["sodium".to_string()], false).await;
 
         assert!(result.is_ok());
         assert!(session.process_provider.get_calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn it_skips_side_effects_in_dry_run() {
+        let workdir = mock_root().join("configured-project");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir),
+            );
+        session.config_provider.app_config.dry_run = true;
+
+        let result = handle_remove(&session, vec!["test-mod".to_string()], false).await;
+
+        assert!(result.is_ok());
+        assert!(
+            session.process_provider.get_calls().is_empty(),
+            "Dry-run mode should not execute packwiz commands"
+        );
     }
 }
 
@@ -1958,6 +2046,30 @@ mod handle_build_tests {
             &workdir
         ));
     }
+
+    #[tokio::test]
+    async fn it_skips_side_effects_in_dry_run() {
+        let workdir = mock_root().join("built-project");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            );
+        session.config_provider.app_config.dry_run = true;
+
+        let result = handle_build(&session, vec!["mrpack".to_string()], false).await;
+
+        assert!(result.is_ok());
+        assert!(
+            session.process_provider.get_calls().is_empty(),
+            "Dry-run mode should not execute build commands"
+        );
+        assert!(
+            session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")),
+            "Dry-run mode should not modify dist/ artifacts"
+        );
+    }
 }
 
 // ===== HANDLE_CLEAN TESTS =====
@@ -2028,6 +2140,80 @@ mod handle_clean_tests {
         assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
         assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")));
     }
+
+    #[tokio::test]
+    async fn it_skips_side_effects_in_dry_run() {
+        let workdir = mock_root().join("built-project");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            );
+        session.config_provider.app_config.dry_run = true;
+
+        let result = handle_clean(&session, vec!["builds".to_string()]).await;
+
+        assert!(result.is_ok());
+        assert!(
+            session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")),
+            "Dry-run mode should not remove dist/ artifacts"
+        );
+        assert!(
+            session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")),
+            "Dry-run mode should not remove dist/ artifacts"
+        );
+    }
+
+    #[tokio::test]
+    async fn it_cleans_dist_when_state_is_configured() {
+        let workdir = mock_root().join("configured-with-dist");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_file(
+                    workdir.join("dist").join("leftover.txt"),
+                    "leftover".to_string(),
+                ),
+        );
+
+        assert!(
+            session.filesystem().is_directory(&workdir.join("dist")),
+            "dist/ should exist before clean"
+        );
+
+        let result = handle_clean(&session, vec!["builds".to_string()]).await;
+
+        assert!(result.is_ok(), "clean should succeed: {result:?}");
+        assert!(
+            !session.filesystem().is_directory(&workdir.join("dist")),
+            "dist/ should be removed even when state is Configured"
+        );
+        assert!(
+            session.filesystem().exists(&workdir.join("empack.yml")),
+            "configuration files should be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn it_reports_nothing_to_clean_when_dist_absent() {
+        let workdir = mock_root().join("configured-no-dist");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
+        );
+
+        assert!(
+            !session.filesystem().is_directory(&workdir.join("dist")),
+            "dist/ should not exist"
+        );
+
+        let result = handle_clean(&session, vec!["builds".to_string()]).await;
+
+        assert!(result.is_ok(), "clean should succeed: {result:?}");
+    }
 }
 
 // ===== HELPER FUNCTION TESTS =====
@@ -2084,53 +2270,6 @@ async fn test_parse_build_targets_empty_list() {
         "Expected error about no targets, got: {}",
         err
     );
-}
-
-// ===== SYNC ACTION TESTS =====
-
-#[tokio::test]
-async fn test_sync_action_creation() {
-    // Test that sync actions are created correctly
-    let add_action = crate::application::sync::SyncExecutionAction::Add {
-        key: "jei".to_string(),
-        title: "Just Enough Items".to_string(),
-        commands: vec![vec!["packwiz".to_string(), "add".to_string(), "jei".to_string()]],
-        resolved_project_id: "jei".to_string(),
-        resolved_platform: ProjectPlatform::Modrinth,
-    };
-
-    match add_action {
-        crate::application::sync::SyncExecutionAction::Add {
-            key,
-            title,
-            commands,
-            resolved_project_id,
-            resolved_platform,
-        } => {
-            assert_eq!(key, "jei");
-            assert_eq!(title, "Just Enough Items");
-            assert_eq!(commands, vec![vec!["packwiz", "add", "jei"]]);
-            assert_eq!(resolved_project_id, "jei");
-            assert_eq!(resolved_platform, ProjectPlatform::Modrinth);
-        }
-        _ => panic!("Expected Add action"),
-    }
-}
-
-#[tokio::test]
-async fn test_sync_action_remove() {
-    let remove_action = crate::application::sync::SyncExecutionAction::Remove {
-        key: "jei".to_string(),
-        title: "Just Enough Items".to_string(),
-    };
-
-    match remove_action {
-        crate::application::sync::SyncExecutionAction::Remove { key, title } => {
-            assert_eq!(key, "jei");
-            assert_eq!(title, "Just Enough Items");
-        }
-        _ => panic!("Expected Remove action"),
-    }
 }
 
 // ===== ERROR HANDLING TESTS =====
@@ -2240,18 +2379,6 @@ fn test_render_add_contract_error_low_confidence() {
 // ===== BUILD TARGET VALIDATION TESTS (Slice 3) =====
 
 #[tokio::test]
-async fn test_invalid_build_target_single() {
-    let err = parse_build_targets(vec!["invalid-target".to_string()])
-        .expect_err("Invalid target should be rejected");
-    assert!(
-        err.to_string()
-            .contains("Unknown build target: invalid-target"),
-        "Expected error about unknown target, got: {}",
-        err
-    );
-}
-
-#[tokio::test]
 async fn test_invalid_build_target_mixed_with_valid() {
     let err = parse_build_targets(vec![
         "client".to_string(),
@@ -2263,16 +2390,6 @@ async fn test_invalid_build_target_mixed_with_valid() {
         err.to_string()
             .contains("Unknown build target: invalid-target"),
         "Expected error about the invalid target, got: {}",
-        err
-    );
-}
-
-#[tokio::test]
-async fn test_empty_build_target_list() {
-    let err = parse_build_targets(vec![]).expect_err("Empty target list should be rejected");
-    assert!(
-        err.to_string().contains("No build targets specified"),
-        "Expected error about no targets, got: {}",
         err
     );
 }
@@ -2312,23 +2429,6 @@ async fn test_all_valid_build_targets_individually() {
 }
 
 // ===== BUILD COMMAND ERROR HANDLING TESTS (Slice 3) =====
-
-#[tokio::test]
-async fn test_build_with_uninitialized_project() {
-    let workdir = mock_root().join("uninitialized-project");
-    let session = MockCommandSession::new()
-        .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir));
-
-    let result = handle_build(&session, vec!["client".to_string()], false).await;
-
-    // Build on uninitialized project succeeds (state check exits gracefully)
-    // but no packwiz commands should be executed
-    assert!(result.is_ok(), "Build on uninitialized project should exit gracefully");
-    assert!(
-        session.process_provider.get_calls().is_empty(),
-        "No packwiz commands should run on uninitialized project"
-    );
-}
 
 #[tokio::test]
 async fn test_build_with_invalid_target_string() {
