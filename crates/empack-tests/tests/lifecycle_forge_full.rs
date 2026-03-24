@@ -73,13 +73,6 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             },
         )?
         .with_mock_executable(
-            "curl",
-            MockBehavior::SucceedWithOutput {
-                stdout: String::new(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
             "zip",
             MockBehavior::SucceedWithOutput {
                 stdout: "Created distribution archive".to_string(),
