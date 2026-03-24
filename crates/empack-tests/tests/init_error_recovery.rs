@@ -65,43 +65,22 @@ async fn test_init_packwiz_failure() -> Result<()> {
     )
     .await;
 
-    // Init would create a subdirectory with the project name
     let project_dir = workdir.join("failure-test-pack");
 
-    // Test behavior: Init can either fail when packwiz unavailable OR succeed via fallback
-    // The MockFileSystemProvider in HermeticSession creates pack.toml directly as fallback
-    if let Err(err) = result {
-        // If init failed, verify error message is informative
-        // Error may come from different sources:
-        // - PackwizError::ProcessFailed → contains "packwiz"
-        // - StateError::PackwizUnavailable → contains "not found"
-        // - Generic wrapper errors may just say "Failed to initialize modpack project"
-        let error_msg = err.to_string();
+    let err = result.expect_err(
+        "Init should fail when packwiz mock returns non-zero exit code",
+    );
+    let error_msg = err.to_string();
+    assert!(
+        error_msg.contains("initialize") || error_msg.contains("packwiz"),
+        "Error should mention initialization or packwiz, got: {}",
+        error_msg
+    );
 
-        // Accept any error as long as init actually failed
-        // (error message quality validated in other tests)
-        eprintln!("Init failed as expected with error: {}", error_msg);
-
-        // Verify cleanup: empack.yml should not exist if init failed
-        let empack_yml_path = project_dir.join("empack.yml");
-        if empack_yml_path.exists() {
-            eprintln!("Note: empack.yml exists after failed init (partial state)");
-        } else {
-            // Cleanup successful - no partial state left
-            assert!(
-                !empack_yml_path.exists(),
-                "empack.yml should be cleaned up after failed init"
-            );
-        }
-    } else {
-        // If init succeeded via fallback, verify pack.toml was created
-        let pack_toml = project_dir.join("pack").join("pack.toml");
-        assert!(
-            pack_toml.exists(),
-            "Fallback should create pack.toml when packwiz unavailable"
-        );
-        eprintln!("Note: Init succeeded via fallback behavior (pack.toml created internally)");
-    }
+    assert!(
+        !project_dir.join("empack.yml").exists(),
+        "empack.yml should be cleaned up after failed init"
+    );
 
     Ok(())
 }
@@ -154,15 +133,30 @@ async fn test_init_packwiz_unavailable() -> Result<()> {
     )
     .await;
 
-    // Init should fail or succeed with fallback behavior
-    // Either is acceptable depending on implementation strategy
-    if let Err(err) = result {
-        let error_msg = err.to_string();
-        // Accept any error - error message quality validated in other tests
-        eprintln!("Init failed as expected with error: {}", error_msg);
-    } else {
-        // If init succeeded, it used fallback/alternative approach
-        eprintln!("Note: Init succeeded despite packwiz unavailability (fallback behavior)");
+    let project_dir = workdir.join("unavailable-packwiz-test");
+
+    // Behavior depends on host: if packwiz is on the system PATH (outside the
+    // hermetic bin/ directory), LiveProcessProvider finds it and init succeeds.
+    // If packwiz is truly absent, init fails.
+    match result {
+        Ok(_) => {
+            assert!(
+                project_dir.join("empack.yml").exists(),
+                "Successful init must produce empack.yml"
+            );
+            assert!(
+                project_dir.join("pack").join("pack.toml").exists(),
+                "Successful init must produce pack/pack.toml"
+            );
+        }
+        Err(err) => {
+            let error_msg = err.to_string();
+            assert!(
+                error_msg.contains("initialize") || error_msg.contains("packwiz"),
+                "Error should mention initialization or packwiz, got: {}",
+                error_msg
+            );
+        }
     }
 
     Ok(())
@@ -344,33 +338,35 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
     )
     .await;
 
-    // Primary assertion: NO PANIC occurred
-    // Init should handle empty loader scenarios gracefully:
-    // - Either succeed with fallback loader (degraded but functional)
-    // - Or return meaningful error (no compatible loaders)
+    let project_dir = workdir.join("empty-loader-test");
+
+    // MockNetworkProvider returns Err from http_client(), forcing version
+    // fetcher to use fallback versions. Init should succeed with a fallback
+    // loader selection.
     match result {
         Ok(_) => {
-            // Init succeeded with fallback loader
-            let project_dir = workdir.join("empty-loader-test");
-            let pack_toml = project_dir.join("pack").join("pack.toml");
-
-            if pack_toml.exists() {
-                eprintln!("✓ Init succeeded with fallback loader (graceful degradation)");
-            } else {
-                eprintln!("✓ Init succeeded without pack.toml (fallback behavior)");
-            }
+            assert!(
+                project_dir.join("empack.yml").exists(),
+                "Fallback init must produce empack.yml"
+            );
+            let empack_yml = std::fs::read_to_string(project_dir.join("empack.yml"))?;
+            assert!(
+                empack_yml.contains("loader:"),
+                "empack.yml should contain a loader field, got: {}",
+                empack_yml
+            );
         }
         Err(e) => {
-            // Init failed with error message
             let error_msg = e.to_string();
-            eprintln!("✓ Init failed gracefully with error: {}", error_msg);
-
-            // Verify error is meaningful (mentions loader or compatibility)
-            // Note: Actual error message may vary depending on implementation
-            // We accept any error as long as it doesn't panic
+            assert!(
+                error_msg.contains("loader")
+                    || error_msg.contains("version")
+                    || error_msg.contains("initialize"),
+                "Error should mention loader, version, or initialization, got: {}",
+                error_msg
+            );
         }
     }
 
-    // Test passes if we reach here (no panic occurred)
     Ok(())
 }
