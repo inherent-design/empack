@@ -22,7 +22,7 @@ use std::fs;
 /// 4. Clean builds
 /// 5. Verify all operations succeeded
 #[cfg(unix)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_lifecycle_forge_full() -> Result<()> {
     let fixture = WorkflowProjectFixture::new("forge-test-pack");
     // Create hermetic session with mocked toolchain and deterministic add results
@@ -308,7 +308,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 /// This test specifically validates that Forge modloader can be initialized
 /// and that the modloader choice propagates through the configuration.
 #[cfg(unix)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_forge_modloader_initialization() -> Result<()> {
     use empack_lib::application::session_mocks::MockInteractiveProvider;
 
