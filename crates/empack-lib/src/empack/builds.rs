@@ -622,6 +622,7 @@ impl<'a> BuildOrchestrator<'a> {
             })?;
 
         let url_owned = url.to_string();
+        let self_timeout = self.session.config().app_config().net_timeout;
         std::thread::scope(|s| {
             s.spawn(|| {
                 let rt = tokio::runtime::Builder::new_current_thread()
@@ -632,8 +633,9 @@ impl<'a> BuildOrchestrator<'a> {
                     })?;
 
                 rt.block_on(async {
+                    let timeout = self_timeout;
                     let client = reqwest::Client::builder()
-                        .timeout(std::time::Duration::from_secs(60))
+                        .timeout(std::time::Duration::from_secs(timeout))
                         .build()
                         .map_err(|e| BuildError::ConfigError {
                             reason: format!("failed to create HTTP client: {}", e),
@@ -1517,13 +1519,13 @@ impl<'a> BuildOrchestrator<'a> {
                 let content = self
                     .session
                     .filesystem()
-                    .read_to_string(&src_path)
+                    .read_bytes(&src_path)
                     .map_err(|e| BuildError::ConfigError {
                         reason: e.to_string(),
                     })?;
                 self.session
                     .filesystem()
-                    .write_file(&dst_path, &content)
+                    .write_bytes(&dst_path, &content)
                     .map_err(|e| BuildError::ConfigError {
                         reason: e.to_string(),
                     })?;

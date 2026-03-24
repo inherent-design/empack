@@ -1702,16 +1702,6 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
         return Ok(());
     }
 
-    // Clean if requested
-    if clean {
-        session
-            .display()
-            .status()
-            .checking("Cleaning build artifacts");
-        crate::empack::state::clean_build_artifacts(session.filesystem(), &manager.workdir)
-            .context("Failed to clean build artifacts")?;
-    }
-
     // Parse build targets
     let build_targets = parse_build_targets(targets)?;
 
@@ -1733,6 +1723,16 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
             .status()
             .complete("Dry run complete - no changes applied");
         return Ok(());
+    }
+
+    // Clean if requested (after dry-run check to prevent side effects during preview)
+    if clean {
+        session
+            .display()
+            .status()
+            .checking("Cleaning build artifacts");
+        crate::empack::state::clean_build_artifacts(session.filesystem(), &manager.workdir)
+            .context("Failed to clean build artifacts")?;
     }
 
     // Ensure packwiz-installer-bootstrap.jar is available for builds that need it
