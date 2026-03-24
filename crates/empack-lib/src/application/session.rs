@@ -9,6 +9,8 @@ use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::packwiz::{LivePackwizOps, PackwizOps};
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
+use crate::networking::cache::HttpCache;
+use crate::networking::rate_limit::RateLimiterManager;
 use crate::empack::state::PackStateManager;
 use anyhow::Context;
 use indicatif::MultiProgress;
@@ -265,6 +267,8 @@ impl FileSystemProvider for LiveFileSystemProvider {
 
 /// Live implementation of NetworkProvider
 pub struct LiveNetworkProvider {
+    cache: Arc<HttpCache>,
+    rate_limiter: Arc<RateLimiterManager>,
     #[cfg(feature = "test-utils")]
     modrinth_base_url: Option<String>,
     #[cfg(feature = "test-utils")]
@@ -274,7 +278,14 @@ pub struct LiveNetworkProvider {
 impl LiveNetworkProvider {
     /// Production constructor - uses default API URLs
     pub fn new() -> Self {
+        let cache_dir = std::env::temp_dir().join("empack").join("http_cache");
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("Failed to build HTTP client");
         Self {
+            cache: Arc::new(HttpCache::new(cache_dir)),
+            rate_limiter: Arc::new(RateLimiterManager::new(client)),
             #[cfg(feature = "test-utils")]
             modrinth_base_url: None,
             #[cfg(feature = "test-utils")]
@@ -288,7 +299,14 @@ impl LiveNetworkProvider {
         modrinth_base_url: Option<String>,
         curseforge_base_url: Option<String>,
     ) -> Self {
+        let cache_dir = std::env::temp_dir().join("empack-test").join("http_cache");
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("Failed to build HTTP client");
         Self {
+            cache: Arc::new(HttpCache::new(cache_dir)),
+            rate_limiter: Arc::new(RateLimiterManager::new(client)),
             modrinth_base_url,
             curseforge_base_url,
         }
@@ -316,17 +334,24 @@ impl NetworkProvider for LiveNetworkProvider {
     ) -> Box<dyn ProjectResolverTrait + Send + Sync> {
         #[cfg(feature = "test-utils")]
         {
-            Box::new(ProjectResolver::new_with_base_urls(
+            Box::new(ProjectResolver::new_with_base_urls_and_networking(
                 client,
                 curseforge_api_key,
                 self.modrinth_base_url.clone(),
                 self.curseforge_base_url.clone(),
+                self.cache.clone(),
+                self.rate_limiter.clone(),
             ))
         }
 
         #[cfg(not(feature = "test-utils"))]
         {
-            Box::new(ProjectResolver::new(client, curseforge_api_key))
+            Box::new(ProjectResolver::with_networking(
+                client,
+                curseforge_api_key,
+                self.cache.clone(),
+                self.rate_limiter.clone(),
+            ))
         }
     }
 }

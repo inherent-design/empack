@@ -1,10 +1,9 @@
 pub mod builds;
 pub mod config;
+pub mod fuzzy;
 pub mod packwiz;
 pub mod parsing;
-pub mod resolved_project;
 pub mod search;
-pub mod search_intent;
 pub mod state;
 pub mod templates;
 pub mod versions;

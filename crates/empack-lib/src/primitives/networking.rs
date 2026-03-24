@@ -2,8 +2,6 @@ use clap::ValueEnum;
 use serde::Deserialize;
 use std::str::FromStr;
 use std::time::Duration;
-use thiserror::Error;
-
 use crate::impl_fromstr_for_value_enum;
 
 // Networking configuration primitives for HTTP clients and request handling.
@@ -305,44 +303,6 @@ impl RequestMetrics {
             self.average_response_time.as_millis(),
             self.format_bytes_transferred()
         )
-    }
-}
-
-/// Networking error categories
-#[derive(Debug, Error)]
-pub enum NetworkingConfigError {
-    #[error("Invalid timeout configuration: {reason}")]
-    InvalidTimeout { reason: String },
-
-    #[error("Invalid concurrency setting: {reason}")]
-    InvalidConcurrency { reason: String },
-
-    #[error("Endpoint configuration error: {endpoint} - {reason}")]
-    EndpointConfigError { endpoint: String, reason: String },
-
-    #[error("Authentication configuration error: {reason}")]
-    AuthConfigError { reason: String },
-
-    #[error("Rate limit configuration error: {reason}")]
-    RateLimitConfigError { reason: String },
-}
-
-/// Convert networking module errors to shared primitive errors
-impl From<crate::networking::NetworkingError> for NetworkingConfigError {
-    fn from(err: crate::networking::NetworkingError) -> Self {
-        match err {
-            crate::networking::NetworkingError::InvalidJobCount { count } => {
-                Self::InvalidConcurrency {
-                    reason: format!("Invalid job count: {}", count),
-                }
-            }
-            crate::networking::NetworkingError::NoModsProvided => Self::InvalidConcurrency {
-                reason: "No items provided for processing".to_string(),
-            },
-            _ => Self::InvalidConcurrency {
-                reason: "Networking error occurred".to_string(),
-            },
-        }
     }
 }
 

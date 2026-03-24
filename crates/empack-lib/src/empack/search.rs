@@ -3,14 +3,17 @@
 //! Project matching with confidence scoring, platform
 //! priority, and fuzzy string matching based on the proven bash implementation.
 
+use crate::networking::cache::HttpCache;
+use crate::networking::rate_limit::RateLimiterManager;
 use crate::primitives::ProjectPlatform;
-use percent_encoding::{CONTROLS, utf8_percent_encode};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 
 /// Search and resolution errors
 #[derive(Debug, Error)]
@@ -104,11 +107,7 @@ struct CurseForgeProject {
     download_count: u64,
 }
 
-/// Configuration constants from bash implementation
-const MODRINTH_CONFIDENCE_THRESHOLD: u8 = 90;
-const CURSEFORGE_CONFIDENCE_THRESHOLD: u8 = 85;
-const MIN_DOWNLOAD_THRESHOLD: u64 = 1000;
-const EXTRA_WORDS_MAX_RATIO: u8 = 150;
+use crate::empack::fuzzy;
 
 /// Project search resolver with platform priority and confidence scoring
 pub struct ProjectResolver {
@@ -116,6 +115,8 @@ pub struct ProjectResolver {
     curseforge_api_key: Option<String>,
     modrinth_base_url: String,
     curseforge_base_url: String,
+    cache: Option<Arc<HttpCache>>,
+    rate_limiter: Option<Arc<RateLimiterManager>>,
 }
 
 impl ProjectResolver {
@@ -126,6 +127,25 @@ impl ProjectResolver {
             curseforge_api_key,
             modrinth_base_url: "https://api.modrinth.com".to_string(),
             curseforge_base_url: "https://api.curseforge.com".to_string(),
+            cache: None,
+            rate_limiter: None,
+        }
+    }
+
+    /// Create new resolver with cache and rate limiter
+    pub fn with_networking(
+        client: Client,
+        curseforge_api_key: Option<String>,
+        cache: Arc<HttpCache>,
+        rate_limiter: Arc<RateLimiterManager>,
+    ) -> Self {
+        Self {
+            client,
+            curseforge_api_key,
+            modrinth_base_url: "https://api.modrinth.com".to_string(),
+            curseforge_base_url: "https://api.curseforge.com".to_string(),
+            cache: Some(cache),
+            rate_limiter: Some(rate_limiter),
         }
     }
 
@@ -144,6 +164,30 @@ impl ProjectResolver {
                 .unwrap_or_else(|| "https://api.modrinth.com".to_string()),
             curseforge_base_url: curseforge_base_url
                 .unwrap_or_else(|| "https://api.curseforge.com".to_string()),
+            cache: None,
+            rate_limiter: None,
+        }
+    }
+
+    /// Create new resolver with custom base URLs and networking (for testing)
+    #[cfg(feature = "test-utils")]
+    pub fn new_with_base_urls_and_networking(
+        client: Client,
+        curseforge_api_key: Option<String>,
+        modrinth_base_url: Option<String>,
+        curseforge_base_url: Option<String>,
+        cache: Arc<HttpCache>,
+        rate_limiter: Arc<RateLimiterManager>,
+    ) -> Self {
+        Self {
+            client,
+            curseforge_api_key,
+            modrinth_base_url: modrinth_base_url
+                .unwrap_or_else(|| "https://api.modrinth.com".to_string()),
+            curseforge_base_url: curseforge_base_url
+                .unwrap_or_else(|| "https://api.curseforge.com".to_string()),
+            cache: Some(cache),
+            rate_limiter: Some(rate_limiter),
         }
     }
 
@@ -264,8 +308,9 @@ impl ProjectResolver {
 
     /// Try searching a single platform, returning Some on high-confidence match.
     ///
-    /// Returns `Ok(None)` for low-confidence or no-results (try next platform).
-    /// Returns `Err` for network/API failures (should propagate).
+    /// Scores all results from the platform and returns the highest-confidence one
+    /// that passes the threshold. Returns `Ok(None)` for low-confidence or no-results
+    /// (try next platform). Returns `Err` for network/API failures (should propagate).
     async fn try_platform_search(
         &self,
         title: &str,
@@ -277,32 +322,34 @@ impl ProjectResolver {
         let (search_result, threshold, label) = match platform {
             ProjectPlatform::Modrinth => (
                 self.search_modrinth(title, project_type, minecraft_version, mod_loader).await,
-                MODRINTH_CONFIDENCE_THRESHOLD,
+                fuzzy::MODRINTH_CONFIDENCE_THRESHOLD,
                 "Modrinth",
             ),
             ProjectPlatform::CurseForge => (
                 self.search_curseforge(title, project_type, minecraft_version, mod_loader).await,
-                CURSEFORGE_CONFIDENCE_THRESHOLD,
+                fuzzy::CURSEFORGE_CONFIDENCE_THRESHOLD,
                 "CurseForge",
             ),
         };
 
         match search_result {
-            Ok(mut project) => {
-                let confidence =
-                    self.calculate_confidence(title, &project.title, project.downloads);
-                project.confidence = confidence;
+            Ok(projects) => {
+                let scored = Self::score_results(title, projects);
 
-                if !self.has_extra_words(title, &project.title) && confidence >= threshold {
+                let best = scored
+                    .into_iter()
+                    .find(|p| !fuzzy::has_extra_words(title, &p.title) && p.confidence >= threshold);
+
+                if let Some(project) = best {
                     debug!(
                         "High confidence {} match: {}% for '{}'",
-                        label, confidence, project.title
+                        label, project.confidence, project.title
                     );
                     Ok(Some(project))
                 } else {
                     warn!(
-                        "{} match rejected: confidence {}% or extra words",
-                        label, confidence
+                        "{} match rejected: no result above threshold {}%",
+                        label, threshold
                     );
                     Ok(None)
                 }
@@ -323,14 +370,157 @@ impl ProjectResolver {
         }
     }
 
-    /// Search Modrinth API for project
+    /// Score and rank a list of ProjectInfo results by confidence (descending).
+    fn score_results(query: &str, mut projects: Vec<ProjectInfo>) -> Vec<ProjectInfo> {
+        for project in &mut projects {
+            project.confidence =
+                fuzzy::calculate_confidence(query, &project.title, project.downloads);
+        }
+        projects.sort_by(|a, b| b.confidence.cmp(&a.confidence));
+        projects
+    }
+
+    /// Search both platforms and return ranked candidates when confidence is ambiguous.
+    ///
+    /// Returns all results with confidence >= `min_confidence`, sorted by confidence
+    /// descending. Used by the UI layer to present a selection list when the top
+    /// result isn't a clear auto-select (confidence 70-89%).
+    pub async fn search_candidates(
+        &self,
+        title: &str,
+        project_type: &str,
+        minecraft_version: Option<&str>,
+        mod_loader: Option<&str>,
+        min_confidence: u8,
+        preferred_platform: Option<ProjectPlatform>,
+    ) -> Result<Vec<ProjectInfo>, SearchError> {
+        let mut all_results = Vec::new();
+
+        let platforms = if preferred_platform == Some(ProjectPlatform::CurseForge) {
+            vec![ProjectPlatform::CurseForge, ProjectPlatform::Modrinth]
+        } else {
+            vec![ProjectPlatform::Modrinth, ProjectPlatform::CurseForge]
+        };
+
+        for platform in platforms {
+            let results = match platform {
+                ProjectPlatform::Modrinth => {
+                    self.search_modrinth(title, project_type, minecraft_version, mod_loader)
+                        .await
+                }
+                ProjectPlatform::CurseForge => {
+                    self.search_curseforge(title, project_type, minecraft_version, mod_loader)
+                        .await
+                }
+            };
+
+            match results {
+                Ok(projects) => all_results.extend(projects),
+                Err(SearchError::NoResults { .. })
+                | Err(SearchError::MissingApiKey { .. }) => {
+                    debug!("No results from {:?}, continuing", platform);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        if all_results.is_empty() {
+            return Err(SearchError::NoResults {
+                query: title.to_string(),
+            });
+        }
+
+        let scored = Self::score_results(title, all_results);
+        let best_confidence = scored.first().map(|p| p.confidence).unwrap_or(0);
+
+        let candidates: Vec<ProjectInfo> = scored
+            .into_iter()
+            .filter(|p| p.confidence >= min_confidence && !fuzzy::has_extra_words(title, &p.title))
+            .collect();
+
+        if candidates.is_empty() {
+            return Err(SearchError::LowConfidence {
+                confidence: best_confidence,
+                threshold: min_confidence,
+            });
+        }
+
+        Ok(candidates)
+    }
+
+    /// Perform a cached, rate-limited GET request, returning (status_code, body_bytes).
+    ///
+    /// If a cache is configured, checks for a cached response first. On cache miss
+    /// (or no cache), the request goes through the rate limiter (if configured) with
+    /// the provided headers. Successful responses are stored back in the cache.
+    async fn cached_get(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        platform: ProjectPlatform,
+    ) -> Result<(u16, Vec<u8>), SearchError> {
+        use crate::networking::cache::CachedResponse;
+        use std::time::SystemTime;
+
+        // Check cache first
+        if let Some(cache) = &self.cache
+            && let Some(cached) = cache.get(url).await
+            && !cached.is_expired()
+        {
+            trace!("Cache hit for search URL: {}", url);
+            return Ok((cached.status, cached.data));
+        }
+
+        // Send through rate limiter or directly
+        let response = if let Some(rate_limiter) = &self.rate_limiter {
+            let rl_client = rate_limiter.client_for_platform(platform);
+            let mut req_builder = self.client.get(url);
+            for (key, value) in headers {
+                req_builder = req_builder.header(*key, *value);
+            }
+            let request = req_builder.build()?;
+            rl_client.execute(request).await?
+        } else {
+            let mut req_builder = self.client.get(url);
+            for (key, value) in headers {
+                req_builder = req_builder.header(*key, *value);
+            }
+            req_builder.send().await?
+        };
+
+        let status = response.status().as_u16();
+        let etag = response
+            .headers()
+            .get("etag")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        let bytes = response.bytes().await?.to_vec();
+
+        // Cache successful responses
+        if let Some(cache) = &self.cache
+            && (200..300).contains(&status)
+        {
+            let cached_response = CachedResponse {
+                data: bytes.clone(),
+                etag,
+                expires: SystemTime::now() + cache.default_ttl(),
+                status,
+            };
+            cache.put(url.to_string(), cached_response).await;
+            trace!("Cached search response for URL: {}", url);
+        }
+
+        Ok((status, bytes))
+    }
+
+    /// Search Modrinth API for projects (returns multiple results)
     async fn search_modrinth(
         &self,
         title: &str,
         project_type: &str,
         minecraft_version: Option<&str>,
         mod_loader: Option<&str>,
-    ) -> Result<ProjectInfo, SearchError> {
+    ) -> Result<Vec<ProjectInfo>, SearchError> {
         let normalized_type = self.normalize_project_type(project_type);
         let mut facets = vec![format!("project_type:{}", normalized_type)];
 
@@ -354,28 +544,26 @@ impl ProjectResolver {
         let url = format!(
             "{}/v2/search?query={}&facets={}",
             self.modrinth_base_url,
-            utf8_percent_encode(title, CONTROLS),
-            utf8_percent_encode(&facets_json, CONTROLS)
+            utf8_percent_encode(title, NON_ALPHANUMERIC),
+            utf8_percent_encode(&facets_json, NON_ALPHANUMERIC)
         );
 
         trace!("Modrinth search URL: {}", url);
 
-        let response = self
-            .client
-            .get(&url)
-            .header("User-Agent", "empack/0.1.0")
-            .send()
+        let headers = vec![("User-Agent", "empack/0.1.0")];
+        let (status, body) = self
+            .cached_get(&url, &headers, ProjectPlatform::Modrinth)
             .await?;
 
-        if !response.status().is_success() {
+        if !(200..300).contains(&status) {
             return Err(SearchError::NetworkError {
-                source: crate::networking::NetworkingError::RequestFailed {
-                    source: response.error_for_status().unwrap_err(),
+                source: crate::networking::NetworkingError::CacheError {
+                    message: format!("Modrinth API returned status {}", status),
                 },
             });
         }
 
-        let search_response: ModrinthSearchResponse = response.json().await?;
+        let search_response: ModrinthSearchResponse = serde_json::from_slice(&body)?;
 
         if search_response.hits.is_empty() {
             return Err(SearchError::NoResults {
@@ -383,39 +571,40 @@ impl ProjectResolver {
             });
         }
 
-        // If we have mod_loader filter, try to find better match
-        let project = if let Some(loader) = mod_loader {
-            search_response
-                .hits
-                .iter()
-                .find(|p| {
-                    p.categories
-                        .iter()
-                        .any(|cat| cat.to_lowercase().contains(&loader.to_lowercase()))
-                })
-                .unwrap_or(&search_response.hits[0])
-        } else {
-            &search_response.hits[0]
-        };
+        // If we have mod_loader filter, sort loader-matching results first
+        let mut hits = search_response.hits;
+        if let Some(loader) = mod_loader {
+            let loader_lower = loader.to_lowercase();
+            hits.sort_by_key(|p| {
+                let matches_loader = p
+                    .categories
+                    .iter()
+                    .any(|cat| cat.to_lowercase().contains(&loader_lower));
+                if matches_loader { 0 } else { 1 }
+            });
+        }
 
-        Ok(ProjectInfo {
-            platform: ProjectPlatform::Modrinth,
-            project_id: project.project_id.clone(),
-            title: project.title.clone(),
-            downloads: project.downloads,
-            confidence: 0, // Will be calculated by caller
-            project_type: normalized_type,
-        })
+        Ok(hits
+            .iter()
+            .map(|project| ProjectInfo {
+                platform: ProjectPlatform::Modrinth,
+                project_id: project.project_id.clone(),
+                title: project.title.clone(),
+                downloads: project.downloads,
+                confidence: 0, // Will be calculated by caller
+                project_type: normalized_type.clone(),
+            })
+            .collect())
     }
 
-    /// Search CurseForge API for project
+    /// Search CurseForge API for projects (returns multiple results)
     async fn search_curseforge(
         &self,
         title: &str,
         project_type: &str,
         minecraft_version: Option<&str>,
         mod_loader: Option<&str>,
-    ) -> Result<ProjectInfo, SearchError> {
+    ) -> Result<Vec<ProjectInfo>, SearchError> {
         let api_key =
             self.curseforge_api_key
                 .as_ref()
@@ -446,7 +635,7 @@ impl ProjectResolver {
 
         let query_string = params
             .iter()
-            .map(|(k, v)| format!("{}={}", k, utf8_percent_encode(v, CONTROLS)))
+            .map(|(k, v)| format!("{}={}", k, utf8_percent_encode(v, NON_ALPHANUMERIC)))
             .collect::<Vec<_>>()
             .join("&");
 
@@ -457,23 +646,23 @@ impl ProjectResolver {
 
         trace!("CurseForge search URL: {}", url);
 
-        let response = self
-            .client
-            .get(&url)
-            .header("x-api-key", api_key)
-            .header("User-Agent", "empack/0.1.0")
-            .send()
+        let headers = vec![
+            ("x-api-key", api_key.as_str()),
+            ("User-Agent", "empack/0.1.0"),
+        ];
+        let (status, body) = self
+            .cached_get(&url, &headers, ProjectPlatform::CurseForge)
             .await?;
 
-        if !response.status().is_success() {
+        if !(200..300).contains(&status) {
             return Err(SearchError::NetworkError {
-                source: crate::networking::NetworkingError::RequestFailed {
-                    source: response.error_for_status().unwrap_err(),
+                source: crate::networking::NetworkingError::CacheError {
+                    message: format!("CurseForge API returned status {}", status),
                 },
             });
         }
 
-        let search_response: CurseForgeSearchResponse = response.json().await?;
+        let search_response: CurseForgeSearchResponse = serde_json::from_slice(&body)?;
 
         if search_response.data.is_empty() {
             return Err(SearchError::NoResults {
@@ -481,108 +670,18 @@ impl ProjectResolver {
             });
         }
 
-        let project = &search_response.data[0];
-
-        Ok(ProjectInfo {
-            platform: ProjectPlatform::CurseForge,
-            project_id: project.id.to_string(),
-            title: project.name.clone(),
-            downloads: project.download_count,
-            confidence: 0, // Will be calculated by caller
-            project_type: normalized_type,
-        })
-    }
-
-    /// Calculate confidence score based on title match and download count
-    fn calculate_confidence(&self, query: &str, found_title: &str, downloads: u64) -> u8 {
-        // Fuzzy string matching using Levenshtein distance
-        let query_lower = query.to_lowercase();
-        let found_lower = found_title.to_lowercase();
-
-        // Exact match gets 100%
-        if query_lower == found_lower {
-            return 100;
-        }
-
-        // Contains match gets high score
-        if found_lower.contains(&query_lower) || query_lower.contains(&found_lower) {
-            let base_score = 85;
-            // Boost for popular projects
-            let download_boost = if downloads >= MIN_DOWNLOAD_THRESHOLD {
-                5
-            } else {
-                0
-            };
-            return std::cmp::min(100, base_score + download_boost);
-        }
-
-        // Basic Levenshtein distance calculation
-        let distance = self.levenshtein_distance(&query_lower, &found_lower);
-        let max_len = std::cmp::max(query.len(), found_title.len());
-
-        if max_len == 0 {
-            return 0;
-        }
-
-        let similarity = 100 - ((distance * 100) / max_len);
-        let download_boost = if downloads >= MIN_DOWNLOAD_THRESHOLD {
-            5
-        } else {
-            0
-        };
-
-        std::cmp::min(100, similarity + download_boost) as u8
-    }
-
-    /// Check if found title has too many extra words compared to query
-    fn has_extra_words(&self, query: &str, found_title: &str) -> bool {
-        // Normalize: lowercase, remove spaces, dashes, underscores, dots
-        let norm_query = query
-            .to_lowercase()
-            .chars()
-            .filter(|&c| c != ' ' && c != '-' && c != '_' && c != '.')
-            .collect::<String>();
-        let norm_found = found_title
-            .to_lowercase()
-            .chars()
-            .filter(|&c| c != ' ' && c != '-' && c != '_' && c != '.')
-            .collect::<String>();
-
-        if norm_query.is_empty() {
-            return false;
-        }
-
-        let ratio = (norm_found.len() * 100) / norm_query.len();
-        ratio > EXTRA_WORDS_MAX_RATIO as usize
-    }
-
-    /// Simple Levenshtein distance implementation
-    fn levenshtein_distance(&self, s1: &str, s2: &str) -> usize {
-        let len1 = s1.len();
-        let len2 = s2.len();
-        let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
-
-        for (i, row) in matrix.iter_mut().enumerate().take(len1 + 1) {
-            row[0] = i;
-        }
-        for (j, value) in matrix[0].iter_mut().enumerate().take(len2 + 1) {
-            *value = j;
-        }
-
-        for (i, c1) in s1.chars().enumerate() {
-            for (j, c2) in s2.chars().enumerate() {
-                let cost = if c1 == c2 { 0 } else { 1 };
-                matrix[i + 1][j + 1] = std::cmp::min(
-                    std::cmp::min(
-                        matrix[i][j + 1] + 1, // deletion
-                        matrix[i + 1][j] + 1, // insertion
-                    ),
-                    matrix[i][j] + cost, // substitution
-                );
-            }
-        }
-
-        matrix[len1][len2]
+        Ok(search_response
+            .data
+            .iter()
+            .map(|project| ProjectInfo {
+                platform: ProjectPlatform::CurseForge,
+                project_id: project.id.to_string(),
+                title: project.name.clone(),
+                downloads: project.download_count,
+                confidence: 0, // Will be calculated by caller
+                project_type: normalized_type.clone(),
+            })
+            .collect())
     }
 
     /// Normalize project type names across platforms
@@ -594,13 +693,21 @@ impl ProjectResolver {
         }
     }
 
-    /// Get CurseForge class ID for project type
+    /// Get CurseForge class ID for project type.
+    ///
+    /// Falls back to classId 6 (Mods) for unmapped types. This is intentional:
+    /// most CurseForge shader packs (e.g. Iris Shaders, Complementary) are
+    /// distributed as mods under classId 6. The CurseForge API does not expose
+    /// a confirmed shader-specific class ID via /v1/categories.
     fn curseforge_class_id(&self, project_type: &str) -> u32 {
         match project_type {
             "mod" => 6,
             "resourcepack" => 12,
             "datapack" => 17,
-            _ => 6, // Default to mod
+            other => {
+                debug!("No dedicated CurseForge classId for '{}', falling back to 6 (Mods)", other);
+                6
+            }
         }
     }
 
@@ -641,65 +748,6 @@ impl ProjectResolverTrait for ProjectResolver {
             .await
         })
     }
-}
-
-/// Resolve a single project using the modern resolver
-pub async fn resolve_modrinth_mod(client: Client, mod_slug: String) -> Result<String, SearchError> {
-    trace!("Resolving Modrinth mod: {}", mod_slug);
-
-    let url = format!("https://api.modrinth.com/v2/project/{}", mod_slug);
-
-    let response = client
-        .get(&url)
-        .header("User-Agent", "empack/0.1.0")
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        error!("Modrinth API request failed: {}", response.status());
-        return Err(SearchError::NetworkError {
-            source: crate::networking::NetworkingError::RequestFailed {
-                source: response.error_for_status().unwrap_err(),
-            },
-        });
-    }
-
-    let mod_data = response.text().await?;
-    trace!("Successfully resolved Modrinth mod: {}", mod_slug);
-
-    Ok(mod_data)
-}
-
-/// Resolve CurseForge project by ID
-pub async fn resolve_curseforge_mod(
-    client: Client,
-    project_id: String,
-    api_key: &str,
-) -> Result<String, SearchError> {
-    trace!("Resolving CurseForge mod: {}", project_id);
-
-    let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
-
-    let response = client
-        .get(&url)
-        .header("x-api-key", api_key)
-        .header("User-Agent", "empack/0.1.0")
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        error!("CurseForge API request failed: {}", response.status());
-        return Err(SearchError::NetworkError {
-            source: crate::networking::NetworkingError::RequestFailed {
-                source: response.error_for_status().unwrap_err(),
-            },
-        });
-    }
-
-    let mod_data = response.text().await?;
-    trace!("Successfully resolved CurseForge mod: {}", project_id);
-
-    Ok(mod_data)
 }
 
 #[cfg(test)]

@@ -1,151 +1,6 @@
 use super::*;
 
 #[test]
-fn test_calculate_confidence_exact_match() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Exact match should always return 100%
-    assert_eq!(resolver.calculate_confidence("JEI", "JEI", 1000), 100);
-    assert_eq!(resolver.calculate_confidence("JEI", "jei", 1000), 100);
-    assert_eq!(resolver.calculate_confidence("Just Enough Items", "Just Enough Items", 1000), 100);
-    assert_eq!(resolver.calculate_confidence("OptiFine", "OptiFine", 0), 100);
-}
-
-#[test]
-fn test_calculate_confidence_contains_match() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Contains match with high downloads should get 85 + 5 = 90%
-    assert_eq!(resolver.calculate_confidence("test", "testing", 1000), 90);
-    assert_eq!(resolver.calculate_confidence("test", "testing", 2000), 90);
-    
-    // Contains match with low downloads should get 85%
-    assert_eq!(resolver.calculate_confidence("test", "testing", 100), 85);
-    assert_eq!(resolver.calculate_confidence("test", "testing", 0), 85);
-    
-    // Reverse contains match
-    assert_eq!(resolver.calculate_confidence("test", "testing", 1000), 90);
-    assert_eq!(resolver.calculate_confidence("test", "testing", 100), 85);
-}
-
-#[test]
-fn test_calculate_confidence_levenshtein_distance() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Similar strings should have high confidence
-    assert!(resolver.calculate_confidence("JEI", "JEI Addon", 1000) > 80);
-    assert!(resolver.calculate_confidence("OptiFine", "Optifine", 1000) > 90);
-    
-    // Very different strings should have low confidence
-    assert!(resolver.calculate_confidence("JEI", "Biomes O' Plenty", 1000) < 50);
-    assert!(resolver.calculate_confidence("short", "very long string indeed", 1000) < 60);
-}
-
-#[test]
-fn test_calculate_confidence_download_boost() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // High download count should boost confidence by 5%
-    let high_downloads = resolver.calculate_confidence("test", "testing", 1000);
-    let low_downloads = resolver.calculate_confidence("test", "testing", 100);
-    
-    assert_eq!(high_downloads, low_downloads + 5);
-}
-
-#[test]
-fn test_calculate_confidence_edge_cases() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Empty strings
-    assert_eq!(resolver.calculate_confidence("", "", 1000), 100);
-    
-    // Empty query or result should have very low confidence
-    let empty_query_confidence = resolver.calculate_confidence("", "something", 1000);
-    assert!(empty_query_confidence <= 100); // This will use Levenshtein distance
-    
-    let empty_result_confidence = resolver.calculate_confidence("something", "", 1000);
-    assert!(empty_result_confidence <= 100); // This will use Levenshtein distance
-
-    // Very long strings
-    let long_query = "a".repeat(100);
-    let long_found = "b".repeat(100);
-    assert!(resolver.calculate_confidence(&long_query, &long_found, 1000) < 10);
-}
-
-#[test]
-fn test_has_extra_words_normal_cases() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Normal acceptable expansion (within 150% ratio)
-    assert!(!resolver.has_extra_words("Create", "Create")); // Same length
-    assert!(!resolver.has_extra_words("test", "test1")); // 5/4 = 125%
-    assert!(!resolver.has_extra_words("mod", "mods")); // 4/3 = 133%
-    assert!(!resolver.has_extra_words("ab", "abc")); // 3/2 = 150% exactly
-    
-    // Acceptable with punctuation that doesn't exceed ratio
-    assert!(!resolver.has_extra_words("RF.Tools", "RFTools")); // "rftools" vs "rftools" = 100%
-    assert!(!resolver.has_extra_words("a-b", "ab")); // "ab" vs "ab" = 100%
-}
-
-#[test]
-fn test_has_extra_words_excessive_expansion() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Excessive expansion should be rejected
-    assert!(resolver.has_extra_words("JEI", "Just Enough Items Plus Extra Functionality And More"));
-    assert!(resolver.has_extra_words("RF", "Redstone Flux API Implementation Framework"));
-    assert!(resolver.has_extra_words("mod", "very long descriptive modification name"));
-}
-
-#[test]
-fn test_has_extra_words_edge_cases() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Empty query should not trigger extra words
-    assert!(!resolver.has_extra_words("", "anything"));
-    assert!(!resolver.has_extra_words("", ""));
-    
-    // Same length after normalization
-    assert!(!resolver.has_extra_words("a-b-c", "abc"));
-    assert!(!resolver.has_extra_words("test", "TEST"));
-    
-    // Exact 150% ratio (boundary condition)
-    assert!(!resolver.has_extra_words("ab", "abc")); // 150% exactly
-}
-
-#[test]
-fn test_has_extra_words_normalization() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Normalization should remove spaces, dashes, underscores, dots
-    assert!(!resolver.has_extra_words("just-enough_items", "Just Enough Items"));
-    assert!(!resolver.has_extra_words("rf.tools", "RFTools"));
-    assert!(!resolver.has_extra_words("a.b-c_d", "abcd"));
-    
-    // Case insensitive
-    assert!(!resolver.has_extra_words("JEI", "jei"));
-    assert!(!resolver.has_extra_words("OptiFine", "optifine"));
-}
-
-#[test]
-fn test_levenshtein_distance() {
-    let resolver = ProjectResolver::new(Client::new(), None);
-
-    // Test basic distance calculations
-    assert_eq!(resolver.levenshtein_distance("", ""), 0);
-    assert_eq!(resolver.levenshtein_distance("", "a"), 1);
-    assert_eq!(resolver.levenshtein_distance("a", ""), 1);
-    assert_eq!(resolver.levenshtein_distance("a", "a"), 0);
-    assert_eq!(resolver.levenshtein_distance("a", "b"), 1);
-    assert_eq!(resolver.levenshtein_distance("ab", "ac"), 1);
-    assert_eq!(resolver.levenshtein_distance("abc", "def"), 3);
-    
-    // Test longer strings
-    assert_eq!(resolver.levenshtein_distance("kitten", "sitting"), 3);
-    assert_eq!(resolver.levenshtein_distance("saturday", "sunday"), 3);
-}
-
-#[test]
 fn test_normalize_project_type() {
     let resolver = ProjectResolver::new(Client::new(), None);
 
@@ -252,7 +107,7 @@ async fn test_platform_priority_default_modrinth_first() {
     assert_eq!(result.platform, ProjectPlatform::Modrinth);
     assert_eq!(result.project_id, "AANobbMI");
     assert_eq!(result.title, "Sodium");
-    assert!(result.confidence >= MODRINTH_CONFIDENCE_THRESHOLD);
+    assert!(result.confidence >= fuzzy::MODRINTH_CONFIDENCE_THRESHOLD);
 
     mr_mock.assert_async().await;
     cf_mock.assert_async().await;
@@ -423,14 +278,14 @@ async fn test_tiered_search_first_fails_second_succeeds() {
 
     // First call (mod): empty. Second call (resourcepack): hit.
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.mod%22".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Amod%22".to_string()))
         .with_status(200)
         .with_body(modrinth_empty_json())
         .create_async()
         .await;
 
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.resourcepack".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Aresourcepack".to_string()))
         .with_status(200)
         .with_body(modrinth_hit_json("RP456", "Faithful", 30_000))
         .create_async()
@@ -459,21 +314,21 @@ async fn test_tiered_search_third_tier_shader_succeeds() {
     let mut mr_server = mockito::Server::new_async().await;
 
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.mod%22".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Amod%22".to_string()))
         .with_status(200)
         .with_body(modrinth_empty_json())
         .create_async()
         .await;
 
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.resourcepack".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Aresourcepack".to_string()))
         .with_status(200)
         .with_body(modrinth_empty_json())
         .create_async()
         .await;
 
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.shader".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Ashader".to_string()))
         .with_status(200)
         .with_body(modrinth_hit_json("SH789", "BSL Shaders", 20_000))
         .create_async()
@@ -686,7 +541,7 @@ async fn test_error_propagation_low_confidence_swallowed_next_tier_succeeds() {
 
     // Mod tier: returns result with wrong title → low confidence → swallowed
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.mod%22".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Amod%22".to_string()))
         .with_status(200)
         .with_body(modrinth_hit_json("WRONG1", "Totally Different Name XYZ", 100))
         .create_async()
@@ -694,7 +549,7 @@ async fn test_error_propagation_low_confidence_swallowed_next_tier_succeeds() {
 
     // Resourcepack tier: returns exact match → high confidence → accepted
     mr_server
-        .mock("GET", mockito::Matcher::Regex(r"project_type.resourcepack".to_string()))
+        .mock("GET", mockito::Matcher::Regex(r"project%5Ftype%3Aresourcepack".to_string()))
         .with_status(200)
         .with_body(modrinth_hit_json("RP999", "Faithful", 30_000))
         .create_async()
@@ -714,4 +569,497 @@ async fn test_error_propagation_low_confidence_swallowed_next_tier_succeeds() {
 
     assert_eq!(result.project_id, "RP999");
     assert_eq!(result.project_type, "resourcepack");
+}
+
+// ===== CACHE INTEGRATION TESTS =====
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_cache_miss_makes_network_call() {
+    use crate::networking::cache::HttpCache;
+    use crate::networking::rate_limit::RateLimiterManager;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let cache = Arc::new(HttpCache::new(temp_dir.path().to_path_buf()));
+    let rate_limiter = Arc::new(RateLimiterManager::new(Client::new()));
+
+    let mut mr_server = mockito::Server::new_async().await;
+
+    let mr_mock = mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"/v2/search\?.*".to_string()),
+        )
+        .with_status(200)
+        .with_body(modrinth_hit_json("CACHED1", "Sodium", 50_000))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls_and_networking(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+        cache.clone(),
+        rate_limiter,
+    );
+
+    let result = resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .expect("should resolve");
+
+    assert_eq!(result.project_id, "CACHED1");
+    assert_eq!(result.platform, ProjectPlatform::Modrinth);
+
+    // Verify network call was made (cache miss)
+    mr_mock.assert_async().await;
+
+    // Verify the response is now cached
+    assert!(!cache.is_empty().await);
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_cache_hit_skips_network_call() {
+    use crate::networking::cache::HttpCache;
+    use crate::networking::rate_limit::RateLimiterManager;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let cache = Arc::new(HttpCache::new(temp_dir.path().to_path_buf()));
+    let rate_limiter = Arc::new(RateLimiterManager::new(Client::new()));
+
+    let mut mr_server = mockito::Server::new_async().await;
+
+    // Only expect ONE network call — the second should be served from cache
+    let mr_mock = mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"/v2/search\?.*".to_string()),
+        )
+        .with_status(200)
+        .with_body(modrinth_hit_json("CACHED2", "Sodium", 50_000))
+        .expect(1)
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls_and_networking(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+        cache,
+        rate_limiter,
+    );
+
+    // First call — cache miss, hits network
+    let result1 = resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .expect("first resolve should succeed");
+    assert_eq!(result1.project_id, "CACHED2");
+
+    // Second call — cache hit, no network call
+    let result2 = resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .expect("second resolve should succeed from cache");
+    assert_eq!(result2.project_id, "CACHED2");
+
+    // Mock asserts only 1 call was made
+    mr_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_rate_limiter_retries_on_429() {
+    use crate::networking::cache::HttpCache;
+    use crate::networking::rate_limit::{BackoffConfig, RateLimiterManager};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let cache = Arc::new(HttpCache::new(temp_dir.path().to_path_buf()));
+
+    let mut mr_server = mockito::Server::new_async().await;
+
+    // First request returns 429, second returns 200
+    let mr_mock_429 = mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"/v2/search\?.*".to_string()),
+        )
+        .with_status(429)
+        .with_header("retry-after", "1")
+        .expect(1)
+        .create_async()
+        .await;
+
+    let mr_mock_200 = mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"/v2/search\?.*".to_string()),
+        )
+        .with_status(200)
+        .with_body(modrinth_hit_json("RETRY1", "Sodium", 50_000))
+        .expect(1)
+        .create_async()
+        .await;
+
+    // Use a fast backoff config so test doesn't take long
+    let backoff = BackoffConfig {
+        initial: Duration::from_millis(50),
+        multiplier: 2.0,
+        max: Duration::from_millis(200),
+    };
+    let rate_limiter = Arc::new(RateLimiterManager::with_backoff(Client::new(), backoff));
+
+    let resolver = ProjectResolver::new_with_base_urls_and_networking(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+        cache,
+        rate_limiter,
+    );
+
+    let result = resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .expect("should succeed after 429 retry");
+
+    assert_eq!(result.project_id, "RETRY1");
+
+    mr_mock_429.assert_async().await;
+    mr_mock_200.assert_async().await;
+}
+
+// ===== MULTI-RESULT / PAGINATION TESTS =====
+
+/// Helper: Modrinth JSON response with multiple hits
+fn modrinth_multi_hit_json(hits: &[(&str, &str, u64)]) -> String {
+    let hit_objects: Vec<serde_json::Value> = hits
+        .iter()
+        .map(|(project_id, title, downloads)| {
+            serde_json::json!({
+                "project_id": project_id,
+                "title": title,
+                "downloads": downloads,
+                "categories": ["fabric"]
+            })
+        })
+        .collect();
+    serde_json::json!({ "hits": hit_objects }).to_string()
+}
+
+/// Helper: CurseForge JSON response with multiple results
+fn curseforge_multi_hit_json(results: &[(u32, &str, u64)]) -> String {
+    let data_objects: Vec<serde_json::Value> = results
+        .iter()
+        .map(|(id, name, download_count)| {
+            serde_json::json!({
+                "id": id,
+                "name": name,
+                "downloadCount": download_count
+            })
+        })
+        .collect();
+    serde_json::json!({ "data": data_objects }).to_string()
+}
+
+#[test]
+fn test_score_results_ranks_by_confidence_descending() {
+    let projects = vec![
+        ProjectInfo {
+            platform: ProjectPlatform::Modrinth,
+            project_id: "low".to_string(),
+            title: "Totally Wrong Name".to_string(),
+            downloads: 500,
+            confidence: 0,
+            project_type: "mod".to_string(),
+        },
+        ProjectInfo {
+            platform: ProjectPlatform::Modrinth,
+            project_id: "exact".to_string(),
+            title: "Sodium".to_string(),
+            downloads: 50_000,
+            confidence: 0,
+            project_type: "mod".to_string(),
+        },
+        ProjectInfo {
+            platform: ProjectPlatform::Modrinth,
+            project_id: "partial".to_string(),
+            title: "Sodium Extra".to_string(),
+            downloads: 10_000,
+            confidence: 0,
+            project_type: "mod".to_string(),
+        },
+    ];
+
+    let ranked = ProjectResolver::score_results("Sodium", projects);
+
+    assert_eq!(ranked[0].project_id, "exact");
+    assert_eq!(ranked[0].confidence, 100);
+    assert!(ranked[0].confidence >= ranked[1].confidence);
+    assert!(ranked[1].confidence >= ranked[2].confidence);
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_picks_best_from_multiple_results() {
+    // Modrinth returns 3 results; the second is an exact match.
+    // resolve_project should pick the highest-confidence result.
+    let mut mr_server = mockito::Server::new_async().await;
+
+    mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(modrinth_multi_hit_json(&[
+            ("WRONG1", "Sodium Reforged Extra", 5_000),
+            ("EXACT1", "Sodium", 80_000),
+            ("WRONG2", "Totally Different", 200),
+        ]))
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+    );
+
+    let result = resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .expect("should pick the exact match");
+
+    assert_eq!(result.project_id, "EXACT1");
+    assert_eq!(result.confidence, 100);
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_auto_selects_high_confidence() {
+    // Single result at >=90% confidence → auto-selected without needing candidates
+    let mut mr_server = mockito::Server::new_async().await;
+
+    mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(modrinth_hit_json("AUTO1", "Sodium", 50_000))
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+    );
+
+    let result = resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .expect("high confidence should auto-select");
+
+    assert!(result.confidence >= 90);
+    assert_eq!(result.project_id, "AUTO1");
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_search_candidates_returns_ranked_list() {
+    // Both platforms return results; search_candidates merges and ranks them
+    let mut mr_server = mockito::Server::new_async().await;
+    let mut cf_server = mockito::Server::new_async().await;
+
+    mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(modrinth_multi_hit_json(&[
+            ("MR1", "Sodium", 80_000),
+            ("MR2", "Sodium Extra", 5_000),
+        ]))
+        .create_async()
+        .await;
+
+    cf_server
+        .mock("GET", mockito::Matcher::Regex(r"/v1/mods/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(curseforge_multi_hit_json(&[
+            (100, "Sodium", 60_000),
+            (101, "Sodium Reforged", 3_000),
+        ]))
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        Some("test-api-key".to_string()),
+        Some(mr_server.url()),
+        Some(cf_server.url()),
+    );
+
+    let candidates = resolver
+        .search_candidates("Sodium", "mod", None, None, 70, None)
+        .await
+        .expect("should return candidates");
+
+    // Should have results from both platforms
+    assert!(candidates.len() >= 2);
+    // First result should be highest confidence (exact match)
+    assert_eq!(candidates[0].confidence, 100);
+    // Results should be sorted by confidence descending
+    for window in candidates.windows(2) {
+        assert!(window[0].confidence >= window[1].confidence);
+    }
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_search_candidates_filters_below_min_confidence() {
+    // Only results above min_confidence threshold should be returned
+    let mut mr_server = mockito::Server::new_async().await;
+
+    mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(modrinth_multi_hit_json(&[
+            ("GOOD1", "Sodium", 80_000),
+            ("BAD1", "Completely Unrelated Mod Name Here", 200),
+        ]))
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+    );
+
+    let candidates = resolver
+        .search_candidates("Sodium", "mod", None, None, 80, None)
+        .await
+        .expect("should return filtered candidates");
+
+    // All returned candidates must be above threshold
+    for c in &candidates {
+        assert!(c.confidence >= 80, "confidence {} < 80", c.confidence);
+    }
+    // The low-confidence result should be filtered out
+    assert!(!candidates.iter().any(|c| c.project_id == "BAD1"));
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_search_candidates_all_below_threshold_returns_error() {
+    // When all results are below min_confidence, return LowConfidence error
+    let mut mr_server = mockito::Server::new_async().await;
+
+    mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(modrinth_multi_hit_json(&[
+            ("BAD1", "Totally Wrong Mod ABCXYZ", 100),
+            ("BAD2", "Another Wrong Mod DEFGHI", 50),
+        ]))
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+    );
+
+    let err = resolver
+        .search_candidates("Sodium", "mod", None, None, 70, None)
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, SearchError::LowConfidence { .. }),
+        "Expected LowConfidence when all results are below threshold, got: {err:?}"
+    );
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_search_candidates_respects_preferred_platform() {
+    // With preferred_platform=CurseForge, CurseForge results should be searched first
+    let mut mr_server = mockito::Server::new_async().await;
+    let mut cf_server = mockito::Server::new_async().await;
+
+    mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(modrinth_hit_json("MR1", "Sodium", 80_000))
+        .create_async()
+        .await;
+
+    cf_server
+        .mock("GET", mockito::Matcher::Regex(r"/v1/mods/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(curseforge_hit_json(200, "Sodium", 60_000))
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        Some("test-api-key".to_string()),
+        Some(mr_server.url()),
+        Some(cf_server.url()),
+    );
+
+    let candidates = resolver
+        .search_candidates(
+            "Sodium", "mod", None, None, 70,
+            Some(ProjectPlatform::CurseForge),
+        )
+        .await
+        .expect("should return candidates from both platforms");
+
+    // Both platforms should be represented
+    assert!(candidates.iter().any(|c| c.platform == ProjectPlatform::Modrinth));
+    assert!(candidates.iter().any(|c| c.platform == ProjectPlatform::CurseForge));
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_search_candidates_network_error_propagates() {
+    // Network errors should propagate even in search_candidates
+    let mut mr_server = mockito::Server::new_async().await;
+
+    mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(500)
+        .with_body("Internal Server Error")
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+    );
+
+    let err = resolver
+        .search_candidates("Sodium", "mod", None, None, 70, None)
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, SearchError::NetworkError { .. }),
+        "Expected NetworkError to propagate, got: {err:?}"
+    );
 }
