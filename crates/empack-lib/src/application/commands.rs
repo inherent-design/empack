@@ -764,6 +764,8 @@ async fn handle_init(
 
     // === Execute phase: all filesystem mutations happen below this line ===
 
+    let created_dir = needs_mkdir;
+
     // Create directory if needed (deferred from path resolution)
     if needs_mkdir {
         let dir_name = target_dir
@@ -777,25 +779,6 @@ async fn handle_init(
         session.filesystem().create_dir_all(&target_dir)?;
     }
 
-    // Create state manager for the (now-existing) target directory
-    let manager =
-        crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
-
-    // Create the empack.yml file with the collected configuration FIRST
-    let empack_yml_content = format_empack_yml(
-        &modpack_name,
-        &author,
-        &version,
-        &minecraft_version,
-        &loader_str,
-        &loader_version,
-    );
-
-    session
-        .filesystem()
-        .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
-
-    // Execute initialization with the collected information
     let init_config = crate::primitives::InitializationConfig {
         name: &modpack_name,
         author: &author,
@@ -804,8 +787,46 @@ async fn handle_init(
         mc_version: &minecraft_version,
         loader_version: &loader_version,
     };
+
+    let result = execute_init_phase(session, &target_dir, &init_config).await;
+
+    if let Err(ref e) = result
+        && created_dir
+        && session.filesystem().is_directory(&target_dir)
+    {
+        let _ = session.filesystem().remove_dir_all(&target_dir);
+        session
+            .display()
+            .status()
+            .warning(&format!("Cleaned up directory after init failure: {}", e));
+    }
+
+    result
+}
+
+async fn execute_init_phase(
+    session: &dyn Session,
+    target_dir: &std::path::Path,
+    config: &crate::primitives::InitializationConfig<'_>,
+) -> Result<()> {
+    let manager =
+        crate::empack::state::PackStateManager::new(target_dir.to_path_buf(), session.filesystem());
+
+    let empack_yml_content = format_empack_yml(
+        config.name,
+        config.author,
+        config.version,
+        config.mc_version,
+        config.modloader,
+        config.loader_version,
+    );
+
+    session
+        .filesystem()
+        .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
+
     let transition_result = manager
-        .execute_transition(session.process(), &*session.packwiz(), StateTransition::Initialize(init_config))
+        .execute_transition(session.process(), &*session.packwiz(), StateTransition::Initialize(*config))
         .await
         .context("Failed to initialize modpack project")?;
     for w in &transition_result.warnings {
@@ -1088,6 +1109,23 @@ async fn handle_add(
                 failed_mods.push((mod_query, rendered.details));
             }
         }
+    }
+
+    if session.config().app_config().dry_run {
+        session.display().status().section("Planned Actions");
+        for resolved in &resolved_mods {
+            session.display().status().info(&format!(
+                "Would add: {} ({} on {})",
+                resolved.resolution.title,
+                resolved.resolution.resolved_project_id,
+                resolved.resolution.resolved_platform,
+            ));
+        }
+        session
+            .display()
+            .status()
+            .complete("Dry run complete - no changes applied");
+        return Ok(());
     }
 
     // === Execute phase: all side effects happen below this line ===
@@ -1390,6 +1428,16 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             .subtle("   Run 'empack init' to set up a modpack project");
         return Ok(());
     }
+    if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
+        session
+            .display()
+            .status()
+            .error("Project initialization is incomplete", "");
+        session.display().status().subtle(
+            "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before removing dependencies",
+        );
+        return Ok(());
+    }
 
     session
         .display()
@@ -1417,6 +1465,21 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             }
         })
         .collect();
+
+    if session.config().app_config().dry_run {
+        session.display().status().section("Planned Actions");
+        for mod_name in &validated_mods {
+            session
+                .display()
+                .status()
+                .info(&format!("Would remove: {}", mod_name));
+        }
+        session
+            .display()
+            .status()
+            .complete("Dry run complete - no changes applied");
+        return Ok(());
+    }
 
     // === Execute phase: all side effects happen below this line ===
     for mod_name in validated_mods {
@@ -1657,6 +1720,21 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
         .status()
         .section(&format!("Building targets: {:?}", build_targets));
 
+    if session.config().app_config().dry_run {
+        session.display().status().section("Planned Actions");
+        for target in &build_targets {
+            session
+                .display()
+                .status()
+                .info(&format!("Would build: {}", target));
+        }
+        session
+            .display()
+            .status()
+            .complete("Dry run complete - no changes applied");
+        return Ok(());
+    }
+
     // Ensure packwiz-installer-bootstrap.jar is available for builds that need it
     let bootstrap_jar_path = session.packwiz().bootstrap_jar_cache_path()?;
     let needs_bootstrap_jar = build_targets.iter().any(|target| {
@@ -1794,6 +1872,30 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
 async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()> {
     let manager = session.state()?;
 
+    if session.config().app_config().dry_run {
+        session.display().status().section("Planned Actions");
+        if targets.is_empty()
+            || targets.contains(&"builds".to_string())
+            || targets.contains(&"all".to_string())
+        {
+            session
+                .display()
+                .status()
+                .info("Would clean build artifacts in dist/");
+        }
+        if targets.contains(&"cache".to_string()) || targets.contains(&"all".to_string()) {
+            session
+                .display()
+                .status()
+                .info("Would clean cached data");
+        }
+        session
+            .display()
+            .status()
+            .complete("Dry run complete - no changes applied");
+        return Ok(());
+    }
+
     if targets.is_empty()
         || targets.contains(&"builds".to_string())
         || targets.contains(&"all".to_string())
@@ -1804,6 +1906,9 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
             .checking("Cleaning build artifacts");
 
         let current_state = manager.discover_state()?;
+        let dist_dir = crate::empack::state::artifact_root(&manager.workdir);
+        let has_dist = session.filesystem().is_directory(&dist_dir);
+
         if current_state == PackState::Built {
             let result = manager
                 .execute_transition(session.process(), &*session.packwiz(), StateTransition::Clean)
@@ -1812,6 +1917,13 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
             for w in &result.warnings {
                 session.display().status().warning(w);
             }
+            session
+                .display()
+                .status()
+                .complete("Build artifacts cleaned");
+        } else if has_dist {
+            crate::empack::state::clean_build_artifacts(session.filesystem(), &manager.workdir)
+                .context("Failed to clean build artifacts")?;
             session
                 .display()
                 .status()
