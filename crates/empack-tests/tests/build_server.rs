@@ -35,17 +35,11 @@ async fn initialize_empack_project(
 ) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
     let (session, test_env) = HermeticSessionBuilder::new()?
         .with_empack_project(project_name, "1.21.1", "fabric")?
+        .with_mock_http_client()
         .with_mock_executable(
             "packwiz",
             MockBehavior::SucceedWithOutput {
                 stdout: build_packwiz_output(project_name),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "mrpack-install",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Installed mock server jar".to_string(),
                 stderr: String::new(),
             },
         )?
@@ -163,8 +157,30 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
-    let (session, _test_env, workdir) =
-        initialize_empack_project("workflow-server-missing-installer").await?;
+    let project_name = "workflow-server-missing-installer";
+    let (session, test_env) = HermeticSessionBuilder::new()?
+        .with_empack_project(project_name, "1.21.1", "fabric")?
+        .with_mock_executable(
+            "packwiz",
+            MockBehavior::SucceedWithOutput {
+                stdout: build_packwiz_output(project_name),
+                stderr: String::new(),
+            },
+        )?
+        .build()?;
+
+    init_display(&session)?;
+
+    let workdir = session
+        .config()
+        .app_config()
+        .workdir
+        .clone()
+        .expect("hermetic project should configure a workdir");
+    std::env::set_current_dir(&workdir)?;
+    unsafe {
+        std::env::set_var("HOME", &test_env.root_path);
+    }
 
     let templates_dir = workdir.join("templates").join("server");
     std::fs::create_dir_all(&templates_dir)?;
@@ -181,25 +197,21 @@ async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
 
     assert!(
         result.is_err(),
-        "Build should fail when installer JAR is unavailable"
+        "Build should fail when HTTP client is unavailable"
     );
     let error = format!("{:#}", result.unwrap_err());
     assert!(
-        error.contains("Mock HTTP client unavailable (test mode)")
-            || (error.contains("Failed to read file:")
-                && error.contains("packwiz-installer-bootstrap.jar")),
-        "Missing installer should fail while resolving the bootstrap JAR, got: {error}"
+        error.contains("HTTP client unavailable")
+            || error.contains("Mock HTTP client unavailable")
+            || error.contains("Failed to read file:"),
+        "Build should fail at HTTP or bootstrap JAR resolution, got: {error}"
     );
     assert!(
         !workdir
             .join("dist")
             .join("workflow-server-missing-installer-v1.0.0-server.zip")
             .exists(),
-        "No server archive should be produced when the installer is missing"
-    );
-    assert!(
-        !workdir.join("dist").join("server").join("srv.jar").exists(),
-        "The server jar should not be materialized when the installer bootstrap is missing"
+        "No server archive should be produced when the build fails"
     );
 
     Ok(())

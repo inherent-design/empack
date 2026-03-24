@@ -73,9 +73,9 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             },
         )?
         .with_mock_executable(
-            "mrpack-install",
+            "curl",
             MockBehavior::SucceedWithOutput {
-                stdout: "Installed server jar".to_string(),
+                stdout: String::new(),
                 stderr: String::new(),
             },
         )?
@@ -386,14 +386,10 @@ async fn test_forge_modloader_initialization() -> Result<()> {
     let empack_yml_path = project_dir.join("empack.yml");
     assert!(empack_yml_path.exists(), "empack.yml should exist");
 
-    // Read empack.yml and verify loader is set to forge
     let empack_yml_content = fs::read_to_string(&empack_yml_path)?;
-
-    // The loader should be present in the YAML (either "forge" or modloader configuration)
-    // Accept that exact format may vary based on implementation
     assert!(
-        empack_yml_content.contains("forge") || empack_yml_content.contains("loader"),
-        "empack.yml should contain loader configuration, got: {}",
+        empack_yml_content.contains("loader: forge"),
+        "empack.yml should contain 'loader: forge', got: {}",
         empack_yml_content
     );
 
