@@ -136,7 +136,7 @@ impl fmt::Display for MarkerKind {
 }
 
 /// Initialization parameters for packwiz init
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct InitializationConfig<'a> {
     pub name: &'a str,
     pub author: &'a str,
