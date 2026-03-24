@@ -326,8 +326,8 @@ fn test_copy_dir_contents() {
     assert!(filesystem.exists(&dst_dir.join("file2.txt")));
     assert!(filesystem.exists(&dst_dir.join("subdir").join("file3.txt")));
 
-    let content1 = filesystem.read_to_string(&dst_dir.join("file1.txt")).unwrap();
-    assert_eq!(content1, "content1");
+    let content1 = filesystem.read_bytes(&dst_dir.join("file1.txt")).unwrap();
+    assert_eq!(content1, b"content1");
 }
 
 #[test]
