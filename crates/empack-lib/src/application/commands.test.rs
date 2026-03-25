@@ -2376,6 +2376,88 @@ fn test_render_add_contract_error_low_confidence() {
     );
 }
 
+#[test]
+fn test_render_add_contract_error_incompatible_project_loader() {
+    let rendered = render_add_contract_error(&AddContractError::ResolveProject {
+        query: "sodium".to_string(),
+        source: crate::empack::search::SearchError::IncompatibleProject {
+            query: "sodium".to_string(),
+            project_title: "Sodium".to_string(),
+            project_slug: "sodium".to_string(),
+            available_loaders: vec![
+                "fabric".to_string(),
+                "neoforge".to_string(),
+                "quilt".to_string(),
+            ],
+            available_versions: vec!["1.21.4".to_string()],
+            requested_loader: Some("forge".to_string()),
+            requested_version: Some("1.21.4".to_string()),
+            downloads: 134_306_743,
+        },
+    });
+
+    assert_eq!(rendered.item, "Mod found but incompatible");
+    assert!(
+        rendered.details.contains("Sodium"),
+        "Details should contain the project title; got: {}",
+        rendered.details
+    );
+    assert!(
+        rendered.details.contains("134M"),
+        "Details should contain abbreviated download count; got: {}",
+        rendered.details
+    );
+    assert!(
+        rendered.details.contains("fabric, neoforge, quilt"),
+        "Details should list supported loaders; got: {}",
+        rendered.details
+    );
+    assert!(
+        rendered.details.contains("forge"),
+        "Details should mention the requested loader; got: {}",
+        rendered.details
+    );
+}
+
+#[test]
+fn test_render_add_contract_error_incompatible_project_loader_only() {
+    let rendered = render_add_contract_error(&AddContractError::ResolveProject {
+        query: "sodium".to_string(),
+        source: crate::empack::search::SearchError::IncompatibleProject {
+            query: "sodium".to_string(),
+            project_title: "Sodium".to_string(),
+            project_slug: "sodium".to_string(),
+            available_loaders: vec!["fabric".to_string(), "quilt".to_string()],
+            available_versions: vec![],
+            requested_loader: Some("forge".to_string()),
+            requested_version: None,
+            downloads: 50_000,
+        },
+    });
+
+    assert_eq!(rendered.item, "Mod found but incompatible");
+    assert!(
+        rendered.details.contains("does not support forge"),
+        "Details should mention unsupported loader; got: {}",
+        rendered.details
+    );
+    assert!(
+        rendered.details.contains("50K"),
+        "Details should contain abbreviated download count; got: {}",
+        rendered.details
+    );
+}
+
+#[test]
+fn test_format_downloads_abbreviation() {
+    assert_eq!(format_downloads(134_306_743), "134M");
+    assert_eq!(format_downloads(1_000_000), "1M");
+    assert_eq!(format_downloads(50_000), "50K");
+    assert_eq!(format_downloads(1_000), "1K");
+    assert_eq!(format_downloads(999), "999");
+    assert_eq!(format_downloads(0), "0");
+}
+
 // ===== BUILD TARGET VALIDATION TESTS (Slice 3) =====
 
 #[tokio::test]
