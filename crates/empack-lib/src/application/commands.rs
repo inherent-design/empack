@@ -154,6 +154,19 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         }
     }
 
+    // Check java availability
+    match session.process().find_program("java") {
+        Some(path) => {
+            session.display().status().success("java", &path);
+        }
+        None => {
+            session.display().status().error(
+                "java",
+                "not found (required for non-vanilla server builds: fabric, quilt, neoforge, forge)",
+            );
+        }
+    }
+
     // Check archiving capabilities as two separate concerns:
     // 1. mrpack extraction requires unzip specifically (tar cannot extract zip files)
     // 2. Distribution creation accepts zip or tar
