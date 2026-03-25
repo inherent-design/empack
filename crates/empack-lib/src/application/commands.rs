@@ -11,6 +11,7 @@ use crate::application::sync::{
     loader_arg, project_type_arg, resolve_add_contract, resolve_sync_action,
 };
 use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
+use crate::empack::search::SearchError;
 use crate::application::{CliConfig, Commands};
 use crate::empack::parsing::ModLoader;
 use crate::platform::{ArchiverCapabilities, GoCapabilities};
@@ -1283,7 +1284,13 @@ struct RenderedStatusError {
 // typed failures without forcing one user-facing message contract on both commands.
 fn render_add_contract_error(error: &AddContractError) -> RenderedStatusError {
     let item = match error {
-        AddContractError::ResolveProject { .. } => "Failed to resolve mod",
+        AddContractError::ResolveProject { source, .. } => {
+            if matches!(source, SearchError::IncompatibleProject { .. }) {
+                "Mod found but incompatible"
+            } else {
+                "Failed to resolve mod"
+            }
+        }
         AddContractError::PlanPackwizAdd { .. } => "Failed to prepare add command",
     };
 
@@ -1295,12 +1302,55 @@ fn render_add_contract_error(error: &AddContractError) -> RenderedStatusError {
 
 fn render_add_contract_error_details(error: &AddContractError) -> String {
     match error {
-        AddContractError::ResolveProject { query, source } => format!("{query}: {source}"),
+        AddContractError::ResolveProject { query, source } => {
+            if let SearchError::IncompatibleProject {
+                project_title,
+                available_loaders,
+                requested_loader,
+                requested_version,
+                downloads,
+                ..
+            } = source
+            {
+                let loaders_str = available_loaders.join(", ");
+                let dl_str = format_downloads(*downloads);
+                match (requested_loader.as_deref(), requested_version.as_deref()) {
+                    (Some(loader), Some(version)) => {
+                        format!(
+                            "'{project_title}' ({dl_str} downloads) exists but has no version for {loader} on {version}. Supported loaders: {loaders_str}"
+                        )
+                    }
+                    (Some(loader), None) => {
+                        format!(
+                            "'{project_title}' ({dl_str} downloads) exists but does not support {loader}. Supported loaders: {loaders_str}"
+                        )
+                    }
+                    (None, Some(version)) => {
+                        format!(
+                            "'{project_title}' ({dl_str} downloads) exists but has no version for {version}"
+                        )
+                    }
+                    (None, None) => format!("{query}: {source}"),
+                }
+            } else {
+                format!("{query}: {source}")
+            }
+        }
         AddContractError::PlanPackwizAdd {
             project_id,
             platform,
             source,
         } => format!("{platform} project {project_id}: {source}"),
+    }
+}
+
+fn format_downloads(downloads: u64) -> String {
+    if downloads >= 1_000_000 {
+        format!("{}M", downloads / 1_000_000)
+    } else if downloads >= 1_000 {
+        format!("{}K", downloads / 1_000)
+    } else {
+        downloads.to_string()
     }
 }
 

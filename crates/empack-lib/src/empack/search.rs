@@ -45,6 +45,18 @@ pub enum SearchError {
     #[error("Project has extra words: '{found}' vs '{query}'")]
     ExtraWords { found: String, query: String },
 
+    #[error("'{project_title}' exists but does not support {requested_loader:?}. Supported loaders: {}", available_loaders.join(", "))]
+    IncompatibleProject {
+        query: String,
+        project_title: String,
+        project_slug: String,
+        available_loaders: Vec<String>,
+        available_versions: Vec<String>,
+        requested_loader: Option<String>,
+        requested_version: Option<String>,
+        downloads: u64,
+    },
+
     #[error("API key missing for platform: {platform}")]
     MissingApiKey { platform: String },
 
@@ -88,9 +100,12 @@ struct ModrinthSearchResponse {
 #[derive(Debug, Deserialize)]
 struct ModrinthProject {
     project_id: String,
+    slug: String,
     title: String,
     downloads: u64,
     categories: Vec<String>,
+    #[serde(default)]
+    versions: Vec<String>,
 }
 
 /// CurseForge API response structures  
@@ -108,6 +123,18 @@ struct CurseForgeProject {
 }
 
 use crate::empack::fuzzy;
+
+const KNOWN_LOADERS: &[&str] = &[
+    "fabric", "forge", "neoforge", "quilt", "liteloader", "rift",
+];
+
+fn extract_loaders(categories: &[String]) -> Vec<String> {
+    categories
+        .iter()
+        .filter(|cat| KNOWN_LOADERS.contains(&cat.as_str()))
+        .cloned()
+        .collect()
+}
 
 /// Project search resolver with platform priority and confidence scoring
 pub struct ProjectResolver {
@@ -566,6 +593,19 @@ impl ProjectResolver {
         let search_response: ModrinthSearchResponse = serde_json::from_slice(&body)?;
 
         if search_response.hits.is_empty() {
+            if (minecraft_version.is_some() || mod_loader.is_some())
+                && let Some(incompatible) = self
+                    .detect_incompatible_project(
+                        title,
+                        &normalized_type,
+                        mod_loader,
+                        minecraft_version,
+                    )
+                    .await?
+            {
+                return Err(incompatible);
+            }
+
             return Err(SearchError::NoResults {
                 query: title.to_string(),
             });
@@ -682,6 +722,73 @@ impl ProjectResolver {
                 project_type: normalized_type.clone(),
             })
             .collect())
+    }
+
+    async fn detect_incompatible_project(
+        &self,
+        title: &str,
+        project_type: &str,
+        requested_loader: Option<&str>,
+        requested_version: Option<&str>,
+    ) -> Result<Option<SearchError>, SearchError> {
+        let facets_json = format!("[[\"project_type:{}\"]]", project_type);
+        let url = format!(
+            "{}/v2/search?query={}&facets={}",
+            self.modrinth_base_url,
+            utf8_percent_encode(title, NON_ALPHANUMERIC),
+            utf8_percent_encode(&facets_json, NON_ALPHANUMERIC)
+        );
+
+        let headers = vec![("User-Agent", "empack/0.1.0")];
+        let (status, body) = self
+            .cached_get(&url, &headers, ProjectPlatform::Modrinth)
+            .await?;
+
+        if !(200..300).contains(&status) {
+            return Ok(None);
+        }
+
+        let search_response: ModrinthSearchResponse = match serde_json::from_slice(&body) {
+            Ok(r) => r,
+            Err(_) => return Ok(None),
+        };
+
+        if search_response.hits.is_empty() {
+            return Ok(None);
+        }
+
+        let best = search_response
+            .hits
+            .iter()
+            .filter(|p| !fuzzy::has_extra_words(title, &p.title))
+            .max_by_key(|p| fuzzy::calculate_confidence(title, &p.title, p.downloads));
+
+        let project = match best {
+            Some(p)
+                if fuzzy::calculate_confidence(title, &p.title, p.downloads)
+                    >= fuzzy::MODRINTH_CONFIDENCE_THRESHOLD =>
+            {
+                p
+            }
+            _ => return Ok(None),
+        };
+
+        let available_loaders = extract_loaders(&project.categories);
+
+        if available_loaders.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(SearchError::IncompatibleProject {
+            query: title.to_string(),
+            project_title: project.title.clone(),
+            project_slug: project.slug.clone(),
+            available_loaders,
+            available_versions: project.versions.clone(),
+            requested_loader: requested_loader.map(|s| s.to_string()),
+            requested_version: requested_version.map(|s| s.to_string()),
+            downloads: project.downloads,
+        }))
     }
 
     /// Normalize project type names across platforms
