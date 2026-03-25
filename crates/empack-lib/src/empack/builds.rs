@@ -1366,13 +1366,20 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: format!("Failed to begin build transition: {:?}", e),
             })?;
 
-        let result = self.execute_build_pipeline_inner(targets)?;
+        let result = self.execute_build_pipeline_inner(targets);
+
+        let temp_extract = self.dist_dir.join("temp-mrpack-extract");
+        if self.session.filesystem().exists(&temp_extract) {
+            let _ = self.session.filesystem().remove_dir_all(&temp_extract);
+        }
+
+        let results = result?;
 
         guard.complete().map_err(|e| BuildError::ConfigError {
             reason: format!("Failed to complete build transition: {:?}", e),
         })?;
 
-        Ok(result)
+        Ok(results)
     }
 
     /// Inner build pipeline logic, separated so the caller can guarantee
@@ -1428,11 +1435,6 @@ impl<'a> BuildOrchestrator<'a> {
             }
 
             results.push(result);
-        }
-
-        let temp_extract = self.dist_dir.join("temp-mrpack-extract");
-        if self.session.filesystem().exists(&temp_extract) {
-            let _ = self.session.filesystem().remove_dir_all(&temp_extract);
         }
 
         Ok(results)
