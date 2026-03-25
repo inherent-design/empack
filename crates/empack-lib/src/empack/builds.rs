@@ -583,7 +583,8 @@ impl<'a> BuildOrchestrator<'a> {
 
         // Clean up installer JAR from the distribution
         let _ = self.session.filesystem().remove_file(&installer_path);
-        Ok(())
+
+        self.download_server_starter_jar(dist_dir)
     }
 
     /// Download and run the Forge server installer.
@@ -629,6 +630,37 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         let _ = self.session.filesystem().remove_file(&installer_path);
+
+        self.download_server_starter_jar(dist_dir)
+    }
+
+    /// Download ServerStarterJar as `srv.jar` for NeoForge and Forge servers.
+    ///
+    /// Verifies the installer produced `run.sh` or `run.bat`, then downloads
+    /// the ~26KB ServerStarterJar from the official neoforged GitHub releases.
+    /// ServerStarterJar reads the installer-generated run scripts, extracts the
+    /// JPMS module path and JVM arguments, and launches the server.
+    fn download_server_starter_jar(&self, dist_dir: &Path) -> Result<(), BuildError> {
+        if !self.session.filesystem().exists(&dist_dir.join("run.sh"))
+            && !self.session.filesystem().exists(&dist_dir.join("run.bat"))
+        {
+            return Err(BuildError::ValidationError {
+                reason: "installer did not produce run.sh or run.bat; cannot download ServerStarterJar".into(),
+            });
+        }
+
+        let srv_jar = dist_dir.join("srv.jar");
+        self.download_file(
+            "https://github.com/neoforged/ServerStarterJar/releases/latest/download/server.jar",
+            &srv_jar,
+        )?;
+
+        if !self.session.filesystem().exists(&srv_jar) {
+            return Err(BuildError::ValidationError {
+                reason: "failed to download ServerStarterJar as srv.jar".into(),
+            });
+        }
+
         Ok(())
     }
 
