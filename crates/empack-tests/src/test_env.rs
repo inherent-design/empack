@@ -349,26 +349,85 @@ fi
 
                 if name == "java" {
                     code.push_str(
-                        r#"
+                        r##"
+JAR_FILE=""
+INSTALL_DIR=""
+IS_FABRIC_INSTALLER=false
+IS_QUILT_INSTALLER=false
+IS_NEOFORGE_INSTALLER=false
+IS_FORGE_INSTALLER=false
 SIDE="unknown"
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -s)
-      SIDE="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
+# First pass: identify the jar file
+for arg in "$@"; do
+  if [[ "$arg" == *"fabric-installer"* && "$arg" == *.jar ]]; then
+    IS_FABRIC_INSTALLER=true
+    JAR_FILE="$arg"
+  elif [[ "$arg" == *"quilt-installer"* && "$arg" == *.jar ]]; then
+    IS_QUILT_INSTALLER=true
+    JAR_FILE="$arg"
+  elif [[ "$arg" == *"neoforge"*"installer"* && "$arg" == *.jar ]]; then
+    IS_NEOFORGE_INSTALLER=true
+    JAR_FILE="$arg"
+  elif [[ "$arg" == *"forge"*"installer"* && "$arg" == *.jar ]]; then
+    IS_FORGE_INSTALLER=true
+    JAR_FILE="$arg"
+  fi
 done
 
-mkdir -p mods
-cat > "mods/${SIDE}-installed.txt" <<JAVAINSTALL
+if $IS_FABRIC_INSTALLER; then
+  # Parse Fabric installer flags (single dash): -dir <path>
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -dir) INSTALL_DIR="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [[ -n "$INSTALL_DIR" ]]; then
+    mkdir -p "$INSTALL_DIR/libraries"
+    echo 'mock fabric launcher' > "$INSTALL_DIR/fabric-server-launch.jar"
+    echo 'mock vanilla server' > "$INSTALL_DIR/server.jar"
+    echo 'serverJar=server.jar' > "$INSTALL_DIR/fabric-server-launcher.properties"
+  fi
+elif $IS_QUILT_INSTALLER; then
+  # Parse Quilt installer flags (double dash): --install-dir=<path>
+  for arg in "$@"; do
+    case "$arg" in
+      --install-dir=*) INSTALL_DIR="${arg#--install-dir=}" ;;
+    esac
+  done
+  if [[ -n "$INSTALL_DIR" ]]; then
+    mkdir -p "$INSTALL_DIR/libraries"
+    echo 'mock quilt launcher' > "$INSTALL_DIR/quilt-server-launch.jar"
+    echo 'mock vanilla server' > "$INSTALL_DIR/server.jar"
+  fi
+elif $IS_NEOFORGE_INSTALLER || $IS_FORGE_INSTALLER; then
+  # Parse NeoForge/Forge installer flags: --install-server or --installServer <path>
+  for arg in "$@"; do
+    if [[ "$arg" != -* && "$arg" != *.jar && -d "$arg" ]]; then
+      INSTALL_DIR="$arg"
+    fi
+  done
+  if [[ -n "$INSTALL_DIR" ]]; then
+    mkdir -p "$INSTALL_DIR/libraries"
+    printf '#!/bin/bash\n' > "$INSTALL_DIR/run.sh"
+    printf '@echo off\n' > "$INSTALL_DIR/run.bat"
+    printf '' > "$INSTALL_DIR/user_jvm_args.txt"
+  fi
+else
+  # Default: packwiz installer behavior (for -s server/both)
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -s) SIDE="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  mkdir -p mods
+  cat > "mods/${SIDE}-installed.txt" <<JAVAINSTALL
 installed=$SIDE
 JAVAINSTALL
-"#,
+fi
+"##,
                     );
                 }
 
