@@ -343,6 +343,11 @@ impl PackwizOps for MockPackwizOps {
         }
         let pack_dir = workdir.join("pack");
         let pack_file = pack_dir.join("pack.toml");
+        let loader_line = if modloader == "none" {
+            String::new()
+        } else {
+            format!("{} = \"{}\"\n", modloader, loader_version)
+        };
         let default_pack_toml = format!(
             r#"name = "{}"
 author = "{}"
@@ -356,9 +361,8 @@ hash = ""
 
 [versions]
 minecraft = "{}"
-{} = "{}"
-"#,
-            name, author, version, mc_version, modloader, loader_version
+{}"#,
+            name, author, version, mc_version, loader_line
         );
         self.filesystem
             .lock()

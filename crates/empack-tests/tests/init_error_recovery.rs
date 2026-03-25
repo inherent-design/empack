@@ -350,9 +350,13 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
                 "Fallback init must produce empack.yml"
             );
             let empack_yml = std::fs::read_to_string(project_dir.join("empack.yml"))?;
+            // With --yes and no --modloader flag, the interactive provider
+            // auto-selects index 0 which is "none (vanilla)". Vanilla packs
+            // omit the loader field from empack.yml entirely.
             assert!(
-                empack_yml.contains("loader:"),
-                "empack.yml should contain a loader field, got: {}",
+                empack_yml.contains("minecraft_version:")
+                    || empack_yml.contains("loader:"),
+                "empack.yml should contain minecraft_version or loader, got: {}",
                 empack_yml
             );
         }

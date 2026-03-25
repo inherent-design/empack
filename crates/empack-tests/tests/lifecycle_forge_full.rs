@@ -313,8 +313,9 @@ async fn test_forge_modloader_initialization() -> Result<()> {
     use empack_lib::application::session_mocks::MockInteractiveProvider;
 
     // Create interactive provider that selects Forge loader
+    // Loader list: [none (vanilla), NeoForge, Fabric, Forge, Quilt]
     let interactive = MockInteractiveProvider::new()
-        .with_select(2) // Assume Forge is index 2 in loader list (Fabric, NeoForge, Forge, Quilt)
+        .with_select(3) // Forge is index 3 after "none (vanilla)" prefix
         .with_fuzzy_select(0); // Select first MC version
 
     let (session, test_env) = HermeticSessionBuilder::new()?

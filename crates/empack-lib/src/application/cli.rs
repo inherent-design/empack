@@ -55,12 +55,12 @@ pub enum Commands {
         #[arg(short, long, help = "Force overwrite existing modpack files")]
         force: bool,
 
-        /// Mod loader (neoforge, fabric, forge, quilt)
+        /// Mod loader (neoforge, fabric, forge, quilt, none)
         #[arg(
             long,
             short = 'm',
             env = "EMPACK_MODLOADER",
-            help = "Mod loader to use (skips interactive prompt)"
+            help = "Mod loader to use (none for vanilla; skips interactive prompt)"
         )]
         modloader: Option<String>,
 
