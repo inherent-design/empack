@@ -50,7 +50,7 @@ pub struct AddResolution {
     pub commands: Vec<Vec<String>>,
     pub resolved_project_id: String,
     pub resolved_platform: ProjectPlatform,
-    pub resolved_project_type: ProjectType,
+    pub resolved_project_type: Option<ProjectType>,
     pub confidence: Option<u8>,
 }
 
@@ -163,7 +163,7 @@ pub async fn resolve_add_contract(
             direct_platform,
             search_query.to_string(),
             None,
-            project_type.unwrap_or(ProjectType::Mod),
+            project_type,
         )
     } else {
         let pt_arg = project_type.map(project_type_arg);
@@ -191,7 +191,7 @@ pub async fn resolve_add_contract(
             project.platform,
             project.title,
             Some(project.confidence),
-            resolved,
+            Some(resolved),
         )
     };
 
