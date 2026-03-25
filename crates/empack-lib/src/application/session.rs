@@ -233,7 +233,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
                 && let Some(extension) = path.extension()
             {
                 match extension.to_str() {
-                    Some("mrpack") | Some("zip") | Some("jar") => return Ok(true),
+                    Some("mrpack") | Some("zip") | Some("jar") | Some("gz") => return Ok(true),
                     _ => continue,
                 }
             }

@@ -154,45 +154,42 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         }
     }
 
-    // Check archiving capabilities
+    // Check archiving capabilities as two separate concerns:
+    // 1. mrpack extraction requires unzip specifically (tar cannot extract zip files)
+    // 2. Distribution creation accepts zip or tar
     let create_caps = ArchiverCapabilities::detect_creation();
     let extract_caps = ArchiverCapabilities::detect_extraction();
 
-    let can_create = create_caps.iter().any(|p| p.available);
-    let can_extract = extract_caps.iter().any(|p| p.available);
-
-    if can_create {
-        let available: Vec<String> = create_caps
-            .iter()
-            .filter(|p| p.available)
-            .map(|p| p.name.clone())
-            .collect();
-        session.display().status().success(
-            "archive creation",
-            &format!("{} available", available.join(", ")),
-        );
-    } else {
+    let has_unzip = extract_caps.iter().any(|p| p.name == "unzip" && p.available);
+    if has_unzip {
         session
             .display()
             .status()
-            .error("archive creation", "no tools found");
+            .success("mrpack extraction", "unzip available");
+    } else {
+        session.display().status().error(
+            "mrpack extraction",
+            "unzip not found (required for server/client builds)",
+        );
     }
 
-    if can_extract {
-        let available: Vec<String> = extract_caps
-            .iter()
-            .filter(|p| p.available)
-            .map(|p| p.name.clone())
-            .collect();
+    let has_zip = create_caps.iter().any(|p| p.name == "zip" && p.available);
+    let has_tar = create_caps.iter().any(|p| p.name == "tar" && p.available);
+    if has_zip {
         session.display().status().success(
-            "archive extraction",
-            &format!("{} available", available.join(", ")),
+            "distribution creation",
+            "zip available",
+        );
+    } else if has_tar {
+        session.display().status().success(
+            "distribution creation",
+            "tar available (distributions will be .tar.gz instead of .zip)",
         );
     } else {
-        session
-            .display()
-            .status()
-            .error("archive extraction", "no tools found");
+        session.display().status().error(
+            "distribution creation",
+            "no tools found (zip or tar required)",
+        );
     }
 
     Ok(())
