@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod builds;
 pub mod config;
 pub mod fuzzy;
@@ -9,6 +10,7 @@ pub mod templates;
 pub mod versions;
 
 // Re-export main types for convenience
+pub use archive::{ArchiveError, ArchiveFormat};
 pub use builds::{BuildOrchestrator, BuildResult, PackInfo};
 pub use config::{
     ConfigManager, Dependency, DependencyEntry, DependencyRecord, DependencySearch,

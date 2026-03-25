@@ -124,7 +124,7 @@ async fn test_resolve_add_contract_matches_sync_search_resolution() {
 
     let add_resolution = resolve_add_contract(
         "Sodium",
-        ProjectType::Mod,
+        Some(ProjectType::Mod),
         Some("1.21.1"),
         Some(ModLoader::Fabric),
         "",
@@ -175,7 +175,7 @@ async fn test_resolve_add_contract_matches_sync_curseforge_version_pin() {
 
     let add_resolution = resolve_add_contract(
         "Just Enough Items",
-        ProjectType::Mod,
+        Some(ProjectType::Mod),
         Some("1.21.1"),
         Some(ModLoader::Forge),
         "238222",
@@ -226,7 +226,7 @@ async fn test_resolve_add_contract_matches_sync_modrinth_version_pin() {
 
     let add_resolution = resolve_add_contract(
         "Sodium",
-        ProjectType::Mod,
+        Some(ProjectType::Mod),
         Some("1.21.1"),
         Some(ModLoader::Fabric),
         "AANobbMI",
@@ -275,7 +275,7 @@ async fn test_resolve_add_contract_wraps_resolver_failures() {
 
     let error = resolve_add_contract(
         "Missing Mod",
-        ProjectType::Mod,
+        Some(ProjectType::Mod),
         Some("1.21.1"),
         Some(ModLoader::Fabric),
         "",
@@ -512,7 +512,7 @@ async fn test_resolve_add_contract_modrinth_search_resolution() {
 
     let resolution = resolve_add_contract(
         "Sodium",
-        ProjectType::Mod,
+        Some(ProjectType::Mod),
         Some("1.21.1"),
         Some(ModLoader::Fabric),
         "",
@@ -539,7 +539,7 @@ async fn test_resolve_add_contract_curseforge_direct_id() {
 
     let resolution = resolve_add_contract(
         "Just Enough Items",
-        ProjectType::Mod,
+        Some(ProjectType::Mod),
         Some("1.21.1"),
         Some(ModLoader::Forge),
         "238222",
@@ -566,7 +566,7 @@ async fn test_resolve_add_contract_modrinth_direct_id_with_version_pin() {
 
     let resolution = resolve_add_contract(
         "Sodium",
-        ProjectType::Mod,
+        Some(ProjectType::Mod),
         Some("1.21.1"),
         Some(ModLoader::Fabric),
         "AANobbMI",
@@ -593,7 +593,7 @@ async fn test_resolve_add_contract_search_failure() {
 
     let err = resolve_add_contract(
         "NonexistentMod",
-        ProjectType::Mod,
+        Some(ProjectType::Mod),
         Some("1.21.1"),
         Some(ModLoader::Fabric),
         "",

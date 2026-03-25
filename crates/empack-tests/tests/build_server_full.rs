@@ -50,20 +50,6 @@ async fn initialize_empack_project(
                 stderr: String::new(),
             },
         )?
-        .with_mock_executable(
-            "unzip",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Extracted mock mrpack".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "zip",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Created server-full archive".to_string(),
-                stderr: String::new(),
-            },
-        )?
         .build()?;
 
     init_display(&session)?;
