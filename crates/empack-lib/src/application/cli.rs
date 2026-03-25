@@ -121,9 +121,9 @@ pub enum Commands {
         #[arg(short, long, help = "Clean build directories before building")]
         clean: bool,
 
-        /// Parallel build processes
-        #[arg(short = 'j', long, help = "Number of parallel build processes")]
-        jobs: Option<usize>,
+        /// Archive format for distribution packages
+        #[arg(long, value_enum, default_value = "zip")]
+        format: CliArchiveFormat,
     },
 
     /// Add projects to the modpack
@@ -182,6 +182,26 @@ pub enum SearchPlatform {
     Curseforge,
     /// Search both platforms
     Both,
+}
+
+/// Archive format for distribution packages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CliArchiveFormat {
+    Zip,
+    #[value(name = "tar.gz")]
+    TarGz,
+    #[value(name = "7z")]
+    SevenZ,
+}
+
+impl CliArchiveFormat {
+    pub fn to_archive_format(&self) -> crate::empack::archive::ArchiveFormat {
+        match self {
+            CliArchiveFormat::Zip => crate::empack::archive::ArchiveFormat::Zip,
+            CliArchiveFormat::TarGz => crate::empack::archive::ArchiveFormat::TarGz,
+            CliArchiveFormat::SevenZ => crate::empack::archive::ArchiveFormat::SevenZ,
+        }
+    }
 }
 
 /// Project type filter for the add command.

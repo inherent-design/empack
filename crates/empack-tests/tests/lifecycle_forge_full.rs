@@ -3,7 +3,7 @@
 //! Tests the full workflow: init → add → build → clean with Forge modloader
 
 use anyhow::Result;
-use empack_lib::application::cli::Commands;
+use empack_lib::application::cli::{CliArchiveFormat, Commands};
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::display::Display;
 use empack_lib::empack::search::ProjectInfo;
@@ -196,7 +196,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         Commands::Build {
             targets: vec!["all".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )

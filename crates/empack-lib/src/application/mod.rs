@@ -14,6 +14,6 @@ pub mod sync;
 pub mod session_mocks;
 
 // Re-export main types for convenience
-pub use cli::{Cli, CliConfig, Commands};
+pub use cli::{Cli, CliArchiveFormat, CliConfig, Commands};
 pub use commands::{execute_command, execute_command_with_session};
 pub use config::AppConfig;

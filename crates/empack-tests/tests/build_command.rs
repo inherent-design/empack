@@ -4,7 +4,7 @@
 //! to validate build workflows without requiring external packwiz installation.
 
 use anyhow::Result;
-use empack_lib::application::cli::Commands;
+use empack_lib::application::cli::{CliArchiveFormat, Commands};
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::config::AppConfig;
 use empack_lib::application::session::{
@@ -53,7 +53,7 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
         Commands::Build {
             targets: vec!["mrpack".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )
@@ -148,7 +148,7 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
         Commands::Build {
             targets: vec!["mrpack".to_string()],
             clean: true,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )
@@ -276,7 +276,7 @@ async fn e2e_build_packwiz_refresh_fails() -> Result<()> {
         Commands::Build {
             targets: vec!["mrpack".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )
@@ -362,7 +362,7 @@ async fn e2e_build_packwiz_export_fails() -> Result<()> {
         Commands::Build {
             targets: vec!["mrpack".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )

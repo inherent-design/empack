@@ -1,6 +1,7 @@
 //! Hermetic E2E tests for the server build target.
 
 use anyhow::Result;
+use empack_lib::application::cli::CliArchiveFormat;
 use empack_lib::application::Commands;
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::session::{
@@ -89,7 +90,7 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
         Commands::Build {
             targets: vec!["server".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )
@@ -169,7 +170,7 @@ async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
         Commands::Build {
             targets: vec!["server".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )
@@ -229,7 +230,7 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
         Commands::Build {
             targets: vec!["server".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )

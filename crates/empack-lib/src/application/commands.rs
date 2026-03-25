@@ -121,8 +121,8 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
         Commands::Build {
             targets,
             clean,
-            jobs: _,
-        } => handle_build(session, targets, clean).await,
+            format,
+        } => handle_build(session, targets, clean, format.to_archive_format()).await,
         Commands::Clean { targets } => handle_clean(session, targets).await,
         Commands::Sync {} => handle_sync(session).await,
     }
@@ -1132,11 +1132,24 @@ async fn handle_add(
     }
 
     // === Execute phase: all side effects happen below this line ===
+    let all_content_folders: &[&str] = &["mods", "resourcepacks", "shaderpacks", "datapacks"];
     for resolved in resolved_mods {
-        let content_dir = workdir
-            .join("pack")
-            .join(content_folder_for_type(resolved.resolution.resolved_project_type));
-        let before_slugs = scan_pw_toml_slugs(session.filesystem(), &content_dir);
+        let (scan_folders, before_slugs) = match resolved.resolution.resolved_project_type {
+            Some(pt) => {
+                let folder = content_folder_for_type(pt);
+                let dir = workdir.join("pack").join(folder);
+                let slugs = scan_pw_toml_slugs(session.filesystem(), &dir);
+                (vec![folder], slugs)
+            }
+            None => {
+                let mut slugs = HashSet::new();
+                for folder in all_content_folders {
+                    let dir = workdir.join("pack").join(folder);
+                    slugs.extend(scan_pw_toml_slugs(session.filesystem(), &dir));
+                }
+                (all_content_folders.to_vec(), slugs)
+            }
+        };
 
         let mut packwiz_result: std::result::Result<(), ()> = Ok(());
         let mut last_error = None;
@@ -1172,13 +1185,21 @@ async fn handle_add(
 
                 // Derive dep_key from the actual .pw.toml file that packwiz created,
                 // rather than from user input which may diverge from the registry slug.
-                let dep_key = discover_dep_key(
-                    session.filesystem(),
-                    &content_dir,
-                    &before_slugs,
-                    &resolved.dep_key,
-                    session.display(),
-                );
+                let mut dep_key = resolved.dep_key.clone();
+                for folder in &scan_folders {
+                    let dir = workdir.join("pack").join(folder);
+                    let found = discover_dep_key(
+                        session.filesystem(),
+                        &dir,
+                        &before_slugs,
+                        &resolved.dep_key,
+                        session.display(),
+                    );
+                    if found != resolved.dep_key {
+                        dep_key = found;
+                        break;
+                    }
+                }
 
                 // Update dependency graph with newly added mod
                 // Rebuild from directory to capture new .pw.toml files
@@ -1212,7 +1233,8 @@ async fn handle_add(
                     title: resolved.resolution.title.clone(),
                     platform: resolved.resolution.resolved_platform,
                     project_id: resolved.resolution.resolved_project_id.clone(),
-                    project_type: resolved.resolution.resolved_project_type,
+                    project_type: resolved.resolution.resolved_project_type
+                        .unwrap_or(ProjectType::Mod),
                     version: None,
                 };
                 if let Err(e) = config_manager.add_dependency(
@@ -1732,7 +1754,12 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     Ok(())
 }
 
-async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) -> Result<()> {
+async fn handle_build(
+    session: &dyn Session,
+    targets: Vec<String>,
+    clean: bool,
+    archive_format: crate::empack::archive::ArchiveFormat,
+) -> Result<()> {
     let manager = session.state()?;
 
     // Verify we're in a configured state
@@ -1899,8 +1926,9 @@ async fn handle_build(session: &dyn Session, targets: Vec<String>, clean: bool) 
     }
 
     // Create BuildOrchestrator with session
-    let mut build_orchestrator = crate::empack::builds::BuildOrchestrator::new(session)
-        .context("Failed to create build orchestrator")?;
+    let mut build_orchestrator =
+        crate::empack::builds::BuildOrchestrator::new(session, archive_format)
+            .context("Failed to create build orchestrator")?;
 
     // Execute build pipeline with state management
     build_orchestrator
