@@ -479,20 +479,20 @@ impl<'a> BuildOrchestrator<'a> {
 
         let install_dir_flag = format!("--install-dir={}", dist_dir.to_string_lossy());
         let installer_path_str = installer_path.to_string_lossy().to_string();
-        let loader_flag = format!("--loader-version={}", pack_info.loader_version);
         let mut args = vec![
             "-jar",
             &installer_path_str,
             "install",
             "server",
             &pack_info.mc_version,
-            &install_dir_flag,
-            "--create-scripts",
-            "--download-server",
         ];
+        // Loader version is a POSITIONAL arg for Quilt (not a flag)
         if !pack_info.loader_version.is_empty() {
-            args.push(&loader_flag);
+            args.push(&pack_info.loader_version);
         }
+        args.push(&install_dir_flag);
+        args.push("--create-scripts");
+        args.push("--download-server");
         let output = self
             .session
             .process()
@@ -592,6 +592,12 @@ impl<'a> BuildOrchestrator<'a> {
         // Clean up installer JAR from the distribution
         let _ = self.session.filesystem().remove_file(&installer_path);
 
+        for entry in self.session.filesystem().get_file_list(dist_dir).unwrap_or_default() {
+            if entry.extension().is_some_and(|e| e == "log") {
+                let _ = self.session.filesystem().remove_file(&entry);
+            }
+        }
+
         self.download_server_starter_jar(dist_dir)
     }
 
@@ -638,6 +644,12 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         let _ = self.session.filesystem().remove_file(&installer_path);
+
+        for entry in self.session.filesystem().get_file_list(dist_dir).unwrap_or_default() {
+            if entry.extension().is_some_and(|e| e == "log") {
+                let _ = self.session.filesystem().remove_file(&entry);
+            }
+        }
 
         self.download_server_starter_jar(dist_dir)
     }
@@ -1416,6 +1428,11 @@ impl<'a> BuildOrchestrator<'a> {
             }
 
             results.push(result);
+        }
+
+        let temp_extract = self.dist_dir.join("temp-mrpack-extract");
+        if self.session.filesystem().exists(&temp_extract) {
+            let _ = self.session.filesystem().remove_dir_all(&temp_extract);
         }
 
         Ok(results)
