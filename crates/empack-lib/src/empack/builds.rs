@@ -39,17 +39,6 @@ struct MojangDownloadInfo {
 }
 
 #[derive(Deserialize)]
-struct FabricLoaderEntry {
-    loader: FabricLoaderInfo,
-}
-
-#[derive(Deserialize)]
-struct FabricLoaderInfo {
-    version: String,
-    stable: bool,
-}
-
-#[derive(Deserialize)]
 struct FabricInstallerEntry {
     version: String,
     stable: bool,
@@ -360,35 +349,16 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    /// Download a pre-built Fabric server JAR from the Fabric Meta API.
+    /// Download and run the Fabric server installer.
     ///
-    /// Resolves the loader and installer versions, then downloads the merged
-    /// server JAR directly (no Java required).
+    /// Resolves the latest stable installer version from the Fabric Meta API,
+    /// downloads the installer JAR from Maven, then invokes it with `java -jar`
+    /// to produce a self-contained server (no internet needed at runtime).
     fn install_fabric_server(
         &self,
         dist_dir: &Path,
         pack_info: &PackInfo,
     ) -> Result<(), BuildError> {
-        let mc = &pack_info.mc_version;
-
-        let loader_version = if pack_info.loader_version.is_empty() {
-            let url = format!("https://meta.fabricmc.net/v2/versions/loader/{}", mc);
-            let text = self.fetch_url_text(&url)?;
-            let entries: Vec<FabricLoaderEntry> =
-                serde_json::from_str(&text).map_err(|e| BuildError::ConfigError {
-                    reason: format!("failed to parse Fabric loader versions: {}", e),
-                })?;
-            entries
-                .iter()
-                .find(|e| e.loader.stable)
-                .map(|e| e.loader.version.clone())
-                .ok_or_else(|| BuildError::ConfigError {
-                    reason: "no stable Fabric loader version found".to_string(),
-                })?
-        } else {
-            pack_info.loader_version.clone()
-        };
-
         let installer_text =
             self.fetch_url_text("https://meta.fabricmc.net/v2/versions/installer")?;
         let installers: Vec<FabricInstallerEntry> =
@@ -403,11 +373,72 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: "no stable Fabric installer version found".to_string(),
             })?;
 
-        let jar_url = format!(
-            "https://meta.fabricmc.net/v2/versions/loader/{}/{}/{}/server/jar",
-            mc, loader_version, installer_version
+        let installer_filename = format!("fabric-installer-{}.jar", installer_version);
+        let installer_url = format!(
+            "https://maven.fabricmc.net/net/fabricmc/fabric-installer/{v}/{f}",
+            v = installer_version,
+            f = installer_filename
         );
-        self.download_file(&jar_url, &dist_dir.join("srv.jar"))
+        let installer_path = dist_dir.join(&installer_filename);
+        self.download_file(&installer_url, &installer_path)?;
+
+        let installer_path_str = installer_path.to_string_lossy().to_string();
+        let dist_dir_str = dist_dir.to_string_lossy().to_string();
+        let mut args = vec![
+            "-jar",
+            &installer_path_str,
+            "server",
+            "-dir",
+            &dist_dir_str,
+            "-mcversion",
+            &pack_info.mc_version,
+            "-downloadMinecraft",
+        ];
+        let loader_flag;
+        if !pack_info.loader_version.is_empty() {
+            loader_flag = pack_info.loader_version.clone();
+            args.insert(args.len() - 1, "-loader");
+            args.insert(args.len() - 1, &loader_flag);
+        }
+        let output = self
+            .session
+            .process()
+            .execute("java", &args, dist_dir)
+            .map_err(|_| BuildError::MissingTool {
+                tool: "java".to_string(),
+            })?;
+
+        if !output.success {
+            return Err(BuildError::CommandFailed {
+                command: format!("fabric installer failed: {}", output.stderr),
+            });
+        }
+
+        let launcher_jar = dist_dir.join("fabric-server-launch.jar");
+        if !self.session.filesystem().exists(&launcher_jar) {
+            return Err(BuildError::ValidationError {
+                reason: "Fabric installer did not produce fabric-server-launch.jar".to_string(),
+            });
+        }
+
+        let srv_jar = dist_dir.join("srv.jar");
+        let bytes = self
+            .session
+            .filesystem()
+            .read_bytes(&launcher_jar)
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to read fabric-server-launch.jar for rename: {}", e),
+            })?;
+        self.session
+            .filesystem()
+            .write_bytes(&srv_jar, &bytes)
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to write srv.jar: {}", e),
+            })?;
+        let _ = self.session.filesystem().remove_file(&launcher_jar);
+
+        let _ = self.session.filesystem().remove_file(&installer_path);
+        Ok(())
     }
 
     /// Download and run the Quilt server installer.
@@ -468,26 +499,28 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
-        // Quilt creates quilt-server-launch.jar and server.jar; rename
-        // server.jar to srv.jar for consistency across loaders.
-        let server_jar = dist_dir.join("server.jar");
-        let srv_jar = dist_dir.join("srv.jar");
-        if self.session.filesystem().exists(&server_jar) && !self.session.filesystem().exists(&srv_jar) {
-            let bytes = self
-                .session
-                .filesystem()
-                .read_bytes(&server_jar)
-                .map_err(|e| BuildError::ConfigError {
-                    reason: format!("failed to read server.jar for rename: {}", e),
-                })?;
-            self.session
-                .filesystem()
-                .write_bytes(&srv_jar, &bytes)
-                .map_err(|e| BuildError::ConfigError {
-                    reason: format!("failed to write srv.jar: {}", e),
-                })?;
-            let _ = self.session.filesystem().remove_file(&server_jar);
+        let launcher_jar = dist_dir.join("quilt-server-launch.jar");
+        if !self.session.filesystem().exists(&launcher_jar) {
+            return Err(BuildError::ValidationError {
+                reason: "Quilt installer did not produce quilt-server-launch.jar".to_string(),
+            });
         }
+
+        let srv_jar = dist_dir.join("srv.jar");
+        let bytes = self
+            .session
+            .filesystem()
+            .read_bytes(&launcher_jar)
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to read quilt-server-launch.jar for rename: {}", e),
+            })?;
+        self.session
+            .filesystem()
+            .write_bytes(&srv_jar, &bytes)
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("failed to write srv.jar: {}", e),
+            })?;
+        let _ = self.session.filesystem().remove_file(&launcher_jar);
 
         let _ = self.session.filesystem().remove_file(&installer_path);
         Ok(())

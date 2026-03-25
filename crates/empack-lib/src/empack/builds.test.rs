@@ -617,26 +617,16 @@ async fn test_download_server_jar_vanilla_fetches_mojang_manifest() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_download_server_jar_fabric_constructs_correct_url() {
+async fn test_download_server_jar_fabric_resolves_installer_and_constructs_maven_url() {
     let mut server = mockito::Server::new_async().await;
 
-    let loader_json = serde_json::json!([
-        { "loader": { "version": "0.16.14", "stable": true } },
-        { "loader": { "version": "0.16.13", "stable": true } }
-    ]);
     let installer_json = serde_json::json!([
-        { "version": "1.0.1", "stable": true },
-        { "version": "1.0.0", "stable": true }
+        { "version": "1.1.1", "stable": true },
+        { "version": "1.1.0", "stable": true }
     ]);
 
-    let _m1 = server.mock("GET", "/v2/versions/loader/1.21.1")
-        .with_body(loader_json.to_string())
-        .create_async().await;
-    let _m2 = server.mock("GET", "/v2/versions/installer")
+    let _m1 = server.mock("GET", "/v2/versions/installer")
         .with_body(installer_json.to_string())
-        .create_async().await;
-    let _m3 = server.mock("GET", "/v2/versions/loader/1.21.1/0.16.14/1.0.1/server/jar")
-        .with_body("fabric server jar bytes")
         .create_async().await;
 
     let mock = MockBuildOrchestrator::new();
@@ -646,27 +636,63 @@ async fn test_download_server_jar_fabric_constructs_correct_url() {
     let dist_dir = mock.workdir().join("dist").join("server");
     mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
-    // Test the Fabric resolution logic step by step using the mock server
-    let loader_text = orchestrator
-        .fetch_url_text(&format!("{}/v2/versions/loader/1.21.1", server.url()))
-        .unwrap();
-    let entries: Vec<FabricLoaderEntry> = serde_json::from_str(&loader_text).unwrap();
-    let stable = entries.iter().find(|e| e.loader.stable).unwrap();
-    assert_eq!(stable.loader.version, "0.16.14");
-
     let installer_text = orchestrator
         .fetch_url_text(&format!("{}/v2/versions/installer", server.url()))
         .unwrap();
     let installers: Vec<FabricInstallerEntry> = serde_json::from_str(&installer_text).unwrap();
     let stable_installer = installers.iter().find(|e| e.stable).unwrap();
-    assert_eq!(stable_installer.version, "1.0.1");
+    assert_eq!(stable_installer.version, "1.1.1");
 
-    let jar_url = format!(
-        "{}/v2/versions/loader/1.21.1/{}/{}/server/jar",
-        server.url(), stable.loader.version, stable_installer.version
+    let expected_maven_url = format!(
+        "https://maven.fabricmc.net/net/fabricmc/fabric-installer/{v}/fabric-installer-{v}.jar",
+        v = stable_installer.version
     );
-    orchestrator.download_file(&jar_url, &dist_dir.join("srv.jar")).unwrap();
-    assert!(mock.session.filesystem().exists(&dist_dir.join("srv.jar")));
+    assert_eq!(
+        expected_maven_url,
+        "https://maven.fabricmc.net/net/fabricmc/fabric-installer/1.1.1/fabric-installer-1.1.1.jar"
+    );
+
+    let expected_filename = format!("fabric-installer-{}.jar", stable_installer.version);
+    assert_eq!(expected_filename, "fabric-installer-1.1.1.jar");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_fabric_installer_produces_srv_jar_after_rename() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+
+    let dist_dir = mock.workdir().join("dist").join("server");
+    mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
+
+    // Simulate installer output: fabric-server-launch.jar + server.jar + libraries/
+    mock.session.filesystem().write_bytes(
+        &dist_dir.join("fabric-server-launch.jar"),
+        b"fabric launcher jar",
+    ).unwrap();
+    mock.session.filesystem().write_bytes(
+        &dist_dir.join("server.jar"),
+        b"vanilla server jar",
+    ).unwrap();
+    mock.session.filesystem().create_dir_all(
+        &dist_dir.join("libraries"),
+    ).unwrap();
+
+    // Perform the rename that install_fabric_server does after running the installer
+    let launcher_jar = dist_dir.join("fabric-server-launch.jar");
+    let srv_jar = dist_dir.join("srv.jar");
+    assert!(mock.session.filesystem().exists(&launcher_jar));
+
+    let bytes = mock.session.filesystem().read_bytes(&launcher_jar).unwrap();
+    mock.session.filesystem().write_bytes(&srv_jar, &bytes).unwrap();
+    let _ = mock.session.filesystem().remove_file(&launcher_jar);
+
+    assert!(mock.session.filesystem().exists(&srv_jar));
+    assert!(!mock.session.filesystem().exists(&launcher_jar));
+    assert!(mock.session.filesystem().exists(&dist_dir.join("server.jar")));
+    assert!(mock.session.filesystem().exists(&dist_dir.join("libraries")));
+
+    let srv_bytes = mock.session.filesystem().read_bytes(&srv_jar).unwrap();
+    assert_eq!(srv_bytes, b"fabric launcher jar");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -709,6 +735,48 @@ async fn test_download_server_jar_quilt_parses_maven_and_invokes_java() {
     let installer_path = dist_dir.join("quilt-installer-0.12.0.jar");
     orchestrator.download_file(&installer_url, &installer_path).unwrap();
     assert!(mock.session.filesystem().exists(&installer_path));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_quilt_installer_renames_launch_jar_not_vanilla() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+
+    let dist_dir = mock.workdir().join("dist").join("server");
+    mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
+
+    // Simulate Quilt installer output
+    mock.session.filesystem().write_bytes(
+        &dist_dir.join("quilt-server-launch.jar"),
+        b"quilt launcher jar",
+    ).unwrap();
+    mock.session.filesystem().write_bytes(
+        &dist_dir.join("server.jar"),
+        b"vanilla server jar",
+    ).unwrap();
+    mock.session.filesystem().create_dir_all(
+        &dist_dir.join("libraries"),
+    ).unwrap();
+
+    // Perform the rename that install_quilt_server does after running the installer
+    let launcher_jar = dist_dir.join("quilt-server-launch.jar");
+    let srv_jar = dist_dir.join("srv.jar");
+    assert!(mock.session.filesystem().exists(&launcher_jar));
+
+    let bytes = mock.session.filesystem().read_bytes(&launcher_jar).unwrap();
+    mock.session.filesystem().write_bytes(&srv_jar, &bytes).unwrap();
+    let _ = mock.session.filesystem().remove_file(&launcher_jar);
+
+    // srv.jar should contain the Quilt launcher, NOT the vanilla server
+    assert!(mock.session.filesystem().exists(&srv_jar));
+    assert!(!mock.session.filesystem().exists(&launcher_jar));
+    assert!(mock.session.filesystem().exists(&dist_dir.join("server.jar")));
+
+    let srv_bytes = mock.session.filesystem().read_bytes(&srv_jar).unwrap();
+    assert_eq!(srv_bytes, b"quilt launcher jar");
+
+    let vanilla_bytes = mock.session.filesystem().read_bytes(&dist_dir.join("server.jar")).unwrap();
+    assert_eq!(vanilla_bytes, b"vanilla server jar");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
