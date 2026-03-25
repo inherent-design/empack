@@ -95,6 +95,7 @@ async fn e2e_add_mod_successfully() -> Result<()> {
             mods: vec!["sodium".to_string()],
             force: false,
             platform: None,
+            project_type: None,
         },
         &session,
     )

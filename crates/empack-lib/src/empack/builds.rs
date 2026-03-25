@@ -882,45 +882,15 @@ impl<'a> BuildOrchestrator<'a> {
                     reason: e.to_string(),
                 })?;
         }
-        self.session
-            .filesystem()
-            .create_dir_all(&temp_extract_dir)
-            .map_err(|e| BuildError::ConfigError {
-                reason: e.to_string(),
+        crate::empack::archive::extract_zip(&mrpack_file, &temp_extract_dir)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("extract mrpack: {}", e),
             })?;
-
-        let output = self
-            .session
-            .process()
-            .execute(
-                "unzip",
-                &[
-                    "-q",
-                    &mrpack_file.to_string_lossy(),
-                    "-d",
-                    &temp_extract_dir.to_string_lossy(),
-                ],
-                &self.workdir,
-            )
-            .map_err(|_| BuildError::MissingTool {
-                tool: "unzip (required for .mrpack extraction)".into(),
-            })?;
-
-        if !output.success {
-            return Err(BuildError::CommandFailed {
-                command: format!("unzip mrpack: {}", output.stderr),
-            });
-        }
 
         self.mrpack_extracted = true;
         Ok(())
     }
 
-    /// Create distribution archive from a build target directory.
-    ///
-    /// Tries `zip -r0` first. Falls back to `tar czf` when zip is unavailable,
-    /// producing a `.tar.gz` archive instead. The returned path reflects the
-    /// actual format chosen.
     fn zip_distribution(&self, target: BuildTarget) -> Result<PathBuf, BuildError> {
         let pack_info = self
             .pack_info
@@ -944,28 +914,14 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
-        let has_zip = self.session.process().find_program("zip").is_some();
-        let has_tar = self.session.process().find_program("tar").is_some();
-
-        let (filename, tool) = if has_zip {
-            (
-                format!("{}-v{}-{}.zip", pack_info.name, pack_info.version, target),
-                "zip",
-            )
-        } else if has_tar {
-            (
-                format!(
-                    "{}-v{}-{}.tar.gz",
-                    pack_info.name, pack_info.version, target
-                ),
-                "tar",
-            )
-        } else {
-            return Err(BuildError::MissingTool {
-                tool: "zip or tar (required for distribution packaging)".into(),
-            });
-        };
-
+        let format = crate::empack::archive::ArchiveFormat::Zip;
+        let filename = format!(
+            "{}-v{}-{}.{}",
+            pack_info.name,
+            pack_info.version,
+            target,
+            format.extension()
+        );
         let archive_path = self.dist_dir.join(&filename);
 
         if self.session.filesystem().exists(&archive_path) {
@@ -977,34 +933,10 @@ impl<'a> BuildOrchestrator<'a> {
                 })?;
         }
 
-        let output = if tool == "zip" {
-            self.session.process().execute(
-                "zip",
-                &["-r0", &archive_path.to_string_lossy(), "./"],
-                &dist_dir,
-            )
-        } else {
-            self.session.process().execute(
-                "tar",
-                &[
-                    "czf",
-                    &archive_path.to_string_lossy(),
-                    "-C",
-                    &dist_dir.to_string_lossy(),
-                    ".",
-                ],
-                &self.workdir,
-            )
-        }
-        .map_err(|e| BuildError::CommandFailed {
-            command: format!("{} {}: {}", tool, filename, e),
-        })?;
-
-        if !output.success {
-            return Err(BuildError::CommandFailed {
-                command: format!("{} {}: {}", tool, filename, output.stderr),
-            });
-        }
+        crate::empack::archive::create_archive(&dist_dir, &archive_path, format)
+            .map_err(|e| BuildError::CommandFailed {
+                command: format!("create distribution archive: {}", e),
+            })?;
 
         Ok(archive_path)
     }
@@ -1540,20 +1472,17 @@ impl<'a> BuildOrchestrator<'a> {
             }
         }
 
-        // Clean distribution archives (.zip and .tar.gz)
         if let Some(info) = pack_info {
-            for ext in &["zip", "tar.gz"] {
-                let archive_file = self
-                    .dist_dir
-                    .join(format!("{}-v{}-{}.{}", info.name, info.version, target, ext));
-                if self.session.filesystem().exists(&archive_file) {
-                    self.session
-                        .filesystem()
-                        .remove_file(&archive_file)
-                        .map_err(|e| BuildError::ConfigError {
-                            reason: e.to_string(),
-                        })?;
-                }
+            let archive_file = self
+                .dist_dir
+                .join(format!("{}-v{}-{}.zip", info.name, info.version, target));
+            if self.session.filesystem().exists(&archive_file) {
+                self.session
+                    .filesystem()
+                    .remove_file(&archive_file)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: e.to_string(),
+                    })?;
             }
         }
 

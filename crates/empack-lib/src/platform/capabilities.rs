@@ -120,93 +120,6 @@ impl ProgramFinder {
     }
 }
 
-/// Archiver capability detector
-pub struct ArchiverCapabilities;
-
-impl ArchiverCapabilities {
-    /// Detect available archive creation capabilities
-    pub fn detect_creation() -> Vec<ProgramInfo> {
-        let mut programs = Vec::new();
-
-        #[cfg(windows)]
-        {
-            // Check PowerShell Compress-Archive
-            if Self::has_powershell_compress() {
-                programs.push(ProgramInfo {
-                    name: "powershell-compress".to_string(),
-                    available: true,
-                    version: None,
-                    path: Some("powershell".to_string()),
-                });
-            }
-
-            // Check zip.exe
-            programs.push(ProgramFinder::find("zip"));
-        }
-
-        #[cfg(unix)]
-        {
-            programs.push(ProgramFinder::find("zip"));
-            programs.push(ProgramFinder::find("tar"));
-        }
-
-        programs
-    }
-
-    /// Detect available archive extraction capabilities
-    pub fn detect_extraction() -> Vec<ProgramInfo> {
-        let mut programs = Vec::new();
-
-        #[cfg(windows)]
-        {
-            // Check PowerShell Expand-Archive
-            if Self::has_powershell_expand() {
-                programs.push(ProgramInfo {
-                    name: "powershell-expand".to_string(),
-                    available: true,
-                    version: None,
-                    path: Some("powershell".to_string()),
-                });
-            }
-
-            // Check unzip.exe
-            programs.push(ProgramFinder::find("unzip"));
-        }
-
-        #[cfg(unix)]
-        {
-            programs.push(ProgramFinder::find("unzip"));
-            programs.push(ProgramFinder::find("tar"));
-        }
-
-        programs
-    }
-
-    #[cfg(windows)]
-    fn has_powershell_compress() -> bool {
-        Command::new("powershell")
-            .args(&[
-                "-Command",
-                "Get-Command Compress-Archive -ErrorAction SilentlyContinue",
-            ])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-
-    #[cfg(windows)]
-    fn has_powershell_expand() -> bool {
-        Command::new("powershell")
-            .args(&[
-                "-Command",
-                "Get-Command Expand-Archive -ErrorAction SilentlyContinue",
-            ])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-}
-
 /// Java runtime detector
 pub struct JavaCapabilities;
 
@@ -247,8 +160,6 @@ impl ToolchainCapabilities {
         ToolchainSummary {
             go: GoCapabilities::detect(),
             java: JavaCapabilities::detect(),
-            archivers_create: ArchiverCapabilities::detect_creation(),
-            archivers_extract: ArchiverCapabilities::detect_extraction(),
         }
     }
 }
@@ -258,21 +169,9 @@ impl ToolchainCapabilities {
 pub struct ToolchainSummary {
     pub go: ProgramInfo,
     pub java: Vec<ProgramInfo>,
-    pub archivers_create: Vec<ProgramInfo>,
-    pub archivers_extract: Vec<ProgramInfo>,
 }
 
 impl ToolchainSummary {
-    /// Check if basic archiving is available
-    pub fn can_create_archives(&self) -> bool {
-        self.archivers_create.iter().any(|p| p.available)
-    }
-
-    /// Check if basic extraction is available
-    pub fn can_extract_archives(&self) -> bool {
-        self.archivers_extract.iter().any(|p| p.available)
-    }
-
     /// Check if Go toolchain is available
     pub fn has_go(&self) -> bool {
         self.go.available

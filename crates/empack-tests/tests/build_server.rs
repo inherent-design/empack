@@ -43,20 +43,6 @@ async fn initialize_empack_project(
                 stderr: String::new(),
             },
         )?
-        .with_mock_executable(
-            "unzip",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Extracted mock mrpack".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "zip",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Created server archive".to_string(),
-                stderr: String::new(),
-            },
-        )?
         .build()?;
 
     init_display(&session)?;
@@ -127,7 +113,7 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
     );
     assert!(
         server_dir.join("config").join("generated.txt").exists(),
-        "Mock unzip should supply deterministic override content"
+        "Override content should be extracted from the mrpack"
     );
     assert!(
         workdir
@@ -143,12 +129,6 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
             .iter()
             .any(|call| call.contains(" mr export ")),
         "Server build should export an mrpack before extraction: {packwiz_calls:?}"
-    );
-
-    let unzip_calls = test_env.get_mock_calls("unzip")?;
-    assert!(
-        !unzip_calls.is_empty(),
-        "Server build should extract the generated mrpack: {unzip_calls:?}"
     );
 
     Ok(())

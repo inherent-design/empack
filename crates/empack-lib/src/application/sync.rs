@@ -50,6 +50,7 @@ pub struct AddResolution {
     pub commands: Vec<Vec<String>>,
     pub resolved_project_id: String,
     pub resolved_platform: ProjectPlatform,
+    pub resolved_project_type: ProjectType,
     pub confidence: Option<u8>,
 }
 
@@ -121,7 +122,7 @@ pub async fn resolve_sync_action(
         SyncPlanAction::Add(dep) => {
             let resolution = resolve_add_contract(
                 &dep.search_query,
-                dep.project_type,
+                Some(dep.project_type),
                 Some(dep.minecraft_version.as_str()),
                 dep.loader,
                 &dep.project_id,
@@ -146,7 +147,7 @@ pub async fn resolve_sync_action(
 #[allow(clippy::too_many_arguments)]
 pub async fn resolve_add_contract(
     search_query: &str,
-    project_type: ProjectType,
+    project_type: Option<ProjectType>,
     minecraft_version: Option<&str>,
     loader: Option<ModLoader>,
     direct_project_id: &str,
@@ -155,20 +156,21 @@ pub async fn resolve_add_contract(
     preferred_platform: Option<ProjectPlatform>,
     resolver: &dyn ProjectResolverTrait,
 ) -> std::result::Result<AddResolution, AddContractError> {
-    // With the new schema, project_id and platform are always present.
-    // Use them directly for resolution.
-    let (project_id, platform, title, confidence) = if !direct_project_id.is_empty() {
+    let (project_id, platform, title, confidence, resolved_type) = if !direct_project_id.is_empty()
+    {
         (
             direct_project_id.to_string(),
             direct_platform,
             search_query.to_string(),
             None,
+            project_type.unwrap_or(ProjectType::Mod),
         )
     } else {
+        let pt_arg = project_type.map(project_type_arg);
         let project = resolver
             .resolve_project(
                 search_query,
-                Some(project_type_arg(project_type)),
+                pt_arg,
                 minecraft_version,
                 loader.map(loader_arg),
                 preferred_platform,
@@ -178,11 +180,18 @@ pub async fn resolve_add_contract(
                 query: search_query.to_string(),
                 source,
             })?;
+        let resolved = match project.project_type.as_str() {
+            "resourcepack" => ProjectType::ResourcePack,
+            "shader" => ProjectType::Shader,
+            "datapack" => ProjectType::Datapack,
+            _ => ProjectType::Mod,
+        };
         (
             project.project_id,
             project.platform,
             project.title,
             Some(project.confidence),
+            resolved,
         )
     };
 
@@ -200,6 +209,7 @@ pub async fn resolve_add_contract(
         commands,
         resolved_project_id: project_id,
         resolved_platform: platform,
+        resolved_project_type: resolved_type,
         confidence,
     })
 }

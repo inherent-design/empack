@@ -163,10 +163,15 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
         "clean-before-build should recreate the mrpack artifact in dist/: {}",
         mrpack_path.display()
     );
-    assert_eq!(
-        std::fs::read_to_string(&mrpack_path)?.trim_end(),
-        "mock mrpack artifact",
+    let rebuilt_bytes = std::fs::read(&mrpack_path)?;
+    assert_ne!(
+        rebuilt_bytes,
+        b"stale mrpack artifact",
         "clean-before-build should replace stale artifact contents with the rebuilt artifact"
+    );
+    assert!(
+        rebuilt_bytes.starts_with(b"PK"),
+        "rebuilt mrpack should be a valid zip archive"
     );
     assert!(
         !stale_server_dir.exists(),

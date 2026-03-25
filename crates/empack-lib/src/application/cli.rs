@@ -143,6 +143,10 @@ pub enum Commands {
         /// Search platform preference
         #[arg(long, value_enum, help = "Preferred platform for project resolution")]
         platform: Option<SearchPlatform>,
+
+        /// Project type to search for (skips tiered search when specified)
+        #[arg(long = "type", value_enum)]
+        project_type: Option<CliProjectType>,
     },
 
     /// Remove projects from the modpack
@@ -178,6 +182,28 @@ pub enum SearchPlatform {
     Curseforge,
     /// Search both platforms
     Both,
+}
+
+/// Project type filter for the add command.
+///
+/// When specified, skips tiered type guessing and searches for the given
+/// project type directly.
+#[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
+pub enum CliProjectType {
+    Mod,
+    #[value(name = "resourcepack")]
+    ResourcePack,
+    Shader,
+}
+
+impl CliProjectType {
+    pub fn to_project_type(&self) -> crate::primitives::ProjectType {
+        match self {
+            CliProjectType::Mod => crate::primitives::ProjectType::Mod,
+            CliProjectType::ResourcePack => crate::primitives::ProjectType::ResourcePack,
+            CliProjectType::Shader => crate::primitives::ProjectType::Shader,
+        }
+    }
 }
 
 impl std::str::FromStr for SearchPlatform {

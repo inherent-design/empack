@@ -15,6 +15,40 @@ pub enum ProjectType {
     Shader,
 }
 
+impl ProjectType {
+    /// Whether this project type uses the pack's modloader as a search facet.
+    /// Only mods are loader-specific; resource packs and shaders have their
+    /// own loader taxonomies on Modrinth (e.g. "minecraft" for resource packs,
+    /// "iris"/"optifine" for shaders).
+    pub fn uses_loader_facet(&self) -> bool {
+        matches!(self, ProjectType::Mod)
+    }
+
+    /// Modrinth project_type facet value.
+    pub fn modrinth_facet_name(&self) -> &'static str {
+        match self {
+            ProjectType::Mod => "mod",
+            ProjectType::ResourcePack => "resourcepack",
+            ProjectType::Shader => "shader",
+            ProjectType::Datapack => "datapack",
+        }
+    }
+
+    /// CurseForge classId for this project type.
+    ///
+    /// Shaders fall back to classId 6 (Mods) because most CurseForge shader
+    /// packs are distributed as mods. CurseForge does have classId 6552 for
+    /// shaders but it is unverified against the live API.
+    pub fn curseforge_class_id(&self) -> u32 {
+        match self {
+            ProjectType::Mod => 6,
+            ProjectType::ResourcePack => 12,
+            ProjectType::Shader => 6,
+            ProjectType::Datapack => 17,
+        }
+    }
+}
+
 /// Build targets for empack distribution formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

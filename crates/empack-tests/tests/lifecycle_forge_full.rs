@@ -72,20 +72,6 @@ async fn test_lifecycle_forge_full() -> Result<()> {
                 stderr: String::new(),
             },
         )?
-        .with_mock_executable(
-            "zip",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Created distribution archive".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "unzip",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Archive extracted".to_string(),
-                stderr: String::new(),
-            },
-        )?
         .build()?;
 
     // Initialize display
@@ -169,6 +155,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             mods: vec!["sodium".to_string()],
             force: false,
             platform: None, // Should auto-detect Modrinth
+            project_type: None,
         },
         &session,
     )
@@ -189,6 +176,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             mods: vec!["jei".to_string()],
             force: false,
             platform: None, // Should auto-detect or fallback to CurseForge
+            project_type: None,
         },
         &session,
     )
