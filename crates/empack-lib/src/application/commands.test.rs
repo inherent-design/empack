@@ -583,19 +583,12 @@ mod validate_init_inputs_tests {
     #[test]
     fn it_passes_with_valid_inputs() {
         let mc_versions = vec!["1.21.1".to_string(), "1.20.1".to_string()];
-        let loaders = vec![
-            crate::empack::versions::ModLoader::Fabric,
-            crate::empack::versions::ModLoader::NeoForge,
-        ];
-        let loader_versions = vec!["0.15.0".to_string(), "0.14.21".to_string()];
 
         let result = validate_init_inputs(
             "1.21.1",
             &mc_versions,
             "fabric",
-            &loaders,
             "0.15.0",
-            &loader_versions,
         );
         assert!(result.is_ok());
     }
@@ -603,56 +596,45 @@ mod validate_init_inputs_tests {
     #[test]
     fn it_rejects_unknown_mc_version() {
         let mc_versions = vec!["1.21.1".to_string()];
-        let loaders = vec![crate::empack::versions::ModLoader::Fabric];
-        let loader_versions = vec!["0.15.0".to_string()];
 
         let result = validate_init_inputs(
             "99.0.0",
             &mc_versions,
             "fabric",
-            &loaders,
             "0.15.0",
-            &loader_versions,
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("99.0.0"));
     }
 
     #[test]
-    fn it_rejects_incompatible_loader() {
+    fn it_rejects_invalid_loader_string() {
         let mc_versions = vec!["1.21.1".to_string()];
-        let loaders = vec![crate::empack::versions::ModLoader::Fabric];
-        let loader_versions = vec!["0.15.0".to_string()];
 
         let result = validate_init_inputs(
             "1.21.1",
             &mc_versions,
-            "neoforge",
-            &loaders,
+            "notaloader",
             "0.15.0",
-            &loader_versions,
         );
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("not compatible"), "Expected compatibility error, got: {}", msg);
+        assert!(msg.contains("Invalid mod loader"), "Expected invalid loader error, got: {}", msg);
     }
 
     #[test]
-    fn it_rejects_unknown_loader_version() {
+    fn it_rejects_empty_loader_version() {
         let mc_versions = vec!["1.21.1".to_string()];
-        let loaders = vec![crate::empack::versions::ModLoader::Fabric];
-        let loader_versions = vec!["0.15.0".to_string()];
 
         let result = validate_init_inputs(
             "1.21.1",
             &mc_versions,
             "fabric",
-            &loaders,
-            "0.99.0",
-            &loader_versions,
+            "",
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("0.99.0"));
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("required"), "Expected required version error, got: {}", msg);
     }
 }
 

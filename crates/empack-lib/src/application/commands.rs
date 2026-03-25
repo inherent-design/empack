@@ -46,6 +46,7 @@ fn format_empack_yml(
         minecraft_version: &'a str,
         #[serde(skip_serializing_if = "Option::is_none")]
         loader: Option<ModLoader>,
+        #[serde(skip_serializing_if = "str::is_empty")]
         loader_version: &'a str,
         dependencies: BTreeMap<String, DependencyEntry>,
     }
@@ -491,241 +492,261 @@ async fn handle_init(
         minecraft_versions[mc_version_index].clone()
     };
 
-    // Step 3: Dynamic, Filtered Mod Loader Prompt
-    session
-        .display()
-        .status()
-        .info("Finding compatible mod loaders...");
-    let compatible_loaders = match version_fetcher
-        .fetch_compatible_loaders(&minecraft_version)
-        .await
-    {
-        Ok(loaders) => {
-            session
-                .display()
-                .status()
-                .success("Found", &format!("{} compatible loaders", loaders.len()));
-            // Debug: Show which loaders were found compatible
-            let loader_names: Vec<String> =
-                loaders.iter().map(|l| l.as_str().to_string()).collect();
-            session
-                .display()
-                .status()
-                .subtle(&format!("Compatible: {}", loader_names.join(", ")));
-            loaders
-        }
-        Err(e) => {
-            session
-                .display()
-                .status()
-                .warning(&format!("Compatibility check failed: {}", e));
-            session
-                .display()
-                .status()
-                .info("Using all loaders as fallback");
-            vec![
-                crate::empack::versions::ModLoader::NeoForge,
-                crate::empack::versions::ModLoader::Fabric,
-                crate::empack::versions::ModLoader::Forge,
-                crate::empack::versions::ModLoader::Quilt,
-            ]
-        }
-    };
+    // Step 3: Mod Loader Selection
+    //
+    // Vanilla (no modloader) is supported: pass --modloader none or select
+    // "none (vanilla)" in the interactive prompt. When vanilla is chosen,
+    // loader fetching, loader version fetching, and loader version prompts
+    // are all skipped.
 
-    // Loader compatibility is already filtered by fetch_compatible_loaders above.
-    // Loaders that 404 for a given MC version are excluded from the list.
+    let is_vanilla = cli_modloader
+        .as_deref()
+        .is_some_and(|s| s.eq_ignore_ascii_case("none"));
 
-    // If no compatible loaders found, inform user and exit gracefully
-    if compatible_loaders.is_empty() {
-        session.display().status().error(
-            "No compatible mod loaders found",
-            &format!("for Minecraft {}", minecraft_version),
-        );
+    let (loader_str, loader_version) = if is_vanilla {
         session
             .display()
             .status()
-            .subtle("   Try selecting a different Minecraft version");
-        return Ok(());
-    }
-
-    // Present filtered loader list with intelligent priority
-    let (selected_loader, loader_str) = if let Some(loader_str) = cli_modloader {
-        session
-            .display()
-            .status()
-            .info(&format!("Using loader: {}", loader_str));
-        let parsed_loader = ModLoader::parse(&loader_str)
-            .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
-
-        let versions_loader: crate::empack::versions::ModLoader = parsed_loader.into();
-
-        if !compatible_loaders.contains(&versions_loader) {
-            let available: Vec<&str> = compatible_loaders.iter().map(|l| l.as_str()).collect();
-            anyhow::bail!(
-                "Loader '{}' is not compatible with Minecraft {}. Compatible loaders: {}",
-                loader_str,
-                minecraft_version,
-                available.join(", ")
-            );
-        }
-
-        let loader_str = versions_loader.as_str().to_string();
-        (versions_loader, loader_str)
+            .info("Using loader: none (vanilla)");
+        ("none".to_string(), String::new())
     } else {
-        let loader_names: Vec<String> = compatible_loaders
-            .iter()
-            .map(|l| l.as_str().to_string())
-            .collect();
-        let loader_name_refs: Vec<&str> = loader_names.iter().map(|s| s.as_str()).collect();
-        let loader_index = session
-            .interactive()
-            .select("Mod loader", &loader_name_refs)?;
-        let selected_loader = &compatible_loaders[loader_index];
-        (
-            selected_loader.clone(),
-            selected_loader.as_str().to_string(),
-        )
-    };
-
-    // Step 4: Dynamic, Searchable Loader Version Prompt
-    session.display().status().info(&format!(
-        "Fetching {} versions for Minecraft {}...",
-        loader_str, minecraft_version
-    ));
-    let loader_versions = match &selected_loader {
-        crate::empack::versions::ModLoader::Fabric => {
-            match version_fetcher
-                .fetch_fabric_loader_versions(&minecraft_version)
-                .await
-            {
-                Ok(versions) => {
-                    session
-                        .display()
-                        .status()
-                        .success("Found", &format!("{} Fabric versions", versions.len()));
-                    versions
-                }
-                Err(e) => {
-                    session
-                        .display()
-                        .status()
-                        .warning(&format!("Network fetch failed: {}", e));
-                    session.display().status().info("Using fallback versions");
-                    crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
-                        "fabric",
-                        &minecraft_version,
-                    )
-                }
-            }
-        }
-        crate::empack::versions::ModLoader::NeoForge => {
-            match version_fetcher
-                .fetch_neoforge_loader_versions(&minecraft_version)
-                .await
-            {
-                Ok(versions) => {
-                    session
-                        .display()
-                        .status()
-                        .success("Found", &format!("{} NeoForge versions", versions.len()));
-                    versions
-                }
-                Err(e) => {
-                    session
-                        .display()
-                        .status()
-                        .warning(&format!("Network fetch failed: {}", e));
-                    session.display().status().info("Using fallback versions");
-                    crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
-                        "neoforge",
-                        &minecraft_version,
-                    )
-                }
-            }
-        }
-        crate::empack::versions::ModLoader::Forge => {
-            match version_fetcher
-                .fetch_forge_loader_versions(&minecraft_version)
-                .await
-            {
-                Ok(versions) => {
-                    session
-                        .display()
-                        .status()
-                        .success("Found", &format!("{} Forge versions", versions.len()));
-                    versions
-                }
-                Err(e) => {
-                    session
-                        .display()
-                        .status()
-                        .warning(&format!("Network fetch failed: {}", e));
-                    session.display().status().info("Using fallback versions");
-                    crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
-                        "forge",
-                        &minecraft_version,
-                    )
-                }
-            }
-        }
-        crate::empack::versions::ModLoader::Quilt => {
-            match version_fetcher
-                .fetch_quilt_loader_versions(&minecraft_version)
-                .await
-            {
-                Ok(versions) => {
-                    session
-                        .display()
-                        .status()
-                        .success("Found", &format!("{} Quilt versions", versions.len()));
-                    versions
-                }
-                Err(e) => {
-                    session
-                        .display()
-                        .status()
-                        .warning(&format!("Network fetch failed: {}", e));
-                    session.display().status().info("Using fallback versions");
-                    crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
-                        "quilt",
-                        &minecraft_version,
-                    )
-                }
-            }
-        }
-    };
-
-    // Each loader's fetch function already filters by MC version.
-    // Empty results are caught by the is_empty() check below.
-
-    // Loader version selection with FuzzySelect (pagination enabled, 6 items per page)
-    let loader_version = if loader_versions.is_empty() {
-        return Err(anyhow::anyhow!(
-            "No {} versions available for Minecraft {}",
-            loader_str,
-            minecraft_version
-        ));
-    } else if let Some(lv) = cli_loader_version {
         session
             .display()
             .status()
-            .info(&format!("Using {} version: {}", loader_str, lv));
-        if !loader_versions.iter().any(|v| v == &lv) {
-            anyhow::bail!(
-                "Loader version '{}' not found for {} on Minecraft {}. Available versions include: {}",
-                lv,
-                loader_str,
-                minecraft_version,
-                loader_versions.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+            .info("Finding compatible mod loaders...");
+        let compatible_loaders = match version_fetcher
+            .fetch_compatible_loaders(&minecraft_version)
+            .await
+        {
+            Ok(loaders) => {
+                session
+                    .display()
+                    .status()
+                    .success("Found", &format!("{} compatible loaders", loaders.len()));
+                let loader_names: Vec<String> =
+                    loaders.iter().map(|l| l.as_str().to_string()).collect();
+                session
+                    .display()
+                    .status()
+                    .subtle(&format!("Compatible: {}", loader_names.join(", ")));
+                loaders
+            }
+            Err(e) => {
+                session
+                    .display()
+                    .status()
+                    .warning(&format!("Compatibility check failed: {}", e));
+                session
+                    .display()
+                    .status()
+                    .info("Using all loaders as fallback");
+                vec![
+                    crate::empack::versions::ModLoader::NeoForge,
+                    crate::empack::versions::ModLoader::Fabric,
+                    crate::empack::versions::ModLoader::Forge,
+                    crate::empack::versions::ModLoader::Quilt,
+                ]
+            }
+        };
+
+        if compatible_loaders.is_empty() {
+            session.display().status().error(
+                "No compatible mod loaders found",
+                &format!("for Minecraft {}", minecraft_version),
             );
+            session
+                .display()
+                .status()
+                .subtle("   Try selecting a different Minecraft version");
+            return Ok(());
         }
-        lv
-    } else {
-        let loader_version_index = session
-            .interactive()
-            .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?
-            .ok_or_else(|| anyhow::anyhow!("Loader version selection cancelled"))?;
-        loader_versions[loader_version_index].clone()
+
+        let (selected_loader, loader_str) = if let Some(loader_str) = cli_modloader {
+            session
+                .display()
+                .status()
+                .info(&format!("Using loader: {}", loader_str));
+            let parsed_loader = ModLoader::parse(&loader_str)
+                .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
+
+            let versions_loader: crate::empack::versions::ModLoader = parsed_loader.into();
+
+            if !compatible_loaders.contains(&versions_loader) {
+                let available: Vec<&str> =
+                    compatible_loaders.iter().map(|l| l.as_str()).collect();
+                anyhow::bail!(
+                    "Loader '{}' is not compatible with Minecraft {}. Compatible loaders: {}",
+                    loader_str,
+                    minecraft_version,
+                    available.join(", ")
+                );
+            }
+
+            let loader_str = versions_loader.as_str().to_string();
+            (Some(versions_loader), loader_str)
+        } else {
+            let mut loader_names: Vec<String> = vec!["none (vanilla)".to_string()];
+            loader_names.extend(
+                compatible_loaders
+                    .iter()
+                    .map(|l| l.as_str().to_string()),
+            );
+            let loader_name_refs: Vec<&str> =
+                loader_names.iter().map(|s| s.as_str()).collect();
+            let loader_index = session
+                .interactive()
+                .select("Mod loader", &loader_name_refs)?;
+
+            if loader_index == 0 {
+                (None, "none".to_string())
+            } else {
+                let selected = &compatible_loaders[loader_index - 1];
+                (Some(selected.clone()), selected.as_str().to_string())
+            }
+        };
+
+        if let Some(selected_loader) = selected_loader {
+            // Step 4: Dynamic, Searchable Loader Version Prompt
+            session.display().status().info(&format!(
+                "Fetching {} versions for Minecraft {}...",
+                loader_str, minecraft_version
+            ));
+            let loader_versions = match &selected_loader {
+                crate::empack::versions::ModLoader::Fabric => {
+                    match version_fetcher
+                        .fetch_fabric_loader_versions(&minecraft_version)
+                        .await
+                    {
+                        Ok(versions) => {
+                            session.display().status().success(
+                                "Found",
+                                &format!("{} Fabric versions", versions.len()),
+                            );
+                            versions
+                        }
+                        Err(e) => {
+                            session
+                                .display()
+                                .status()
+                                .warning(&format!("Network fetch failed: {}", e));
+                            session.display().status().info("Using fallback versions");
+                            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
+                                "fabric",
+                                &minecraft_version,
+                            )
+                        }
+                    }
+                }
+                crate::empack::versions::ModLoader::NeoForge => {
+                    match version_fetcher
+                        .fetch_neoforge_loader_versions(&minecraft_version)
+                        .await
+                    {
+                        Ok(versions) => {
+                            session.display().status().success(
+                                "Found",
+                                &format!("{} NeoForge versions", versions.len()),
+                            );
+                            versions
+                        }
+                        Err(e) => {
+                            session
+                                .display()
+                                .status()
+                                .warning(&format!("Network fetch failed: {}", e));
+                            session.display().status().info("Using fallback versions");
+                            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
+                                "neoforge",
+                                &minecraft_version,
+                            )
+                        }
+                    }
+                }
+                crate::empack::versions::ModLoader::Forge => {
+                    match version_fetcher
+                        .fetch_forge_loader_versions(&minecraft_version)
+                        .await
+                    {
+                        Ok(versions) => {
+                            session.display().status().success(
+                                "Found",
+                                &format!("{} Forge versions", versions.len()),
+                            );
+                            versions
+                        }
+                        Err(e) => {
+                            session
+                                .display()
+                                .status()
+                                .warning(&format!("Network fetch failed: {}", e));
+                            session.display().status().info("Using fallback versions");
+                            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
+                                "forge",
+                                &minecraft_version,
+                            )
+                        }
+                    }
+                }
+                crate::empack::versions::ModLoader::Quilt => {
+                    match version_fetcher
+                        .fetch_quilt_loader_versions(&minecraft_version)
+                        .await
+                    {
+                        Ok(versions) => {
+                            session.display().status().success(
+                                "Found",
+                                &format!("{} Quilt versions", versions.len()),
+                            );
+                            versions
+                        }
+                        Err(e) => {
+                            session
+                                .display()
+                                .status()
+                                .warning(&format!("Network fetch failed: {}", e));
+                            session.display().status().info("Using fallback versions");
+                            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
+                                "quilt",
+                                &minecraft_version,
+                            )
+                        }
+                    }
+                }
+            };
+
+            let loader_version = if loader_versions.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "No {} versions available for Minecraft {}",
+                    loader_str,
+                    minecraft_version
+                ));
+            } else if let Some(lv) = cli_loader_version {
+                session
+                    .display()
+                    .status()
+                    .info(&format!("Using {} version: {}", loader_str, lv));
+                if !loader_versions.iter().any(|v| v == &lv) {
+                    anyhow::bail!(
+                        "Loader version '{}' not found for {} on Minecraft {}. Available versions include: {}",
+                        lv,
+                        loader_str,
+                        minecraft_version,
+                        loader_versions.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                    );
+                }
+                lv
+            } else {
+                let loader_version_index = session
+                    .interactive()
+                    .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?
+                    .ok_or_else(|| anyhow::anyhow!("Loader version selection cancelled"))?;
+                loader_versions[loader_version_index].clone()
+            };
+
+            (loader_str, loader_version)
+        } else {
+            ("none".to_string(), String::new())
+        }
     };
 
     // Step 5: Final Confirmation and Execution
@@ -746,10 +767,17 @@ async fn handle_init(
         .display()
         .status()
         .info(&format!("   Minecraft: {}", minecraft_version));
-    session
-        .display()
-        .status()
-        .info(&format!("   Loader: {} v{}", loader_str, loader_version));
+    if loader_str == "none" {
+        session
+            .display()
+            .status()
+            .info("   Loader: none (vanilla)");
+    } else {
+        session
+            .display()
+            .status()
+            .info(&format!("   Loader: {} v{}", loader_str, loader_version));
+    }
 
     // Final confirmation
     let confirmed = session
@@ -764,14 +792,14 @@ async fn handle_init(
         return Ok(());
     }
 
-    validate_init_inputs(
-        &minecraft_version,
-        &minecraft_versions,
-        &loader_str,
-        &compatible_loaders,
-        &loader_version,
-        &loader_versions,
-    )?;
+    if loader_str != "none" {
+        validate_init_inputs(
+            &minecraft_version,
+            &minecraft_versions,
+            &loader_str,
+            &loader_version,
+        )?;
+    }
 
     // === Execute phase: all filesystem mutations happen below this line ===
 
@@ -877,15 +905,14 @@ async fn execute_init_phase(
     Ok(())
 }
 
-/// Validate that all init inputs are consistent with the fetched version lists.
-/// Called as a final checkpoint before executing packwiz init.
+/// Validate that loader inputs are consistent.
+/// Skipped for vanilla (loader_str == "none"). MC version and loader
+/// compatibility are validated inline before this is called.
 fn validate_init_inputs(
     mc_version: &str,
     minecraft_versions: &[String],
     loader_str: &str,
-    compatible_loaders: &[crate::empack::versions::ModLoader],
     loader_version: &str,
-    loader_versions: &[String],
 ) -> Result<()> {
     if !minecraft_versions.iter().any(|v| v.eq_ignore_ascii_case(mc_version)) {
         anyhow::bail!(
@@ -894,25 +921,13 @@ fn validate_init_inputs(
         );
     }
 
-    let parsed_loader = ModLoader::parse(loader_str)
+    ModLoader::parse(loader_str)
         .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
-    let versions_loader: crate::empack::versions::ModLoader = parsed_loader.into();
-    if !compatible_loaders.contains(&versions_loader) {
-        let available: Vec<&str> = compatible_loaders.iter().map(|l| l.as_str()).collect();
-        anyhow::bail!(
-            "Loader '{}' is not compatible with Minecraft {}. Compatible: {}",
-            loader_str,
-            mc_version,
-            available.join(", ")
-        );
-    }
 
-    if !loader_versions.iter().any(|v| v == loader_version) {
+    if loader_version.is_empty() {
         anyhow::bail!(
-            "Loader version '{}' not found for {} on Minecraft {}",
-            loader_version,
-            loader_str,
-            mc_version
+            "Loader version is required for {}",
+            loader_str
         );
     }
 
@@ -1055,7 +1070,7 @@ async fn handle_add(
 
         // Use project plan context if available
         let minecraft_version = project_plan.as_ref().map(|p| p.minecraft_version.as_str());
-        let mod_loader = project_plan.as_ref().map(|p| p.loader);
+        let mod_loader = project_plan.as_ref().and_then(|p| p.loader);
 
         // For CLI add, we resolve via search (empty project_id triggers search path)
         let direct_project_id = resolution_intent.direct_project_id.as_deref().unwrap_or("");

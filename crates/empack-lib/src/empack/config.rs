@@ -198,7 +198,7 @@ pub struct ProjectPlan {
 
     /// Target platform
     pub minecraft_version: String,
-    pub loader: ModLoader,
+    pub loader: Option<ModLoader>,
     pub loader_version: String,
 
     /// Resolved project specifications from empack.yml
@@ -220,8 +220,8 @@ pub struct ProjectSpec {
     /// Target Minecraft version (defaults to plan version)
     pub minecraft_version: String,
 
-    /// Target mod loader (defaults to plan loader)
-    pub loader: ModLoader,
+    /// Target mod loader (defaults to plan loader; None for vanilla)
+    pub loader: Option<ModLoader>,
 
     /// Required project ID (from DependencyRecord)
     pub project_id: String,
@@ -326,14 +326,12 @@ impl<'a> ConfigManager<'a> {
                 field: "minecraft_version (from empack.yml or pack.toml)".to_string(),
             })?;
 
-        let loader = if let Some(empack_loader) = empack_config.empack.loader {
-            empack_loader
+        let loader: Option<ModLoader> = if empack_config.empack.loader.is_some() {
+            empack_config.empack.loader
         } else if let Some(pack_meta) = &pack_metadata {
-            self.infer_loader_from_metadata(pack_meta)?
+            self.infer_loader_from_metadata(pack_meta).ok()
         } else {
-            return Err(ConfigError::MissingField {
-                field: "loader (from empack.yml or pack.toml)".to_string(),
-            });
+            None
         };
 
         let loader_version = empack_config
@@ -341,11 +339,13 @@ impl<'a> ConfigManager<'a> {
             .loader_version
             .clone()
             .or_else(|| {
-                pack_metadata.as_ref().and_then(|p| {
-                    self.get_loader_version_from_metadata(p, &loader).ok()
+                loader.and_then(|l| {
+                    pack_metadata.as_ref().and_then(|p| {
+                        self.get_loader_version_from_metadata(p, &l).ok()
+                    })
                 })
             })
-            .unwrap_or_else(|| "latest".to_string());
+            .unwrap_or_default();
 
         // Build project specs from resolved dependency records only
         let mut dependencies = Vec::new();
@@ -355,7 +355,7 @@ impl<'a> ConfigManager<'a> {
                     slug,
                     record,
                     &minecraft_version,
-                    &loader,
+                    loader,
                 );
                 dependencies.push(spec);
             }
@@ -424,20 +424,19 @@ impl<'a> ConfigManager<'a> {
             })
     }
 
-    /// Build a ProjectSpec from a DependencyRecord and plan defaults
     fn build_project_spec_from_record(
         &self,
         slug: &str,
         record: &DependencyRecord,
         default_minecraft: &str,
-        default_loader: &ModLoader,
+        default_loader: Option<ModLoader>,
     ) -> ProjectSpec {
         ProjectSpec {
             key: slug.to_string(),
             search_query: record.title.clone(),
             project_type: record.project_type,
             minecraft_version: default_minecraft.to_string(),
-            loader: *default_loader,
+            loader: default_loader,
             project_id: record.project_id.clone(),
             project_platform: record.platform,
             version_pin: record.version.clone(),
