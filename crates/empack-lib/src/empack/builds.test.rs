@@ -1007,3 +1007,123 @@ async fn test_download_server_jar_unknown_loader_returns_error() {
         other => panic!("expected ConfigError, got {other:?}"),
     }
 }
+
+#[test]
+fn test_zip_distribution_falls_back_to_tar() {
+    let mut mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+
+    let filesystem = mock.session.filesystem();
+    let workdir = mock.workdir().to_path_buf();
+    let dist_dir = workdir.join("dist").join("client");
+    filesystem.create_dir_all(&dist_dir).unwrap();
+    filesystem
+        .write_file(&dist_dir.join("test.txt"), "content")
+        .unwrap();
+
+    mock.session
+        .process_provider
+        .programs
+        .insert("zip".to_string(), None);
+    mock.session
+        .process_provider
+        .programs
+        .insert("tar".to_string(), Some("/usr/bin/tar".to_string()));
+
+    let mut orchestrator = mock.orchestrator();
+    orchestrator.load_pack_info().unwrap();
+
+    let result = orchestrator.zip_distribution(BuildTarget::Client);
+    assert!(result.is_ok());
+
+    let path = result.unwrap();
+    assert!(
+        path.to_string_lossy().ends_with(".tar.gz"),
+        "expected .tar.gz extension, got {}",
+        path.display()
+    );
+}
+
+#[test]
+fn test_zip_distribution_fails_without_zip_or_tar() {
+    let mut mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+
+    let filesystem = mock.session.filesystem();
+    let workdir = mock.workdir().to_path_buf();
+    let dist_dir = workdir.join("dist").join("client");
+    filesystem.create_dir_all(&dist_dir).unwrap();
+    filesystem
+        .write_file(&dist_dir.join("test.txt"), "content")
+        .unwrap();
+
+    mock.session
+        .process_provider
+        .programs
+        .insert("zip".to_string(), None);
+    mock.session
+        .process_provider
+        .programs
+        .insert("tar".to_string(), None);
+
+    let mut orchestrator = mock.orchestrator();
+    orchestrator.load_pack_info().unwrap();
+
+    let result = orchestrator.zip_distribution(BuildTarget::Client);
+    match result {
+        Err(BuildError::MissingTool { tool }) => {
+            assert!(
+                tool.contains("zip or tar"),
+                "expected 'zip or tar' in message, got: {}",
+                tool
+            );
+        }
+        other => panic!("expected MissingTool, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_extract_mrpack_fails_with_clear_error_when_unzip_unavailable() {
+    let mut mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+
+    let filesystem = mock.session.filesystem();
+    let workdir = mock.workdir().to_path_buf();
+    let mrpack_path = workdir.join("dist").join("TestPack-v1.0.0.mrpack");
+    filesystem
+        .create_dir_all(&workdir.join("dist"))
+        .unwrap();
+    filesystem
+        .write_file(&mrpack_path, "fake mrpack content")
+        .unwrap();
+
+    let temp_extract_dir = workdir
+        .join("dist")
+        .join("temp-mrpack-extract");
+
+    mock.session.process_provider.results.insert(
+        (
+            "unzip".to_string(),
+            vec![
+                "-q".to_string(),
+                mrpack_path.to_string_lossy().to_string(),
+                "-d".to_string(),
+                temp_extract_dir.to_string_lossy().to_string(),
+            ],
+        ),
+        Err("unzip: command not found".to_string()),
+    );
+
+    let mut orchestrator = mock.orchestrator();
+    let result = orchestrator.extract_mrpack();
+    match result {
+        Err(BuildError::MissingTool { tool }) => {
+            assert!(
+                tool.contains("unzip") && tool.contains(".mrpack"),
+                "expected unzip + .mrpack in message, got: {}",
+                tool
+            );
+        }
+        other => panic!("expected MissingTool, got {other:?}"),
+    }
+}
