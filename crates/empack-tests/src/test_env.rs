@@ -340,10 +340,10 @@ if [[ "$*" == *"mr export"* ]]; then
   if [[ -n "$OUTPUT_FILE" ]]; then
     mkdir -p "$(dirname "$OUTPUT_FILE")"
     python3 -c "
-import zipfile, os
-with zipfile.ZipFile('$OUTPUT_FILE', 'w') as z:
+import zipfile, os, sys
+with zipfile.ZipFile(sys.argv[1], 'w') as z:
     z.writestr('overrides/config/generated.txt', 'override=true')
-"
+" "$OUTPUT_FILE"
   fi
 fi
 "#,

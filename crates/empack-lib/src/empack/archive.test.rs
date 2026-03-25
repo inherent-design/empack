@@ -117,6 +117,39 @@ fn test_extract_zip_nonexistent_archive_returns_error() {
 }
 
 #[test]
+fn test_create_archive_empty_source_tar_gz_returns_error() {
+    let tmp = tempdir().unwrap();
+    let src = tmp.path().join("empty");
+    std::fs::create_dir_all(&src).unwrap();
+
+    let tar_path = tmp.path().join("empty.tar.gz");
+    let result = create_archive(&src, &tar_path, ArchiveFormat::TarGz);
+    assert!(matches!(result, Err(ArchiveError::EmptySource(_))));
+}
+
+#[test]
+fn test_create_archive_empty_source_7z_returns_error() {
+    let tmp = tempdir().unwrap();
+    let src = tmp.path().join("empty");
+    std::fs::create_dir_all(&src).unwrap();
+
+    let sz_path = tmp.path().join("empty.7z");
+    let result = create_archive(&src, &sz_path, ArchiveFormat::SevenZ);
+    assert!(matches!(result, Err(ArchiveError::EmptySource(_))));
+}
+
+#[test]
+fn test_create_archive_empty_nested_dirs_returns_error() {
+    let tmp = tempdir().unwrap();
+    let src = tmp.path().join("nested-empty");
+    std::fs::create_dir_all(src.join("a/b/c")).unwrap();
+
+    let zip_path = tmp.path().join("nested-empty.zip");
+    let result = create_archive(&src, &zip_path, ArchiveFormat::Zip);
+    assert!(matches!(result, Err(ArchiveError::EmptySource(_))));
+}
+
+#[test]
 fn test_archive_format_extension() {
     assert_eq!(ArchiveFormat::Zip.extension(), "zip");
     assert_eq!(ArchiveFormat::TarGz.extension(), "tar.gz");
