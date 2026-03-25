@@ -13,7 +13,7 @@ cargo nextest run -p empack-lib --features test-utils
 cargo nextest run -p empack-tests
 ```
 
-Current checkpoint: 555 tests (505 in `empack-lib`, 15 skipped; 50 in `empack-tests`).
+Current checkpoint: 552 tests (502 in `empack-lib`, 15 skipped; 50 in `empack-tests`).
 
 CI uses `cargo nextest` exclusively. Grouped `cargo test` is advisory-only due to global state conflicts between workflow tests.
 
@@ -242,10 +242,10 @@ Recording touches live network services and can fail due to rate limits or API d
 | Tool | Used by | Tested via | Test fidelity |
 |------|---------|-----------|---------------|
 | packwiz CLI | init, add, remove, sync, build (refresh, export) | Shell script mocks (HermeticSessionBuilder) | Verifies args passed; does not run real packwiz |
-| java | build quilt, neoforge, forge (server installer); build client-full, server-full (packwiz-installer) | Shell script mocks | Verifies args; does not run real Java |
+| java | build fabric, quilt, neoforge, forge (server installer); build client-full, server-full (packwiz-installer) | Shell script mocks | Verifies args; does not run real Java |
 | zip | build client, server, client-full, server-full | Shell script mocks | Verifies invocation |
 | unzip | build client, build server (mrpack extraction) | Shell script mocks | Verifies invocation |
-| reqwest (HTTP) | build server JAR download (vanilla, fabric, quilt) | mockito (unit tests); live HTTP (integration tests) | Unit tests verify JSON/XML parsing and URL construction; integration tests download from real APIs |
+| reqwest (HTTP) | build server JAR download (all loaders: vanilla, fabric, quilt, neoforge, forge); ServerStarterJar download (neoforge, forge) | mockito (unit tests); live HTTP (integration tests) | Unit tests verify JSON/XML parsing and URL construction; integration tests download from real APIs |
 
 ---
 
@@ -255,6 +255,4 @@ Recording touches live network services and can fail due to rate limits or API d
 2. No integration tests for --dry-run on add, remove, build, clean (unit tests exist)
 3. No integration tests for NeoForge or Quilt loader paths
 4. 28/39 integration tests are unix-only; minimal cross-platform coverage
-5. 65 vacuous tests (13% of total) inflate the test count without verifying behavior
-6. Misplaced test in handle_remove module actually tests handle_sync
-7. Server JAR integration tests depend on live network access to Fabric/Mojang APIs
+5. Server JAR integration tests depend on live network access to Mojang, Fabric, Quilt, NeoForge, and Forge APIs

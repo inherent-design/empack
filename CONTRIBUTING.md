@@ -5,7 +5,7 @@
 - [Rust toolchain](https://rustup.rs/) (stable)
 - [cargo-nextest](https://nexte.st/) (test runner; CI uses it exclusively)
 - [packwiz](https://packwiz.infra.link/) (required for live CLI workflows)
-- [Java](https://adoptium.net/) (required for Quilt, NeoForge, and Forge server builds)
+- [Java](https://adoptium.net/) (required for Fabric, Quilt, NeoForge, and Forge server builds; only Vanilla does not require Java)
 - Optional: `jq` (VCR cassette recording)
 
 ## Getting Started

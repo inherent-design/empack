@@ -319,7 +319,15 @@ impl<'a> BuildOrchestrator<'a> {
         let jar_path = dist_dir.join("srv.jar");
         self.download_file(&version_meta.downloads.server.url, &jar_path)?;
 
-        self.verify_server_jar_sha1(&jar_path, &version_meta.downloads.server.sha1)
+        self.verify_server_jar_sha1(&jar_path, &version_meta.downloads.server.sha1)?;
+
+        if !self.session.filesystem().exists(&jar_path) {
+            return Err(BuildError::ValidationError {
+                reason: format!("server JAR download did not produce {}", jar_path.display()),
+            });
+        }
+
+        Ok(())
     }
 
     /// Read a JAR file, compute its SHA1, and compare against the expected hash.
