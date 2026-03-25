@@ -37,9 +37,11 @@ fn test_curseforge_loader_id() {
 
 /// Helper: Modrinth JSON response with a single hit
 fn modrinth_hit_json(project_id: &str, title: &str, downloads: u64) -> String {
+    let slug = title.to_lowercase().replace(' ', "-");
     serde_json::json!({
         "hits": [{
             "project_id": project_id,
+            "slug": slug,
             "title": title,
             "downloads": downloads,
             "categories": ["fabric"]
@@ -747,8 +749,10 @@ fn modrinth_multi_hit_json(hits: &[(&str, &str, u64)]) -> String {
     let hit_objects: Vec<serde_json::Value> = hits
         .iter()
         .map(|(project_id, title, downloads)| {
+            let slug = title.to_lowercase().replace(' ', "-");
             serde_json::json!({
                 "project_id": project_id,
+                "slug": slug,
                 "title": title,
                 "downloads": downloads,
                 "categories": ["fabric"]
@@ -1062,4 +1066,263 @@ async fn test_search_candidates_network_error_propagates() {
         matches!(err, SearchError::NetworkError { .. }),
         "Expected NetworkError to propagate, got: {err:?}"
     );
+}
+
+// ===== PHASE 2: INCOMPATIBLE PROJECT DETECTION TESTS =====
+
+fn modrinth_hit_with_categories_json(
+    project_id: &str,
+    slug: &str,
+    title: &str,
+    downloads: u64,
+    categories: &[&str],
+    versions: &[&str],
+) -> String {
+    serde_json::json!({
+        "hits": [{
+            "project_id": project_id,
+            "slug": slug,
+            "title": title,
+            "downloads": downloads,
+            "categories": categories,
+            "versions": versions,
+        }]
+    })
+    .to_string()
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_phase2_detects_incompatible_project() {
+    let mut mr_server = mockito::Server::new_async().await;
+
+    // Phase 1: faceted search (forge+1.21.4) returns empty
+    mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"categories%3Aforge".to_string()),
+        )
+        .with_status(200)
+        .with_body(modrinth_empty_json())
+        .create_async()
+        .await;
+
+    // Phase 2: unfaceted search (project_type only) returns Sodium with fabric/neoforge/quilt
+    mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(
+                r"project%5Ftype%3Amod%22%5D%5D$".to_string(),
+            ),
+        )
+        .with_status(200)
+        .with_body(modrinth_hit_with_categories_json(
+            "AANobbMI",
+            "sodium",
+            "Sodium",
+            134_306_743,
+            &["fabric", "neoforge", "optimization", "quilt"],
+            &["1.16.3", "1.21.4"],
+        ))
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+    );
+
+    let err = resolver
+        .resolve_project("Sodium", Some("mod"), Some("1.21.4"), Some("forge"), None)
+        .await
+        .unwrap_err();
+
+    match &err {
+        SearchError::IncompatibleProject {
+            project_title,
+            available_loaders,
+            requested_loader,
+            downloads,
+            ..
+        } => {
+            assert_eq!(project_title, "Sodium");
+            assert!(available_loaders.contains(&"fabric".to_string()));
+            assert!(available_loaders.contains(&"neoforge".to_string()));
+            assert!(available_loaders.contains(&"quilt".to_string()));
+            assert!(!available_loaders.contains(&"optimization".to_string()));
+            assert_eq!(requested_loader.as_deref(), Some("forge"));
+            assert_eq!(*downloads, 134_306_743);
+        }
+        other => panic!("Expected IncompatibleProject, got: {other:?}"),
+    }
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_phase2_returns_no_results_when_unfaceted_also_empty() {
+    let mut mr_server = mockito::Server::new_async().await;
+
+    // Both faceted and unfaceted searches return empty
+    mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"/v2/search\?.*".to_string()),
+        )
+        .with_status(200)
+        .with_body(modrinth_empty_json())
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+    );
+
+    let err = resolver
+        .resolve_project(
+            "xyznonexistent",
+            Some("mod"),
+            Some("1.21.4"),
+            Some("forge"),
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, SearchError::NoResults { ref query } if query == "xyznonexistent"),
+        "Expected NoResults, got: {err:?}"
+    );
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_phase2_skips_when_no_filters_applied() {
+    let mut mr_server = mockito::Server::new_async().await;
+
+    // Only one mock needed: the faceted search returns empty.
+    // Phase 2 should NOT trigger because no loader/version filter was applied.
+    let mr_mock = mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"/v2/search\?.*".to_string()),
+        )
+        .with_status(200)
+        .with_body(modrinth_empty_json())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+    );
+
+    let err = resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, SearchError::NoResults { .. }),
+        "Expected NoResults (no Phase 2 trigger), got: {err:?}"
+    );
+
+    mr_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_phase2_incompatible_propagates_through_platform_search() {
+    let mut mr_server = mockito::Server::new_async().await;
+    let mut cf_server = mockito::Server::new_async().await;
+
+    // Phase 1: Modrinth faceted returns empty
+    mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"categories%3Aforge".to_string()),
+        )
+        .with_status(200)
+        .with_body(modrinth_empty_json())
+        .create_async()
+        .await;
+
+    // Phase 2: Modrinth unfaceted returns Sodium
+    mr_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(
+                r"project%5Ftype%3Amod%22%5D%5D$".to_string(),
+            ),
+        )
+        .with_status(200)
+        .with_body(modrinth_hit_with_categories_json(
+            "AANobbMI",
+            "sodium",
+            "Sodium",
+            134_000_000,
+            &["fabric", "neoforge", "quilt"],
+            &["1.21.4"],
+        ))
+        .create_async()
+        .await;
+
+    // CurseForge should NOT be called because IncompatibleProject propagates
+    let cf_mock = cf_server
+        .mock(
+            "GET",
+            mockito::Matcher::Regex(r"/v1/mods/search\?.*".to_string()),
+        )
+        .expect(0)
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        Some("test-api-key".to_string()),
+        Some(mr_server.url()),
+        Some(cf_server.url()),
+    );
+
+    let err = resolver
+        .resolve_project("Sodium", Some("mod"), Some("1.21.4"), Some("forge"), None)
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, SearchError::IncompatibleProject { .. }),
+        "Expected IncompatibleProject to propagate, got: {err:?}"
+    );
+
+    cf_mock.assert_async().await;
+}
+
+#[test]
+fn test_extract_loaders_filters_content_categories() {
+    let categories: Vec<String> = vec![
+        "fabric".to_string(),
+        "optimization".to_string(),
+        "neoforge".to_string(),
+        "quilt".to_string(),
+        "technology".to_string(),
+    ];
+    let loaders = extract_loaders(&categories);
+    assert_eq!(loaders, vec!["fabric", "neoforge", "quilt"]);
+}
+
+#[test]
+fn test_extract_loaders_empty_on_no_loaders() {
+    let categories: Vec<String> = vec![
+        "optimization".to_string(),
+        "technology".to_string(),
+    ];
+    let loaders = extract_loaders(&categories);
+    assert!(loaders.is_empty());
 }
