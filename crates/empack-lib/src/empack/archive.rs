@@ -91,11 +91,28 @@ pub fn create_archive(
         return Err(ArchiveError::SourceNotFound(source_dir.to_path_buf()));
     }
 
+    if is_dir_empty(source_dir)? {
+        return Err(ArchiveError::EmptySource(source_dir.to_path_buf()));
+    }
+
     match format {
         ArchiveFormat::Zip => create_zip_archive(source_dir, output_path),
         ArchiveFormat::TarGz => create_tar_gz_archive(source_dir, output_path),
         ArchiveFormat::SevenZ => create_7z_archive(source_dir, output_path),
     }
+}
+
+fn is_dir_empty(dir: &Path) -> Result<bool, ArchiveError> {
+    for entry in std::fs::read_dir(dir).map_err(|e| ArchiveError::Io { path: dir.to_path_buf(), source: e })? {
+        let entry = entry.map_err(|e| ArchiveError::Io { path: dir.to_path_buf(), source: e })?;
+        if entry.path().is_file() {
+            return Ok(false);
+        }
+        if entry.path().is_dir() && !is_dir_empty(&entry.path())? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), ArchiveError> {
@@ -110,14 +127,11 @@ fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archi
     let mut zip_writer = zip::ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
-    let mut has_entries = false;
-
     fn walk_dir(
         base: &Path,
         current: &Path,
         writer: &mut zip::ZipWriter<File>,
         options: SimpleFileOptions,
-        has_entries: &mut bool,
     ) -> Result<(), ArchiveError> {
         let entries = std::fs::read_dir(current).map_err(|e| ArchiveError::Io {
             path: current.to_path_buf(),
@@ -139,9 +153,8 @@ fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archi
                 writer
                     .add_directory(format!("{}/", name), options)
                     .map_err(ArchiveError::Zip)?;
-                walk_dir(base, &path, writer, options, has_entries)?;
+                walk_dir(base, &path, writer, options)?;
             } else {
-                *has_entries = true;
                 writer
                     .start_file(name.to_string(), options)
                     .map_err(ArchiveError::Zip)?;
@@ -163,13 +176,7 @@ fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archi
         Ok(())
     }
 
-    walk_dir(source_dir, source_dir, &mut zip_writer, options, &mut has_entries)?;
-
-    if !has_entries {
-        drop(zip_writer);
-        let _ = std::fs::remove_file(output_path);
-        return Err(ArchiveError::EmptySource(source_dir.to_path_buf()));
-    }
+    walk_dir(source_dir, source_dir, &mut zip_writer, options)?;
 
     zip_writer.finish().map_err(ArchiveError::Zip)?;
     Ok(())
@@ -191,7 +198,11 @@ fn create_tar_gz_archive(source_dir: &Path, output_path: &Path) -> Result<(), Ar
             path: source_dir.to_path_buf(),
             source: e,
         })?;
-    tar_builder.finish().map_err(|e| ArchiveError::Io {
+    let enc = tar_builder.into_inner().map_err(|e| ArchiveError::Io {
+        path: output_path.to_path_buf(),
+        source: e,
+    })?;
+    enc.finish().map_err(|e| ArchiveError::Io {
         path: output_path.to_path_buf(),
         source: e,
     })?;
