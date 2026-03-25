@@ -202,7 +202,7 @@ empack:
     assert_eq!(plan.author, Some("Test Author".to_string()));
     assert_eq!(plan.version, Some("1.0.0".to_string()));
     assert_eq!(plan.minecraft_version, "1.21");
-    assert_eq!(plan.loader, ModLoader::Fabric);
+    assert_eq!(plan.loader, Some(ModLoader::Fabric));
     assert_eq!(plan.dependencies.len(), 2);
 }
 
@@ -247,7 +247,7 @@ fabric = "0.14.21"
     assert_eq!(plan.author, Some("Fallback Author".to_string()));
     assert_eq!(plan.version, Some("2.0.0".to_string()));
     assert_eq!(plan.minecraft_version, "1.20.1");
-    assert_eq!(plan.loader, ModLoader::Fabric);
+    assert_eq!(plan.loader, Some(ModLoader::Fabric));
     assert_eq!(plan.dependencies.len(), 1);
 }
 
@@ -298,7 +298,7 @@ fabric = "0.14.21"
     assert_eq!(plan.author, Some("Empack Author".to_string()));
     assert_eq!(plan.version, Some("3.0.0".to_string()));
     assert_eq!(plan.minecraft_version, "1.21");
-    assert_eq!(plan.loader, ModLoader::Fabric);
+    assert_eq!(plan.loader, Some(ModLoader::Fabric));
 }
 
 #[test]
@@ -350,13 +350,10 @@ empack:
     let config_manager = provider.config_manager(workdir);
     let result = config_manager.create_project_plan();
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        ConfigError::MissingField { field } => {
-            assert!(field.contains("loader"));
-        }
-        _ => panic!("Expected MissingField error"),
-    }
+    assert!(result.is_ok(), "vanilla (no loader) should succeed");
+    let plan = result.unwrap();
+    assert_eq!(plan.loader, None);
+    assert_eq!(plan.minecraft_version, "1.21");
 }
 
 #[test]
@@ -395,7 +392,7 @@ fabric = "0.14.21"
 
     assert!(result.is_ok());
     let plan = result.unwrap();
-    assert_eq!(plan.loader, ModLoader::Fabric);
+    assert_eq!(plan.loader, Some(ModLoader::Fabric));
     assert_eq!(plan.loader_version, "0.14.21");
 }
 
@@ -435,7 +432,7 @@ forge = "47.1.0"
 
     assert!(result.is_ok());
     let plan = result.unwrap();
-    assert_eq!(plan.loader, ModLoader::Forge);
+    assert_eq!(plan.loader, Some(ModLoader::Forge));
     assert_eq!(plan.loader_version, "47.1.0");
 }
 
@@ -475,7 +472,7 @@ quilt = "0.21.0"
 
     assert!(result.is_ok());
     let plan = result.unwrap();
-    assert_eq!(plan.loader, ModLoader::Quilt);
+    assert_eq!(plan.loader, Some(ModLoader::Quilt));
     assert_eq!(plan.loader_version, "0.21.0");
 }
 
@@ -515,7 +512,7 @@ neoforge = "21.0.0"
 
     assert!(result.is_ok());
     let plan = result.unwrap();
-    assert_eq!(plan.loader, ModLoader::NeoForge);
+    assert_eq!(plan.loader, Some(ModLoader::NeoForge));
     assert_eq!(plan.loader_version, "21.0.0");
 }
 
@@ -553,13 +550,9 @@ unknown_loader = "1.0.0"
     let config_manager = provider.config_manager(workdir);
     let result = config_manager.create_project_plan();
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        ConfigError::ValidationError { reason } => {
-            assert!(reason.contains("Cannot infer mod loader"));
-        }
-        _ => panic!("Expected ValidationError"),
-    }
+    assert!(result.is_ok(), "unknown loader in pack.toml should yield None loader");
+    let plan = result.unwrap();
+    assert_eq!(plan.loader, None);
 }
 
 #[test]
@@ -591,7 +584,7 @@ empack:
     assert_eq!(dep.search_query, "Fabric API");
     assert_eq!(dep.project_type, ProjectType::Mod);
     assert_eq!(dep.minecraft_version, "1.21");
-    assert_eq!(dep.loader, ModLoader::Fabric);
+    assert_eq!(dep.loader, Some(ModLoader::Fabric));
     assert_eq!(dep.project_id, "P7dR8mSH");
     assert_eq!(dep.project_platform, ProjectPlatform::Modrinth);
 }
