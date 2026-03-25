@@ -675,7 +675,7 @@ mod handle_add_tests {
                 }),
             ));
 
-        let result = handle_add(&session, vec!["test-mod".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None).await;
 
         if let Err(e) = &result {
             println!("Error: {}", e);
@@ -754,6 +754,7 @@ mod handle_add_tests {
             vec!["mod1".to_string(), "mod2".to_string()],
             false,
             None,
+            None,
         )
         .await;
 
@@ -806,7 +807,7 @@ mod handle_add_tests {
                 }),
             ));
 
-        let result = handle_add(&session, vec!["AANobbMI".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["AANobbMI".to_string()], false, None, None).await;
 
         assert!(result.is_ok());
         assert!(session.process_provider.verify_call(
@@ -845,6 +846,7 @@ mod handle_add_tests {
             vec!["238222".to_string()],
             false,
             Some(crate::application::cli::SearchPlatform::Curseforge),
+            None,
         )
         .await;
 
@@ -860,7 +862,7 @@ mod handle_add_tests {
     async fn it_handles_empty_mod_list() {
         let session = MockCommandSession::new();
 
-        let result = handle_add(&session, vec![], false, None).await;
+        let result = handle_add(&session, vec![], false, None, None).await;
 
         assert!(result.is_ok());
 
@@ -876,7 +878,7 @@ mod handle_add_tests {
                 .with_current_dir(mock_root().join("uninitialized-project")),
         );
 
-        let result = handle_add(&session, vec!["test-mod".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None).await;
 
         assert!(result.is_ok());
 
@@ -928,7 +930,7 @@ mod handle_add_tests {
                 }),
             ));
 
-        let result = handle_add(&session, vec!["sodium".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["sodium".to_string()], false, None, None).await;
 
         assert!(result.is_ok());
         assert!(session.process_provider.get_calls().is_empty());
@@ -958,7 +960,7 @@ mod handle_add_tests {
                 Err("Mock packwiz error".to_string()),
             ));
 
-        let result = handle_add(&session, vec!["failing-mod".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["failing-mod".to_string()], false, None, None).await;
 
         assert!(result.is_ok()); // Command handler should handle errors gracefully
 
@@ -1008,7 +1010,7 @@ mod handle_add_tests {
                     .with_packwiz_add_slug("YL57xq9U".to_string(), "iris".to_string()),
             );
 
-        let result = handle_add(&session, vec!["iris_shaders".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["iris_shaders".to_string()], false, None, None).await;
         assert!(result.is_ok(), "handle_add should succeed: {result:?}");
 
         // Verify empack.yml was updated with "iris" (from .pw.toml), NOT "iris_shaders" (from input)
@@ -1060,7 +1062,7 @@ mod handle_add_tests {
             ));
         // Note: No with_packwiz_add_slug → no .pw.toml created → fallback
 
-        let result = handle_add(&session, vec!["test-mod".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None).await;
         assert!(result.is_ok());
 
         // Verify empack.yml was updated with the fallback key "test-mod"
@@ -1117,7 +1119,7 @@ mod handle_add_tests {
                     .with_packwiz_add_slug("new-mod-id".to_string(), "new-mod".to_string()),
             );
 
-        let result = handle_add(&session, vec!["New Mod".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["New Mod".to_string()], false, None, None).await;
         assert!(result.is_ok(), "handle_add should succeed: {result:?}");
 
         // The dep_key should be "new-mod" (from the newly created .pw.toml),
@@ -1151,7 +1153,7 @@ mod handle_add_tests {
             );
         session.config_provider.app_config.dry_run = true;
 
-        let result = handle_add(&session, vec!["test-mod".to_string()], false, None).await;
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None).await;
 
         assert!(result.is_ok());
         assert!(

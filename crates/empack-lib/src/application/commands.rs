@@ -4,7 +4,7 @@
 //! Implements the Session-Scoped Dependency Injection Pattern.
 
 use crate::Result;
-use crate::application::cli::SearchPlatform;
+use crate::application::cli::{CliProjectType, SearchPlatform};
 use crate::application::session::{CommandSession, FileSystemProvider, Session};
 use crate::application::sync::{
     AddContractError, AddResolution, SyncExecutionAction, SyncPlanAction, build_sync_plan,
@@ -14,7 +14,7 @@ use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus}
 use crate::empack::search::SearchError;
 use crate::application::{CliConfig, Commands};
 use crate::empack::parsing::ModLoader;
-use crate::platform::{ArchiverCapabilities, GoCapabilities};
+use crate::platform::GoCapabilities;
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
 use std::collections::{BTreeMap, HashSet};
@@ -115,7 +115,8 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             mods,
             force,
             platform,
-        } => handle_add(session, mods, force, platform).await,
+            project_type,
+        } => handle_add(session, mods, force, platform, project_type).await,
         Commands::Remove { mods, deps } => handle_remove(session, mods, deps).await,
         Commands::Build {
             targets,
@@ -169,43 +170,10 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         }
     }
 
-    // Check archiving capabilities as two separate concerns:
-    // 1. mrpack extraction requires unzip specifically (tar cannot extract zip files)
-    // 2. Distribution creation accepts zip or tar
-    let create_caps = ArchiverCapabilities::detect_creation();
-    let extract_caps = ArchiverCapabilities::detect_extraction();
-
-    let has_unzip = extract_caps.iter().any(|p| p.name == "unzip" && p.available);
-    if has_unzip {
-        session
-            .display()
-            .status()
-            .success("mrpack extraction", "unzip available");
-    } else {
-        session.display().status().error(
-            "mrpack extraction",
-            "unzip not found (required for server/client builds)",
-        );
-    }
-
-    let has_zip = create_caps.iter().any(|p| p.name == "zip" && p.available);
-    let has_tar = create_caps.iter().any(|p| p.name == "tar" && p.available);
-    if has_zip {
-        session.display().status().success(
-            "distribution creation",
-            "zip available",
-        );
-    } else if has_tar {
-        session.display().status().success(
-            "distribution creation",
-            "tar available (distributions will be .tar.gz instead of .zip)",
-        );
-    } else {
-        session.display().status().error(
-            "distribution creation",
-            "no tools found (zip or tar required)",
-        );
-    }
+    session
+        .display()
+        .status()
+        .success("archive support", "native (zip, tar.gz, 7z)");
 
     Ok(())
 }
@@ -962,6 +930,7 @@ async fn handle_add(
     mods: Vec<String>,
     force: bool,
     platform: Option<SearchPlatform>,
+    project_type: Option<CliProjectType>,
 ) -> Result<()> {
     // Migrate from legacy handle_add - using session providers
 
@@ -1076,9 +1045,10 @@ async fn handle_add(
         let direct_project_id = resolution_intent.direct_project_id.as_deref().unwrap_or("");
         let direct_platform = resolution_intent.direct_platform.unwrap_or(ProjectPlatform::Modrinth);
 
+        let search_project_type = project_type.as_ref().map(|pt| pt.to_project_type());
         match resolve_add_contract(
             &resolution_intent.search_query,
-            crate::primitives::ProjectType::Mod,
+            search_project_type,
             minecraft_version,
             mod_loader,
             direct_project_id,
@@ -1163,8 +1133,10 @@ async fn handle_add(
 
     // === Execute phase: all side effects happen below this line ===
     for resolved in resolved_mods {
-        // Snapshot .pw.toml slugs before packwiz add so we can diff after
-        let before_slugs = scan_pw_toml_slugs(session.filesystem(), &mods_dir);
+        let content_dir = workdir
+            .join("pack")
+            .join(content_folder_for_type(resolved.resolution.resolved_project_type));
+        let before_slugs = scan_pw_toml_slugs(session.filesystem(), &content_dir);
 
         let mut packwiz_result: std::result::Result<(), ()> = Ok(());
         let mut last_error = None;
@@ -1202,7 +1174,7 @@ async fn handle_add(
                 // rather than from user input which may diverge from the registry slug.
                 let dep_key = discover_dep_key(
                     session.filesystem(),
-                    &mods_dir,
+                    &content_dir,
                     &before_slugs,
                     &resolved.dep_key,
                     session.display(),
@@ -1235,13 +1207,12 @@ async fn handle_add(
                     }
                 }
 
-                // Atomically update empack.yml with the new dependency
                 let record = DependencyRecord {
                     status: DependencyStatus::Resolved,
                     title: resolved.resolution.title.clone(),
                     platform: resolved.resolution.resolved_platform,
                     project_id: resolved.resolution.resolved_project_id.clone(),
-                    project_type: crate::primitives::ProjectType::Mod,
+                    project_type: resolved.resolution.resolved_project_type,
                     version: None,
                 };
                 if let Err(e) = config_manager.add_dependency(
@@ -1408,11 +1379,15 @@ impl AddResolutionIntent {
     }
 }
 
-/// Scan a directory for `.pw.toml` files and extract their slugs.
-///
-/// Replicates the slug-extraction logic from `PackwizOps::get_installed_mods`
-/// but operates directly on the filesystem provider so we can snapshot before/after
-/// a packwiz command without requiring stateful mocks.
+fn content_folder_for_type(project_type: ProjectType) -> &'static str {
+    match project_type {
+        ProjectType::Mod => "mods",
+        ProjectType::ResourcePack => "resourcepacks",
+        ProjectType::Shader => "shaderpacks",
+        ProjectType::Datapack => "datapacks",
+    }
+}
+
 fn scan_pw_toml_slugs(
     filesystem: &dyn FileSystemProvider,
     mods_dir: &std::path::Path,

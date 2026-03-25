@@ -6,6 +6,7 @@
 use crate::networking::cache::HttpCache;
 use crate::networking::rate_limit::RateLimiterManager;
 use crate::primitives::ProjectPlatform;
+use crate::primitives::empack::ProjectType;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -45,7 +46,7 @@ pub enum SearchError {
     #[error("Project has extra words: '{found}' vs '{query}'")]
     ExtraWords { found: String, query: String },
 
-    #[error("'{project_title}' exists but does not support {requested_loader:?}. Supported loaders: {}", available_loaders.join(", "))]
+    #[error("'{project_title}' exists but is incompatible with the requested configuration. Supported loaders: {}", available_loaders.join(", "))]
     IncompatibleProject {
         query: String,
         project_title: String,
@@ -131,7 +132,7 @@ const KNOWN_LOADERS: &[&str] = &[
 fn extract_loaders(categories: &[String]) -> Vec<String> {
     categories
         .iter()
-        .filter(|cat| KNOWN_LOADERS.contains(&cat.as_str()))
+        .filter(|cat| KNOWN_LOADERS.contains(&cat.to_lowercase().as_str()))
         .cloned()
         .collect()
 }
@@ -549,13 +550,19 @@ impl ProjectResolver {
         mod_loader: Option<&str>,
     ) -> Result<Vec<ProjectInfo>, SearchError> {
         let normalized_type = self.normalize_project_type(project_type);
-        let mut facets = vec![format!("project_type:{}", normalized_type)];
+        let parsed_type = Self::parse_project_type(&normalized_type);
+        let facet_name = parsed_type
+            .map(|pt| pt.modrinth_facet_name())
+            .unwrap_or(normalized_type.as_str());
+        let mut facets = vec![format!("project_type:{}", facet_name)];
 
         if let Some(version) = minecraft_version {
             facets.push(format!("versions:{}", version));
         }
 
-        if let Some(loader) = mod_loader {
+        if parsed_type.is_none_or(|pt| pt.uses_loader_facet())
+            && let Some(loader) = mod_loader
+        {
             facets.push(format!("categories:{}", loader));
         }
 
@@ -653,7 +660,10 @@ impl ProjectResolver {
                 })?;
 
         let normalized_type = self.normalize_project_type(project_type);
-        let class_id = self.curseforge_class_id(&normalized_type);
+        let parsed_type = Self::parse_project_type(&normalized_type);
+        let class_id = parsed_type
+            .map(|pt| pt.curseforge_class_id())
+            .unwrap_or_else(|| self.curseforge_class_id(&normalized_type));
 
         let mut params = vec![
             ("gameId", "432".to_string()),
@@ -667,7 +677,8 @@ impl ProjectResolver {
             params.push(("gameVersion", version.to_string()));
         }
 
-        if let Some(loader) = mod_loader
+        if parsed_type.is_none_or(|pt| pt.uses_loader_facet())
+            && let Some(loader) = mod_loader
             && let Some(loader_id) = self.curseforge_loader_id(loader)
         {
             params.push(("modLoaderType", loader_id.to_string()));
@@ -789,6 +800,16 @@ impl ProjectResolver {
             requested_version: requested_version.map(|s| s.to_string()),
             downloads: project.downloads,
         }))
+    }
+
+    fn parse_project_type(project_type: &str) -> Option<ProjectType> {
+        match project_type {
+            "mod" => Some(ProjectType::Mod),
+            "resourcepack" => Some(ProjectType::ResourcePack),
+            "shader" => Some(ProjectType::Shader),
+            "datapack" => Some(ProjectType::Datapack),
+            _ => None,
+        }
     }
 
     /// Normalize project type names across platforms

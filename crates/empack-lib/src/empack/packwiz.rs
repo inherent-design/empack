@@ -178,25 +178,27 @@ impl PackwizOps for LivePackwizOps<'_> {
     }
 
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>> {
-        let mods_dir = workdir.join("pack").join("mods");
+        let pack_dir = workdir.join("pack");
+        let scan_dirs = ["mods", "resourcepacks", "shaderpacks"];
 
-        if !self.filesystem.exists(&mods_dir) {
-            return Ok(HashSet::new());
-        }
-
-        let file_list = self.filesystem.get_file_list(&mods_dir)?;
-        let mut installed_mods = HashSet::new();
-
-        for path in &file_list {
-            if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
-                && let Some(slug) = file_name.strip_suffix(".pw.toml")
-                && !slug.is_empty()
-            {
-                installed_mods.insert(slug.to_string());
+        let mut installed = HashSet::new();
+        for folder in &scan_dirs {
+            let dir = pack_dir.join(folder);
+            if !self.filesystem.exists(&dir) {
+                continue;
+            }
+            let file_list = self.filesystem.get_file_list(&dir)?;
+            for path in &file_list {
+                if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
+                    && let Some(slug) = file_name.strip_suffix(".pw.toml")
+                    && !slug.is_empty()
+                {
+                    installed.insert(slug.to_string());
+                }
             }
         }
 
-        Ok(installed_mods)
+        Ok(installed)
     }
 
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {

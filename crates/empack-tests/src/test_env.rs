@@ -320,7 +320,8 @@ fi
                 if name == "packwiz" && stdout.contains("Exported") {
                     code.push_str(
                         r#"
-# Create a dummy mrpack artifact if 'mr export' is requested
+# Create a real zip mrpack artifact if 'mr export' is requested.
+# Native archive extraction requires a valid zip file.
 if [[ "$*" == *"mr export"* ]]; then
   OUTPUT_FILE=""
 
@@ -338,9 +339,11 @@ if [[ "$*" == *"mr export"* ]]; then
 
   if [[ -n "$OUTPUT_FILE" ]]; then
     mkdir -p "$(dirname "$OUTPUT_FILE")"
-    cat > "$OUTPUT_FILE" <<'MRPACK'
-mock mrpack artifact
-MRPACK
+    python3 -c "
+import zipfile, os
+with zipfile.ZipFile('$OUTPUT_FILE', 'w') as z:
+    z.writestr('overrides/config/generated.txt', 'override=true')
+"
   fi
 fi
 "#,
@@ -428,52 +431,6 @@ installed=$SIDE
 JAVAINSTALL
 fi
 "##,
-                    );
-                }
-
-                if name == "zip" {
-                    code.push_str(
-                        r#"
-OUTPUT_FILE=""
-
-if [[ "$1" == "-r0" ]]; then
-  OUTPUT_FILE="$2"
-fi
-
-if [[ -n "$OUTPUT_FILE" ]]; then
-  mkdir -p "$(dirname "$OUTPUT_FILE")"
-  cat > "$OUTPUT_FILE" <<ZIPFILE
-mock zip artifact
-ZIPFILE
-fi
-"#,
-                    );
-                }
-
-                if name == "unzip" {
-                    code.push_str(
-                        r#"
-DEST_DIR=""
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -d)
-      DEST_DIR="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-
-if [[ -n "$DEST_DIR" ]]; then
-  mkdir -p "$DEST_DIR/overrides/config"
-  cat > "$DEST_DIR/overrides/config/generated.txt" <<UNZIPFILE
-override=true
-UNZIPFILE
-fi
-"#,
                     );
                 }
 

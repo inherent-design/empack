@@ -37,6 +37,10 @@ windows-core = { workspace = true }
 tempfile = { workspace = true }
 handlebars = { workspace = true }
 semver = { workspace = true }
+zip = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
+sevenz-rust2 = { workspace = true }
 
 [dev-dependencies]
 mockito = { workspace = true }
