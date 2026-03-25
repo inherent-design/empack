@@ -50,10 +50,14 @@ Without arguments, empack prompts interactively for each field.
 | Flag | Short | Env var | Description |
 | --- | --- | --- | --- |
 | `--pack-name` | `-n` | `EMPACK_NAME` | Modpack display name |
-| `--modloader` | `-m` | `EMPACK_MODLOADER` | Mod loader: `neoforge`, `fabric`, `forge`, `quilt` |
+| `--modloader` | `-m` | `EMPACK_MODLOADER` | Mod loader: `neoforge`, `fabric`, `forge`, `quilt`, `none` |
 | `--mc-version` | | `EMPACK_MC_VERSION` | Minecraft version |
 | `--author` | `-A` | `EMPACK_AUTHOR` | Author name |
+| `--loader-version` | | `EMPACK_LOADER_VERSION` | Loader version (e.g. `0.15.0` for Fabric) |
+| `--pack-version` | `-V` | `EMPACK_PACK_VERSION` | Pack version string (e.g. `1.0.0`) |
 | `--force` | `-f` | | Overwrite existing project files |
+
+Use `--modloader none` for vanilla (no mod loader) projects. When vanilla is selected, loader version prompts are skipped and no loader metadata is written to `empack.yml`.
 
 The `--force` flag overwrites existing project files:
 
@@ -69,9 +73,15 @@ Add mods by name, URL, or project ID. empack searches Modrinth and CurseForge by
 empack add sodium
 empack add jei --platform curseforge
 empack add sodium --force
+empack add complementary-reimagined --type shader
+empack add faithful --type resourcepack
 ```
 
-The `--platform` flag restricts search to `modrinth`, `curseforge`, or `both` (default). The `--force` flag adds projects even when version conflicts exist.
+| Flag | Description |
+| --- | --- |
+| `--platform` | Restrict search to `modrinth`, `curseforge`, or `both` (default) |
+| `--type` | Project type: `mod`, `resourcepack`, `shader`. Skips tiered type guessing when specified |
+| `--force` | Add projects even when version conflicts or duplicates exist |
 
 ### empack sync
 

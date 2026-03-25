@@ -390,6 +390,10 @@ impl ProjectResolver {
                     debug!("{} search: {}", label, e);
                     Ok(None)
                 }
+                // IncompatibleProject from Modrinth prevents CurseForge from
+                // being searched. A project compatible only on CurseForge will
+                // show a false incompatibility message. This is an intentional
+                // tradeoff for the common case.
                 _ => {
                     debug!("{} search failed: {}", label, e);
                     Err(e)
