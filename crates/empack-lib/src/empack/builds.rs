@@ -330,24 +330,33 @@ impl<'a> BuildOrchestrator<'a> {
         let jar_path = dist_dir.join("srv.jar");
         self.download_file(&version_meta.downloads.server.url, &jar_path)?;
 
+        self.verify_server_jar_sha1(&jar_path, &version_meta.downloads.server.sha1)
+    }
+
+    /// Read a JAR file, compute its SHA1, and compare against the expected hash.
+    /// Deletes the file and returns `BuildError::ValidationError` on mismatch.
+    fn verify_server_jar_sha1(
+        &self,
+        jar_path: &Path,
+        expected_sha1: &str,
+    ) -> Result<(), BuildError> {
         let jar_bytes = self
             .session
             .filesystem()
-            .read_bytes(&jar_path)
+            .read_bytes(jar_path)
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("failed to read downloaded server JAR: {}", e),
             })?;
         let hash = format!("{:x}", Sha1::digest(&jar_bytes));
-        if hash != version_meta.downloads.server.sha1 {
-            let _ = self.session.filesystem().remove_file(&jar_path);
+        if hash != expected_sha1 {
+            let _ = self.session.filesystem().remove_file(jar_path);
             return Err(BuildError::ValidationError {
                 reason: format!(
                     "SHA1 mismatch for server JAR: expected {}, got {}",
-                    version_meta.downloads.server.sha1, hash
+                    expected_sha1, hash
                 ),
             });
         }
-
         Ok(())
     }
 
@@ -430,23 +439,25 @@ impl<'a> BuildOrchestrator<'a> {
         self.download_file(&installer_url, &installer_path)?;
 
         let install_dir_flag = format!("--install-dir={}", dist_dir.to_string_lossy());
+        let installer_path_str = installer_path.to_string_lossy().to_string();
+        let loader_flag = format!("--loader-version={}", pack_info.loader_version);
+        let mut args = vec![
+            "-jar",
+            &installer_path_str,
+            "install",
+            "server",
+            &pack_info.mc_version,
+            &install_dir_flag,
+            "--create-scripts",
+            "--download-server",
+        ];
+        if !pack_info.loader_version.is_empty() {
+            args.push(&loader_flag);
+        }
         let output = self
             .session
             .process()
-            .execute(
-                "java",
-                &[
-                    "-jar",
-                    &installer_path.to_string_lossy(),
-                    "install",
-                    "server",
-                    &pack_info.mc_version,
-                    &install_dir_flag,
-                    "--create-scripts",
-                    "--download-server",
-                ],
-                dist_dir,
-            )
+            .execute("java", &args, dist_dir)
             .map_err(|_| BuildError::MissingTool {
                 tool: "java".to_string(),
             })?;
@@ -612,6 +623,12 @@ impl<'a> BuildOrchestrator<'a> {
     /// Uses the shared `reqwest::Client` from the session and the existing
     /// tokio multi-thread runtime via `block_in_place` + `Handle::current()`.
     fn fetch_url_bytes(&self, url: &str) -> Result<Vec<u8>, BuildError> {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() && handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::CurrentThread {
+            return Err(BuildError::ConfigError {
+                reason: "server JAR download requires a multi-threaded tokio runtime".into(),
+            });
+        }
+
         let client = self
             .session
             .network()
