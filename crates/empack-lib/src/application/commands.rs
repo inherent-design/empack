@@ -794,11 +794,18 @@ async fn handle_init(
         && created_dir
         && session.filesystem().is_directory(&target_dir)
     {
-        let _ = session.filesystem().remove_dir_all(&target_dir);
-        session
-            .display()
-            .status()
-            .warning(&format!("Cleaned up directory after init failure: {}", e));
+        match session.filesystem().remove_dir_all(&target_dir) {
+            Ok(()) => session
+                .display()
+                .status()
+                .warning(&format!("Cleaned up directory after init failure: {}", e)),
+            Err(cleanup_err) => session.display().status().warning(&format!(
+                "Init failed: {}. Also failed to clean up {}: {}",
+                e,
+                target_dir.display(),
+                cleanup_err
+            )),
+        }
     }
 
     result
