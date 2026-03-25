@@ -29,7 +29,8 @@ impl MockBuildOrchestrator {
     }
 
     fn orchestrator(&self) -> BuildOrchestrator<'_> {
-        BuildOrchestrator::new(&self.session).expect("Failed to create orchestrator")
+        BuildOrchestrator::new(&self.session, crate::empack::archive::ArchiveFormat::Zip)
+            .expect("Failed to create orchestrator")
     }
 
     fn setup_basic_pack_structure(&self) -> Result<(), BuildError> {
@@ -154,7 +155,7 @@ fn test_build_registry() {
 #[test]
 fn test_prepare_build_environment() {
     let (_temp_dir, session) = create_test_orchestrator();
-    let orchestrator = BuildOrchestrator::new(&session).expect("Failed to create orchestrator");
+    let orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).expect("Failed to create orchestrator");
 
     // Should fail without pack directory
     let result = orchestrator.prepare_build_environment();
@@ -194,7 +195,7 @@ fn test_load_pack_info() {
 #[test]
 fn test_load_pack_info_missing_file() {
     let (_temp_dir, session) = create_test_orchestrator();
-    let mut orchestrator = BuildOrchestrator::new(&session).expect("Failed to create orchestrator");
+    let mut orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).expect("Failed to create orchestrator");
 
     let result = orchestrator.load_pack_info();
     assert!(result.is_err());
@@ -446,7 +447,7 @@ async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
                 .with_configured_project(workdir.clone()),
         )
         .with_process(process);
-    let mut orchestrator = BuildOrchestrator::new(&session).unwrap();
+    let mut orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let error = orchestrator
         .execute_build_pipeline(&[BuildTarget::Mrpack])
         .await
@@ -493,7 +494,7 @@ async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_e
                 .with_configured_project(workdir.clone()),
         )
         .with_process(process);
-    let mut orchestrator = BuildOrchestrator::new(&session).unwrap();
+    let mut orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let error = orchestrator
         .execute_build_pipeline(&[BuildTarget::Mrpack])
         .await

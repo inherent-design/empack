@@ -316,7 +316,7 @@ async fn test_transition_to_built() {
     let session = configured_build_session(&workdir);
     let manager = PackStateManager::new(workdir.clone(), session.filesystem());
     let targets = vec![BuildTarget::Mrpack];
-    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
+    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let packwiz = mock_packwiz_for_test();
     let result = manager
         .execute_transition(session.process(), &packwiz, StateTransition::Build(mock_orchestrator, targets))
@@ -356,7 +356,7 @@ async fn test_invalid_transitions() {
 
     // Can't build from uninitialized
     let mock_session = crate::application::session_mocks::MockCommandSession::new();
-    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session).unwrap();
+    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let result = manager
         .execute_transition(
             &process,
@@ -538,7 +538,7 @@ async fn test_pure_execute_transition_function() {
     let workdir = mock_root().join("configured-project");
     let session = configured_build_session(&workdir);
     let targets = vec![BuildTarget::Mrpack];
-    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
+    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let result = execute_transition(
         session.filesystem(),
         session.process(),
@@ -694,7 +694,7 @@ async fn test_pure_execute_build_function() {
     let workdir = mock_root().join("configured-project");
     let session = configured_build_session(&workdir);
     let targets = vec![BuildTarget::Mrpack];
-    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session).unwrap();
+    let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let result = execute_build(mock_orchestrator, &targets).await.unwrap();
     assert_eq!(result, PackState::Built);
 }

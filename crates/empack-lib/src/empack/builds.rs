@@ -97,14 +97,13 @@ pub struct BuildOrchestrator<'a> {
     workdir: PathBuf,
     dist_dir: PathBuf,
 
-    // State tracking for incremental builds
     pack_refreshed: bool,
     mrpack_extracted: bool,
 
-    // Cached template variables
     pack_info: Option<PackInfo>,
 
-    // Session provider for resource resolution and state management
+    archive_format: crate::empack::archive::ArchiveFormat,
+
     session: &'a dyn crate::application::session::Session,
 }
 
@@ -116,6 +115,7 @@ impl<'a> std::fmt::Debug for BuildOrchestrator<'a> {
             .field("pack_refreshed", &self.pack_refreshed)
             .field("mrpack_extracted", &self.mrpack_extracted)
             .field("pack_info", &self.pack_info)
+            .field("archive_format", &self.archive_format)
             .field("session", &"<dyn Session>")
             .finish()
     }
@@ -160,7 +160,10 @@ pub struct BuildArtifact {
 }
 
 impl<'a> BuildOrchestrator<'a> {
-    pub fn new(session: &'a dyn crate::application::session::Session) -> Result<Self, BuildError> {
+    pub fn new(
+        session: &'a dyn crate::application::session::Session,
+        archive_format: crate::empack::archive::ArchiveFormat,
+    ) -> Result<Self, BuildError> {
         let workdir = match session.config().app_config().workdir.as_ref().cloned() {
             Some(w) => w,
             None => session
@@ -178,6 +181,7 @@ impl<'a> BuildOrchestrator<'a> {
             pack_refreshed: false,
             mrpack_extracted: false,
             pack_info: None,
+            archive_format,
             session,
         })
     }
@@ -914,7 +918,7 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
-        let format = crate::empack::archive::ArchiveFormat::Zip;
+        let format = self.archive_format;
         let filename = format!(
             "{}-v{}-{}.{}",
             pack_info.name,
@@ -1473,16 +1477,18 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         if let Some(info) = pack_info {
-            let archive_file = self
-                .dist_dir
-                .join(format!("{}-v{}-{}.zip", info.name, info.version, target));
-            if self.session.filesystem().exists(&archive_file) {
-                self.session
-                    .filesystem()
-                    .remove_file(&archive_file)
-                    .map_err(|e| BuildError::ConfigError {
-                        reason: e.to_string(),
-                    })?;
+            for ext in ["zip", "tar.gz", "7z"] {
+                let archive_file = self
+                    .dist_dir
+                    .join(format!("{}-v{}-{}.{}", info.name, info.version, target, ext));
+                if self.session.filesystem().exists(&archive_file) {
+                    self.session
+                        .filesystem()
+                        .remove_file(&archive_file)
+                        .map_err(|e| BuildError::ConfigError {
+                            reason: e.to_string(),
+                        })?;
+                }
             }
         }
 

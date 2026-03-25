@@ -3,7 +3,7 @@
 //! Tests graceful error handling when a template file is missing during build.
 
 use anyhow::Result;
-use empack_lib::application::cli::Commands;
+use empack_lib::application::cli::{CliArchiveFormat, Commands};
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
@@ -94,7 +94,7 @@ async fn test_build_with_missing_template() -> Result<()> {
         Commands::Build {
             targets: vec!["client".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )
@@ -189,7 +189,7 @@ async fn test_build_template_error_specificity() -> Result<()> {
         Commands::Build {
             targets: vec!["server".to_string()],
             clean: false,
-            jobs: None,
+            format: CliArchiveFormat::Zip,
         },
         &session,
     )
