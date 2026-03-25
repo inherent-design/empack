@@ -509,33 +509,7 @@ async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_e
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_vanilla_server_sha1_mismatch_returns_validation_error() {
-    let mut server = mockito::Server::new_async().await;
-    let jar_bytes = b"fake server jar";
-    let wrong_sha1 = "0000000000000000000000000000000000000000";
-
-    let version_meta = serde_json::json!({
-        "downloads": {
-            "server": {
-                "url": format!("{}/server.jar", server.url()),
-                "sha1": wrong_sha1
-            }
-        }
-    });
-    let manifest = serde_json::json!({
-        "versions": [{ "id": "1.21", "url": format!("{}/meta.json", server.url()) }]
-    });
-
-    let _m1 = server.mock("GET", "/manifest.json")
-        .with_body(manifest.to_string())
-        .create_async().await;
-    let _m2 = server.mock("GET", "/meta.json")
-        .with_body(version_meta.to_string())
-        .create_async().await;
-    let _m3 = server.mock("GET", "/server.jar")
-        .with_body(jar_bytes.as_slice())
-        .create_async().await;
-
+async fn test_verify_server_jar_sha1_accepts_correct_hash() {
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
     let orchestrator = mock.orchestrator();
@@ -543,24 +517,39 @@ async fn test_vanilla_server_sha1_mismatch_returns_validation_error() {
     let dist_dir = mock.workdir().join("dist").join("server");
     mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
-    // Fetch manifest
-    let manifest_text = orchestrator
-        .fetch_url_text(&format!("{}/manifest.json", server.url()))
-        .unwrap();
-    let parsed: MojangVersionManifest = serde_json::from_str(&manifest_text).unwrap();
-
-    // Fetch version meta
-    let meta_text = orchestrator.fetch_url_text(&parsed.versions[0].url).unwrap();
-    let meta: MojangVersionMeta = serde_json::from_str(&meta_text).unwrap();
-
-    // Download the jar
+    let jar_bytes = b"test jar content";
+    let correct_sha1 = format!("{:x}", Sha1::digest(jar_bytes));
     let jar_path = dist_dir.join("srv.jar");
-    orchestrator.download_file(&meta.downloads.server.url, &jar_path).unwrap();
+    mock.session.filesystem().write_bytes(&jar_path, jar_bytes).unwrap();
 
-    // Verify hash mismatch
-    let downloaded = mock.session.filesystem().read_bytes(&jar_path).unwrap();
-    let actual_hash = format!("{:x}", Sha1::digest(&downloaded));
-    assert_ne!(actual_hash, wrong_sha1, "hashes should not match for this test");
+    let result = orchestrator.verify_server_jar_sha1(&jar_path, &correct_sha1);
+    assert!(result.is_ok());
+    assert!(mock.session.filesystem().exists(&jar_path));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_verify_server_jar_sha1_rejects_wrong_hash_and_deletes_file() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let dist_dir = mock.workdir().join("dist").join("server");
+    mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
+
+    let jar_bytes = b"test jar content";
+    let wrong_sha1 = "0000000000000000000000000000000000000000";
+    let jar_path = dist_dir.join("srv.jar");
+    mock.session.filesystem().write_bytes(&jar_path, jar_bytes).unwrap();
+
+    let result = orchestrator.verify_server_jar_sha1(&jar_path, wrong_sha1);
+    match result {
+        Err(BuildError::ValidationError { reason }) => {
+            assert!(reason.contains("SHA1 mismatch"));
+            assert!(reason.contains(wrong_sha1));
+        }
+        other => panic!("expected ValidationError, got {other:?}"),
+    }
+    assert!(!mock.session.filesystem().exists(&jar_path));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
