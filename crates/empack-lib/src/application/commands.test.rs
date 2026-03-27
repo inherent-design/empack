@@ -3637,13 +3637,17 @@ project-id = 448233
     //
     // R2 test 5: When restricted mods are detected at build-time, empack should
     // open the browser to the CurseForge download page. Assert via MockProcessProvider
-    // that `open` (macOS) was called with the correct CF URL.
+    // that the platform-appropriate browser command was called with the correct CF URL.
     #[tokio::test]
     async fn test_build_restricted_opens_browser() {
         let workdir = mock_root().join("cf-restricted-build-browser");
         let mods_dir = workdir.join("pack").join("mods");
 
+        let mut tty_caps = crate::terminal::TerminalCapabilities::minimal();
+        tty_caps.is_tty = true;
+
         let session = MockCommandSession::new()
+            .with_terminal_capabilities(tty_caps)
             .with_filesystem(
                 MockFileSystemProvider::new()
                     .with_current_dir(workdir.clone())
@@ -3668,23 +3672,21 @@ project-id = 448233
         )
         .await;
 
-        // After W2-F6: the build pre-flight detects the restricted mod and
-        // attempts to open the browser with the CurseForge download URL.
-        // On macOS this would call `open https://www.curseforge.com/...`.
-        let open_calls = session.process_provider.get_calls_for_command("open");
+        let (expected_cmd, _) = crate::platform::browser_open_command();
+        let open_calls = session.process_provider.get_calls_for_command(expected_cmd);
         assert!(
             !open_calls.is_empty(),
             "Build should attempt to open browser for restricted mod download. \
-             Currently: no open command called. All process calls: {:?}",
+             Currently: no '{}' command called. All process calls: {:?}",
+            expected_cmd,
             session.process_provider.get_calls()
         );
 
-        // Verify the URL contains the CurseForge project and file ID from the .pw.toml
         let open_args: Vec<String> = open_calls[0].args.clone();
         let url = open_args.join(" ");
         assert!(
             url.contains("curseforge.com") && url.contains("256717"),
-            "open URL must point to the CurseForge project page; got: {}",
+            "browser open URL must point to the CurseForge project page; got: {}",
             url
         );
     }
@@ -4040,7 +4042,11 @@ project-id = 2222
         let workdir = mock_root().join("cf-restricted-platform-cmd");
         let mods_dir = workdir.join("pack").join("mods");
 
+        let mut tty_caps = crate::terminal::TerminalCapabilities::minimal();
+        tty_caps.is_tty = true;
+
         let session = MockCommandSession::new()
+            .with_terminal_capabilities(tty_caps)
             .with_filesystem(
                 MockFileSystemProvider::new()
                     .with_current_dir(workdir.clone())
@@ -4065,13 +4071,7 @@ project-id = 2222
         )
         .await;
 
-        let expected_command = if cfg!(target_os = "macos") {
-            "open"
-        } else if cfg!(target_os = "windows") {
-            "cmd"
-        } else {
-            "xdg-open"
-        };
+        let (expected_command, _) = crate::platform::browser_open_command();
 
         let open_calls = session
             .process_provider

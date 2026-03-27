@@ -1664,11 +1664,8 @@ fn packwiz_cache_import_dir() -> std::path::PathBuf {
     }
     #[cfg(not(test))]
     {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| std::path::PathBuf::from("."));
-        home.join(".cache")
+        crate::platform::home_dir()
+            .join(".cache")
             .join("packwiz")
             .join("cache")
             .join("import")
@@ -2028,13 +2025,12 @@ async fn handle_build(
                     "Download manually: {}",
                     url
                 ));
-                if cfg!(target_os = "windows") {
-                    let _ = session.process().execute("cmd", &["/c", "start", &url], &pack_dir);
-                } else if cfg!(target_os = "macos") {
-                    let _ = session.process().execute("open", &[&url], &pack_dir);
-                } else {
-                    let _ = session.process().execute("xdg-open", &[&url], &pack_dir);
-                };
+                if session.terminal().is_tty {
+                    let (cmd, prefix_args) = crate::platform::browser_open_command();
+                    let mut args: Vec<&str> = prefix_args;
+                    args.push(&url);
+                    let _ = session.process().execute(cmd, &args, &pack_dir);
+                }
                 mod_names.push(rm.name.clone());
             }
             session.display().status().warning(&format!(

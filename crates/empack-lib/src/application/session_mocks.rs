@@ -1130,6 +1130,7 @@ impl InteractiveProvider for MockInteractiveProvider {
 pub struct MockCommandSession {
     pub multi_progress: Arc<MultiProgress>,
     pub display_provider: LiveDisplayProvider,
+    pub terminal_capabilities: crate::terminal::TerminalCapabilities,
     pub filesystem_provider: MockFileSystemProvider,
     pub network_provider: MockNetworkProvider,
     pub process_provider: MockProcessProvider,
@@ -1140,7 +1141,6 @@ pub struct MockCommandSession {
 
 impl MockCommandSession {
     pub fn new() -> Self {
-        // Initialize display system for tests
         use crate::display::Display;
         use crate::terminal::capabilities::TerminalCapabilities;
         let capabilities = TerminalCapabilities::detect_from_config(&AppConfig::default())
@@ -1158,6 +1158,7 @@ impl MockCommandSession {
         let mut session = Self {
             multi_progress,
             display_provider,
+            terminal_capabilities: TerminalCapabilities::minimal(),
             filesystem_provider,
             network_provider: MockNetworkProvider::new(),
             process_provider: MockProcessProvider::new(),
@@ -1206,6 +1207,11 @@ impl MockCommandSession {
         self
     }
 
+    pub fn with_terminal_capabilities(mut self, caps: crate::terminal::TerminalCapabilities) -> Self {
+        self.terminal_capabilities = caps;
+        self
+    }
+
     fn sync_process_provider(&mut self) {
         self.process_provider
             .connect_filesystem(&self.filesystem_provider);
@@ -1240,6 +1246,11 @@ impl MockCommandSession {
     pub fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
     }
+
+    /// Get the terminal capabilities for this session
+    pub fn terminal(&self) -> &crate::terminal::TerminalCapabilities {
+        &self.terminal_capabilities
+    }
 }
 
 impl Default for MockCommandSession {
@@ -1271,6 +1282,10 @@ impl Session for MockCommandSession {
 
     fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
+    }
+
+    fn terminal(&self) -> &crate::terminal::TerminalCapabilities {
+        &self.terminal_capabilities
     }
 
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
