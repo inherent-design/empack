@@ -216,7 +216,16 @@ mod handle_init_tests {
 
         let result = handle_init(&session, None, None, false, None, None, None, None, None).await;
 
-        assert!(result.is_ok());
+        assert!(
+            result.is_err(),
+            "handle_init should return Err when existing project detected without --force"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("already contains a modpack project"),
+            "Error should mention existing project: {}",
+            err_msg
+        );
         assert_eq!(
             session
                 .filesystem()

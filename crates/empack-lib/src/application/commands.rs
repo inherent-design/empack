@@ -274,7 +274,9 @@ async fn handle_init(
                     .display()
                     .status()
                     .subtle("   Use --force to overwrite existing files");
-                return Ok(());
+                return Err(anyhow::anyhow!(
+                    "Directory already contains a modpack project. Use --force to overwrite existing files."
+                ));
             }
 
             session
@@ -352,7 +354,10 @@ async fn handle_init(
                         .display()
                         .status()
                         .subtle("   Use --force to overwrite existing files");
-                    return Ok(());
+                    return Err(anyhow::anyhow!(
+                        "Directory '{}' already contains a modpack project. Use --force to overwrite existing files.",
+                        new_target.display()
+                    ));
                 }
                 // Force path: clean existing state
                 session
@@ -553,7 +558,10 @@ async fn handle_init(
                 .display()
                 .status()
                 .subtle("   Try selecting a different Minecraft version");
-            return Ok(());
+            return Err(anyhow::anyhow!(
+                "No compatible mod loaders found for Minecraft {}",
+                minecraft_version
+            ));
         }
 
         let (selected_loader, loader_str) = if let Some(loader_str) = cli_modloader {
