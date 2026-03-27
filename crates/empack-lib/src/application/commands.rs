@@ -2138,37 +2138,13 @@ async fn handle_build(
             .status()
             .info("Downloading required component: packwiz-installer-bootstrap.jar...");
 
-        // Create cache directory if it doesn't exist
-        if let Some(parent) = bootstrap_jar_path.parent() {
-            session.filesystem().create_dir_all(parent)?;
-        }
-
-        // Use the NetworkProvider to download the file
-        let client = session.network().http_client()?;
-        let url = "https://github.com/packwiz/packwiz-installer-bootstrap/releases/latest/download/packwiz-installer-bootstrap.jar";
-        let response = client
-            .get(url)
-            .send()
-            .await
-            .context("Failed to download packwiz-installer-bootstrap.jar")?;
-
-        if !response.status().is_success() {
-            return Err(anyhow::anyhow!(
-                "Failed to download packwiz-installer-bootstrap.jar: HTTP {}",
-                response.status()
-            ));
-        }
-
-        let bytes = response
-            .bytes()
-            .await
-            .context("Failed to read response bytes")?;
-
-        // Use the FileSystemProvider to save the file
-        session
-            .filesystem()
-            .write_bytes(&bootstrap_jar_path, bytes.as_ref())
-            .context("Failed to write JAR file to cache")?;
+        download_to_cache(
+            session,
+            "https://github.com/packwiz/packwiz-installer-bootstrap/releases/latest/download/packwiz-installer-bootstrap.jar",
+            &bootstrap_jar_path,
+            "packwiz-installer-bootstrap.jar",
+        )
+        .await?;
 
         session
             .display()
@@ -2188,37 +2164,13 @@ async fn handle_build(
             .status()
             .info("Downloading required component: packwiz-installer.jar...");
 
-        // Create cache directory if it doesn't exist
-        if let Some(parent) = installer_jar_path.parent() {
-            session.filesystem().create_dir_all(parent)?;
-        }
-
-        // Use the NetworkProvider to download the file
-        let client = session.network().http_client()?;
-        let url = "https://github.com/packwiz/packwiz-installer/releases/latest/download/packwiz-installer.jar";
-        let response = client
-            .get(url)
-            .send()
-            .await
-            .context("Failed to download packwiz-installer.jar")?;
-
-        if !response.status().is_success() {
-            return Err(anyhow::anyhow!(
-                "Failed to download packwiz-installer.jar: HTTP {}",
-                response.status()
-            ));
-        }
-
-        let bytes = response
-            .bytes()
-            .await
-            .context("Failed to read response bytes")?;
-
-        // Use the FileSystemProvider to save the file
-        session
-            .filesystem()
-            .write_bytes(&installer_jar_path, bytes.as_ref())
-            .context("Failed to write JAR file to cache")?;
+        download_to_cache(
+            session,
+            "https://github.com/packwiz/packwiz-installer/releases/latest/download/packwiz-installer.jar",
+            &installer_jar_path,
+            "packwiz-installer.jar",
+        )
+        .await?;
 
         session
             .display()
@@ -2797,6 +2749,72 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 }
 
 // Helper functions
+
+/// Download a file from `url` and write it to `dest` with retry logic.
+/// Retries up to 3 times on transient failures with exponential backoff (1s, 2s, 4s).
+async fn download_to_cache(
+    session: &dyn Session,
+    url: &str,
+    dest: &std::path::Path,
+    label: &str,
+) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        session.filesystem().create_dir_all(parent)?;
+    }
+
+    let client = session.network().http_client()?;
+    let max_attempts: u32 = 3;
+    let mut last_error = None;
+
+    for attempt in 0..max_attempts {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(1 << (attempt - 1))).await;
+        }
+
+        match client
+            .get(url)
+            .timeout(std::time::Duration::from_secs(
+                session.config().app_config().net_timeout,
+            ))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                Ok(bytes) => {
+                    session
+                        .filesystem()
+                        .write_bytes(dest, bytes.as_ref())
+                        .context(format!("Failed to write {} to cache", label))?;
+                    return Ok(());
+                }
+                Err(e) => {
+                    last_error = Some(format!("Failed to read response body for {}: {}", label, e));
+                    continue;
+                }
+            },
+            Ok(resp) => {
+                last_error = Some(format!(
+                    "Failed to download {}: HTTP {}",
+                    label,
+                    resp.status()
+                ));
+                continue;
+            }
+            Err(e) => {
+                last_error = Some(format!("Failed to download {}: {}", label, e));
+                continue;
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "{}",
+        last_error.unwrap_or_else(|| format!(
+            "Failed to download {} after {} attempts",
+            label, max_attempts
+        ))
+    ))
+}
 
 /// Parse build targets from string arguments
 fn parse_build_targets(targets: Vec<String>) -> Result<Vec<BuildTarget>> {
