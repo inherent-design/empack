@@ -14,7 +14,6 @@ use crate::application::{CliConfig, Commands};
 use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::SearchError;
-use crate::platform::GoCapabilities;
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
 use std::collections::{BTreeMap, HashSet};
@@ -155,7 +154,7 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
                 .display()
                 .status()
                 .subtle("   Install from: https://packwiz.infra.link/installation/");
-            if GoCapabilities::detect().available {
+            if session.process().find_program("go").is_some() {
                 session
                     .display()
                     .status()
