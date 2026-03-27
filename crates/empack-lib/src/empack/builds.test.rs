@@ -1009,6 +1009,75 @@ async fn test_download_server_jar_unknown_loader_returns_error() {
     }
 }
 
+// ===== W2-F4: FETCH RETRY TESTS =====
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_fetch_url_bytes_retries_on_server_error_then_succeeds() {
+    let mut server = mockito::Server::new_async().await;
+    let body = b"downloaded content";
+
+    let _m = server.mock("GET", "/retry-test")
+        .with_status(503)
+        .with_body("Service Unavailable")
+        .expect_at_most(2)
+        .create_async().await;
+    let _m_ok = server.mock("GET", "/retry-test")
+        .with_status(200)
+        .with_body(body.as_slice())
+        .create_async().await;
+
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let url = format!("{}/retry-test", server.url());
+    let result = orchestrator.fetch_url_bytes(&url);
+    assert!(result.is_ok(), "should succeed after retries: {:?}", result.err());
+    assert_eq!(result.unwrap(), body);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_fetch_url_bytes_does_not_retry_on_client_error() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _m = server.mock("GET", "/not-found")
+        .with_status(404)
+        .with_body("Not Found")
+        .expect(1)
+        .create_async().await;
+
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let url = format!("{}/not-found", server.url());
+    let result = orchestrator.fetch_url_bytes(&url);
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(err_msg.contains("404"), "error should contain status code: {err_msg}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_fetch_url_bytes_exhausts_retries_on_persistent_server_error() {
+    let mut server = mockito::Server::new_async().await;
+
+    let _m = server.mock("GET", "/always-failing")
+        .with_status(502)
+        .with_body("Bad Gateway")
+        .expect(3)
+        .create_async().await;
+
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let url = format!("{}/always-failing", server.url());
+    let result = orchestrator.fetch_url_bytes(&url);
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(err_msg.contains("502"), "error should contain status code: {err_msg}");
+}
+
 // ===== W1-T4: NEOFORGE BUILD TESTS (B1) =====
 
 mod neoforge_build_tests {
