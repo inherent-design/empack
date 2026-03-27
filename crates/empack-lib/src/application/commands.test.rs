@@ -2800,3 +2800,1192 @@ mod from_cli_input_tests {
         assert_eq!(intent.search_query, "AANobbMI");
     }
 }
+
+// ===== SEARCH AND ADD TESTS (W1-T3) =====
+//
+// S1: CurseForge numeric ID auto-detection and add
+// S2: Search quality for multi-word queries and type filtering
+
+mod search_add_tests {
+    use super::*;
+    use crate::application::sync::resolve_add_contract;
+    use crate::empack::parsing::ModLoader;
+
+    // S1: CurseForge numeric ID without explicit --platform flag is auto-detected
+    // and produces valid packwiz curseforge add commands.
+    // The AddResolutionIntent auto-detects all-digit strings as CurseForge IDs.
+    #[tokio::test]
+    async fn test_handle_add_curseforge_direct_id() {
+        let workdir = mock_root().join("cf-direct-id");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "curseforge".to_string(),
+                    "add".to_string(),
+                    "--addon-id".to_string(),
+                    "238222".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_add(
+            &session,
+            vec!["238222".to_string()],
+            false,
+            None, // no --platform flag
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok(), "handle_add with CF numeric ID should succeed: {result:?}");
+
+        let calls = session.process_provider.get_calls_for_command("packwiz");
+        assert_eq!(calls.len(), 1, "Expected exactly one packwiz call");
+        assert_eq!(
+            calls[0].args,
+            vec!["curseforge", "add", "--addon-id", "238222", "-y"],
+            "Packwiz command must use curseforge add --addon-id for numeric ID"
+        );
+    }
+
+    // S1/E5: When packwiz curseforge add --addon-id fails with stderr content,
+    // the error message must be non-empty. Currently handle_add returns Ok
+    // and the error is only printed, not propagated.
+    // W1-T3: expected to fail until W2-F3
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_add_curseforge_id_propagates_stderr() {
+        let workdir = mock_root().join("cf-id-stderr");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "curseforge".to_string(),
+                    "add".to_string(),
+                    "--addon-id".to_string(),
+                    "238222".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: "no file found for game version".to_string(),
+                    success: false,
+                }),
+            ));
+
+        let result = handle_add(
+            &session,
+            vec!["238222".to_string()],
+            false,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "handle_add must return Err when packwiz curseforge add fails"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            !err_msg.is_empty(),
+            "Error message must be non-empty when packwiz produces stderr"
+        );
+        assert!(
+            err_msg.contains("no file found for game version"),
+            "Error must propagate packwiz stderr; got: {}",
+            err_msg
+        );
+    }
+
+    // S2 partial: Search with explicit --type mod uses the correct type filter
+    // through the full handle_add flow. The mock resolver receives the query
+    // and returns a mod result; the packwiz command is built for Modrinth.
+    // After N4 search redesign, ProjectType::Mod maps to classId 6 on
+    // CurseForge and project_type:mod facet on Modrinth.
+    #[tokio::test]
+    async fn test_search_type_mod_prevents_resourcepack() {
+        let workdir = mock_root().join("type-mod-filter");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_network(
+                MockNetworkProvider::new().with_project_response(
+                    "faithful".to_string(),
+                    modrinth_project("faith-id", "Faithful"),
+                ),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "faith-id".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_add(
+            &session,
+            vec!["faithful".to_string()],
+            false,
+            None,
+            Some(CliProjectType::Mod),
+        )
+        .await;
+
+        assert!(result.is_ok(), "handle_add with --type mod should succeed: {result:?}");
+
+        let calls = session.process_provider.get_calls_for_command("packwiz");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].args,
+            vec!["modrinth", "add", "--project-id", "faith-id", "-y"],
+        );
+    }
+
+    // S2: Multi-word query "just enough items" resolves to the correct mod via
+    // resolve_add_contract. The mock resolver returns JEI when queried with
+    // the multi-word title. This validates that multi-word queries flow
+    // correctly through the resolution pipeline.
+    #[tokio::test]
+    async fn test_search_multiword_resolves_correct_project() {
+        let resolver = MockProjectResolver::new().with_project_response(
+            "just enough items".to_string(),
+            ProjectInfo {
+                platform: ProjectPlatform::Modrinth,
+                project_id: "u6dRKJwZ".to_string(),
+                title: "Just Enough Items".to_string(),
+                downloads: 200_000_000,
+                confidence: 98,
+                project_type: "mod".to_string(),
+            },
+        );
+
+        let resolution = resolve_add_contract(
+            "just enough items",
+            None,
+            Some("1.21.1"),
+            Some(ModLoader::Fabric),
+            "",
+            ProjectPlatform::Modrinth,
+            None,
+            None,
+            &resolver,
+        )
+        .await;
+
+        assert!(
+            resolution.is_ok(),
+            "Multi-word query should resolve: {resolution:?}"
+        );
+        let res = resolution.unwrap();
+        assert_eq!(res.title, "Just Enough Items");
+        assert_eq!(res.resolved_project_id, "u6dRKJwZ");
+        assert_eq!(res.resolved_platform, ProjectPlatform::Modrinth);
+
+        let commands = &res.commands;
+        assert_eq!(commands.len(), 1);
+        assert!(
+            commands[0].contains(&"modrinth".to_string()),
+            "Command must target modrinth: {:?}",
+            commands[0]
+        );
+        assert!(
+            commands[0].contains(&"--project-id".to_string()),
+            "Command must use --project-id: {:?}",
+            commands[0]
+        );
+        assert!(
+            commands[0].contains(&"u6dRKJwZ".to_string()),
+            "Command must contain the resolved project ID: {:?}",
+            commands[0]
+        );
+    }
+}
+
+// ===== EXIT CODE TESTS (W1-T1) =====
+//
+// These tests verify exit code behavior for error conditions.
+// They are expected to FAIL until Wave 2 fixes (W2-F1) are implemented.
+//
+// Test for ExitCode enum (E4) is omitted because the type does not exist yet;
+// a non-compiling test would block the entire suite. The enum should define:
+//   General = 1, Config = 2, Network = 3, NotFound = 4
+
+// ===== INIT INTERACTIVE TESTS =====
+
+mod init_interactive_tests {
+    use super::*;
+
+    // W1-T2: expected to fail until W2-F2
+    //
+    // I1: handle_init with yes_mode=true and no --modloader must return Err
+    // containing "modloader". Currently the interactive provider auto-selects
+    // index 0 ("none (vanilla)") and init silently produces a vanilla pack.
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_init_yes_without_modloader_errors() {
+        let workdir = mock_root().join("yes-no-modloader");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            Some("test-pack".to_string()),
+            None,
+            false,
+            None,  // no --modloader
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "handle_init with --yes and no --modloader must return Err, got Ok"
+        );
+        let err_msg = result.unwrap_err().to_string().to_lowercase();
+        assert!(
+            err_msg.contains("modloader"),
+            "Error must mention 'modloader'; got: {}",
+            err_msg
+        );
+    }
+
+    // W1-T2: expected to fail until W2-F2
+    //
+    // I2: handle_init with a positional name must skip the interactive name
+    // prompt. Currently, the text_input prompt for "Modpack name" fires
+    // regardless of whether a positional name was provided because the guard
+    // checks cli_pack_name, not positional_name.
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_init_positional_name_skips_prompt() {
+        let workdir = mock_root().join("positional-name-skip");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let _result = handle_init(
+            &session,
+            Some("my-pack".to_string()), // positional name
+            None,                         // no --name flag
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        let text_calls = session.interactive_provider.get_text_input_calls();
+        let name_prompt_fired = text_calls
+            .iter()
+            .any(|(prompt, _)| prompt.contains("Modpack name") || prompt.contains("name"));
+        assert!(
+            !name_prompt_fired,
+            "Positional name 'my-pack' should skip the name prompt; text_input calls: {:?}",
+            text_calls
+        );
+    }
+
+    // W1-T2: expected to fail until W2-F2
+    //
+    // I3: Orphan removal in handle_remove must use confirm(), not text_input().
+    // Currently the code at line ~1672 calls text_input("Remove orphaned
+    // dependencies? [y/N]", "N") which is both wrong UX and wrong type.
+    // The fix should replace it with confirm("Remove orphaned dependencies?", false).
+    //
+    // This test sets up a remove with --deps, removes a mod, and then checks
+    // that session.interactive().confirm() was called for orphan removal.
+    // The test fails because: (a) orphan detection uses Path::exists() on a
+    // mock path that doesn't exist on the real filesystem, and (b) even if
+    // reached, text_input is called instead of confirm.
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_remove_orphan_uses_confirm() {
+        let workdir = mock_root().join("orphan-confirm");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_interactive(
+                MockInteractiveProvider::new().queue_confirm(true),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec!["remove".to_string(), "-y".to_string(), "sodium".to_string()],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let _result = handle_remove(
+            &session,
+            vec!["sodium".to_string()],
+            true, // --deps: enable orphan detection
+        )
+        .await;
+
+        let confirm_calls = session.interactive_provider.get_confirm_calls();
+        assert!(
+            !confirm_calls.is_empty(),
+            "Orphan removal must use confirm(), not text_input(); confirm_calls was empty. \
+             text_input_calls: {:?}",
+            session.interactive_provider.get_text_input_calls()
+        );
+    }
+
+    // W1-T2: expected to fail until W2-F2
+    //
+    // I4: handle_init with --modloader none and --loader-version 0.15.0 should
+    // either warn about the ignored loader version or return an error. Currently
+    // it silently ignores --loader-version for vanilla packs.
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_init_vanilla_loader_version_warns() {
+        let workdir = mock_root().join("vanilla-loader-version");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            Some("test-pack".to_string()),
+            None,
+            false,
+            Some("none".to_string()),       // vanilla
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            Some("0.15.0".to_string()),      // should warn or error
+            None,
+        )
+        .await;
+
+        // Accept either behavior: an error return OR a successful init.
+        // If Ok, the loader_version should NOT appear in empack.yml
+        // (and ideally a warning was emitted, but we can't capture
+        // display output in unit tests).
+        //
+        // The key assertion: the result must not silently succeed with
+        // a loader_version baked into the config. If it returns Ok,
+        // verify the empack.yml does NOT contain "0.15.0".
+        if let Ok(()) = result {
+            let target_dir = mock_root()
+                .join("vanilla-loader-version")
+                .join("test-pack");
+            if let Ok(yml) = session
+                .filesystem()
+                .read_to_string(&target_dir.join("empack.yml"))
+            {
+                assert!(
+                    !yml.contains("0.15.0"),
+                    "Vanilla init must not silently embed --loader-version in config; \
+                     empack.yml contains:\n{}",
+                    yml
+                );
+            }
+            // If we reach here with Ok and no yml (dir not created), the test
+            // effectively passes vacuously. That's acceptable for the "warn"
+            // variant since the real fix may just emit a warning.
+            panic!(
+                "handle_init with --modloader none --loader-version 0.15.0 should \
+                 either return Err or omit loader_version from config"
+            );
+        }
+        // If Err: the error path is the preferred fix. Just verify it ran.
+    }
+}
+
+// ===== CF RESTRICTED DOWNLOADS TESTS (W1-T7) =====
+//
+// R1: CF-restricted mods: add succeeds silently, builds fail with opaque errors
+// R2: No workflow for manually downloading restricted CF mod files
+//
+// All tests are #[ignore] and expected to fail until W2-F6.
+//
+// A CurseForge-restricted mod has `mode = "metadata:curseforge"` and NO `url`
+// field in its .pw.toml `[download]` section. This means the mod file cannot be
+// downloaded via the API and must be manually fetched from the CurseForge website.
+
+mod cf_restricted_downloads_tests {
+    use super::*;
+
+    /// .pw.toml content for a CurseForge-restricted mod (no url, mode = metadata:curseforge)
+    const RESTRICTED_PW_TOML: &str = r#"name = "OptiFine"
+filename = "OptiFine_1.21.4_HD_U_J2.jar"
+side = "client"
+
+[download]
+hash-format = "sha1"
+hash = "abc123def456"
+mode = "metadata:curseforge"
+
+[update]
+[update.curseforge]
+file-id = 5678901
+project-id = 256717
+"#;
+
+    /// .pw.toml content for a normal (non-restricted) mod
+    const NORMAL_PW_TOML: &str = r#"name = "Sodium"
+filename = "sodium-fabric-0.6.0+mc1.21.4.jar"
+side = "client"
+
+[download]
+url = "https://cdn.modrinth.com/data/AANobbMI/versions/nPGOChsP/sodium-fabric-0.6.0%2Bmc1.21.4.jar"
+hash-format = "sha1"
+hash = "fedcba987654"
+
+[update]
+[update.modrinth]
+mod-id = "AANobbMI"
+version = "nPGOChsP"
+"#;
+
+    // W1-T7: expected to fail until W2-F6
+    //
+    // R1 test 1: After handle_add creates a .pw.toml with metadata:curseforge mode
+    // and no url, empack must warn the user. Currently: silent success.
+    //
+    // Setup: Mock packwiz add to succeed and inject a restricted .pw.toml into the
+    // mock filesystem. Assert that handle_add returns Ok but the warning message
+    // was emitted (or, if the design changes to block, returns Err).
+    //
+    // Since we cannot capture display output in unit tests, we instead assert that
+    // the function explicitly detects the restricted mod. The actual implementation
+    // should call session.display().status().warning() with a message containing
+    // "third-party downloads disabled" or "manual download required".
+    //
+    // For now, we verify by checking that the code reads the .pw.toml after the
+    // packwiz add (which it currently doesn't do for restriction detection).
+    #[ignore]
+    #[tokio::test]
+    async fn test_add_cf_restricted_mod_warns() {
+        let workdir = mock_root().join("cf-restricted-add-warn");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(
+                MockProcessProvider::new()
+                    .with_packwiz_result(
+                        vec![
+                            "curseforge".to_string(),
+                            "add".to_string(),
+                            "--addon-id".to_string(),
+                            "256717".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    .with_packwiz_add_slug("256717".to_string(), "optifine".to_string()),
+            );
+
+        // Inject the restricted .pw.toml that packwiz would create
+        session
+            .filesystem_provider
+            .files
+            .lock()
+            .unwrap()
+            .insert(
+                mods_dir.join("optifine.pw.toml"),
+                RESTRICTED_PW_TOML.to_string(),
+            );
+
+        let result = handle_add(
+            &session,
+            vec!["256717".to_string()],
+            false,
+            Some(crate::application::cli::SearchPlatform::Curseforge),
+            None,
+        )
+        .await;
+
+        // The add should succeed (the metadata is valid), but detection must happen.
+        // Until W2-F6, empack does NOT detect the restriction at all.
+        // After W2-F6, one of these must be true:
+        // a) handle_add returns Ok and a warning was emitted (preferred), OR
+        // b) handle_add returns Err with a clear message about the restriction.
+        //
+        // We cannot capture display warnings, so the minimum verifiable assertion is:
+        // If Ok, the .pw.toml for the restricted mod must have been read by the
+        // detection logic. We check this indirectly: after W2-F6, the code should
+        // read the .pw.toml and detect `mode = "metadata:curseforge"` without a `url`.
+        //
+        // For the failing test, we assert that if the result is Ok, empack
+        // must NOT have silently succeeded without any detection attempt.
+        // This is hard to test without output capture, so we take a pragmatic
+        // approach: assert that the result is Err (the implementation should
+        // at least surface this as a warning-level issue).
+        assert!(
+            result.is_err(),
+            "handle_add must detect CF-restricted mod and return Err (or emit warning). \
+             Currently succeeds silently."
+        );
+    }
+
+    // W1-T7: expected to fail until W2-F6
+    //
+    // R1 test 2: When a CF-restricted mod is also available on Modrinth, empack
+    // should suggest the Modrinth alternative. Currently: no detection at all.
+    #[ignore]
+    #[tokio::test]
+    async fn test_add_cf_restricted_suggests_modrinth() {
+        let workdir = mock_root().join("cf-restricted-modrinth-alt");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        // The resolver returns Entity Culling as a Modrinth project when searched
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_network(
+                MockNetworkProvider::new().with_project_response(
+                    "Entity Culling".to_string(),
+                    ProjectInfo {
+                        platform: ProjectPlatform::Modrinth,
+                        project_id: "NNAgCjsB".to_string(),
+                        title: "Entity Culling".to_string(),
+                        downloads: 50_000_000,
+                        confidence: 95,
+                        project_type: "mod".to_string(),
+                    },
+                ),
+            )
+            .with_process(
+                MockProcessProvider::new()
+                    .with_packwiz_result(
+                        vec![
+                            "curseforge".to_string(),
+                            "add".to_string(),
+                            "--addon-id".to_string(),
+                            "448233".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    .with_packwiz_add_slug("448233".to_string(), "entityculling".to_string()),
+            );
+
+        // Inject restricted .pw.toml for Entity Culling
+        let ec_pw_toml = r#"name = "Entity Culling"
+filename = "entityculling-fabric-1.7.3-mc1.21.4.jar"
+side = "client"
+
+[download]
+hash-format = "sha1"
+hash = "deadbeef123456"
+mode = "metadata:curseforge"
+
+[update]
+[update.curseforge]
+file-id = 7654321
+project-id = 448233
+"#;
+        session
+            .filesystem_provider
+            .files
+            .lock()
+            .unwrap()
+            .insert(
+                mods_dir.join("entityculling.pw.toml"),
+                ec_pw_toml.to_string(),
+            );
+
+        let result = handle_add(
+            &session,
+            vec!["448233".to_string()],
+            false,
+            Some(crate::application::cli::SearchPlatform::Curseforge),
+            None,
+        )
+        .await;
+
+        // After W2-F6: empack detects the restriction and checks Modrinth for
+        // an alternative. Since our mock resolver has "Entity Culling" on Modrinth,
+        // empack should suggest it. The suggestion message should contain "Modrinth"
+        // or the modrinth alternative.
+        //
+        // Currently fails: no detection, no Modrinth check.
+        assert!(
+            result.is_err(),
+            "handle_add must detect CF-restricted mod and suggest Modrinth alternative. \
+             Currently succeeds silently with no detection."
+        );
+    }
+
+    // W1-T7: expected to fail until W2-F6
+    //
+    // R2 test 3: handle_build must scan .pw.toml files for metadata:curseforge mode
+    // before calling packwiz export. Assert a pre-flight report lists the restricted mod.
+    // Currently: builds attempt and fail with an opaque error.
+    #[ignore]
+    #[tokio::test]
+    async fn test_build_preflight_detects_restricted() {
+        let workdir = mock_root().join("cf-restricted-build-preflight");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_empack_project(
+                        workdir.clone(),
+                        "Test Pack",
+                        "1.21.4",
+                        "fabric",
+                    )
+                    // Place a restricted .pw.toml in pack/mods/
+                    .with_file(
+                        mods_dir.join("optifine.pw.toml"),
+                        RESTRICTED_PW_TOML.to_string(),
+                    )
+                    // Also place a normal mod so the pack is not empty
+                    .with_file(
+                        mods_dir.join("sodium.pw.toml"),
+                        NORMAL_PW_TOML.to_string(),
+                    ),
+            )
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+
+        let result = handle_build(
+            &session,
+            vec!["mrpack".to_string()],
+            false,
+            crate::empack::archive::ArchiveFormat::Zip,
+        )
+        .await;
+
+        // After W2-F6: handle_build should detect the restricted mod BEFORE
+        // attempting packwiz export. The error should clearly identify the mod
+        // and provide a download URL.
+        assert!(
+            result.is_err(),
+            "handle_build must detect restricted mods in pre-flight and return Err \
+             with a clear report. Currently either succeeds or fails with opaque error."
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("OptiFine") || err_msg.contains("optifine"),
+            "Pre-flight error must name the restricted mod; got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("curseforge.com") || err_msg.contains("manual download"),
+            "Pre-flight error must include download URL or manual download instruction; got: {}",
+            err_msg
+        );
+    }
+
+    // W1-T7: expected to fail until W2-F6
+    //
+    // R2 test 4: When the restricted mod file is present in the packwiz cache,
+    // build should proceed. Currently: no cache check logic exists.
+    #[ignore]
+    #[tokio::test]
+    async fn test_build_preflight_passes_when_cached() {
+        let workdir = mock_root().join("cf-restricted-build-cached");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        // Simulate the cached file existing in packwiz's import cache.
+        // The actual cache path will be defined by W2-F6 implementation;
+        // for the test we use a deterministic mock path.
+        let cache_dir = mock_root()
+            .join(".cache")
+            .join("packwiz")
+            .join("cache")
+            .join("import");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_empack_project(
+                        workdir.clone(),
+                        "Test Pack",
+                        "1.21.4",
+                        "fabric",
+                    )
+                    .with_file(
+                        mods_dir.join("optifine.pw.toml"),
+                        RESTRICTED_PW_TOML.to_string(),
+                    )
+                    .with_file(
+                        mods_dir.join("sodium.pw.toml"),
+                        NORMAL_PW_TOML.to_string(),
+                    )
+                    // Place the cached file so pre-flight passes
+                    .with_file(
+                        cache_dir.join("OptiFine_1.21.4_HD_U_J2.jar"),
+                        "fake jar content".to_string(),
+                    ),
+            )
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+
+        let result = handle_build(
+            &session,
+            vec!["mrpack".to_string()],
+            false,
+            crate::empack::archive::ArchiveFormat::Zip,
+        )
+        .await;
+
+        // After W2-F6: pre-flight finds the restricted mod but also finds the
+        // file in cache, so it proceeds with the build normally.
+        //
+        // To verify the cache check ACTUALLY RUNS (vs the build vacuously
+        // succeeding because no pre-flight exists), we check that the .pw.toml
+        // file was read during the build. The mock filesystem tracks reads, and
+        // the pre-flight scan must read the restricted .pw.toml to check its
+        // mode field and then look up the cache.
+        //
+        // Currently fails: no pre-flight cache check logic exists. The build
+        // proceeds without ever reading the .pw.toml for restriction detection.
+        //
+        // We verify by checking that the restricted .pw.toml was read during
+        // the build flow. This is only true if pre-flight scanning is implemented.
+        let _optifine_toml_path = mods_dir.join("optifine.pw.toml");
+
+        // After the build, check that the .pw.toml was read (pre-flight scan ran).
+        // BuildOrchestrator currently does NOT read .pw.toml files for restriction
+        // detection, so this read would only happen if W2-F6 added the pre-flight scan.
+        //
+        // Pragmatic assertion: the result must be Ok AND the build must have
+        // specifically checked the cache path. Since we can't easily introspect
+        // mock filesystem reads, we instead verify a behavioral signal: if
+        // pre-flight exists and cache is found, the build should NOT call `open`
+        // (browser) for the cached mod.
+        //
+        // However, without pre-flight at all, we can't distinguish "no detection"
+        // from "detection + cache hit". So the test must fail until pre-flight exists.
+        //
+        // Strategy: also run test_build_preflight_detects_restricted (test 3) without
+        // the cache file. If that test passes (pre-flight blocks), then this test
+        // verifies the cache bypass. If test 3 fails, this test should also fail.
+        //
+        // Direct assertion: verify that the mock filesystem's cache file was
+        // consulted. Since the pre-flight doesn't exist yet, we assert failure.
+        assert!(
+            result.is_ok(),
+            "Build with cached restricted mod file should succeed, got: {:?}",
+            result
+        );
+
+        // Verify the pre-flight actually ran by checking that no `open` command was called
+        // (the cached mod should not trigger browser opening).
+        // BUT ALSO verify the pre-flight EXISTS by asserting the restricted .pw.toml was
+        // read. We check this by verifying the cache_dir path was checked via filesystem.exists().
+        let _cached_jar_path = cache_dir.join("OptiFine_1.21.4_HD_U_J2.jar");
+        // The pre-flight should have checked if this file exists. Since the mock
+        // filesystem reports it exists, the pre-flight should have proceeded.
+        // Without pre-flight, the cache path is never checked.
+        //
+        // We cannot directly observe filesystem.exists() calls on the mock, so
+        // we use a proxy: if pre-flight ran and found the cache, it should NOT
+        // have emitted any `open` commands. If pre-flight did NOT run, the
+        // packwiz export may have failed with its own error about manual downloads.
+        //
+        // Final assertion: the pre-flight must have detected the restricted mod.
+        // We verify this by confirming the build read the restricted .pw.toml content.
+        // This requires the pre-flight to parse .pw.toml files in pack/mods/.
+        // Since this logic doesn't exist yet, we fail with a clear message.
+        panic!(
+            "Pre-flight cache check is not yet implemented. \
+             The build succeeded vacuously because no restriction detection exists. \
+             After W2-F6, this test should verify that the pre-flight scan finds \
+             the restricted mod in cache and allows the build to proceed."
+        );
+    }
+
+    // W1-T7: expected to fail until W2-F6
+    //
+    // R2 test 5: When restricted mods are detected at build-time, empack should
+    // open the browser to the CurseForge download page. Assert via MockProcessProvider
+    // that `open` (macOS) was called with the correct CF URL.
+    #[ignore]
+    #[tokio::test]
+    async fn test_build_restricted_opens_browser() {
+        let workdir = mock_root().join("cf-restricted-build-browser");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_empack_project(
+                        workdir.clone(),
+                        "Test Pack",
+                        "1.21.4",
+                        "fabric",
+                    )
+                    .with_file(
+                        mods_dir.join("optifine.pw.toml"),
+                        RESTRICTED_PW_TOML.to_string(),
+                    ),
+            )
+            .with_process(MockProcessProvider::new());
+
+        let _result = handle_build(
+            &session,
+            vec!["mrpack".to_string()],
+            false,
+            crate::empack::archive::ArchiveFormat::Zip,
+        )
+        .await;
+
+        // After W2-F6: the build pre-flight detects the restricted mod and
+        // attempts to open the browser with the CurseForge download URL.
+        // On macOS this would call `open https://www.curseforge.com/...`.
+        let open_calls = session.process_provider.get_calls_for_command("open");
+        assert!(
+            !open_calls.is_empty(),
+            "Build should attempt to open browser for restricted mod download. \
+             Currently: no open command called. All process calls: {:?}",
+            session.process_provider.get_calls()
+        );
+
+        // Verify the URL contains the CurseForge project and file ID from the .pw.toml
+        let open_args: Vec<String> = open_calls[0].args.clone();
+        let url = open_args.join(" ");
+        assert!(
+            url.contains("curseforge.com") && url.contains("256717"),
+            "open URL must point to the CurseForge project page; got: {}",
+            url
+        );
+    }
+
+    // W1-T7: expected to fail until W2-F6
+    //
+    // R2 test 6: When packwiz export fails due to a restricted mod, empack must
+    // surface the mod name and download URL in its error message, not a generic
+    // "packwiz mr export failed".
+    #[ignore]
+    #[tokio::test]
+    async fn test_build_packwiz_error_surfaces_restricted() {
+        let workdir = mock_root().join("cf-restricted-build-error");
+        let mods_dir = workdir.join("pack").join("mods");
+        let pack_file = workdir.join("pack").join("pack.toml");
+
+        // Packwiz mr export fails with the manual download message
+        let packwiz_stderr = "\
+Found 1 manual downloads; these mods are unable to be downloaded by packwiz \
+(due to API limitations) and must be manually downloaded:\n\
+OptiFine (OptiFine_1.21.4_HD_U_J2.jar) from \
+https://www.curseforge.com/minecraft/mc-mods/optifine/files/5678901\n\
+Once you have done so, place these files in \
+/Users/test/.cache/packwiz/cache/import and re-run this command.";
+
+        let pack_file_arg = pack_file.display().to_string();
+        let dist_mrpack = workdir
+            .join("dist")
+            .join("Test Pack-v1.0.0.mrpack")
+            .display()
+            .to_string();
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_empack_project(
+                        workdir.clone(),
+                        "Test Pack",
+                        "1.21.4",
+                        "fabric",
+                    )
+                    .with_file(
+                        mods_dir.join("optifine.pw.toml"),
+                        RESTRICTED_PW_TOML.to_string(),
+                    ),
+            )
+            .with_process(
+                MockProcessProvider::new()
+                    // packwiz refresh succeeds
+                    .with_packwiz_result(
+                        vec![
+                            "--pack-file".to_string(),
+                            pack_file_arg.clone(),
+                            "refresh".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    // packwiz mr export fails with restricted mod message
+                    .with_packwiz_result(
+                        vec![
+                            "--pack-file".to_string(),
+                            pack_file_arg,
+                            "mr".to_string(),
+                            "export".to_string(),
+                            "-o".to_string(),
+                            dist_mrpack,
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: packwiz_stderr.to_string(),
+                            success: false,
+                        }),
+                    ),
+            );
+
+        let result = handle_build(
+            &session,
+            vec!["mrpack".to_string()],
+            false,
+            crate::empack::archive::ArchiveFormat::Zip,
+        )
+        .await;
+
+        // After W2-F6: the build error message must contain the mod name
+        // and download URL from packwiz's stderr, not a generic failure.
+        assert!(
+            result.is_err(),
+            "Build must fail when packwiz mr export fails"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("OptiFine"),
+            "Error must contain the restricted mod name 'OptiFine'; got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("curseforge.com")
+                || err_msg.contains("5678901")
+                || err_msg.contains("manual"),
+            "Error must contain the download URL or manual download instruction; got: {}",
+            err_msg
+        );
+        // Must NOT be the generic message
+        assert!(
+            !err_msg.ends_with("packwiz mr export failed"),
+            "Error must not be the generic 'packwiz mr export failed'; got: {}",
+            err_msg
+        );
+    }
+}
+
+mod exit_code_tests {
+    use super::*;
+
+    // W1-T1: expected to fail until W2-F1
+    //
+    // E1: handle_add with packwiz failure must return Err, not Ok.
+    // Currently handle_add prints the error and returns Ok(()).
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_add_packwiz_failure_returns_error() {
+        let workdir = mock_root().join("exit-code-packwiz-fail");
+        let mock_project = modrinth_project("fail-mod-id", "Fail Mod");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_project_response("fail-mod".to_string(), mock_project),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "fail-mod-id".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: "packwiz error: could not add mod".to_string(),
+                    success: false,
+                }),
+            ));
+
+        let result = handle_add(
+            &session,
+            vec!["fail-mod".to_string()],
+            false,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "handle_add must return Err when packwiz fails, got Ok"
+        );
+    }
+
+    // W1-T1: expected to fail until W2-F1
+    //
+    // E3: handle_add with no search results must return Err, not Ok.
+    // Currently handle_add prints the error and returns Ok(()).
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_add_no_results_returns_error() {
+        let workdir = mock_root().join("exit-code-no-results");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_error_response(
+                        "nonexistent-mod".to_string(),
+                        "No results found".to_string(),
+                    ),
+            );
+
+        let result = handle_add(
+            &session,
+            vec!["nonexistent-mod".to_string()],
+            false,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "handle_add must return Err when no search results found, got Ok"
+        );
+    }
+
+    // W1-T1: expected to fail until W2-F1
+    //
+    // E2: handle_build in an uninitialized directory must return Err, not Ok.
+    // Currently handle_build prints a message and returns Ok(()).
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_build_uninitialized_returns_error() {
+        let workdir = mock_root().join("exit-code-uninit-build");
+
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(workdir),
+        );
+
+        let result = handle_build(
+            &session,
+            vec!["mrpack".to_string()],
+            false,
+            crate::empack::archive::ArchiveFormat::Zip,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "handle_build must return Err when not in a modpack directory, got Ok"
+        );
+    }
+
+    // W1-T1: expected to fail until W2-F1
+    //
+    // E5: When packwiz fails with stderr output, the error message returned
+    // by handle_add must contain that stderr content. Currently the error
+    // message is empty or generic.
+    #[ignore]
+    #[tokio::test]
+    async fn test_handle_add_propagates_packwiz_stderr() {
+        let workdir = mock_root().join("exit-code-stderr-prop");
+        let mock_project = modrinth_project("stderr-mod-id", "Stderr Mod");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_network(
+                MockNetworkProvider::new()
+                    .with_project_response("stderr-mod".to_string(), mock_project),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "stderr-mod-id".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: "version not found".to_string(),
+                    success: false,
+                }),
+            ));
+
+        let result = handle_add(
+            &session,
+            vec!["stderr-mod".to_string()],
+            false,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "handle_add must return Err when packwiz fails"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("version not found"),
+            "Error must propagate packwiz stderr; got: {}",
+            err_msg
+        );
+    }
+}
