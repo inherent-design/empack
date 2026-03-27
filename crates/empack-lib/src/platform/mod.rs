@@ -6,6 +6,32 @@ use thiserror::Error;
 
 pub use capabilities::*;
 
+/// Returns the platform-appropriate command and arguments to open a URL in the default browser.
+///
+/// macOS: `("open", vec![])`
+/// Linux: `("xdg-open", vec![])`
+/// Windows: `("cmd", vec!["/c", "start"])`
+pub fn browser_open_command() -> (&'static str, Vec<&'static str>) {
+    if cfg!(target_os = "macos") {
+        ("open", vec![])
+    } else if cfg!(target_os = "windows") {
+        ("cmd", vec!["/c", "start"])
+    } else {
+        ("xdg-open", vec![])
+    }
+}
+
+/// Returns the user's home directory using platform-appropriate environment variables.
+///
+/// Checks `HOME` first (Unix, macOS), then `USERPROFILE` (Windows).
+/// Falls back to `"."` if neither is set.
+pub fn home_dir() -> std::path::PathBuf {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+}
+
 /// Platform-specific system resource detection errors
 #[derive(Debug, Error)]
 pub enum PlatformError {
