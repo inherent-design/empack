@@ -13,7 +13,7 @@ empack requirements          # check for packwiz, java, etc.
 empack init my-pack          # create a new modpack project
 cd my-pack
 empack add sodium            # search and add a mod
-empack sync                  # reconcile dependencies
+empack sync                  # reconcile dependencies; if editing empack.yml directly
 empack build all             # produce mrpack, client, and server artifacts
 ```
 
