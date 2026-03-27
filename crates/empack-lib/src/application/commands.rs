@@ -1598,7 +1598,7 @@ fn packwiz_cache_import_dir() -> std::path::PathBuf {
     {
         // Match Go's os.UserCacheDir() behavior (which packwiz uses):
         //   Linux:   $XDG_CACHE_HOME or $HOME/.cache
-        //   macOS:   $HOME/.cache  (Go does NOT use ~/Library/Caches)
+        //   macOS:   $HOME/Library/Caches
         //   Windows: %LocalAppData%
         let cache_base = packwiz_user_cache_dir();
         cache_base.join("packwiz").join("cache").join("import")
@@ -1611,13 +1611,18 @@ fn packwiz_user_cache_dir() -> std::path::PathBuf {
     #[cfg(target_os = "windows")]
     {
         std::env::var("LocalAppData")
+            .ok()
+            .filter(|s| !s.is_empty())
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| crate::platform::home_dir().join(".cache"))
+            .unwrap_or_else(|| crate::platform::home_dir().join(".cache"))
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::platform::home_dir().join("Library").join("Caches")
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
         // Go's os.UserCacheDir on Linux: $XDG_CACHE_HOME or $HOME/.cache
-        // Go's os.UserCacheDir on macOS: $HOME/.cache (NOT Library/Caches)
         std::env::var("XDG_CACHE_HOME")
             .ok()
             .filter(|s| !s.is_empty())
@@ -2654,7 +2659,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 // Helper functions
 
 /// Download a file from `url` and write it to `dest` with retry logic.
-/// Retries up to 3 times on transient failures with exponential backoff (1s, 2s, 4s).
+/// Retries up to 3 times on transient failures with exponential backoff (1s, 2s).
 async fn download_to_cache(
     session: &dyn Session,
     url: &str,
@@ -2696,11 +2701,11 @@ async fn download_to_cache(
                 }
             },
             Ok(resp) => {
-                last_error = Some(format!(
-                    "Failed to download {}: HTTP {}",
-                    label,
-                    resp.status()
-                ));
+                let status = resp.status();
+                last_error = Some(format!("HTTP {} for {}", status, label));
+                if status.is_client_error() {
+                    break;
+                }
                 continue;
             }
             Err(e) => {
