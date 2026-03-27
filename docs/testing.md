@@ -13,7 +13,7 @@ cargo nextest run -p empack-lib --features test-utils
 cargo nextest run -p empack-tests
 ```
 
-Current checkpoint: 552 tests (502 in `empack-lib`, 15 skipped; 50 in `empack-tests`).
+Current checkpoint: 613 tests (554 in `empack-lib`, 15 skipped; 59 in `empack-tests`).
 
 CI uses `cargo nextest` exclusively. Grouped `cargo test` is advisory-only due to global state conflicts between workflow tests.
 
@@ -21,12 +21,12 @@ CI uses `cargo nextest` exclusively. Grouped `cargo test` is advisory-only due t
 
 Tests are organized across two crates with distinct patterns:
 
-**empack-lib** (505 tests): co-located `.test.rs` files included via `include!()`. Unit tests use `MockCommandSession` with full mock providers. Some modules use `mockito` for HTTP mock servers. Feature-gated behind `test-utils` for mock access.
+**empack-lib** (569 tests, 15 skipped): co-located `.test.rs` files included via `include!()`. Unit tests use `MockCommandSession` with full mock providers. Some modules use `mockito` for HTTP mock servers. Feature-gated behind `test-utils` for mock access.
 
-**empack-tests** (50 tests): workflow and integration tests using two session construction patterns:
+**empack-tests** (59 tests): workflow and integration tests using two session construction patterns:
 
-- **HermeticSessionBuilder** (28 tests, all `#[cfg(unix)]`): creates shell script mocks on disk via PATH manipulation. Exercises real process execution and filesystem interaction. Cannot run on Windows.
-- **MockProcessProvider** (11 tests, cross-platform): pre-registered argument-to-result mappings. Verifies orchestration logic but cannot detect argument variations.
+- **HermeticSessionBuilder** (34 tests, all `#[cfg(unix)]`): creates shell script mocks on disk via PATH manipulation. Exercises real process execution and filesystem interaction. Cannot run on Windows.
+- **MockProcessProvider** (14 tests, cross-platform): pre-registered argument-to-result mappings. Verifies orchestration logic but cannot detect argument variations.
 
 ## Isolated reruns
 
@@ -58,7 +58,7 @@ Common interference sources: `Display::init` global state and environment variab
 
 ## Test health inventory
 
-Audited 2026-03-24 across 515 test functions (358 unit + 39 integration + 118 infrastructure).
+Audited 2026-03-24 across 515 test functions (358 unit + 39 integration + 118 infrastructure). The alpha.1 release gate work added 64 unit tests in empack-lib and 9 integration tests in empack-tests (all strong-assertion). The tables below reflect the 2026-03-24 audit; new tests are not yet individually categorized.
 
 ### Assertion quality
 
@@ -133,16 +133,16 @@ These tests cannot fail regardless of implementation correctness.
 
 | Command | Happy Path | Error Path | Edge Cases | --dry-run | --force |
 |---------|-----------|------------|------------|-----------|---------|
-| init | 3 tests | 3 tests (2 vacuous) | Existing project (1) | Not tested | Not tested |
-| add | 1 test (moderate) | Not tested | Not tested | Not tested | Not tested |
-| remove | 2 tests | Not tested | Empty list (1) | Not tested | N/A |
+| init | 7 tests (NeoForge, Quilt, Vanilla, older MC, zero-config, explicit, directory) | 4 tests (2 vacuous) | Existing project (1) | Not tested | Not tested |
+| add | 1 test (moderate) | Not tested | Type variants (2: resourcepack, shader) | 1 test | Not tested |
+| remove | 2 tests | Not tested | Empty list (1) | 1 test | N/A |
 | sync | 1 test | Not tested | Noop (1) | 1 test | N/A |
 | build mrpack | 2 tests | 2 tests | clean flag (1) | Not tested | N/A |
 | build client | Not tested | Not tested | Not tested | Not tested | N/A |
 | build client-full | 2 tests | 1 test | Not tested | Not tested | N/A |
 | build server | 2 tests | 1 test | Not tested | Not tested | N/A |
 | build server-full | 2 tests | 1 test | Not tested | Not tested | N/A |
-| clean | 2 tests | Not tested | No artifacts (1) | Not tested | N/A |
+| clean | 2 tests | Not tested | No artifacts (1), specific targets (1) | 1 test | N/A |
 | requirements | 2 tests (result-only) | 1 test (vacuous) | Not tested | N/A | N/A |
 | version | 1 test (moderate) | Not tested | Not tested | N/A | N/A |
 
@@ -151,26 +151,30 @@ These tests cannot fail regardless of implementation correctness.
 | Feature | Integration Tested? |
 |---------|-------------------|
 | --dry-run for sync | Yes (1 test) |
-| --dry-run for add, remove, build, clean | No (unit tests exist but no integration) |
+| --dry-run for add | Yes (1 test, add_matrix) |
+| --dry-run for remove | Yes (1 test, dry_run_matrix) |
+| --dry-run for clean | Yes (1 test, dry_run_matrix) |
+| --dry-run for build | No (unit tests exist but no integration) |
 | --force for init | No |
 | --force for add | No |
 | --deps flag for remove | No |
 | Build target "client" standalone | No |
-| NeoForge loader path | No |
-| Quilt loader path | No |
+| NeoForge loader path | Yes (1 test, init_matrix) |
+| Quilt loader path | Yes (1 test, init_matrix) |
 | CurseForge platform preference | No |
+| CF restricted pre-flight (build) | Yes (unit tests: 11 in cf_restricted_downloads_tests) |
 | Multiple build targets in single command | No (except "all" via lifecycle) |
 
 ### By module (unit tests, invariance coverage)
 
 | Module | Happy Path | Error Path | Boundary | Concurrency |
 |--------|-----------|------------|----------|-------------|
-| handle_init | Yes | Yes (5 paths) | Yes (force, cancel) | No |
-| handle_add | Yes | Yes (4 paths) | Yes (empty, slug) | No |
-| handle_remove | Yes | Yes (3 paths) | Yes (empty) | No |
+| handle_init | Yes | Yes (5 paths) | Yes (force, cancel, NeoForge, Quilt, Vanilla, older MC) | No |
+| handle_add | Yes | Yes (5 paths: packwiz fail, no results, stderr, CF restricted, CF restricted + Modrinth) | Yes (empty, slug, dry-run, type variants) | No |
+| handle_remove | Yes | Yes (3 paths) | Yes (empty, dry-run) | No |
 | handle_sync | Yes | Yes (3 paths) | Yes (noop, dry-run) | No |
-| handle_build | Yes | Yes (3 paths) | Yes (dry-run, clean) | No |
-| handle_clean | Yes | No | Yes (empty, absent) | No |
+| handle_build | Yes | Yes (3 paths) | Yes (dry-run, clean, CF restricted pre-flight, cached bypass, browser open) | No |
+| handle_clean | Yes | No | Yes (empty, absent, dry-run) | No |
 | config (serde) | Yes | Yes | Yes (62 tests) | No |
 | state machine | Yes | Yes | Yes (46 tests) | No |
 | fuzzy matching | Yes | No | Yes (unicode) | No |
@@ -183,12 +187,12 @@ These tests cannot fail regardless of implementation correctness.
 
 ### Platform coverage
 
-28 of 39 integration tests are `#[cfg(unix)]` only. Cross-platform tests: version, add, requirements (3), clean (3), build error cases (2), init_error_recovery (2, but vacuous).
+34 of 48 integration tests (excluding lib tests) are `#[cfg(unix)]` only (all HermeticSessionBuilder tests). Cross-platform tests (14): version (1), add (1), add_matrix (3), requirements (3), clean (3), build error cases (2), dry_run_matrix clean (1).
 
 ### Unused test infrastructure
 
 - `MockBehavior::Conditional { rules }` and `ConditionalRule`: defined in test_env.rs but never used in any test
-- `with_dry_run_flag()`: used in 1 test only (sync dry-run)
+- `with_dry_run_flag()`: used in 2 tests (sync dry-run, remove dry-run)
 - `with_interactive_provider()`: used in 1 test only (forge lifecycle)
 - `with_mock_search_result()`: used in 1 test only (forge lifecycle)
 
@@ -252,7 +256,6 @@ Recording touches live network services and can fail due to rate limits or API d
 ## Remaining gaps
 
 1. Client build with CurseForge JAR overrides fails at runtime (not yet investigated in tests)
-2. No integration tests for --dry-run on add, remove, build, clean (unit tests exist)
-3. No integration tests for NeoForge or Quilt loader paths
-4. 28/39 integration tests are unix-only; minimal cross-platform coverage
-5. Server JAR integration tests depend on live network access to Mojang, Fabric, Quilt, NeoForge, and Forge APIs
+2. No integration test for --dry-run on build (add, remove, and clean now have integration tests)
+3. 33/48 integration tests are unix-only; minimal cross-platform coverage
+4. Server JAR integration tests depend on live network access to Mojang, Fabric, Quilt, NeoForge, and Forge APIs
