@@ -608,108 +608,14 @@ async fn handle_init(
                 "Fetching {} versions for Minecraft {}...",
                 loader_str, minecraft_version
             ));
-            let loader_versions = match &selected_loader {
-                crate::empack::versions::ModLoader::Fabric => {
-                    match version_fetcher
-                        .fetch_fabric_loader_versions(&minecraft_version)
-                        .await
-                    {
-                        Ok(versions) => {
-                            session
-                                .display()
-                                .status()
-                                .success("Found", &format!("{} Fabric versions", versions.len()));
-                            versions
-                        }
-                        Err(e) => {
-                            session
-                                .display()
-                                .status()
-                                .warning(&format!("Network fetch failed: {}", e));
-                            session.display().status().info("Using fallback versions");
-                            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
-                                "fabric",
-                                &minecraft_version,
-                            )
-                        }
-                    }
-                }
-                crate::empack::versions::ModLoader::NeoForge => {
-                    match version_fetcher
-                        .fetch_neoforge_loader_versions(&minecraft_version)
-                        .await
-                    {
-                        Ok(versions) => {
-                            session
-                                .display()
-                                .status()
-                                .success("Found", &format!("{} NeoForge versions", versions.len()));
-                            versions
-                        }
-                        Err(e) => {
-                            session
-                                .display()
-                                .status()
-                                .warning(&format!("Network fetch failed: {}", e));
-                            session.display().status().info("Using fallback versions");
-                            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
-                                "neoforge",
-                                &minecraft_version,
-                            )
-                        }
-                    }
-                }
-                crate::empack::versions::ModLoader::Forge => {
-                    match version_fetcher
-                        .fetch_forge_loader_versions(&minecraft_version)
-                        .await
-                    {
-                        Ok(versions) => {
-                            session
-                                .display()
-                                .status()
-                                .success("Found", &format!("{} Forge versions", versions.len()));
-                            versions
-                        }
-                        Err(e) => {
-                            session
-                                .display()
-                                .status()
-                                .warning(&format!("Network fetch failed: {}", e));
-                            session.display().status().info("Using fallback versions");
-                            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
-                                "forge",
-                                &minecraft_version,
-                            )
-                        }
-                    }
-                }
-                crate::empack::versions::ModLoader::Quilt => {
-                    match version_fetcher
-                        .fetch_quilt_loader_versions(&minecraft_version)
-                        .await
-                    {
-                        Ok(versions) => {
-                            session
-                                .display()
-                                .status()
-                                .success("Found", &format!("{} Quilt versions", versions.len()));
-                            versions
-                        }
-                        Err(e) => {
-                            session
-                                .display()
-                                .status()
-                                .warning(&format!("Network fetch failed: {}", e));
-                            session.display().status().info("Using fallback versions");
-                            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
-                                "quilt",
-                                &minecraft_version,
-                            )
-                        }
-                    }
-                }
-            };
+            let loader_versions = fetch_loader_versions(
+                session,
+                &version_fetcher,
+                &selected_loader,
+                &loader_str,
+                &minecraft_version,
+            )
+            .await;
 
             let loader_version = if loader_versions.is_empty() {
                 return Err(anyhow::anyhow!(
@@ -2814,6 +2720,62 @@ async fn download_to_cache(
             label, max_attempts
         ))
     ))
+}
+
+/// Fetch loader versions with fallback on network failure.
+///
+/// Dispatches to the appropriate `VersionFetcher` method for the selected loader,
+/// displays the result, and falls back to hardcoded versions on error.
+async fn fetch_loader_versions(
+    session: &dyn Session,
+    version_fetcher: &crate::empack::versions::VersionFetcher<'_>,
+    selected_loader: &crate::empack::versions::ModLoader,
+    loader_str: &str,
+    minecraft_version: &str,
+) -> Vec<String> {
+    let result = match selected_loader {
+        crate::empack::versions::ModLoader::Fabric => {
+            version_fetcher
+                .fetch_fabric_loader_versions(minecraft_version)
+                .await
+        }
+        crate::empack::versions::ModLoader::NeoForge => {
+            version_fetcher
+                .fetch_neoforge_loader_versions(minecraft_version)
+                .await
+        }
+        crate::empack::versions::ModLoader::Forge => {
+            version_fetcher
+                .fetch_forge_loader_versions(minecraft_version)
+                .await
+        }
+        crate::empack::versions::ModLoader::Quilt => {
+            version_fetcher
+                .fetch_quilt_loader_versions(minecraft_version)
+                .await
+        }
+    };
+
+    match result {
+        Ok(versions) => {
+            session.display().status().success(
+                "Found",
+                &format!("{} {} versions", versions.len(), loader_str),
+            );
+            versions
+        }
+        Err(e) => {
+            session
+                .display()
+                .status()
+                .warning(&format!("Network fetch failed: {}", e));
+            session.display().status().info("Using fallback versions");
+            crate::empack::versions::VersionFetcher::get_fallback_loader_versions(
+                loader_str,
+                minecraft_version,
+            )
+        }
+    }
 }
 
 /// Parse build targets from string arguments
