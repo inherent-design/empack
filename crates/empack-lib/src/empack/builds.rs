@@ -1026,12 +1026,24 @@ impl<'a> BuildOrchestrator<'a> {
             })?;
 
         if !output.success {
+            let combined_output = format!("{}{}", output.stdout, output.stderr);
+            let warning = if combined_output.contains("manual download")
+                || combined_output.contains("must be manually downloaded")
+            {
+                combined_output
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            } else {
+                "packwiz mr export failed".to_string()
+            };
             return Ok(BuildResult {
                 target: BuildTarget::Mrpack,
                 success: false,
                 output_path: None,
                 artifacts: vec![],
-                warnings: vec!["packwiz mr export failed".to_string()],
+                warnings: vec![warning],
             });
         }
 

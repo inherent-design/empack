@@ -16,9 +16,6 @@ pub trait DisplayProvider {
     /// Display progress for long-running operations  
     fn progress(&self) -> Box<dyn ProgressProvider>;
 
-    /// Display interactive prompts and selections
-    fn prompt(&self) -> Box<dyn PromptProvider>;
-
     /// Display structured output (tables, lists)
     fn table(&self) -> Box<dyn StructuredProvider>;
 }
@@ -114,21 +111,6 @@ pub trait MultiProgressProvider {
 
     /// Clear all progress bars
     fn clear(&self);
-}
-
-/// Provider trait for interactive prompts
-pub trait PromptProvider {
-    /// Display a confirmation prompt
-    fn confirm(&self, message: &str) -> bool;
-
-    /// Display a text input prompt
-    fn input(&self, message: &str) -> Option<String>;
-
-    /// Display a selection prompt with options
-    fn select(&self, message: &str, options: &[&str]) -> Option<usize>;
-
-    /// Display a multi-selection prompt
-    fn multi_select(&self, message: &str, options: &[&str]) -> Vec<usize>;
 }
 
 /// Provider trait for structured output

@@ -794,7 +794,8 @@ impl MockProcessProvider {
         files
             .lock()
             .unwrap()
-            .insert(pw_toml_path, format!("name = \"{}\"\n", slug));
+            .entry(pw_toml_path)
+            .or_insert_with(|| format!("name = \"{}\"\n", slug));
     }
 
     /// Get all recorded process calls for verification

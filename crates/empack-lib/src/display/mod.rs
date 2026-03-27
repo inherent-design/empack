@@ -7,7 +7,6 @@
 use crate::terminal::TerminalCapabilities;
 use std::sync::OnceLock;
 
-pub mod interactive;
 pub mod live;
 pub mod mock;
 pub mod progress;
@@ -21,10 +20,10 @@ pub mod test_utils;
 
 // Re-export provider traits and implementations for easy access
 pub use live::LiveDisplayProvider;
-pub use mock::{DisplayCall, MockDisplayProvider, ResponseValue};
+pub use mock::{DisplayCall, MockDisplayProvider};
 pub use providers::{
     DisplayProvider, DisplayProviderExt, MultiProgressProvider, OperationSummary, ProgressProvider,
-    ProgressTracker, PromptProvider, StatusProvider, StructuredProvider,
+    ProgressTracker, StatusProvider, StructuredProvider,
 };
 
 // Global display manager - initialized once with terminal capabilities
@@ -66,12 +65,6 @@ impl Display {
     pub fn status() -> status::StatusDisplay<'static> {
         let display = Self::global();
         status::StatusDisplay::new(&display.styling)
-    }
-
-    /// Interactive prompts and selections
-    pub fn prompt() -> interactive::InteractiveDisplay<'static> {
-        let display = Self::global();
-        interactive::InteractiveDisplay::new(&display.styling, &display.capabilities)
     }
 
     /// Progress tracking for long operations
