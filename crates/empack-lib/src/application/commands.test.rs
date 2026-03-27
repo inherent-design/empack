@@ -3344,6 +3344,18 @@ version = "nPGOChsP"
             "handle_add must detect CF-restricted mod and return Err (or emit warning). \
              Currently succeeds silently."
         );
+
+        // W2-F7: after cleanup, the .pw.toml must no longer exist on disk
+        let pw_toml_exists = session
+            .filesystem_provider
+            .files
+            .lock()
+            .unwrap()
+            .contains_key(&mods_dir.join("optifine.pw.toml"));
+        assert!(
+            !pw_toml_exists,
+            "Restricted mod .pw.toml must be cleaned up after Phase A detection"
+        );
     }
 
     // W1-T7: expected to fail until W2-F6
@@ -3854,6 +3866,96 @@ Once you have done so, place these files in \
             !empack_yml.contains("256717:"),
             "empack.yml must NOT contain restricted mod '256717:' as dependency; got:\n{}",
             empack_yml
+        );
+    }
+
+    // W2-F7: verify that packwiz remove -y {slug} is called and the .pw.toml
+    // is deleted from the filesystem after Phase A detects a CF-restricted mod.
+    #[tokio::test]
+    async fn test_add_cf_restricted_cleans_pw_toml() {
+        let workdir = mock_root().join("cf-restricted-cleanup");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(
+                MockProcessProvider::new()
+                    .with_packwiz_result(
+                        vec![
+                            "curseforge".to_string(),
+                            "add".to_string(),
+                            "--addon-id".to_string(),
+                            "256717".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    .with_packwiz_add_slug("256717".to_string(), "optifine".to_string()),
+            );
+
+        session
+            .filesystem_provider
+            .files
+            .lock()
+            .unwrap()
+            .insert(
+                mods_dir.join("optifine.pw.toml"),
+                RESTRICTED_PW_TOML.to_string(),
+            );
+
+        let result = handle_add(
+            &session,
+            vec!["256717".to_string()],
+            false,
+            Some(crate::application::cli::SearchPlatform::Curseforge),
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "handle_add must return Err for restricted mod");
+
+        // Verify packwiz remove -y was called with the correct slug
+        let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+        let remove_call = packwiz_calls.iter().find(|call| {
+            call.args.len() >= 3
+                && call.args[0] == "remove"
+                && call.args[1] == "-y"
+        });
+        assert!(
+            remove_call.is_some(),
+            "packwiz remove -y must be called to clean up restricted mod; all packwiz calls: {:?}",
+            packwiz_calls
+        );
+        let remove_call = remove_call.unwrap();
+        assert_eq!(
+            remove_call.args,
+            vec!["remove".to_string(), "-y".to_string(), "optifine".to_string()],
+            "packwiz remove must target the correct slug"
+        );
+        assert_eq!(
+            remove_call.working_dir,
+            workdir.join("pack"),
+            "packwiz remove must run in the pack directory"
+        );
+
+        // Verify the .pw.toml is gone from the filesystem
+        let pw_toml_exists = session
+            .filesystem_provider
+            .files
+            .lock()
+            .unwrap()
+            .contains_key(&mods_dir.join("optifine.pw.toml"));
+        assert!(
+            !pw_toml_exists,
+            "optifine.pw.toml must be removed from disk after cleanup"
         );
     }
 
