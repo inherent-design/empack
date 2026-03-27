@@ -1281,21 +1281,19 @@ async fn handle_add(
                         // Clean up the .pw.toml that packwiz just created so it
                         // doesn't cause confusing build pre-flight failures later.
                         let pack_dir = workdir.join("pack");
-                        if let Err(e) = session.process().execute(
-                            "packwiz",
-                            &["remove", "-y", &dep_key],
-                            &pack_dir,
-                        ) {
-                            session.display().status().warning(&format!(
-                                "Failed to clean up packwiz metadata for {}: {}",
-                                dep_key, e
-                            ));
-                        }
-                        if let Err(e) = session.filesystem().remove_file(&pw_toml_path) {
-                            session.display().status().warning(&format!(
-                                "Failed to remove {}: {}",
-                                pw_toml_path.display(), e
-                            ));
+                        let packwiz_remove_ok = session
+                            .process()
+                            .execute("packwiz", &["remove", "-y", &dep_key], &pack_dir)
+                            .is_ok();
+
+                        if !packwiz_remove_ok {
+                            if let Err(e) = session.filesystem().remove_file(&pw_toml_path) {
+                                session.display().status().warning(&format!(
+                                    "Failed to remove {}: {}",
+                                    pw_toml_path.display(),
+                                    e
+                                ));
+                            }
                         }
 
                         is_restricted = true;

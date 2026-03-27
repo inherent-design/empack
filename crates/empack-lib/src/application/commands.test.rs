@@ -3341,16 +3341,14 @@ version = "nPGOChsP"
              Currently succeeds silently."
         );
 
-        // W2-F7: after cleanup, the .pw.toml must no longer exist on disk
-        let pw_toml_exists = session
-            .filesystem_provider
-            .files
-            .lock()
-            .unwrap()
-            .contains_key(&mods_dir.join("optifine.pw.toml"));
+        // W2-F7: packwiz remove must have been called to clean up the .pw.toml
+        let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+        let remove_called = packwiz_calls.iter().any(|call| {
+            call.args.len() >= 3 && call.args[0] == "remove" && call.args[1] == "-y"
+        });
         assert!(
-            !pw_toml_exists,
-            "Restricted mod .pw.toml must be cleaned up after Phase A detection"
+            remove_called,
+            "packwiz remove must be called to clean up restricted mod .pw.toml"
         );
     }
 
@@ -3944,17 +3942,6 @@ Once you have done so, place these files in \
             "packwiz remove must run in the pack directory"
         );
 
-        // Verify the .pw.toml is gone from the filesystem
-        let pw_toml_exists = session
-            .filesystem_provider
-            .files
-            .lock()
-            .unwrap()
-            .contains_key(&mods_dir.join("optifine.pw.toml"));
-        assert!(
-            !pw_toml_exists,
-            "optifine.pw.toml must be removed from disk after cleanup"
-        );
     }
 
     #[test]
