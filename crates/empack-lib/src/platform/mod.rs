@@ -10,12 +10,12 @@ pub use capabilities::*;
 ///
 /// macOS: `("open", vec![])`
 /// Linux: `("xdg-open", vec![])`
-/// Windows: `("cmd", vec!["/c", "start"])`
+/// Windows: `("cmd", vec!["/c", "start", ""])`
 pub fn browser_open_command() -> (&'static str, Vec<&'static str>) {
     if cfg!(target_os = "macos") {
         ("open", vec![])
     } else if cfg!(target_os = "windows") {
-        ("cmd", vec!["/c", "start"])
+        ("cmd", vec!["/c", "start", ""])
     } else {
         ("xdg-open", vec![])
     }
