@@ -1340,6 +1340,37 @@ mod handle_remove_tests {
             "Dry-run mode should not execute packwiz commands"
         );
     }
+
+    #[tokio::test]
+    async fn it_returns_error_when_remove_fails() {
+        let workdir = mock_root().join("configured-project");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir),
+            )
+            .with_process(
+                MockProcessProvider::new().with_packwiz_result(
+                    vec!["remove".to_string(), "-y".to_string(), "bad-mod".to_string()],
+                    Ok(ProcessOutput {
+                        stdout: String::new(),
+                        stderr: "Error: mod not found".to_string(),
+                        success: false,
+                    }),
+                ),
+            );
+
+        let result = handle_remove(&session, vec!["bad-mod".to_string()], false).await;
+
+        assert!(result.is_err(), "handle_remove should return Err when mods fail");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("bad-mod"),
+            "Error should mention the failed mod: {}",
+            err_msg
+        );
+    }
 }
 
 // ===== HANDLE_SYNC TESTS =====

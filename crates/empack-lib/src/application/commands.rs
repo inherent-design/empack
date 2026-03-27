@@ -1979,9 +1979,19 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
     if !failed_mods.is_empty() {
         session.display().status().section("Failed mods");
-        for (mod_name, error) in failed_mods {
-            session.display().status().error(&mod_name, &error);
+        for (mod_name, error) in &failed_mods {
+            session.display().status().error(mod_name, error);
         }
+        let summary = failed_mods
+            .iter()
+            .map(|(name, err)| format!("{}: {}", name, err))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(anyhow::anyhow!(
+            "{} mod(s) failed to remove: {}",
+            failed_mods.len(),
+            summary
+        ));
     }
 
     Ok(())
