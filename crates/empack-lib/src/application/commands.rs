@@ -10,10 +10,10 @@ use crate::application::sync::{
     AddContractError, AddResolution, SyncExecutionAction, SyncPlanAction, build_sync_plan,
     loader_arg, project_type_arg, resolve_add_contract, resolve_sync_action,
 };
-use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
-use crate::empack::search::SearchError;
 use crate::application::{CliConfig, Commands};
+use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
 use crate::empack::parsing::ModLoader;
+use crate::empack::search::SearchError;
 use crate::platform::GoCapabilities;
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
@@ -106,7 +106,14 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             pack_version,
         } => {
             handle_init(
-                session, name, pack_name, force, modloader, mc_version, author, loader_version,
+                session,
+                name,
+                pack_name,
+                force,
+                modloader,
+                mc_version,
+                author,
+                loader_version,
                 pack_version,
             )
             .await
@@ -216,7 +223,9 @@ async fn handle_init(
     cli_pack_version: Option<String>,
 ) -> Result<()> {
     if session.config().app_config().yes && cli_modloader.is_none() {
-        return Err(anyhow::anyhow!("--yes requires --modloader to be specified"));
+        return Err(anyhow::anyhow!(
+            "--yes requires --modloader to be specified"
+        ));
     }
 
     // Handle directory creation case: `empack init <name>` where <name> is a directory
@@ -329,8 +338,10 @@ async fn handle_init(
 
         // If the new target exists and already has a modpack, check state
         if !needs_mkdir {
-            let new_manager =
-                crate::empack::state::PackStateManager::new(new_target.clone(), session.filesystem());
+            let new_manager = crate::empack::state::PackStateManager::new(
+                new_target.clone(),
+                session.filesystem(),
+            );
             let new_state = new_manager.discover_state()?;
             if new_state != PackState::Uninitialized {
                 if !force {
@@ -448,11 +459,19 @@ async fn handle_init(
             .display()
             .status()
             .info(&format!("Using Minecraft version: {}", mc_ver));
-        if !minecraft_versions.iter().any(|v| v.eq_ignore_ascii_case(&mc_ver)) {
+        if !minecraft_versions
+            .iter()
+            .any(|v| v.eq_ignore_ascii_case(&mc_ver))
+        {
             anyhow::bail!(
                 "Minecraft version '{}' not found. Available versions include: {}",
                 mc_ver,
-                minecraft_versions.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                minecraft_versions
+                    .iter()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
         }
         mc_ver
@@ -549,8 +568,7 @@ async fn handle_init(
             let versions_loader: crate::empack::versions::ModLoader = parsed_loader.into();
 
             if !compatible_loaders.contains(&versions_loader) {
-                let available: Vec<&str> =
-                    compatible_loaders.iter().map(|l| l.as_str()).collect();
+                let available: Vec<&str> = compatible_loaders.iter().map(|l| l.as_str()).collect();
                 anyhow::bail!(
                     "Loader '{}' is not compatible with Minecraft {}. Compatible loaders: {}",
                     loader_str,
@@ -563,13 +581,8 @@ async fn handle_init(
             (Some(versions_loader), loader_str)
         } else {
             let mut loader_names: Vec<String> = vec!["none (vanilla)".to_string()];
-            loader_names.extend(
-                compatible_loaders
-                    .iter()
-                    .map(|l| l.as_str().to_string()),
-            );
-            let loader_name_refs: Vec<&str> =
-                loader_names.iter().map(|s| s.as_str()).collect();
+            loader_names.extend(compatible_loaders.iter().map(|l| l.as_str().to_string()));
+            let loader_name_refs: Vec<&str> = loader_names.iter().map(|s| s.as_str()).collect();
             let loader_index = session
                 .interactive()
                 .select("Mod loader", &loader_name_refs)?;
@@ -595,10 +608,10 @@ async fn handle_init(
                         .await
                     {
                         Ok(versions) => {
-                            session.display().status().success(
-                                "Found",
-                                &format!("{} Fabric versions", versions.len()),
-                            );
+                            session
+                                .display()
+                                .status()
+                                .success("Found", &format!("{} Fabric versions", versions.len()));
                             versions
                         }
                         Err(e) => {
@@ -620,10 +633,10 @@ async fn handle_init(
                         .await
                     {
                         Ok(versions) => {
-                            session.display().status().success(
-                                "Found",
-                                &format!("{} NeoForge versions", versions.len()),
-                            );
+                            session
+                                .display()
+                                .status()
+                                .success("Found", &format!("{} NeoForge versions", versions.len()));
                             versions
                         }
                         Err(e) => {
@@ -645,10 +658,10 @@ async fn handle_init(
                         .await
                     {
                         Ok(versions) => {
-                            session.display().status().success(
-                                "Found",
-                                &format!("{} Forge versions", versions.len()),
-                            );
+                            session
+                                .display()
+                                .status()
+                                .success("Found", &format!("{} Forge versions", versions.len()));
                             versions
                         }
                         Err(e) => {
@@ -670,10 +683,10 @@ async fn handle_init(
                         .await
                     {
                         Ok(versions) => {
-                            session.display().status().success(
-                                "Found",
-                                &format!("{} Quilt versions", versions.len()),
-                            );
+                            session
+                                .display()
+                                .status()
+                                .success("Found", &format!("{} Quilt versions", versions.len()));
                             versions
                         }
                         Err(e) => {
@@ -708,7 +721,12 @@ async fn handle_init(
                         lv,
                         loader_str,
                         minecraft_version,
-                        loader_versions.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                        loader_versions
+                            .iter()
+                            .take(5)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     );
                 }
                 lv
@@ -745,10 +763,7 @@ async fn handle_init(
         .status()
         .info(&format!("   Minecraft: {}", minecraft_version));
     if loader_str == "none" {
-        session
-            .display()
-            .status()
-            .info("   Loader: none (vanilla)");
+        session.display().status().info("   Loader: none (vanilla)");
     } else {
         session
             .display()
@@ -849,7 +864,11 @@ async fn execute_init_phase(
         .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
 
     let transition_result = manager
-        .execute_transition(session.process(), &*session.packwiz(), StateTransition::Initialize(*config))
+        .execute_transition(
+            session.process(),
+            &*session.packwiz(),
+            StateTransition::Initialize(*config),
+        )
         .await
         .context("Failed to initialize modpack project")?;
     for w in &transition_result.warnings {
@@ -891,21 +910,20 @@ fn validate_init_inputs(
     loader_str: &str,
     loader_version: &str,
 ) -> Result<()> {
-    if !minecraft_versions.iter().any(|v| v.eq_ignore_ascii_case(mc_version)) {
+    if !minecraft_versions
+        .iter()
+        .any(|v| v.eq_ignore_ascii_case(mc_version))
+    {
         anyhow::bail!(
             "Minecraft version '{}' not found in available versions",
             mc_version
         );
     }
 
-    ModLoader::parse(loader_str)
-        .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
+    ModLoader::parse(loader_str).with_context(|| format!("Invalid mod loader: {}", loader_str))?;
 
     if loader_version.is_empty() {
-        anyhow::bail!(
-            "Loader version is required for {}",
-            loader_str
-        );
+        anyhow::bail!("Loader version is required for {}", loader_str);
     }
 
     Ok(())
@@ -1036,8 +1054,7 @@ async fn handle_add(
 
     // === Gather phase: resolve all mods, no side effects ===
     let mut resolved_mods: Vec<ResolvedMod> = Vec::new();
-    let mut batch_project_ids: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut batch_project_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for mod_query in mods {
         let resolution_intent = AddResolutionIntent::from_cli_input(&mod_query, platform.clone());
@@ -1052,7 +1069,9 @@ async fn handle_add(
 
         // For CLI add, we resolve via search (empty project_id triggers search path)
         let direct_project_id = resolution_intent.direct_project_id.as_deref().unwrap_or("");
-        let direct_platform = resolution_intent.direct_platform.unwrap_or(ProjectPlatform::Modrinth);
+        let direct_platform = resolution_intent
+            .direct_platform
+            .unwrap_or(ProjectPlatform::Modrinth);
 
         let search_project_type = project_type.as_ref().map(|pt| pt.to_project_type());
         match resolve_add_contract(
@@ -1175,8 +1194,7 @@ async fn handle_add(
                 }
                 Ok(output) => {
                     packwiz_result = Err(());
-                    last_error =
-                        Some(anyhow::anyhow!("Packwiz command failed: {}", output.stderr));
+                    last_error = Some(anyhow::anyhow!("Packwiz command failed: {}", output.stderr));
                 }
                 Err(error) => {
                     packwiz_result = Err(());
@@ -1212,9 +1230,10 @@ async fn handle_add(
 
                 // Update dependency graph with newly added mod
                 // Rebuild from directory to capture new .pw.toml files
-                let mut updated_graph =
-                    crate::api::dependency_graph::DependencyGraph::new();
-                if let Err(e) = updated_graph.build_from_directory_with(&mods_dir, session.filesystem()) {
+                let mut updated_graph = crate::api::dependency_graph::DependencyGraph::new();
+                if let Err(e) =
+                    updated_graph.build_from_directory_with(&mods_dir, session.filesystem())
+                {
                     session
                         .display()
                         .status()
@@ -1250,10 +1269,10 @@ async fn handle_add(
                             "\"{}\" has third-party downloads disabled on CurseForge.",
                             rm.name
                         ));
-                        session.display().status().warning(&format!(
-                            "Download manually: {}",
-                            cf_url
-                        ));
+                        session
+                            .display()
+                            .status()
+                            .warning(&format!("Download manually: {}", cf_url));
                         session.display().status().warning(&format!(
                             "Place the file in: {}",
                             packwiz_cache_import_dir().display()
@@ -1286,14 +1305,14 @@ async fn handle_add(
                             .execute("packwiz", &["remove", "-y", &dep_key], &pack_dir)
                             .is_ok();
 
-                        if !packwiz_remove_ok {
-                            if let Err(e) = session.filesystem().remove_file(&pw_toml_path) {
-                                session.display().status().warning(&format!(
-                                    "Failed to remove {}: {}",
-                                    pw_toml_path.display(),
-                                    e
-                                ));
-                            }
+                        if !packwiz_remove_ok
+                            && let Err(e) = session.filesystem().remove_file(&pw_toml_path)
+                        {
+                            session.display().status().warning(&format!(
+                                "Failed to remove {}: {}",
+                                pw_toml_path.display(),
+                                e
+                            ));
                         }
 
                         is_restricted = true;
@@ -1314,14 +1333,13 @@ async fn handle_add(
                         title: resolved.resolution.title.clone(),
                         platform: resolved.resolution.resolved_platform,
                         project_id: resolved.resolution.resolved_project_id.clone(),
-                        project_type: resolved.resolution.resolved_project_type
+                        project_type: resolved
+                            .resolution
+                            .resolved_project_type
                             .unwrap_or(ProjectType::Mod),
                         version: None,
                     };
-                    if let Err(e) = config_manager.add_dependency(
-                        &dep_key,
-                        record,
-                    ) {
+                    if let Err(e) = config_manager.add_dependency(&dep_key, record) {
                         session
                             .display()
                             .status()
@@ -1331,8 +1349,8 @@ async fn handle_add(
                 }
             }
             Err(_) => {
-                let e = last_error
-                    .unwrap_or_else(|| anyhow::anyhow!("Unknown packwiz add failure"));
+                let e =
+                    last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown packwiz add failure"));
                 session
                     .display()
                     .status()
@@ -1474,12 +1492,14 @@ impl AddResolutionIntent {
         // (e.g. "faithful", "optifine"). Users must pass --platform modrinth
         // for direct Modrinth ID lookup.
         let (direct_project_id, direct_platform) = match preferred_platform {
-            Some(ProjectPlatform::CurseForge) if is_curseforge_project_id(mod_query) => {
-                (Some(mod_query.to_string()), Some(ProjectPlatform::CurseForge))
-            }
-            None if is_curseforge_project_id(mod_query) => {
-                (Some(mod_query.to_string()), Some(ProjectPlatform::CurseForge))
-            }
+            Some(ProjectPlatform::CurseForge) if is_curseforge_project_id(mod_query) => (
+                Some(mod_query.to_string()),
+                Some(ProjectPlatform::CurseForge),
+            ),
+            None if is_curseforge_project_id(mod_query) => (
+                Some(mod_query.to_string()),
+                Some(ProjectPlatform::CurseForge),
+            ),
             _ => (None, None),
         };
 
@@ -1639,7 +1659,8 @@ fn scan_restricted_mods(
                 .and_then(|s| s.to_str())
                 .map(|s| s.ends_with(".pw"))
                 .unwrap_or(false);
-            if ext_match && stem_match
+            if ext_match
+                && stem_match
                 && let Ok(content) = filesystem.read_to_string(path)
                 && let Some(rm) = parse_restricted_pw_toml(&content)
             {
@@ -2011,7 +2032,10 @@ async fn handle_build(
         }
 
         if !blocked.is_empty() {
-            session.display().status().section("CurseForge restricted mods detected");
+            session
+                .display()
+                .status()
+                .section("CurseForge restricted mods detected");
             let mut mod_names = Vec::new();
             for rm in &blocked {
                 let url = rm.curseforge_url();
@@ -2019,10 +2043,10 @@ async fn handle_build(
                     "\"{}\" has third-party downloads disabled on CurseForge.",
                     rm.name
                 ));
-                session.display().status().warning(&format!(
-                    "Download manually: {}",
-                    url
-                ));
+                session
+                    .display()
+                    .status()
+                    .warning(&format!("Download manually: {}", url));
                 if session.terminal().is_tty {
                     let (cmd, prefix_args) = crate::platform::browser_open_command();
                     let mut args: Vec<&str> = prefix_args;
@@ -2204,10 +2228,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
                 .info("Would clean build artifacts in dist/");
         }
         if targets.contains(&"cache".to_string()) || targets.contains(&"all".to_string()) {
-            session
-                .display()
-                .status()
-                .info("Would clean cached data");
+            session.display().status().info("Would clean cached data");
         }
         session
             .display()
@@ -2231,7 +2252,11 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
 
         if current_state == PackState::Built {
             let result = manager
-                .execute_transition(session.process(), &*session.packwiz(), StateTransition::Clean)
+                .execute_transition(
+                    session.process(),
+                    &*session.packwiz(),
+                    StateTransition::Clean,
+                )
                 .await
                 .context("Failed to clean build artifacts")?;
             for w in &result.warnings {
@@ -2343,11 +2368,14 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .load_pack_metadata()
             .context("Failed to load pack metadata")?;
 
-        let minecraft_version_opt = empack_config
-            .empack
-            .minecraft_version
-            .as_deref()
-            .or(pack_metadata.as_ref().map(|p| p.versions.minecraft.as_str()));
+        let minecraft_version_opt =
+            empack_config
+                .empack
+                .minecraft_version
+                .as_deref()
+                .or(pack_metadata
+                    .as_ref()
+                    .map(|p| p.versions.minecraft.as_str()));
 
         let mod_loader_opt = empack_config.empack.loader.or_else(|| {
             pack_metadata
@@ -2411,10 +2439,10 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     );
                 }
                 Err(e) => {
-                    session.display().status().warning(&format!(
-                        "Could not resolve '{}': {}",
-                        search.title, e
-                    ));
+                    session
+                        .display()
+                        .status()
+                        .warning(&format!("Could not resolve '{}': {}", search.title, e));
                     unresolved_slugs.insert(slug.clone());
                 }
             }
@@ -2481,10 +2509,11 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     for dep_spec in &already_installed {
         step += 1;
-        session
-            .display()
-            .status()
-            .step(step, total_steps, &format!("Processing dependency: {}", dep_spec.key));
+        session.display().status().step(
+            step,
+            total_steps,
+            &format!("Processing dependency: {}", dep_spec.key),
+        );
         session
             .display()
             .status()
@@ -2499,10 +2528,11 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             SyncPlanAction::Add(dep) => dep.search_query.as_str(),
             SyncPlanAction::Remove { key, .. } => key.as_str(),
         };
-        session
-            .display()
-            .status()
-            .step(step, total_steps, &format!("Processing dependency: {}", action_label));
+        session.display().status().step(
+            step,
+            total_steps,
+            &format!("Processing dependency: {}", action_label),
+        );
 
         match resolve_sync_action(action, resolver.as_ref()).await {
             Ok(resolved) => {
@@ -2540,7 +2570,11 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             session.display().status().warning(&format!(
                 "{} search {} could not be resolved. Run sync again to retry.",
                 unresolved_slugs.len(),
-                if unresolved_slugs.len() == 1 { "entry" } else { "entries" }
+                if unresolved_slugs.len() == 1 {
+                    "entry"
+                } else {
+                    "entries"
+                }
             ));
         } else {
             session
@@ -2605,10 +2639,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 
     // Execute planned actions
-    session
-        .display()
-        .status()
-        .section("Executing sync actions");
+    session.display().status().section("Executing sync actions");
     let mut success_count = 0;
     let mut failure_count = 0;
 

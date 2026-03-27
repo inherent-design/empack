@@ -1,8 +1,8 @@
 //! Hermetic E2E tests for the client-full build target.
 
 use anyhow::Result;
-use empack_lib::application::cli::CliArchiveFormat;
 use empack_lib::application::Commands;
+use empack_lib::application::cli::CliArchiveFormat;
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
@@ -107,7 +107,10 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
         "Pack metadata should be copied into client-full output"
     );
     assert!(
-        client_full_dir.join("mods").join("both-installed.txt").exists(),
+        client_full_dir
+            .join("mods")
+            .join("both-installed.txt")
+            .exists(),
         "Mock installer should leave a deterministic install marker"
     );
 
@@ -178,7 +181,10 @@ async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
     );
     assert!(
         !workdir
-            .join("dist").join("client-full").join("mods").join("both-installed.txt")
+            .join("dist")
+            .join("client-full")
+            .join("mods")
+            .join("both-installed.txt")
             .exists(),
         "The full installer step should not run when the installer bootstrap is missing"
     );
@@ -241,12 +247,17 @@ async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
     );
     assert!(
         client_full_dir
-            .join("pack").join("mods").join("example-mod.pw.toml")
+            .join("pack")
+            .join("mods")
+            .join("example-mod.pw.toml")
             .exists(),
         "Existing pack structure should be copied into client-full output"
     );
     assert!(
-        client_full_dir.join("mods").join("both-installed.txt").exists(),
+        client_full_dir
+            .join("mods")
+            .join("both-installed.txt")
+            .exists(),
         "Installer marker should confirm the mocked full download step"
     );
     assert!(

@@ -1,8 +1,8 @@
-use anyhow::Context;
 use crate::empack::builds::BuildError;
 use crate::empack::config::ConfigError;
 use crate::empack::packwiz::PackwizOps;
 use crate::primitives::*;
+use anyhow::Context;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -115,10 +115,7 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
             "cleaning" => PackState::Cleaning,
             other => {
                 return Err(StateError::IoError {
-                    source: anyhow::anyhow!(
-                        "Unknown state marker content: '{}'",
-                        other
-                    ),
+                    source: anyhow::anyhow!("Unknown state marker content: '{}'", other),
                 });
             }
         };
@@ -132,8 +129,7 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
     let dist_dir = artifact_root(workdir);
 
     // Check for built state first (most advanced)
-    if provider.is_directory(&dist_dir)
-        && provider.has_build_artifacts(&dist_dir).unwrap_or(false)
+    if provider.is_directory(&dist_dir) && provider.has_build_artifacts(&dist_dir).unwrap_or(false)
     {
         return Ok(PackState::Built);
     }
@@ -158,12 +154,18 @@ pub fn can_transition(from: &PackState, kind: TransitionKind) -> bool {
         // RefreshIndex: must be Configured, or recovering from interrupted build
         (PackState::Configured, TransitionKind::RefreshIndex) => true,
         (PackState::Interrupted { was }, TransitionKind::RefreshIndex)
-            if matches!(was.as_ref(), PackState::Building) => true,
+            if matches!(was.as_ref(), PackState::Building) =>
+        {
+            true
+        }
 
         // Build (full): Configured, Built, or retry after interrupted build
         (PackState::Configured | PackState::Built, TransitionKind::Build) => true,
         (PackState::Interrupted { was }, TransitionKind::Build)
-            if matches!(was.as_ref(), PackState::Building) => true,
+            if matches!(was.as_ref(), PackState::Building) =>
+        {
+            true
+        }
 
         // Clean: from Built, Configured, Uninitialized (idempotent), or Interrupted (recovery)
         (PackState::Built, TransitionKind::Clean) => true,
@@ -211,7 +213,10 @@ pub(crate) fn can_enter_marker(
         (PackState::Configured | PackState::Built, MarkerKind::Building) => layout_ok(from),
         // Building retry: allow re-entering Building after an interrupted build
         (PackState::Interrupted { was }, MarkerKind::Building)
-            if matches!(was.as_ref(), PackState::Building) => layout_ok(from),
+            if matches!(was.as_ref(), PackState::Building) =>
+        {
+            layout_ok(from)
+        }
         // Cleaning: only from Built, layout must confirm built state
         (PackState::Built, MarkerKind::Cleaning) => layout_ok(from),
         _ => false,
@@ -258,7 +263,8 @@ fn remove_state_marker<P: crate::application::session::FileSystemProvider + ?Siz
 /// If the guard is dropped without calling `complete()` (e.g., due to error or panic),
 /// it leaves the marker in place so `discover_state()` correctly reports `Interrupted`.
 #[must_use = "dropping the guard without complete() leaves the marker, signalling interruption"]
-pub(crate) struct StateMarkerGuard<'a, P: crate::application::session::FileSystemProvider + ?Sized> {
+pub(crate) struct StateMarkerGuard<'a, P: crate::application::session::FileSystemProvider + ?Sized>
+{
     provider: &'a P,
     workdir: PathBuf,
     active: bool,
@@ -310,7 +316,12 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 ) -> Result<StateTransitionResult, StateError> {
     let current = discover_state(provider, workdir)?;
 
-    let no_warnings = |state| Ok(StateTransitionResult { state, warnings: vec![] });
+    let no_warnings = |state| {
+        Ok(StateTransitionResult {
+            state,
+            warnings: vec![],
+        })
+    };
 
     match transition {
         StateTransition::Initialize(config) => {
@@ -334,7 +345,10 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                 config.mc_version,
                 config.loader_version,
             )
-            .map(|state| StateTransitionResult { state, warnings: vec![] })
+            .map(|state| StateTransitionResult {
+                state,
+                warnings: vec![],
+            })
         }
 
         StateTransition::RefreshIndex => {
@@ -360,7 +374,10 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
             // via begin_state_transition/complete_state_transition
             execute_build(orchestrator, &targets)
                 .await
-                .map(|state| StateTransitionResult { state, warnings: vec![] })
+                .map(|state| StateTransitionResult {
+                    state,
+                    warnings: vec![],
+                })
         }
 
         StateTransition::Clean => {
@@ -406,7 +423,6 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                 }
             }
         }
-
     }
 }
 
@@ -526,7 +542,9 @@ pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider 
 ) -> Result<(), StateError> {
     let dist_dir = artifact_root(workdir);
     if provider.is_directory(&dist_dir) {
-        provider.remove_dir_all(&dist_dir).context("Failed to remove dist directory")?;
+        provider
+            .remove_dir_all(&dist_dir)
+            .context("Failed to remove dist directory")?;
     }
     Ok(())
 }
@@ -685,7 +703,8 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
             MarkerKind::Cleaning => ("cleaning", PackState::Cleaning),
         };
 
-        let layout_ok = |state: &PackState| validate_state_layout(self.provider, &self.workdir, state);
+        let layout_ok =
+            |state: &PackState| validate_state_layout(self.provider, &self.workdir, state);
         if !can_enter_marker(&current, marker, &layout_ok) {
             return Err(StateError::InvalidTransition {
                 from: current,
@@ -699,10 +718,7 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> PackStateM
     /// Begin a marker transition without RAII guard. Only used in tests --
     /// production code should use `guarded_transition` for automatic cleanup.
     #[cfg(test)]
-    pub(crate) fn begin_state_transition(
-        &self,
-        marker: MarkerKind,
-    ) -> Result<(), StateError> {
+    pub(crate) fn begin_state_transition(&self, marker: MarkerKind) -> Result<(), StateError> {
         let state_label = self.validate_transition(marker)?;
         write_state_marker(self.provider, &self.workdir, state_label)
     }

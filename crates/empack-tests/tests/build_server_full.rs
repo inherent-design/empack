@@ -1,8 +1,8 @@
 //! Hermetic E2E tests for the server-full build target.
 
 use anyhow::Result;
-use empack_lib::application::cli::CliArchiveFormat;
 use empack_lib::application::Commands;
+use empack_lib::application::cli::CliArchiveFormat;
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
@@ -127,7 +127,10 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
         "Server-full build should materialize the server JAR"
     );
     assert!(
-        server_full_dir.join("mods").join("server-installed.txt").exists(),
+        server_full_dir
+            .join("mods")
+            .join("server-installed.txt")
+            .exists(),
         "Mock installer should leave a deterministic server install marker"
     );
     assert!(
@@ -207,8 +210,7 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
     );
     let error = result.unwrap_err().to_string();
     assert!(
-        error.contains("HTTP client unavailable")
-            || error.contains("Mock HTTP client unavailable"),
+        error.contains("HTTP client unavailable") || error.contains("Mock HTTP client unavailable"),
         "Build should fail at HTTP client creation, got: {error}"
     );
     assert!(
@@ -302,7 +304,10 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
         "Server JAR should exist"
     );
     assert!(
-        server_full_dir.join("mods").join("server-installed.txt").exists(),
+        server_full_dir
+            .join("mods")
+            .join("server-installed.txt")
+            .exists(),
         "Installer marker should confirm server-full download step"
     );
 
