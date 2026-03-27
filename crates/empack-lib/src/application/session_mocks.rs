@@ -1032,10 +1032,10 @@ impl InteractiveProvider for MockInteractiveProvider {
         // Queue takes priority: pop if front element is the matching type
         {
             let mut queue = self.response_queue.lock().unwrap();
-            if let Some(MockResponse::Text(_)) = queue.front() {
-                if let Some(MockResponse::Text(value)) = queue.pop_front() {
-                    return Ok(value);
-                }
+            if let Some(MockResponse::Text(_)) = queue.front()
+                && let Some(MockResponse::Text(value)) = queue.pop_front()
+            {
+                return Ok(value);
             }
         }
 
@@ -1058,10 +1058,10 @@ impl InteractiveProvider for MockInteractiveProvider {
 
         {
             let mut queue = self.response_queue.lock().unwrap();
-            if let Some(MockResponse::Confirm(_)) = queue.front() {
-                if let Some(MockResponse::Confirm(value)) = queue.pop_front() {
-                    return Ok(value);
-                }
+            if let Some(MockResponse::Confirm(_)) = queue.front()
+                && let Some(MockResponse::Confirm(value)) = queue.pop_front()
+            {
+                return Ok(value);
             }
         }
 
@@ -1081,10 +1081,10 @@ impl InteractiveProvider for MockInteractiveProvider {
 
         {
             let mut queue = self.response_queue.lock().unwrap();
-            if let Some(MockResponse::Select(_)) = queue.front() {
-                if let Some(MockResponse::Select(value)) = queue.pop_front() {
-                    return Ok(value);
-                }
+            if let Some(MockResponse::Select(_)) = queue.front()
+                && let Some(MockResponse::Select(value)) = queue.pop_front()
+            {
+                return Ok(value);
             }
         }
 
@@ -1107,10 +1107,10 @@ impl InteractiveProvider for MockInteractiveProvider {
 
         {
             let mut queue = self.response_queue.lock().unwrap();
-            if let Some(MockResponse::FuzzySelect(_)) = queue.front() {
-                if let Some(MockResponse::FuzzySelect(value)) = queue.pop_front() {
-                    return Ok(value);
-                }
+            if let Some(MockResponse::FuzzySelect(_)) = queue.front()
+                && let Some(MockResponse::FuzzySelect(value)) = queue.pop_front()
+            {
+                return Ok(value);
             }
         }
 
@@ -1396,7 +1396,7 @@ mod tests {
             provider.text_input("Name?", "default".to_string()).unwrap(),
             "queued-name"
         );
-        assert_eq!(provider.confirm("Continue?", true).unwrap(), false);
+        assert!(!provider.confirm("Continue?", true).unwrap());
         assert_eq!(
             provider.select("Pick one:", &["a", "b", "c"]).unwrap(),
             2
@@ -1409,7 +1409,7 @@ mod tests {
                 .unwrap(),
             "fallback"
         );
-        assert_eq!(provider.confirm("Sure?", true).unwrap(), true);
+        assert!(provider.confirm("Sure?", true).unwrap());
         assert_eq!(provider.select("Again:", &["x", "y"]).unwrap(), 0);
         assert_eq!(
             provider
