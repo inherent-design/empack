@@ -339,13 +339,13 @@ async fn test_forge_modloader_initialization() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Execute init without explicit loader (interactive provider will select Forge)
+    // Execute init with explicit Forge loader (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("forge-loader-test".to_string()),
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("forge".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,

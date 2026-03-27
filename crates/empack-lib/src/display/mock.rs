@@ -4,21 +4,18 @@
 //! for assertion in unit tests.
 
 use super::providers::*;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Mock implementation of DisplayProvider that records all calls
 #[derive(Clone)]
 pub struct MockDisplayProvider {
     calls: Arc<Mutex<Vec<DisplayCall>>>,
-    responses: Arc<Mutex<HashMap<String, ResponseValue>>>,
 }
 
 impl MockDisplayProvider {
     pub fn new() -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
-            responses: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -30,14 +27,6 @@ impl MockDisplayProvider {
     /// Clear all recorded calls
     pub fn clear_calls(&self) {
         self.calls.lock().unwrap().clear();
-    }
-
-    /// Set a response for interactive prompts
-    pub fn set_response(&self, prompt: &str, response: ResponseValue) {
-        self.responses
-            .lock()
-            .unwrap()
-            .insert(prompt.to_string(), response);
     }
 
     /// Check if a specific call was made
@@ -67,13 +56,6 @@ impl DisplayProvider for MockDisplayProvider {
 
     fn progress(&self) -> Box<dyn ProgressProvider> {
         Box::new(MockProgressProvider::new(self.calls.clone()))
-    }
-
-    fn prompt(&self) -> Box<dyn PromptProvider> {
-        Box::new(MockPromptProvider::new(
-            self.calls.clone(),
-            self.responses.clone(),
-        ))
     }
 
     fn table(&self) -> Box<dyn StructuredProvider> {
@@ -166,26 +148,6 @@ pub enum DisplayCall {
         message: String,
     },
 
-    // Prompt calls
-    PromptConfirm {
-        message: String,
-        response: bool,
-    },
-    PromptInput {
-        message: String,
-        response: Option<String>,
-    },
-    PromptSelect {
-        message: String,
-        options: Vec<String>,
-        response: Option<usize>,
-    },
-    PromptMultiSelect {
-        message: String,
-        options: Vec<String>,
-        response: Vec<usize>,
-    },
-
     // Structured calls
     StructuredTable {
         headers: Vec<String>,
@@ -224,24 +186,11 @@ impl DisplayCall {
             DisplayCall::ProgressTick { .. } => "progress_tick",
             DisplayCall::ProgressFinish { .. } => "progress_finish",
             DisplayCall::ProgressAbandon { .. } => "progress_abandon",
-            DisplayCall::PromptConfirm { .. } => "prompt_confirm",
-            DisplayCall::PromptInput { .. } => "prompt_input",
-            DisplayCall::PromptSelect { .. } => "prompt_select",
-            DisplayCall::PromptMultiSelect { .. } => "prompt_multi_select",
             DisplayCall::StructuredTable { .. } => "structured_table",
             DisplayCall::StructuredList { .. } => "structured_list",
             DisplayCall::StructuredProperties { .. } => "structured_properties",
         }
     }
-}
-
-/// Response values for interactive prompts
-#[derive(Debug, Clone)]
-pub enum ResponseValue {
-    Bool(bool),
-    String(String),
-    Index(usize),
-    Indices(Vec<usize>),
 }
 
 /// Mock status provider
@@ -523,88 +472,6 @@ impl MultiProgressProvider for MockMultiProgressProvider {
 
     fn clear(&self) {
         // For mocking, we can ignore this or record it if needed
-    }
-}
-
-/// Mock prompt provider
-struct MockPromptProvider {
-    calls: Arc<Mutex<Vec<DisplayCall>>>,
-    responses: Arc<Mutex<HashMap<String, ResponseValue>>>,
-}
-
-impl MockPromptProvider {
-    fn new(
-        calls: Arc<Mutex<Vec<DisplayCall>>>,
-        responses: Arc<Mutex<HashMap<String, ResponseValue>>>,
-    ) -> Self {
-        Self { calls, responses }
-    }
-
-    fn get_response(&self, prompt: &str) -> Option<ResponseValue> {
-        self.responses.lock().unwrap().get(prompt).cloned()
-    }
-}
-
-impl PromptProvider for MockPromptProvider {
-    fn confirm(&self, message: &str) -> bool {
-        let response = match self.get_response(message) {
-            Some(ResponseValue::Bool(value)) => value,
-            _ => false, // Default to false
-        };
-
-        self.calls.lock().unwrap().push(DisplayCall::PromptConfirm {
-            message: message.to_string(),
-            response,
-        });
-
-        response
-    }
-
-    fn input(&self, message: &str) -> Option<String> {
-        let response = match self.get_response(message) {
-            Some(ResponseValue::String(value)) => Some(value),
-            _ => None,
-        };
-
-        self.calls.lock().unwrap().push(DisplayCall::PromptInput {
-            message: message.to_string(),
-            response: response.clone(),
-        });
-
-        response
-    }
-
-    fn select(&self, message: &str, options: &[&str]) -> Option<usize> {
-        let response = match self.get_response(message) {
-            Some(ResponseValue::Index(value)) => Some(value),
-            _ => None,
-        };
-
-        self.calls.lock().unwrap().push(DisplayCall::PromptSelect {
-            message: message.to_string(),
-            options: options.iter().map(|s| s.to_string()).collect(),
-            response,
-        });
-
-        response
-    }
-
-    fn multi_select(&self, message: &str, options: &[&str]) -> Vec<usize> {
-        let response = match self.get_response(message) {
-            Some(ResponseValue::Indices(value)) => value,
-            _ => vec![],
-        };
-
-        self.calls
-            .lock()
-            .unwrap()
-            .push(DisplayCall::PromptMultiSelect {
-                message: message.to_string(),
-                options: options.iter().map(|s| s.to_string()).collect(),
-                response: response.clone(),
-            });
-
-        response
     }
 }
 

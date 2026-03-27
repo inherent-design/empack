@@ -40,13 +40,13 @@ async fn test_build_with_missing_template() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Initialize the project
+    // Initialize the project (--yes requires --modloader)
     execute_command_with_session(
         Commands::Init {
             name: None,
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,
@@ -160,13 +160,13 @@ async fn test_build_template_error_specificity() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Initialize project
+    // Initialize project (--yes requires --modloader)
     execute_command_with_session(
         Commands::Init {
             name: None,
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,

@@ -59,13 +59,13 @@ async fn test_init_zero_config() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Execute init command (--yes flag is now global in session.config)
+    // Execute init command (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: None,
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,
@@ -292,13 +292,13 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Execute init with directory name argument (--yes flag is now global in session.config)
+    // Execute init with directory name argument (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("my-pack".to_string()),
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,
@@ -395,13 +395,13 @@ async fn test_init_existing_project_error() -> Result<()> {
 "#,
     )?;
 
-    // Execute init command (should detect existing project)
+    // Execute init command (should detect existing project; --yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: None,
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None, // No force flag - should fail or prompt
             loader_version: None,
