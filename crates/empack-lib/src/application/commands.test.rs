@@ -962,7 +962,7 @@ mod handle_add_tests {
 
         let result = handle_add(&session, vec!["failing-mod".to_string()], false, None, None).await;
 
-        assert!(result.is_ok()); // Command handler should handle errors gracefully
+        assert!(result.is_err(), "handle_add must return Err when packwiz fails");
 
         let calls = session.process_provider.get_calls();
         assert_eq!(calls.len(), 1);
@@ -1966,8 +1966,7 @@ mod handle_build_tests {
 
         let result = handle_build(&session, vec!["client".to_string()], false, crate::empack::archive::ArchiveFormat::Zip).await;
 
-        // Should complete successfully - command handler checks state and exits gracefully
-        assert!(result.is_ok());
+        assert!(result.is_err(), "handle_build must return Err when not in a modpack directory");
     }
 
     #[tokio::test]
@@ -1984,7 +1983,7 @@ mod handle_build_tests {
 
         let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err(), "handle_build must return Err for incomplete project state");
         assert!(session.process_provider.get_calls().is_empty());
     }
 
@@ -2860,10 +2859,7 @@ mod search_add_tests {
     }
 
     // S1/E5: When packwiz curseforge add --addon-id fails with stderr content,
-    // the error message must be non-empty. Currently handle_add returns Ok
-    // and the error is only printed, not propagated.
-    // W1-T3: expected to fail until W2-F3
-    #[ignore]
+    // the error message must be non-empty and propagate the stderr.
     #[tokio::test]
     async fn test_handle_add_curseforge_id_propagates_stderr() {
         let workdir = mock_root().join("cf-id-stderr");
@@ -3042,19 +3038,20 @@ mod search_add_tests {
 
 mod init_interactive_tests {
     use super::*;
+    use crate::application::config::AppConfig;
 
-    // W1-T2: expected to fail until W2-F2
-    //
     // I1: handle_init with yes_mode=true and no --modloader must return Err
-    // containing "modloader". Currently the interactive provider auto-selects
-    // index 0 ("none (vanilla)") and init silently produces a vanilla pack.
-    #[ignore]
+    // containing "modloader".
     #[tokio::test]
     async fn test_handle_init_yes_without_modloader_errors() {
         let workdir = mock_root().join("yes-no-modloader");
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
-            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true))
+            .with_config(MockConfigProvider::new(AppConfig {
+                yes: true,
+                ..Default::default()
+            }));
 
         let result = handle_init(
             &session,
@@ -3081,13 +3078,8 @@ mod init_interactive_tests {
         );
     }
 
-    // W1-T2: expected to fail until W2-F2
-    //
     // I2: handle_init with a positional name must skip the interactive name
-    // prompt. Currently, the text_input prompt for "Modpack name" fires
-    // regardless of whether a positional name was provided because the guard
-    // checks cli_pack_name, not positional_name.
-    #[ignore]
+    // prompt.
     #[tokio::test]
     async fn test_handle_init_positional_name_skips_prompt() {
         let workdir = mock_root().join("positional-name-skip");
@@ -3119,27 +3111,20 @@ mod init_interactive_tests {
         );
     }
 
-    // W1-T2: expected to fail until W2-F2
-    //
     // I3: Orphan removal in handle_remove must use confirm(), not text_input().
-    // Currently the code at line ~1672 calls text_input("Remove orphaned
-    // dependencies? [y/N]", "N") which is both wrong UX and wrong type.
-    // The fix should replace it with confirm("Remove orphaned dependencies?", false).
-    //
-    // This test sets up a remove with --deps, removes a mod, and then checks
-    // that session.interactive().confirm() was called for orphan removal.
-    // The test fails because: (a) orphan detection uses Path::exists() on a
-    // mock path that doesn't exist on the real filesystem, and (b) even if
-    // reached, text_input is called instead of confirm.
-    #[ignore]
     #[tokio::test]
     async fn test_handle_remove_orphan_uses_confirm() {
         let workdir = mock_root().join("orphan-confirm");
+        let mods_dir = workdir.join("pack").join("mods");
         let session = MockCommandSession::new()
             .with_filesystem(
                 MockFileSystemProvider::new()
                     .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
+                    .with_configured_project(workdir.clone())
+                    .with_file(
+                        mods_dir.join("fabric-language-kotlin.pw.toml"),
+                        "name = \"Fabric Language Kotlin\"\nfilename = \"fabric-language-kotlin-1.12.0.jar\"\n".to_string(),
+                    ),
             )
             .with_interactive(
                 MockInteractiveProvider::new().queue_confirm(true),
@@ -3169,12 +3154,8 @@ mod init_interactive_tests {
         );
     }
 
-    // W1-T2: expected to fail until W2-F2
-    //
     // I4: handle_init with --modloader none and --loader-version 0.15.0 should
-    // either warn about the ignored loader version or return an error. Currently
-    // it silently ignores --loader-version for vanilla packs.
-    #[ignore]
+    // either warn about the ignored loader version or return an error.
     #[tokio::test]
     async fn test_handle_init_vanilla_loader_version_warns() {
         let workdir = mock_root().join("vanilla-loader-version");
@@ -3292,7 +3273,6 @@ version = "nPGOChsP"
     //
     // For now, we verify by checking that the code reads the .pw.toml after the
     // packwiz add (which it currently doesn't do for restriction detection).
-    #[ignore]
     #[tokio::test]
     async fn test_add_cf_restricted_mod_warns() {
         let workdir = mock_root().join("cf-restricted-add-warn");
@@ -3370,7 +3350,6 @@ version = "nPGOChsP"
     //
     // R1 test 2: When a CF-restricted mod is also available on Modrinth, empack
     // should suggest the Modrinth alternative. Currently: no detection at all.
-    #[ignore]
     #[tokio::test]
     async fn test_add_cf_restricted_suggests_modrinth() {
         let workdir = mock_root().join("cf-restricted-modrinth-alt");
@@ -3467,7 +3446,6 @@ project-id = 448233
     // R2 test 3: handle_build must scan .pw.toml files for metadata:curseforge mode
     // before calling packwiz export. Assert a pre-flight report lists the restricted mod.
     // Currently: builds attempt and fail with an opaque error.
-    #[ignore]
     #[tokio::test]
     async fn test_build_preflight_detects_restricted() {
         let workdir = mock_root().join("cf-restricted-build-preflight");
@@ -3529,7 +3507,6 @@ project-id = 448233
     //
     // R2 test 4: When the restricted mod file is present in the packwiz cache,
     // build should proceed. Currently: no cache check logic exists.
-    #[ignore]
     #[tokio::test]
     async fn test_build_preflight_passes_when_cached() {
         let workdir = mock_root().join("cf-restricted-build-cached");
@@ -3633,15 +3610,14 @@ project-id = 448233
         // have emitted any `open` commands. If pre-flight did NOT run, the
         // packwiz export may have failed with its own error about manual downloads.
         //
-        // Final assertion: the pre-flight must have detected the restricted mod.
-        // We verify this by confirming the build read the restricted .pw.toml content.
-        // This requires the pre-flight to parse .pw.toml files in pack/mods/.
-        // Since this logic doesn't exist yet, we fail with a clear message.
-        panic!(
-            "Pre-flight cache check is not yet implemented. \
-             The build succeeded vacuously because no restriction detection exists. \
-             After W2-F6, this test should verify that the pre-flight scan finds \
-             the restricted mod in cache and allows the build to proceed."
+        // Pre-flight ran, found the restricted mod, found the cache file, and
+        // allowed the build to proceed. No `open` command should have been called
+        // since the mod was already cached.
+        let open_calls = session.process_provider.get_calls_for_command("open");
+        assert!(
+            open_calls.is_empty(),
+            "No browser open should be triggered when cached file exists, got: {:?}",
+            open_calls
         );
     }
 
@@ -3650,7 +3626,6 @@ project-id = 448233
     // R2 test 5: When restricted mods are detected at build-time, empack should
     // open the browser to the CurseForge download page. Assert via MockProcessProvider
     // that `open` (macOS) was called with the correct CF URL.
-    #[ignore]
     #[tokio::test]
     async fn test_build_restricted_opens_browser() {
         let workdir = mock_root().join("cf-restricted-build-browser");
@@ -3707,7 +3682,6 @@ project-id = 448233
     // R2 test 6: When packwiz export fails due to a restricted mod, empack must
     // surface the mod name and download URL in its error message, not a generic
     // "packwiz mr export failed".
-    #[ignore]
     #[tokio::test]
     async fn test_build_packwiz_error_surfaces_restricted() {
         let workdir = mock_root().join("cf-restricted-build-error");
@@ -3817,11 +3791,7 @@ Once you have done so, place these files in \
 mod exit_code_tests {
     use super::*;
 
-    // W1-T1: expected to fail until W2-F1
-    //
     // E1: handle_add with packwiz failure must return Err, not Ok.
-    // Currently handle_add prints the error and returns Ok(()).
-    #[ignore]
     #[tokio::test]
     async fn test_handle_add_packwiz_failure_returns_error() {
         let workdir = mock_root().join("exit-code-packwiz-fail");
@@ -3867,11 +3837,7 @@ mod exit_code_tests {
         );
     }
 
-    // W1-T1: expected to fail until W2-F1
-    //
     // E3: handle_add with no search results must return Err, not Ok.
-    // Currently handle_add prints the error and returns Ok(()).
-    #[ignore]
     #[tokio::test]
     async fn test_handle_add_no_results_returns_error() {
         let workdir = mock_root().join("exit-code-no-results");
@@ -3905,11 +3871,7 @@ mod exit_code_tests {
         );
     }
 
-    // W1-T1: expected to fail until W2-F1
-    //
     // E2: handle_build in an uninitialized directory must return Err, not Ok.
-    // Currently handle_build prints a message and returns Ok(()).
-    #[ignore]
     #[tokio::test]
     async fn test_handle_build_uninitialized_returns_error() {
         let workdir = mock_root().join("exit-code-uninit-build");
@@ -3932,12 +3894,8 @@ mod exit_code_tests {
         );
     }
 
-    // W1-T1: expected to fail until W2-F1
-    //
     // E5: When packwiz fails with stderr output, the error message returned
-    // by handle_add must contain that stderr content. Currently the error
-    // message is empty or generic.
-    #[ignore]
+    // by handle_add must contain that stderr content.
     #[tokio::test]
     async fn test_handle_add_propagates_packwiz_stderr() {
         let workdir = mock_root().join("exit-code-stderr-prop");

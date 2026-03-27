@@ -1,7 +1,7 @@
 //! Live display provider implementation
 //!
 //! Production implementation of display providers using the existing
-//! display system with indicatif and dialoguer.
+//! display system with indicatif.
 
 use super::Display;
 use super::providers::*;
@@ -41,10 +41,6 @@ impl DisplayProvider for LiveDisplayProvider {
         Box::new(LiveProgressProvider {
             parent: self.multi_progress.clone(),
         })
-    }
-
-    fn prompt(&self) -> Box<dyn PromptProvider> {
-        Box::new(LivePromptProvider)
     }
 
     fn table(&self) -> Box<dyn StructuredProvider> {
@@ -161,39 +157,6 @@ impl MultiProgressProvider for LiveMultiProgressProvider {
     fn clear(&self) {
         // Clear implementation would interact with the MultiProgress
         // For now, this is a no-op since we're using independent progress bars
-    }
-}
-
-/// Live implementation of PromptProvider
-struct LivePromptProvider;
-
-impl PromptProvider for LivePromptProvider {
-    fn confirm(&self, message: &str) -> bool {
-        Display::prompt()
-            .confirm(message)
-            .default(false)
-            .interact()
-            .unwrap_or(false)
-    }
-
-    fn input(&self, message: &str) -> Option<String> {
-        Display::prompt().input(message).interact().ok()
-    }
-
-    fn select(&self, message: &str, options: &[&str]) -> Option<usize> {
-        Display::prompt()
-            .select(message)
-            .options(options)
-            .interact()
-            .ok()
-    }
-
-    fn multi_select(&self, message: &str, options: &[&str]) -> Vec<usize> {
-        // Single-select fallback; multi-select not used by any current command
-        match self.select(message, options) {
-            Some(index) => vec![index],
-            None => vec![],
-        }
     }
 }
 

@@ -215,6 +215,10 @@ async fn handle_init(
     cli_loader_version: Option<String>,
     cli_pack_version: Option<String>,
 ) -> Result<()> {
+    if session.config().app_config().yes && cli_modloader.is_none() {
+        return Err(anyhow::anyhow!("--yes requires --modloader to be specified"));
+    }
+
     // Handle directory creation case: `empack init <name>` where <name> is a directory
     // Precedence: positional arg > --name flag
     let name = positional_name.or(cli_pack_name.clone());
@@ -303,8 +307,8 @@ async fn handle_init(
         )
         .to_string();
 
-    // Interactive prompt for modpack configuration (or use CLI flag)
-    let modpack_name = if let Some(name) = cli_pack_name.clone() {
+    // Interactive prompt for modpack configuration (or use CLI flag / positional arg)
+    let modpack_name = if let Some(name) = cli_pack_name.clone().or(initial_name.clone()) {
         session
             .display()
             .status()
@@ -472,6 +476,11 @@ async fn handle_init(
         .is_some_and(|s| s.eq_ignore_ascii_case("none"));
 
     let (loader_str, loader_version) = if is_vanilla {
+        if cli_loader_version.is_some() {
+            return Err(anyhow::anyhow!(
+                "--loader-version ignored: vanilla packs have no modloader"
+            ));
+        }
         session
             .display()
             .status()
@@ -1247,7 +1256,62 @@ async fn handle_add(
                         .warning(&format!("Failed to update empack.yml: {}", e));
                 }
 
-                added_mods.push((resolved.query, resolved.resolution));
+                // Phase A: detect CF-restricted mods after packwiz add
+                let mut is_restricted = false;
+                for folder in &scan_folders {
+                    let dir = workdir.join("pack").join(folder);
+                    let pw_toml_path = dir.join(format!("{}.pw.toml", dep_key));
+                    if let Ok(content) = session.filesystem().read_to_string(&pw_toml_path)
+                        && let Some(rm) = parse_restricted_pw_toml(&content)
+                    {
+                        let cf_url = rm.curseforge_url();
+                        session.display().status().warning(&format!(
+                            "\"{}\" has third-party downloads disabled on CurseForge.",
+                            rm.name
+                        ));
+                        session.display().status().warning(&format!(
+                            "Download manually: {}",
+                            cf_url
+                        ));
+                        session.display().status().warning(&format!(
+                            "Place the file in: {}",
+                            packwiz_cache_import_dir().display()
+                        ));
+
+                        if let Ok(modrinth_info) = resolver
+                            .resolve_project(
+                                &rm.name,
+                                Some("mod"),
+                                project_plan.as_ref().map(|p| p.minecraft_version.as_str()),
+                                project_plan.as_ref().and_then(|p| {
+                                    p.loader.map(crate::application::sync::loader_arg)
+                                }),
+                                Some(ProjectPlatform::Modrinth),
+                            )
+                            .await
+                            && modrinth_info.platform == ProjectPlatform::Modrinth
+                        {
+                            session.display().status().warning(&format!(
+                                "This mod may be available on Modrinth. Try: empack remove {} && empack add \"{}\"",
+                                dep_key, rm.name
+                            ));
+                        }
+
+                        is_restricted = true;
+                        failed_mods.push((
+                            resolved.query.clone(),
+                            format!(
+                                "CurseForge restricted: \"{}\" has third-party downloads disabled. Manual download required: {}",
+                                rm.name, cf_url
+                            ),
+                        ));
+                        break;
+                    }
+                }
+
+                if !is_restricted {
+                    added_mods.push((resolved.query, resolved.resolution));
+                }
             }
             Err(_) => {
                 let e = last_error
@@ -1274,9 +1338,19 @@ async fn handle_add(
 
     if !failed_mods.is_empty() {
         session.display().status().section("Failed mods");
-        for (mod_name, error) in failed_mods {
-            session.display().status().error(&mod_name, &error);
+        for (mod_name, error) in &failed_mods {
+            session.display().status().error(mod_name, error);
         }
+        let summary = failed_mods
+            .iter()
+            .map(|(name, err)| format!("{}: {}", name, err))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(anyhow::anyhow!(
+            "{} mod(s) failed: {}",
+            failed_mods.len(),
+            summary
+        ));
     }
 
     Ok(())
@@ -1479,6 +1553,107 @@ fn is_curseforge_project_id(value: &str) -> bool {
     !value.is_empty() && value.chars().all(|c| c.is_ascii_digit())
 }
 
+struct RestrictedMod {
+    name: String,
+    filename: String,
+    file_id: u64,
+    project_id: u64,
+}
+
+impl RestrictedMod {
+    fn curseforge_url(&self) -> String {
+        format!(
+            "https://www.curseforge.com/projects/{}/files/{}",
+            self.project_id, self.file_id
+        )
+    }
+}
+
+fn parse_restricted_pw_toml(content: &str) -> Option<RestrictedMod> {
+    if !content.contains("mode = \"metadata:curseforge\"") {
+        return None;
+    }
+    if content.contains("\nurl = ") || content.contains("\nurl=") {
+        return None;
+    }
+
+    let parsed: toml::Value = toml::from_str(content).ok()?;
+
+    let name = parsed.get("name")?.as_str()?.to_string();
+    let filename = parsed.get("filename")?.as_str()?.to_string();
+
+    let update_cf = parsed.get("update")?.get("curseforge")?;
+    let file_id = update_cf.get("file-id")?.as_integer()? as u64;
+    let project_id = update_cf.get("project-id")?.as_integer()? as u64;
+
+    Some(RestrictedMod {
+        name,
+        filename,
+        file_id,
+        project_id,
+    })
+}
+
+fn scan_restricted_mods(
+    filesystem: &dyn FileSystemProvider,
+    pack_dir: &std::path::Path,
+) -> Vec<RestrictedMod> {
+    let content_dirs = ["mods", "resourcepacks", "shaderpacks"];
+    let mut restricted = Vec::new();
+
+    for folder in &content_dirs {
+        let dir = pack_dir.join(folder);
+        if !filesystem.exists(&dir) {
+            continue;
+        }
+        let file_list = match filesystem.get_file_list(&dir) {
+            Ok(list) => list,
+            Err(_) => continue,
+        };
+        for path in &file_list {
+            let ext_match = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e == "toml")
+                .unwrap_or(false);
+            let stem_match = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.ends_with(".pw"))
+                .unwrap_or(false);
+            if ext_match && stem_match
+                && let Ok(content) = filesystem.read_to_string(path)
+                && let Some(rm) = parse_restricted_pw_toml(&content)
+            {
+                restricted.push(rm);
+            }
+        }
+    }
+
+    restricted
+}
+
+fn packwiz_cache_import_dir() -> std::path::PathBuf {
+    #[cfg(test)]
+    {
+        crate::application::session_mocks::mock_root()
+            .join(".cache")
+            .join("packwiz")
+            .join("cache")
+            .join("import")
+    }
+    #[cfg(not(test))]
+    {
+        let home = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        home.join(".cache")
+            .join("packwiz")
+            .join("cache")
+            .join("import")
+    }
+}
+
 async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> Result<()> {
     if mods.is_empty() {
         session
@@ -1610,15 +1785,14 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
     // Orphan detection: Find mods with no dependents (if --deps flag is set)
     let mut removed_orphans = Vec::new();
-    if deps && !removed_mods.is_empty() && mods_dir.exists() {
+    if deps && !removed_mods.is_empty() && session.filesystem().exists(&mods_dir) {
         session
             .display()
             .status()
             .section("Detecting orphaned dependencies");
 
-        // Rebuild dependency graph after removals
         let mut dep_graph = crate::api::dependency_graph::DependencyGraph::new();
-        if let Err(e) = dep_graph.build_from_directory(&mods_dir) {
+        if let Err(e) = dep_graph.build_from_directory_with(&mods_dir, session.filesystem()) {
             session
                 .display()
                 .status()
@@ -1668,13 +1842,11 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                         .subtle(&format!("  - {}", orphan));
                 }
 
-                // Prompt user to remove orphans
                 let should_remove = session
                     .interactive()
-                    .text_input("Remove orphaned dependencies? [y/N]", "N".to_string())?
-                    .to_lowercase();
+                    .confirm("Remove orphaned dependencies?", false)?;
 
-                if should_remove == "y" || should_remove == "yes" {
+                if should_remove {
                     session.display().status().section("Removing orphans");
 
                     for orphan in orphans {
@@ -1773,7 +1945,7 @@ async fn handle_build(
             .display()
             .status()
             .subtle("   Run 'empack init' to set up a modpack project");
-        return Ok(());
+        return Err(anyhow::anyhow!("Not in a modpack directory"));
     }
     if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
         session
@@ -1783,7 +1955,7 @@ async fn handle_build(
         session.display().status().subtle(
             "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before building",
         );
-        return Ok(());
+        return Err(anyhow::anyhow!("Project initialization is incomplete"));
     }
 
     // Parse build targets
@@ -1807,6 +1979,48 @@ async fn handle_build(
             .status()
             .complete("Dry run complete - no changes applied");
         return Ok(());
+    }
+
+    // Phase B: pre-flight scan for CF-restricted mods
+    let pack_dir = manager.workdir.join("pack");
+    let restricted_mods = scan_restricted_mods(session.filesystem(), &pack_dir);
+    if !restricted_mods.is_empty() {
+        let cache_dir = packwiz_cache_import_dir();
+        let mut blocked: Vec<&RestrictedMod> = Vec::new();
+        for rm in &restricted_mods {
+            let cached_path = cache_dir.join(&rm.filename);
+            if !session.filesystem().exists(&cached_path) {
+                blocked.push(rm);
+            }
+        }
+
+        if !blocked.is_empty() {
+            session.display().status().section("CurseForge restricted mods detected");
+            let mut mod_names = Vec::new();
+            for rm in &blocked {
+                let url = rm.curseforge_url();
+                session.display().status().warning(&format!(
+                    "\"{}\" has third-party downloads disabled on CurseForge.",
+                    rm.name
+                ));
+                session.display().status().warning(&format!(
+                    "Download manually: {}",
+                    url
+                ));
+                let _ = session.process().execute("open", &[&url], &pack_dir);
+                mod_names.push(rm.name.clone());
+            }
+            session.display().status().warning(&format!(
+                "Place downloaded files in: {}",
+                cache_dir.display()
+            ));
+            return Err(anyhow::anyhow!(
+                "{} mod(s) require manual download: {}. Visit curseforge.com to download, then place files in {} and re-run this command.",
+                blocked.len(),
+                mod_names.join(", "),
+                cache_dir.display()
+            ));
+        }
     }
 
     // Clean if requested (after dry-run check to prevent side effects during preview)

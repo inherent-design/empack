@@ -49,13 +49,13 @@ async fn test_init_packwiz_failure() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Execute init command - may fail or succeed via fallback
+    // Execute init command - may fail or succeed via fallback (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("failure-test-pack".to_string()),
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,
@@ -117,13 +117,13 @@ async fn test_init_packwiz_unavailable() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Execute init command
+    // Execute init command (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("unavailable-packwiz-test".to_string()),
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,
@@ -218,13 +218,13 @@ async fn test_init_filesystem_error() -> Result<()> {
 
     std::env::set_current_dir(&readonly_dir)?;
 
-    // Execute init command - should fail due to permission error
+    // Execute init command - should fail due to permission error (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("readonly-test".to_string()),
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,
@@ -319,16 +319,13 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
     let workdir = test_env.work_path.clone();
     std::env::set_current_dir(&workdir)?;
 
-    // Execute init command
-    // Note: Without --mc-version flag, init uses interactive prompt (mocked to select default)
-    // MockNetworkProvider forces fallback to hardcoded versions
-    // This simulates the end state of "all loaders return empty vec" behavior
+    // Execute init command (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("empty-loader-test".to_string()),
             pack_name: None,
             force: false,
-            modloader: None,
+            modloader: Some("fabric".to_string()),
             mc_version: None,
             author: None,
             loader_version: None,
