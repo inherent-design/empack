@@ -120,65 +120,12 @@ impl ProgramFinder {
     }
 }
 
-/// Java runtime detector
-pub struct JavaCapabilities;
-
-impl JavaCapabilities {
-    /// Detect Java runtime information
-    pub fn detect() -> Vec<ProgramInfo> {
-        let mut javas = Vec::new();
-
-        // Check standard java command
-        let java_info = ProgramFinder::find_with_version("java", &["--version"]);
-        javas.push(java_info);
-
-        // Check javac if java is available
-        if javas[0].available {
-            javas.push(ProgramFinder::find_with_version("javac", &["--version"]));
-        }
-
-        javas
-    }
-}
-
-/// Go toolchain detector  
+/// Go toolchain detector
 pub struct GoCapabilities;
 
 impl GoCapabilities {
     /// Detect Go toolchain
     pub fn detect() -> ProgramInfo {
         ProgramFinder::find_with_version("go", &["version"])
-    }
-}
-
-/// Batch capability checker for common development tools
-pub struct ToolchainCapabilities;
-
-impl ToolchainCapabilities {
-    /// Check all common development tools
-    pub fn detect_all() -> ToolchainSummary {
-        ToolchainSummary {
-            go: GoCapabilities::detect(),
-            java: JavaCapabilities::detect(),
-        }
-    }
-}
-
-/// Summary of detected toolchain capabilities
-#[derive(Debug)]
-pub struct ToolchainSummary {
-    pub go: ProgramInfo,
-    pub java: Vec<ProgramInfo>,
-}
-
-impl ToolchainSummary {
-    /// Check if Go toolchain is available
-    pub fn has_go(&self) -> bool {
-        self.go.available
-    }
-
-    /// Check if Java runtime is available
-    pub fn has_java(&self) -> bool {
-        self.java.iter().any(|p| p.available)
     }
 }

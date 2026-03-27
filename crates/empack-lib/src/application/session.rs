@@ -12,6 +12,7 @@ use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
 use crate::networking::cache::HttpCache;
 use crate::networking::rate_limit::RateLimiterManager;
 use crate::empack::state::PackStateManager;
+use crate::terminal::TerminalCapabilities;
 use anyhow::Context;
 use indicatif::MultiProgress;
 use reqwest::Client;
@@ -142,6 +143,9 @@ pub trait Session {
 
     /// Get the interactive provider for this session
     fn interactive(&self) -> &dyn InteractiveProvider;
+
+    /// Get the terminal capabilities for this session
+    fn terminal(&self) -> &TerminalCapabilities;
 
     /// Get the packwiz operations provider for this session
     fn packwiz(&self) -> Box<dyn PackwizOps + '_>;
@@ -690,6 +694,8 @@ where
     multi_progress: Arc<MultiProgress>,
     /// Display provider for this session
     display_provider: LiveDisplayProvider,
+    /// Terminal capabilities for this session
+    terminal_capabilities: TerminalCapabilities,
     /// Filesystem operations provider
     filesystem_provider: F,
     /// Network operations provider
@@ -714,15 +720,18 @@ impl
     /// Create a new command session with owned state (production composition)
     pub fn new(app_config: AppConfig) -> Self {
         // Initialize display and logger systems
-        if let Ok(terminal_caps) =
-            crate::terminal::TerminalCapabilities::detect_from_config(&app_config)
-        {
-            crate::display::Display::init_or_get(terminal_caps.clone());
-            let logger_config = app_config.to_logger_config(&terminal_caps);
-            if let Err(e) = crate::logger::Logger::init(logger_config) {
-                eprintln!("empack: logger init failed: {e}");
-            }
-        }
+        let terminal_capabilities =
+            match TerminalCapabilities::detect_from_config(&app_config) {
+                Ok(caps) => {
+                    crate::display::Display::init_or_get(caps.clone());
+                    let logger_config = app_config.to_logger_config(&caps);
+                    if let Err(e) = crate::logger::Logger::init(logger_config) {
+                        eprintln!("empack: logger init failed: {e}");
+                    }
+                    caps
+                }
+                Err(_) => TerminalCapabilities::minimal(),
+            };
 
         let multi_progress = Arc::new(MultiProgress::new());
         let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
@@ -730,6 +739,7 @@ impl
         Self {
             multi_progress,
             display_provider,
+            terminal_capabilities,
             filesystem_provider: LiveFileSystemProvider,
             network_provider: LiveNetworkProvider::new(),
             process_provider: LiveProcessProvider::new(),
@@ -762,6 +772,7 @@ where
         Self {
             multi_progress,
             display_provider,
+            terminal_capabilities: TerminalCapabilities::minimal(),
             filesystem_provider,
             network_provider,
             process_provider,
@@ -799,6 +810,11 @@ where
     pub fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
     }
+
+    /// Get the terminal capabilities for this session
+    pub fn terminal(&self) -> &TerminalCapabilities {
+        &self.terminal_capabilities
+    }
 }
 
 impl<F, N, P, C, I> Session for CommandSession<F, N, P, C, I>
@@ -831,6 +847,10 @@ where
 
     fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
+    }
+
+    fn terminal(&self) -> &TerminalCapabilities {
+        &self.terminal_capabilities
     }
 
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
