@@ -3184,7 +3184,13 @@ mod init_interactive_tests {
         // The key assertion: the result must not silently succeed with
         // a loader_version baked into the config. If it returns Ok,
         // verify the empack.yml does NOT contain "0.15.0".
-        if let Ok(()) = result {
+        if let Err(e) = &result {
+            assert!(
+                e.to_string().to_lowercase().contains("loader-version")
+                    || e.to_string().to_lowercase().contains("vanilla"),
+                "Err message should mention loader-version or vanilla; got: {e}"
+            );
+        } else {
             let target_dir = mock_root()
                 .join("vanilla-loader-version")
                 .join("test-pack");
@@ -3194,20 +3200,10 @@ mod init_interactive_tests {
             {
                 assert!(
                     !yml.contains("0.15.0"),
-                    "Vanilla init must not silently embed --loader-version in config; \
-                     empack.yml contains:\n{}",
-                    yml
+                    "vanilla init must not embed loader-version in empack.yml: {yml}"
                 );
             }
-            // If we reach here with Ok and no yml (dir not created), the test
-            // effectively passes vacuously. That's acceptable for the "warn"
-            // variant since the real fix may just emit a warning.
-            panic!(
-                "handle_init with --modloader none --loader-version 0.15.0 should \
-                 either return Err or omit loader_version from config"
-            );
         }
-        // If Err: the error path is the preferred fix. Just verify it ran.
     }
 }
 
