@@ -1,3 +1,7 @@
+// NOTE: `set_current_dir` mutates process-global state but is safe here because
+// nextest runs each test in its own process, preventing cross-test interference.
+// This matches the pattern used across all hermetic tests in this crate.
+
 use anyhow::Result;
 use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;

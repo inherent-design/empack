@@ -991,7 +991,7 @@ async fn handle_add(
     let mods_dir = workdir.join("pack").join("mods");
 
     if mods_dir.exists()
-        && let Err(e) = dep_graph.build_from_directory(&mods_dir)
+        && let Err(e) = dep_graph.build_from_directory_with(&mods_dir, session.filesystem())
     {
         session
             .display()
@@ -1214,7 +1214,7 @@ async fn handle_add(
                 // Rebuild from directory to capture new .pw.toml files
                 let mut updated_graph =
                     crate::api::dependency_graph::DependencyGraph::new();
-                if let Err(e) = updated_graph.build_from_directory(&mods_dir) {
+                if let Err(e) = updated_graph.build_from_directory_with(&mods_dir, session.filesystem()) {
                     session
                         .display()
                         .status()
@@ -1237,26 +1237,7 @@ async fn handle_add(
                     }
                 }
 
-                let record = DependencyRecord {
-                    status: DependencyStatus::Resolved,
-                    title: resolved.resolution.title.clone(),
-                    platform: resolved.resolution.resolved_platform,
-                    project_id: resolved.resolution.resolved_project_id.clone(),
-                    project_type: resolved.resolution.resolved_project_type
-                        .unwrap_or(ProjectType::Mod),
-                    version: None,
-                };
-                if let Err(e) = config_manager.add_dependency(
-                    &dep_key,
-                    record,
-                ) {
-                    session
-                        .display()
-                        .status()
-                        .warning(&format!("Failed to update empack.yml: {}", e));
-                }
-
-                // Phase A: detect CF-restricted mods after packwiz add
+                // Phase A: detect CF-restricted mods before writing empack.yml
                 let mut is_restricted = false;
                 for folder in &scan_folders {
                     let dir = workdir.join("pack").join(folder);
@@ -1310,6 +1291,24 @@ async fn handle_add(
                 }
 
                 if !is_restricted {
+                    let record = DependencyRecord {
+                        status: DependencyStatus::Resolved,
+                        title: resolved.resolution.title.clone(),
+                        platform: resolved.resolution.resolved_platform,
+                        project_id: resolved.resolution.resolved_project_id.clone(),
+                        project_type: resolved.resolution.resolved_project_type
+                            .unwrap_or(ProjectType::Mod),
+                        version: None,
+                    };
+                    if let Err(e) = config_manager.add_dependency(
+                        &dep_key,
+                        record,
+                    ) {
+                        session
+                            .display()
+                            .status()
+                            .warning(&format!("Failed to update empack.yml: {}", e));
+                    }
                     added_mods.push((resolved.query, resolved.resolution));
                 }
             }
@@ -1570,14 +1569,15 @@ impl RestrictedMod {
 }
 
 fn parse_restricted_pw_toml(content: &str) -> Option<RestrictedMod> {
-    if !content.contains("mode = \"metadata:curseforge\"") {
-        return None;
-    }
-    if content.contains("\nurl = ") || content.contains("\nurl=") {
-        return None;
-    }
-
     let parsed: toml::Value = toml::from_str(content).ok()?;
+
+    let download = parsed.get("download")?;
+    if download.get("mode")?.as_str()? != "metadata:curseforge" {
+        return None;
+    }
+    if download.get("url").and_then(|v| v.as_str()).is_some() {
+        return None;
+    }
 
     let name = parsed.get("name")?.as_str()?.to_string();
     let filename = parsed.get("filename")?.as_str()?.to_string();
@@ -1645,6 +1645,7 @@ fn packwiz_cache_import_dir() -> std::path::PathBuf {
     #[cfg(not(test))]
     {
         let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::path::PathBuf::from("."));
         home.join(".cache")
@@ -2007,7 +2008,13 @@ async fn handle_build(
                     "Download manually: {}",
                     url
                 ));
-                let _ = session.process().execute("open", &[&url], &pack_dir);
+                if cfg!(target_os = "windows") {
+                    let _ = session.process().execute("cmd", &["/c", "start", &url], &pack_dir);
+                } else if cfg!(target_os = "macos") {
+                    let _ = session.process().execute("open", &[&url], &pack_dir);
+                } else {
+                    let _ = session.process().execute("xdg-open", &[&url], &pack_dir);
+                };
                 mod_names.push(rm.name.clone());
             }
             session.display().status().warning(&format!(
