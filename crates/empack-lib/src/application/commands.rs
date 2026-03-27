@@ -1601,10 +1601,7 @@ fn packwiz_cache_import_dir() -> std::path::PathBuf {
         //   macOS:   $HOME/.cache  (Go does NOT use ~/Library/Caches)
         //   Windows: %LocalAppData%
         let cache_base = packwiz_user_cache_dir();
-        cache_base
-            .join("packwiz")
-            .join("cache")
-            .join("import")
+        cache_base.join("packwiz").join("cache").join("import")
     }
 }
 

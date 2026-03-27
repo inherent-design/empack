@@ -128,4 +128,3 @@ async fn test_build_with_missing_template() -> Result<()> {
 
     Ok(())
 }
-
