@@ -3786,6 +3786,201 @@ Once you have done so, place these files in \
             err_msg
         );
     }
+
+    #[tokio::test]
+    async fn test_add_cf_restricted_does_not_persist_to_empack_yml() {
+        let workdir = mock_root().join("cf-restricted-no-persist");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(
+                MockProcessProvider::new()
+                    .with_packwiz_result(
+                        vec![
+                            "curseforge".to_string(),
+                            "add".to_string(),
+                            "--addon-id".to_string(),
+                            "256717".to_string(),
+                            "-y".to_string(),
+                        ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    .with_packwiz_add_slug("256717".to_string(), "optifine".to_string()),
+            );
+
+        session
+            .filesystem_provider
+            .files
+            .lock()
+            .unwrap()
+            .insert(
+                mods_dir.join("optifine.pw.toml"),
+                RESTRICTED_PW_TOML.to_string(),
+            );
+
+        let result = handle_add(
+            &session,
+            vec!["256717".to_string()],
+            false,
+            Some(crate::application::cli::SearchPlatform::Curseforge),
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_err(),
+            "handle_add must return Err for CF-restricted mod"
+        );
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            !empack_yml.contains("optifine:"),
+            "empack.yml must NOT contain restricted mod 'optifine:' as dependency; got:\n{}",
+            empack_yml
+        );
+        assert!(
+            !empack_yml.contains("256717:"),
+            "empack.yml must NOT contain restricted mod '256717:' as dependency; got:\n{}",
+            empack_yml
+        );
+    }
+
+    #[test]
+    fn test_parse_restricted_pw_toml_url_at_first_byte() {
+        let content = r#"url = "https://example.com/file.jar"
+name = "SomeMod"
+filename = "somemod.jar"
+
+[download]
+url = "https://cdn.example.com/somemod.jar"
+hash-format = "sha1"
+hash = "abc123"
+mode = "metadata:curseforge"
+
+[update]
+[update.curseforge]
+file-id = 1234
+project-id = 5678
+"#;
+        let result = parse_restricted_pw_toml(content);
+        assert!(
+            result.is_none(),
+            "A .pw.toml with a url field in [download] must NOT be flagged as restricted"
+        );
+    }
+
+    #[test]
+    fn test_parse_restricted_pw_toml_no_url_is_restricted() {
+        let content = r#"name = "RestrictedMod"
+filename = "restricted-1.0.jar"
+side = "client"
+
+[download]
+hash-format = "sha1"
+hash = "deadbeef"
+mode = "metadata:curseforge"
+
+[update]
+[update.curseforge]
+file-id = 9999
+project-id = 1111
+"#;
+        let result = parse_restricted_pw_toml(content);
+        assert!(
+            result.is_some(),
+            "A .pw.toml with mode=metadata:curseforge and no url must be restricted"
+        );
+        let rm = result.unwrap();
+        assert_eq!(rm.name, "RestrictedMod");
+        assert_eq!(rm.filename, "restricted-1.0.jar");
+        assert_eq!(rm.file_id, 9999);
+        assert_eq!(rm.project_id, 1111);
+    }
+
+    #[test]
+    fn test_parse_restricted_pw_toml_with_url_not_restricted() {
+        let content = r#"name = "AvailableMod"
+filename = "available-1.0.jar"
+side = "client"
+
+[download]
+url = "https://cdn.modrinth.com/data/xyz/versions/abc/available-1.0.jar"
+hash-format = "sha1"
+hash = "abc123"
+mode = "metadata:curseforge"
+
+[update]
+[update.curseforge]
+file-id = 8888
+project-id = 2222
+"#;
+        let result = parse_restricted_pw_toml(content);
+        assert!(
+            result.is_none(),
+            "A .pw.toml with mode=metadata:curseforge AND a url must NOT be restricted"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_restricted_opens_platform_appropriate_command() {
+        let workdir = mock_root().join("cf-restricted-platform-cmd");
+        let mods_dir = workdir.join("pack").join("mods");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_empack_project(
+                        workdir.clone(),
+                        "Test Pack",
+                        "1.21.4",
+                        "fabric",
+                    )
+                    .with_file(
+                        mods_dir.join("optifine.pw.toml"),
+                        RESTRICTED_PW_TOML.to_string(),
+                    ),
+            )
+            .with_process(MockProcessProvider::new());
+
+        let _result = handle_build(
+            &session,
+            vec!["mrpack".to_string()],
+            false,
+            crate::empack::archive::ArchiveFormat::Zip,
+        )
+        .await;
+
+        let expected_command = if cfg!(target_os = "macos") {
+            "open"
+        } else if cfg!(target_os = "windows") {
+            "cmd"
+        } else {
+            "xdg-open"
+        };
+
+        let open_calls = session
+            .process_provider
+            .get_calls_for_command(expected_command);
+        assert!(
+            !open_calls.is_empty(),
+            "Build pre-flight must call '{}' for this platform; all calls: {:?}",
+            expected_command,
+            session.process_provider.get_calls()
+        );
+    }
 }
 
 mod exit_code_tests {
