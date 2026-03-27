@@ -1603,8 +1603,8 @@ fn parse_restricted_pw_toml(content: &str) -> Option<RestrictedMod> {
     let filename = parsed.get("filename")?.as_str()?.to_string();
 
     let update_cf = parsed.get("update")?.get("curseforge")?;
-    let file_id = update_cf.get("file-id")?.as_integer()? as u64;
-    let project_id = update_cf.get("project-id")?.as_integer()? as u64;
+    let file_id = u64::try_from(update_cf.get("file-id")?.as_integer()?).ok()?;
+    let project_id = u64::try_from(update_cf.get("project-id")?.as_integer()?).ok()?;
 
     Some(RestrictedMod {
         name,
