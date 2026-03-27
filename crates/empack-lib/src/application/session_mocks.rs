@@ -15,6 +15,7 @@ use reqwest::Client;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -891,6 +892,21 @@ impl ConfigProvider for MockConfigProvider {
     }
 }
 
+/// Typed response for the queue-based mock interactive provider.
+///
+/// Each variant corresponds to one `InteractiveProvider` trait method.
+/// Queued responses are consumed in FIFO order; when the front element
+/// matches the expected type it is popped and returned. When the queue
+/// is empty or the front element is the wrong type, the provider falls
+/// back to yes_mode, then the static response, then the default value.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MockResponse {
+    Text(String),
+    Confirm(bool),
+    Select(usize),
+    FuzzySelect(Option<usize>),
+}
+
 /// Mock interactive provider for testing
 pub struct MockInteractiveProvider {
     yes_mode: bool,
@@ -902,6 +918,7 @@ pub struct MockInteractiveProvider {
     pub confirm_response: Arc<Mutex<Option<bool>>>,
     pub select_response: Arc<Mutex<Option<usize>>>,
     pub fuzzy_select_response: Arc<Mutex<Option<usize>>>,
+    pub response_queue: Arc<Mutex<VecDeque<MockResponse>>>,
 }
 
 impl MockInteractiveProvider {
@@ -916,6 +933,7 @@ impl MockInteractiveProvider {
             confirm_response: Arc::new(Mutex::new(None)),
             select_response: Arc::new(Mutex::new(None)),
             fuzzy_select_response: Arc::new(Mutex::new(None)),
+            response_queue: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -941,6 +959,38 @@ impl MockInteractiveProvider {
 
     pub fn with_fuzzy_select(self, response: usize) -> Self {
         *self.fuzzy_select_response.lock().unwrap() = Some(response);
+        self
+    }
+
+    pub fn queue_text(self, response: &str) -> Self {
+        self.response_queue
+            .lock()
+            .unwrap()
+            .push_back(MockResponse::Text(response.to_string()));
+        self
+    }
+
+    pub fn queue_confirm(self, response: bool) -> Self {
+        self.response_queue
+            .lock()
+            .unwrap()
+            .push_back(MockResponse::Confirm(response));
+        self
+    }
+
+    pub fn queue_select(self, index: usize) -> Self {
+        self.response_queue
+            .lock()
+            .unwrap()
+            .push_back(MockResponse::Select(index));
+        self
+    }
+
+    pub fn queue_fuzzy_select(self, index: Option<usize>) -> Self {
+        self.response_queue
+            .lock()
+            .unwrap()
+            .push_back(MockResponse::FuzzySelect(index));
         self
     }
 
@@ -978,7 +1028,16 @@ impl InteractiveProvider for MockInteractiveProvider {
             .unwrap()
             .push((prompt.to_string(), default.clone()));
 
-        // Check yes_mode first (--yes flag)
+        // Queue takes priority: pop if front element is the matching type
+        {
+            let mut queue = self.response_queue.lock().unwrap();
+            if let Some(MockResponse::Text(_)) = queue.front() {
+                if let Some(MockResponse::Text(value)) = queue.pop_front() {
+                    return Ok(value);
+                }
+            }
+        }
+
         if self.yes_mode {
             return Ok(default);
         }
@@ -986,7 +1045,6 @@ impl InteractiveProvider for MockInteractiveProvider {
         if let Some(response) = self.text_input_response.lock().unwrap().clone() {
             Ok(response)
         } else {
-            // Default behavior: return the default value
             Ok(default)
         }
     }
@@ -997,7 +1055,15 @@ impl InteractiveProvider for MockInteractiveProvider {
             .unwrap()
             .push((prompt.to_string(), default));
 
-        // Check yes_mode first (--yes flag)
+        {
+            let mut queue = self.response_queue.lock().unwrap();
+            if let Some(MockResponse::Confirm(_)) = queue.front() {
+                if let Some(MockResponse::Confirm(value)) = queue.pop_front() {
+                    return Ok(value);
+                }
+            }
+        }
+
         if self.yes_mode {
             return Ok(default);
         }
@@ -1005,7 +1071,6 @@ impl InteractiveProvider for MockInteractiveProvider {
         if let Some(response) = *self.confirm_response.lock().unwrap() {
             Ok(response)
         } else {
-            // Default behavior: return the default value
             Ok(default)
         }
     }
@@ -1013,15 +1078,22 @@ impl InteractiveProvider for MockInteractiveProvider {
     fn select(&self, prompt: &str, _options: &[&str]) -> Result<usize> {
         self.select_calls.lock().unwrap().push(prompt.to_string());
 
-        // Check yes_mode first (--yes flag)
+        {
+            let mut queue = self.response_queue.lock().unwrap();
+            if let Some(MockResponse::Select(_)) = queue.front() {
+                if let Some(MockResponse::Select(value)) = queue.pop_front() {
+                    return Ok(value);
+                }
+            }
+        }
+
         if self.yes_mode {
-            return Ok(0); // First option
+            return Ok(0);
         }
 
         if let Some(response) = *self.select_response.lock().unwrap() {
             Ok(response)
         } else {
-            // Default behavior: return first option (0)
             Ok(0)
         }
     }
@@ -1032,15 +1104,22 @@ impl InteractiveProvider for MockInteractiveProvider {
             .unwrap()
             .push(prompt.to_string());
 
-        // Check yes_mode first (--yes flag)
+        {
+            let mut queue = self.response_queue.lock().unwrap();
+            if let Some(MockResponse::FuzzySelect(_)) = queue.front() {
+                if let Some(MockResponse::FuzzySelect(value)) = queue.pop_front() {
+                    return Ok(value);
+                }
+            }
+        }
+
         if self.yes_mode {
-            return Ok(Some(0)); // First option
+            return Ok(Some(0));
         }
 
         if let Some(response) = *self.fuzzy_select_response.lock().unwrap() {
             Ok(Some(response))
         } else {
-            // Default behavior: return first option (0)
             Ok(Some(0))
         }
     }
@@ -1301,6 +1380,41 @@ mod tests {
         assert_eq!(
             check_packwiz_available(session.process(), Path::new(".")).unwrap(),
             (false, "not found".to_string())
+        );
+    }
+
+    #[test]
+    fn test_mock_interactive_queue_responses() {
+        let provider = MockInteractiveProvider::new()
+            .queue_text("queued-name")
+            .queue_confirm(false)
+            .queue_select(2);
+
+        // Queued responses are returned in FIFO order
+        assert_eq!(
+            provider.text_input("Name?", "default".to_string()).unwrap(),
+            "queued-name"
+        );
+        assert_eq!(provider.confirm("Continue?", true).unwrap(), false);
+        assert_eq!(
+            provider.select("Pick one:", &["a", "b", "c"]).unwrap(),
+            2
+        );
+
+        // Queue is now empty — falls back to default behavior
+        assert_eq!(
+            provider
+                .text_input("Another?", "fallback".to_string())
+                .unwrap(),
+            "fallback"
+        );
+        assert_eq!(provider.confirm("Sure?", true).unwrap(), true);
+        assert_eq!(provider.select("Again:", &["x", "y"]).unwrap(), 0);
+        assert_eq!(
+            provider
+                .fuzzy_select("Search:", &["a".to_string(), "b".to_string()])
+                .unwrap(),
+            Some(0)
         );
     }
 }
