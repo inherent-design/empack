@@ -711,6 +711,8 @@ impl<'a> BuildOrchestrator<'a> {
     ///
     /// Uses the shared `reqwest::Client` from the session and the existing
     /// tokio multi-thread runtime via `block_in_place` + `Handle::current()`.
+    /// Retries up to 3 times on transient failures (connection errors, timeouts)
+    /// with exponential backoff (1s, 2s, 4s).
     fn fetch_url_bytes(&self, url: &str) -> Result<Vec<u8>, BuildError> {
         if let Ok(handle) = tokio::runtime::Handle::try_current() && handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::CurrentThread {
             return Err(BuildError::ConfigError {
@@ -728,37 +730,67 @@ impl<'a> BuildOrchestrator<'a> {
 
         let url_owned = url.to_string();
         let timeout = self.session.config().app_config().net_timeout;
+        let max_attempts: u32 = 3;
 
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                let resp = client
-                    .get(&url_owned)
-                    .timeout(std::time::Duration::from_secs(timeout))
-                    .send()
-                    .await
-                    .map_err(|e| BuildError::CommandFailed {
-                        command: format!("HTTP GET {} failed: {}", url_owned, e),
-                    })?;
+                let mut last_error = None;
 
-                if !resp.status().is_success() {
-                    return Err(BuildError::CommandFailed {
-                        command: format!(
-                            "HTTP GET {} returned status {}",
-                            url_owned,
-                            resp.status()
-                        ),
-                    });
+                for attempt in 0..max_attempts {
+                    if attempt > 0 {
+                        let backoff = std::time::Duration::from_secs(1 << (attempt - 1));
+                        tokio::time::sleep(backoff).await;
+                    }
+
+                    match client
+                        .get(&url_owned)
+                        .timeout(std::time::Duration::from_secs(timeout))
+                        .send()
+                        .await
+                    {
+                        Ok(resp) => {
+                            if resp.status().is_client_error() {
+                                return Err(BuildError::CommandFailed {
+                                    command: format!(
+                                        "HTTP GET {} returned status {}",
+                                        url_owned,
+                                        resp.status()
+                                    ),
+                                });
+                            }
+
+                            if !resp.status().is_success() {
+                                last_error = Some(format!(
+                                    "HTTP GET {} returned status {}",
+                                    url_owned,
+                                    resp.status()
+                                ));
+                                continue;
+                            }
+
+                            match resp.bytes().await {
+                                Ok(b) => return Ok(b.to_vec()),
+                                Err(e) => {
+                                    last_error = Some(format!(
+                                        "failed to read response body from {}: {}",
+                                        url_owned, e
+                                    ));
+                                    continue;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            last_error = Some(format!("HTTP GET {} failed: {}", url_owned, e));
+                            continue;
+                        }
+                    }
                 }
 
-                resp.bytes()
-                    .await
-                    .map(|b| b.to_vec())
-                    .map_err(|e| BuildError::CommandFailed {
-                        command: format!(
-                            "failed to read response body from {}: {}",
-                            url_owned, e
-                        ),
-                    })
+                Err(BuildError::CommandFailed {
+                    command: last_error.unwrap_or_else(|| {
+                        format!("HTTP GET {} failed after {} attempts", url_owned, max_attempts)
+                    }),
+                })
             })
         })
     }
