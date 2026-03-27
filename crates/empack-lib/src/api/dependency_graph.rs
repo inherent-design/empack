@@ -418,12 +418,12 @@ impl DependencyGraph {
     ) -> Result<(), DependencyGraphError> {
         debug!("Building dependency graph from: {}", dir.display());
 
-        let entries =
-            fs.get_file_list(dir)
-                .map_err(|e| DependencyGraphError::FileReadError {
-                    path: dir.to_path_buf(),
-                    source: std::io::Error::other(e.to_string()),
-                })?;
+        let entries = fs
+            .get_file_list(dir)
+            .map_err(|e| DependencyGraphError::FileReadError {
+                path: dir.to_path_buf(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
 
         for path in entries {
             if path.extension().and_then(|s| s.to_str()) == Some("toml")

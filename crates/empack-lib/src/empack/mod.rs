@@ -16,9 +16,9 @@ pub use config::{
     ConfigManager, Dependency, DependencyEntry, DependencyRecord, DependencySearch,
     DependencyStatus, EmpackConfig, ProjectPlan, ProjectSpec,
 };
-pub use packwiz::{PackwizError, PackwizInstaller, PackwizMetadata, PackwizOps};
 #[cfg(feature = "test-utils")]
 pub use packwiz::MockPackwizOps;
+pub use packwiz::{PackwizError, PackwizInstaller, PackwizMetadata, PackwizOps};
 pub use state::{PackStateManager, StateTransitionResult};
 
 // Re-export primitives types for convenience

@@ -330,8 +330,7 @@ impl CapabilityProber {
                         if let Some(cell_start) = cell_response.find("[8;")
                             && let Some(cell_end) = cell_response[cell_start..].find('t')
                         {
-                            let cell_data =
-                                &cell_response[cell_start + 3..cell_start + cell_end];
+                            let cell_data = &cell_response[cell_start + 3..cell_start + cell_end];
                             if let Some(cell_semicolon) = cell_data.find(';') {
                                 let rows: u16 = cell_data[..cell_semicolon].parse().unwrap_or(24);
                                 let cols: u16 =

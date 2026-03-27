@@ -1,7 +1,7 @@
+use crate::impl_fromstr_for_value_enum;
 use clap::ValueEnum;
 use serde::Deserialize;
 use std::str::FromStr;
-use crate::impl_fromstr_for_value_enum;
 
 // Platform configuration primitives for system resource detection.
 
@@ -64,7 +64,6 @@ impl_fromstr_for_value_enum!(
     ResourceCalculationAlgorithm,
     "resource calculation algorithm"
 );
-
 
 /// Platform capability flags for feature detection
 #[derive(Debug, Clone, PartialEq, Eq)]

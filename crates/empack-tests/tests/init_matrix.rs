@@ -281,10 +281,7 @@ async fn test_init_fabric_older_mc() -> Result<()> {
     );
 
     let project_dir = workdir.join("fabric-old-mc");
-    assert!(
-        project_dir.exists(),
-        "fabric-old-mc directory should exist"
-    );
+    assert!(project_dir.exists(), "fabric-old-mc directory should exist");
 
     let empack_yml = fs::read_to_string(project_dir.join("empack.yml"))?;
     assert!(

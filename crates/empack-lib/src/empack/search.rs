@@ -125,9 +125,7 @@ struct CurseForgeProject {
 
 use crate::empack::fuzzy;
 
-const KNOWN_LOADERS: &[&str] = &[
-    "fabric", "forge", "neoforge", "quilt", "liteloader", "rift",
-];
+const KNOWN_LOADERS: &[&str] = &["fabric", "forge", "neoforge", "quilt", "liteloader", "rift"];
 
 fn extract_loaders(categories: &[String]) -> Vec<String> {
     categories
@@ -237,7 +235,13 @@ impl ProjectResolver {
     ) -> Result<ProjectInfo, SearchError> {
         if let Some(pt) = project_type {
             return self
-                .resolve_project_for_type(title, pt, minecraft_version, mod_loader, preferred_platform)
+                .resolve_project_for_type(
+                    title,
+                    pt,
+                    minecraft_version,
+                    mod_loader,
+                    preferred_platform,
+                )
                 .await;
         }
 
@@ -251,7 +255,13 @@ impl ProjectResolver {
 
         for project_type in &type_tiers {
             match self
-                .resolve_project_for_type(title, project_type, minecraft_version, mod_loader, preferred_platform)
+                .resolve_project_for_type(
+                    title,
+                    project_type,
+                    minecraft_version,
+                    mod_loader,
+                    preferred_platform,
+                )
                 .await
             {
                 Ok(result) => return Ok(result),
@@ -291,7 +301,10 @@ impl ProjectResolver {
             // CurseForge-first order when explicitly preferred
             if let Some(result) = self
                 .try_platform_search(
-                    title, project_type, minecraft_version, mod_loader,
+                    title,
+                    project_type,
+                    minecraft_version,
+                    mod_loader,
                     ProjectPlatform::CurseForge,
                 )
                 .await?
@@ -300,7 +313,10 @@ impl ProjectResolver {
             }
             if let Some(result) = self
                 .try_platform_search(
-                    title, project_type, minecraft_version, mod_loader,
+                    title,
+                    project_type,
+                    minecraft_version,
+                    mod_loader,
                     ProjectPlatform::Modrinth,
                 )
                 .await?
@@ -311,7 +327,10 @@ impl ProjectResolver {
             // Default: Modrinth first, CurseForge fallback
             if let Some(result) = self
                 .try_platform_search(
-                    title, project_type, minecraft_version, mod_loader,
+                    title,
+                    project_type,
+                    minecraft_version,
+                    mod_loader,
                     ProjectPlatform::Modrinth,
                 )
                 .await?
@@ -320,7 +339,10 @@ impl ProjectResolver {
             }
             if let Some(result) = self
                 .try_platform_search(
-                    title, project_type, minecraft_version, mod_loader,
+                    title,
+                    project_type,
+                    minecraft_version,
+                    mod_loader,
                     ProjectPlatform::CurseForge,
                 )
                 .await?
@@ -349,12 +371,14 @@ impl ProjectResolver {
     ) -> Result<Option<ProjectInfo>, SearchError> {
         let (search_result, threshold, label) = match platform {
             ProjectPlatform::Modrinth => (
-                self.search_modrinth(title, project_type, minecraft_version, mod_loader).await,
+                self.search_modrinth(title, project_type, minecraft_version, mod_loader)
+                    .await,
                 fuzzy::MODRINTH_CONFIDENCE_THRESHOLD,
                 "Modrinth",
             ),
             ProjectPlatform::CurseForge => (
-                self.search_curseforge(title, project_type, minecraft_version, mod_loader).await,
+                self.search_curseforge(title, project_type, minecraft_version, mod_loader)
+                    .await,
                 fuzzy::CURSEFORGE_CONFIDENCE_THRESHOLD,
                 "CurseForge",
             ),
@@ -364,9 +388,9 @@ impl ProjectResolver {
             Ok(projects) => {
                 let scored = Self::score_results(title, projects);
 
-                let best = scored
-                    .into_iter()
-                    .find(|p| !fuzzy::has_extra_words(title, &p.title) && p.confidence >= threshold);
+                let best = scored.into_iter().find(|p| {
+                    !fuzzy::has_extra_words(title, &p.title) && p.confidence >= threshold
+                });
 
                 if let Some(project) = best {
                     debug!(
@@ -448,8 +472,7 @@ impl ProjectResolver {
 
             match results {
                 Ok(projects) => all_results.extend(projects),
-                Err(SearchError::NoResults { .. })
-                | Err(SearchError::MissingApiKey { .. }) => {
+                Err(SearchError::NoResults { .. }) | Err(SearchError::MissingApiKey { .. }) => {
                     debug!("No results from {:?}, continuing", platform);
                 }
                 Err(e) => return Err(e),
@@ -837,7 +860,10 @@ impl ProjectResolver {
             "resourcepack" => 12,
             "datapack" => 17,
             other => {
-                debug!("No dedicated CurseForge classId for '{}', falling back to 6 (Mods)", other);
+                debug!(
+                    "No dedicated CurseForge classId for '{}', falling back to 6 (Mods)",
+                    other
+                );
                 6
             }
         }

@@ -315,11 +315,13 @@ mod tests {
 
         assert_eq!(
             fixture.artifact_path(&root, WorkflowArtifact::Mrpack),
-            root.join("dist").join("workflow-fixture-pack-v1.0.0.mrpack")
+            root.join("dist")
+                .join("workflow-fixture-pack-v1.0.0.mrpack")
         );
         assert_eq!(
             fixture.artifact_path(&root, WorkflowArtifact::ServerFull),
-            root.join("dist").join("workflow-fixture-pack-v1.0.0-server-full.zip")
+            root.join("dist")
+                .join("workflow-fixture-pack-v1.0.0-server-full.zip")
         );
     }
 }

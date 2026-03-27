@@ -1,8 +1,8 @@
+use crate::impl_fromstr_for_value_enum;
 use clap::ValueEnum;
 use serde::Deserialize;
 use std::str::FromStr;
 use std::time::Duration;
-use crate::impl_fromstr_for_value_enum;
 
 // Networking configuration primitives for HTTP clients and request handling.
 
@@ -193,7 +193,6 @@ pub enum BackoffStrategy {
 }
 
 impl_fromstr_for_value_enum!(BackoffStrategy, "backoff strategy");
-
 
 /// Networking configuration summary
 #[derive(Debug, Clone)]

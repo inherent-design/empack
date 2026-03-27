@@ -103,8 +103,14 @@ pub fn create_archive(
 }
 
 fn is_dir_empty(dir: &Path) -> Result<bool, ArchiveError> {
-    for entry in std::fs::read_dir(dir).map_err(|e| ArchiveError::Io { path: dir.to_path_buf(), source: e })? {
-        let entry = entry.map_err(|e| ArchiveError::Io { path: dir.to_path_buf(), source: e })?;
+    for entry in std::fs::read_dir(dir).map_err(|e| ArchiveError::Io {
+        path: dir.to_path_buf(),
+        source: e,
+    })? {
+        let entry = entry.map_err(|e| ArchiveError::Io {
+            path: dir.to_path_buf(),
+            source: e,
+        })?;
         if entry.path().is_file() {
             return Ok(false);
         }
@@ -117,8 +123,8 @@ fn is_dir_empty(dir: &Path) -> Result<bool, ArchiveError> {
 
 fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), ArchiveError> {
     use std::io::{Read, Write};
-    use zip::write::SimpleFileOptions;
     use zip::CompressionMethod;
+    use zip::write::SimpleFileOptions;
 
     let file = File::create(output_path).map_err(|e| ArchiveError::Io {
         path: output_path.to_path_buf(),
@@ -144,9 +150,7 @@ fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archi
                 source: e,
             })?;
             let path = entry.path();
-            let relative = path
-                .strip_prefix(base)
-                .expect("path must be under base");
+            let relative = path.strip_prefix(base).expect("path must be under base");
             let name = relative.to_string_lossy();
 
             if path.is_dir() {
@@ -183,8 +187,8 @@ fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archi
 }
 
 fn create_tar_gz_archive(source_dir: &Path, output_path: &Path) -> Result<(), ArchiveError> {
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
 
     let file = File::create(output_path).map_err(|e| ArchiveError::Io {
         path: output_path.to_path_buf(),

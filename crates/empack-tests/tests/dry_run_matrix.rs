@@ -25,7 +25,10 @@ async fn test_clean_dry_run() -> Result<()> {
     std::fs::write(&client_zip, "mock client zip content")?;
 
     assert!(mrpack_file.exists(), "mrpack should exist before dry-run");
-    assert!(client_zip.exists(), "client zip should exist before dry-run");
+    assert!(
+        client_zip.exists(),
+        "client zip should exist before dry-run"
+    );
 
     std::env::set_current_dir(&workdir)?;
 
@@ -64,10 +67,7 @@ async fn test_clean_dry_run() -> Result<()> {
         mrpack_file.exists(),
         "dry-run should not delete mrpack file"
     );
-    assert!(
-        client_zip.exists(),
-        "dry-run should not delete client zip"
-    );
+    assert!(client_zip.exists(), "dry-run should not delete client zip");
     assert!(
         paths.dist_dir.exists(),
         "dry-run should not remove dist/ directory"
