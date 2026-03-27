@@ -4227,3 +4227,24 @@ mod exit_code_tests {
         );
     }
 }
+
+// ===== PACKWIZ_CACHE_IMPORT_DIR TESTS =====
+
+mod packwiz_cache_import_dir_tests {
+    use super::*;
+
+    #[test]
+    fn packwiz_cache_import_dir_returns_absolute_path() {
+        let path = packwiz_cache_import_dir();
+        assert!(
+            path.is_absolute(),
+            "cache path must be absolute: {}",
+            path.display()
+        );
+        assert!(
+            path.ends_with(std::path::Path::new("packwiz").join("cache").join("import")),
+            "cache path must end with packwiz/cache/import: {}",
+            path.display()
+        );
+    }
+}

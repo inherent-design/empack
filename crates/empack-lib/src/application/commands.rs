@@ -1683,11 +1683,36 @@ fn packwiz_cache_import_dir() -> std::path::PathBuf {
     }
     #[cfg(not(test))]
     {
-        crate::platform::home_dir()
-            .join(".cache")
+        // Match Go's os.UserCacheDir() behavior (which packwiz uses):
+        //   Linux:   $XDG_CACHE_HOME or $HOME/.cache
+        //   macOS:   $HOME/.cache  (Go does NOT use ~/Library/Caches)
+        //   Windows: %LocalAppData%
+        let cache_base = packwiz_user_cache_dir();
+        cache_base
             .join("packwiz")
             .join("cache")
             .join("import")
+    }
+}
+
+/// Replicate Go's os.UserCacheDir() to match packwiz's actual cache root.
+#[cfg(not(test))]
+fn packwiz_user_cache_dir() -> std::path::PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("LocalAppData")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| crate::platform::home_dir().join(".cache"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Go's os.UserCacheDir on Linux: $XDG_CACHE_HOME or $HOME/.cache
+        // Go's os.UserCacheDir on macOS: $HOME/.cache (NOT Library/Caches)
+        std::env::var("XDG_CACHE_HOME")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| crate::platform::home_dir().join(".cache"))
     }
 }
 
