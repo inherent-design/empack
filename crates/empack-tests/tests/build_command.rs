@@ -165,8 +165,7 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
     );
     let rebuilt_bytes = std::fs::read(&mrpack_path)?;
     assert_ne!(
-        rebuilt_bytes,
-        b"stale mrpack artifact",
+        rebuilt_bytes, b"stale mrpack artifact",
         "clean-before-build should replace stale artifact contents with the rebuilt artifact"
     );
     assert!(

@@ -45,10 +45,7 @@ pub enum ConfigError {
     ValidationError { reason: String },
 
     #[error("Ambiguous removal: '{query}' matches multiple dependencies: {matches:?}")]
-    AmbiguousRemoval {
-        query: String,
-        matches: Vec<String>,
-    },
+    AmbiguousRemoval { query: String, matches: Vec<String> },
 }
 
 /// Top-level empack.yml configuration
@@ -340,9 +337,9 @@ impl<'a> ConfigManager<'a> {
             .clone()
             .or_else(|| {
                 loader.and_then(|l| {
-                    pack_metadata.as_ref().and_then(|p| {
-                        self.get_loader_version_from_metadata(p, &l).ok()
-                    })
+                    pack_metadata
+                        .as_ref()
+                        .and_then(|p| self.get_loader_version_from_metadata(p, &l).ok())
                 })
             })
             .unwrap_or_default();
@@ -351,12 +348,8 @@ impl<'a> ConfigManager<'a> {
         let mut dependencies = Vec::new();
         for (slug, entry) in &empack_config.empack.dependencies {
             if let DependencyEntry::Resolved(record) = entry {
-                let spec = self.build_project_spec_from_record(
-                    slug,
-                    record,
-                    &minecraft_version,
-                    loader,
-                );
+                let spec =
+                    self.build_project_spec_from_record(slug, record, &minecraft_version, loader);
                 dependencies.push(spec);
             }
         }
@@ -458,37 +451,46 @@ impl<'a> ConfigManager<'a> {
 
         let mut deps = BTreeMap::new();
         if loader == Some(ModLoader::Fabric) || loader == Some(ModLoader::Quilt) {
-            deps.insert("sodium".to_string(), DependencyEntry::Resolved(DependencyRecord {
-                status: DependencyStatus::Resolved,
-                title: "Sodium".to_string(),
-                platform: ProjectPlatform::Modrinth,
-                project_id: "AANobbMI".to_string(),
-                project_type: ProjectType::Mod,
-                version: None,
-            }));
-            deps.insert("lithium".to_string(), DependencyEntry::Resolved(DependencyRecord {
-                status: DependencyStatus::Resolved,
-                title: "Lithium".to_string(),
-                platform: ProjectPlatform::Modrinth,
-                project_id: "gvQqBUqZ".to_string(),
-                project_type: ProjectType::Mod,
-                version: None,
-            }));
-            if loader == Some(ModLoader::Fabric) {
-                deps.insert("fabric-api".to_string(), DependencyEntry::Resolved(DependencyRecord {
+            deps.insert(
+                "sodium".to_string(),
+                DependencyEntry::Resolved(DependencyRecord {
                     status: DependencyStatus::Resolved,
-                    title: "Fabric API".to_string(),
+                    title: "Sodium".to_string(),
                     platform: ProjectPlatform::Modrinth,
-                    project_id: "P7dR8mSH".to_string(),
+                    project_id: "AANobbMI".to_string(),
                     project_type: ProjectType::Mod,
                     version: None,
-                }));
+                }),
+            );
+            deps.insert(
+                "lithium".to_string(),
+                DependencyEntry::Resolved(DependencyRecord {
+                    status: DependencyStatus::Resolved,
+                    title: "Lithium".to_string(),
+                    platform: ProjectPlatform::Modrinth,
+                    project_id: "gvQqBUqZ".to_string(),
+                    project_type: ProjectType::Mod,
+                    version: None,
+                }),
+            );
+            if loader == Some(ModLoader::Fabric) {
+                deps.insert(
+                    "fabric-api".to_string(),
+                    DependencyEntry::Resolved(DependencyRecord {
+                        status: DependencyStatus::Resolved,
+                        title: "Fabric API".to_string(),
+                        platform: ProjectPlatform::Modrinth,
+                        project_id: "P7dR8mSH".to_string(),
+                        project_type: ProjectType::Mod,
+                        version: None,
+                    }),
+                );
             }
         }
 
-        let loader_version = pack_metadata.as_ref().and_then(|p| {
-            loader.and_then(|l| self.get_loader_version_from_metadata(p, &l).ok())
-        });
+        let loader_version = pack_metadata
+            .as_ref()
+            .and_then(|p| loader.and_then(|l| self.get_loader_version_from_metadata(p, &l).ok()));
 
         let config = EmpackConfig {
             empack: EmpackProjectConfig {
@@ -548,11 +550,9 @@ impl<'a> ConfigManager<'a> {
         // Load existing config or create new one
         let mut config = match self.load_empack_config() {
             Ok(cfg) => cfg,
-            Err(ConfigError::MissingField { .. }) => {
-                EmpackConfig {
-                    empack: EmpackProjectConfig::default(),
-                }
-            }
+            Err(ConfigError::MissingField { .. }) => EmpackConfig {
+                empack: EmpackProjectConfig::default(),
+            },
             Err(e) => return Err(e),
         };
 

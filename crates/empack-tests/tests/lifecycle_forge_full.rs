@@ -166,7 +166,11 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         "Add sodium should resolve and succeed in the hermetic lifecycle: {add_sodium_result:?}"
     );
     assert!(
-        project_dir.join("pack").join("mods").join("AANobbMI.pw.toml").exists(),
+        project_dir
+            .join("pack")
+            .join("mods")
+            .join("AANobbMI.pw.toml")
+            .exists(),
         "Modrinth add should leave deterministic mod metadata"
     );
 
@@ -187,7 +191,11 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         "Add JEI should resolve and succeed in the hermetic lifecycle: {add_jei_result:?}"
     );
     assert!(
-        project_dir.join("pack").join("mods").join("238222.pw.toml").exists(),
+        project_dir
+            .join("pack")
+            .join("mods")
+            .join("238222.pw.toml")
+            .exists(),
         "CurseForge add should leave deterministic mod metadata"
     );
 
@@ -223,18 +231,26 @@ async fn test_lifecycle_forge_full() -> Result<()> {
         );
     }
     assert!(
-        dist_dir.join("server").join("config").join("generated.txt").exists(),
+        dist_dir
+            .join("server")
+            .join("config")
+            .join("generated.txt")
+            .exists(),
         "Server build should include extracted override content"
     );
     assert!(
         dist_dir
-            .join("server-full").join("mods").join("server-installed.txt")
+            .join("server-full")
+            .join("mods")
+            .join("server-installed.txt")
             .exists(),
         "Server-full build should include full install marker"
     );
     assert!(
         dist_dir
-            .join("client-full").join("mods").join("both-installed.txt")
+            .join("client-full")
+            .join("mods")
+            .join("both-installed.txt")
             .exists(),
         "Client-full build should include full install marker"
     );

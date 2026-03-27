@@ -269,11 +269,7 @@ impl<'a> BuildOrchestrator<'a> {
     /// Download or install the Minecraft server JAR into `dist_dir`.
     ///
     /// Dispatches per loader type; each arm calls a dedicated provider method.
-    fn download_server_jar(
-        &self,
-        dist_dir: &Path,
-        pack_info: &PackInfo,
-    ) -> Result<(), BuildError> {
+    fn download_server_jar(&self, dist_dir: &Path, pack_info: &PackInfo) -> Result<(), BuildError> {
         match pack_info.loader_type.as_str() {
             "vanilla" => self.install_vanilla_server(dist_dir, pack_info),
             "fabric" => self.install_fabric_server(dist_dir, pack_info),
@@ -295,9 +291,8 @@ impl<'a> BuildOrchestrator<'a> {
         dist_dir: &Path,
         pack_info: &PackInfo,
     ) -> Result<(), BuildError> {
-        let manifest_text = self.fetch_url_text(
-            "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
-        )?;
+        let manifest_text =
+            self.fetch_url_text("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")?;
         let manifest: MojangVersionManifest =
             serde_json::from_str(&manifest_text).map_err(|e| BuildError::ConfigError {
                 reason: format!("failed to parse Mojang version manifest: {}", e),
@@ -596,7 +591,12 @@ impl<'a> BuildOrchestrator<'a> {
         // Clean up installer JAR from the distribution
         let _ = self.session.filesystem().remove_file(&installer_path);
 
-        for entry in self.session.filesystem().get_file_list(dist_dir).unwrap_or_default() {
+        for entry in self
+            .session
+            .filesystem()
+            .get_file_list(dist_dir)
+            .unwrap_or_default()
+        {
             if entry.extension().is_some_and(|e| e == "log") {
                 let _ = self.session.filesystem().remove_file(&entry);
             }
@@ -649,7 +649,12 @@ impl<'a> BuildOrchestrator<'a> {
 
         let _ = self.session.filesystem().remove_file(&installer_path);
 
-        for entry in self.session.filesystem().get_file_list(dist_dir).unwrap_or_default() {
+        for entry in self
+            .session
+            .filesystem()
+            .get_file_list(dist_dir)
+            .unwrap_or_default()
+        {
             if entry.extension().is_some_and(|e| e == "log") {
                 let _ = self.session.filesystem().remove_file(&entry);
             }
@@ -669,7 +674,9 @@ impl<'a> BuildOrchestrator<'a> {
             && !self.session.filesystem().exists(&dist_dir.join("run.bat"))
         {
             return Err(BuildError::ValidationError {
-                reason: "installer did not produce run.sh or run.bat; cannot download ServerStarterJar".into(),
+                reason:
+                    "installer did not produce run.sh or run.bat; cannot download ServerStarterJar"
+                        .into(),
             });
         }
 
@@ -695,7 +702,11 @@ impl<'a> BuildOrchestrator<'a> {
             .filesystem()
             .write_bytes(dest, &bytes)
             .map_err(|e| BuildError::ConfigError {
-                reason: format!("failed to write downloaded file to {}: {}", dest.display(), e),
+                reason: format!(
+                    "failed to write downloaded file to {}: {}",
+                    dest.display(),
+                    e
+                ),
             })
     }
 
@@ -714,7 +725,9 @@ impl<'a> BuildOrchestrator<'a> {
     /// Retries up to 3 times on transient failures (connection errors, timeouts)
     /// with exponential backoff (1s, 2s, 4s).
     fn fetch_url_bytes(&self, url: &str) -> Result<Vec<u8>, BuildError> {
-        if let Ok(handle) = tokio::runtime::Handle::try_current() && handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::CurrentThread {
+        if let Ok(handle) = tokio::runtime::Handle::try_current()
+            && handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::CurrentThread
+        {
             return Err(BuildError::ConfigError {
                 reason: "server JAR download requires a multi-threaded tokio runtime".into(),
             });
@@ -788,7 +801,10 @@ impl<'a> BuildOrchestrator<'a> {
 
                 Err(BuildError::CommandFailed {
                     command: last_error.unwrap_or_else(|| {
-                        format!("HTTP GET {} failed after {} attempts", url_owned, max_attempts)
+                        format!(
+                            "HTTP GET {} failed after {} attempts",
+                            url_owned, max_attempts
+                        )
                     }),
                 })
             })
@@ -918,10 +934,11 @@ impl<'a> BuildOrchestrator<'a> {
                     reason: e.to_string(),
                 })?;
         }
-        crate::empack::archive::extract_zip(&mrpack_file, &temp_extract_dir)
-            .map_err(|e| BuildError::CommandFailed {
+        crate::empack::archive::extract_zip(&mrpack_file, &temp_extract_dir).map_err(|e| {
+            BuildError::CommandFailed {
                 command: format!("extract mrpack: {}", e),
-            })?;
+            }
+        })?;
 
         self.mrpack_extracted = true;
         Ok(())
@@ -969,10 +986,11 @@ impl<'a> BuildOrchestrator<'a> {
                 })?;
         }
 
-        crate::empack::archive::create_archive(&dist_dir, &archive_path, format)
-            .map_err(|e| BuildError::CommandFailed {
+        crate::empack::archive::create_archive(&dist_dir, &archive_path, format).map_err(|e| {
+            BuildError::CommandFailed {
                 command: format!("create distribution archive: {}", e),
-            })?;
+            }
+        })?;
 
         Ok(archive_path)
     }
@@ -1371,21 +1389,21 @@ impl<'a> BuildOrchestrator<'a> {
         self.prepare_build_environment()?;
 
         // Get bootstrap and installer JAR paths from session
-        let bootstrap_jar_path = self
-            .session
-            .packwiz()
-            .bootstrap_jar_cache_path()
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to get bootstrap JAR path: {}", e),
-            })?;
+        let bootstrap_jar_path =
+            self.session
+                .packwiz()
+                .bootstrap_jar_cache_path()
+                .map_err(|e| BuildError::ConfigError {
+                    reason: format!("Failed to get bootstrap JAR path: {}", e),
+                })?;
 
-        let installer_jar_path = self
-            .session
-            .packwiz()
-            .installer_jar_cache_path()
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to get installer JAR path: {}", e),
-            })?;
+        let installer_jar_path =
+            self.session
+                .packwiz()
+                .installer_jar_cache_path()
+                .map_err(|e| BuildError::ConfigError {
+                    reason: format!("Failed to get installer JAR path: {}", e),
+                })?;
 
         let mut results = Vec::new();
 
@@ -1447,10 +1465,7 @@ impl<'a> BuildOrchestrator<'a> {
 
     /// Inner clean pipeline logic, separated so the caller can guarantee
     /// state cleanup on early returns.
-    fn execute_clean_pipeline_inner(
-        &mut self,
-        targets: &[BuildTarget],
-    ) -> Result<(), BuildError> {
+    fn execute_clean_pipeline_inner(&mut self, targets: &[BuildTarget]) -> Result<(), BuildError> {
         // Clean each target
         for target in targets {
             self.clean_target(*target)?;
@@ -1522,9 +1537,10 @@ impl<'a> BuildOrchestrator<'a> {
 
         if let Some(info) = pack_info {
             for ext in ["zip", "tar.gz", "7z"] {
-                let archive_file = self
-                    .dist_dir
-                    .join(format!("{}-v{}-{}.{}", info.name, info.version, target, ext));
+                let archive_file = self.dist_dir.join(format!(
+                    "{}-v{}-{}.{}",
+                    info.name, info.version, target, ext
+                ));
                 if self.session.filesystem().exists(&archive_file) {
                     self.session
                         .filesystem()

@@ -248,7 +248,11 @@ async fn test_add_dry_run() -> Result<()> {
     )
     .await;
 
-    assert!(result.is_ok(), "Add with --dry-run should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Add with --dry-run should succeed: {:?}",
+        result
+    );
 
     let mods_dir = workdir.join("pack").join("mods");
     let has_pw_toml = mods_dir.exists()

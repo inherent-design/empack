@@ -90,9 +90,7 @@ pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<Stri
             continue;
         }
 
-        actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(
-            dep_spec,
-        )));
+        actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(dep_spec)));
     }
 
     for installed_mod in installed_mods {
@@ -233,9 +231,7 @@ pub fn build_packwiz_add_commands(
 
     match version_pin {
         None => Ok(vec![append_yes(base)]),
-        Some(version) => {
-            Ok(vec![append_yes(with_version(base, version_flag, version))])
-        }
+        Some(version) => Ok(vec![append_yes(with_version(base, version_flag, version))]),
     }
 }
 

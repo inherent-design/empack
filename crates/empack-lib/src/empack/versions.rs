@@ -200,7 +200,9 @@ fn filter_neoforge_versions_by_minecraft(
     // Use dynamic algorithm from neoforged.net instead of hardcoded matches
 
     // NeoForge only supports MC 1.20.2+
-    if parse_version(mc_version).is_none_or(|v| v < parse_version("1.20.2").expect("hardcoded version must parse")) {
+    if parse_version(mc_version)
+        .is_none_or(|v| v < parse_version("1.20.2").expect("hardcoded version must parse"))
+    {
         return Ok(vec![]);
     }
 
@@ -728,7 +730,10 @@ impl<'a> VersionFetcher<'a> {
                             response.json::<Vec<QuiltLoaderCombination>>().await
                             && !combinations.is_empty()
                         {
-                            return Ok(combinations.iter().map(|c| c.loader.version.clone()).collect());
+                            return Ok(combinations
+                                .iter()
+                                .map(|c| c.loader.version.clone())
+                                .collect());
                         }
                         // Empty array or parse failure - return empty vec
                         Ok(vec![])

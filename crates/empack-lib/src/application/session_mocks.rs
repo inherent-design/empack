@@ -328,10 +328,7 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(())
     }
 
-    fn get_file_list(
-        &self,
-        path: &std::path::Path,
-    ) -> Result<HashSet<PathBuf>> {
+    fn get_file_list(&self, path: &std::path::Path) -> Result<HashSet<PathBuf>> {
         let files = self.files.lock().unwrap();
         let binary_files = self.binary_files.lock().unwrap();
         let directories = self.directories.lock().unwrap();
@@ -360,10 +357,7 @@ impl FileSystemProvider for MockFileSystemProvider {
         Ok(result)
     }
 
-    fn has_build_artifacts(
-        &self,
-        dist_dir: &std::path::Path,
-    ) -> Result<bool> {
+    fn has_build_artifacts(&self, dist_dir: &std::path::Path) -> Result<bool> {
         let files = self.files.lock().unwrap();
         let binary_files = self.binary_files.lock().unwrap();
 
@@ -432,7 +426,6 @@ impl FileSystemProvider for MockFileSystemProvider {
 
         Ok(())
     }
-
 }
 
 type ResolverCall = (Client, Option<String>);
@@ -644,10 +637,8 @@ impl MockProcessProvider {
             .to_string();
 
         // Ensure packwiz is available via find_program
-        self.programs.insert(
-            "packwiz".to_string(),
-            Some(packwiz_path.clone()),
-        );
+        self.programs
+            .insert("packwiz".to_string(), Some(packwiz_path.clone()));
         // Backward compat: keep "which" result
         self.results.insert(
             ("which".to_string(), vec!["packwiz".to_string()]),
@@ -1207,7 +1198,10 @@ impl MockCommandSession {
         self
     }
 
-    pub fn with_terminal_capabilities(mut self, caps: crate::terminal::TerminalCapabilities) -> Self {
+    pub fn with_terminal_capabilities(
+        mut self,
+        caps: crate::terminal::TerminalCapabilities,
+    ) -> Self {
         self.terminal_capabilities = caps;
         self
     }
@@ -1297,9 +1291,15 @@ impl Session for MockCommandSession {
         Box::new(mock)
     }
 
-    fn state(&self) -> crate::Result<crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_>> {
+    fn state(
+        &self,
+    ) -> crate::Result<crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_>>
+    {
         let workdir = self.filesystem().current_dir()?;
-        Ok(crate::empack::state::PackStateManager::new(workdir, self.filesystem()))
+        Ok(crate::empack::state::PackStateManager::new(
+            workdir,
+            self.filesystem(),
+        ))
     }
 }
 
@@ -1310,8 +1310,8 @@ mod tests {
 
     #[test]
     fn test_mock_filesystem_provider() {
-        let provider = MockFileSystemProvider::new()
-            .with_current_dir(PathBuf::from("/custom/path"));
+        let provider =
+            MockFileSystemProvider::new().with_current_dir(PathBuf::from("/custom/path"));
 
         assert_eq!(
             provider.current_dir().unwrap(),
@@ -1412,10 +1412,7 @@ mod tests {
             "queued-name"
         );
         assert!(!provider.confirm("Continue?", true).unwrap());
-        assert_eq!(
-            provider.select("Pick one:", &["a", "b", "c"]).unwrap(),
-            2
-        );
+        assert_eq!(provider.select("Pick one:", &["a", "b", "c"]).unwrap(), 2);
 
         // Queue is now empty — falls back to default behavior
         assert_eq!(

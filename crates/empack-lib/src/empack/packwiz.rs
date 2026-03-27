@@ -74,7 +74,10 @@ pub struct LivePackwizOps<'a> {
 
 impl<'a> LivePackwizOps<'a> {
     pub fn new(process: &'a dyn ProcessProvider, filesystem: &'a dyn FileSystemProvider) -> Self {
-        Self { process, filesystem }
+        Self {
+            process,
+            filesystem,
+        }
     }
 }
 
@@ -132,11 +135,12 @@ impl PackwizOps for LivePackwizOps<'_> {
             _ => {}
         }
 
-        let output = self.process.execute("packwiz", &args, &pack_dir).map_err(|e| {
-            StateError::CommandFailed {
+        let output = self
+            .process
+            .execute("packwiz", &args, &pack_dir)
+            .map_err(|e| StateError::CommandFailed {
                 command: format!("packwiz init failed: {}", e),
-            }
-        })?;
+            })?;
 
         if !output.success {
             return Err(StateError::CommandFailed {
@@ -150,12 +154,9 @@ impl PackwizOps for LivePackwizOps<'_> {
     fn run_packwiz_refresh(&self, workdir: &Path) -> Result<(), StateError> {
         let pack_file = workdir.join("pack").join("pack.toml");
 
-        let pack_file_str =
-            pack_file
-                .to_str()
-                .ok_or_else(|| StateError::IoError {
-                    source: anyhow::anyhow!("Invalid UTF-8 in pack.toml path"),
-                })?;
+        let pack_file_str = pack_file.to_str().ok_or_else(|| StateError::IoError {
+            source: anyhow::anyhow!("Invalid UTF-8 in pack.toml path"),
+        })?;
 
         let output = self
             .process
@@ -279,7 +280,9 @@ impl MockPackwizOps {
     pub fn new() -> Self {
         Self {
             installed_mods: HashSet::new(),
-            filesystem: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            filesystem: std::sync::Arc::new(
+                std::sync::Mutex::new(std::collections::HashMap::new()),
+            ),
             current_dir: crate::application::session_mocks::mock_root().join("workdir"),
             fail_init: false,
         }
@@ -402,10 +405,7 @@ minecraft = "{}"
     }
 
     fn installer_jar_cache_path(&self) -> crate::Result<PathBuf> {
-        Ok(self
-            .current_dir
-            .join("cache")
-            .join("packwiz-installer.jar"))
+        Ok(self.current_dir.join("cache").join("packwiz-installer.jar"))
     }
 }
 

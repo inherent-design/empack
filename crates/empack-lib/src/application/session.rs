@@ -9,9 +9,9 @@ use crate::display::{DisplayProvider, LiveDisplayProvider};
 use crate::empack::config::ConfigManager;
 use crate::empack::packwiz::{LivePackwizOps, PackwizOps};
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
+use crate::empack::state::PackStateManager;
 use crate::networking::cache::HttpCache;
 use crate::networking::rate_limit::RateLimiterManager;
-use crate::empack::state::PackStateManager;
 use crate::terminal::TerminalCapabilities;
 use anyhow::Context;
 use indicatif::MultiProgress;
@@ -172,8 +172,7 @@ impl FileSystemProvider for LiveFileSystemProvider {
     }
 
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>> {
-        std::fs::read(path)
-            .with_context(|| format!("Failed to read file: {}", path.display()))
+        std::fs::read(path).with_context(|| format!("Failed to read file: {}", path.display()))
     }
 
     fn write_file(&self, path: &Path, content: &str) -> Result<()> {
@@ -210,10 +209,11 @@ impl FileSystemProvider for LiveFileSystemProvider {
             return Ok(files);
         }
 
-        let entries =
-            std::fs::read_dir(path).with_context(|| format!("Failed to read directory: {}", path.display()))?;
+        let entries = std::fs::read_dir(path)
+            .with_context(|| format!("Failed to read directory: {}", path.display()))?;
         for entry in entries {
-            let entry = entry.with_context(|| format!("Failed to read directory entry: {}", path.display()))?;
+            let entry = entry
+                .with_context(|| format!("Failed to read directory entry: {}", path.display()))?;
             files.insert(entry.path());
         }
 
@@ -228,22 +228,27 @@ impl FileSystemProvider for LiveFileSystemProvider {
         let entries = std::fs::read_dir(dist_dir)
             .with_context(|| format!("Failed to read directory: {}", dist_dir.display()))?;
         for entry in entries {
-            let entry =
-                entry.with_context(|| format!("Failed to read directory entry: {}", dist_dir.display()))?;
+            let entry = entry.with_context(|| {
+                format!("Failed to read directory entry: {}", dist_dir.display())
+            })?;
             let path = entry.path();
 
             // Look for common build artifacts (files)
-            if path.is_file() && path.extension().is_some()
+            if path.is_file()
+                && path.extension().is_some()
                 && let Some(extension) = path.extension()
             {
                 match extension.to_str() {
-                    Some("mrpack") | Some("zip") | Some("jar") | Some("gz") | Some("7z") => return Ok(true),
+                    Some("mrpack") | Some("zip") | Some("jar") | Some("gz") | Some("7z") => {
+                        return Ok(true);
+                    }
                     _ => continue,
                 }
             }
 
             // Also consider build target directories as evidence of build state
-            if path.is_dir() && path.file_name().and_then(|n| n.to_str()).is_some()
+            if path.is_dir()
+                && path.file_name().and_then(|n| n.to_str()).is_some()
                 && let Some(dir_name) = path.file_name().and_then(|n| n.to_str())
             {
                 match dir_name {
@@ -640,11 +645,7 @@ impl InteractiveProvider for LiveInteractiveProvider {
 
         use dialoguer::Select;
 
-        match Select::new()
-            .with_prompt(prompt)
-            .items(options)
-            .interact()
-        {
+        match Select::new().with_prompt(prompt).items(options).interact() {
             Ok(val) => Ok(val),
             Err(dialoguer::Error::IO(ref io_err))
                 if io_err.kind() == std::io::ErrorKind::Interrupted =>
@@ -720,18 +721,17 @@ impl
     /// Create a new command session with owned state (production composition)
     pub fn new(app_config: AppConfig) -> Self {
         // Initialize display and logger systems
-        let terminal_capabilities =
-            match TerminalCapabilities::detect_from_config(&app_config) {
-                Ok(caps) => {
-                    crate::display::Display::init_or_get(caps.clone());
-                    let logger_config = app_config.to_logger_config(&caps);
-                    if let Err(e) = crate::logger::Logger::init(logger_config) {
-                        eprintln!("empack: logger init failed: {e}");
-                    }
-                    caps
+        let terminal_capabilities = match TerminalCapabilities::detect_from_config(&app_config) {
+            Ok(caps) => {
+                crate::display::Display::init_or_get(caps.clone());
+                let logger_config = app_config.to_logger_config(&caps);
+                if let Err(e) = crate::logger::Logger::init(logger_config) {
+                    eprintln!("empack: logger init failed: {e}");
                 }
-                Err(_) => TerminalCapabilities::minimal(),
-            };
+                caps
+            }
+            Err(_) => TerminalCapabilities::minimal(),
+        };
 
         let multi_progress = Arc::new(MultiProgress::new());
         let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
@@ -744,7 +744,10 @@ impl
             network_provider: LiveNetworkProvider::new(),
             process_provider: LiveProcessProvider::new(),
             config_provider: LiveConfigProvider::new(app_config.clone()),
-            interactive_provider: LiveInteractiveProvider::new(app_config.yes, app_config.workdir.clone()),
+            interactive_provider: LiveInteractiveProvider::new(
+                app_config.yes,
+                app_config.workdir.clone(),
+            ),
         }
     }
 }

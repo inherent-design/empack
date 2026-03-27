@@ -67,9 +67,7 @@ async fn test_init_packwiz_failure() -> Result<()> {
 
     let project_dir = workdir.join("failure-test-pack");
 
-    let err = result.expect_err(
-        "Init should fail when packwiz mock returns non-zero exit code",
-    );
+    let err = result.expect_err("Init should fail when packwiz mock returns non-zero exit code");
     let error_msg = err.to_string();
     assert!(
         error_msg.contains("initialize") || error_msg.contains("packwiz"),
@@ -351,8 +349,7 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
             // auto-selects index 0 which is "none (vanilla)". Vanilla packs
             // omit the loader field from empack.yml entirely.
             assert!(
-                empack_yml.contains("minecraft_version:")
-                    || empack_yml.contains("loader:"),
+                empack_yml.contains("minecraft_version:") || empack_yml.contains("loader:"),
                 "empack.yml should contain minecraft_version or loader, got: {}",
                 empack_yml
             );
