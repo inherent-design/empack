@@ -926,6 +926,35 @@ impl MockSessionBuilder {
         self
     }
 
+    pub fn with_deferred_file(
+        mut self,
+        directory: PathBuf,
+        filename: String,
+        content: String,
+    ) -> Self {
+        self.filesystem =
+            self.filesystem
+                .with_deferred_file(directory, filename, content);
+        self
+    }
+
+    /// Pre-populate `srv.jar` stubs in server and server-full dist directories
+    /// via deferred files so the build orchestrator skips the real HTTP download.
+    pub fn with_server_jar_stub(self) -> Self {
+        let workdir = mock_root().join("workdir");
+        let dist = workdir.join("dist");
+        self.with_deferred_file(
+            dist.join("server"),
+            "srv.jar".to_string(),
+            "mock-server-jar".to_string(),
+        )
+        .with_deferred_file(
+            dist.join("server-full"),
+            "srv.jar".to_string(),
+            "mock-server-jar".to_string(),
+        )
+    }
+
     pub fn with_mock_http_client(mut self) -> Self {
         self.network = LibMockNetworkProvider::new();
         self
