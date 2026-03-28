@@ -104,13 +104,18 @@ impl MockFileSystemProvider {
     /// production code expects to appear during a build step (e.g. srv.jar
     /// created by an installer after the dist directory is created).
     pub fn with_deferred_file(self, directory: PathBuf, filename: String, content: String) -> Self {
+        self.add_deferred_file(directory, filename, content);
+        self
+    }
+
+    /// Register a deferred file on an already-built provider.
+    pub fn add_deferred_file(&self, directory: PathBuf, filename: String, content: String) {
         self.deferred_files
             .lock()
             .unwrap()
             .entry(directory)
             .or_default()
             .push((filename, content));
-        self
     }
 
     /// Helper method to create a typical empack project structure
@@ -482,8 +487,9 @@ impl MockNetworkProvider {
         self
     }
 
-    pub fn enable_http_client(&mut self) {
+    pub fn enable_http_client(mut self) -> Self {
         self.fail_http_client = false;
+        self
     }
 
     pub fn with_project_response(self, query: String, project_info: ProjectInfo) -> Self {
