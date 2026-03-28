@@ -50,6 +50,7 @@ async fn initialize_empack_project(
                 stderr: String::new(),
             },
         )?
+        .with_pre_cached_jars()?
         .build()?;
 
     init_display(&session)?;
@@ -73,17 +74,6 @@ async fn initialize_empack_project(
 async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
     let project_name = "workflow-client-full";
     let (session, test_env, workdir) = initialize_empack_project(project_name).await?;
-
-    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
-    std::fs::create_dir_all(&jar_cache)?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer-bootstrap.jar"),
-        "mock-bootstrap-jar",
-    )?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer.jar"),
-        "mock-installer-jar",
-    )?;
 
     let result = execute_command_with_session(
         Commands::Build {
@@ -150,8 +140,37 @@ async fn e2e_build_client_full_successfully() -> anyhow::Result<()> {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
-    let (session, _test_env, workdir) =
-        initialize_empack_project("workflow-client-full-missing-installer").await?;
+    let project_name = "workflow-client-full-missing-installer";
+    let (session, test_env) = HermeticSessionBuilder::new()?
+        .with_empack_project(project_name, "1.21.1", "fabric")?
+        .with_mock_executable(
+            "packwiz",
+            MockBehavior::SucceedWithOutput {
+                stdout: build_packwiz_output(project_name),
+                stderr: String::new(),
+            },
+        )?
+        .with_mock_executable(
+            "java",
+            MockBehavior::SucceedWithOutput {
+                stdout: "Installed client-full mods".to_string(),
+                stderr: String::new(),
+            },
+        )?
+        .build()?;
+
+    init_display(&session)?;
+
+    let workdir = session
+        .config()
+        .app_config()
+        .workdir
+        .clone()
+        .expect("hermetic project should configure a workdir");
+    std::env::set_current_dir(&workdir)?;
+    unsafe {
+        std::env::set_var("HOME", &test_env.root_path);
+    }
 
     let result = execute_command_with_session(
         Commands::Build {
@@ -208,17 +227,6 @@ async fn e2e_build_client_full_missing_installer() -> anyhow::Result<()> {
 async fn e2e_build_client_full_with_pack_structure() -> anyhow::Result<()> {
     let project_name = "workflow-client-full-structure";
     let (session, _test_env, workdir) = initialize_empack_project(project_name).await?;
-
-    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
-    std::fs::create_dir_all(&jar_cache)?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer-bootstrap.jar"),
-        "mock-bootstrap-jar",
-    )?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer.jar"),
-        "mock-installer-jar",
-    )?;
 
     let pack_dir = workdir.join("pack");
     let mods_dir = pack_dir.join("mods");
