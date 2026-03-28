@@ -1615,7 +1615,8 @@ impl<'a> BuildOrchestrator<'a> {
                     .replace("{{NAME}}", &pack_info.name)
                     .replace("{{AUTHOR}}", &pack_info.author)
                     .replace("{{MC_VERSION}}", &pack_info.mc_version)
-                    .replace("{{LOADER_VERSION}}", &pack_info.loader_version);
+                    .replace("{{LOADER_VERSION}}", &pack_info.loader_version)
+                    .replace("{{FABRIC_VERSION}}", &pack_info.loader_version);
 
                 self.session
                     .filesystem()
