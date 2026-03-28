@@ -93,19 +93,20 @@ async fn e2e_build_server_full_successfully() -> Result<()> {
         "Server-full archive should be created: {create_calls:?}"
     );
     assert!(
-        !session.filesystem().exists(&workdir.join("dist").join("server")),
+        !session
+            .filesystem()
+            .exists(&workdir.join("dist").join("server")),
         "Standalone server-full builds should not materialize the server target directory"
     );
 
     let java_calls = session.process_provider.get_calls_for_command("java");
     assert!(
-        java_calls.iter().any(|call| call
-            .args
+        java_calls
             .iter()
-            .any(|a| a == "-s")
-            && call.args.iter().any(|a| a == "server")
-            && call.args.iter().any(|a| a == "--bootstrap-main-jar")
-            && call.args.iter().any(|a| a.contains("pack.toml"))),
+            .any(|call| call.args.iter().any(|a| a == "-s")
+                && call.args.iter().any(|a| a == "server")
+                && call.args.iter().any(|a| a == "--bootstrap-main-jar")
+                && call.args.iter().any(|a| a.contains("pack.toml"))),
         "server-full build should invoke packwiz installer for server side: {java_calls:?}"
     );
 

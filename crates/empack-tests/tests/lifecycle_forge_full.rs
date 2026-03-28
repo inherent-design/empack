@@ -238,15 +238,21 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     // Verify server-full and client-full install markers from java installer side effects
     assert!(
-        session
-            .filesystem()
-            .exists(&dist.join("server-full").join("mods").join("server-installed.txt")),
+        session.filesystem().exists(
+            &dist
+                .join("server-full")
+                .join("mods")
+                .join("server-installed.txt")
+        ),
         "Server-full build should include full install marker"
     );
     assert!(
-        session
-            .filesystem()
-            .exists(&dist.join("client-full").join("mods").join("both-installed.txt")),
+        session.filesystem().exists(
+            &dist
+                .join("client-full")
+                .join("mods")
+                .join("both-installed.txt")
+        ),
         "Client-full build should include full install marker"
     );
 
@@ -306,9 +312,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 /// and that the modloader choice propagates through the configuration.
 #[tokio::test]
 async fn test_forge_modloader_initialization() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 

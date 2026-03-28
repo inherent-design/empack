@@ -44,9 +44,9 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
     let pack_file_str = pack_file.to_string_lossy();
     let mrpack_path_str = mrpack_path.to_string_lossy();
     assert!(
-        packwiz_calls.iter().any(|call| {
-            call.args == vec!["--pack-file", pack_file_str.as_ref(), "refresh"]
-        }),
+        packwiz_calls
+            .iter()
+            .any(|call| { call.args == vec!["--pack-file", pack_file_str.as_ref(), "refresh"] }),
         "build should refresh the pack before exporting: {packwiz_calls:?}"
     );
     assert!(
@@ -139,9 +139,9 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
     let pack_file_str = pack_file.to_string_lossy();
     let mrpack_path_str = mrpack_path.to_string_lossy();
     assert!(
-        packwiz_calls.iter().any(|call| {
-            call.args == vec!["--pack-file", pack_file_str.as_ref(), "refresh"]
-        }),
+        packwiz_calls
+            .iter()
+            .any(|call| { call.args == vec!["--pack-file", pack_file_str.as_ref(), "refresh"] }),
         "clean-before-build should refresh the pack after cleaning: {packwiz_calls:?}"
     );
     assert!(
