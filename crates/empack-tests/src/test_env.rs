@@ -955,7 +955,7 @@ impl MockSessionBuilder {
     }
 
     pub fn with_mock_http_client(mut self) -> Self {
-        self.network = LibMockNetworkProvider::new();
+        self.network.enable_http_client();
         self
     }
 

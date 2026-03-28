@@ -483,6 +483,10 @@ impl MockNetworkProvider {
         self
     }
 
+    pub fn enable_http_client(&mut self) {
+        self.fail_http_client = false;
+    }
+
     pub fn with_project_response(self, query: String, project_info: ProjectInfo) -> Self {
         self.mock_resolver
             .responses
@@ -648,14 +652,8 @@ impl crate::application::session::ArchiveProvider for MockArchiveProvider {
             .unwrap()
             .push((archive_path.to_path_buf(), dest_dir.to_path_buf()));
 
-        if let (Some(files), Some(directories)) = (&self.files, &self.directories) {
+        if let (Some(_files), Some(directories)) = (&self.files, &self.directories) {
             directories.lock().unwrap().insert(dest_dir.to_path_buf());
-            let overrides_dir = dest_dir.join("overrides");
-            directories.lock().unwrap().insert(overrides_dir.clone());
-            files
-                .lock()
-                .unwrap()
-                .insert(overrides_dir.join(".gitkeep"), String::new());
         }
 
         Ok(())
@@ -1000,8 +998,14 @@ impl MockProcessProvider {
         {
             let install_dir = args
                 .iter()
-                .find(|arg| !arg.starts_with('-') && !arg.ends_with(".jar") && !arg.contains('='))
-                .map(PathBuf::from);
+                .zip(args.iter().skip(1))
+                .find_map(|(flag, val)| {
+                    if *flag == "--install-server" || *flag == "--installServer" {
+                        Some(PathBuf::from(val))
+                    } else {
+                        None
+                    }
+                });
             if let Some(dir) = install_dir {
                 directories.lock().unwrap().insert(dir.join("libraries"));
                 directories.lock().unwrap().insert(dir.clone());
