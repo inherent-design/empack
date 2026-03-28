@@ -501,7 +501,7 @@ async fn handle_init(
     let (loader_str, loader_version) = if is_vanilla {
         if cli_loader_version.is_some() {
             return Err(anyhow::anyhow!(
-                "--loader-version ignored: vanilla packs have no modloader"
+                "--loader-version is not allowed for vanilla packs"
             ));
         }
         session
@@ -1549,7 +1549,7 @@ fn scan_restricted_mods(
     filesystem: &dyn FileSystemProvider,
     pack_dir: &std::path::Path,
 ) -> Vec<RestrictedMod> {
-    let content_dirs = ["mods", "resourcepacks", "shaderpacks"];
+    let content_dirs = ["mods", "resourcepacks", "shaderpacks", "datapacks"];
     let mut restricted = Vec::new();
 
     for folder in &content_dirs {
@@ -1614,7 +1614,7 @@ fn packwiz_user_cache_dir() -> std::path::PathBuf {
             .ok()
             .filter(|s| !s.is_empty())
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| crate::platform::home_dir().join(".cache"))
+            .expect("%LocalAppData% must be set on Windows")
     }
     #[cfg(target_os = "macos")]
     {

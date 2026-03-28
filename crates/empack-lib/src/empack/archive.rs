@@ -151,7 +151,7 @@ fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archi
             })?;
             let path = entry.path();
             let relative = path.strip_prefix(base).expect("path must be under base");
-            let name = relative.to_string_lossy();
+            let name = relative.to_string_lossy().replace('\\', "/");
 
             if path.is_dir() {
                 writer

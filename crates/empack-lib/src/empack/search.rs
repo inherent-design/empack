@@ -131,7 +131,7 @@ fn extract_loaders(categories: &[String]) -> Vec<String> {
     categories
         .iter()
         .filter(|cat| KNOWN_LOADERS.contains(&cat.to_lowercase().as_str()))
-        .cloned()
+        .map(|cat| cat.to_lowercase())
         .collect()
 }
 
