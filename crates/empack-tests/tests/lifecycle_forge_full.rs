@@ -25,8 +25,6 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     let workdir = mock_root().join("workdir");
 
     // Build session with search results for add step.
-    // with_mock_http_client() must come before with_mock_search_result()
-    // because it replaces the network provider.
     let mut session = MockSessionBuilder::new()
         .with_yes_flag()
         .with_mock_http_client()

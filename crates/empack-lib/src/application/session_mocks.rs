@@ -12,7 +12,6 @@ use crate::empack::packwiz::{MockPackwizOps, PackwizOps};
 use crate::empack::search::{ProjectInfo, ProjectResolverTrait, SearchError};
 use indicatif::MultiProgress;
 use reqwest::Client;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -652,7 +651,7 @@ impl crate::application::session::ArchiveProvider for MockArchiveProvider {
             .unwrap()
             .push((archive_path.to_path_buf(), dest_dir.to_path_buf()));
 
-        if let (Some(_files), Some(directories)) = (&self.files, &self.directories) {
+        if let (Some(_), Some(directories)) = (&self.files, &self.directories) {
             directories.lock().unwrap().insert(dest_dir.to_path_buf());
         }
 
@@ -694,7 +693,7 @@ pub struct ProcessCall {
 
 /// Mock process provider for testing with spy pattern
 pub struct MockProcessProvider {
-    pub calls: RefCell<Vec<ProcessCall>>,
+    pub calls: Arc<Mutex<Vec<ProcessCall>>>,
     pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
     pub programs: HashMap<String, Option<String>>,
     materialize_mrpack_exports: bool,
@@ -717,7 +716,7 @@ impl MockProcessProvider {
         programs.insert("packwiz".to_string(), Some(packwiz_path.clone()));
 
         let mut provider = Self {
-            calls: RefCell::new(Vec::new()),
+            calls: Arc::new(Mutex::new(Vec::new())),
             results: HashMap::new(),
             programs,
             materialize_mrpack_exports: false,
@@ -1019,13 +1018,14 @@ impl MockProcessProvider {
 
     /// Get all recorded process calls for verification
     pub fn get_calls(&self) -> Vec<ProcessCall> {
-        self.calls.borrow().clone()
+        self.calls.lock().unwrap().clone()
     }
 
     /// Get calls for a specific command
     pub fn get_calls_for_command(&self, command: &str) -> Vec<ProcessCall> {
         self.calls
-            .borrow()
+            .lock()
+            .unwrap()
             .iter()
             .filter(|call| call.command == command)
             .cloned()
@@ -1040,7 +1040,7 @@ impl MockProcessProvider {
             working_dir: working_dir.to_path_buf(),
         };
 
-        self.calls.borrow().contains(&expected_call)
+        self.calls.lock().unwrap().contains(&expected_call)
     }
 }
 
@@ -1063,7 +1063,7 @@ impl ProcessProvider for MockProcessProvider {
             args: args.iter().map(|s| s.to_string()).collect(),
             working_dir: working_dir.to_path_buf(),
         };
-        self.calls.borrow_mut().push(call);
+        self.calls.lock().unwrap().push(call);
 
         // Check if we have a specific result for this command
         let key = (
