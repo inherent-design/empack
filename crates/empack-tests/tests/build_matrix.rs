@@ -69,13 +69,10 @@ async fn setup_mrpack_session(
     project_name: &str,
     loader: &str,
 ) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
-    let builder = HermeticSessionBuilder::new()?
-        .with_empack_project(project_name, "1.21.4", loader)?;
+    let builder =
+        HermeticSessionBuilder::new()?.with_empack_project(project_name, "1.21.4", loader)?;
 
-    let workdir_early = builder
-        .test_env()
-        .work_path
-        .join(project_name);
+    let workdir_early = builder.test_env().work_path.join(project_name);
     fix_pack_toml_loader_version(&workdir_early, loader)?;
 
     let (session, test_env) = builder
@@ -108,13 +105,10 @@ async fn setup_server_session(
     project_name: &str,
     loader: &str,
 ) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
-    let builder = HermeticSessionBuilder::new()?
-        .with_empack_project(project_name, "1.21.4", loader)?;
+    let builder =
+        HermeticSessionBuilder::new()?.with_empack_project(project_name, "1.21.4", loader)?;
 
-    let workdir_early = builder
-        .test_env()
-        .work_path
-        .join(project_name);
+    let workdir_early = builder.test_env().work_path.join(project_name);
     fix_pack_toml_loader_version(&workdir_early, loader)?;
 
     let (session, test_env) = builder
@@ -156,13 +150,10 @@ async fn setup_server_full_session(
     project_name: &str,
     loader: &str,
 ) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
-    let builder = HermeticSessionBuilder::new()?
-        .with_empack_project(project_name, "1.21.4", loader)?;
+    let builder =
+        HermeticSessionBuilder::new()?.with_empack_project(project_name, "1.21.4", loader)?;
 
-    let workdir_early = builder
-        .test_env()
-        .work_path
-        .join(project_name);
+    let workdir_early = builder.test_env().work_path.join(project_name);
     fix_pack_toml_loader_version(&workdir_early, loader)?;
 
     let (session, test_env) = builder
@@ -204,13 +195,10 @@ async fn setup_client_session(
     project_name: &str,
     loader: &str,
 ) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
-    let builder = HermeticSessionBuilder::new()?
-        .with_empack_project(project_name, "1.21.4", loader)?;
+    let builder =
+        HermeticSessionBuilder::new()?.with_empack_project(project_name, "1.21.4", loader)?;
 
-    let workdir_early = builder
-        .test_env()
-        .work_path
-        .join(project_name);
+    let workdir_early = builder.test_env().work_path.join(project_name);
     fix_pack_toml_loader_version(&workdir_early, loader)?;
 
     let (session, test_env) = builder
@@ -341,8 +329,7 @@ async fn test_build_neoforge_server() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_build_neoforge_server_full() -> anyhow::Result<()> {
     let project_name = "matrix-neoforge-server-full";
-    let (session, test_env, workdir) =
-        setup_server_full_session(project_name, "neoforge").await?;
+    let (session, test_env, workdir) = setup_server_full_session(project_name, "neoforge").await?;
 
     create_server_templates(&workdir)?;
 
@@ -508,10 +495,7 @@ async fn test_build_quilt_server_full() -> anyhow::Result<()> {
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "Quilt server-full build failed: {result:?}"
-    );
+    assert!(result.is_ok(), "Quilt server-full build failed: {result:?}");
 
     let server_full_dir = workdir.join("dist").join("server-full");
     assert!(
