@@ -887,7 +887,12 @@ impl MockSessionBuilder {
     }
 
     pub fn with_pre_cached_jars(mut self) -> Self {
-        let cache_dir = mock_root().join("workdir").join("cache");
+        let workdir = self
+            .config
+            .workdir
+            .clone()
+            .unwrap_or_else(|| mock_root().join("workdir"));
+        let cache_dir = workdir.join("cache");
         self.filesystem = self
             .filesystem
             .with_file(
@@ -940,7 +945,11 @@ impl MockSessionBuilder {
     /// Pre-populate `srv.jar` stubs in server and server-full dist directories
     /// via deferred files so the build orchestrator skips the real HTTP download.
     pub fn with_server_jar_stub(self) -> Self {
-        let workdir = mock_root().join("workdir");
+        let workdir = self
+            .config
+            .workdir
+            .clone()
+            .unwrap_or_else(|| mock_root().join("workdir"));
         let dist = workdir.join("dist");
         self.with_deferred_file(
             dist.join("server"),
@@ -955,7 +964,7 @@ impl MockSessionBuilder {
     }
 
     pub fn with_mock_http_client(mut self) -> Self {
-        self.network.enable_http_client();
+        self.network = self.network.enable_http_client();
         self
     }
 
