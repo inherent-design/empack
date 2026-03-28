@@ -1,15 +1,16 @@
 //! Integration tests for `empack sync` workflow.
 //!
-//! These scenarios exercise real workflow planning with hermetic packwiz command
+//! These scenarios exercise real workflow planning with mock packwiz command
 //! assertions instead of only checking that the command doesn't panic.
 
 use anyhow::Result;
 use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;
+use empack_lib::application::session_mocks::mock_root;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::{HermeticSessionBuilder, MockBehavior};
-use std::fs;
+use empack_tests::MockSessionBuilder;
+use std::collections::HashSet;
 
 fn sync_project_config() -> &'static str {
     r#"empack:
@@ -34,109 +35,69 @@ fn sync_project_config() -> &'static str {
 "#
 }
 
-/// Minimal .pw.toml content to mark a mod as installed
-fn pw_toml_stub(name: &str) -> String {
-    format!(
-        r#"name = "{name}"
-filename = "{name}.jar"
-side = "both"
-
-[download]
-url = ""
-hash = ""
-"#
-    )
-}
-
-/// Test: empack sync executes the planned add/remove actions hermetically.
-#[cfg(unix)]
 #[tokio::test]
 async fn test_sync_workflow_full() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let workdir = mock_root().join("workdir");
+
+    let session = MockSessionBuilder::new()
+        .with_empack_project("sync-pack", "1.21.1", "fabric")
         .with_mock_http_client()
-        .with_empack_project("sync-pack", "1.21.1", "fabric")?
-        .with_mock_executable("packwiz", MockBehavior::AlwaysSucceed)?
-        .build()?;
+        .with_yes_flag()
+        .with_file(workdir.join("empack.yml"), sync_project_config().to_string())
+        .with_installed_mods(HashSet::from([
+            "sodium".to_string(),
+            "old-mod".to_string(),
+        ]))
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    fs::write(workdir.join("empack.yml"), sync_project_config())?;
-
-    // Simulate sodium already installed, old-mod is extra
-    let mods_dir = workdir.join("pack").join("mods");
-    fs::create_dir_all(&mods_dir)?;
-    fs::write(mods_dir.join("sodium.pw.toml"), pw_toml_stub("sodium"))?;
-    fs::write(mods_dir.join("old-mod.pw.toml"), pw_toml_stub("old-mod"))?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let sync_result = execute_command_with_session(Commands::Sync {}, &session).await;
     assert!(sync_result.is_ok(), "sync command failed: {sync_result:?}");
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
-        packwiz_calls.iter().any(|call| call.contains_args(&[
-            "modrinth",
-            "add",
-            "--project-id",
-            "P7dR8mSH",
-            "-y"
-        ])),
+        packwiz_calls.iter().any(|call| {
+            let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
+            args.windows(5).any(|w| {
+                w == ["modrinth", "add", "--project-id", "P7dR8mSH", "-y"]
+            })
+        }),
         "sync should add the missing dependency by project id: {packwiz_calls:?}"
     );
     assert!(
-        packwiz_calls
-            .iter()
-            .any(|call| call.contains_args(&["remove", "-y", "old-mod"])),
+        packwiz_calls.iter().any(|call| {
+            let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
+            args.windows(3).any(|w| w == ["remove", "-y", "old-mod"])
+        }),
         "sync should remove mods not declared in empack.yml: {packwiz_calls:?}"
     );
     assert!(
-        !packwiz_calls.iter().any(|call| call.contains_args(&[
-            "modrinth",
-            "add",
-            "--project-id",
-            "AANobbMI",
-            "-y"
-        ])),
+        !packwiz_calls.iter().any(|call| {
+            let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
+            args.windows(5).any(|w| {
+                w == ["modrinth", "add", "--project-id", "AANobbMI", "-y"]
+            })
+        }),
         "sync should not re-add dependencies that are already installed: {packwiz_calls:?}"
     );
 
     Ok(())
 }
 
-/// Test: empack sync --dry-run plans actions without mutating packwiz state.
-#[cfg(unix)]
 #[tokio::test]
 async fn test_sync_dry_run_no_modifications() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_dry_run_flag()
+    let workdir = mock_root().join("workdir");
+
+    let session = MockSessionBuilder::new()
+        .with_empack_project("sync-pack-dry-run", "1.21.1", "fabric")
         .with_mock_http_client()
-        .with_empack_project("sync-pack-dry-run", "1.21.1", "fabric")?
-        .with_mock_executable("packwiz", MockBehavior::AlwaysSucceed)?
-        .build()?;
+        .with_dry_run_flag()
+        .with_file(workdir.join("empack.yml"), sync_project_config().to_string())
+        .with_installed_mods(HashSet::from(["old-mod".to_string()]))
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    fs::write(workdir.join("empack.yml"), sync_project_config())?;
-
-    // Simulate old-mod installed (will be planned for removal but not executed)
-    let mods_dir = workdir.join("pack").join("mods");
-    fs::create_dir_all(&mods_dir)?;
-    fs::write(mods_dir.join("old-mod.pw.toml"), pw_toml_stub("old-mod"))?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let sync_result = execute_command_with_session(Commands::Sync {}, &session).await;
     assert!(
@@ -144,7 +105,7 @@ async fn test_sync_dry_run_no_modifications() -> Result<()> {
         "dry-run sync command failed: {sync_result:?}"
     );
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
         !packwiz_calls.iter().any(|call| {
             call.args
@@ -163,36 +124,22 @@ async fn test_sync_dry_run_no_modifications() -> Result<()> {
     Ok(())
 }
 
-/// Test: sync matches installed .pw.toml filenames by slug key (no normalization).
-#[cfg(unix)]
 #[tokio::test]
 async fn test_sync_normalized_installed_names_noop() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let workdir = mock_root().join("workdir");
+
+    let session = MockSessionBuilder::new()
+        .with_empack_project("sync-pack-normalized", "1.21.1", "fabric")
         .with_mock_http_client()
-        .with_empack_project("sync-pack-normalized", "1.21.1", "fabric")?
-        .with_mock_executable("packwiz", MockBehavior::AlwaysSucceed)?
-        .build()?;
+        .with_yes_flag()
+        .with_file(workdir.join("empack.yml"), sync_project_config().to_string())
+        .with_installed_mods(HashSet::from([
+            "sodium".to_string(),
+            "fabric_api".to_string(),
+        ]))
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    fs::write(workdir.join("empack.yml"), sync_project_config())?;
-
-    // Both mods installed with exact slug-matching filenames
-    let mods_dir = workdir.join("pack").join("mods");
-    fs::create_dir_all(&mods_dir)?;
-    fs::write(mods_dir.join("sodium.pw.toml"), pw_toml_stub("sodium"))?;
-    fs::write(
-        mods_dir.join("fabric_api.pw.toml"),
-        pw_toml_stub("fabric_api"),
-    )?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let sync_result = execute_command_with_session(Commands::Sync {}, &session).await;
     assert!(
@@ -200,7 +147,7 @@ async fn test_sync_normalized_installed_names_noop() -> Result<()> {
         "slug-matching installed names should produce a no-op sync: {sync_result:?}"
     );
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
         packwiz_calls.is_empty(),
         "all-installed sync should not call packwiz at all: {packwiz_calls:?}"

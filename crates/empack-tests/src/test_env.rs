@@ -916,6 +916,21 @@ impl MockSessionBuilder {
         self
     }
 
+    pub fn with_installed_mods(mut self, mods: std::collections::HashSet<String>) -> Self {
+        self.filesystem = self.filesystem.with_installed_mods(mods);
+        self
+    }
+
+    pub fn with_file(mut self, path: PathBuf, content: String) -> Self {
+        self.filesystem = self.filesystem.with_file(path, content);
+        self
+    }
+
+    pub fn with_mock_http_client(mut self) -> Self {
+        self.network = LibMockNetworkProvider::new();
+        self
+    }
+
     pub fn with_interactive(mut self, interactive: MockInteractiveProvider) -> Self {
         self.interactive = Some(interactive);
         self
