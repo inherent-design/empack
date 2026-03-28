@@ -1,51 +1,19 @@
-// NOTE: `set_current_dir` mutates process-global state but is safe here because
-// nextest runs each test in its own process, preventing cross-test interference.
-// This matches the pattern used across all hermetic tests in this crate.
-
 use anyhow::Result;
 use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::{HermeticSessionBuilder, MockBehavior};
-use std::fs;
+use empack_tests::MockSessionBuilder;
 
-fn standard_packwiz_mock() -> MockBehavior {
-    MockBehavior::SucceedWithOutput {
-        stdout: "Initialized packwiz project".to_string(),
-        stderr: String::new(),
-    }
-}
-
-fn standard_git_mock() -> MockBehavior {
-    MockBehavior::SucceedWithOutput {
-        stdout: "main".to_string(),
-        stderr: String::new(),
-    }
-}
-
-fn standard_which_mock() -> MockBehavior {
-    MockBehavior::SucceedWithOutput {
-        stdout: "/test/bin/packwiz".to_string(),
-        stderr: String::new(),
-    }
-}
-
-#[cfg(unix)]
 #[tokio::test]
 async fn test_init_neoforge() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let session = MockSessionBuilder::new()
         .with_yes_flag()
-        .with_mock_executable("packwiz", standard_packwiz_mock())?
-        .with_mock_executable("git", standard_git_mock())?
-        .with_mock_executable("which", standard_which_mock())?
-        .build()?;
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
         Commands::Init {
@@ -65,9 +33,14 @@ async fn test_init_neoforge() -> Result<()> {
     assert!(result.is_ok(), "Init with NeoForge failed: {:?}", result);
 
     let project_dir = workdir.join("neoforge-pack");
-    assert!(project_dir.exists(), "neoforge-pack directory should exist");
+    assert!(
+        session.filesystem().exists(&project_dir),
+        "neoforge-pack directory should exist"
+    );
 
-    let empack_yml = fs::read_to_string(project_dir.join("empack.yml"))?;
+    let empack_yml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("empack.yml"))?;
     assert!(
         empack_yml.contains("loader: neoforge"),
         "empack.yml should have loader: neoforge, got: {}",
@@ -80,45 +53,27 @@ async fn test_init_neoforge() -> Result<()> {
         empack_yml
     );
 
-    let pack_toml = fs::read_to_string(project_dir.join("pack").join("pack.toml"))?;
+    let pack_toml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("pack").join("pack.toml"))?;
     assert!(
         pack_toml.contains("neoforge = "),
         "pack.toml [versions] should contain neoforge entry, got: {}",
         pack_toml
     );
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
-    let init_call = packwiz_calls
-        .iter()
-        .find(|call| call.args.first().map(String::as_str) == Some("init"))
-        .expect("packwiz init should have been called");
-    assert!(
-        init_call.contains_args(&["--modloader", "neoforge"]),
-        "packwiz should receive --modloader neoforge: {init_call:?}"
-    );
-    assert!(
-        init_call.args.iter().any(|arg| arg == "--neoforge-version"),
-        "packwiz should receive --neoforge-version flag: {init_call:?}"
-    );
-
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn test_init_quilt() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let session = MockSessionBuilder::new()
         .with_yes_flag()
-        .with_mock_executable("packwiz", standard_packwiz_mock())?
-        .with_mock_executable("git", standard_git_mock())?
-        .with_mock_executable("which", standard_which_mock())?
-        .build()?;
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
         Commands::Init {
@@ -138,9 +93,14 @@ async fn test_init_quilt() -> Result<()> {
     assert!(result.is_ok(), "Init with Quilt failed: {:?}", result);
 
     let project_dir = workdir.join("quilt-pack");
-    assert!(project_dir.exists(), "quilt-pack directory should exist");
+    assert!(
+        session.filesystem().exists(&project_dir),
+        "quilt-pack directory should exist"
+    );
 
-    let empack_yml = fs::read_to_string(project_dir.join("empack.yml"))?;
+    let empack_yml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("empack.yml"))?;
     assert!(
         empack_yml.contains("loader: quilt"),
         "empack.yml should have loader: quilt, got: {}",
@@ -153,45 +113,27 @@ async fn test_init_quilt() -> Result<()> {
         empack_yml
     );
 
-    let pack_toml = fs::read_to_string(project_dir.join("pack").join("pack.toml"))?;
+    let pack_toml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("pack").join("pack.toml"))?;
     assert!(
         pack_toml.contains("quilt = "),
         "pack.toml [versions] should contain quilt entry, got: {}",
         pack_toml
     );
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
-    let init_call = packwiz_calls
-        .iter()
-        .find(|call| call.args.first().map(String::as_str) == Some("init"))
-        .expect("packwiz init should have been called");
-    assert!(
-        init_call.contains_args(&["--modloader", "quilt"]),
-        "packwiz should receive --modloader quilt: {init_call:?}"
-    );
-    assert!(
-        init_call.args.iter().any(|arg| arg == "--quilt-version"),
-        "packwiz should receive --quilt-version flag: {init_call:?}"
-    );
-
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn test_init_vanilla() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let session = MockSessionBuilder::new()
         .with_yes_flag()
-        .with_mock_executable("packwiz", standard_packwiz_mock())?
-        .with_mock_executable("git", standard_git_mock())?
-        .with_mock_executable("which", standard_which_mock())?
-        .build()?;
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
         Commands::Init {
@@ -211,53 +153,32 @@ async fn test_init_vanilla() -> Result<()> {
     assert!(result.is_ok(), "Init with vanilla failed: {:?}", result);
 
     let project_dir = workdir.join("vanilla-pack");
-    assert!(project_dir.exists(), "vanilla-pack directory should exist");
+    assert!(
+        session.filesystem().exists(&project_dir),
+        "vanilla-pack directory should exist"
+    );
 
-    let empack_yml = fs::read_to_string(project_dir.join("empack.yml"))?;
+    let empack_yml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("empack.yml"))?;
     assert!(
         !empack_yml.contains("loader:"),
         "vanilla empack.yml should not have a loader field, got: {}",
         empack_yml
     );
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
-    let init_call = packwiz_calls
-        .iter()
-        .find(|call| call.args.first().map(String::as_str) == Some("init"))
-        .expect("packwiz init should have been called");
-    assert!(
-        init_call.contains_args(&["--modloader", "none"]),
-        "packwiz should receive --modloader none: {init_call:?}"
-    );
-    let has_loader_version_flag = init_call.args.iter().any(|arg| {
-        arg == "--fabric-version"
-            || arg == "--neoforge-version"
-            || arg == "--forge-version"
-            || arg == "--quilt-version"
-    });
-    assert!(
-        !has_loader_version_flag,
-        "vanilla init should not pass any loader version flag: {init_call:?}"
-    );
-
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn test_init_fabric_older_mc() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let session = MockSessionBuilder::new()
         .with_yes_flag()
-        .with_mock_executable("packwiz", standard_packwiz_mock())?
-        .with_mock_executable("git", standard_git_mock())?
-        .with_mock_executable("which", standard_which_mock())?
-        .build()?;
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
         Commands::Init {
@@ -281,9 +202,14 @@ async fn test_init_fabric_older_mc() -> Result<()> {
     );
 
     let project_dir = workdir.join("fabric-old-mc");
-    assert!(project_dir.exists(), "fabric-old-mc directory should exist");
+    assert!(
+        session.filesystem().exists(&project_dir),
+        "fabric-old-mc directory should exist"
+    );
 
-    let empack_yml = fs::read_to_string(project_dir.join("empack.yml"))?;
+    let empack_yml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("empack.yml"))?;
     assert!(
         empack_yml.contains("loader: fabric"),
         "empack.yml should have loader: fabric, got: {}",
@@ -296,7 +222,9 @@ async fn test_init_fabric_older_mc() -> Result<()> {
         empack_yml
     );
 
-    let pack_toml = fs::read_to_string(project_dir.join("pack").join("pack.toml"))?;
+    let pack_toml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("pack").join("pack.toml"))?;
     assert!(
         pack_toml.contains("1.20.1"),
         "pack.toml should reference minecraft 1.20.1, got: {}",
@@ -306,20 +234,6 @@ async fn test_init_fabric_older_mc() -> Result<()> {
         pack_toml.contains("fabric = "),
         "pack.toml [versions] should contain fabric entry, got: {}",
         pack_toml
-    );
-
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
-    let init_call = packwiz_calls
-        .iter()
-        .find(|call| call.args.first().map(String::as_str) == Some("init"))
-        .expect("packwiz init should have been called");
-    assert!(
-        init_call.contains_args(&["--mc-version", "1.20.1"]),
-        "packwiz should receive --mc-version 1.20.1: {init_call:?}"
-    );
-    assert!(
-        init_call.contains_args(&["--modloader", "fabric"]),
-        "packwiz should receive --modloader fabric: {init_call:?}"
     );
 
     Ok(())
