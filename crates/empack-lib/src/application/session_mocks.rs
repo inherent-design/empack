@@ -102,12 +102,7 @@ impl MockFileSystemProvider {
     /// called for the given directory. Useful for simulating artifacts that
     /// production code expects to appear during a build step (e.g. srv.jar
     /// created by an installer after the dist directory is created).
-    pub fn with_deferred_file(
-        self,
-        directory: PathBuf,
-        filename: String,
-        content: String,
-    ) -> Self {
+    pub fn with_deferred_file(self, directory: PathBuf, filename: String, content: String) -> Self {
         self.deferred_files
             .lock()
             .unwrap()
@@ -515,9 +510,7 @@ impl NetworkProvider for MockNetworkProvider {
     fn http_client(&self) -> Result<Client> {
         *self.client_calls.lock().unwrap() += 1;
         if self.fail_http_client {
-            return Err(anyhow::anyhow!(
-                "Mock HTTP client unavailable (test mode)"
-            ));
+            return Err(anyhow::anyhow!("Mock HTTP client unavailable (test mode)"));
         }
         Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -643,7 +636,11 @@ impl Default for MockArchiveProvider {
 }
 
 impl crate::application::session::ArchiveProvider for MockArchiveProvider {
-    fn extract_zip(&self, archive_path: &std::path::Path, dest_dir: &std::path::Path) -> Result<()> {
+    fn extract_zip(
+        &self,
+        archive_path: &std::path::Path,
+        dest_dir: &std::path::Path,
+    ) -> Result<()> {
         self.extract_calls
             .lock()
             .unwrap()
@@ -1679,8 +1676,7 @@ mod tests {
     fn test_mock_java_fabric_installer_side_effects() {
         let fs = MockFileSystemProvider::new();
         let install_dir = mock_root().join("dist").join("server");
-        let mut provider =
-            MockProcessProvider::new().with_java_installer_side_effects();
+        let mut provider = MockProcessProvider::new().with_java_installer_side_effects();
         provider.connect_filesystem(&fs);
 
         let dir_str = install_dir.to_string_lossy().to_string();
@@ -1711,8 +1707,7 @@ mod tests {
     fn test_mock_java_neoforge_installer_side_effects() {
         let fs = MockFileSystemProvider::new();
         let install_dir = mock_root().join("dist").join("server");
-        let mut provider =
-            MockProcessProvider::new().with_java_installer_side_effects();
+        let mut provider = MockProcessProvider::new().with_java_installer_side_effects();
         provider.connect_filesystem(&fs);
 
         let dir_str = install_dir.to_string_lossy().to_string();
@@ -1740,8 +1735,7 @@ mod tests {
     fn test_mock_java_packwiz_installer_side_effects() {
         let fs = MockFileSystemProvider::new();
         let workdir = mock_root().join("server-full");
-        let mut provider =
-            MockProcessProvider::new().with_java_installer_side_effects();
+        let mut provider = MockProcessProvider::new().with_java_installer_side_effects();
         provider.connect_filesystem(&fs);
 
         let result = provider

@@ -6,12 +6,12 @@ use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveNetworkProvider,
 };
 use empack_lib::application::session_mocks::{
-    mock_root, MockInteractiveProvider, MockProcessProvider,
+    MockInteractiveProvider, MockProcessProvider, mock_root,
 };
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
 use empack_tests::MockSessionBuilder;
+use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
 use tempfile::TempDir;
 
 #[tokio::test]
