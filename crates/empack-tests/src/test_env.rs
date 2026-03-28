@@ -853,7 +853,7 @@ impl MockSessionBuilder {
             process: MockProcessProvider::new()
                 .with_mrpack_export_side_effects()
                 .with_java_installer_side_effects(),
-            network: LibMockNetworkProvider::new(),
+            network: LibMockNetworkProvider::new().with_failing_http_client(),
             config: AppConfig::default(),
             interactive: None,
             terminal_capabilities: None,
