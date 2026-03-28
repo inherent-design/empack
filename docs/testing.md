@@ -13,7 +13,7 @@ cargo nextest run -p empack-lib --features test-utils
 cargo nextest run -p empack-tests
 ```
 
-Current checkpoint: 613 tests (554 in `empack-lib`, 15 skipped; 59 in `empack-tests`).
+Current checkpoint: 630 tests (561 in `empack-lib`, 15 skipped; 69 in `empack-tests`).
 
 CI uses `cargo nextest` exclusively. Grouped `cargo test` is advisory-only due to global state conflicts between workflow tests.
 
@@ -21,12 +21,13 @@ CI uses `cargo nextest` exclusively. Grouped `cargo test` is advisory-only due t
 
 Tests are organized across two crates with distinct patterns:
 
-**empack-lib** (569 tests, 15 skipped): co-located `.test.rs` files included via `include!()`. Unit tests use `MockCommandSession` with full mock providers. Some modules use `mockito` for HTTP mock servers. Feature-gated behind `test-utils` for mock access.
+**empack-lib** (576 tests, 15 skipped): co-located `.test.rs` files included via `include!()`. Unit tests use `MockCommandSession` with full mock providers. Some modules use `mockito` for HTTP mock servers. Feature-gated behind `test-utils` for mock access.
 
-**empack-tests** (59 tests): workflow and integration tests using two session construction patterns:
+**empack-tests** (69 tests): workflow and integration tests (55) plus lib/infrastructure tests (14). Three session construction patterns:
 
-- **HermeticSessionBuilder** (34 tests, all `#[cfg(unix)]`): creates shell script mocks on disk via PATH manipulation. Exercises real process execution and filesystem interaction. Cannot run on Windows.
-- **MockProcessProvider** (14 tests, cross-platform): pre-registered argument-to-result mappings. Verifies orchestration logic but cannot detect argument variations.
+- **MockSessionBuilder** (40 tests, cross-platform): in-memory filesystem and mock process provider via builder API. Covers build targets (mrpack, server, server-full, client), init workflows, remove, sync, dry-run, and lifecycle tests. Uses `MockArchiveProvider` for archive verification without real zip/unzip.
+- **MockProcessProvider** (12 tests, cross-platform): pre-registered argument-to-result mappings via `CommandSession::new_with_providers`. Covers add (with type variants and dry-run), clean, requirements, and version commands.
+- **HermeticSessionBuilder** (3 tests, 1 `#[cfg(unix)]`): creates shell script mocks on disk via PATH manipulation. Exercises real process execution and filesystem interaction. Used only for init error recovery scenarios.
 
 ## Isolated reruns
 
@@ -58,7 +59,7 @@ Common interference sources: `Display::init` global state and environment variab
 
 ## Test health inventory
 
-Audited 2026-03-24 across 515 test functions (358 unit + 39 integration + 118 infrastructure). The alpha.1 release gate work added 64 unit tests in empack-lib and 9 integration tests in empack-tests (all strong-assertion). The tables below reflect the 2026-03-24 audit; new tests are not yet individually categorized.
+Audited 2026-03-24 across 515 test functions (358 unit + 39 integration + 118 infrastructure). Subsequent work added unit tests in empack-lib and migrated integration tests from HermeticSessionBuilder to MockSessionBuilder. The tables below reflect the 2026-03-24 audit; tests added after that date are not individually categorized.
 
 ### Assertion quality
 
@@ -133,15 +134,16 @@ These tests cannot fail regardless of implementation correctness.
 
 | Command | Happy Path | Error Path | Edge Cases | --dry-run | --force |
 |---------|-----------|------------|------------|-----------|---------|
-| init | 7 tests (NeoForge, Quilt, Vanilla, older MC, zero-config, explicit, directory) | 4 tests (2 vacuous) | Existing project (1) | Not tested | Not tested |
+| init | 8 tests (NeoForge, Quilt, Vanilla, Forge, older MC, zero-config, explicit, directory) | 3 tests (packwiz failure, filesystem error, empty loaders) | Existing project (1) | Not tested | Not tested |
 | add | 1 test (moderate) | Not tested | Type variants (2: resourcepack, shader) | 1 test | Not tested |
 | remove | 2 tests | Not tested | Empty list (1) | 1 test | N/A |
 | sync | 1 test | Not tested | Noop (1) | 1 test | N/A |
-| build mrpack | 2 tests | 2 tests | clean flag (1) | Not tested | N/A |
-| build client | Not tested | Not tested | Not tested | Not tested | N/A |
-| build client-full | 2 tests | 1 test | Not tested | Not tested | N/A |
-| build server | 2 tests | 1 test | Not tested | Not tested | N/A |
-| build server-full | 2 tests | 1 test | Not tested | Not tested | N/A |
+| build mrpack | 5 tests (2 build_command + 3 build_matrix: neoforge, quilt, vanilla) | 2 tests (refresh fail, export fail) | clean flag (1) | Not tested | N/A |
+| build client | 1 test (fabric) | Not tested | Not tested | Not tested | N/A |
+| build client-full | 2 tests | 1 test | Pack structure (1) | Not tested | N/A |
+| build server | 2 tests | 1 test | Templates (1) | Not tested | N/A |
+| build server-full | 2 tests | 1 test | Templates (1) | Not tested | N/A |
+| build (cross-loader) | 9 tests via build_matrix (neoforge, quilt, vanilla x mrpack/server/server-full; fabric client) | Not tested | Not tested | Not tested | N/A |
 | clean | 2 tests | Not tested | No artifacts (1), specific targets (1) | 1 test | N/A |
 | requirements | 2 tests (result-only) | 1 test (vacuous) | Not tested | N/A | N/A |
 | version | 1 test (moderate) | Not tested | Not tested | N/A | N/A |
@@ -158,11 +160,13 @@ These tests cannot fail regardless of implementation correctness.
 | --force for init | No |
 | --force for add | No |
 | --deps flag for remove | No |
-| Build target "client" standalone | No |
-| NeoForge loader path | Yes (1 test, init_matrix) |
-| Quilt loader path | Yes (1 test, init_matrix) |
+| Build target "client" standalone | Yes (1 test, build_matrix: fabric client) |
+| NeoForge loader path | Yes (1 init_matrix + 3 build_matrix: mrpack, server, server-full) |
+| Quilt loader path | Yes (1 init_matrix + 3 build_matrix: mrpack, server, server-full) |
+| Vanilla loader path | Yes (1 init_matrix + 2 build_matrix: mrpack, server) |
+| Forge lifecycle | Yes (2 tests, lifecycle_forge_full) |
 | CurseForge platform preference | No |
-| CF restricted pre-flight (build) | Yes (unit tests: 11 in cf_restricted_downloads_tests) |
+| CF restricted pre-flight (build) | Yes (unit tests: 12 in cf_restricted_downloads_tests) |
 | Multiple build targets in single command | No (except "all" via lifecycle) |
 
 ### By module (unit tests, invariance coverage)
@@ -187,14 +191,17 @@ These tests cannot fail regardless of implementation correctness.
 
 ### Platform coverage
 
-34 of 48 integration tests (excluding lib tests) are `#[cfg(unix)]` only (all HermeticSessionBuilder tests). Cross-platform tests (14): version (1), add (1), add_matrix (3), requirements (3), clean (3), build error cases (2), dry_run_matrix clean (1).
+54 of 55 integration tests are cross-platform. Only 1 test remains `#[cfg(unix)]`: `test_init_filesystem_error` (tests Unix file permissions). The migration from HermeticSessionBuilder to MockSessionBuilder eliminated the previous unix-only constraint. Two lib/infrastructure tests in test_env (`test_mock_executable_logging`, `test_mock_executable_logging_preserves_argument_boundaries`) are also `#[cfg(unix)]` since they execute shell script mocks.
 
 ### Unused test infrastructure
 
 - `MockBehavior::Conditional { rules }` and `ConditionalRule`: defined in test_env.rs but never used in any test
-- `with_dry_run_flag()`: used in 2 tests (sync dry-run, remove dry-run)
-- `with_interactive_provider()`: used in 1 test only (forge lifecycle)
-- `with_mock_search_result()`: used in 1 test only (forge lifecycle)
+- `MockSessionBuilder::with_interactive_provider()`: defined in test_env.rs but never called from any test file
+
+### New test infrastructure (since migration)
+
+- **MockSessionBuilder**: builder for `MockCommandSession` with in-memory filesystem, mock process provider, and `MockArchiveProvider`. Replaced most HermeticSessionBuilder usage for cross-platform compatibility.
+- **MockArchiveProvider**: records `create_archive` calls via `Arc<Mutex<Vec>>` for assertion without invoking real zip/unzip. Used by all build_matrix, build_server, build_server_full, and build_client_full tests.
 
 ---
 
@@ -245,10 +252,9 @@ Recording touches live network services and can fail due to rate limits or API d
 
 | Tool | Used by | Tested via | Test fidelity |
 |------|---------|-----------|---------------|
-| packwiz CLI | init, add, remove, sync, build (refresh, export) | Shell script mocks (HermeticSessionBuilder) | Verifies args passed; does not run real packwiz |
-| java | build fabric, quilt, neoforge, forge (server installer); build client-full, server-full (packwiz-installer) | Shell script mocks | Verifies args; does not run real Java |
-| zip | build client, server, client-full, server-full | Shell script mocks | Verifies invocation |
-| unzip | build client, build server (mrpack extraction) | Shell script mocks | Verifies invocation |
+| packwiz CLI | init, add, remove, sync, build (refresh, export) | MockProcessProvider (MockSessionBuilder tests); shell script mocks (HermeticSessionBuilder, 3 tests) | Verifies args passed; does not run real packwiz |
+| java | build fabric, quilt, neoforge, forge (server installer); build client-full, server-full (packwiz-installer) | MockProcessProvider (MockSessionBuilder tests) | Verifies args; does not run real Java |
+| zip/unzip | build client, server, client-full, server-full | MockArchiveProvider (MockSessionBuilder tests) | Records create_archive calls for assertion; does not invoke real zip/unzip |
 | reqwest (HTTP) | build server JAR download (all loaders: vanilla, fabric, quilt, neoforge, forge); ServerStarterJar download (neoforge, forge) | mockito (unit tests); live HTTP (integration tests) | Unit tests verify JSON/XML parsing and URL construction; integration tests download from real APIs |
 
 ---
@@ -257,5 +263,8 @@ Recording touches live network services and can fail due to rate limits or API d
 
 1. Client build with CurseForge JAR overrides fails at runtime (not yet investigated in tests)
 2. No integration test for --dry-run on build (add, remove, and clean now have integration tests)
-3. 33/48 integration tests are unix-only; minimal cross-platform coverage
-4. Server JAR integration tests depend on live network access to Mojang, Fabric, Quilt, NeoForge, and Forge APIs
+3. No integration test for --force flag on init or add
+4. No integration test for --deps flag on remove
+5. Server JAR integration tests depend on live network access to Mojang, Fabric, Quilt, NeoForge, and Forge APIs
+6. CurseForge platform preference not tested at integration level
+7. Multiple build targets in single command not tested (except "all" via lifecycle)
