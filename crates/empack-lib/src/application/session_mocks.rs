@@ -21,6 +21,9 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+/// Type alias for deferred file map: directory path -> Vec<(filename, content)>.
+pub type DeferredFileMap = Arc<Mutex<HashMap<PathBuf, Vec<(String, String)>>>>;
+
 /// Returns a platform-appropriate absolute path root for mock/test paths.
 /// On Unix: `/test`, on Windows: `C:\test`
 pub fn mock_root() -> PathBuf {
@@ -52,8 +55,7 @@ pub struct MockFileSystemProvider {
     /// Track directories that exist
     pub directories: Arc<Mutex<HashSet<PathBuf>>>,
     /// Files to auto-create when a matching directory is created via `create_dir_all`.
-    /// Maps directory path -> Vec<(filename, content)>.
-    pub deferred_files: Arc<Mutex<HashMap<PathBuf, Vec<(String, String)>>>>,
+    pub deferred_files: DeferredFileMap,
 }
 
 impl MockFileSystemProvider {
