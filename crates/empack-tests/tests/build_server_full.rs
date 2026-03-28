@@ -1,91 +1,46 @@
-//! Hermetic E2E tests for the server-full build target.
+//! E2E tests for the server-full build target.
 
 use anyhow::Result;
 use empack_lib::application::Commands;
 use empack_lib::application::cli::CliArchiveFormat;
 use empack_lib::application::commands::execute_command_with_session;
-use empack_lib::application::session::{
-    CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
-};
-use empack_lib::application::session_mocks::MockInteractiveProvider;
+use empack_lib::application::session_mocks::mock_root;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::{HermeticSessionBuilder, MockBehavior, MockNetworkProvider, TestEnvironment};
-use std::path::PathBuf;
+use empack_tests::MockSessionBuilder;
+use std::path::{Path, PathBuf};
 
-type HermeticSession = CommandSession<
-    LiveFileSystemProvider,
-    MockNetworkProvider,
-    LiveProcessProvider,
-    LiveConfigProvider,
-    MockInteractiveProvider,
->;
-
-fn build_packwiz_output(project_name: &str) -> String {
-    format!("Refreshed packwiz index\nExported to {project_name}-v1.0.0.mrpack")
+fn server_templates(workdir: &Path) -> Vec<(PathBuf, String)> {
+    let templates_dir = workdir.join("templates").join("server");
+    vec![
+        (
+            templates_dir.join("server.properties.template"),
+            "server-port=25565\nmotd={{NAME}} v{{VERSION}}\n".to_string(),
+        ),
+        (
+            templates_dir.join("install_pack.sh.template"),
+            "#!/bin/bash\necho \"Installing {{NAME}}\"\n".to_string(),
+        ),
+    ]
 }
 
-fn init_display(session: &HermeticSession) -> Result<()> {
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-    Ok(())
-}
+#[tokio::test]
+async fn e2e_build_server_full_successfully() -> Result<()> {
+    let project_name = "workflow-server-full";
+    let workdir = mock_root().join("workdir");
 
-async fn initialize_empack_project(
-    project_name: &str,
-) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_empack_project(project_name, "1.21.1", "fabric")?
-        .with_mock_http_client()
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: build_packwiz_output(project_name),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "java",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Installed server-full mods".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_pre_cached_jars()?
-        .build()?;
+    let mut builder = MockSessionBuilder::new()
+        .with_empack_project(project_name, "1.21.1", "fabric")
+        .with_pre_cached_jars()
+        .with_server_jar_stub();
 
-    init_display(&session)?;
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    unsafe {
-        std::env::set_var("HOME", &test_env.root_path);
+    for (path, content) in server_templates(&workdir) {
+        builder = builder.with_file(path, content);
     }
 
-    Ok((session, test_env, workdir))
-}
+    let session = builder.build();
 
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
-    let project_name = "workflow-server-full";
-    let (session, test_env, workdir) = initialize_empack_project(project_name).await?;
-
-    let templates_dir = workdir.join("templates").join("server");
-    std::fs::create_dir_all(&templates_dir)?;
-    std::fs::write(
-        templates_dir.join("server.properties.template"),
-        "server-port=25565\nmotd={{NAME}} v{{VERSION}}\n",
-    )?;
-    std::fs::write(
-        templates_dir.join("install_pack.sh.template"),
-        "#!/bin/bash\necho \"Installing {{NAME}}\"\n",
-    )?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Build {
@@ -101,88 +56,72 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
 
     let server_full_dir = workdir.join("dist").join("server-full");
     assert!(
-        server_full_dir.exists(),
+        session.filesystem().exists(&server_full_dir),
         "Server-full build directory should exist"
     );
+    let properties = session
+        .filesystem()
+        .read_to_string(&server_full_dir.join("server.properties"))?;
     assert!(
-        std::fs::read_to_string(server_full_dir.join("server.properties"))?.contains(project_name),
+        properties.contains(project_name),
         "Server-full build should process template variables"
     );
     assert!(
-        server_full_dir.join("pack").join("pack.toml").exists(),
+        session
+            .filesystem()
+            .exists(&server_full_dir.join("pack").join("pack.toml")),
         "Pack contents should be copied into server-full output"
     );
     assert!(
-        server_full_dir.join("srv.jar").exists(),
+        session
+            .filesystem()
+            .exists(&server_full_dir.join("srv.jar")),
         "Server-full build should materialize the server JAR"
     );
     assert!(
-        server_full_dir
-            .join("mods")
-            .join("server-installed.txt")
-            .exists(),
+        session
+            .filesystem()
+            .exists(&server_full_dir.join("mods").join("server-installed.txt")),
         "Mock installer should leave a deterministic server install marker"
     );
+
+    let create_calls = session.archive_provider.create_calls.lock().unwrap();
     assert!(
-        workdir
-            .join("dist")
-            .join(format!("{project_name}-v1.0.0-server-full.zip"))
-            .exists(),
-        "Server-full archive should be created"
+        create_calls.iter().any(|(_, dest)| dest
+            .to_string_lossy()
+            .contains(&format!("{project_name}-v1.0.0-server-full.zip"))),
+        "Server-full archive should be created: {create_calls:?}"
     );
     assert!(
-        !workdir.join("dist").join("server").exists(),
+        !session.filesystem().exists(&workdir.join("dist").join("server")),
         "Standalone server-full builds should not materialize the server target directory"
     );
-    assert!(
-        !workdir
-            .join("dist")
-            .join(format!("{project_name}-v1.0.0-server.zip"))
-            .exists(),
-        "Standalone server-full builds should not create a server archive"
-    );
 
-    let java_calls = test_env.get_mock_calls("java")?;
+    let java_calls = session.process_provider.get_calls_for_command("java");
     assert!(
-        java_calls.iter().any(|call| call.contains("-s server")
-            && call.contains("--bootstrap-main-jar")
-            && call.contains("pack.toml")),
+        java_calls.iter().any(|call| call
+            .args
+            .iter()
+            .any(|a| a == "-s")
+            && call.args.iter().any(|a| a == "server")
+            && call.args.iter().any(|a| a == "--bootstrap-main-jar")
+            && call.args.iter().any(|a| a.contains("pack.toml"))),
         "server-full build should invoke packwiz installer for server side: {java_calls:?}"
     );
 
     Ok(())
 }
 
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
+#[tokio::test]
+async fn e2e_build_server_full_missing_installer() -> Result<()> {
     let project_name = "workflow-server-full-missing-installer";
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_empack_project(project_name, "1.21.1", "fabric")?
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: build_packwiz_output(project_name),
-                stderr: String::new(),
-            },
-        )?
-        .build()?;
+    let workdir = mock_root().join("workdir");
 
-    init_display(&session)?;
+    let session = MockSessionBuilder::new()
+        .with_empack_project(project_name, "1.21.1", "fabric")
+        .build();
 
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    unsafe {
-        std::env::set_var("HOME", &test_env.root_path);
-    }
-
-    let templates_dir = workdir.join("templates").join("server");
-    std::fs::create_dir_all(&templates_dir)?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Build {
@@ -204,36 +143,44 @@ async fn e2e_build_server_full_missing_installer() -> anyhow::Result<()> {
         "Build should fail at HTTP client creation, got: {error}"
     );
     assert!(
-        !workdir
-            .join("dist")
-            .join("workflow-server-full-missing-installer-v1.0.0-server-full.zip")
-            .exists(),
+        !session.filesystem().exists(
+            &workdir
+                .join("dist")
+                .join(format!("{project_name}-v1.0.0-server-full.zip"))
+        ),
         "No server-full archive should be produced when the build fails"
     );
 
     Ok(())
 }
 
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
+#[tokio::test]
+async fn e2e_build_server_full_with_templates() -> Result<()> {
     let project_name = "workflow-server-full-templates";
-    let (session, _test_env, workdir) = initialize_empack_project(project_name).await?;
-
+    let workdir = mock_root().join("workdir");
     let templates_dir = workdir.join("templates").join("server");
-    std::fs::create_dir_all(&templates_dir)?;
-    std::fs::write(
-        templates_dir.join("server.properties.template"),
-        "server-port=25565\nmotd={{NAME}} v{{VERSION}} by {{AUTHOR}}\nmax-players=20\n",
-    )?;
-    std::fs::write(
-        templates_dir.join("eula.txt.template"),
-        "eula=true\n# {{NAME}} server\n",
-    )?;
-    std::fs::write(
-        templates_dir.join("start.sh.template"),
-        "#!/bin/bash\necho \"Starting {{NAME}} server-full\"\njava -jar srv.jar nogui\n",
-    )?;
+
+    let session = MockSessionBuilder::new()
+        .with_empack_project(project_name, "1.21.1", "fabric")
+        .with_pre_cached_jars()
+        .with_server_jar_stub()
+        .with_file(
+            templates_dir.join("server.properties.template"),
+            "server-port=25565\nmotd={{NAME}} v{{VERSION}} by {{AUTHOR}}\nmax-players=20\n"
+                .to_string(),
+        )
+        .with_file(
+            templates_dir.join("eula.txt.template"),
+            "eula=true\n# {{NAME}} server\n".to_string(),
+        )
+        .with_file(
+            templates_dir.join("start.sh.template"),
+            "#!/bin/bash\necho \"Starting {{NAME}} server-full\"\njava -jar srv.jar nogui\n"
+                .to_string(),
+        )
+        .build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Build {
@@ -248,7 +195,9 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
     assert!(result.is_ok(), "Server-full build failed: {result:?}");
 
     let server_full_dir = workdir.join("dist").join("server-full");
-    let properties = std::fs::read_to_string(server_full_dir.join("server.properties"))?;
+    let properties = session
+        .filesystem()
+        .read_to_string(&server_full_dir.join("server.properties"))?;
     assert!(
         properties.contains(project_name),
         "Server name should be processed"
@@ -262,14 +211,18 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
         "Template variables should be replaced"
     );
 
-    let eula = std::fs::read_to_string(server_full_dir.join("eula.txt"))?;
+    let eula = session
+        .filesystem()
+        .read_to_string(&server_full_dir.join("eula.txt"))?;
     assert!(eula.contains("eula=true"), "EULA should be rendered");
     assert!(
         eula.contains(project_name),
         "EULA comment should be rendered"
     );
 
-    let script = std::fs::read_to_string(server_full_dir.join("start.sh"))?;
+    let script = session
+        .filesystem()
+        .read_to_string(&server_full_dir.join("start.sh"))?;
     assert!(
         script.contains(&format!("Starting {project_name} server-full")),
         "Start script should be rendered"
@@ -279,14 +232,15 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
         "Start script should retain the server launch command"
     );
     assert!(
-        server_full_dir.join("srv.jar").exists(),
+        session
+            .filesystem()
+            .exists(&server_full_dir.join("srv.jar")),
         "Server JAR should exist"
     );
     assert!(
-        server_full_dir
-            .join("mods")
-            .join("server-installed.txt")
-            .exists(),
+        session
+            .filesystem()
+            .exists(&server_full_dir.join("mods").join("server-installed.txt")),
         "Installer marker should confirm server-full download step"
     );
 
