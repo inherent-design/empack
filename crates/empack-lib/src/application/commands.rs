@@ -317,7 +317,9 @@ async fn handle_init(
         )
         .to_string();
 
-    // Interactive prompt for modpack configuration (or use CLI flag / positional arg)
+    // Display name precedence: --name flag > positional arg (initial_name).
+    // This differs from the *directory* precedence at line 232 (positional > --name)
+    // because --name is the user's explicit display-name preference.
     let modpack_name = if let Some(name) = cli_pack_name.clone().or(initial_name.clone()) {
         session
             .display()
