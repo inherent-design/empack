@@ -1513,7 +1513,10 @@ impl<'a> BuildOrchestrator<'a> {
     }
 
     /// Clean build target (V1's clean_target implementation)
-    fn clean_target(&self, target: BuildTarget) -> Result<(), BuildError> {
+    fn clean_target(&mut self, target: BuildTarget) -> Result<(), BuildError> {
+        if self.pack_info.is_none() {
+            let _ = self.load_pack_info();
+        }
         let pack_info = self.pack_info.as_ref();
 
         let dist_dir = self.dist_dir.join(target.to_string());

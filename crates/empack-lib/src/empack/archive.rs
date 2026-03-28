@@ -153,7 +153,11 @@ fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archi
             let relative = path.strip_prefix(base).expect("path must be under base");
             let name = relative.to_string_lossy().replace('\\', "/");
 
-            if path.is_dir() {
+            let metadata = path.symlink_metadata().map_err(|e| ArchiveError::Io {
+                path: path.clone(),
+                source: e,
+            })?;
+            if metadata.file_type().is_dir() {
                 writer
                     .add_directory(format!("{}/", name), options)
                     .map_err(ArchiveError::Zip)?;
