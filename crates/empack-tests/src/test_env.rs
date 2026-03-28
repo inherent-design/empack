@@ -745,6 +745,26 @@ impl HermeticSessionBuilder {
         Ok(self)
     }
 
+    /// Pre-populate the packwiz JAR cache so builds skip real downloads.
+    ///
+    /// Writes mock `packwiz-installer-bootstrap.jar` and `packwiz-installer.jar`
+    /// into the cache directory that `cache_root()` resolves to during tests.
+    /// Must be called after the builder is configured but before `build()`,
+    /// because `build()` sets `EMPACK_CACHE_DIR`.
+    pub fn with_pre_cached_jars(self) -> Result<Self> {
+        let jar_cache = self.test_env.root_path.join("cache").join("jars");
+        std::fs::create_dir_all(&jar_cache)?;
+        std::fs::write(
+            jar_cache.join("packwiz-installer-bootstrap.jar"),
+            "mock-bootstrap-jar",
+        )?;
+        std::fs::write(
+            jar_cache.join("packwiz-installer.jar"),
+            "mock-installer-jar",
+        )?;
+        Ok(self)
+    }
+
     /// Build the hermetic session with all configured providers
     pub fn build(self) -> Result<(HermeticCommandSession, TestEnvironment)> {
         use empack_lib::application::session_mocks::MockInteractiveProvider;

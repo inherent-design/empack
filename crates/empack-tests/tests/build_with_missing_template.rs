@@ -30,6 +30,7 @@ async fn test_build_with_missing_template() -> Result<()> {
                 stderr: String::new(),
             },
         )?
+        .with_pre_cached_jars()?
         .build()?;
 
     // Initialize display
@@ -73,15 +74,6 @@ async fn test_build_with_missing_template() -> Result<()> {
         project_dir.join("pack").exists(),
         "pack/ directory should exist"
     );
-
-    // Pre-seed the bootstrap JAR so the build progresses past the download step
-    // to actually test template handling.
-    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
-    std::fs::create_dir_all(&jar_cache)?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer-bootstrap.jar"),
-        "mock jar content",
-    )?;
 
     // Change to project directory since build needs to find the project
     std::env::set_current_dir(&project_dir)?;

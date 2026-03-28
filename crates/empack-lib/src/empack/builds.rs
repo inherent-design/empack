@@ -696,7 +696,13 @@ impl<'a> BuildOrchestrator<'a> {
     }
 
     /// Download a file from `url` and write it to `dest` using reqwest.
+    ///
+    /// Returns immediately when `dest` already exists, enabling callers to
+    /// pre-populate the path (e.g. in tests) and skip the network round-trip.
     fn download_file(&self, url: &str, dest: &Path) -> Result<(), BuildError> {
+        if self.session.filesystem().exists(dest) {
+            return Ok(());
+        }
         let bytes = self.fetch_url_bytes(url)?;
         self.session
             .filesystem()
