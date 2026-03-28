@@ -7,10 +7,16 @@ use anyhow::Result;
 use empack_lib::application::config::AppConfig;
 use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
-    NetworkProvider,
+    NetworkProvider, ProcessOutput,
+};
+use empack_lib::application::session_mocks::{
+    MockCommandSession, MockConfigProvider, MockFileSystemProvider,
+    MockInteractiveProvider, MockProcessProvider, mock_root,
+    MockNetworkProvider as LibMockNetworkProvider,
 };
 use empack_lib::empack::search::{ProjectInfo, ProjectResolverTrait, SearchError};
 use empack_lib::primitives::ProjectPlatform;
+use empack_lib::terminal::TerminalCapabilities;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::fs;
@@ -820,6 +826,126 @@ impl HermeticSessionBuilder {
     }
 }
 
+/// Builder for creating cross-platform mock test sessions.
+///
+/// Produces a `MockCommandSession` backed entirely by in-memory providers,
+/// enabling tests to run on any platform without shell scripts or real
+/// filesystem operations.
+pub struct MockSessionBuilder {
+    filesystem: MockFileSystemProvider,
+    process: MockProcessProvider,
+    network: LibMockNetworkProvider,
+    config: AppConfig,
+    interactive: Option<MockInteractiveProvider>,
+    terminal_capabilities: Option<TerminalCapabilities>,
+}
+
+impl Default for MockSessionBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MockSessionBuilder {
+    pub fn new() -> Self {
+        Self {
+            filesystem: MockFileSystemProvider::new(),
+            process: MockProcessProvider::new()
+                .with_mrpack_export_side_effects()
+                .with_java_installer_side_effects(),
+            network: LibMockNetworkProvider::new(),
+            config: AppConfig::default(),
+            interactive: None,
+            terminal_capabilities: None,
+        }
+    }
+
+    pub fn with_empack_project(mut self, name: &str, mc_version: &str, loader: &str) -> Self {
+        let workdir = mock_root().join("workdir");
+        self.filesystem = self
+            .filesystem
+            .with_current_dir(workdir.clone())
+            .with_empack_project(workdir.clone(), name, mc_version, loader);
+        self.config.workdir = Some(workdir);
+        self
+    }
+
+    pub fn with_yes_flag(mut self) -> Self {
+        self.config.yes = true;
+        self
+    }
+
+    pub fn with_dry_run_flag(mut self) -> Self {
+        self.config.dry_run = true;
+        self
+    }
+
+    pub fn with_mock_search_result(mut self, query: &str, project_info: ProjectInfo) -> Self {
+        self.network = self
+            .network
+            .with_project_response(query.to_string(), project_info);
+        self
+    }
+
+    pub fn with_pre_cached_jars(mut self) -> Self {
+        let cache_dir = mock_root().join("workdir").join("cache");
+        self.filesystem = self
+            .filesystem
+            .with_file(
+                cache_dir.join("packwiz-installer-bootstrap.jar"),
+                "mock-bootstrap-jar".to_string(),
+            )
+            .with_file(
+                cache_dir.join("packwiz-installer.jar"),
+                "mock-installer-jar".to_string(),
+            );
+        self
+    }
+
+    pub fn with_packwiz_result(
+        mut self,
+        args: Vec<String>,
+        result: std::result::Result<ProcessOutput, String>,
+    ) -> Self {
+        self.process = self.process.with_packwiz_result(args, result);
+        self
+    }
+
+    pub fn with_packwiz_add_slug(mut self, project_id: String, slug: String) -> Self {
+        self.process = self.process.with_packwiz_add_slug(project_id, slug);
+        self
+    }
+
+    pub fn with_interactive(mut self, interactive: MockInteractiveProvider) -> Self {
+        self.interactive = Some(interactive);
+        self
+    }
+
+    pub fn with_terminal_capabilities(mut self, caps: TerminalCapabilities) -> Self {
+        self.terminal_capabilities = Some(caps);
+        self
+    }
+
+    pub fn build(self) -> MockCommandSession {
+        let interactive = self
+            .interactive
+            .unwrap_or_else(|| MockInteractiveProvider::new().with_yes_mode(self.config.yes));
+
+        let mut session = MockCommandSession::new()
+            .with_filesystem(self.filesystem)
+            .with_process(self.process)
+            .with_network(self.network)
+            .with_config(MockConfigProvider::new(self.config))
+            .with_interactive(interactive);
+
+        if let Some(caps) = self.terminal_capabilities {
+            session = session.with_terminal_capabilities(caps);
+        }
+
+        session
+    }
+}
+
 /// Mock network provider for hermetic testing
 pub struct MockNetworkProvider {
     /// Mock project search results
@@ -1035,5 +1161,64 @@ mod tests {
 
         assert!(path_env.starts_with(env.bin_path.to_str().unwrap()));
         assert!(path_env.contains(":"));
+    }
+
+    #[test]
+    fn test_mock_session_builder_creates_project() {
+        let session = MockSessionBuilder::new()
+            .with_empack_project("test-pack", "1.21.4", "fabric")
+            .with_yes_flag()
+            .build();
+
+        let workdir = session.filesystem().current_dir().unwrap();
+        assert!(
+            session.filesystem().exists(&workdir.join("empack.yml")),
+            "empack.yml should exist in mock filesystem"
+        );
+        assert!(
+            session
+                .filesystem()
+                .exists(&workdir.join("pack").join("pack.toml")),
+            "pack/pack.toml should exist in mock filesystem"
+        );
+        assert!(
+            session
+                .filesystem()
+                .exists(&workdir.join("pack").join("index.toml")),
+            "pack/index.toml should exist in mock filesystem"
+        );
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
+        assert!(empack_yml.contains("minecraft_version: \"1.21.4\""));
+        assert!(empack_yml.contains("loader: fabric"));
+        assert!(empack_yml.contains("name: \"test-pack\""));
+    }
+
+    #[test]
+    fn test_mock_session_builder_pre_cached_jars() {
+        let session = MockSessionBuilder::new()
+            .with_empack_project("test-pack", "1.21.4", "fabric")
+            .with_pre_cached_jars()
+            .build();
+
+        let cache_dir = mock_root().join("workdir").join("cache");
+        assert!(session
+            .filesystem()
+            .exists(&cache_dir.join("packwiz-installer-bootstrap.jar")));
+        assert!(session
+            .filesystem()
+            .exists(&cache_dir.join("packwiz-installer.jar")));
+    }
+
+    #[test]
+    fn test_mock_session_builder_dry_run() {
+        let session = MockSessionBuilder::new()
+            .with_dry_run_flag()
+            .build();
+
+        assert!(session.config().app_config().dry_run);
     }
 }
