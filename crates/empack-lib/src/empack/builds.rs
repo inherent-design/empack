@@ -271,6 +271,10 @@ impl<'a> BuildOrchestrator<'a> {
     /// Dispatches per loader type; each arm calls a dedicated provider method.
     fn download_server_jar(&self, dist_dir: &Path, pack_info: &PackInfo) -> Result<(), BuildError> {
         if self.session.filesystem().exists(&dist_dir.join("srv.jar")) {
+            tracing::debug!(
+                "srv.jar already present in {}, skipping download",
+                dist_dir.display()
+            );
             return Ok(());
         }
         match pack_info.loader_type.as_str() {
