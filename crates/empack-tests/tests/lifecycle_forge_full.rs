@@ -29,6 +29,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     let (session, test_env) = HermeticSessionBuilder::new()?
         .with_yes_flag()
         .with_mock_http_client()
+        .with_pre_cached_jars()?
         .with_mock_search_result(
             "sodium",
             ProjectInfo {
@@ -137,13 +138,6 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     std::fs::write(
         templates_dir.join("server.properties.template"),
         "motd={{NAME}}\nmax-players=10\n",
-    )?;
-
-    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
-    std::fs::create_dir_all(&jar_cache)?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer-bootstrap.jar"),
-        "mock-installer-jar",
     )?;
 
     // Step 2: Add mods (sodium via Modrinth, jei via CurseForge)

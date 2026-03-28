@@ -1009,6 +1009,32 @@ async fn test_download_server_jar_unknown_loader_returns_error() {
     }
 }
 
+// ===== W1-T6b: CACHE-FIRST DOWNLOAD CHECK =====
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_download_file_skips_http_when_dest_exists() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let dist_dir = mock.workdir().join("dist").join("server");
+    mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
+
+    let dest = dist_dir.join("already-cached.jar");
+    mock.session
+        .filesystem()
+        .write_bytes(&dest, b"cached content")
+        .unwrap();
+
+    // URL is unreachable; download_file must return Ok because the cache hit
+    // prevents the HTTP call entirely.
+    let result = orchestrator.download_file("http://unreachable.invalid/file.jar", &dest);
+    assert!(result.is_ok(), "cache-first check should skip HTTP: {result:?}");
+
+    let bytes = mock.session.filesystem().read_bytes(&dest).unwrap();
+    assert_eq!(bytes, b"cached content", "existing file should be untouched");
+}
+
 // ===== W2-F4: FETCH RETRY TESTS =====
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

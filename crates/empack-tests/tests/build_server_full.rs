@@ -51,6 +51,7 @@ async fn initialize_empack_project(
                 stderr: String::new(),
             },
         )?
+        .with_pre_cached_jars()?
         .build()?;
 
     init_display(&session)?;
@@ -84,17 +85,6 @@ async fn e2e_build_server_full_successfully() -> anyhow::Result<()> {
     std::fs::write(
         templates_dir.join("install_pack.sh.template"),
         "#!/bin/bash\necho \"Installing {{NAME}}\"\n",
-    )?;
-
-    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
-    std::fs::create_dir_all(&jar_cache)?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer-bootstrap.jar"),
-        "mock-bootstrap-jar",
-    )?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer.jar"),
-        "mock-installer-jar",
     )?;
 
     let result = execute_command_with_session(
@@ -243,17 +233,6 @@ async fn e2e_build_server_full_with_templates() -> anyhow::Result<()> {
     std::fs::write(
         templates_dir.join("start.sh.template"),
         "#!/bin/bash\necho \"Starting {{NAME}} server-full\"\njava -jar srv.jar nogui\n",
-    )?;
-
-    let jar_cache = empack_lib::platform::cache::cache_root()?.join("jars");
-    std::fs::create_dir_all(&jar_cache)?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer-bootstrap.jar"),
-        "mock-bootstrap-jar",
-    )?;
-    std::fs::write(
-        jar_cache.join("packwiz-installer.jar"),
-        "mock-installer-jar",
     )?;
 
     let result = execute_command_with_session(
