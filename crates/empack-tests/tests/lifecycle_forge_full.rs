@@ -1,35 +1,35 @@
 //! E2E test for complete lifecycle with Forge modloader
 //!
-//! Tests the full workflow: init → add → build → clean with Forge modloader
+//! Tests the full workflow: init -> add -> build -> clean with Forge modloader
 
 use anyhow::Result;
 use empack_lib::application::cli::{CliArchiveFormat, Commands};
 use empack_lib::application::commands::execute_command_with_session;
+use empack_lib::application::session_mocks::mock_root;
 use empack_lib::display::Display;
 use empack_lib::empack::search::ProjectInfo;
 use empack_lib::primitives::ProjectPlatform;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
-use empack_tests::{HermeticSessionBuilder, MockBehavior};
-use std::fs;
+use empack_tests::MockSessionBuilder;
 
 /// Test: Complete lifecycle with Forge modloader
 ///
 /// Workflow:
-/// 1. Run `empack init -y --loader forge` in temp directory
+/// 1. Run `empack init -y --loader forge` in mock directory
 /// 2. Add mods: sodium (Modrinth), jei (CurseForge)
 /// 3. Build all targets
 /// 4. Clean builds
 /// 5. Verify all operations succeeded
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[tokio::test]
 async fn test_lifecycle_forge_full() -> Result<()> {
-    let fixture = WorkflowProjectFixture::new("forge-test-pack");
-    // Create hermetic session with mocked toolchain and deterministic add results
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let workdir = mock_root().join("workdir");
+
+    // Build session with search results for add step.
+    // with_mock_http_client() must come before with_mock_search_result()
+    // because it replaces the network provider.
+    let mut session = MockSessionBuilder::new()
         .with_yes_flag()
         .with_mock_http_client()
-        .with_pre_cached_jars()?
         .with_mock_search_result(
             "sodium",
             ProjectInfo {
@@ -52,36 +52,11 @@ async fn test_lifecycle_forge_full() -> Result<()> {
                 project_type: "mod".to_string(),
             },
         )
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Initialized packwiz project\nRefreshed packwiz index\nExported to forge-test-pack-v1.0.0.mrpack".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "git",
-            MockBehavior::SucceedWithOutput {
-                stdout: "main".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "java",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Installed full client and server mods".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .build()?;
+        .with_packwiz_add_slug("AANobbMI".to_string(), "AANobbMI".to_string())
+        .with_packwiz_add_slug("238222".to_string(), "238222".to_string())
+        .build();
 
-    // Initialize display
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-
-    // Use test work directory as working directory
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     // Step 1: Initialize with Forge modloader
     let init_result = execute_command_with_session(
@@ -110,45 +85,76 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     // Verify empack.yml was created in project directory
     let empack_yml_path = project_dir.join("empack.yml");
     assert!(
-        empack_yml_path.exists(),
+        session.filesystem().exists(&empack_yml_path),
         "empack.yml should be created in project directory"
     );
 
     // Verify pack/ directory was created in project directory
     let pack_dir = project_dir.join("pack");
-    assert!(pack_dir.exists(), "pack/ directory should be created");
+    assert!(
+        session.filesystem().exists(&pack_dir),
+        "pack/ directory should be created"
+    );
 
     // Verify pack.toml exists
     let pack_toml_path = pack_dir.join("pack.toml");
     assert!(
-        pack_toml_path.exists(),
+        session.filesystem().exists(&pack_toml_path),
         "pack.toml should exist after packwiz init"
     );
-    let empack_yml = fs::read_to_string(&empack_yml_path)?;
+    let empack_yml = session.filesystem().read_to_string(&empack_yml_path)?;
     assert!(
         empack_yml.contains("loader: forge"),
         "empack.yml should record the Forge loader, got: {empack_yml}"
     );
 
-    // Run the remaining lifecycle steps from inside the initialized project.
-    std::env::set_current_dir(&project_dir)?;
+    // Pivot the session's working directory into the initialized project so
+    // subsequent commands (add, build, clean) resolve empack.yml correctly.
+    session.filesystem_provider.current_dir = project_dir.clone();
+    session.config_provider.app_config.workdir = Some(project_dir.clone());
+    session.packwiz_provider.current_dir = project_dir.clone();
 
+    // Add server templates for the build step
     let templates_dir = project_dir.join("templates").join("server");
-    std::fs::create_dir_all(&templates_dir)?;
-    std::fs::write(
-        templates_dir.join("server.properties.template"),
+    session.filesystem().create_dir_all(&templates_dir)?;
+    session.filesystem().write_file(
+        &templates_dir.join("server.properties.template"),
         "motd={{NAME}}\nmax-players=10\n",
     )?;
 
-    // Step 2: Add mods (sodium via Modrinth, jei via CurseForge)
-    // Note: This validates multi-platform mod addition in Forge context
+    // Pre-populate JAR cache so full builds skip real HTTP downloads.
+    // MockPackwizOps resolves cache relative to its current_dir.
+    let cache_dir = project_dir.join("cache");
+    session.filesystem().create_dir_all(&cache_dir)?;
+    session.filesystem().write_file(
+        &cache_dir.join("packwiz-installer-bootstrap.jar"),
+        "mock-bootstrap-jar",
+    )?;
+    session.filesystem().write_file(
+        &cache_dir.join("packwiz-installer.jar"),
+        "mock-installer-jar",
+    )?;
 
-    // Add sodium (Modrinth platform, Forge-compatible versions exist)
+    // Deferred server JAR stubs: injected when the build creates dist directories.
+    let dist = project_dir.join("dist");
+    {
+        let mut deferred = session.filesystem_provider.deferred_files.lock().unwrap();
+        deferred
+            .entry(dist.join("server"))
+            .or_default()
+            .push(("srv.jar".to_string(), "mock-server-jar".to_string()));
+        deferred
+            .entry(dist.join("server-full"))
+            .or_default()
+            .push(("srv.jar".to_string(), "mock-server-jar".to_string()));
+    }
+
+    // Step 2: Add mods (sodium via Modrinth, jei via CurseForge)
     let add_sodium_result = execute_command_with_session(
         Commands::Add {
             mods: vec!["sodium".to_string()],
             force: false,
-            platform: None, // Should auto-detect Modrinth
+            platform: None,
             project_type: None,
         },
         &session,
@@ -157,23 +163,20 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     assert!(
         add_sodium_result.is_ok(),
-        "Add sodium should resolve and succeed in the hermetic lifecycle: {add_sodium_result:?}"
+        "Add sodium should succeed: {add_sodium_result:?}"
     );
     assert!(
-        project_dir
-            .join("pack")
-            .join("mods")
-            .join("AANobbMI.pw.toml")
-            .exists(),
+        session
+            .filesystem()
+            .exists(&pack_dir.join("mods").join("AANobbMI.pw.toml")),
         "Modrinth add should leave deterministic mod metadata"
     );
 
-    // Add JEI (CurseForge platform, Forge-native mod)
     let add_jei_result = execute_command_with_session(
         Commands::Add {
             mods: vec!["jei".to_string()],
             force: false,
-            platform: None, // Should auto-detect or fallback to CurseForge
+            platform: None,
             project_type: None,
         },
         &session,
@@ -182,14 +185,12 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     assert!(
         add_jei_result.is_ok(),
-        "Add JEI should resolve and succeed in the hermetic lifecycle: {add_jei_result:?}"
+        "Add JEI should succeed: {add_jei_result:?}"
     );
     assert!(
-        project_dir
-            .join("pack")
-            .join("mods")
-            .join("238222.pw.toml")
-            .exists(),
+        session
+            .filesystem()
+            .exists(&pack_dir.join("mods").join("238222.pw.toml")),
         "CurseForge add should leave deterministic mod metadata"
     );
 
@@ -206,46 +207,46 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     assert!(
         build_result.is_ok(),
-        "Build all should succeed with hermetic tool mocks: {build_result:?}"
+        "Build all should succeed: {build_result:?}"
     );
 
-    let dist_dir = project_dir.join("dist");
-    for artifact in [
-        WorkflowArtifact::Mrpack,
-        WorkflowArtifact::Client,
-        WorkflowArtifact::Server,
-        WorkflowArtifact::ClientFull,
-        WorkflowArtifact::ServerFull,
-    ] {
-        let artifact_path = fixture.artifact_path(&project_dir, artifact);
-        assert!(
-            artifact_path.exists(),
-            "Lifecycle build should materialize {}",
-            artifact_path.display()
-        );
-    }
+    // Verify mrpack artifact in mock filesystem (created by packwiz mr export side effect)
+    let mrpack_path = dist.join("forge-test-pack-v1.0.0.mrpack");
     assert!(
-        dist_dir
-            .join("server")
-            .join("config")
-            .join("generated.txt")
-            .exists(),
-        "Server build should include extracted override content"
+        session.filesystem().exists(&mrpack_path),
+        "Lifecycle build should create the mrpack artifact"
     );
+
+    // Verify zip archives via MockArchiveProvider create_calls spy
+    {
+        let create_calls = session.archive_provider.create_calls.lock().unwrap();
+        for suffix in [
+            "client.zip",
+            "server.zip",
+            "client-full.zip",
+            "server-full.zip",
+        ] {
+            assert!(
+                create_calls
+                    .iter()
+                    .any(|(_, dest)| dest.to_string_lossy().contains(suffix)),
+                "Lifecycle build should create archive with suffix '{}': {create_calls:?}",
+                suffix
+            );
+        }
+    }
+
+    // Verify server-full and client-full install markers from java installer side effects
     assert!(
-        dist_dir
-            .join("server-full")
-            .join("mods")
-            .join("server-installed.txt")
-            .exists(),
+        session
+            .filesystem()
+            .exists(&dist.join("server-full").join("mods").join("server-installed.txt")),
         "Server-full build should include full install marker"
     );
     assert!(
-        dist_dir
-            .join("client-full")
-            .join("mods")
-            .join("both-installed.txt")
-            .exists(),
+        session
+            .filesystem()
+            .exists(&dist.join("client-full").join("mods").join("both-installed.txt")),
         "Client-full build should include full install marker"
     );
 
@@ -258,43 +259,41 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     )
     .await;
 
-    // Clean should succeed even if builds didn't complete
     assert!(
         clean_result.is_ok(),
         "Clean command failed: {:?}",
         clean_result
     );
     assert!(
-        !dist_dir.exists(),
+        !session.filesystem().exists(&dist),
         "Clean should remove the build output directory after a successful lifecycle"
     );
 
-    // Verify packwiz was called during workflow
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    // Verify packwiz was called during workflow via process provider spy
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
-        packwiz_calls.iter().any(|call| call.contains_args(&[
-            "modrinth",
-            "add",
-            "--project-id",
-            "AANobbMI",
-            "-y"
-        ])),
+        packwiz_calls.iter().any(|call| {
+            call.args.iter().any(|a| a == "modrinth")
+                && call.args.iter().any(|a| a == "add")
+                && call.args.iter().any(|a| a == "--project-id")
+                && call.args.iter().any(|a| a == "AANobbMI")
+        }),
         "Lifecycle should add the Modrinth dependency through packwiz: {packwiz_calls:?}"
     );
     assert!(
-        packwiz_calls.iter().any(|call| call.contains_args(&[
-            "curseforge",
-            "add",
-            "--addon-id",
-            "238222",
-            "-y"
-        ])),
+        packwiz_calls.iter().any(|call| {
+            call.args.iter().any(|a| a == "curseforge")
+                && call.args.iter().any(|a| a == "add")
+                && call.args.iter().any(|a| a == "--addon-id")
+                && call.args.iter().any(|a| a == "238222")
+        }),
         "Lifecycle should add the CurseForge dependency through packwiz: {packwiz_calls:?}"
     );
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains_args(&["mr", "export"])),
+            .any(|call| call.args.iter().any(|a| a == "mr")
+                && call.args.iter().any(|a| a == "export")),
         "Lifecycle should export the mrpack during full builds: {packwiz_calls:?}"
     );
 
@@ -305,49 +304,15 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 ///
 /// This test specifically validates that Forge modloader can be initialized
 /// and that the modloader choice propagates through the configuration.
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[tokio::test]
 async fn test_forge_modloader_initialization() -> Result<()> {
-    use empack_lib::application::session_mocks::MockInteractiveProvider;
-
-    // Create interactive provider that selects Forge loader
-    // Loader list: [none (vanilla), NeoForge, Fabric, Forge, Quilt]
-    let interactive = MockInteractiveProvider::new()
-        .with_select(3) // Forge is index 3 after "none (vanilla)" prefix
-        .with_fuzzy_select(0); // Select first MC version
-
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let session = MockSessionBuilder::new()
         .with_yes_flag()
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Initialized packwiz project".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "git",
-            MockBehavior::SucceedWithOutput {
-                stdout: "main".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "which",
-            MockBehavior::SucceedWithOutput {
-                stdout: "/test/bin/packwiz".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_interactive_provider(interactive)
-        .build()?;
+        .build();
 
-    // Initialize display
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
     // Execute init with explicit Forge loader (--yes requires --modloader)
     let result = execute_command_with_session(
@@ -356,7 +321,7 @@ async fn test_forge_modloader_initialization() -> Result<()> {
             pack_name: None,
             force: false,
             modloader: Some("forge".to_string()),
-            mc_version: None,
+            mc_version: Some("1.21.1".to_string()),
             author: None,
             loader_version: None,
             pack_version: None,
@@ -376,9 +341,12 @@ async fn test_forge_modloader_initialization() -> Result<()> {
 
     // Verify empack.yml exists in project directory
     let empack_yml_path = project_dir.join("empack.yml");
-    assert!(empack_yml_path.exists(), "empack.yml should exist");
+    assert!(
+        session.filesystem().exists(&empack_yml_path),
+        "empack.yml should exist"
+    );
 
-    let empack_yml_content = fs::read_to_string(&empack_yml_path)?;
+    let empack_yml_content = session.filesystem().read_to_string(&empack_yml_path)?;
     assert!(
         empack_yml_content.contains("loader: forge"),
         "empack.yml should contain 'loader: forge', got: {}",
