@@ -564,6 +564,84 @@ impl ProjectResolverTrait for MockProjectResolver {
     }
 }
 
+/// Mock archive provider for testing with spy pattern.
+///
+/// Records all calls and optionally populates the connected mock filesystem
+/// with extraction results or archive placeholders.
+pub struct MockArchiveProvider {
+    pub extract_calls: Arc<Mutex<Vec<(PathBuf, PathBuf)>>>,
+    pub create_calls: Arc<Mutex<Vec<(PathBuf, PathBuf)>>>,
+    files: Option<Arc<Mutex<HashMap<PathBuf, String>>>>,
+    directories: Option<Arc<Mutex<HashSet<PathBuf>>>>,
+}
+
+impl MockArchiveProvider {
+    pub fn new() -> Self {
+        Self {
+            extract_calls: Arc::new(Mutex::new(Vec::new())),
+            create_calls: Arc::new(Mutex::new(Vec::new())),
+            files: None,
+            directories: None,
+        }
+    }
+
+    fn connect_filesystem(&mut self, filesystem: &MockFileSystemProvider) {
+        self.files = Some(filesystem.files.clone());
+        self.directories = Some(filesystem.directories.clone());
+    }
+}
+
+impl Default for MockArchiveProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl crate::application::session::ArchiveProvider for MockArchiveProvider {
+    fn extract_zip(&self, archive_path: &std::path::Path, dest_dir: &std::path::Path) -> Result<()> {
+        self.extract_calls
+            .lock()
+            .unwrap()
+            .push((archive_path.to_path_buf(), dest_dir.to_path_buf()));
+
+        if let (Some(files), Some(directories)) = (&self.files, &self.directories) {
+            directories.lock().unwrap().insert(dest_dir.to_path_buf());
+            let overrides_dir = dest_dir.join("overrides");
+            directories.lock().unwrap().insert(overrides_dir.clone());
+            files
+                .lock()
+                .unwrap()
+                .insert(overrides_dir.join(".gitkeep"), String::new());
+        }
+
+        Ok(())
+    }
+
+    fn create_archive(
+        &self,
+        source_dir: &std::path::Path,
+        dest_path: &std::path::Path,
+        _format: crate::empack::archive::ArchiveFormat,
+    ) -> Result<()> {
+        self.create_calls
+            .lock()
+            .unwrap()
+            .push((source_dir.to_path_buf(), dest_path.to_path_buf()));
+
+        if let (Some(files), Some(directories)) = (&self.files, &self.directories) {
+            if let Some(parent) = dest_path.parent() {
+                directories.lock().unwrap().insert(parent.to_path_buf());
+            }
+            files
+                .lock()
+                .unwrap()
+                .insert(dest_path.to_path_buf(), "mock archive".to_string());
+        }
+
+        Ok(())
+    }
+}
+
 /// Process call record for spy pattern
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcessCall {
@@ -1231,6 +1309,7 @@ pub struct MockCommandSession {
     pub config_provider: MockConfigProvider,
     pub interactive_provider: MockInteractiveProvider,
     pub packwiz_provider: MockPackwizOps,
+    pub archive_provider: MockArchiveProvider,
 }
 
 impl MockCommandSession {
@@ -1259,9 +1338,11 @@ impl MockCommandSession {
             config_provider: MockConfigProvider::new(AppConfig::default()),
             interactive_provider: MockInteractiveProvider::new(),
             packwiz_provider,
+            archive_provider: MockArchiveProvider::new(),
         };
 
         session.sync_process_provider();
+        session.sync_archive_provider();
         session
     }
 
@@ -1272,6 +1353,7 @@ impl MockCommandSession {
             .with_filesystem(filesystem.files.clone());
         self.filesystem_provider = filesystem;
         self.sync_process_provider();
+        self.sync_archive_provider();
         self
     }
 
@@ -1314,6 +1396,11 @@ impl MockCommandSession {
             .connect_filesystem(&self.filesystem_provider);
     }
 
+    fn sync_archive_provider(&mut self) {
+        self.archive_provider
+            .connect_filesystem(&self.filesystem_provider);
+    }
+
     /// Get the display provider for this session
     pub fn display(&self) -> &dyn DisplayProvider {
         &self.display_provider
@@ -1342,6 +1429,11 @@ impl MockCommandSession {
     /// Get the interactive provider for this session
     pub fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
+    }
+
+    /// Get the archive provider for this session
+    pub fn archive(&self) -> &dyn crate::application::session::ArchiveProvider {
+        &self.archive_provider
     }
 
     /// Get the terminal capabilities for this session
@@ -1383,6 +1475,10 @@ impl Session for MockCommandSession {
 
     fn terminal(&self) -> &crate::terminal::TerminalCapabilities {
         &self.terminal_capabilities
+    }
+
+    fn archive(&self) -> &dyn crate::application::session::ArchiveProvider {
+        &self.archive_provider
     }
 
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {

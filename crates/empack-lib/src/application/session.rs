@@ -108,6 +108,40 @@ pub trait ConfigProvider {
     fn app_config(&self) -> &AppConfig;
 }
 
+/// Provider trait for archive operations (zip extraction, archive creation)
+pub trait ArchiveProvider {
+    /// Extract a zip archive to a directory.
+    fn extract_zip(&self, archive_path: &Path, dest_dir: &Path) -> Result<()>;
+
+    /// Create an archive from a directory in the specified format.
+    fn create_archive(
+        &self,
+        source_dir: &Path,
+        dest_path: &Path,
+        format: crate::empack::archive::ArchiveFormat,
+    ) -> Result<()>;
+}
+
+/// Live implementation of ArchiveProvider that delegates to `archive` module functions.
+pub struct LiveArchiveProvider;
+
+impl ArchiveProvider for LiveArchiveProvider {
+    fn extract_zip(&self, archive_path: &Path, dest_dir: &Path) -> Result<()> {
+        crate::empack::archive::extract_zip(archive_path, dest_dir)
+            .with_context(|| format!("Failed to extract zip: {}", archive_path.display()))
+    }
+
+    fn create_archive(
+        &self,
+        source_dir: &Path,
+        dest_path: &Path,
+        format: crate::empack::archive::ArchiveFormat,
+    ) -> Result<()> {
+        crate::empack::archive::create_archive(source_dir, dest_path, format)
+            .with_context(|| format!("Failed to create archive: {}", dest_path.display()))
+    }
+}
+
 /// Provider trait for interactive user input operations
 pub trait InteractiveProvider {
     /// Prompt for text input with optional default value
@@ -146,6 +180,9 @@ pub trait Session {
 
     /// Get the terminal capabilities for this session
     fn terminal(&self) -> &TerminalCapabilities;
+
+    /// Get the archive operations provider for this session
+    fn archive(&self) -> &dyn ArchiveProvider;
 
     /// Get the packwiz operations provider for this session
     fn packwiz(&self) -> Box<dyn PackwizOps + '_>;
@@ -707,6 +744,8 @@ where
     config_provider: C,
     /// Interactive input provider
     interactive_provider: I,
+    /// Archive operations provider
+    archive_provider: LiveArchiveProvider,
 }
 
 impl
@@ -748,6 +787,7 @@ impl
                 app_config.yes,
                 app_config.workdir.clone(),
             ),
+            archive_provider: LiveArchiveProvider,
         }
     }
 }
@@ -781,6 +821,7 @@ where
             process_provider,
             config_provider,
             interactive_provider,
+            archive_provider: LiveArchiveProvider,
         }
     }
 
@@ -854,6 +895,10 @@ where
 
     fn terminal(&self) -> &TerminalCapabilities {
         &self.terminal_capabilities
+    }
+
+    fn archive(&self) -> &dyn ArchiveProvider {
+        &self.archive_provider
     }
 
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
