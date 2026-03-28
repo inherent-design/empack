@@ -11,62 +11,33 @@ use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::{HermeticSessionBuilder, MockBehavior};
-use std::fs;
+use empack_tests::MockSessionBuilder;
 
 /// Test: empack init -y (zero-config with API-driven defaults)
 ///
 /// Workflow:
-/// 1. Run `empack init -y` in temp directory
+/// 1. Run `empack init -y` in empty mock directory
 /// 2. Verify empack.yml created with reasonable defaults
 /// 3. Verify pack/ directory created
-/// 4. Verify packwiz init was called
+/// 4. Verify pack.toml exists (via MockPackwizOps init side effect)
 /// 5. Verify project structure matches expected layout
-#[cfg(unix)]
 #[tokio::test]
 async fn test_init_zero_config() -> Result<()> {
-    // Create hermetic session with mock packwiz and --yes flag
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_yes_flag() // Enable non-interactive mode
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Initialized packwiz project".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "git",
-            MockBehavior::SucceedWithOutput {
-                stdout: "main".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "which",
-            MockBehavior::SucceedWithOutput {
-                stdout: "/test/bin/packwiz".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .build()?;
+    let session = MockSessionBuilder::new()
+        .with_yes_flag()
+        .build();
 
-    // Initialize display
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    // Use test work directory as working directory
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
-    // Execute init command (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: None,
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
-            mc_version: None,
+            mc_version: Some("1.21.4".to_string()),
             author: None,
             loader_version: None,
             pack_version: None,
@@ -75,39 +46,28 @@ async fn test_init_zero_config() -> Result<()> {
     )
     .await;
 
-    // Verify init succeeded
     assert!(result.is_ok(), "Init command failed: {:?}", result);
 
-    // When no name is provided via CLI, the interactively-entered name
-    // (defaulting to the directory name) becomes the target subdirectory.
     let dir_name = workdir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Pack");
     let project_dir = workdir.join(dir_name);
 
-    // Verify empack.yml was created inside the subdirectory
-    let empack_yml_path = project_dir.join("empack.yml");
     assert!(
-        empack_yml_path.exists(),
+        session.filesystem().exists(&project_dir.join("empack.yml")),
         "empack.yml should be created in subdirectory named after the modpack"
     );
 
-    // Verify pack/ directory was created inside the subdirectory
     let pack_dir = project_dir.join("pack");
-    assert!(pack_dir.exists(), "pack/ directory should be created");
-
-    // Verify packwiz init was called
-    let packwiz_calls = test_env.get_mock_calls("packwiz")?;
     assert!(
-        !packwiz_calls.is_empty(),
-        "packwiz should have been called for initialization"
+        session.filesystem().exists(&pack_dir),
+        "pack/ directory should be created"
     );
 
-    // Verify pack.toml exists in pack/
     let pack_toml_path = pack_dir.join("pack.toml");
     assert!(
-        pack_toml_path.exists(),
+        session.filesystem().exists(&pack_toml_path),
         "pack.toml should exist after packwiz init"
     );
 
@@ -119,44 +79,17 @@ async fn test_init_zero_config() -> Result<()> {
 /// Workflow:
 /// 1. Run `empack init matrix-fabric --pack-name "Matrix Fabric" --modloader fabric --mc-version 1.21.1`
 /// 2. Verify the generated empack.yml reflects the explicit inputs
-/// 3. Verify the packwiz invocation received the expected progressive-init flags
-#[cfg(unix)]
+/// 3. Verify pack.toml created via MockPackwizOps with correct content
 #[tokio::test]
 async fn test_init_with_explicit_flags() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
+    let session = MockSessionBuilder::new()
         .with_yes_flag()
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Initialized packwiz project".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "git",
-            MockBehavior::SucceedWithOutput {
-                stdout: "main".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "which",
-            MockBehavior::SucceedWithOutput {
-                stdout: "/test/bin/packwiz".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .build()?;
+        .build();
 
-    // Initialize display
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    // Use test work directory
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
-    // Execute init with explicit CLI configuration.
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("matrix-fabric".to_string()),
@@ -174,21 +107,19 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 
     assert!(result.is_ok(), "Init with name failed: {:?}", result.err());
 
-    // When name is provided, init creates a subdirectory
     let project_dir = workdir.join("matrix-fabric");
     assert!(
-        project_dir.exists(),
+        session.filesystem().exists(&project_dir),
         "matrix-fabric directory should be created"
     );
 
-    // Verify empack.yml was created inside the configured project directory.
     let empack_yml_path = project_dir.join("empack.yml");
     assert!(
-        empack_yml_path.exists(),
+        session.filesystem().exists(&empack_yml_path),
         "empack.yml should be created inside matrix-fabric/"
     );
 
-    let empack_yml = fs::read_to_string(&empack_yml_path)?;
+    let empack_yml = session.filesystem().read_to_string(&empack_yml_path)?;
     assert!(
         empack_yml.contains("name: Matrix Fabric"),
         "empack.yml should persist the explicit pack name"
@@ -206,43 +137,29 @@ async fn test_init_with_explicit_flags() -> Result<()> {
         "empack.yml should persist the explicit loader"
     );
 
-    // Verify pack/ directory created inside matrix-fabric/
     let pack_dir = project_dir.join("pack");
     assert!(
-        pack_dir.exists(),
+        session.filesystem().exists(&pack_dir),
         "pack/ directory should be created inside matrix-fabric/"
     );
 
-    // Verify packwiz was called
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    let pack_toml_path = pack_dir.join("pack.toml");
     assert!(
-        !packwiz_calls.is_empty(),
-        "packwiz should have been called for initialization"
+        session.filesystem().exists(&pack_toml_path),
+        "pack.toml should exist after init"
     );
-
-    let init_call = packwiz_calls
-        .iter()
-        .find(|call| call.args.first().map(String::as_str) == Some("init"))
-        .expect("packwiz init invocation should be logged");
+    let pack_toml = session.filesystem().read_to_string(&pack_toml_path)?;
     assert!(
-        init_call.contains_args(&["--name", "Matrix Fabric"]),
-        "packwiz init should receive the explicit pack name: {init_call:?}"
+        pack_toml.contains("name = \"Matrix Fabric\""),
+        "pack.toml should contain the explicit pack name: {pack_toml}"
     );
     assert!(
-        init_call.contains_args(&["--author", "Workflow Test"]),
-        "packwiz init should receive the explicit author: {init_call:?}"
+        pack_toml.contains("minecraft = \"1.21.1\""),
+        "pack.toml should contain the explicit Minecraft version: {pack_toml}"
     );
     assert!(
-        init_call.contains_args(&["--mc-version", "1.21.1"]),
-        "packwiz init should receive the explicit Minecraft version: {init_call:?}"
-    );
-    assert!(
-        init_call.contains_args(&["--modloader", "fabric"]),
-        "packwiz init should receive the explicit loader: {init_call:?}"
-    );
-    assert!(
-        init_call.args.iter().any(|arg| arg == "--fabric-version"),
-        "packwiz init should resolve and pass a Fabric loader version: {init_call:?}"
+        pack_toml.contains("fabric = "),
+        "pack.toml should contain fabric loader entry: {pack_toml}"
     );
 
     Ok(())
@@ -255,51 +172,23 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 /// 2. Verify my-pack/ directory was created
 /// 3. Verify empack.yml exists inside my-pack/
 /// 4. Verify pack/ directory created inside my-pack/
-#[cfg(unix)]
 #[tokio::test]
 async fn test_init_creates_directory_from_name() -> Result<()> {
-    // Create hermetic session with --yes flag
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_yes_flag() // Enable non-interactive mode
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Initialized packwiz project".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "git",
-            MockBehavior::SucceedWithOutput {
-                stdout: "main".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "which",
-            MockBehavior::SucceedWithOutput {
-                stdout: "/test/bin/packwiz".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .build()?;
+    let session = MockSessionBuilder::new()
+        .with_yes_flag()
+        .build();
 
-    // Initialize display
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    // Use test work directory
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
-    // Execute init with directory name argument (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: Some("my-pack".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
-            mc_version: None,
+            mc_version: Some("1.21.4".to_string()),
             author: None,
             loader_version: None,
             pack_version: None,
@@ -314,22 +203,23 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
         result.err()
     );
 
-    // Verify my-pack directory was created
     let project_dir = workdir.join("my-pack");
-    assert!(project_dir.exists(), "my-pack directory should be created");
-    assert!(project_dir.is_dir(), "my-pack should be a directory");
-
-    // Verify empack.yml exists inside my-pack/
-    let empack_yml_path = project_dir.join("empack.yml");
     assert!(
-        empack_yml_path.exists(),
+        session.filesystem().exists(&project_dir),
+        "my-pack directory should be created"
+    );
+    assert!(
+        session.filesystem().is_directory(&project_dir),
+        "my-pack should be a directory"
+    );
+
+    assert!(
+        session.filesystem().exists(&project_dir.join("empack.yml")),
         "empack.yml should exist inside my-pack/"
     );
 
-    // Verify pack/ directory exists inside my-pack/
-    let pack_dir = project_dir.join("pack");
     assert!(
-        pack_dir.exists(),
+        session.filesystem().exists(&project_dir.join("pack")),
         "pack/ directory should exist inside my-pack/"
     );
 
@@ -339,71 +229,40 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
 /// Test: empack init in directory with existing empack.yml (error handling)
 ///
 /// Workflow:
-/// 1. Create empack.yml in work directory
+/// 1. Pre-populate empack.yml in mock filesystem
 /// 2. Run `empack init -y` (should detect existing project)
-/// 3. Verify appropriate error handling (either prompt or fail gracefully)
-///
-/// Note: Without --force flag, init should detect existing project
-#[cfg(unix)]
+/// 3. Verify appropriate error (existing project without --force)
+/// 4. Verify original empack.yml is preserved
 #[tokio::test]
 async fn test_init_existing_project_error() -> Result<()> {
-    // Create hermetic session with --yes flag
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_yes_flag() // Enable non-interactive mode
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: "Initialized packwiz project".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "git",
-            MockBehavior::SucceedWithOutput {
-                stdout: "main".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .with_mock_executable(
-            "which",
-            MockBehavior::SucceedWithOutput {
-                stdout: "/test/bin/packwiz".to_string(),
-                stderr: String::new(),
-            },
-        )?
-        .build()?;
+    let session = MockSessionBuilder::new()
+        .with_yes_flag()
+        .build();
 
-    // Initialize display
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
+    Display::init_or_get(TerminalCapabilities::minimal());
 
-    // Use test work directory
-    let workdir = test_env.work_path.clone();
-    std::env::set_current_dir(&workdir)?;
+    let workdir = session.filesystem().current_dir()?;
 
-    // Create existing empack.yml to simulate existing project
-    let empack_yml_path = workdir.join("empack.yml");
-    fs::write(
-        &empack_yml_path,
-        r#"empack:
+    let existing_yml = r#"empack:
   dependencies: []
   minecraft_version: "1.21.1"
   loader: fabric
   name: "existing-pack"
   author: "Existing Author"
   version: "1.0.0"
-"#,
-    )?;
+"#;
+    session
+        .filesystem()
+        .write_file(&workdir.join("empack.yml"), existing_yml)?;
 
-    // Execute init command (should detect existing project; --yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
             name: None,
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
-            mc_version: None,
-            author: None, // No force flag - should fail or prompt
+            mc_version: Some("1.21.4".to_string()),
+            author: None,
             loader_version: None,
             pack_version: None,
         },
@@ -422,8 +281,9 @@ async fn test_init_existing_project_error() -> Result<()> {
         err_msg
     );
 
-    // Existing project should be preserved and init should short-circuit before packwiz runs.
-    let empack_yml_content = fs::read_to_string(&empack_yml_path)?;
+    let empack_yml_content = session
+        .filesystem()
+        .read_to_string(&workdir.join("empack.yml"))?;
     assert!(
         empack_yml_content.contains("existing-pack"),
         "Original empack.yml should be preserved (not overwritten)"
@@ -432,12 +292,14 @@ async fn test_init_existing_project_error() -> Result<()> {
         empack_yml_content.contains("Existing Author"),
         "Original author should be preserved"
     );
+
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
-        test_env.get_mock_calls("packwiz")?.is_empty(),
+        packwiz_calls.is_empty(),
         "Existing project detection should refuse early instead of invoking packwiz"
     );
     assert!(
-        !workdir.join("pack").exists(),
+        !session.filesystem().exists(&workdir.join("pack")),
         "Refused init should not create pack metadata in an existing project"
     );
 

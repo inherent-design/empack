@@ -435,6 +435,7 @@ pub struct MockNetworkProvider {
     pub client_calls: Arc<Mutex<usize>>,
     pub resolver_calls: Arc<Mutex<Vec<ResolverCall>>>,
     pub mock_resolver: Arc<MockProjectResolver>,
+    fail_http_client: bool,
 }
 
 impl MockNetworkProvider {
@@ -443,7 +444,13 @@ impl MockNetworkProvider {
             client_calls: Arc::new(Mutex::new(0)),
             resolver_calls: Arc::new(Mutex::new(Vec::new())),
             mock_resolver: Arc::new(MockProjectResolver::new()),
+            fail_http_client: false,
         }
+    }
+
+    pub fn with_failing_http_client(mut self) -> Self {
+        self.fail_http_client = true;
+        self
     }
 
     pub fn with_project_response(self, query: String, project_info: ProjectInfo) -> Self {
@@ -474,6 +481,11 @@ impl Default for MockNetworkProvider {
 impl NetworkProvider for MockNetworkProvider {
     fn http_client(&self) -> Result<Client> {
         *self.client_calls.lock().unwrap() += 1;
+        if self.fail_http_client {
+            return Err(anyhow::anyhow!(
+                "Mock HTTP client unavailable (test mode)"
+            ));
+        }
         Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
