@@ -578,6 +578,7 @@ pub struct MockProcessProvider {
     pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
     pub programs: HashMap<String, Option<String>>,
     materialize_mrpack_exports: bool,
+    java_installer_side_effects: bool,
     /// Maps project_id -> slug for simulating .pw.toml creation on packwiz add
     packwiz_add_slugs: HashMap<String, String>,
     files: Option<Arc<Mutex<HashMap<PathBuf, String>>>>,
@@ -600,6 +601,7 @@ impl MockProcessProvider {
             results: HashMap::new(),
             programs,
             materialize_mrpack_exports: false,
+            java_installer_side_effects: false,
             packwiz_add_slugs: HashMap::new(),
             files: None,
             directories: None,
@@ -691,6 +693,11 @@ impl MockProcessProvider {
 
     pub fn with_mrpack_export_side_effects(mut self) -> Self {
         self.materialize_mrpack_exports = true;
+        self
+    }
+
+    pub fn with_java_installer_side_effects(mut self) -> Self {
+        self.java_installer_side_effects = true;
         self
     }
 
@@ -789,6 +796,101 @@ impl MockProcessProvider {
             .or_insert_with(|| format!("name = \"{}\"\n", slug));
     }
 
+    fn maybe_materialize_java_installer(
+        &self,
+        command: &str,
+        args: &[&str],
+        working_dir: &std::path::Path,
+        output: &ProcessOutput,
+    ) {
+        if command != "java" || !self.java_installer_side_effects || !output.success {
+            return;
+        }
+
+        let (Some(files), Some(directories)) = (&self.files, &self.directories) else {
+            return;
+        };
+
+        let jar_file = args
+            .iter()
+            .zip(args.iter().skip(1))
+            .find_map(|(flag, val)| if *flag == "-jar" { Some(*val) } else { None });
+
+        if args.contains(&"--bootstrap-main-jar") {
+            let side = args
+                .iter()
+                .zip(args.iter().skip(1))
+                .find_map(|(flag, val)| if *flag == "-s" { Some(*val) } else { None })
+                .unwrap_or("both");
+
+            let mods_dir = working_dir.join("mods");
+            directories.lock().unwrap().insert(mods_dir.clone());
+            files.lock().unwrap().insert(
+                mods_dir.join(format!("{side}-installed.txt")),
+                format!("installed={side}\n"),
+            );
+            return;
+        }
+
+        let Some(jar_file) = jar_file else { return };
+
+        if jar_file.contains("fabric-installer") {
+            let install_dir = args
+                .iter()
+                .zip(args.iter().skip(1))
+                .find_map(|(flag, val)| {
+                    if *flag == "-dir" {
+                        Some(PathBuf::from(val))
+                    } else {
+                        None
+                    }
+                });
+            if let Some(dir) = install_dir {
+                directories.lock().unwrap().insert(dir.join("libraries"));
+                directories.lock().unwrap().insert(dir.clone());
+                let mut f = files.lock().unwrap();
+                f.insert(
+                    dir.join("fabric-server-launch.jar"),
+                    "mock fabric launcher".to_string(),
+                );
+                f.insert(dir.join("server.jar"), "mock vanilla server".to_string());
+                f.insert(
+                    dir.join("fabric-server-launcher.properties"),
+                    "serverJar=server.jar".to_string(),
+                );
+            }
+        } else if jar_file.contains("quilt-installer") {
+            let install_dir = args
+                .iter()
+                .find_map(|arg| arg.strip_prefix("--install-dir=").map(PathBuf::from));
+            if let Some(dir) = install_dir {
+                directories.lock().unwrap().insert(dir.join("libraries"));
+                directories.lock().unwrap().insert(dir.clone());
+                let mut f = files.lock().unwrap();
+                f.insert(
+                    dir.join("quilt-server-launch.jar"),
+                    "mock quilt launcher".to_string(),
+                );
+                f.insert(dir.join("server.jar"), "mock vanilla server".to_string());
+            }
+        } else if (jar_file.contains("neoforge") && jar_file.contains("installer"))
+            || (jar_file.contains("forge") && jar_file.contains("installer"))
+        {
+            let install_dir = args
+                .iter()
+                .find(|arg| !arg.starts_with('-') && !arg.ends_with(".jar") && !arg.contains('='))
+                .map(PathBuf::from);
+            if let Some(dir) = install_dir {
+                directories.lock().unwrap().insert(dir.join("libraries"));
+                directories.lock().unwrap().insert(dir.clone());
+                let mut f = files.lock().unwrap();
+                f.insert(dir.join("run.sh"), "#!/bin/bash\n".to_string());
+                f.insert(dir.join("run.bat"), "@echo off\n".to_string());
+                f.insert(dir.join("user_jvm_args.txt"), String::new());
+            }
+        }
+    }
+
     /// Get all recorded process calls for verification
     pub fn get_calls(&self) -> Vec<ProcessCall> {
         self.calls.borrow().clone()
@@ -858,6 +960,7 @@ impl ProcessProvider for MockProcessProvider {
 
         self.maybe_materialize_mrpack_export(command, args, &output);
         self.maybe_materialize_pw_toml(command, args, working_dir, &output);
+        self.maybe_materialize_java_installer(command, args, working_dir, &output);
 
         Ok(output)
     }
@@ -1429,5 +1532,100 @@ mod tests {
                 .unwrap(),
             Some(0)
         );
+    }
+
+    #[test]
+    fn test_mock_java_fabric_installer_side_effects() {
+        let fs = MockFileSystemProvider::new();
+        let install_dir = mock_root().join("dist").join("server");
+        let mut provider =
+            MockProcessProvider::new().with_java_installer_side_effects();
+        provider.connect_filesystem(&fs);
+
+        let dir_str = install_dir.to_string_lossy().to_string();
+        let result = provider
+            .execute(
+                "java",
+                &[
+                    "-jar",
+                    "fabric-installer-1.0.1.jar",
+                    "server",
+                    "-dir",
+                    &dir_str,
+                    "-mcversion",
+                    "1.21.1",
+                ],
+                &mock_root().join("workdir"),
+            )
+            .unwrap();
+
+        assert!(result.success);
+        let files = fs.files.lock().unwrap();
+        assert!(files.contains_key(&install_dir.join("fabric-server-launch.jar")));
+        assert!(files.contains_key(&install_dir.join("server.jar")));
+        assert!(files.contains_key(&install_dir.join("fabric-server-launcher.properties")));
+    }
+
+    #[test]
+    fn test_mock_java_neoforge_installer_side_effects() {
+        let fs = MockFileSystemProvider::new();
+        let install_dir = mock_root().join("dist").join("server");
+        let mut provider =
+            MockProcessProvider::new().with_java_installer_side_effects();
+        provider.connect_filesystem(&fs);
+
+        let dir_str = install_dir.to_string_lossy().to_string();
+        let result = provider
+            .execute(
+                "java",
+                &[
+                    "-jar",
+                    "neoforge-21.1.77-installer.jar",
+                    "--install-server",
+                    &dir_str,
+                ],
+                &install_dir,
+            )
+            .unwrap();
+
+        assert!(result.success);
+        let files = fs.files.lock().unwrap();
+        assert!(files.contains_key(&install_dir.join("run.sh")));
+        assert!(files.contains_key(&install_dir.join("run.bat")));
+        assert!(files.contains_key(&install_dir.join("user_jvm_args.txt")));
+    }
+
+    #[test]
+    fn test_mock_java_packwiz_installer_side_effects() {
+        let fs = MockFileSystemProvider::new();
+        let workdir = mock_root().join("server-full");
+        let mut provider =
+            MockProcessProvider::new().with_java_installer_side_effects();
+        provider.connect_filesystem(&fs);
+
+        let result = provider
+            .execute(
+                "java",
+                &[
+                    "-jar",
+                    "packwiz-installer-bootstrap.jar",
+                    "--bootstrap-main-jar",
+                    "packwiz-installer.jar",
+                    "-g",
+                    "-s",
+                    "server",
+                    "pack/pack.toml",
+                ],
+                &workdir,
+            )
+            .unwrap();
+
+        assert!(result.success);
+        let files = fs.files.lock().unwrap();
+        assert!(files.contains_key(&workdir.join("mods").join("server-installed.txt")));
+        let content = files
+            .get(&workdir.join("mods").join("server-installed.txt"))
+            .unwrap();
+        assert!(content.contains("installed=server"));
     }
 }
