@@ -35,7 +35,10 @@ async fn e2e_remove_single_mod() -> Result<()> {
     let session = MockSessionBuilder::new()
         .with_empack_project("remove-single", "1.21.1", "fabric")
         .with_yes_flag()
-        .with_file(workdir.join("empack.yml"), remove_project_config().to_string())
+        .with_file(
+            workdir.join("empack.yml"),
+            remove_project_config().to_string(),
+        )
         .build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
@@ -53,14 +56,16 @@ async fn e2e_remove_single_mod() -> Result<()> {
 
     let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
-        packwiz_calls
-            .iter()
-            .any(|call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
-                == ["remove", "-y", "sodium"]),
+        packwiz_calls.iter().any(
+            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "sodium"]
+        ),
         "remove should invoke packwiz remove -y sodium: {packwiz_calls:?}"
     );
 
-    let config_content = session.filesystem().read_to_string(&workdir.join("empack.yml"))?;
+    let config_content = session
+        .filesystem()
+        .read_to_string(&workdir.join("empack.yml"))?;
     assert!(
         !config_content.contains("sodium"),
         "sodium should be removed from empack.yml after remove command"
@@ -79,7 +84,10 @@ async fn e2e_remove_multiple_mods() -> Result<()> {
     let session = MockSessionBuilder::new()
         .with_empack_project("remove-multi", "1.21.1", "fabric")
         .with_yes_flag()
-        .with_file(workdir.join("empack.yml"), remove_project_config().to_string())
+        .with_file(
+            workdir.join("empack.yml"),
+            remove_project_config().to_string(),
+        )
         .build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
@@ -97,21 +105,23 @@ async fn e2e_remove_multiple_mods() -> Result<()> {
 
     let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
-        packwiz_calls
-            .iter()
-            .any(|call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
-                == ["remove", "-y", "sodium"]),
+        packwiz_calls.iter().any(
+            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "sodium"]
+        ),
         "should invoke packwiz remove for sodium: {packwiz_calls:?}"
     );
     assert!(
-        packwiz_calls
-            .iter()
-            .any(|call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
-                == ["remove", "-y", "fabric_api"]),
+        packwiz_calls.iter().any(
+            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "fabric_api"]
+        ),
         "should invoke packwiz remove for fabric_api: {packwiz_calls:?}"
     );
 
-    let config_content = session.filesystem().read_to_string(&workdir.join("empack.yml"))?;
+    let config_content = session
+        .filesystem()
+        .read_to_string(&workdir.join("empack.yml"))?;
     assert!(
         !config_content.contains("sodium"),
         "sodium should be removed from empack.yml"
@@ -130,7 +140,10 @@ async fn e2e_remove_empty_mods_is_noop() -> Result<()> {
     let session = MockSessionBuilder::new()
         .with_empack_project("remove-empty", "1.21.1", "fabric")
         .with_yes_flag()
-        .with_file(workdir.join("empack.yml"), remove_project_config().to_string())
+        .with_file(
+            workdir.join("empack.yml"),
+            remove_project_config().to_string(),
+        )
         .build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
@@ -155,7 +168,9 @@ async fn e2e_remove_empty_mods_is_noop() -> Result<()> {
         "remove with empty mods should not call packwiz: {packwiz_calls:?}"
     );
 
-    let config_content = session.filesystem().read_to_string(&workdir.join("empack.yml"))?;
+    let config_content = session
+        .filesystem()
+        .read_to_string(&workdir.join("empack.yml"))?;
     assert!(
         config_content.contains("sodium"),
         "empack.yml should be unchanged after empty remove"

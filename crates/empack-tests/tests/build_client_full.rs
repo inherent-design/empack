@@ -67,22 +67,20 @@ async fn e2e_build_client_full_successfully() -> Result<()> {
 
     let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
-        packwiz_calls.iter().any(|call| call
-            .args
+        packwiz_calls
             .iter()
-            .any(|a| a == "refresh")),
+            .any(|call| call.args.iter().any(|a| a == "refresh")),
         "build should refresh pack metadata before client-full build: {packwiz_calls:?}"
     );
 
     let java_calls = session.process_provider.get_calls_for_command("java");
     assert!(
-        java_calls.iter().any(|call| call
-            .args
+        java_calls
             .iter()
-            .any(|a| a == "-s")
-            && call.args.iter().any(|a| a == "both")
-            && call.args.iter().any(|a| a == "--bootstrap-main-jar")
-            && call.args.iter().any(|a| a.contains("pack.toml"))),
+            .any(|call| call.args.iter().any(|a| a == "-s")
+                && call.args.iter().any(|a| a == "both")
+                && call.args.iter().any(|a| a == "--bootstrap-main-jar")
+                && call.args.iter().any(|a| a.contains("pack.toml"))),
         "client-full build should invoke packwiz installer for both sides: {java_calls:?}"
     );
 

@@ -7,9 +7,7 @@ use empack_tests::MockSessionBuilder;
 
 #[tokio::test]
 async fn test_init_neoforge() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 
@@ -67,9 +65,7 @@ async fn test_init_neoforge() -> Result<()> {
 
 #[tokio::test]
 async fn test_init_quilt() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 
@@ -127,9 +123,7 @@ async fn test_init_quilt() -> Result<()> {
 
 #[tokio::test]
 async fn test_init_vanilla() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 
@@ -172,9 +166,7 @@ async fn test_init_vanilla() -> Result<()> {
 
 #[tokio::test]
 async fn test_init_fabric_older_mc() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 

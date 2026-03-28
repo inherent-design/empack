@@ -10,9 +10,8 @@ use empack_lib::application::session::{
     NetworkProvider, ProcessOutput,
 };
 use empack_lib::application::session_mocks::{
-    MockCommandSession, MockConfigProvider, MockFileSystemProvider,
-    MockInteractiveProvider, MockProcessProvider, mock_root,
-    MockNetworkProvider as LibMockNetworkProvider,
+    MockCommandSession, MockConfigProvider, MockFileSystemProvider, MockInteractiveProvider,
+    MockNetworkProvider as LibMockNetworkProvider, MockProcessProvider, mock_root,
 };
 use empack_lib::empack::search::{ProjectInfo, ProjectResolverTrait, SearchError};
 use empack_lib::primitives::ProjectPlatform;
@@ -932,9 +931,9 @@ impl MockSessionBuilder {
         filename: String,
         content: String,
     ) -> Self {
-        self.filesystem =
-            self.filesystem
-                .with_deferred_file(directory, filename, content);
+        self.filesystem = self
+            .filesystem
+            .with_deferred_file(directory, filename, content);
         self
     }
 
@@ -1249,19 +1248,21 @@ mod tests {
             .build();
 
         let cache_dir = mock_root().join("workdir").join("cache");
-        assert!(session
-            .filesystem()
-            .exists(&cache_dir.join("packwiz-installer-bootstrap.jar")));
-        assert!(session
-            .filesystem()
-            .exists(&cache_dir.join("packwiz-installer.jar")));
+        assert!(
+            session
+                .filesystem()
+                .exists(&cache_dir.join("packwiz-installer-bootstrap.jar"))
+        );
+        assert!(
+            session
+                .filesystem()
+                .exists(&cache_dir.join("packwiz-installer.jar"))
+        );
     }
 
     #[test]
     fn test_mock_session_builder_dry_run() {
-        let session = MockSessionBuilder::new()
-            .with_dry_run_flag()
-            .build();
+        let session = MockSessionBuilder::new().with_dry_run_flag().build();
 
         assert!(session.config().app_config().dry_run);
     }

@@ -23,9 +23,7 @@ use empack_tests::MockSessionBuilder;
 /// 5. Verify project structure matches expected layout
 #[tokio::test]
 async fn test_init_zero_config() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 
@@ -82,9 +80,7 @@ async fn test_init_zero_config() -> Result<()> {
 /// 3. Verify pack.toml created via MockPackwizOps with correct content
 #[tokio::test]
 async fn test_init_with_explicit_flags() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 
@@ -174,9 +170,7 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 /// 4. Verify pack/ directory created inside my-pack/
 #[tokio::test]
 async fn test_init_creates_directory_from_name() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 
@@ -235,9 +229,7 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
 /// 4. Verify original empack.yml is preserved
 #[tokio::test]
 async fn test_init_existing_project_error() -> Result<()> {
-    let session = MockSessionBuilder::new()
-        .with_yes_flag()
-        .build();
+    let session = MockSessionBuilder::new().with_yes_flag().build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
 

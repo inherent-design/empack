@@ -43,11 +43,11 @@ async fn test_sync_workflow_full() -> Result<()> {
         .with_empack_project("sync-pack", "1.21.1", "fabric")
         .with_mock_http_client()
         .with_yes_flag()
-        .with_file(workdir.join("empack.yml"), sync_project_config().to_string())
-        .with_installed_mods(HashSet::from([
-            "sodium".to_string(),
-            "old-mod".to_string(),
-        ]))
+        .with_file(
+            workdir.join("empack.yml"),
+            sync_project_config().to_string(),
+        )
+        .with_installed_mods(HashSet::from(["sodium".to_string(), "old-mod".to_string()]))
         .build();
 
     Display::init_or_get(TerminalCapabilities::minimal());
@@ -59,9 +59,8 @@ async fn test_sync_workflow_full() -> Result<()> {
     assert!(
         packwiz_calls.iter().any(|call| {
             let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
-            args.windows(5).any(|w| {
-                w == ["modrinth", "add", "--project-id", "P7dR8mSH", "-y"]
-            })
+            args.windows(5)
+                .any(|w| w == ["modrinth", "add", "--project-id", "P7dR8mSH", "-y"])
         }),
         "sync should add the missing dependency by project id: {packwiz_calls:?}"
     );
@@ -75,9 +74,8 @@ async fn test_sync_workflow_full() -> Result<()> {
     assert!(
         !packwiz_calls.iter().any(|call| {
             let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
-            args.windows(5).any(|w| {
-                w == ["modrinth", "add", "--project-id", "AANobbMI", "-y"]
-            })
+            args.windows(5)
+                .any(|w| w == ["modrinth", "add", "--project-id", "AANobbMI", "-y"])
         }),
         "sync should not re-add dependencies that are already installed: {packwiz_calls:?}"
     );
@@ -93,7 +91,10 @@ async fn test_sync_dry_run_no_modifications() -> Result<()> {
         .with_empack_project("sync-pack-dry-run", "1.21.1", "fabric")
         .with_mock_http_client()
         .with_dry_run_flag()
-        .with_file(workdir.join("empack.yml"), sync_project_config().to_string())
+        .with_file(
+            workdir.join("empack.yml"),
+            sync_project_config().to_string(),
+        )
         .with_installed_mods(HashSet::from(["old-mod".to_string()]))
         .build();
 
@@ -132,7 +133,10 @@ async fn test_sync_normalized_installed_names_noop() -> Result<()> {
         .with_empack_project("sync-pack-normalized", "1.21.1", "fabric")
         .with_mock_http_client()
         .with_yes_flag()
-        .with_file(workdir.join("empack.yml"), sync_project_config().to_string())
+        .with_file(
+            workdir.join("empack.yml"),
+            sync_project_config().to_string(),
+        )
         .with_installed_mods(HashSet::from([
             "sodium".to_string(),
             "fabric_api".to_string(),
