@@ -940,11 +940,12 @@ impl<'a> BuildOrchestrator<'a> {
                     reason: e.to_string(),
                 })?;
         }
-        crate::empack::archive::extract_zip(&mrpack_file, &temp_extract_dir).map_err(|e| {
-            BuildError::CommandFailed {
+        self.session
+            .archive()
+            .extract_zip(&mrpack_file, &temp_extract_dir)
+            .map_err(|e| BuildError::CommandFailed {
                 command: format!("extract mrpack: {}", e),
-            }
-        })?;
+            })?;
 
         self.mrpack_extracted = true;
         Ok(())
@@ -992,11 +993,12 @@ impl<'a> BuildOrchestrator<'a> {
                 })?;
         }
 
-        crate::empack::archive::create_archive(&dist_dir, &archive_path, format).map_err(|e| {
-            BuildError::CommandFailed {
+        self.session
+            .archive()
+            .create_archive(&dist_dir, &archive_path, format)
+            .map_err(|e| BuildError::CommandFailed {
                 command: format!("create distribution archive: {}", e),
-            }
-        })?;
+            })?;
 
         Ok(archive_path)
     }
