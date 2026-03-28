@@ -1,9 +1,10 @@
 use anyhow::Result;
 use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;
+use empack_lib::application::session_mocks::mock_root;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::{HermeticSessionBuilder, MockBehavior};
+use empack_tests::MockSessionBuilder;
 
 fn remove_project_config() -> &'static str {
     r#"empack:
@@ -28,26 +29,16 @@ fn remove_project_config() -> &'static str {
 "#
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn e2e_remove_single_mod() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_mock_http_client()
-        .with_empack_project("remove-single", "1.21.1", "fabric")?
-        .with_mock_executable("packwiz", MockBehavior::AlwaysSucceed)?
-        .build()?;
+    let workdir = mock_root().join("workdir");
+    let session = MockSessionBuilder::new()
+        .with_empack_project("remove-single", "1.21.1", "fabric")
+        .with_yes_flag()
+        .with_file(workdir.join("empack.yml"), remove_project_config().to_string())
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    std::fs::write(workdir.join("empack.yml"), remove_project_config())?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Remove {
@@ -60,15 +51,16 @@ async fn e2e_remove_single_mod() -> Result<()> {
 
     assert!(result.is_ok(), "remove command failed: {result:?}");
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains_args(&["remove", "-y", "sodium"])),
+            .any(|call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "sodium"]),
         "remove should invoke packwiz remove -y sodium: {packwiz_calls:?}"
     );
 
-    let config_content = std::fs::read_to_string(workdir.join("empack.yml"))?;
+    let config_content = session.filesystem().read_to_string(&workdir.join("empack.yml"))?;
     assert!(
         !config_content.contains("sodium"),
         "sodium should be removed from empack.yml after remove command"
@@ -81,26 +73,16 @@ async fn e2e_remove_single_mod() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn e2e_remove_multiple_mods() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_mock_http_client()
-        .with_empack_project("remove-multi", "1.21.1", "fabric")?
-        .with_mock_executable("packwiz", MockBehavior::AlwaysSucceed)?
-        .build()?;
+    let workdir = mock_root().join("workdir");
+    let session = MockSessionBuilder::new()
+        .with_empack_project("remove-multi", "1.21.1", "fabric")
+        .with_yes_flag()
+        .with_file(workdir.join("empack.yml"), remove_project_config().to_string())
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    std::fs::write(workdir.join("empack.yml"), remove_project_config())?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Remove {
@@ -113,21 +95,23 @@ async fn e2e_remove_multiple_mods() -> Result<()> {
 
     assert!(result.is_ok(), "remove command failed: {result:?}");
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains_args(&["remove", "-y", "sodium"])),
+            .any(|call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "sodium"]),
         "should invoke packwiz remove for sodium: {packwiz_calls:?}"
     );
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains_args(&["remove", "-y", "fabric_api"])),
+            .any(|call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "fabric_api"]),
         "should invoke packwiz remove for fabric_api: {packwiz_calls:?}"
     );
 
-    let config_content = std::fs::read_to_string(workdir.join("empack.yml"))?;
+    let config_content = session.filesystem().read_to_string(&workdir.join("empack.yml"))?;
     assert!(
         !config_content.contains("sodium"),
         "sodium should be removed from empack.yml"
@@ -140,26 +124,16 @@ async fn e2e_remove_multiple_mods() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn e2e_remove_empty_mods_is_noop() -> Result<()> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_mock_http_client()
-        .with_empack_project("remove-empty", "1.21.1", "fabric")?
-        .with_mock_executable("packwiz", MockBehavior::AlwaysSucceed)?
-        .build()?;
+    let workdir = mock_root().join("workdir");
+    let session = MockSessionBuilder::new()
+        .with_empack_project("remove-empty", "1.21.1", "fabric")
+        .with_yes_flag()
+        .with_file(workdir.join("empack.yml"), remove_project_config().to_string())
+        .build();
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    std::fs::write(workdir.join("empack.yml"), remove_project_config())?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Remove {
@@ -175,13 +149,13 @@ async fn e2e_remove_empty_mods_is_noop() -> Result<()> {
         "remove with empty mods should not fail: {result:?}"
     );
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
         packwiz_calls.is_empty(),
         "remove with empty mods should not call packwiz: {packwiz_calls:?}"
     );
 
-    let config_content = std::fs::read_to_string(workdir.join("empack.yml"))?;
+    let config_content = session.filesystem().read_to_string(&workdir.join("empack.yml"))?;
     assert!(
         config_content.contains("sodium"),
         "empack.yml should be unchanged after empty remove"

@@ -5,10 +5,13 @@ use empack_lib::application::config::AppConfig;
 use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveNetworkProvider,
 };
-use empack_lib::application::session_mocks::{MockInteractiveProvider, MockProcessProvider};
+use empack_lib::application::session_mocks::{
+    mock_root, MockInteractiveProvider, MockProcessProvider,
+};
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
+use empack_tests::MockSessionBuilder;
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -84,27 +87,9 @@ async fn test_clean_dry_run() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn test_remove_dry_run() -> Result<()> {
-    let (session, test_env) = empack_tests::HermeticSessionBuilder::new()?
-        .with_mock_http_client()
-        .with_dry_run_flag()
-        .with_empack_project("remove-dry-run", "1.21.1", "fabric")?
-        .with_mock_executable("packwiz", empack_tests::MockBehavior::AlwaysSucceed)?
-        .build()?;
-
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-
+    let workdir = mock_root().join("workdir");
     let custom_config = r#"empack:
   name: "Remove Dry Run Pack"
   author: "Test Author"
@@ -125,7 +110,14 @@ async fn test_remove_dry_run() -> Result<()> {
       project_id: P7dR8mSH
       type: mod
 "#;
-    std::fs::write(workdir.join("empack.yml"), custom_config)?;
+
+    let session = MockSessionBuilder::new()
+        .with_empack_project("remove-dry-run", "1.21.1", "fabric")
+        .with_dry_run_flag()
+        .with_file(workdir.join("empack.yml"), custom_config.to_string())
+        .build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Remove {
@@ -142,7 +134,7 @@ async fn test_remove_dry_run() -> Result<()> {
         result
     );
 
-    let packwiz_calls = test_env.get_mock_invocations("packwiz")?;
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     let remove_calls: Vec<_> = packwiz_calls
         .iter()
         .filter(|call| call.args.contains(&"remove".to_string()))
@@ -153,7 +145,9 @@ async fn test_remove_dry_run() -> Result<()> {
         remove_calls
     );
 
-    let config_content = std::fs::read_to_string(workdir.join("empack.yml"))?;
+    let config_content = session
+        .filesystem()
+        .read_to_string(&workdir.join("empack.yml"))?;
     assert!(
         config_content.contains("sodium"),
         "dry-run should not modify empack.yml; sodium should remain"
