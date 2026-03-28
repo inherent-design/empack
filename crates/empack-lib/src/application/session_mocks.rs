@@ -51,6 +51,9 @@ pub struct MockFileSystemProvider {
     pub binary_files: Arc<Mutex<HashMap<PathBuf, Vec<u8>>>>,
     /// Track directories that exist
     pub directories: Arc<Mutex<HashSet<PathBuf>>>,
+    /// Files to auto-create when a matching directory is created via `create_dir_all`.
+    /// Maps directory path -> Vec<(filename, content)>.
+    pub deferred_files: Arc<Mutex<HashMap<PathBuf, Vec<(String, String)>>>>,
 }
 
 impl MockFileSystemProvider {
@@ -63,6 +66,7 @@ impl MockFileSystemProvider {
             files: Arc::new(Mutex::new(HashMap::new())),
             binary_files: Arc::new(Mutex::new(HashMap::new())),
             directories: Arc::new(Mutex::new(HashSet::new())),
+            deferred_files: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -91,6 +95,25 @@ impl MockFileSystemProvider {
 
     pub fn with_files(self, files: HashMap<PathBuf, String>) -> Self {
         *self.files.lock().unwrap() = files;
+        self
+    }
+
+    /// Register a file to be automatically created when `create_dir_all` is
+    /// called for the given directory. Useful for simulating artifacts that
+    /// production code expects to appear during a build step (e.g. srv.jar
+    /// created by an installer after the dist directory is created).
+    pub fn with_deferred_file(
+        self,
+        directory: PathBuf,
+        filename: String,
+        content: String,
+    ) -> Self {
+        self.deferred_files
+            .lock()
+            .unwrap()
+            .entry(directory)
+            .or_default()
+            .push((filename, content));
         self
     }
 
@@ -324,6 +347,16 @@ impl FileSystemProvider for MockFileSystemProvider {
                 .unwrap()
                 .insert(parent.to_path_buf());
             current = parent.to_path_buf();
+        }
+        // Materialize deferred files registered for this directory
+        let deferred = self.deferred_files.lock().unwrap();
+        if let Some(entries) = deferred.get(path) {
+            for (filename, content) in entries {
+                self.files
+                    .lock()
+                    .unwrap()
+                    .insert(path.join(filename), content.clone());
+            }
         }
         Ok(())
     }

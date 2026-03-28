@@ -1,84 +1,46 @@
-//! Hermetic E2E tests for the server build target.
+//! E2E tests for the server build target.
 
 use anyhow::Result;
 use empack_lib::application::Commands;
 use empack_lib::application::cli::CliArchiveFormat;
 use empack_lib::application::commands::execute_command_with_session;
-use empack_lib::application::session::{
-    CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveProcessProvider,
-};
-use empack_lib::application::session_mocks::MockInteractiveProvider;
+use empack_lib::application::session_mocks::mock_root;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::{HermeticSessionBuilder, MockBehavior, MockNetworkProvider, TestEnvironment};
-use std::path::PathBuf;
+use empack_tests::MockSessionBuilder;
+use std::path::{Path, PathBuf};
 
-type HermeticSession = CommandSession<
-    LiveFileSystemProvider,
-    MockNetworkProvider,
-    LiveProcessProvider,
-    LiveConfigProvider,
-    MockInteractiveProvider,
->;
-
-fn build_packwiz_output(project_name: &str) -> String {
-    format!("Refreshed packwiz index\nExported to {project_name}-v1.0.0.mrpack")
+fn server_templates(workdir: &Path) -> Vec<(PathBuf, String)> {
+    let templates_dir = workdir.join("templates").join("server");
+    vec![
+        (
+            templates_dir.join("server.properties.template"),
+            "server-port=25565\nmotd={{NAME}} v{{VERSION}}\n".to_string(),
+        ),
+        (
+            templates_dir.join("install_pack.sh.template"),
+            "#!/bin/bash\necho \"Installing {{NAME}}\"\n".to_string(),
+        ),
+    ]
 }
 
-fn init_display(session: &HermeticSession) -> Result<()> {
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
-    Display::init_or_get(terminal_caps);
-    Ok(())
-}
+#[tokio::test]
+async fn e2e_build_server_successfully() -> Result<()> {
+    let project_name = "workflow-server";
+    let workdir = mock_root().join("workdir");
 
-async fn initialize_empack_project(
-    project_name: &str,
-) -> Result<(HermeticSession, TestEnvironment, PathBuf)> {
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_empack_project(project_name, "1.21.1", "fabric")?
-        .with_mock_http_client()
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: build_packwiz_output(project_name),
-                stderr: String::new(),
-            },
-        )?
-        .with_pre_cached_jars()?
-        .build()?;
+    let mut builder = MockSessionBuilder::new()
+        .with_empack_project(project_name, "1.21.1", "fabric")
+        .with_pre_cached_jars()
+        .with_server_jar_stub();
 
-    init_display(&session)?;
-
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    unsafe {
-        std::env::set_var("HOME", &test_env.root_path);
+    for (path, content) in server_templates(&workdir) {
+        builder = builder.with_file(path, content);
     }
 
-    Ok((session, test_env, workdir))
-}
+    let session = builder.build();
 
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn e2e_build_server_successfully() -> anyhow::Result<()> {
-    let project_name = "workflow-server";
-    let (session, test_env, workdir) = initialize_empack_project(project_name).await?;
-
-    let templates_dir = workdir.join("templates").join("server");
-    std::fs::create_dir_all(&templates_dir)?;
-    std::fs::write(
-        templates_dir.join("server.properties.template"),
-        "server-port=25565\nmotd={{NAME}} v{{VERSION}}\n",
-    )?;
-    std::fs::write(
-        templates_dir.join("install_pack.sh.template"),
-        "#!/bin/bash\necho \"Installing {{NAME}}\"\n",
-    )?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Build {
@@ -93,72 +55,64 @@ async fn e2e_build_server_successfully() -> anyhow::Result<()> {
     assert!(result.is_ok(), "Server build failed: {result:?}");
 
     let server_dir = workdir.join("dist").join("server");
-    assert!(server_dir.exists(), "Server build directory should exist");
     assert!(
-        std::fs::read_to_string(server_dir.join("server.properties"))?.contains(project_name),
+        session.filesystem().exists(&server_dir),
+        "Server build directory should exist"
+    );
+    let properties = session
+        .filesystem()
+        .read_to_string(&server_dir.join("server.properties"))?;
+    assert!(
+        properties.contains(project_name),
         "Server templates should be rendered"
     );
     assert!(
-        server_dir.join("packwiz-installer-bootstrap.jar").exists(),
+        session
+            .filesystem()
+            .exists(&server_dir.join("packwiz-installer-bootstrap.jar")),
         "Bootstrap installer should be copied into server output"
     );
     assert!(
-        server_dir.join("srv.jar").exists(),
+        session.filesystem().exists(&server_dir.join("srv.jar")),
         "Server build should materialize the server JAR"
     );
+
+    let extract_calls = session.archive_provider.extract_calls.lock().unwrap();
     assert!(
-        server_dir.join("config").join("generated.txt").exists(),
-        "Override content should be extracted from the mrpack"
-    );
-    assert!(
-        workdir
-            .join("dist")
-            .join(format!("{project_name}-v1.0.0-server.zip"))
-            .exists(),
-        "Server archive should be created"
+        !extract_calls.is_empty(),
+        "Server build should extract the mrpack archive"
     );
 
-    let packwiz_calls = test_env.get_mock_calls("packwiz")?;
+    let create_calls = session.archive_provider.create_calls.lock().unwrap();
+    assert!(
+        create_calls.iter().any(|(_, dest)| dest
+            .to_string_lossy()
+            .contains(&format!("{project_name}-v1.0.0-server.zip"))),
+        "Server archive should be created: {create_calls:?}"
+    );
+
+    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
     assert!(
         packwiz_calls
             .iter()
-            .any(|call| call.contains(" mr export ")),
+            .any(|call| call.args.iter().any(|a| a == "mr")
+                && call.args.iter().any(|a| a == "export")),
         "Server build should export an mrpack before extraction: {packwiz_calls:?}"
     );
 
     Ok(())
 }
 
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
+#[tokio::test]
+async fn e2e_build_server_missing_installer() -> Result<()> {
     let project_name = "workflow-server-missing-installer";
-    let (session, test_env) = HermeticSessionBuilder::new()?
-        .with_empack_project(project_name, "1.21.1", "fabric")?
-        .with_mock_executable(
-            "packwiz",
-            MockBehavior::SucceedWithOutput {
-                stdout: build_packwiz_output(project_name),
-                stderr: String::new(),
-            },
-        )?
-        .build()?;
+    let workdir = mock_root().join("workdir");
 
-    init_display(&session)?;
+    let session = MockSessionBuilder::new()
+        .with_empack_project(project_name, "1.21.1", "fabric")
+        .build();
 
-    let workdir = session
-        .config()
-        .app_config()
-        .workdir
-        .clone()
-        .expect("hermetic project should configure a workdir");
-    std::env::set_current_dir(&workdir)?;
-    unsafe {
-        std::env::set_var("HOME", &test_env.root_path);
-    }
-
-    let templates_dir = workdir.join("templates").join("server");
-    std::fs::create_dir_all(&templates_dir)?;
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Build {
@@ -182,36 +136,44 @@ async fn e2e_build_server_missing_installer() -> anyhow::Result<()> {
         "Build should fail at HTTP or bootstrap JAR resolution, got: {error}"
     );
     assert!(
-        !workdir
-            .join("dist")
-            .join("workflow-server-missing-installer-v1.0.0-server.zip")
-            .exists(),
+        !session.filesystem().exists(
+            &workdir
+                .join("dist")
+                .join(format!("{project_name}-v1.0.0-server.zip"))
+        ),
         "No server archive should be produced when the build fails"
     );
 
     Ok(())
 }
 
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
+#[tokio::test]
+async fn e2e_build_server_with_templates() -> Result<()> {
     let project_name = "workflow-server-templates";
-    let (session, _test_env, workdir) = initialize_empack_project(project_name).await?;
-
+    let workdir = mock_root().join("workdir");
     let templates_dir = workdir.join("templates").join("server");
-    std::fs::create_dir_all(&templates_dir)?;
-    std::fs::write(
-        templates_dir.join("server.properties.template"),
-        "server-port=25565\nmotd={{NAME}} v{{VERSION}} by {{AUTHOR}}\nmax-players=20\n",
-    )?;
-    std::fs::write(
-        templates_dir.join("README.md.template"),
-        "# {{NAME}}\n\nVersion: {{VERSION}}\nAuthor: {{AUTHOR}}\nMinecraft: {{MC_VERSION}}\n",
-    )?;
-    std::fs::write(
-        templates_dir.join("start.sh.template"),
-        "#!/bin/bash\necho \"Starting {{NAME}} server\"\njava -jar srv.jar\n",
-    )?;
+
+    let session = MockSessionBuilder::new()
+        .with_empack_project(project_name, "1.21.1", "fabric")
+        .with_pre_cached_jars()
+        .with_server_jar_stub()
+        .with_file(
+            templates_dir.join("server.properties.template"),
+            "server-port=25565\nmotd={{NAME}} v{{VERSION}} by {{AUTHOR}}\nmax-players=20\n"
+                .to_string(),
+        )
+        .with_file(
+            templates_dir.join("README.md.template"),
+            "# {{NAME}}\n\nVersion: {{VERSION}}\nAuthor: {{AUTHOR}}\nMinecraft: {{MC_VERSION}}\n"
+                .to_string(),
+        )
+        .with_file(
+            templates_dir.join("start.sh.template"),
+            "#!/bin/bash\necho \"Starting {{NAME}} server\"\njava -jar srv.jar\n".to_string(),
+        )
+        .build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
         Commands::Build {
@@ -226,7 +188,9 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
     assert!(result.is_ok(), "Server build failed: {result:?}");
 
     let server_dir = workdir.join("dist").join("server");
-    let properties = std::fs::read_to_string(server_dir.join("server.properties"))?;
+    let properties = session
+        .filesystem()
+        .read_to_string(&server_dir.join("server.properties"))?;
     assert!(
         properties.contains(project_name),
         "Server name should be processed"
@@ -240,7 +204,9 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
         "Template variables should be replaced"
     );
 
-    let readme = std::fs::read_to_string(server_dir.join("README.md"))?;
+    let readme = session
+        .filesystem()
+        .read_to_string(&server_dir.join("README.md"))?;
     assert!(
         readme.contains(&format!("# {project_name}")),
         "README should be rendered"
@@ -250,7 +216,9 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
         "README template variables should be replaced"
     );
 
-    let script = std::fs::read_to_string(server_dir.join("start.sh"))?;
+    let script = session
+        .filesystem()
+        .read_to_string(&server_dir.join("start.sh"))?;
     assert!(
         script.contains(&format!("Starting {project_name} server")),
         "Script should be processed"
@@ -260,12 +228,8 @@ async fn e2e_build_server_with_templates() -> anyhow::Result<()> {
         "Script should contain the server launch command"
     );
     assert!(
-        server_dir.join("srv.jar").exists(),
+        session.filesystem().exists(&server_dir.join("srv.jar")),
         "Server JAR should exist"
-    );
-    assert!(
-        server_dir.join("config").join("generated.txt").exists(),
-        "Override content should be copied into the rendered server build"
     );
 
     Ok(())

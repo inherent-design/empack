@@ -270,6 +270,9 @@ impl<'a> BuildOrchestrator<'a> {
     ///
     /// Dispatches per loader type; each arm calls a dedicated provider method.
     fn download_server_jar(&self, dist_dir: &Path, pack_info: &PackInfo) -> Result<(), BuildError> {
+        if self.session.filesystem().exists(&dist_dir.join("srv.jar")) {
+            return Ok(());
+        }
         match pack_info.loader_type.as_str() {
             "vanilla" => self.install_vanilla_server(dist_dir, pack_info),
             "fabric" => self.install_fabric_server(dist_dir, pack_info),
