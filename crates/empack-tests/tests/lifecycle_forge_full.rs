@@ -135,17 +135,16 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     // Deferred server JAR stubs: injected when the build creates dist directories.
     let dist = project_dir.join("dist");
-    {
-        let mut deferred = session.filesystem_provider.deferred_files.lock().unwrap();
-        deferred
-            .entry(dist.join("server"))
-            .or_default()
-            .push(("srv.jar".to_string(), "mock-server-jar".to_string()));
-        deferred
-            .entry(dist.join("server-full"))
-            .or_default()
-            .push(("srv.jar".to_string(), "mock-server-jar".to_string()));
-    }
+    session.filesystem_provider.add_deferred_file(
+        dist.join("server"),
+        "srv.jar".to_string(),
+        "mock-server-jar".to_string(),
+    );
+    session.filesystem_provider.add_deferred_file(
+        dist.join("server-full"),
+        "srv.jar".to_string(),
+        "mock-server-jar".to_string(),
+    );
 
     // Step 2: Add mods (sodium via Modrinth, jei via CurseForge)
     let add_sodium_result = execute_command_with_session(
