@@ -28,8 +28,10 @@ jobs:
           cd pack
           packwiz mr export
 
-      - name: Package server distribution
+      - name: Collect and package artifacts
         run: |
+          mkdir -p dist
+          mv pack/*.mrpack dist/ 2>/dev/null || true
           mkdir -p staging/server
           cp -r pack staging/server/
           if [ -d templates/server ]; then
@@ -38,11 +40,6 @@ jobs:
             done
           fi
           cd staging && tar czf ../dist/server.tar.gz server
-
-      - name: Collect artifacts
-        run: |
-          mkdir -p dist
-          mv pack/*.mrpack dist/ 2>/dev/null || true
 
       - name: Create release
         uses: softprops/action-gh-release@v2
