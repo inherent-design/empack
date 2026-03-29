@@ -9,10 +9,12 @@ on:
       - 'templates/**'
       - '.github/workflows/validate.yml'
   pull_request:
+    branches: [main]
     paths:
       - 'pack/**'
       - 'empack.yml'
       - 'templates/**'
+      - '.github/workflows/validate.yml'
   workflow_dispatch:
 
 jobs:

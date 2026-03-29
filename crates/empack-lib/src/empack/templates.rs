@@ -50,7 +50,8 @@ impl TemplateEngine {
         let mut handlebars = Handlebars::new();
 
         // Configure for V1 compatibility
-        handlebars.set_strict_mode(false); // Allow missing variables
+        handlebars.set_strict_mode(false);
+        handlebars.register_escape_fn(handlebars::no_escape);
 
         // Register embedded templates using include_str!
         let _ = handlebars.register_template_string(
