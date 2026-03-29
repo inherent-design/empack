@@ -105,6 +105,8 @@ pub struct BuildOrchestrator<'a> {
 
     archive_format: crate::empack::archive::ArchiveFormat,
 
+    template_engine: Option<TemplateEngine>,
+
     session: &'a dyn crate::application::session::Session,
 }
 
@@ -117,6 +119,10 @@ impl<'a> std::fmt::Debug for BuildOrchestrator<'a> {
             .field("mrpack_extracted", &self.mrpack_extracted)
             .field("pack_info", &self.pack_info)
             .field("archive_format", &self.archive_format)
+            .field(
+                "template_engine",
+                &self.template_engine.as_ref().map(|_| "<TemplateEngine>"),
+            )
             .field("session", &"<dyn Session>")
             .finish()
     }
@@ -183,6 +189,7 @@ impl<'a> BuildOrchestrator<'a> {
             mrpack_extracted: false,
             pack_info: None,
             archive_format,
+            template_engine: None,
             session,
         })
     }
@@ -265,6 +272,22 @@ impl<'a> BuildOrchestrator<'a> {
             Some(pack_info) => Ok(pack_info),
             None => unreachable!("pack info should be cached after loading"),
         }
+    }
+
+    /// Return a cached `TemplateEngine` loaded from pack.toml, initializing it
+    /// on first call.
+    fn get_or_init_template_engine(&mut self) -> Result<&TemplateEngine, BuildError> {
+        if self.template_engine.is_none() {
+            let mut engine = TemplateEngine::new();
+            let pack_toml = self.workdir.join("pack").join("pack.toml");
+            engine
+                .load_from_pack_toml(&pack_toml, self.session.filesystem())
+                .map_err(|e| BuildError::ConfigError {
+                    reason: format!("Failed to load template variables from pack.toml: {}", e),
+                })?;
+            self.template_engine = Some(engine);
+        }
+        Ok(self.template_engine.as_ref().unwrap())
     }
 
     /// Download or install the Minecraft server JAR into `dist_dir`.
@@ -1586,14 +1609,8 @@ impl<'a> BuildOrchestrator<'a> {
             return Ok(());
         }
 
-        // Build a TemplateEngine with pack variables from pack.toml
-        let pack_toml_path = self.workdir.join("pack").join("pack.toml");
-        let mut engine = TemplateEngine::new();
-        engine
-            .load_from_pack_toml(&pack_toml_path, self.session.filesystem())
-            .map_err(|e| BuildError::ConfigError {
-                reason: format!("Failed to load template variables from pack.toml: {}", e),
-            })?;
+        // Ensure the cached TemplateEngine is initialised from pack.toml
+        self.get_or_init_template_engine()?;
 
         let template_files = self
             .session
@@ -1620,12 +1637,14 @@ impl<'a> BuildOrchestrator<'a> {
                         reason: e.to_string(),
                     })?;
 
-                let processed =
-                    engine
-                        .render_string(&content)
-                        .map_err(|e| BuildError::ConfigError {
-                            reason: format!("Template rendering failed for {}: {}", filename, e),
-                        })?;
+                let processed = self
+                    .template_engine
+                    .as_ref()
+                    .unwrap()
+                    .render_string(&content)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: format!("Template rendering failed for {}: {}", filename, e),
+                    })?;
 
                 self.session
                     .filesystem()
