@@ -85,26 +85,12 @@ fn test_render_string_missing_variable_passthrough() {
 }
 
 #[test]
-fn test_render_string_with_loader_version_alias() {
-    let mut engine = TemplateEngine::new();
-    engine.set_pack_variables("TestPack", "Author", "1.21.1", "1.0.0");
-    engine.set_modloader_variables("fabric", "0.16.14");
-
-    let result = engine.render_string("Loader: {{LOADER_VERSION}}").unwrap();
-    assert_eq!(result, "Loader: 0.16.14");
-
-    let result2 = engine.render_string("Loader: {{MODLOADER_VERSION}}").unwrap();
-    assert_eq!(result2, "Loader: 0.16.14");
-}
-
-#[test]
-fn test_pack_toml_parsing_with_layer1_data() {
+fn test_pack_toml_parsing_with_modloader_data() {
     let mut engine = TemplateEngine::new();
     let fs = LiveFileSystemProvider;
 
-    // Create mock layer_1 pack.toml content
-    let layer1_pack_toml = r#"
-name = "layer_1"
+    let sample_pack_toml = r#"
+name = "test-modpack"
 author = "mannie-exe"
 version = "0.4.5-alpha"
 pack-format = "packwiz:1.1.0"
@@ -126,20 +112,19 @@ datapack-folder = "config/openloader/data"
     // Write to temp file and test parsing
     let temp_dir = TempDir::new().unwrap();
     let pack_path = temp_dir.path().join("pack.toml");
-    std::fs::write(&pack_path, layer1_pack_toml).unwrap();
+    std::fs::write(&pack_path, sample_pack_toml).unwrap();
 
     // Test the pack.toml loading functionality
     engine.load_from_pack_toml(&pack_path, &fs).unwrap();
 
-    // Verify V1-compatible variables were extracted correctly
+    // Verify template variables
     let variables = engine.variables();
-    assert_eq!(variables.get("NAME").unwrap(), "layer_1");
+    assert_eq!(variables.get("NAME").unwrap(), "test-modpack");
     assert_eq!(variables.get("AUTHOR").unwrap(), "mannie-exe");
     assert_eq!(variables.get("VERSION").unwrap(), "0.4.5-alpha");
     assert_eq!(variables.get("MC_VERSION").unwrap(), "1.21.1");
     assert_eq!(variables.get("MODLOADER_NAME").unwrap(), "fabric");
     assert_eq!(variables.get("MODLOADER_VERSION").unwrap(), "0.16.14");
-    assert_eq!(variables.get("LOADER_VERSION").unwrap(), "0.16.14");
 }
 
 #[test]

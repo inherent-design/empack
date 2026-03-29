@@ -731,7 +731,6 @@ impl MockProcessProvider {
             files: None,
             directories: None,
         };
-        // Backward compat: keep "which" result for any code still using execute("which", ...)
         provider.results.insert(
             ("which".to_string(), vec!["packwiz".to_string()]),
             Ok(ProcessOutput {
@@ -766,7 +765,6 @@ impl MockProcessProvider {
         // Ensure packwiz is available via find_program
         self.programs
             .insert("packwiz".to_string(), Some(packwiz_path.clone()));
-        // Backward compat: keep "which" result
         self.results.insert(
             ("which".to_string(), vec!["packwiz".to_string()]),
             Ok(ProcessOutput {

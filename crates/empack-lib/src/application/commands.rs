@@ -894,8 +894,6 @@ async fn handle_add(
     platform: Option<SearchPlatform>,
     project_type: Option<CliProjectType>,
 ) -> Result<()> {
-    // Migrate from legacy handle_add - using session providers
-
     if mods.is_empty() {
         session
             .display()

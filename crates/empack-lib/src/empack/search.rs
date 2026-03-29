@@ -1,7 +1,7 @@
 //! Project search and resolution across project platforms
 //!
 //! Project matching with confidence scoring, platform
-//! priority, and fuzzy string matching based on the proven bash implementation.
+//! priority, and fuzzy string matching.
 
 use crate::networking::cache::HttpCache;
 use crate::networking::rate_limit::RateLimiterManager;

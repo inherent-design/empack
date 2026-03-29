@@ -221,35 +221,6 @@ pub fn load_vcr_body_string(cassette_path: &str) -> Result<String> {
     })
 }
 
-/// Legacy function - deprecated, use load_vcr_body_string instead
-#[deprecated(note = "Use load_vcr_body_string instead")]
-pub fn load_fixture(name: &str) -> Result<String> {
-    // Map old fixture names to new VCR cassette paths
-    let cassette_path = match name {
-        "modrinth_search_sodium.json" => cassette_path("modrinth/search_sodium.json")
-            .to_string_lossy()
-            .into_owned(),
-        "modrinth_search_jei.json" => {
-            // Note: This cassette doesn't exist yet, would need to be created
-            return Err(anyhow::anyhow!(
-                "JEI cassette not yet created - use VCR recording"
-            ));
-        }
-        _ => return Err(anyhow::anyhow!("Unknown fixture '{}'", name)),
-    };
-
-    load_vcr_body_string(&cassette_path)
-}
-
-/// Legacy function - deprecated, use load_vcr_response instead
-#[deprecated(note = "Use load_vcr_response instead")]
-pub fn load_fixture_json(name: &str) -> Result<Value> {
-    #[allow(deprecated)]
-    let content = load_fixture(name)?;
-    serde_json::from_str(&content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse fixture '{}' as JSON: {}", name, e))
-}
-
 /// Get the base URL for mockito server
 #[cfg(test)]
 pub fn mockito_url(server: &mockito::Server) -> String {
@@ -280,15 +251,6 @@ mod tests {
         let body_str = load_vcr_body_string(cassette_path.to_str().unwrap()).unwrap();
         assert!(body_str.contains("sodium"));
         assert!(body_str.contains("AANobbMI"));
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_legacy_load_fixture() {
-        // Test that legacy function still works via compatibility layer
-        let fixture = load_fixture("modrinth_search_sodium.json").unwrap();
-        assert!(fixture.contains("sodium"));
-        assert!(fixture.contains("AANobbMI"));
     }
 
     #[test]

@@ -432,19 +432,6 @@ fn test_pure_discover_state_function() {
 }
 
 #[test]
-fn test_discover_state_ignores_legacy_hidden_artifact_root() {
-    let (provider, workdir) = create_configured_test();
-    provider.add_directory(workdir.join(".empack").join("dist"));
-    provider.add_build_artifact(workdir.join(".empack").join("dist").join("legacy.mrpack"));
-
-    let state = discover_state(&provider, &workdir).unwrap();
-    assert_eq!(state, PackState::Configured);
-
-    let manager = PackStateManager::new(workdir, &provider);
-    assert!(!manager.validate_state(PackState::Built).unwrap());
-}
-
-#[test]
 fn test_pure_can_transition_function() {
     // Test valid orchestrated transitions (pure whitelist)
     assert!(can_transition(
