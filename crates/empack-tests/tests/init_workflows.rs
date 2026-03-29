@@ -46,26 +46,22 @@ async fn test_init_zero_config() -> Result<()> {
 
     assert!(result.is_ok(), "Init command failed: {:?}", result);
 
-    let dir_name = workdir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Pack");
-    let project_dir = workdir.join(dir_name);
-
+    // With --yes and no name, the default name matches the directory name,
+    // so init should happen in-place (not create a nested subdirectory).
     assert!(
-        session.filesystem().exists(&project_dir.join("empack.yml")),
-        "empack.yml should be created in subdirectory named after the modpack"
+        session.filesystem().exists(&workdir.join("empack.yml")),
+        "empack.yml should be created in the current directory when name matches dir name"
     );
 
-    let pack_dir = project_dir.join("pack");
     assert!(
-        session.filesystem().exists(&pack_dir),
+        session.filesystem().exists(&workdir.join("pack")),
         "pack/ directory should be created"
     );
 
-    let pack_toml_path = pack_dir.join("pack.toml");
     assert!(
-        session.filesystem().exists(&pack_toml_path),
+        session
+            .filesystem()
+            .exists(&workdir.join("pack").join("pack.toml")),
         "pack.toml should exist after packwiz init"
     );
 
@@ -396,6 +392,133 @@ async fn test_init_scaffolds_template_files() -> Result<()> {
             .filesystem()
             .exists(&project_dir.join(".github/workflows/release.yml")),
         ".github/workflows/release.yml should be created after init"
+    );
+
+    Ok(())
+}
+
+/// Test: empack init in a directory whose name matches the interactively entered
+/// modpack name should init in-place instead of creating a subdirectory.
+/// Uses --yes which returns the default name (dir basename) from the prompt.
+#[tokio::test]
+async fn test_init_in_matching_named_directory() -> Result<()> {
+    let session = MockSessionBuilder::new().with_yes_flag().build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let workdir = session.filesystem().current_dir()?;
+    let dir_name = workdir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap()
+        .to_string();
+
+    // No positional name, no --name flag. --yes causes the interactive prompt
+    // to return the default (directory basename). Since that matches the dir name,
+    // init should happen in-place.
+    let result = execute_command_with_session(
+        Commands::Init {
+            name: None,
+            pack_name: None,
+            force: false,
+            modloader: Some("fabric".to_string()),
+            mc_version: Some("1.21.4".to_string()),
+            author: Some("Test".to_string()),
+            loader_version: None,
+            pack_version: None,
+        },
+        &session,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "Init in matching dir failed: {:?}",
+        result.err()
+    );
+
+    assert!(
+        session.filesystem().exists(&workdir.join("empack.yml")),
+        "empack.yml should be in the current directory when name matches dir name"
+    );
+    assert!(
+        !session
+            .filesystem()
+            .exists(&workdir.join(&dir_name).join("empack.yml")),
+        "empack.yml should NOT be in a nested subdirectory when name matches"
+    );
+
+    Ok(())
+}
+
+/// Test: empack init in a directory whose name does NOT match creates subdirectory.
+#[tokio::test]
+async fn test_init_in_nonmatching_directory_creates_subdir() -> Result<()> {
+    let session = MockSessionBuilder::new().with_yes_flag().build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let workdir = session.filesystem().current_dir()?;
+
+    let result = execute_command_with_session(
+        Commands::Init {
+            name: None,
+            pack_name: Some("different-name".to_string()),
+            force: false,
+            modloader: Some("fabric".to_string()),
+            mc_version: Some("1.21.4".to_string()),
+            author: Some("Test".to_string()),
+            loader_version: None,
+            pack_version: None,
+        },
+        &session,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "Init with different name failed: {:?}",
+        result.err()
+    );
+
+    let project_dir = workdir.join("different-name");
+    assert!(
+        session.filesystem().exists(&project_dir.join("empack.yml")),
+        "empack.yml should be in different-name/ subdirectory"
+    );
+
+    Ok(())
+}
+
+/// Test: empack init . uses current directory in-place.
+#[tokio::test]
+async fn test_init_dot_uses_current_directory() -> Result<()> {
+    let session = MockSessionBuilder::new().with_yes_flag().build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let workdir = session.filesystem().current_dir()?;
+
+    let result = execute_command_with_session(
+        Commands::Init {
+            name: Some(".".to_string()),
+            pack_name: None,
+            force: false,
+            modloader: Some("fabric".to_string()),
+            mc_version: Some("1.21.4".to_string()),
+            author: Some("Test".to_string()),
+            loader_version: None,
+            pack_version: None,
+        },
+        &session,
+    )
+    .await;
+
+    assert!(result.is_ok(), "Init with . failed: {:?}", result.err());
+
+    assert!(
+        session.filesystem().exists(&workdir.join("empack.yml")),
+        "empack.yml should be in the current directory"
     );
 
     Ok(())

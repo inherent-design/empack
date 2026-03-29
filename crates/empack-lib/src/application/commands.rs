@@ -333,58 +333,63 @@ async fn handle_init(
     };
 
     // When no name was provided via CLI and the cwd is not already a project,
-    // the interactively-entered name determines the target subdirectory
-    // (like `empack init <name>` would).
+    // decide whether to init in-place or create a subdirectory.
+    // If the entered name matches the current directory name, init in place.
     if initial_name.is_none() && !existing_project_in_cwd {
-        let new_target = target_dir.join(&modpack_name);
-        needs_mkdir = !session.filesystem().exists(&new_target);
+        let dir_name = target_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
 
-        // If the new target exists and already has a modpack, check state
-        if !needs_mkdir {
-            let new_manager = crate::empack::state::PackStateManager::new(
-                new_target.clone(),
-                session.filesystem(),
-            );
-            let new_state = new_manager.discover_state()?;
-            if new_state != PackState::Uninitialized {
-                if !force {
-                    session.display().status().error(
-                        "Directory already contains a modpack project",
-                        &new_target.display().to_string(),
-                    );
+        if modpack_name != dir_name {
+            let new_target = target_dir.join(&modpack_name);
+            needs_mkdir = !session.filesystem().exists(&new_target);
+
+            if !needs_mkdir {
+                let new_manager = crate::empack::state::PackStateManager::new(
+                    new_target.clone(),
+                    session.filesystem(),
+                );
+                let new_state = new_manager.discover_state()?;
+                if new_state != PackState::Uninitialized {
+                    if !force {
+                        session.display().status().error(
+                            "Directory already contains a modpack project",
+                            &new_target.display().to_string(),
+                        );
+                        session
+                            .display()
+                            .status()
+                            .subtle("   Use --force to overwrite existing files");
+                        return Err(anyhow::anyhow!(
+                            "Directory '{}' already contains a modpack project. Use --force to overwrite existing files.",
+                            new_target.display()
+                        ));
+                    }
                     session
                         .display()
                         .status()
-                        .subtle("   Use --force to overwrite existing files");
-                    return Err(anyhow::anyhow!(
-                        "Directory '{}' already contains a modpack project. Use --force to overwrite existing files.",
-                        new_target.display()
-                    ));
-                }
-                // Force path: clean existing state
-                session
-                    .display()
-                    .status()
-                    .checking("Resetting existing project state for --force init");
-                let mut current_state = new_state;
-                while current_state != PackState::Uninitialized {
-                    let result = new_manager
-                        .execute_transition(
-                            session.process(),
-                            &*session.packwiz(),
-                            StateTransition::Clean,
-                        )
-                        .await
-                        .context("Failed to reset existing project before initialization")?;
-                    for w in &result.warnings {
-                        session.display().status().warning(w);
+                        .checking("Resetting existing project state for --force init");
+                    let mut current_state = new_state;
+                    while current_state != PackState::Uninitialized {
+                        let result = new_manager
+                            .execute_transition(
+                                session.process(),
+                                &*session.packwiz(),
+                                StateTransition::Clean,
+                            )
+                            .await
+                            .context("Failed to reset existing project before initialization")?;
+                        for w in &result.warnings {
+                            session.display().status().warning(w);
+                        }
+                        current_state = result.state;
                     }
-                    current_state = result.state;
                 }
             }
-        }
 
-        target_dir = new_target;
+            target_dir = new_target;
+        }
     }
 
     // Try to get git user.name as smart default.
