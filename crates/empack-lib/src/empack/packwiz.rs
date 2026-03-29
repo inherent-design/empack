@@ -729,7 +729,7 @@ impl<'a> PackwizInstaller<'a> {
                     reason: "Installer JAR path contains invalid UTF-8".to_string(),
                 })?;
 
-        // Use v1 pattern: --bootstrap-main-jar <installer.jar> -g -s <side> <pack.toml>
+        // --bootstrap-main-jar <installer.jar> -g -s <side> <pack.toml>
         let pack_toml_path = working_dir.join("pack").join("pack.toml");
         let pack_toml_str = pack_toml_path
             .to_str()

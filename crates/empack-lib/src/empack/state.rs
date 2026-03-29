@@ -27,8 +27,6 @@ pub struct StateTransitionResult {
 }
 
 /// Canonical project-local artifact root for build outputs.
-/// Keeping this rooted at `workdir/dist` lets build and clean share one trusted
-/// artifact boundary instead of falling back to historical `.empack/dist` paths.
 pub fn artifact_root(workdir: &Path) -> PathBuf {
     workdir.join("dist")
 }
@@ -566,13 +564,6 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
         provider
             .remove_dir_all(&pack_dir)
             .context("Failed to remove pack directory")?;
-    }
-
-    let empack_dir = workdir.join(".empack");
-    if provider.is_directory(&empack_dir) {
-        provider
-            .remove_dir_all(&empack_dir)
-            .context("Failed to remove .empack directory")?;
     }
 
     Ok(())

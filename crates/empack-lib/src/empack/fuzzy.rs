@@ -2,7 +2,7 @@
 //!
 //! Extracted from `search.rs` to isolate matching logic from HTTP/API concerns.
 
-/// Configuration constants from bash implementation
+/// Configuration constants for fuzzy matching thresholds
 pub const MODRINTH_CONFIDENCE_THRESHOLD: u8 = 90;
 pub const CURSEFORGE_CONFIDENCE_THRESHOLD: u8 = 85;
 pub const MIN_DOWNLOAD_THRESHOLD: u64 = 1000;

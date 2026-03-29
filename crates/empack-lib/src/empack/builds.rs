@@ -139,7 +139,7 @@ pub struct PackInfo {
     pub loader_type: String,
 }
 
-/// Build configuration for a specific target (V1's register_build_target pattern)
+/// Build configuration for a specific target
 #[derive(Debug, Clone)]
 pub struct BuildConfig {
     pub target: BuildTarget,
@@ -194,7 +194,7 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Load pack info from pack.toml (V1's load_pack_info implementation)
+    /// Load pack info from pack.toml
     fn load_pack_info(&mut self) -> Result<&PackInfo, BuildError> {
         if self.pack_info.is_none() {
             let pack_toml = self.workdir.join("pack").join("pack.toml");
@@ -848,12 +848,11 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Register build targets (V1's register_all_build_targets pattern)
+    /// Register build targets
     #[cfg(test)]
     fn create_build_registry() -> HashMap<BuildTarget, BuildConfig> {
         let mut registry = HashMap::new();
 
-        // V1 pattern: register_build_target "mrpack" "build_mrpack_impl" ""
         registry.insert(
             BuildTarget::Mrpack,
             BuildConfig {
@@ -864,7 +863,6 @@ impl<'a> BuildOrchestrator<'a> {
             },
         );
 
-        // V1 pattern: register_build_target "client" "build_client_impl" "mrpack"
         registry.insert(
             BuildTarget::Client,
             BuildConfig {
@@ -875,7 +873,6 @@ impl<'a> BuildOrchestrator<'a> {
             },
         );
 
-        // V1 pattern: register_build_target "server" "build_server_impl" "mrpack"
         registry.insert(
             BuildTarget::Server,
             BuildConfig {
@@ -886,7 +883,6 @@ impl<'a> BuildOrchestrator<'a> {
             },
         );
 
-        // V1 pattern: register_build_target "client-full" "build_client_full_impl" ""
         registry.insert(
             BuildTarget::ClientFull,
             BuildConfig {
@@ -897,7 +893,6 @@ impl<'a> BuildOrchestrator<'a> {
             },
         );
 
-        // V1 pattern: register_build_target "server-full" "build_server_full_impl" ""
         registry.insert(
             BuildTarget::ServerFull,
             BuildConfig {
@@ -911,7 +906,7 @@ impl<'a> BuildOrchestrator<'a> {
         registry
     }
 
-    /// Refresh pack files using packwiz (V1's refresh_pack implementation)
+    /// Refresh pack files using packwiz
     fn refresh_pack(&mut self) -> Result<(), BuildError> {
         if self.pack_refreshed {
             return Ok(());
@@ -946,7 +941,7 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    /// Extract mrpack for distribution builds (V1's extract_mrpack implementation)
+    /// Extract mrpack for distribution builds
     fn extract_mrpack(&mut self) -> Result<(), BuildError> {
         if self.mrpack_extracted {
             return Ok(());
@@ -958,7 +953,6 @@ impl<'a> BuildOrchestrator<'a> {
             .join(format!("{}-v{}.mrpack", pack_info.name, pack_info.version));
 
         if !self.session.filesystem().exists(&mrpack_file) {
-            // Build mrpack first (V1 pattern)
             self.build_mrpack_impl()?;
         }
 
@@ -1034,7 +1028,7 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(archive_path)
     }
 
-    /// Build mrpack implementation (V1's build_mrpack_impl)
+    /// Build mrpack implementation
     fn build_mrpack_impl(&mut self) -> Result<BuildResult, BuildError> {
         self.refresh_pack()?;
 
@@ -1062,7 +1056,6 @@ impl<'a> BuildOrchestrator<'a> {
                 })?;
         }
 
-        // Build mrpack using packwiz (V1 pattern)
         let output = self
             .session
             .process()
@@ -1115,9 +1108,8 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Build client implementation (V1's build_client_impl)
+    /// Build client implementation
     fn build_client_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
-        // Clean first (V1 pattern)
         self.clean_target(BuildTarget::Client)?;
 
         self.refresh_pack()?;
@@ -1130,10 +1122,8 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        // V1 pattern: process_build_templates "templates/client" "$dist_dir"
         self.process_build_templates("templates/client", &dist_dir)?;
 
-        // Set up client structure (V1 pattern)
         let minecraft_dir = dist_dir.join(".minecraft");
         self.session
             .filesystem()
@@ -1160,11 +1150,9 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        // Copy pack files (V1 pattern)
         let pack_dir = self.workdir.join("pack");
         self.copy_dir_contents(&pack_dir, &minecraft_dir.join("pack"))?;
 
-        // Extract mrpack overrides (V1 pattern)
         self.extract_mrpack()?;
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
         let overrides_dir = temp_extract_dir.join("overrides");
@@ -1172,7 +1160,6 @@ impl<'a> BuildOrchestrator<'a> {
             self.copy_dir_contents(&overrides_dir, &minecraft_dir)?;
         }
 
-        // Create distribution (V1 pattern)
         let zip_path = self.zip_distribution(BuildTarget::Client)?;
         let artifact = self.create_artifact(&zip_path)?;
 
@@ -1185,7 +1172,7 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Build server implementation (V1's build_server_impl)
+    /// Build server implementation
     fn build_server_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
         // Step 1: Clean the dist/server/ directory
         self.clean_target(BuildTarget::Server)?;
@@ -1261,7 +1248,7 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Build client-full implementation (V1's build_client_full_impl)
+    /// Build client-full implementation
     fn build_client_full_impl(
         &mut self,
         bootstrap_jar_path: &Path,
@@ -1317,7 +1304,7 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Build server-full implementation (V1's build_server_full_impl)
+    /// Build server-full implementation
     fn build_server_full_impl(
         &mut self,
         bootstrap_jar_path: &Path,
@@ -1387,7 +1374,7 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Execute V1's proven 5-target build pipeline with state management.
+    /// Execute the 5-target build pipeline with state management.
     /// Uses an RAII guard so the state marker is removed on both success and
     /// failure (including panics) without manual cleanup.
     pub async fn execute_build_pipeline(
@@ -1513,7 +1500,7 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    /// Prepare build environment (V1's pattern checking)
+    /// Prepare build environment
     fn prepare_build_environment(&self) -> Result<(), BuildError> {
         // Ensure pack directory exists
         let pack_dir = self.workdir.join("pack");
@@ -1536,7 +1523,7 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    /// Clean build target (V1's clean_target implementation)
+    /// Clean build target
     fn clean_target(&mut self, target: BuildTarget) -> Result<(), BuildError> {
         if self.pack_info.is_none() {
             let _ = self.load_pack_info();
@@ -1545,7 +1532,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         let dist_dir = self.dist_dir.join(target.to_string());
 
-        // Clean directory contents (V1 pattern with .gitkeep preservation)
+        // Preserve .gitkeep files
         if self.session.filesystem().exists(&dist_dir) {
             let files = self
                 .session
@@ -1597,7 +1584,7 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    /// Helper: Process build templates (V1's process_build_templates)
+    /// Helper: Process build templates
     fn process_build_templates(
         &mut self,
         template_dir: &str,

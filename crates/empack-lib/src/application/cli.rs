@@ -254,7 +254,7 @@ impl Commands {
         }
     }
 
-    /// Get execution order for command (matches V1's command registry)
+    /// Get execution order for command
     pub fn execution_order(&self) -> u8 {
         match self {
             Commands::Requirements => 0,

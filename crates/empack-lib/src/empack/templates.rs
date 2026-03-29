@@ -29,10 +29,7 @@ pub enum TemplateError {
     },
 }
 
-/// Template system for V1-compatible modpack initialization
-///
-/// Uses embedded templates with handlebars engine for compatibility
-/// with V1's `{{VARIABLE}}` pattern.
+/// Template system for modpack initialization and build-time variable substitution
 pub struct TemplateEngine {
     handlebars: Handlebars<'static>,
     variables: HashMap<String, String>,
@@ -45,11 +42,10 @@ impl Default for TemplateEngine {
 }
 
 impl TemplateEngine {
-    /// Create new template engine with embedded V1-compatible templates
+    /// Create new template engine with embedded templates
     pub fn new() -> Self {
         let mut handlebars = Handlebars::new();
 
-        // Configure for V1 compatibility
         handlebars.set_strict_mode(false);
         handlebars.register_escape_fn(handlebars::no_escape);
 
@@ -103,7 +99,7 @@ impl TemplateEngine {
         self.variables.extend(vars);
     }
 
-    /// Set default V1-compatible variables for modpack initialization
+    /// Set standard template variables from modpack metadata
     pub fn set_pack_variables(
         &mut self,
         name: &str,
@@ -129,10 +125,9 @@ impl TemplateEngine {
     pub fn set_modloader_variables(&mut self, modloader_name: &str, modloader_version: &str) {
         self.set_variable("MODLOADER_NAME", modloader_name);
         self.set_variable("MODLOADER_VERSION", modloader_version);
-        self.set_variable("LOADER_VERSION", modloader_version);
     }
 
-    /// Load V1-compatible variables from pack.toml for build-time rendering
+    /// Load template variables from pack.toml for build-time rendering
     pub fn load_from_pack_toml<P: AsRef<Path>>(
         &mut self,
         pack_toml_path: P,
@@ -147,7 +142,6 @@ impl TemplateEngine {
             )
         })?;
 
-        // Extract V1-compatible template variables (NAME, AUTHOR, VERSION only)
         self.set_variable("NAME", &pack.name);
         if let Some(ref author) = pack.author {
             self.set_variable("AUTHOR", author);
@@ -164,23 +158,18 @@ impl TemplateEngine {
 
     /// Extract modloader information from PackMetadata (all 4 supported: NeoForge > Fabric > Quilt > Forge)
     fn extract_modloader_info(&mut self, pack: &PackMetadata) {
-        // V1 preference order: NeoForge > Fabric > Quilt > Forge
         if let Some(neoforge_version) = pack.versions.loader_versions.get("neoforge") {
             self.set_variable("MODLOADER_NAME", "neoforge");
             self.set_variable("MODLOADER_VERSION", neoforge_version);
-            self.set_variable("LOADER_VERSION", neoforge_version);
         } else if let Some(fabric_version) = pack.versions.loader_versions.get("fabric") {
             self.set_variable("MODLOADER_NAME", "fabric");
             self.set_variable("MODLOADER_VERSION", fabric_version);
-            self.set_variable("LOADER_VERSION", fabric_version);
         } else if let Some(quilt_version) = pack.versions.loader_versions.get("quilt") {
             self.set_variable("MODLOADER_NAME", "quilt");
             self.set_variable("MODLOADER_VERSION", quilt_version);
-            self.set_variable("LOADER_VERSION", quilt_version);
         } else if let Some(forge_version) = pack.versions.loader_versions.get("forge") {
             self.set_variable("MODLOADER_NAME", "forge");
             self.set_variable("MODLOADER_VERSION", forge_version);
-            self.set_variable("LOADER_VERSION", forge_version);
         }
 
         // Always set MC version from pack.toml
@@ -219,7 +208,7 @@ impl TemplateEngine {
     }
 }
 
-/// Template installer for V1-compatible modpack setup
+/// Template installer for modpack project scaffolding
 pub struct TemplateInstaller<'a> {
     engine: TemplateEngine,
     filesystem: &'a dyn FileSystemProvider,
@@ -331,7 +320,7 @@ impl<'a> TemplateInstaller<'a> {
         Ok(())
     }
 
-    /// Create layer_1-compatible directory structure
+    /// Create standard modpack directory structure
     pub fn create_directory_structure<P: AsRef<Path>>(&self, target_dir: P) -> Result<()> {
         let base = target_dir.as_ref();
 
@@ -366,7 +355,7 @@ impl<'a> TemplateInstaller<'a> {
         Ok(())
     }
 
-    /// Install all templates and create complete layer_1-compatible structure
+    /// Install all templates and create complete project structure
     pub fn install_all<P: AsRef<Path>>(&self, target_dir: P) -> Result<()> {
         self.create_directory_structure(&target_dir)?;
         self.install_config_templates(&target_dir)?;

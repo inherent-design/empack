@@ -102,7 +102,7 @@ hash = "abcd1234"
     "version": "{{VERSION}}",
     "author": "{{AUTHOR}}",
     "mcVersion": "{{MC_VERSION}}",
-    "loaderVersion": "{{LOADER_VERSION}}"
+    "loaderVersion": "{{MODLOADER_VERSION}}"
 }"#;
         filesystem.write_file(&template_file, template_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
 
@@ -138,7 +138,7 @@ fn test_build_registry() {
     assert!(registry.contains_key(&BuildTarget::ClientFull));
     assert!(registry.contains_key(&BuildTarget::ServerFull));
 
-    // Test dependencies (V1 pattern)
+    // Test dependencies
     let client_config = &registry[&BuildTarget::Client];
     assert_eq!(client_config.dependencies, vec![BuildTarget::Mrpack]);
     assert_eq!(client_config.handler, "build_client_impl");
@@ -379,36 +379,6 @@ fn test_clean_target() {
     assert!(!filesystem.exists(&target_dir.join("test.txt")));
     assert!(filesystem.exists(&target_dir.join(".gitkeep")));
     assert!(!filesystem.exists(&zip_file));
-}
-
-#[test]
-fn test_clean_target_preserves_mrpack_and_legacy_hidden_outputs() {
-    let mock = MockBuildOrchestrator::new();
-    mock.setup_basic_pack_structure().unwrap();
-
-    let workdir = mock.workdir().to_path_buf();
-    let mut orchestrator = mock.orchestrator();
-
-    orchestrator.load_pack_info().unwrap();
-
-    let filesystem = mock.session.filesystem();
-    let target_dir = workdir.join("dist").join("client");
-    filesystem.create_dir_all(&target_dir).unwrap();
-    filesystem.write_file(&target_dir.join("test.txt"), "content").unwrap();
-
-    let mrpack_file = workdir.join("dist").join("TestPack-v1.0.0.mrpack");
-    filesystem.write_file(&mrpack_file, "mock mrpack content").unwrap();
-
-    let legacy_dir = workdir.join(".empack").join("dist").join("client");
-    filesystem.create_dir_all(&legacy_dir).unwrap();
-    filesystem.write_file(&legacy_dir.join("legacy.txt"), "legacy content").unwrap();
-
-    let result = orchestrator.clean_target(BuildTarget::Client);
-    assert!(result.is_ok());
-
-    assert!(!filesystem.exists(&target_dir.join("test.txt")));
-    assert!(filesystem.exists(&mrpack_file));
-    assert!(filesystem.exists(&legacy_dir.join("legacy.txt")));
 }
 
 #[tokio::test]
