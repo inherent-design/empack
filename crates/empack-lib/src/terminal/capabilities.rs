@@ -41,10 +41,8 @@ impl Default for TerminalDimensions {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DimensionSource {
-    Tiocgwinsz,  // Unix ioctl - most reliable
-    CsiQuery,    // ESC[14t - cross-platform
-    Environment, // COLUMNS/LINES - fallback
-    Default,     // 80x24 assumption
+    Environment,
+    Default,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

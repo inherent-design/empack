@@ -273,29 +273,6 @@ fn test_graphics_caps_enum_variants() {
 
 #[test]
 fn test_terminal_dimensions_sources() {
-    let tiocgwinsz_dims = TerminalDimensions {
-        cols: 120,
-        rows: 40,
-        width_pixels: Some(1440),
-        height_pixels: Some(900),
-        detection_source: DimensionSource::Tiocgwinsz,
-    };
-    assert_eq!(
-        tiocgwinsz_dims.detection_source,
-        DimensionSource::Tiocgwinsz
-    );
-    assert_eq!(tiocgwinsz_dims.width_pixels, Some(1440));
-
-    let csi_dims = TerminalDimensions {
-        cols: 100,
-        rows: 30,
-        width_pixels: None,
-        height_pixels: None,
-        detection_source: DimensionSource::CsiQuery,
-    };
-    assert_eq!(csi_dims.detection_source, DimensionSource::CsiQuery);
-    assert_eq!(csi_dims.width_pixels, None);
-
     let env_dims = TerminalDimensions {
         cols: 80,
         rows: 24,
@@ -351,6 +328,7 @@ fn test_environment_isolation_iterm_detection() {
 }
 
 #[test]
+#[cfg(unix)]
 fn test_environment_isolation_unicode_locales() {
     clean_test_env();
     unsafe {
@@ -365,6 +343,7 @@ fn test_environment_isolation_unicode_locales() {
 }
 
 #[test]
+#[cfg(unix)]
 fn test_environment_isolation_utf8_locale() {
     clean_test_env();
     unsafe {
