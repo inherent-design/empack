@@ -2,35 +2,55 @@ name: Validate Pack
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
+    paths:
+      - 'pack/**'
+      - 'empack.yml'
+      - 'templates/**'
+      - '.github/workflows/validate.yml'
   pull_request:
-    branches: [ main ]
+    paths:
+      - 'pack/**'
+      - 'empack.yml'
+      - 'templates/**'
+  workflow_dispatch:
 
 jobs:
   validate:
+    name: Validate Modpack
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.21'
-    
-    - name: Install packwiz
-      run: go install github.com/packwiz/packwiz@latest
-    
-    - name: Validate pack configuration
-      run: |
-        cd pack
-        packwiz refresh
-        
-    - name: Check for file consistency
-      run: |
-        cd pack
-        if ! git diff --exit-code; then
-          echo "❌ Pack files are not up to date. Run 'packwiz refresh' and commit changes."
-          exit 1
-        fi
-        echo "✅ Pack validation successful"
+      - uses: actions/checkout@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install packwiz
+        run: go install github.com/packwiz/packwiz@latest
+
+      - name: Install empack
+        run: |
+          curl -fsSL https://github.com/inherent-design/empack/releases/latest/download/empack-linux-x86_64.tar.gz | tar xz
+          sudo mv empack /usr/local/bin/
+
+      - name: Validate pack structure
+        run: |
+          cd pack
+          packwiz refresh
+          if ! git diff --exit-code; then
+            echo "Pack files are not up to date. Run 'packwiz refresh' and commit changes."
+            exit 1
+          fi
+
+      - name: Build mrpack
+        run: empack build mrpack

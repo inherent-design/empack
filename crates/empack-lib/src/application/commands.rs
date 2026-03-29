@@ -779,8 +779,7 @@ async fn execute_init_phase(
         .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
 
     // Scaffold project structure and templates (non-fatal: warn on failure)
-    let mut installer =
-        crate::empack::templates::TemplateInstaller::new(session.filesystem());
+    let mut installer = crate::empack::templates::TemplateInstaller::new(session.filesystem());
     installer.configure(
         config.name,
         config.author,
