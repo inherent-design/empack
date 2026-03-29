@@ -152,6 +152,18 @@ impl TerminalCapabilities {
 
 /// Detect terminal dimensions from environment variables.
 fn detect_dimensions_from_env() -> TerminalDimensions {
+    if let Some((terminal_size::Width(w), terminal_size::Height(h))) =
+        terminal_size::terminal_size()
+    {
+        return TerminalDimensions {
+            cols: w,
+            rows: h,
+            width_pixels: None,
+            height_pixels: None,
+            detection_source: DimensionSource::Environment,
+        };
+    }
+
     let cols = std::env::var("COLUMNS").ok().and_then(|s| s.parse().ok());
     let rows = std::env::var("LINES").ok().and_then(|s| s.parse().ok());
 
@@ -163,21 +175,7 @@ fn detect_dimensions_from_env() -> TerminalDimensions {
             height_pixels: None,
             detection_source: DimensionSource::Environment,
         },
-        (Some(c), None) => TerminalDimensions {
-            cols: c,
-            rows: 24,
-            width_pixels: None,
-            height_pixels: None,
-            detection_source: DimensionSource::Environment,
-        },
-        (None, Some(r)) => TerminalDimensions {
-            cols: 80,
-            rows: r,
-            width_pixels: None,
-            height_pixels: None,
-            detection_source: DimensionSource::Environment,
-        },
-        (None, None) => TerminalDimensions::default(),
+        _ => TerminalDimensions::default(),
     }
 }
 
