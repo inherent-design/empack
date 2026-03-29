@@ -1,4 +1,3 @@
-use crate::application::AppConfig;
 use crate::primitives::*;
 use std::io::{self, IsTerminal};
 
@@ -92,7 +91,9 @@ impl TerminalCapabilities {
         }
     }
 
-    pub fn detect_from_config(config: &AppConfig) -> Result<Self, TerminalError> {
+    pub fn detect_from_config(
+        color_intent: TerminalCapsDetectIntent,
+    ) -> Result<Self, TerminalError> {
         // Load environment variables
         let env_config = envy::from_env::<TerminalEnvConfig>()
             .map_err(|e| TerminalError::EnvironmentParsingFailed { source: e })?;
@@ -104,8 +105,8 @@ impl TerminalCapabilities {
         let terminal_specific = detect_terminal_specific_capabilities(&env_config);
 
         // Pure environment-based detection (no probing)
-        let color = if is_tty && config.color != TerminalCapsDetectIntent::Never {
-            match config.color {
+        let color = if is_tty && color_intent != TerminalCapsDetectIntent::Never {
+            match color_intent {
                 TerminalCapsDetectIntent::Always => {
                     let env_color = detect_color_from_environment(&env_config, &terminal_specific);
                     if env_color == TerminalColorCaps::None {
@@ -120,7 +121,7 @@ impl TerminalCapabilities {
                 TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
             }
         } else {
-            match config.color {
+            match color_intent {
                 TerminalCapsDetectIntent::Always => terminal_specific.expected_color,
                 TerminalCapsDetectIntent::Auto => {
                     detect_color_from_environment(&env_config, &terminal_specific)
