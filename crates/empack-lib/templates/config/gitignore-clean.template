@@ -96,5 +96,7 @@ dist/server-full/.*
 !dist/server-full/.gitkeep
 dist/*.zip
 dist/*.mrpack
+dist/*.tar.gz
+dist/*.7z
 
 # End of Custom
