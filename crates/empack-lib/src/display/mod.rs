@@ -52,6 +52,9 @@ impl Display {
     /// Auto-initializes with minimal capabilities if not yet initialized.
     pub fn global() -> &'static Self {
         GLOBAL_DISPLAY.get_or_init(|| {
+            tracing::warn!(
+                "Display initialized with minimal capabilities; session may not have started yet"
+            );
             let capabilities = TerminalCapabilities::minimal();
             let styling = styling::StyleManager::new(&capabilities);
             Display {

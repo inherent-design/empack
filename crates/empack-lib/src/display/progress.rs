@@ -3,9 +3,15 @@
 //! Provides progress bars and spinners using indicatif with
 //! terminal-capability-aware styling.
 
+use super::Display;
 use super::styling::StyleManager;
+use crate::primitives::terminal::TerminalUnicodeCaps;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::time::Duration;
+
+fn has_unicode() -> bool {
+    Display::capabilities().unicode != TerminalUnicodeCaps::Ascii
+}
 
 /// Progress display manager for long-running operations
 pub struct ProgressDisplay<'a> {
@@ -36,7 +42,7 @@ impl<'a> ProgressDisplay<'a> {
         let pb = ProgressBar::new(total);
 
         // Use terminal-appropriate progress style
-        let style = if self.styling.primitives().checkmark == "✓" {
+        let style = if has_unicode() {
             // Unicode-capable terminal
             ProgressStyle::with_template(
                 "{spinner:.green} {msg} [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
@@ -72,7 +78,7 @@ impl<'a> ProgressDisplay<'a> {
     pub fn spinner(&self, message: &str) -> ProgressTracker<'_> {
         let pb = ProgressBar::new_spinner();
 
-        let style = if self.styling.primitives().checkmark == "✓" {
+        let style = if has_unicode() {
             // Unicode spinner
             ProgressStyle::with_template("{spinner:.green} {msg}")
                 .unwrap()
@@ -181,7 +187,7 @@ impl<'a> MultiProgressTracker<'a> {
 
         let pb = self.multi.add(ProgressBar::new(total));
 
-        let style = if self.styling.primitives().checkmark == "✓" {
+        let style = if has_unicode() {
             ProgressStyle::with_template(
                 "{spinner:.green} {msg} [{wide_bar:.cyan/blue}] {pos}/{len}",
             )
@@ -210,7 +216,7 @@ impl<'a> MultiProgressTracker<'a> {
 
         let pb = self.multi.add(ProgressBar::new_spinner());
 
-        let style = if self.styling.primitives().checkmark == "✓" {
+        let style = if has_unicode() {
             ProgressStyle::with_template("{spinner:.green} {msg}")
                 .unwrap()
                 .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])

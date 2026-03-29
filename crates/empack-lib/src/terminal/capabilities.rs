@@ -1,12 +1,8 @@
 use crate::application::AppConfig;
 use crate::primitives::*;
 use std::io::{self, IsTerminal};
-#[cfg(unix)]
-use std::mem;
-use std::time::Duration;
 
 use super::detection::*;
-use super::probing::*;
 use crate::primitives::terminal::TerminalGraphicsCaps;
 
 // ============================================================================
@@ -107,81 +103,39 @@ impl TerminalCapabilities {
         // Get terminal-specific capability expectations
         let terminal_specific = detect_terminal_specific_capabilities(&env_config);
 
-        // Use capability probing for interactive terminals when appropriate
-        let (color, graphics, dimensions) =
-            if is_tty && config.color != TerminalCapsDetectIntent::Never {
-                // Probe capabilities if we can
-                let prober_result = CapabilityProber::new(Duration::from_millis(100));
-
-                match prober_result {
-                    Ok(prober) => {
-                        let color = match config.color {
-                            TerminalCapsDetectIntent::Always => {
-                                // Force color on, detect best level
-                                prober
-                                    .probe_color_support()
-                                    .unwrap_or(terminal_specific.expected_color)
-                            }
-                            TerminalCapsDetectIntent::Auto => {
-                                // Probe first, then environment
-                                prober.probe_color_support().unwrap_or_else(|_| {
-                                    detect_color_from_environment(&env_config, &terminal_specific)
-                                })
-                            }
-                            TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
-                        };
-
-                        let graphics = if terminal_specific.reliability
-                            == CapabilityReliability::EnvironmentReliable
-                        {
-                            // Known terminals use environment detection
-                            terminal_specific.expected_graphics
-                        } else {
-                            // Unknown terminals need probing
-                            prober
-                                .probe_graphics_support()
-                                .unwrap_or(terminal_specific.expected_graphics)
-                        };
-
-                        let dimensions = prober
-                            .probe_dimensions()
-                            .unwrap_or_else(|_| TerminalDimensions::default());
-
-                        (color, graphics, dimensions)
-                    }
-                    Err(_) => {
-                        // Non-interactive: use environment detection
-                        let color = match config.color {
-                            TerminalCapsDetectIntent::Always => terminal_specific.expected_color,
-                            TerminalCapsDetectIntent::Auto => {
-                                detect_color_from_environment(&env_config, &terminal_specific)
-                            }
-                            TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
-                        };
-
-                        (
-                            color,
-                            terminal_specific.expected_graphics,
-                            TerminalDimensions::default(),
-                        )
+        // Pure environment-based detection (no probing)
+        let color = if is_tty && config.color != TerminalCapsDetectIntent::Never {
+            match config.color {
+                TerminalCapsDetectIntent::Always => {
+                    let env_color = detect_color_from_environment(&env_config, &terminal_specific);
+                    if env_color == TerminalColorCaps::None {
+                        terminal_specific.expected_color
+                    } else {
+                        env_color
                     }
                 }
-            } else {
-                // Non-interactive or forced-off
-                let color = match config.color {
-                    TerminalCapsDetectIntent::Always => terminal_specific.expected_color,
-                    TerminalCapsDetectIntent::Auto => {
-                        detect_color_from_environment(&env_config, &terminal_specific)
-                    }
-                    TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
-                };
+                TerminalCapsDetectIntent::Auto => {
+                    detect_color_from_environment(&env_config, &terminal_specific)
+                }
+                TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
+            }
+        } else {
+            match config.color {
+                TerminalCapsDetectIntent::Always => terminal_specific.expected_color,
+                TerminalCapsDetectIntent::Auto => {
+                    detect_color_from_environment(&env_config, &terminal_specific)
+                }
+                TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
+            }
+        };
 
-                (
-                    color,
-                    TerminalGraphicsCaps::None,
-                    TerminalDimensions::default(),
-                )
-            };
+        let graphics = if is_tty {
+            terminal_specific.expected_graphics
+        } else {
+            TerminalGraphicsCaps::None
+        };
+
+        let dimensions = detect_dimensions_from_env();
 
         // Detect unicode capabilities
         let unicode = detect_unicode_capabilities(&env_config, is_tty)?;
@@ -197,115 +151,34 @@ impl TerminalCapabilities {
     }
 }
 
-// ============================================================================
-// RAW MODE TERMINAL CONTROL
-// ============================================================================
+/// Detect terminal dimensions from environment variables.
+fn detect_dimensions_from_env() -> TerminalDimensions {
+    let cols = std::env::var("COLUMNS").ok().and_then(|s| s.parse().ok());
+    let rows = std::env::var("LINES").ok().and_then(|s| s.parse().ok());
 
-pub(crate) struct RawModeGuard {
-    #[cfg(unix)]
-    original_termios: Option<libc::termios>,
-    #[cfg(not(unix))]
-    #[allow(dead_code)]
-    original_termios: Option<()>,
-}
-
-impl Drop for RawModeGuard {
-    fn drop(&mut self) {
-        let _ = self.restore_terminal_mode();
-    }
-}
-
-pub(crate) fn setup_raw_mode() -> Result<RawModeGuard, TerminalError> {
-    #[cfg(unix)]
-    {
-        let original_termios = setup_unix_raw_mode()?;
-        Ok(RawModeGuard {
-            original_termios: Some(original_termios),
-        })
-    }
-
-    #[cfg(windows)]
-    {
-        setup_windows_raw_mode()?;
-        return Ok(RawModeGuard {
-            original_termios: None,
-        });
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    {
-        Ok(RawModeGuard {
-            original_termios: None,
-        })
-    }
-}
-
-#[cfg(unix)]
-fn setup_unix_raw_mode() -> Result<libc::termios, TerminalError> {
-    use std::os::fd::AsRawFd;
-
-    // Switch to raw mode for probing
-    let fd = io::stdin().as_raw_fd();
-
-    let mut original_termios: libc::termios = unsafe { mem::zeroed() };
-    if unsafe { libc::tcgetattr(fd, &mut original_termios) } != 0 {
-        return Err(TerminalError::RawModeSetupFailed {
-            reason: "Failed to get terminal attributes".to_string(),
-        });
-    }
-
-    // Configure raw mode
-    let mut raw_termios = original_termios;
-
-    // Set raw mode flags
-    raw_termios.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG | libc::IEXTEN);
-    raw_termios.c_iflag &= !(libc::IXON | libc::ICRNL | libc::BRKINT | libc::INPCK | libc::ISTRIP);
-    raw_termios.c_cflag |= libc::CS8;
-    raw_termios.c_oflag &= !libc::OPOST;
-
-    // Set read timeout
-    raw_termios.c_cc[libc::VMIN] = 0;
-    raw_termios.c_cc[libc::VTIME] = 1;
-
-    if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw_termios) } != 0 {
-        return Err(TerminalError::RawModeSetupFailed {
-            reason: "Failed to set terminal attributes".to_string(),
-        });
-    }
-
-    Ok(original_termios)
-}
-
-#[cfg(windows)]
-fn setup_windows_raw_mode() -> Result<(), TerminalError> {
-    // Simplified Windows raw mode setup
-    // Full implementation would use Windows Console API
-    Ok(())
-}
-
-impl RawModeGuard {
-    fn restore_terminal_mode(&self) -> Result<(), TerminalError> {
-        #[cfg(unix)]
-        {
-            if let Some(ref original_termios) = self.original_termios {
-                use std::os::fd::AsRawFd;
-                let fd = io::stdin().as_raw_fd();
-
-                // Back to normal mode
-                if unsafe { libc::tcsetattr(fd, libc::TCSANOW, original_termios) } != 0 {
-                    return Err(TerminalError::RawModeSetupFailed {
-                        reason: "Failed to restore terminal attributes".to_string(),
-                    });
-                }
-
-                // Clear input buffer
-                unsafe {
-                    libc::tcflush(fd, libc::TCIFLUSH);
-                }
-            }
-        }
-
-        Ok(())
+    match (cols, rows) {
+        (Some(c), Some(r)) => TerminalDimensions {
+            cols: c,
+            rows: r,
+            width_pixels: None,
+            height_pixels: None,
+            detection_source: DimensionSource::Environment,
+        },
+        (Some(c), None) => TerminalDimensions {
+            cols: c,
+            rows: 24,
+            width_pixels: None,
+            height_pixels: None,
+            detection_source: DimensionSource::Environment,
+        },
+        (None, Some(r)) => TerminalDimensions {
+            cols: 80,
+            rows: r,
+            width_pixels: None,
+            height_pixels: None,
+            detection_source: DimensionSource::Environment,
+        },
+        (None, None) => TerminalDimensions::default(),
     }
 }
 

@@ -216,29 +216,16 @@ fn test_terminal_error_source_chain() {
 }
 
 // =============================================================================
-// CAPABILITY PROBING SYSTEM TESTING
+// ENVIRONMENT-BASED DIMENSION DETECTION TESTING
 // =============================================================================
 
 #[test]
-fn test_capability_prober_new_non_interactive() {
-    use std::time::Duration;
-
-    // This test assumes we're NOT running in a fully interactive terminal
-    // In CI/testing environments, this should trigger the NotInteractive error
-    // Since capability probing requires raw mode access
-
-    let result = CapabilityProber::new(Duration::from_millis(100));
-    // The result depends on the testing environment:
-    // - In CI: Should be Err(TerminalError::NotInteractive)
-    // - In interactive terminal: Should be Ok(probes)
-    // Both are valid outcomes for different environments
-    match result {
-        Ok(_) => {}
-        Err(TerminalError::NotInteractive) => {}
-        Err(other) => {
-            panic!("Unexpected error type: {:?}", other);
-        }
-    }
+fn test_detect_dimensions_from_env_defaults() {
+    let dims = detect_dimensions_from_env();
+    // Without COLUMNS/LINES set, should get defaults or env values
+    // (depends on CI environment; either outcome is valid)
+    assert!(dims.cols > 0);
+    assert!(dims.rows > 0);
 }
 
 // =============================================================================

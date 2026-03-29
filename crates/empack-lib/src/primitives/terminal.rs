@@ -481,14 +481,14 @@ impl TerminalPrimitives {
             debug: "",
             muted: "",
 
-            // Limited styling (only what works everywhere)
-            bold: "\x1b[1m",    // Bold usually works
-            dim: "",            // Skip dim
-            italic: "",         // Skip italic
-            underline: "",      // Skip underline
-            reverse: "\x1b[7m", // Reverse usually works
-            strikethrough: "",  // Not supported
-            reset: "\x1b[0m",   // Reset always works
+            // No escape codes when color is None (NO_COLOR compliance)
+            bold: "",
+            dim: "",
+            italic: "",
+            underline: "",
+            reverse: "",
+            strikethrough: "",
+            reset: "",
 
             // ASCII symbols only
             checkmark: "+",
@@ -538,105 +538,5 @@ pub fn from_terminal_capabilities(
         color: caps.color,
         unicode: caps.unicode,
         graphics: shared_graphics,
-    }
-}
-
-/// Direct access to escape codes
-pub mod codes {
-    use super::primitives;
-
-    /// Get red color escape code for current terminal
-    pub fn red() -> &'static str {
-        primitives().red
-    }
-
-    /// Get green color escape code for current terminal
-    pub fn green() -> &'static str {
-        primitives().green
-    }
-
-    /// Get blue color escape code for current terminal
-    pub fn blue() -> &'static str {
-        primitives().blue
-    }
-
-    /// Get yellow color escape code for current terminal
-    pub fn yellow() -> &'static str {
-        primitives().yellow
-    }
-
-    /// Get cyan color escape code for current terminal
-    pub fn cyan() -> &'static str {
-        primitives().cyan
-    }
-
-    /// Get magenta color escape code for current terminal
-    pub fn magenta() -> &'static str {
-        primitives().magenta
-    }
-
-    /// Get white color escape code for current terminal
-    pub fn white() -> &'static str {
-        primitives().white
-    }
-
-    /// Get black color escape code for current terminal
-    pub fn black() -> &'static str {
-        primitives().black
-    }
-
-    /// Get bold style escape code for current terminal
-    pub fn bold() -> &'static str {
-        primitives().bold
-    }
-
-    /// Get dim style escape code for current terminal
-    pub fn dim() -> &'static str {
-        primitives().dim
-    }
-
-    /// Get italic style escape code for current terminal
-    pub fn italic() -> &'static str {
-        primitives().italic
-    }
-
-    /// Get underline style escape code for current terminal
-    pub fn underline() -> &'static str {
-        primitives().underline
-    }
-
-    /// Get reset escape code for current terminal
-    pub fn reset() -> &'static str {
-        primitives().reset
-    }
-
-    /// Get success color escape code for current terminal
-    pub fn success() -> &'static str {
-        primitives().success
-    }
-
-    /// Get error color escape code for current terminal
-    pub fn error() -> &'static str {
-        primitives().error
-    }
-
-    /// Get warning color escape code for current terminal
-    pub fn warning() -> &'static str {
-        primitives().warning
-    }
-
-    /// Get info color escape code for current terminal
-    pub fn info() -> &'static str {
-        primitives().info
-    }
-
-    /// Get debug color escape code for current terminal
-    pub fn debug() -> &'static str {
-        primitives().debug
-    }
-
-    /// Get muted color escape code for current terminal
-    pub fn muted() -> &'static str {
-        primitives().muted
     }
 }
