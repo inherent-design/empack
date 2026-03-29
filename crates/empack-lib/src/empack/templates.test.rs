@@ -10,6 +10,8 @@ fn test_template_engine_creation() {
     assert!(templates.contains(&"gitignore".to_string()));
     assert!(templates.contains(&"instance.cfg".to_string()));
     assert!(templates.contains(&"install_pack.sh".to_string()));
+    assert!(templates.contains(&"validate.yml".to_string()));
+    assert!(templates.contains(&"release.yml".to_string()));
 }
 
 #[test]
