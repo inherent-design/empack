@@ -1,6 +1,7 @@
 //! Build system for empack targets
 //! Five-target system: mrpack, client, server, client-full, server-full
 
+use crate::empack::templates::TemplateEngine;
 use crate::empack::PackwizInstaller;
 use crate::primitives::*;
 #[cfg(test)]
@@ -1585,7 +1586,14 @@ impl<'a> BuildOrchestrator<'a> {
             return Ok(());
         }
 
-        let pack_info = self.load_pack_info()?.clone();
+        // Build a TemplateEngine with pack variables from pack.toml
+        let pack_toml_path = self.workdir.join("pack").join("pack.toml");
+        let mut engine = TemplateEngine::new();
+        engine
+            .load_from_pack_toml(&pack_toml_path, self.session.filesystem())
+            .map_err(|e| BuildError::ConfigError {
+                reason: format!("Failed to load template variables from pack.toml: {}", e),
+            })?;
 
         let template_files = self
             .session
@@ -1612,13 +1620,12 @@ impl<'a> BuildOrchestrator<'a> {
                         reason: e.to_string(),
                     })?;
 
-                // V1's template variable processing
-                let processed = content
-                    .replace("{{VERSION}}", &pack_info.version)
-                    .replace("{{NAME}}", &pack_info.name)
-                    .replace("{{AUTHOR}}", &pack_info.author)
-                    .replace("{{MC_VERSION}}", &pack_info.mc_version)
-                    .replace("{{LOADER_VERSION}}", &pack_info.loader_version);
+                let processed =
+                    engine
+                        .render_string(&content)
+                        .map_err(|e| BuildError::ConfigError {
+                            reason: format!("Template rendering failed for {}: {}", filename, e),
+                        })?;
 
                 self.session
                     .filesystem()

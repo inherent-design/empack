@@ -297,3 +297,100 @@ async fn test_init_existing_project_error() -> Result<()> {
 
     Ok(())
 }
+
+/// Test: empack init scaffolds template files and directory structure
+///
+/// Workflow:
+/// 1. Run `empack init my-templates --modloader fabric --mc-version 1.21.1`
+/// 2. Verify .gitignore exists in project root
+/// 3. Verify .packwizignore exists in pack/ directory
+/// 4. Verify templates/server/ directory exists
+/// 5. Verify templates/client/ directory exists
+/// 6. Verify dist/ build output directories exist
+#[tokio::test]
+async fn test_init_scaffolds_template_files() -> Result<()> {
+    let session = MockSessionBuilder::new().with_yes_flag().build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let workdir = session.filesystem().current_dir()?;
+
+    let result = execute_command_with_session(
+        Commands::Init {
+            name: Some("my-templates".to_string()),
+            pack_name: None,
+            force: false,
+            modloader: Some("fabric".to_string()),
+            mc_version: Some("1.21.1".to_string()),
+            author: Some("Template Test".to_string()),
+            loader_version: None,
+            pack_version: None,
+        },
+        &session,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "Init with template scaffolding failed: {:?}",
+        result.err()
+    );
+
+    let project_dir = workdir.join("my-templates");
+
+    // Verify .gitignore exists
+    assert!(
+        session
+            .filesystem()
+            .exists(&project_dir.join(".gitignore")),
+        ".gitignore should be created after init"
+    );
+
+    // Verify .packwizignore exists in pack/
+    assert!(
+        session
+            .filesystem()
+            .exists(&project_dir.join("pack/.packwizignore")),
+        ".packwizignore should be created in pack/ after init"
+    );
+
+    // Verify templates/server/ directory exists
+    assert!(
+        session
+            .filesystem()
+            .exists(&project_dir.join("templates/server")),
+        "templates/server/ directory should be created after init"
+    );
+
+    // Verify templates/client/ directory exists
+    assert!(
+        session
+            .filesystem()
+            .exists(&project_dir.join("templates/client")),
+        "templates/client/ directory should be created after init"
+    );
+
+    // Verify dist/ build output directories exist
+    assert!(
+        session
+            .filesystem()
+            .exists(&project_dir.join("dist/server")),
+        "dist/server/ directory should be created after init"
+    );
+    assert!(
+        session
+            .filesystem()
+            .exists(&project_dir.join("dist/client")),
+        "dist/client/ directory should be created after init"
+    );
+
+    // Verify .github/workflows/validate.yml exists
+    assert!(
+        session
+            .filesystem()
+            .exists(&project_dir.join(".github/workflows/validate.yml")),
+        ".github/workflows/validate.yml should be created after init"
+    );
+
+    Ok(())
+}

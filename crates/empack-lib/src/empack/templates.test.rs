@@ -64,6 +64,38 @@ fn test_template_installer_full_install() {
 }
 
 #[test]
+fn test_render_string_with_variables() {
+    let mut engine = TemplateEngine::new();
+    engine.set_pack_variables("MyPack", "Author1", "1.21.1", "2.0.0");
+
+    let result = engine
+        .render_string("Server: {{NAME}} v{{VERSION}} for MC {{MC_VERSION}}")
+        .unwrap();
+    assert_eq!(result, "Server: MyPack v2.0.0 for MC 1.21.1");
+}
+
+#[test]
+fn test_render_string_missing_variable_passthrough() {
+    let engine = TemplateEngine::new();
+    // strict_mode is false, so missing vars render as empty
+    let result = engine.render_string("Hello {{MISSING}}").unwrap();
+    assert_eq!(result, "Hello ");
+}
+
+#[test]
+fn test_render_string_with_loader_version_alias() {
+    let mut engine = TemplateEngine::new();
+    engine.set_pack_variables("TestPack", "Author", "1.21.1", "1.0.0");
+    engine.set_modloader_variables("fabric", "0.16.14");
+
+    let result = engine.render_string("Loader: {{LOADER_VERSION}}").unwrap();
+    assert_eq!(result, "Loader: 0.16.14");
+
+    let result2 = engine.render_string("Loader: {{MODLOADER_VERSION}}").unwrap();
+    assert_eq!(result2, "Loader: 0.16.14");
+}
+
+#[test]
 fn test_pack_toml_parsing_with_layer1_data() {
     let mut engine = TemplateEngine::new();
     let fs = LiveFileSystemProvider;
@@ -105,6 +137,7 @@ datapack-folder = "config/openloader/data"
     assert_eq!(variables.get("MC_VERSION").unwrap(), "1.21.1");
     assert_eq!(variables.get("MODLOADER_NAME").unwrap(), "fabric");
     assert_eq!(variables.get("MODLOADER_VERSION").unwrap(), "0.16.14");
+    assert_eq!(variables.get("LOADER_VERSION").unwrap(), "0.16.14");
 }
 
 #[test]
@@ -139,4 +172,53 @@ minecraft = "1.21.1"
 
     assert!(install_script.contains("# MyModpack v2.1.0 Server Installer"));
     assert!(install_script.contains("Installing MyModpack v2.1.0 server pack"));
+}
+
+#[test]
+fn test_installer_with_modloader_variables() {
+    let temp_dir = TempDir::new().unwrap();
+    let fs = LiveFileSystemProvider;
+    let mut installer = TemplateInstaller::new(&fs);
+    installer.configure("MyPack", "TestAuthor", "1.21.1", "1.0.0");
+    installer
+        .engine_mut()
+        .set_modloader_variables("fabric", "0.16.14");
+
+    installer.install_all(temp_dir.path()).unwrap();
+
+    // Verify .gitignore exists
+    assert!(temp_dir.path().join(".gitignore").exists());
+    // Verify .packwizignore exists in pack/
+    assert!(temp_dir.path().join("pack/.packwizignore").exists());
+    // Verify .github/workflows/validate.yml exists
+    assert!(temp_dir
+        .path()
+        .join(".github/workflows/validate.yml")
+        .exists());
+    // Verify templates/server/ directory exists with files
+    assert!(temp_dir
+        .path()
+        .join("templates/server/install_pack.sh.template")
+        .exists());
+    assert!(temp_dir
+        .path()
+        .join("templates/server/server.properties.template")
+        .exists());
+    // Verify templates/client/ directory exists with files
+    assert!(temp_dir
+        .path()
+        .join("templates/client/instance.cfg.template")
+        .exists());
+
+    // Verify server template has variable substitution
+    let install_sh = std::fs::read_to_string(
+        temp_dir
+            .path()
+            .join("templates/server/install_pack.sh.template"),
+    )
+    .unwrap();
+    assert!(
+        install_sh.contains("MyPack v1.0.0"),
+        "install_pack.sh should contain substituted pack name and version"
+    );
 }
