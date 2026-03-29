@@ -372,7 +372,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
             }
             // Marker writing is handled by BuildOrchestrator::execute_build_pipeline
             // via begin_state_transition/complete_state_transition
-            execute_build(orchestrator, &targets)
+            execute_build(*orchestrator, &targets)
                 .await
                 .map(|state| StateTransitionResult {
                     state,

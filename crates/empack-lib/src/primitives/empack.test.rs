@@ -112,7 +112,7 @@ fn test_state_transition_kind_method() {
     let mock_session = crate::application::session_mocks::MockCommandSession::new();
     let orchestrator = crate::empack::builds::BuildOrchestrator::new(&mock_session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     assert_eq!(
-        StateTransition::Build(orchestrator, vec![]).kind(),
+        StateTransition::Build(Box::new(orchestrator), vec![]).kind(),
         TransitionKind::Build,
     );
 }
