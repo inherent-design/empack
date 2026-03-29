@@ -77,6 +77,10 @@ impl TemplateEngine {
             "validate.yml",
             include_str!("../../templates/github/validate.yml.template"),
         );
+        let _ = handlebars.register_template_string(
+            "release.yml",
+            include_str!("../../templates/github/release.yml.template"),
+        );
 
         Self {
             handlebars,
@@ -279,6 +283,12 @@ impl<'a> TemplateInstaller<'a> {
         self.filesystem.write_file(
             &base.join(".github/workflows/validate.yml"),
             &validate_content,
+        )?;
+
+        let release_content = self.engine.render_template("release.yml")?;
+        self.filesystem.write_file(
+            &base.join(".github/workflows/release.yml"),
+            &release_content,
         )?;
 
         Ok(())
