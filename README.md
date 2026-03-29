@@ -50,6 +50,7 @@ Each empack project consists of three parts:
 | [Provider API: Modrinth](docs/reference/MODRINTH.md) | Modrinth API reference |
 | [Provider API: CurseForge](docs/reference/CURSEFORGE.md) | CurseForge API reference |
 | [Architecture Decision Record](docs/reference/historical-adr.md) | Historical architecture context |
+| [Changelog](CHANGELOG.md) | Release history |
 
 ## Project Structure
 
