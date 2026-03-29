@@ -390,5 +390,13 @@ async fn test_init_scaffolds_template_files() -> Result<()> {
         ".github/workflows/validate.yml should be created after init"
     );
 
+    // Verify .github/workflows/release.yml exists
+    assert!(
+        session
+            .filesystem()
+            .exists(&project_dir.join(".github/workflows/release.yml")),
+        ".github/workflows/release.yml should be created after init"
+    );
+
     Ok(())
 }
