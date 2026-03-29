@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install packwiz
+        run: go install github.com/packwiz/packwiz@latest
+
+      - name: Build mrpack
+        run: |
+          cd pack
+          packwiz mr export
+
+      - name: Package server distribution
+        run: |
+          mkdir -p staging/server
+          cp -r pack staging/server/
+          if [ -d templates/server ]; then
+            for f in templates/server/*; do
+              cp "$f" "staging/server/$(basename "$f" .template)"
+            done
+          fi
+          cd staging && tar czf ../dist/server.tar.gz server
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          mv pack/*.mrpack dist/ 2>/dev/null || true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.mrpack
+            dist/*.tar.gz

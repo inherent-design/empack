@@ -24,33 +24,23 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-go@v5
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
+          go-version: 'stable'
 
       - name: Install packwiz
         run: go install github.com/packwiz/packwiz@latest
 
-      - name: Install empack
-        run: |
-          curl -fsSL https://github.com/inherent-design/empack/releases/latest/download/empack-linux-x86_64.tar.gz | tar xz
-          sudo mv empack /usr/local/bin/
-
-      - name: Validate pack structure
+      - name: Verify pack is up to date
         run: |
           cd pack
           packwiz refresh
           if ! git diff --exit-code; then
-            echo "Pack files are not up to date. Run 'packwiz refresh' and commit changes."
+            echo "::error::Pack index is stale. Run 'packwiz refresh' locally and commit."
             exit 1
           fi
 
       - name: Build mrpack
-        run: empack build mrpack
+        run: |
+          cd pack
+          packwiz mr export
