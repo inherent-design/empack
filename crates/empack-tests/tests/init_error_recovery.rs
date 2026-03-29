@@ -43,7 +43,8 @@ async fn test_init_packwiz_failure() -> Result<()> {
         .build()?;
 
     // Initialize display
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
+    let terminal_caps =
+        TerminalCapabilities::detect_from_config(session.config().app_config().color)?;
     Display::init_or_get(terminal_caps);
 
     let workdir = test_env.work_path.clone();
@@ -134,7 +135,8 @@ async fn test_init_filesystem_error() -> Result<()> {
         )?
         .build()?;
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
+    let terminal_caps =
+        TerminalCapabilities::detect_from_config(session.config().app_config().color)?;
     Display::init_or_get(terminal_caps);
 
     std::env::set_current_dir(&readonly_dir)?;
@@ -234,7 +236,8 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
         .build()?;
 
     // Initialize display
-    let terminal_caps = TerminalCapabilities::detect_from_config(session.config().app_config())?;
+    let terminal_caps =
+        TerminalCapabilities::detect_from_config(session.config().app_config().color)?;
     Display::init_or_get(terminal_caps);
 
     let workdir = test_env.work_path.clone();

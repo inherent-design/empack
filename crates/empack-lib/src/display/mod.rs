@@ -92,3 +92,8 @@ impl Display {
         &Self::global().styling
     }
 }
+
+#[cfg(test)]
+mod tests {
+    include!("display.test.rs");
+}

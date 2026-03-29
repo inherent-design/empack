@@ -760,7 +760,8 @@ impl
     /// Create a new command session with owned state (production composition)
     pub fn new(app_config: AppConfig) -> Self {
         // Initialize display and logger systems
-        let terminal_capabilities = match TerminalCapabilities::detect_from_config(&app_config) {
+        let terminal_capabilities = match TerminalCapabilities::detect_from_config(app_config.color)
+        {
             Ok(caps) => {
                 crate::display::Display::init_or_get(caps.clone());
                 let logger_config = app_config.to_logger_config(&caps);

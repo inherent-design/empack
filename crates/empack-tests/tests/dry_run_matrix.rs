@@ -41,7 +41,7 @@ async fn test_clean_dry_run() -> Result<()> {
     };
     app_config.dry_run = true;
 
-    let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
+    let terminal_caps = TerminalCapabilities::detect_from_config(app_config.color)?;
     Display::init_or_get(terminal_caps);
 
     let session = CommandSession::new_with_providers(

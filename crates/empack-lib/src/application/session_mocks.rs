@@ -1368,7 +1368,7 @@ impl MockCommandSession {
     pub fn new() -> Self {
         use crate::display::Display;
         use crate::terminal::capabilities::TerminalCapabilities;
-        let capabilities = TerminalCapabilities::detect_from_config(&AppConfig::default())
+        let capabilities = TerminalCapabilities::detect_from_config(AppConfig::default().color)
             .expect("Failed to detect terminal capabilities for testing");
         Display::init_or_get(capabilities);
 

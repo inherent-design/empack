@@ -32,7 +32,7 @@ async fn e2e_requirements_check_successfully() -> Result<()> {
     };
 
     // Initialize display system
-    let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
+    let terminal_caps = TerminalCapabilities::detect_from_config(app_config.color)?;
     Display::init_or_get(terminal_caps);
 
     // Mock successful which command for packwiz
@@ -98,7 +98,7 @@ async fn e2e_requirements_packwiz_missing() -> Result<()> {
     };
 
     // Initialize display system
-    let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
+    let terminal_caps = TerminalCapabilities::detect_from_config(app_config.color)?;
     Display::init_or_get(terminal_caps);
 
     // Simulate packwiz missing via find_program returning None
@@ -141,7 +141,7 @@ async fn e2e_requirements_check_git() -> Result<()> {
     };
 
     // Initialize display system
-    let terminal_caps = TerminalCapabilities::detect_from_config(&app_config)?;
+    let terminal_caps = TerminalCapabilities::detect_from_config(app_config.color)?;
     Display::init_or_get(terminal_caps);
 
     // Mock both packwiz and git checks

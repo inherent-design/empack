@@ -3,7 +3,6 @@ use crate::display::test_utils::clean_test_env;
 use std::env;
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_truecolor_detection_via_colorterm() {
     clean_test_env();
     unsafe {
@@ -19,7 +18,6 @@ fn test_truecolor_detection_via_colorterm() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_256_color_detection_via_term() {
     clean_test_env();
     unsafe {
@@ -35,7 +33,6 @@ fn test_256_color_detection_via_term() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_unicode_detection_via_lang() {
     clean_test_env();
     unsafe {
@@ -50,7 +47,6 @@ fn test_unicode_detection_via_lang() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_kitty_terminal_detection() {
     clean_test_env();
     unsafe {
@@ -69,7 +65,6 @@ fn test_kitty_terminal_detection() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_windows_terminal_detection() {
     clean_test_env();
     unsafe {
@@ -100,7 +95,6 @@ fn test_terminal_dimensions_default() {
 // =============================================================================
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_terminal_capabilities_detect_from_config_auto() {
     clean_test_env();
     unsafe {
@@ -108,12 +102,7 @@ fn test_terminal_capabilities_detect_from_config_auto() {
         env::set_var("COLORTERM", "truecolor");
     }
 
-    let config = AppConfig {
-        color: TerminalCapsDetectIntent::Auto,
-        ..AppConfig::default()
-    };
-
-    let result = TerminalCapabilities::detect_from_config(&config);
+    let result = TerminalCapabilities::detect_from_config(TerminalCapsDetectIntent::Auto);
     assert!(result.is_ok());
 
     let caps = result.unwrap();
@@ -124,19 +113,13 @@ fn test_terminal_capabilities_detect_from_config_auto() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_terminal_capabilities_detect_forced_never() {
     clean_test_env();
     unsafe {
         env::set_var("COLORTERM", "truecolor");
     }
 
-    let config = AppConfig {
-        color: TerminalCapsDetectIntent::Never,
-        ..AppConfig::default()
-    };
-
-    let result = TerminalCapabilities::detect_from_config(&config);
+    let result = TerminalCapabilities::detect_from_config(TerminalCapsDetectIntent::Never);
     assert!(result.is_ok());
 
     let caps = result.unwrap();
@@ -150,12 +133,7 @@ fn test_terminal_capabilities_detect_forced_always() {
     clean_test_env();
     // Even without color environment variables, force should enable
 
-    let config = AppConfig {
-        color: TerminalCapsDetectIntent::Always,
-        ..AppConfig::default()
-    };
-
-    let result = TerminalCapabilities::detect_from_config(&config);
+    let result = TerminalCapabilities::detect_from_config(TerminalCapsDetectIntent::Always);
     assert!(result.is_ok());
 
     let caps = result.unwrap();
@@ -333,10 +311,8 @@ fn test_terminal_dimensions_sources() {
 // =============================================================================
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_environment_isolation_kitty_vs_iterm() {
-    // This test demonstrates cargo-nextest's environment isolation
-    // Each test gets its own process, so env vars don't interfere
+    // Each nextest process gets its own env, so env vars don't interfere
     clean_test_env();
     unsafe {
         env::set_var("TERM_PROGRAM", "kitty");
@@ -357,10 +333,8 @@ fn test_environment_isolation_kitty_vs_iterm() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_environment_isolation_iterm_detection() {
-    // This runs in a separate process from the kitty test above
-    // Demonstrates that cargo-nextest prevents environment pollution
+    // Runs in a separate process from the kitty test above
     clean_test_env();
     unsafe {
         env::set_var("TERM_PROGRAM", "iTerm.app");
@@ -377,7 +351,6 @@ fn test_environment_isolation_iterm_detection() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_environment_isolation_unicode_locales() {
     clean_test_env();
     unsafe {
@@ -392,7 +365,6 @@ fn test_environment_isolation_unicode_locales() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_environment_isolation_utf8_locale() {
     clean_test_env();
     unsafe {
@@ -439,7 +411,6 @@ fn test_terminal_interactivity_construction() {
 // =============================================================================
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_comprehensive_terminal_detection_vscode() {
     clean_test_env();
     unsafe {
@@ -458,7 +429,6 @@ fn test_comprehensive_terminal_detection_vscode() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_comprehensive_terminal_detection_wezterm() {
     clean_test_env();
     unsafe {
@@ -497,7 +467,6 @@ fn test_comprehensive_terminal_detection_fallback() {
 // =============================================================================
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_full_integration_modern_terminal() {
     clean_test_env();
     unsafe {
@@ -506,12 +475,7 @@ fn test_full_integration_modern_terminal() {
         env::set_var("LANG", "en_US.UTF-8");
     }
 
-    let config = AppConfig {
-        color: TerminalCapsDetectIntent::Auto,
-        ..AppConfig::default()
-    };
-
-    let result = TerminalCapabilities::detect_from_config(&config);
+    let result = TerminalCapabilities::detect_from_config(TerminalCapsDetectIntent::Auto);
     assert!(result.is_ok());
 
     let caps = result.unwrap();
@@ -527,7 +491,6 @@ fn test_full_integration_modern_terminal() {
 }
 
 #[test]
-#[ignore = "manipulates global environment variables"]
 fn test_full_integration_legacy_terminal() {
     clean_test_env();
     unsafe {
@@ -535,12 +498,7 @@ fn test_full_integration_legacy_terminal() {
         env::set_var("LC_ALL", "C");
     }
 
-    let config = AppConfig {
-        color: TerminalCapsDetectIntent::Auto,
-        ..AppConfig::default()
-    };
-
-    let result = TerminalCapabilities::detect_from_config(&config);
+    let result = TerminalCapabilities::detect_from_config(TerminalCapsDetectIntent::Auto);
     assert!(result.is_ok());
 
     let caps = result.unwrap();
