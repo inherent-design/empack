@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON((github.base_ref == 'main' || github.ref == 'refs/heads/main') && '["blacksmith-4vcpu-ubuntu-2404","macos-latest","windows-latest"]' || '["blacksmith-4vcpu-ubuntu-2404"]') }}
+        runner: ${{ fromJSON((github.base_ref == 'main' || github.ref == 'refs/heads/main') && '["blacksmith-4vcpu-ubuntu-2404","macos-26","windows-latest"]' || '["blacksmith-4vcpu-ubuntu-2404"]') }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable

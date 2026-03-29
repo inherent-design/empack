@@ -31,12 +31,12 @@ jobs:
             archive_ext: tar.gz
             use_cross: true
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-26-intel
             binary_ext: ""
             archive_ext: tar.gz
             use_cross: false
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-26
             binary_ext: ""
             archive_ext: tar.gz
             use_cross: false
