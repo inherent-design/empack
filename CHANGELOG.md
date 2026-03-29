@@ -3,6 +3,19 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.1.0-alpha.2 - 2026-03-29
+
+### Bug Fixes
+
+- Gate locale tests on unix, remove stale DimensionSource variants
+- Real terminal size detection, remove empty capabilities module
+
+### Refactoring
+
+- Remove terminal probing, enforce NO_COLOR, capability-driven display
+- Consolidate platform module, remove dead capabilities
+- Display tests, un-ignore terminal tests, break circular dep
+
 ## v0.1.0-alpha.1 - 2026-03-29
 
 ### Features
@@ -208,6 +221,7 @@ All notable changes to empack are documented in this file.
 - Update prerequisites and testing docs for unified srv.jar strategy
 - Clarify sync usage in quickstart
 - Update testing.md to reflect alpha.1 release candidate state
+- Add changelog and reference in README
 
 ### Performance
 
@@ -273,6 +287,7 @@ All notable changes to empack are documented in this file.
 - Add -- -D warnings to clippy, restrict build-check to Linux targets
 - Add pull_request trigger to coverage, improve error handling and cod
 - Remove dev from push trigger to prevent duplicate CI runs
+- Use macos-26 and macos-26-intel runners
 
 ### Maintenance
 
