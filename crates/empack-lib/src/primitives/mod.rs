@@ -20,9 +20,6 @@ pub use empack::*;
 pub mod terminal;
 pub use terminal::*;
 
-/// System resource detection for job parallelism
-pub mod platform;
-
 /// Async HTTP client with concurrency limiting
 pub mod networking;
 
