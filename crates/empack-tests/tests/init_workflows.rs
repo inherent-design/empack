@@ -340,9 +340,7 @@ async fn test_init_scaffolds_template_files() -> Result<()> {
 
     // Verify .gitignore exists
     assert!(
-        session
-            .filesystem()
-            .exists(&project_dir.join(".gitignore")),
+        session.filesystem().exists(&project_dir.join(".gitignore")),
         ".gitignore should be created after init"
     );
 

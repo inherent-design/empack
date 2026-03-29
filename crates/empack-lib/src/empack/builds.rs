@@ -1,8 +1,8 @@
 //! Build system for empack targets
 //! Five-target system: mrpack, client, server, client-full, server-full
 
-use crate::empack::templates::TemplateEngine;
 use crate::empack::PackwizInstaller;
+use crate::empack::templates::TemplateEngine;
 use crate::primitives::*;
 #[cfg(test)]
 use std::collections::HashMap;

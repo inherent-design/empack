@@ -4,6 +4,13 @@
 # Build outputs
 dist/
 
+# empack project files
+empack.yml
+templates/
+
+# CI/CD
+.github/
+
 # Development files
 .env
 .env.local
