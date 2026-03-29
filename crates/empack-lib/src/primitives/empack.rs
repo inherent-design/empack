@@ -189,7 +189,7 @@ pub enum StateTransition<'a> {
     RefreshIndex,
     /// Build: Configured -> Built
     Build(
-        crate::empack::builds::BuildOrchestrator<'a>,
+        Box<crate::empack::builds::BuildOrchestrator<'a>>,
         Vec<BuildTarget>,
     ),
     /// Clean: Built -> Configured

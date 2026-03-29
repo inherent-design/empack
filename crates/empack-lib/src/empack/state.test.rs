@@ -319,7 +319,7 @@ async fn test_transition_to_built() {
     let mock_orchestrator = crate::empack::builds::BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let packwiz = mock_packwiz_for_test();
     let result = manager
-        .execute_transition(session.process(), &packwiz, StateTransition::Build(mock_orchestrator, targets))
+        .execute_transition(session.process(), &packwiz, StateTransition::Build(Box::new(mock_orchestrator), targets))
         .await
         .unwrap();
     assert_eq!(result.state, PackState::Built);
@@ -361,7 +361,7 @@ async fn test_invalid_transitions() {
         .execute_transition(
             &process,
             &packwiz,
-            StateTransition::Build(mock_orchestrator, vec![BuildTarget::Mrpack]),
+            StateTransition::Build(Box::new(mock_orchestrator), vec![BuildTarget::Mrpack]),
         )
         .await;
     assert!(result.is_err());
@@ -544,7 +544,7 @@ async fn test_pure_execute_transition_function() {
         session.process(),
         &packwiz,
         &workdir,
-        StateTransition::Build(mock_orchestrator, targets),
+        StateTransition::Build(Box::new(mock_orchestrator), targets),
     )
     .await
     .unwrap();
