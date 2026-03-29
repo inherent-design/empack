@@ -4,8 +4,6 @@ pub mod capabilities;
 use std::sync::OnceLock;
 use thiserror::Error;
 
-pub use capabilities::*;
-
 /// Returns the platform-appropriate command and arguments to open a URL in the default browser.
 ///
 /// macOS: `("open", vec![])`
@@ -30,6 +28,20 @@ pub fn home_dir() -> std::path::PathBuf {
         .or_else(|_| std::env::var("USERPROFILE"))
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
+}
+
+/// Returns the platform-appropriate configuration directory for empack.
+pub fn config_dir() -> std::path::PathBuf {
+    directories::ProjectDirs::from("", "", "empack")
+        .map(|dirs| dirs.config_dir().to_path_buf())
+        .unwrap_or_else(|| home_dir().join(".config").join("empack"))
+}
+
+/// Returns the platform-appropriate data directory for empack.
+pub fn data_dir() -> std::path::PathBuf {
+    directories::ProjectDirs::from("", "", "empack")
+        .map(|dirs| dirs.data_dir().to_path_buf())
+        .unwrap_or_else(|| home_dir().join(".local").join("share").join("empack"))
 }
 
 /// Platform-specific system resource detection errors
@@ -237,12 +249,6 @@ pub fn system_resources() -> Result<&'static SystemResources, PlatformError> {
 
     // Return cached result
     Ok(SYSTEM_RESOURCES.get().unwrap())
-}
-
-/// Force refresh of system resources cache
-pub fn refresh_system_resources() -> Result<&'static SystemResources, PlatformError> {
-    // OnceLock can't refresh - detection runs once per program
-    system_resources()
 }
 
 // ============================================================================
