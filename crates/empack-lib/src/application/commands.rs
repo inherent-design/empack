@@ -778,7 +778,20 @@ async fn execute_init_phase(
         .filesystem()
         .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
 
-    // Scaffold project structure and templates (non-fatal: warn on failure)
+    let transition_result = manager
+        .execute_transition(
+            session.process(),
+            &*session.packwiz(),
+            StateTransition::Initialize(*config),
+        )
+        .await
+        .context("Failed to initialize modpack project")?;
+    for w in &transition_result.warnings {
+        session.display().status().warning(w);
+    }
+
+    // Scaffold project structure and templates after state transition succeeds.
+    // Must run AFTER transition to avoid discover_state seeing dist/ as Built.
     let mut installer = crate::empack::templates::TemplateInstaller::new(session.filesystem());
     installer.configure(
         config.name,
@@ -796,18 +809,6 @@ async fn execute_init_phase(
             .display()
             .status()
             .warning(&format!("Template scaffolding incomplete: {}", e));
-    }
-
-    let transition_result = manager
-        .execute_transition(
-            session.process(),
-            &*session.packwiz(),
-            StateTransition::Initialize(*config),
-        )
-        .await
-        .context("Failed to initialize modpack project")?;
-    for w in &transition_result.warnings {
-        session.display().status().warning(w);
     }
 
     match transition_result.state {
