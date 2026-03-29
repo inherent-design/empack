@@ -1,5 +1,4 @@
 pub mod cache;
-pub mod capabilities;
 
 use std::sync::OnceLock;
 use thiserror::Error;
