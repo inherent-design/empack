@@ -778,6 +778,27 @@ async fn execute_init_phase(
         .filesystem()
         .write_file(&target_dir.join("empack.yml"), &empack_yml_content)?;
 
+    // Scaffold project structure and templates (non-fatal: warn on failure)
+    let mut installer =
+        crate::empack::templates::TemplateInstaller::new(session.filesystem());
+    installer.configure(
+        config.name,
+        config.author,
+        config.mc_version,
+        config.version,
+    );
+    if config.modloader != "none" && !config.loader_version.is_empty() {
+        installer
+            .engine_mut()
+            .set_modloader_variables(config.modloader, config.loader_version);
+    }
+    if let Err(e) = installer.install_all(target_dir) {
+        session
+            .display()
+            .status()
+            .warning(&format!("Template scaffolding incomplete: {}", e));
+    }
+
     let transition_result = manager
         .execute_transition(
             session.process(),

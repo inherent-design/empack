@@ -120,6 +120,13 @@ impl TemplateEngine {
         self.set_variable("SAFE_NAME", safe_name);
     }
 
+    /// Set modloader variables (called separately when modloader info is available)
+    pub fn set_modloader_variables(&mut self, modloader_name: &str, modloader_version: &str) {
+        self.set_variable("MODLOADER_NAME", modloader_name);
+        self.set_variable("MODLOADER_VERSION", modloader_version);
+        self.set_variable("LOADER_VERSION", modloader_version);
+    }
+
     /// Load V1-compatible variables from pack.toml for build-time rendering
     pub fn load_from_pack_toml<P: AsRef<Path>>(
         &mut self,
@@ -156,15 +163,19 @@ impl TemplateEngine {
         if let Some(neoforge_version) = pack.versions.loader_versions.get("neoforge") {
             self.set_variable("MODLOADER_NAME", "neoforge");
             self.set_variable("MODLOADER_VERSION", neoforge_version);
+            self.set_variable("LOADER_VERSION", neoforge_version);
         } else if let Some(fabric_version) = pack.versions.loader_versions.get("fabric") {
             self.set_variable("MODLOADER_NAME", "fabric");
             self.set_variable("MODLOADER_VERSION", fabric_version);
+            self.set_variable("LOADER_VERSION", fabric_version);
         } else if let Some(quilt_version) = pack.versions.loader_versions.get("quilt") {
             self.set_variable("MODLOADER_NAME", "quilt");
             self.set_variable("MODLOADER_VERSION", quilt_version);
+            self.set_variable("LOADER_VERSION", quilt_version);
         } else if let Some(forge_version) = pack.versions.loader_versions.get("forge") {
             self.set_variable("MODLOADER_NAME", "forge");
             self.set_variable("MODLOADER_VERSION", forge_version);
+            self.set_variable("LOADER_VERSION", forge_version);
         }
 
         // Always set MC version from pack.toml
@@ -177,6 +188,17 @@ impl TemplateEngine {
             .render(template_name, &self.variables)
             .map_err(|e| TemplateError::RenderError {
                 message: format!("Failed to render template '{}': {}", template_name, e),
+            })
+            .map_err(Into::into)
+    }
+
+    /// Render an arbitrary template string with current variables.
+    /// Used by build-time template processing for user-provided template files.
+    pub fn render_string(&self, template_content: &str) -> Result<String> {
+        self.handlebars
+            .render_template(template_content, &self.variables)
+            .map_err(|e| TemplateError::RenderError {
+                message: format!("Failed to render template string: {}", e),
             })
             .map_err(Into::into)
     }
@@ -207,6 +229,11 @@ impl<'a> TemplateInstaller<'a> {
         }
     }
 
+    /// Get mutable access to the underlying engine for setting additional variables
+    pub fn engine_mut(&mut self) -> &mut TemplateEngine {
+        &mut self.engine
+    }
+
     /// Configure template variables for modpack
     pub fn configure(&mut self, name: &str, author: &str, mc_version: &str, version: &str) {
         self.engine
@@ -215,39 +242,8 @@ impl<'a> TemplateInstaller<'a> {
 
     /// Configure template variables from pack.toml for build-time rendering
     pub fn configure_from_pack_toml<P: AsRef<Path>>(&mut self, pack_toml_path: P) -> Result<()> {
-        let content = self.filesystem.read_to_string(pack_toml_path.as_ref())?;
-        let pack: PackMetadata = toml::from_str(&content)?;
-
-        // Extract V1-compatible template variables
-        self.engine.set_variable("NAME", &pack.name);
-        if let Some(ref author) = pack.author {
-            self.engine.set_variable("AUTHOR", author);
-        }
-        if let Some(ref version) = pack.version {
-            self.engine.set_variable("VERSION", version);
-        }
-
-        // Add modloader info
-        if let Some(neoforge_version) = pack.versions.loader_versions.get("neoforge") {
-            self.engine.set_variable("MODLOADER_NAME", "neoforge");
-            self.engine
-                .set_variable("MODLOADER_VERSION", neoforge_version);
-        } else if let Some(fabric_version) = pack.versions.loader_versions.get("fabric") {
-            self.engine.set_variable("MODLOADER_NAME", "fabric");
-            self.engine
-                .set_variable("MODLOADER_VERSION", fabric_version);
-        } else if let Some(quilt_version) = pack.versions.loader_versions.get("quilt") {
-            self.engine.set_variable("MODLOADER_NAME", "quilt");
-            self.engine.set_variable("MODLOADER_VERSION", quilt_version);
-        } else if let Some(forge_version) = pack.versions.loader_versions.get("forge") {
-            self.engine.set_variable("MODLOADER_NAME", "forge");
-            self.engine.set_variable("MODLOADER_VERSION", forge_version);
-        }
-
         self.engine
-            .set_variable("MC_VERSION", &pack.versions.minecraft);
-
-        Ok(())
+            .load_from_pack_toml(pack_toml_path, self.filesystem)
     }
 
     /// Render template by name
