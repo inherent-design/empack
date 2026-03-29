@@ -1412,6 +1412,15 @@ impl<'a> BuildOrchestrator<'a> {
         &mut self,
         targets: &[BuildTarget],
     ) -> Result<Vec<BuildResult>, BuildError> {
+        if let Ok(resources) = crate::platform::system_resources() {
+            tracing::debug!(
+                "System resources: {} cores, {:.0}% memory pressure, {} optimal jobs",
+                resources.cpu_cores,
+                resources.memory_pressure * 100.0,
+                resources.calculate_optimal_jobs(None)
+            );
+        }
+
         self.prepare_build_environment()?;
 
         // Get bootstrap and installer JAR paths from session
