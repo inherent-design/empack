@@ -27,7 +27,6 @@ See [Usage Guide](docs/usage.md) for the full command reference, flags, and envi
 | `empack version` | Print version information |
 | `empack init` | Create or complete a modpack project |
 | `empack add` | Add mods by name, URL, or project ID |
-| `empack sync` | Reconcile declared dependencies with installed state |
 | `empack build` | Build mrpack, client, server, or all targets |
 | `empack remove` | Remove mods from the current project (alias: `rm`) |
 | `empack clean` | Remove build outputs from `dist/` |
