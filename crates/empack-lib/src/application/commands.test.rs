@@ -3296,6 +3296,43 @@ mod init_interactive_tests {
         );
     }
 
+    // I2b: handle_init with "." as positional dir resolves to the actual workdir basename.
+    #[tokio::test]
+    async fn test_handle_init_dot_dir_uses_actual_basename_as_default() {
+        let workdir = mock_root().join("my-cool-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir.clone()))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let _result = handle_init(
+            &session,
+            Some(".".to_string()),
+            None,
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        let text_calls = session.interactive_provider.get_text_input_calls();
+        let name_call = text_calls
+            .iter()
+            .find(|(prompt, _)| prompt.contains("Modpack name"));
+        assert!(
+            name_call.is_some(),
+            "Dot dir should resolve to actual basename for name prompt; text_input calls: {:?}",
+            text_calls
+        );
+        assert_eq!(
+            name_call.unwrap().1,
+            "my-cool-pack",
+            "Positional dir '.' should resolve to the actual workdir basename 'my-cool-pack'"
+        );
+    }
+
     // I3: Orphan removal in handle_remove must use confirm(), not text_input().
     #[tokio::test]
     async fn test_handle_remove_orphan_uses_confirm() {
