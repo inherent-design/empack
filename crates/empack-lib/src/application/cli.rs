@@ -47,8 +47,8 @@ pub enum Commands {
 
     /// Initialize modpack development environment
     Init {
-        /// Modpack name
-        #[arg(help = "Name of the modpack to initialize")]
+        /// Target directory for the modpack project
+        #[arg(help = "Directory for the modpack project (created if needed)")]
         name: Option<String>,
 
         /// Force overwrite existing files
@@ -81,12 +81,12 @@ pub enum Commands {
         )]
         author: Option<String>,
 
-        /// Modpack name (same as positional argument)
+        /// Modpack display name
         #[arg(
             long,
             short = 'n',
             env = "EMPACK_NAME",
-            help = "Modpack name (skips interactive prompt)"
+            help = "Modpack display name (default: directory basename)"
         )]
         pack_name: Option<String>,
 

@@ -227,35 +227,21 @@ async fn handle_init(
         ));
     }
 
-    // Handle directory creation case: `empack init <name>` where <name> is a directory
-    // Precedence: positional arg > --name flag
-    let name = positional_name.or(cli_pack_name.clone());
-    let (mut target_dir, initial_name, mut needs_mkdir) = if let Some(name) = name {
-        let potential_dir = session
-            .config()
-            .app_config()
-            .workdir
-            .as_ref()
-            .unwrap_or(&session.filesystem().current_dir()?)
-            .join(&name);
+    // Phase A: Resolve target_dir (WHERE). Only the positional arg affects directory.
+    let base_dir = session.config().app_config().workdir.clone().unwrap_or(
+        session
+            .filesystem()
+            .current_dir()
+            .context("Failed to get current directory")?,
+    );
 
-        let needs_mkdir = !session.filesystem().exists(&potential_dir);
-        (potential_dir, Some(name), needs_mkdir)
+    let (target_dir, needs_mkdir) = if let Some(ref dir_arg) = positional_name {
+        let target = base_dir.join(dir_arg);
+        let needs_mkdir = !session.filesystem().exists(&target);
+        (target, needs_mkdir)
     } else {
-        let workdir = match session.config().app_config().workdir.as_ref().cloned() {
-            Some(w) => w,
-            None => session
-                .filesystem()
-                .current_dir()
-                .context("Failed to get current directory")?,
-        };
-        (workdir, None, false)
+        (base_dir, false)
     };
-
-    // Track whether the target directory already contains a project.
-    // When true and initial_name is None, the user wants in-place reinit,
-    // so we should NOT retarget to a subdirectory after the interactive prompt.
-    let mut existing_project_in_cwd = false;
 
     // Check state only if the directory already exists
     if !needs_mkdir {
@@ -264,7 +250,6 @@ async fn handle_init(
 
         let mut current_state = manager.discover_state()?;
         if current_state != PackState::Uninitialized {
-            existing_project_in_cwd = initial_name.is_none();
             if !force {
                 session
                     .display()
@@ -306,86 +291,25 @@ async fn handle_init(
         .status()
         .section("Initializing modpack project");
 
-    // Get default name from directory or command line
-    let default_name = initial_name
-        .as_deref()
-        .unwrap_or(
-            target_dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("Pack"),
-        )
+    // Phase B: Resolve pack_name (WHAT). Never affects directory.
+    let dir_basename = target_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Pack")
         .to_string();
 
-    // Display name precedence: --name flag > positional arg (initial_name).
-    // This differs from the *directory* precedence at line 232 (positional > --name)
-    // because --name is the user's explicit display-name preference.
-    let modpack_name = if let Some(name) = cli_pack_name.clone().or(initial_name.clone()) {
+    let modpack_name = if let Some(name) = cli_pack_name.clone() {
+        // --name flag is the explicit display name; highest priority
         session
             .display()
             .status()
             .info(&format!("Using name: {}", name));
         name
     } else {
-        session
-            .interactive()
-            .text_input("Modpack name", default_name)?
+        // Default: positional arg if given, else directory basename
+        let default = positional_name.clone().unwrap_or(dir_basename);
+        session.interactive().text_input("Modpack name", default)?
     };
-
-    // When no name was provided via CLI and the cwd is not already a project,
-    // the interactively-entered name determines the target subdirectory
-    // (like `empack init <name>` would).
-    if initial_name.is_none() && !existing_project_in_cwd {
-        let new_target = target_dir.join(&modpack_name);
-        needs_mkdir = !session.filesystem().exists(&new_target);
-
-        // If the new target exists and already has a modpack, check state
-        if !needs_mkdir {
-            let new_manager = crate::empack::state::PackStateManager::new(
-                new_target.clone(),
-                session.filesystem(),
-            );
-            let new_state = new_manager.discover_state()?;
-            if new_state != PackState::Uninitialized {
-                if !force {
-                    session.display().status().error(
-                        "Directory already contains a modpack project",
-                        &new_target.display().to_string(),
-                    );
-                    session
-                        .display()
-                        .status()
-                        .subtle("   Use --force to overwrite existing files");
-                    return Err(anyhow::anyhow!(
-                        "Directory '{}' already contains a modpack project. Use --force to overwrite existing files.",
-                        new_target.display()
-                    ));
-                }
-                // Force path: clean existing state
-                session
-                    .display()
-                    .status()
-                    .checking("Resetting existing project state for --force init");
-                let mut current_state = new_state;
-                while current_state != PackState::Uninitialized {
-                    let result = new_manager
-                        .execute_transition(
-                            session.process(),
-                            &*session.packwiz(),
-                            StateTransition::Clean,
-                        )
-                        .await
-                        .context("Failed to reset existing project before initialization")?;
-                    for w in &result.warnings {
-                        session.display().status().warning(w);
-                    }
-                    current_state = result.state;
-                }
-            }
-        }
-
-        target_dir = new_target;
-    }
 
     // Try to get git user.name as smart default.
     // Use parent dir (or target_dir itself) as cwd because target_dir

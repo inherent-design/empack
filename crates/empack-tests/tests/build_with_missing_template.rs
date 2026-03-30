@@ -34,18 +34,13 @@ async fn test_build_with_missing_template() -> Result<()> {
     .await?;
 
     let workdir = session.filesystem().current_dir()?;
-    let dir_name = workdir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Pack");
-    let project_dir = workdir.join(dir_name);
 
     assert!(
-        session.filesystem().exists(&project_dir.join("empack.yml")),
+        session.filesystem().exists(&workdir.join("empack.yml")),
         "empack.yml should exist"
     );
     assert!(
-        session.filesystem().exists(&project_dir.join("pack")),
+        session.filesystem().exists(&workdir.join("pack")),
         "pack/ directory should exist"
     );
 

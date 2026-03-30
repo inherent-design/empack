@@ -46,18 +46,12 @@ async fn test_init_zero_config() -> Result<()> {
 
     assert!(result.is_ok(), "Init command failed: {:?}", result);
 
-    let dir_name = workdir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Pack");
-    let project_dir = workdir.join(dir_name);
-
     assert!(
-        session.filesystem().exists(&project_dir.join("empack.yml")),
-        "empack.yml should be created in subdirectory named after the modpack"
+        session.filesystem().exists(&workdir.join("empack.yml")),
+        "empack.yml should be created in the working directory"
     );
 
-    let pack_dir = project_dir.join("pack");
+    let pack_dir = workdir.join("pack");
     assert!(
         session.filesystem().exists(&pack_dir),
         "pack/ directory should be created"

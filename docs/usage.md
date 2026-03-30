@@ -34,7 +34,7 @@ empack version
 
 ### empack init
 
-Create a new modpack project or complete a partial setup.
+Create a new modpack project. The positional argument specifies the target directory; `--pack-name` sets the display name independently.
 
 ```bash
 empack init my-pack \
@@ -45,11 +45,11 @@ empack init my-pack \
   -y
 ```
 
-Without arguments, empack prompts interactively for each field.
+Without arguments, empack initializes in the current directory and prompts for each field.
 
 | Flag | Short | Env var | Description |
 | --- | --- | --- | --- |
-| `--pack-name` | `-n` | `EMPACK_NAME` | Modpack display name |
+| `--pack-name` | `-n` | `EMPACK_NAME` | Modpack display name (default: directory basename) |
 | `--modloader` | `-m` | `EMPACK_MODLOADER` | Mod loader: `neoforge`, `fabric`, `forge`, `quilt`, `none` |
 | `--mc-version` | | `EMPACK_MC_VERSION` | Minecraft version |
 | `--author` | `-A` | `EMPACK_AUTHOR` | Author name |
