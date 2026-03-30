@@ -582,6 +582,144 @@ mod handle_init_tests {
             "pre-existing directory should NOT be removed on force init failure"
         );
     }
+
+    #[tokio::test]
+    async fn it_separates_directory_from_name() {
+        let workdir = mock_root().join("dir-name-split");
+        let target_dir = workdir.join("my-dir");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            Some("my-dir".to_string()),
+            Some("My Display Name".to_string()),
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(session.filesystem().is_directory(&target_dir));
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("name: My Display Name"),
+            "empack.yml should use --name flag for display name, not directory name: {}",
+            empack_yml
+        );
+    }
+
+    #[tokio::test]
+    async fn it_does_not_create_subdir_from_interactive_name() {
+        let workdir = mock_root().join("no-subdir-from-interactive");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir.clone()))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            None,
+            None,
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(
+            session.filesystem().exists(&workdir.join("empack.yml")),
+            "empack.yml should be in cwd, not in a subdirectory"
+        );
+    }
+
+    #[tokio::test]
+    async fn it_uses_dir_basename_as_default_name_with_yes() {
+        let workdir = mock_root().join("cool-project");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir.clone()))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            None,
+            None,
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok());
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("name: cool-project"),
+            "empack.yml should default name to directory basename 'cool-project': {}",
+            empack_yml
+        );
+    }
+
+    #[tokio::test]
+    async fn it_name_flag_with_spaces_does_not_create_directory() {
+        let workdir = mock_root().join("name-spaces-test");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir.clone()))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            None,
+            Some("My Cool Pack".to_string()),
+            false,
+            Some("fabric".to_string()),
+            Some("1.21.1".to_string()),
+            Some("Test Author".to_string()),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(
+            !session
+                .filesystem()
+                .is_directory(&workdir.join("My Cool Pack")),
+            "No 'My Cool Pack' directory should be created from --name flag"
+        );
+        assert!(
+            session.filesystem().exists(&workdir.join("empack.yml")),
+            "empack.yml should be in cwd, not in a space-named directory"
+        );
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("name: My Cool Pack"),
+            "empack.yml should contain the display name from --name flag: {}",
+            empack_yml
+        );
+    }
 }
 
 // ===== VALIDATE_INIT_INPUTS UNIT TESTS =====
@@ -3118,11 +3256,11 @@ mod init_interactive_tests {
         );
     }
 
-    // I2: handle_init with a positional name must skip the interactive name
-    // prompt.
+    // I2: handle_init with a positional name uses it as the default for the
+    // interactive name prompt (the --name flag is needed to skip the prompt).
     #[tokio::test]
-    async fn test_handle_init_positional_name_skips_prompt() {
-        let workdir = mock_root().join("positional-name-skip");
+    async fn test_handle_init_positional_name_sets_prompt_default() {
+        let workdir = mock_root().join("positional-name-default");
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
             .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
@@ -3140,14 +3278,21 @@ mod init_interactive_tests {
         )
         .await;
 
+        // Positional name is the default for the interactive prompt (not a skip).
+        // The --name flag is the only way to skip the name prompt entirely.
         let text_calls = session.interactive_provider.get_text_input_calls();
-        let name_prompt_fired = text_calls
+        let name_call = text_calls
             .iter()
-            .any(|(prompt, _)| prompt.contains("Modpack name") || prompt.contains("name"));
+            .find(|(prompt, _)| prompt.contains("Modpack name"));
         assert!(
-            !name_prompt_fired,
-            "Positional name 'my-pack' should skip the name prompt; text_input calls: {:?}",
+            name_call.is_some(),
+            "Positional name should be passed as default to interactive prompt; text_input calls: {:?}",
             text_calls
+        );
+        assert_eq!(
+            name_call.unwrap().1,
+            "my-pack",
+            "Positional name 'my-pack' should be the default for the name prompt"
         );
     }
 
