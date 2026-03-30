@@ -49,7 +49,7 @@ pub enum Commands {
     Init {
         /// Target directory for the modpack project
         #[arg(help = "Directory for the modpack project (created if needed)")]
-        name: Option<String>,
+        dir: Option<String>,
 
         /// Force overwrite existing files
         #[arg(short, long, help = "Force overwrite existing modpack files")]

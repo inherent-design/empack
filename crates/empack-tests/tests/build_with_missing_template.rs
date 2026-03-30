@@ -20,7 +20,7 @@ async fn test_build_with_missing_template() -> Result<()> {
 
     execute_command_with_session(
         Commands::Init {
-            name: None,
+            dir: None,
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),

@@ -15,7 +15,7 @@ async fn test_init_neoforge() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("neoforge-pack".to_string()),
+            dir: Some("neoforge-pack".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("neoforge".to_string()),
@@ -73,7 +73,7 @@ async fn test_init_quilt() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("quilt-pack".to_string()),
+            dir: Some("quilt-pack".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("quilt".to_string()),
@@ -131,7 +131,7 @@ async fn test_init_vanilla() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("vanilla-pack".to_string()),
+            dir: Some("vanilla-pack".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("none".to_string()),
@@ -174,7 +174,7 @@ async fn test_init_fabric_older_mc() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("fabric-old-mc".to_string()),
+            dir: Some("fabric-old-mc".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),

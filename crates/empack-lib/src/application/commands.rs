@@ -95,7 +95,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
         Commands::Requirements => handle_requirements(session).await,
         Commands::Version => handle_version(session).await,
         Commands::Init {
-            name,
+            dir,
             force,
             modloader,
             mc_version,
@@ -106,7 +106,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
         } => {
             handle_init(
                 session,
-                name,
+                dir,
                 pack_name,
                 force,
                 modloader,
@@ -212,7 +212,7 @@ async fn handle_version(session: &dyn Session) -> Result<()> {
 #[allow(clippy::too_many_arguments)]
 async fn handle_init(
     session: &dyn Session,
-    positional_name: Option<String>,
+    positional_dir: Option<String>,
     cli_pack_name: Option<String>,
     force: bool,
     cli_modloader: Option<String>,
@@ -235,7 +235,7 @@ async fn handle_init(
             .context("Failed to get current directory")?,
     );
 
-    let (target_dir, needs_mkdir) = if let Some(ref dir_arg) = positional_name {
+    let (target_dir, needs_mkdir) = if let Some(ref dir_arg) = positional_dir {
         let target = base_dir.join(dir_arg);
         let needs_mkdir = !session.filesystem().exists(&target);
         (target, needs_mkdir)
@@ -306,8 +306,12 @@ async fn handle_init(
             .info(&format!("Using name: {}", name));
         name
     } else {
-        // Default: positional arg if given, else directory basename
-        let default = positional_name.clone().unwrap_or(dir_basename);
+        // Default: directory basename; filter "." and ".." from positional arg
+        let default = positional_dir
+            .as_deref()
+            .filter(|s| *s != "." && *s != "..")
+            .map(String::from)
+            .unwrap_or(dir_basename);
         session.interactive().text_input("Modpack name", default)?
     };
 
