@@ -1,14 +1,10 @@
-//! Terminal-aware styling using empack's primitive system
-//!
-//! Provides semantic color schemes and symbols that leverage the existing
-//! terminal primitives and capability detection.
+//! Terminal-aware styling using empack's terminal primitive system.
 
 use crate::primitives::terminal::{
     TerminalPrimitives, from_terminal_capabilities, init_primitives, primitives,
 };
 use crate::terminal::TerminalCapabilities;
 
-/// Style manager that uses empack's terminal primitives
 pub struct StyleManager {
     primitives: &'static TerminalPrimitives,
 }
@@ -103,7 +99,6 @@ impl StyleManager {
     }
 }
 
-/// Symbol access (using your primitives)
 impl StyleManager {
     /// Get success symbol (checkmark) with appropriate styling
     pub fn success_symbol(&self) -> String {

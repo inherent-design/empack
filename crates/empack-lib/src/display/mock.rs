@@ -416,7 +416,6 @@ impl ProgressTracker for MockProgressTracker {
     }
 
     fn finish_clear(&self) {
-        // For mocking, we can just record this as a finish with empty message
         self.calls
             .lock()
             .unwrap()
@@ -471,7 +470,7 @@ impl MultiProgressProvider for MockMultiProgressProvider {
     }
 
     fn clear(&self) {
-        // For mocking, we can ignore this or record it if needed
+        // no-op
     }
 }
 

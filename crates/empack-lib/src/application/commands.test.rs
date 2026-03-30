@@ -1262,7 +1262,7 @@ mod handle_add_tests {
                             success: true,
                         }),
                     )
-                    // packwiz creates "new-mod.pw.toml" — different from "new_mod" (query normalized)
+                    // packwiz creates "new-mod.pw.toml"; different from "new_mod" (query normalized)
                     .with_packwiz_add_slug("new-mod-id".to_string(), "new-mod".to_string()),
             );
 
@@ -1271,7 +1271,7 @@ mod handle_add_tests {
 
         // The dep_key should be "new-mod" (from the newly created .pw.toml),
         // not "new-mod" from input normalization (they happen to match here, but
-        // the mechanism is what matters — it came from filesystem diff)
+        // the mechanism is what matters; it came from filesystem diff)
         let empack_yml = session
             .filesystem()
             .read_to_string(&workdir.join("empack.yml"))
@@ -2644,7 +2644,7 @@ async fn test_case_insensitive_build_targets() {
         parse_build_targets(vec!["client".to_string()]).expect("Lowercase 'client' should parse");
     assert_eq!(parsed, vec![BuildTarget::Client]);
 
-    // Uppercase is rejected — parse_build_targets uses exact match
+    // Uppercase is rejected; parse_build_targets uses exact match
     let err = parse_build_targets(vec!["CLIENT".to_string()])
         .expect_err("Uppercase 'CLIENT' should be rejected");
     assert!(

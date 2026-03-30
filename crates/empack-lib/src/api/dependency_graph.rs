@@ -252,7 +252,6 @@ impl DependencyGraph {
         Some(result)
     }
 
-    /// Recursive helper for transitive dependency collection
     fn collect_transitive(
         &self,
         node: NodeIndex,

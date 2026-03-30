@@ -118,7 +118,6 @@ impl MockFileSystemProvider {
             .push((filename, content));
     }
 
-    /// Helper method to create a typical empack project structure
     pub fn with_empack_project(
         self,
         workdir: PathBuf,
@@ -1453,42 +1452,34 @@ impl MockCommandSession {
             .connect_filesystem(&self.filesystem_provider);
     }
 
-    /// Get the display provider for this session
     pub fn display(&self) -> &dyn DisplayProvider {
         &self.display_provider
     }
 
-    /// Get the filesystem provider for this session
     pub fn filesystem(&self) -> &dyn FileSystemProvider {
         &self.filesystem_provider
     }
 
-    /// Get the network provider for this session
     pub fn network(&self) -> &dyn NetworkProvider {
         &self.network_provider
     }
 
-    /// Get the process provider for this session
     pub fn process(&self) -> &dyn ProcessProvider {
         &self.process_provider
     }
 
-    /// Get the config provider for this session
     pub fn config(&self) -> &dyn ConfigProvider {
         &self.config_provider
     }
 
-    /// Get the interactive provider for this session
     pub fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
     }
 
-    /// Get the archive provider for this session
     pub fn archive(&self) -> &dyn crate::application::session::ArchiveProvider {
         &self.archive_provider
     }
 
-    /// Get the terminal capabilities for this session
     pub fn terminal(&self) -> &crate::terminal::TerminalCapabilities {
         &self.terminal_capabilities
     }

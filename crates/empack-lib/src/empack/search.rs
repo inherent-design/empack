@@ -109,7 +109,7 @@ struct ModrinthProject {
     versions: Vec<String>,
 }
 
-/// CurseForge API response structures  
+/// CurseForge API response structures
 #[derive(Debug, Deserialize)]
 struct CurseForgeSearchResponse {
     data: Vec<CurseForgeProject>,
@@ -665,7 +665,7 @@ impl ProjectResolver {
                 project_id: project.project_id.clone(),
                 title: project.title.clone(),
                 downloads: project.downloads,
-                confidence: 0, // Will be calculated by caller
+                confidence: 0,
                 project_type: normalized_type.clone(),
             })
             .collect())
@@ -696,7 +696,7 @@ impl ProjectResolver {
             ("gameId", "432".to_string()),
             ("classId", class_id.to_string()),
             ("searchFilter", title.to_string()),
-            ("sortField", "6".to_string()), // Downloads
+            ("sortField", "6".to_string()),
             ("sortOrder", "desc".to_string()),
         ];
 
@@ -756,7 +756,7 @@ impl ProjectResolver {
                 project_id: project.id.to_string(),
                 title: project.name.clone(),
                 downloads: project.download_count,
-                confidence: 0, // Will be calculated by caller
+                confidence: 0,
                 project_type: normalized_type.clone(),
             })
             .collect())

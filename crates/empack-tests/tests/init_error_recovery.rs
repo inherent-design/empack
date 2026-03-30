@@ -1,7 +1,3 @@
-//! E2E test for init error recovery
-//!
-//! Tests error handling when packwiz init fails and verifies cleanup
-
 use anyhow::Result;
 use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;
@@ -9,16 +5,8 @@ use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::{HermeticSessionBuilder, MockBehavior};
 
-/// Test: Init command handles packwiz failure gracefully
-///
-/// Workflow:
-/// 1. Configure packwiz to fail during init
-/// 2. Run `empack init -y`
-/// 3. Verify error is returned
-/// 4. Verify no partial state is left behind (cleanup successful)
 #[tokio::test]
 async fn test_init_packwiz_failure() -> Result<()> {
-    // Create hermetic session with failing packwiz
     let (session, test_env) = HermeticSessionBuilder::new()?
         .with_yes_flag()
         .with_mock_executable(
@@ -42,7 +30,6 @@ async fn test_init_packwiz_failure() -> Result<()> {
         )?
         .build()?;
 
-    // Initialize display
     let terminal_caps =
         TerminalCapabilities::detect_from_config(session.config().app_config().color)?;
     Display::init_or_get(terminal_caps);
@@ -84,23 +71,16 @@ async fn test_init_packwiz_failure() -> Result<()> {
     Ok(())
 }
 
-/// Test: Init command handles filesystem errors during directory creation
-///
-/// Workflow:
-/// 1. Attempt to create project in read-only or inaccessible location
-/// 2. Verify error is caught and reported
 #[cfg(unix)]
 #[tokio::test]
 async fn test_init_filesystem_error() -> Result<()> {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
 
-    // Create a read-only directory for testing
     let temp_dir = tempfile::TempDir::new()?;
     let readonly_dir = temp_dir.path().join("readonly");
     fs::create_dir(&readonly_dir)?;
 
-    // Make directory read-only (Unix-specific)
     // Use 0o555 (r-x) instead of 0o444 (r--) because chdir() requires execute permission
     #[cfg(unix)]
     {
@@ -185,30 +165,12 @@ async fn test_init_filesystem_error() -> Result<()> {
     Ok(())
 }
 
-/// Test: Init command handles empty loader list gracefully (all loaders incompatible)
-///
-/// Workflow:
-/// 1. Create hermetic session where MockNetworkProvider forces fallback behavior
-/// 2. Run `empack init -y`
-/// 3. Verify init either:
-///    - Succeeds with fallback loader (graceful degradation)
-///    - Returns meaningful error (no compatible loaders found)
-/// 4. Verify NO PANIC occurs when all loaders return empty vec
-///
-/// Context:
-/// - When MC version is unsupported by all loaders:
-///   - Fabric returns Ok(vec![]) on HTTP 400
-///   - Quilt returns Ok(vec![]) on HTTP 404
-///   - NeoForge returns Ok(vec![]) for MC < 1.20.2
-///   - Forge returns Ok(vec![]) for unknown versions
-/// - MockNetworkProvider.http_client() returns Err() to force fallback
-/// - Fallback versions are hardcoded, so test verifies graceful handling
-///
-/// This test validates the gap identified in VCR analysis:
-/// "No existing tests found for empty loader list scenario"
+/// When MC version is unsupported by all loaders, each API returns Ok(vec![]).
+/// MockNetworkProvider.http_client() returns Err() to force fallback to
+/// hardcoded versions. This validates the gap identified in VCR analysis:
+/// "No existing tests found for empty loader list scenario".
 #[tokio::test]
 async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
-    // Create hermetic session with network provider that forces fallback
     // MockNetworkProvider returns Err() from http_client(), triggering fallback behavior
     let (session, test_env) = HermeticSessionBuilder::new()?
         .with_yes_flag()
@@ -235,7 +197,6 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
         )?
         .build()?;
 
-    // Initialize display
     let terminal_caps =
         TerminalCapabilities::detect_from_config(session.config().app_config().color)?;
     Display::init_or_get(terminal_caps);

@@ -6,17 +6,9 @@ use anyhow::Context;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-// StateProvider trait removed - now using unified FileSystemProvider
-// LiveStateProvider removed - now using LiveFileSystemProvider from session.rs
-
-// LiveStateProvider implementation removed - now using LiveFileSystemProvider from session.rs
-
 /// Marker file written to workdir during Building/Cleaning transitions.
 /// If this file exists on next discovery, we know the previous operation was interrupted.
 pub(crate) const STATE_MARKER_FILE: &str = ".empack-state";
-
-// Pure business logic functions - zero I/O, 100% testable.
-// These functions contain the core state machine logic without side effects.
 
 /// Result of a state transition, carrying the new state and any warnings
 /// that callers should surface through DisplayProvider.
@@ -93,14 +85,12 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
     provider: &P,
     workdir: &Path,
 ) -> Result<PackState, StateError> {
-    // Check if directory exists and is valid
     if !provider.is_directory(workdir) {
         return Err(StateError::InvalidDirectory {
             path: workdir.to_path_buf(),
         });
     }
 
-    // Check for interrupted state first (marker file presence)
     let marker_path = workdir.join(STATE_MARKER_FILE);
     if provider.exists(&marker_path) {
         let content = provider
@@ -243,7 +233,7 @@ fn remove_state_marker<P: crate::application::session::FileSystemProvider + ?Siz
     match provider.remove_file(&marker_path) {
         Ok(()) => Ok(()),
         Err(e) => {
-            // If the file was already gone, that's fine -- the goal is absence.
+            // If the file was already gone, that's fine; the goal is absence.
             if let Some(io_err) = e.downcast_ref::<std::io::Error>()
                 && io_err.kind() == std::io::ErrorKind::NotFound
             {
@@ -294,8 +284,8 @@ impl<'a, P: crate::application::session::FileSystemProvider + ?Sized> StateMarke
 impl<P: crate::application::session::FileSystemProvider + ?Sized> Drop for StateMarkerGuard<'_, P> {
     fn drop(&mut self) {
         if self.active {
-            // Marker left in place intentionally: the operation did not complete
-            // successfully, so discover_state() should report Interrupted.
+            // Marker left in place intentionally; the operation did not complete
+            // successfully, so discover_state() will report Interrupted.
             tracing::warn!(
                 "State marker left in place at {:?} -- operation did not complete",
                 self.workdir.join(STATE_MARKER_FILE)
@@ -578,7 +568,6 @@ pub struct PackStateManager<'a, P: crate::application::session::FileSystemProvid
     provider: &'a P,
 }
 
-/// State detection errors
 #[derive(Debug, Error)]
 pub enum StateError {
     #[error("IO error")]

@@ -1,12 +1,6 @@
-//! Environment variable handling for application configuration
-//!
-//! Manages standard environment variables for color and CI detection
-//! following established conventions.
-
 use crate::primitives::{ConfigError, TerminalCapsDetectIntent};
 use serde::Deserialize;
 
-/// Environment variables that affect application behavior
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnvironmentConfig {
     /// NO_COLOR environment variable (any value = disable color)

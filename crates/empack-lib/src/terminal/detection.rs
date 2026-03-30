@@ -8,10 +8,6 @@ use crate::primitives::terminal::{
     GraphicsDetectionMethod, KittyGraphicsCaps, TerminalGraphicsCaps,
 };
 
-// ============================================================================
-// ENVIRONMENT CONFIGURATION
-// ============================================================================
-
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct TerminalEnvConfig {
     /// COLORTERM environment variable (color support indicator)
@@ -48,10 +44,6 @@ pub(crate) struct TerminalEnvConfig {
     #[allow(dead_code)]
     pub columns: Option<String>,
 }
-
-// ============================================================================
-// TERMINAL SPECIFIC CAPABILITY PROFILES
-// ============================================================================
 
 impl TerminalSpecificCaps {
     pub fn kitty_full() -> Self {
@@ -191,32 +183,17 @@ impl TerminalSpecificCaps {
     }
 }
 
-// ============================================================================
-// TERMINAL DATABASE AND DETECTION
-// ============================================================================
-
 pub(crate) fn detect_terminal_specific_capabilities(
     env_config: &TerminalEnvConfig,
 ) -> TerminalSpecificCaps {
     // First check TERM_PROGRAM (most reliable)
     if let Some(ref term_program) = env_config.term_program {
         match term_program.as_str() {
-            // Kitty family - Full graphics + true color
             "kitty" => return TerminalSpecificCaps::kitty_full(),
-
-            // Ghostty - Modern terminal with full capabilities
             "ghostty" => return TerminalSpecificCaps::ghostty_full(),
-
-            // WezTerm - Full modern terminal
             "wezterm" => return TerminalSpecificCaps::wezterm_full(),
-
-            // Alacritty - GPU-accelerated, no graphics protocol
             "alacritty" => return TerminalSpecificCaps::alacritty_full(),
-
-            // VS Code integrated terminal
             "vscode" => return TerminalSpecificCaps::vscode_full(),
-
-            // Windows Terminal - Microsoft's modern terminal
             "Windows Terminal" | "WindowsTerminal" => {
                 return TerminalSpecificCaps::windows_terminal_full();
             }
@@ -228,16 +205,9 @@ pub(crate) fn detect_terminal_specific_capabilities(
     // Then check TERM variable patterns
     if let Some(ref term_var) = env_config.term {
         match term_var.as_str() {
-            // Kitty variants
             "xterm-kitty" | "kitty" => return TerminalSpecificCaps::kitty_full(),
-
-            // Ghostty variants
             "xterm-ghostty" | "ghostty" => return TerminalSpecificCaps::ghostty_full(),
-
-            // WezTerm variants
             "wezterm" | "xterm-wezterm" => return TerminalSpecificCaps::wezterm_full(),
-
-            // Screen/tmux - capability pass-through
             term if term.starts_with("screen") || term.starts_with("tmux") => {
                 return TerminalSpecificCaps::multiplexer_passthrough();
             }
@@ -246,7 +216,6 @@ pub(crate) fn detect_terminal_specific_capabilities(
         }
     }
 
-    // Environment-specific detection
     if env_config.wt_session.is_some() {
         return TerminalSpecificCaps::windows_terminal_full();
     }
@@ -255,12 +224,10 @@ pub(crate) fn detect_terminal_specific_capabilities(
         return TerminalSpecificCaps::vscode_full();
     }
 
-    // Check Kitty-specific environment variables
     if env_config.kitty_window_id.is_some() || env_config.kitty_pid.is_some() {
         return TerminalSpecificCaps::kitty_full();
     }
 
-    // Check WezTerm environment
     if env_config.wezterm_pane.is_some() || env_config.wezterm_unix_socket.is_some() {
         return TerminalSpecificCaps::wezterm_full();
     }
@@ -268,15 +235,11 @@ pub(crate) fn detect_terminal_specific_capabilities(
     TerminalSpecificCaps::unknown()
 }
 
-// ============================================================================
-// HELPER DETECTION FUNCTIONS
-// ============================================================================
-
 pub(crate) fn detect_color_from_environment(
     env_config: &TerminalEnvConfig,
     terminal_specific: &TerminalSpecificCaps,
 ) -> TerminalColorCaps {
-    // Check COLORTERM environment variable (as per termstandard doc)
+    // Check COLORTERM environment variable (termstandard spec)
     if let Some(ref colorterm) = env_config.colorterm {
         let colorterm_lower = colorterm.to_lowercase();
         if colorterm_lower == "truecolor" || colorterm_lower == "24bit" {
@@ -284,10 +247,8 @@ pub(crate) fn detect_color_from_environment(
         }
     }
 
-    // Check specific terminal programs known to support truecolor
     if let Some(ref term_program) = env_config.term_program {
         match term_program.as_str() {
-            // From termstandard: terminals that fully support truecolor
             "alacritty" | "kitty" | "wezterm" | "iTerm.app" => {
                 return TerminalColorCaps::TrueColor;
             }
@@ -296,7 +257,6 @@ pub(crate) fn detect_color_from_environment(
         }
     }
 
-    // Check TERM variable for color hints
     if let Some(ref term_var) = env_config.term {
         if term_var.contains("truecolor") || term_var.contains("24bit") {
             return TerminalColorCaps::TrueColor;
@@ -325,7 +285,6 @@ pub(crate) fn detect_unicode_capabilities(
         return Ok(TerminalUnicodeCaps::Ascii);
     }
 
-    // Check locale environment variables for UTF-8 support
     // Priority: LC_ALL > LC_CTYPE > LANG
     let locale_var = env_config
         .lc_all
@@ -344,7 +303,6 @@ pub(crate) fn detect_unicode_capabilities(
         }
     }
 
-    // Platform-specific locale detection
     #[cfg(unix)]
     {
         if let Ok(charset) = get_unix_charset()
@@ -381,7 +339,6 @@ pub(crate) fn detect_unicode_capabilities(
             }
         }
 
-        // No UTF-8 code pages detected, return Ascii
         return Ok(TerminalUnicodeCaps::Ascii);
     }
 
@@ -389,7 +346,6 @@ pub(crate) fn detect_unicode_capabilities(
 }
 
 pub(crate) fn supports_extended_unicode(env_config: &TerminalEnvConfig) -> bool {
-    // Modern terminals known to support emoji and extended unicode well
     if let Some(ref term_program) = env_config.term_program {
         match term_program.as_str() {
             "iTerm.app" | "wezterm" | "alacritty" | "kitty" => return true,
@@ -398,17 +354,14 @@ pub(crate) fn supports_extended_unicode(env_config: &TerminalEnvConfig) -> bool 
         }
     }
 
-    // Windows Terminal
     if env_config.wt_session.is_some() {
         return true;
     }
 
-    // VS Code integrated terminal
     if env_config.vscode_injection.is_some() {
         return true;
     }
 
-    // macOS Terminal.app - generally good unicode support
     #[cfg(target_os = "macos")]
     {
         if let Some(ref term_program) = env_config.term_program

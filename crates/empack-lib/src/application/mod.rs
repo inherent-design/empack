@@ -1,7 +1,3 @@
-//! Application layer modules
-//!
-//! Organizes CLI interface, configuration management, and application initialization.
-
 pub mod cli;
 pub mod commands;
 pub mod config;
@@ -13,7 +9,6 @@ pub mod sync;
 #[cfg(feature = "test-utils")]
 pub mod session_mocks;
 
-// Re-export main types for convenience
 pub use cli::{Cli, CliArchiveFormat, CliConfig, Commands};
 pub use commands::{execute_command, execute_command_with_session};
 pub use config::AppConfig;

@@ -52,11 +52,8 @@ pub enum NetworkingError {
 /// Resource-aware networking configuration
 #[derive(Debug, Clone)]
 pub struct NetworkingConfig {
-    /// Maximum number of concurrent jobs (from CLI --cpu-jobs)
     pub max_jobs: Option<u32>,
-    /// HTTP client timeout in seconds
     pub timeout_seconds: u64,
-    /// Enable request/response tracing
     pub trace_requests: bool,
 }
 
@@ -83,10 +80,7 @@ impl NetworkingManager {
     pub async fn new(config: NetworkingConfig) -> Result<Self, NetworkingError> {
         trace!("Initializing networking manager");
 
-        // Detect system resources
         let resources = SystemResources::detect()?;
-
-        // Calculate optimal job count using system resources
         let optimal_jobs = resources.calculate_optimal_jobs(config.max_jobs);
 
         trace!(
@@ -94,19 +88,16 @@ impl NetworkingManager {
             resources.cpu_cores, resources.memory_pressure, optimal_jobs
         );
 
-        // Validate job count
         if optimal_jobs == 0 {
             return Err(NetworkingError::InvalidJobCount {
                 count: optimal_jobs,
             });
         }
 
-        // Build HTTP client with timeout
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(config.timeout_seconds))
             .build()?;
 
-        // Create semaphore for controlling concurrency
         let semaphore = Arc::new(Semaphore::new(optimal_jobs as usize));
 
         trace!(
@@ -157,14 +148,12 @@ impl NetworkingManager {
             let trace_requests = self.config.trace_requests;
 
             let task = tokio::spawn(async move {
-                // Acquire semaphore permit to control concurrency
                 let _permit = semaphore.acquire().await?;
 
                 if trace_requests {
                     trace!("Processing project resolution task");
                 }
 
-                // Execute the resolver function
                 let result = resolver(client, mod_id).await;
 
                 if trace_requests {
@@ -180,7 +169,6 @@ impl NetworkingManager {
             tasks.push(task);
         }
 
-        // Wait for all tasks to complete
         let mut results = Vec::new();
         for task in tasks {
             let task_result = task.await?;

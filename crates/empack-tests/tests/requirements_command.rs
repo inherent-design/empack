@@ -15,7 +15,6 @@ use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
 use tempfile::TempDir;
 
-/// Test that requirements command checks for packwiz successfully
 #[tokio::test]
 async fn e2e_requirements_check_successfully() -> Result<()> {
     // Setup: Create a real temporary directory
@@ -81,7 +80,6 @@ async fn e2e_requirements_check_successfully() -> Result<()> {
     Ok(())
 }
 
-/// Test that requirements command reports missing packwiz
 #[tokio::test]
 async fn e2e_requirements_packwiz_missing() -> Result<()> {
     // Setup: Create a real temporary directory
@@ -124,7 +122,6 @@ async fn e2e_requirements_packwiz_missing() -> Result<()> {
     Ok(())
 }
 
-/// Test that requirements command checks git availability
 #[tokio::test]
 async fn e2e_requirements_check_git() -> Result<()> {
     // Setup: Create a real temporary directory

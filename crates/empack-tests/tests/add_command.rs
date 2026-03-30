@@ -19,7 +19,6 @@ use mockito::Server;
 use std::path::Path;
 use tempfile::TempDir;
 
-/// Test that the add command works end-to-end with real filesystem and mock process
 #[tokio::test]
 async fn e2e_add_mod_successfully() -> Result<()> {
     // Setup: Create a real temporary directory
@@ -116,12 +115,9 @@ async fn e2e_add_mod_successfully() -> Result<()> {
     Ok(())
 }
 
-/// Initialize a real empack project in the given directory
 async fn initialize_empack_project(workdir: &Path) -> Result<()> {
-    // Create the basic structure that empack expects
     std::fs::create_dir_all(workdir.join("pack"))?;
 
-    // Create empack.yml
     let empack_yml = r#"empack:
   dependencies:
     - fabric_api: "Fabric API|mod"
@@ -133,7 +129,6 @@ async fn initialize_empack_project(workdir: &Path) -> Result<()> {
 "#;
     std::fs::write(workdir.join("empack.yml"), empack_yml)?;
 
-    // Create pack.toml
     let pack_toml = r#"name = "Test Pack"
 author = "Test Author"
 version = "1.0.0"
@@ -150,7 +145,6 @@ fabric = "0.15.0"
 "#;
     std::fs::write(workdir.join("pack").join("pack.toml"), pack_toml)?;
 
-    // Create index.toml
     let index_toml = r#"hash-format = "sha256"
 
 [[files]]

@@ -41,7 +41,6 @@ async fn e2e_version_prints_successfully() -> Result<()> {
         result
     );
 
-    // Verify the compiled-in version is a valid semver string.
     // handle_version formats this as "empack {version}" via session.display(),
     // which writes through LiveDisplayProvider (indicatif MultiProgress) and
     // isn't capturable in tests. Asserting the source value ensures the
@@ -52,7 +51,6 @@ async fn e2e_version_prints_successfully() -> Result<()> {
         "CARGO_PKG_VERSION should not be empty"
     );
 
-    // Strip pre-release suffix (e.g. "0.0.0-alpha.1" -> "0.0.0") then validate major.minor.patch
     let base_version = pkg_version.split('-').next().unwrap();
     let parts: Vec<&str> = base_version.split('.').collect();
     assert_eq!(

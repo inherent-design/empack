@@ -3,27 +3,21 @@ use std::sync::OnceLock;
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-/// Global logger instance - ensures single initialization
 static GLOBAL_LOGGER: OnceLock<Logger> = OnceLock::new();
 
-/// Logger implementation using tracing with indicatif progress integration
 #[derive(Debug)]
 pub struct Logger {
-    _guard: (), // Future: for async logging guards if needed
+    _guard: (),
 }
 
 impl Logger {
-    /// Initialize the global logger with terminal-aware configuration
     pub fn init(config: LoggerConfig) -> Result<&'static Self, LoggerError> {
-        // Check if already initialized
         if GLOBAL_LOGGER.get().is_some() {
             return Err(LoggerError::AlreadyInitialized);
         }
 
-        // Create indicatif layer for progress bars
         let indicatif_layer = IndicatifLayer::new();
 
-        // Configure environment filter for log levels with empack-focused filtering
         let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
             let level_str = match config.level {
                 LogLevel::Error => "error",
@@ -33,14 +27,12 @@ impl Logger {
                 LogLevel::Trace => "trace",
             };
 
-            // Filter: empack at level, external crates at warn
             let filter_str = format!("empack={},hyper_util=warn,reqwest=warn,h2=warn,tower=warn,tokio=warn,mio=warn,want=warn,{}",
                 level_str, level_str);
 
             EnvFilter::new(filter_str)
         });
 
-        // Configure terminal-aware formatting with output selection
         let fmt_layer = match (config.output, config.format) {
             (LogOutput::Stderr, LogFormat::Text) => fmt::layer()
                 .with_writer(indicatif_layer.get_stderr_writer())
@@ -74,7 +66,6 @@ impl Logger {
                 .boxed(),
         };
 
-        // Initialize tracing subscriber with layered configuration
         tracing_subscriber::registry()
             .with(env_filter)
             .with(fmt_layer)
@@ -84,15 +75,12 @@ impl Logger {
                 reason: e.to_string(),
             })?;
 
-        // Create logger instance
         let logger = Logger { _guard: () };
 
-        // Store in global static
         GLOBAL_LOGGER
             .set(logger)
             .map_err(|_| LoggerError::AlreadyInitialized)?;
 
-        // Log initialization success
         tracing::info!(
             level = ?config.level,
             format = ?config.format,
@@ -104,20 +92,15 @@ impl Logger {
         Ok(GLOBAL_LOGGER.get().unwrap())
     }
 
-    /// Get reference to the global logger instance
     pub fn global() -> Option<&'static Self> {
         GLOBAL_LOGGER.get()
     }
 
-    /// Check if logger is initialized
     pub fn is_initialized() -> bool {
         GLOBAL_LOGGER.get().is_some()
     }
 
-    // Convenience methods for structured logging
-    // These delegate to tracing macros for consistency
-
-    /// Log an error message with optional context
+    /// Log an error message with optional context.
     pub fn error(&self, message: &str, context: Option<LogContext>) {
         if let Some(ctx) = context {
             tracing::error!(
@@ -131,7 +114,6 @@ impl Logger {
         }
     }
 
-    /// Log a warning message with optional context
     pub fn warn(&self, message: &str, context: Option<LogContext>) {
         if let Some(ctx) = context {
             tracing::warn!(
@@ -145,7 +127,6 @@ impl Logger {
         }
     }
 
-    /// Log an info message with optional context
     pub fn info(&self, message: &str, context: Option<LogContext>) {
         if let Some(ctx) = context {
             tracing::info!(
@@ -159,7 +140,6 @@ impl Logger {
         }
     }
 
-    /// Log a debug message with optional context
     pub fn debug(&self, message: &str, context: Option<LogContext>) {
         if let Some(ctx) = context {
             tracing::debug!(
@@ -173,7 +153,6 @@ impl Logger {
         }
     }
 
-    /// Log a trace message with optional context
     pub fn trace(&self, message: &str, context: Option<LogContext>) {
         if let Some(ctx) = context {
             tracing::trace!(
@@ -188,10 +167,7 @@ impl Logger {
     }
 }
 
-// Convenience macros for easier logging throughout the application
-// These can be used instead of the Logger methods
-
-/// Create a span for operations that should show progress bars
+/// Create a span for operations that should show progress bars.
 #[macro_export]
 macro_rules! progress_span {
     ($operation:expr) => {
@@ -202,7 +178,7 @@ macro_rules! progress_span {
     };
 }
 
-/// Quick logging macros that use the global logger if available, fall back to tracing macros
+/// Quick logging macros that use the global logger if available, falling back to tracing macros.
 #[macro_export]
 macro_rules! log_error {
     ($msg:expr) => {

@@ -49,7 +49,6 @@ impl TemplateEngine {
         handlebars.set_strict_mode(false);
         handlebars.register_escape_fn(handlebars::no_escape);
 
-        // Register embedded templates using include_str!
         let _ = handlebars.register_template_string(
             "gitignore",
             include_str!("../../templates/config/gitignore-clean.template"),
@@ -112,7 +111,6 @@ impl TemplateEngine {
         self.set_variable("MC_VERSION", mc_version);
         self.set_variable("VERSION", version);
 
-        // Generate safe identifiers
         let safe_name = name
             .to_lowercase()
             .chars()
@@ -150,7 +148,6 @@ impl TemplateEngine {
             self.set_variable("VERSION", version);
         }
 
-        // Add modloader info from pack.toml for build-time context
         self.extract_modloader_info(&pack);
 
         Ok(())
@@ -172,7 +169,6 @@ impl TemplateEngine {
             self.set_variable("MODLOADER_VERSION", forge_version);
         }
 
-        // Always set MC version from pack.toml
         self.set_variable("MC_VERSION", &pack.versions.minecraft);
     }
 
@@ -249,12 +245,10 @@ impl<'a> TemplateInstaller<'a> {
     pub fn install_config_templates<P: AsRef<Path>>(&self, target_dir: P) -> Result<()> {
         let base = target_dir.as_ref();
 
-        // .gitignore
         let gitignore_content = self.engine.render_template("gitignore")?;
         self.filesystem
             .write_file(&base.join(".gitignore"), &gitignore_content)?;
 
-        // pack/.packwizignore
         self.filesystem.create_dir_all(&base.join("pack"))?;
         let packwizignore_content = self.engine.render_template("packwizignore")?;
         self.filesystem
@@ -324,7 +318,6 @@ impl<'a> TemplateInstaller<'a> {
     pub fn create_directory_structure<P: AsRef<Path>>(&self, target_dir: P) -> Result<()> {
         let base = target_dir.as_ref();
 
-        // Build output directories with .gitkeep files
         let build_dirs = [
             "dist/client",
             "dist/client-full",
@@ -337,19 +330,14 @@ impl<'a> TemplateInstaller<'a> {
             self.filesystem.write_file(&dir_path.join(".gitkeep"), "")?;
         }
 
-        // Template directories
-        let template_dirs = ["templates/client", "templates/server"];
-        for dir in &template_dirs {
+        for dir in &["templates/client", "templates/server"] {
             self.filesystem.create_dir_all(&base.join(dir))?;
         }
 
-        // GitHub directories
-        let github_dirs = [".github/workflows"];
-        for dir in &github_dirs {
+        for dir in &[".github/workflows"] {
             self.filesystem.create_dir_all(&base.join(dir))?;
         }
 
-        // Pack directory
         self.filesystem.create_dir_all(&base.join("pack"))?;
 
         Ok(())

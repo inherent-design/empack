@@ -1,7 +1,3 @@
-//! E2E test for build with missing template file
-//!
-//! Tests graceful error handling when a template file is missing during build.
-
 use anyhow::Result;
 use empack_lib::application::cli::{CliArchiveFormat, Commands};
 use empack_lib::application::commands::execute_command_with_session;

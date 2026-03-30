@@ -5,7 +5,6 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProjectType {
-    /// MProject
     Mod,
     /// Datapack project
     Datapack,

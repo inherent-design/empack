@@ -18,7 +18,6 @@ pub mod styling;
 #[cfg(test)]
 pub mod test_utils;
 
-// Re-export provider traits and implementations for easy access
 pub use live::LiveDisplayProvider;
 pub use mock::{DisplayCall, MockDisplayProvider};
 pub use providers::{
@@ -26,7 +25,6 @@ pub use providers::{
     ProgressTracker, StatusProvider, StructuredProvider,
 };
 
-// Global display manager - initialized once with terminal capabilities
 static GLOBAL_DISPLAY: OnceLock<Display> = OnceLock::new();
 
 /// Main display manager that coordinates all user-facing communication

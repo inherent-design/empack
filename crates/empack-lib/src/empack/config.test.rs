@@ -1566,7 +1566,7 @@ title: Unresolved Mod
 
 #[test]
 fn test_untagged_yaml_resolved_missing_platform_fails() {
-    // status: resolved but missing required platform field —
+    // status: resolved but missing required platform field ; 
     // should fail Resolved and also fail Search (which requires no status).
     // With untagged, serde tries Resolved first (fails: missing platform),
     // then Search (succeeds: title is present, extra fields ignored).
@@ -1769,7 +1769,7 @@ empack:
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir.clone());
 
-    // Remove by title (case-insensitive) — "SODIUM" should match title "Sodium"
+    // Remove by title (case-insensitive); "SODIUM" should match title "Sodium"
     let result = config_manager.remove_dependency("SODIUM");
     assert!(result.is_ok());
 
@@ -1806,7 +1806,7 @@ empack:
     let provider = with_empack_yml(provider, &workdir, empack_content);
     let config_manager = provider.config_manager(workdir.clone());
 
-    // "Sodium" matches two entries by title — should be ambiguous
+    // "Sodium" matches two entries by title; should be ambiguous
     let result = config_manager.remove_dependency("Sodium");
     assert!(result.is_err());
 

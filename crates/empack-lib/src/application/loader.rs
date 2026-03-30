@@ -1,14 +1,8 @@
-//! Configuration loading and global state management
-//!
-//! Coordinates loading configuration from various sources and provides
-//! global application configuration access.
-
 use crate::primitives::ConfigError;
 use std::sync::OnceLock;
 
 use super::{cli::CliConfig, config::AppConfig, env::EnvironmentConfig};
 
-// Global configuration available throughout the application
 static GLOBAL_CONFIG: OnceLock<AppConfig> = OnceLock::new();
 
 impl AppConfig {
@@ -16,10 +10,8 @@ impl AppConfig {
     pub fn load() -> Result<Self, ConfigError> {
         use dotenvy::from_filename;
 
-        // 1. Start with defaults
         let mut config = Self::default();
 
-        // 2. Load .env file (if it exists, don't error if missing)
         let env_files = [".env.local", ".env"];
         for env_file in &env_files {
             if let Err(e) = from_filename(env_file) {
@@ -33,15 +25,12 @@ impl AppConfig {
             }
         }
 
-        // 3. Handle standard environment variables (override empack config if set)
         let env_config = EnvironmentConfig::load()?;
         config.color = env_config.apply_color_config(config.color);
 
-        // 4. Override with CLI arguments (highest precedence)
         let cli_config = CliConfig::load()?;
         config = config.merge_with(cli_config.app_config);
 
-        // 5. Post-process and validate
         config.validate()?;
 
         Ok(config)

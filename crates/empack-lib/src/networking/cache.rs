@@ -15,13 +15,9 @@ const DEFAULT_CACHE_TTL_SECS: u64 = 300;
 /// Cached HTTP response with ETag support
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedResponse {
-    /// Response body data
     pub data: Vec<u8>,
-    /// ETag value for revalidation (if server provided one)
     pub etag: Option<String>,
-    /// Expiration timestamp
     pub expires: SystemTime,
-    /// Response status code
     pub status: u16,
 }
 
@@ -39,11 +35,8 @@ impl CachedResponse {
 
 /// HTTP cache with ETag support and disk persistence
 pub struct HttpCache {
-    /// In-memory cache
     cache: Arc<RwLock<HashMap<String, CachedResponse>>>,
-    /// Cache directory path
     cache_dir: PathBuf,
-    /// Default TTL for cached entries
     default_ttl: Duration,
 }
 
@@ -196,19 +189,15 @@ impl HttpCache {
         // Check if we have a cached entry
         if let Some(cached) = self.get(url).await {
             if !cached.is_expired() {
-                // Cache hit - return cached data
-                trace!("Cache hit for URL: {}", url);
                 return Ok(cached);
             }
 
-            // Cache expired - attempt revalidation with ETag
             if let Some(ref etag) = cached.etag {
                 trace!("Cache expired, attempting ETag revalidation for: {}", url);
 
                 let response = client.get(url).header("If-None-Match", etag).send().await?;
 
                 if response.status() == StatusCode::NOT_MODIFIED {
-                    // 304 Not Modified - extend TTL and return cached data
                     trace!("ETag revalidation successful (304), extending TTL");
                     let mut updated = cached.clone();
                     updated.extend_ttl(self.default_ttl);
@@ -251,7 +240,6 @@ impl HttpCache {
             status,
         };
 
-        // Only cache successful responses
         if (200..300).contains(&status) {
             self.put(url.to_string(), cached_response.clone()).await;
             trace!("Cached response for URL: {}", url);

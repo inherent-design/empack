@@ -16,7 +16,6 @@ use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
 use tempfile::TempDir;
 
-/// Test that clean command successfully removes build artifacts
 #[tokio::test]
 async fn e2e_clean_builds_successfully() -> Result<()> {
     // Setup: Create a real temporary directory
@@ -100,7 +99,6 @@ async fn e2e_clean_builds_successfully() -> Result<()> {
     Ok(())
 }
 
-/// Test that clean command handles missing dist directory gracefully
 #[tokio::test]
 async fn e2e_clean_no_artifacts() -> Result<()> {
     // Setup: Create a real temporary directory
@@ -163,7 +161,6 @@ async fn e2e_clean_no_artifacts() -> Result<()> {
     Ok(())
 }
 
-/// Test that clean command can target specific build types
 #[tokio::test]
 async fn e2e_clean_specific_targets() -> Result<()> {
     // Setup: Create a real temporary directory

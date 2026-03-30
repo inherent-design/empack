@@ -152,7 +152,6 @@ impl<'a> TableDisplay<'a> {
             }
         }
 
-        // Adjust for terminal width (simple truncation for now)
         let total_width: usize = col_widths.iter().sum::<usize>() + (num_cols - 1) * 3; // 3 chars for " | "
         if total_width > terminal_width {
             let excess = total_width - terminal_width;

@@ -6,7 +6,7 @@ use super::config::AppConfig;
 /// empack CLI - Minecraft modpack management
 #[derive(Debug, Clone, Parser, Default)]
 #[command(name = "empack")]
-#[command(about = "A smarter Minecraft modpack manager")]
+#[command(about = "Minecraft modpack manager")]
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {

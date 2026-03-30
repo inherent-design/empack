@@ -246,13 +246,8 @@ pub fn system_resources() -> Result<&'static SystemResources, PlatformError> {
         })
     });
 
-    // Return cached result
     Ok(SYSTEM_RESOURCES.get().unwrap())
 }
-
-// ============================================================================
-// PLATFORM-SPECIFIC IMPLEMENTATIONS
-// ============================================================================
 
 #[cfg(target_family = "unix")]
 fn detect_cpu_cores() -> Result<u32, PlatformError> {
@@ -280,10 +275,8 @@ fn detect_memory_info() -> Result<(u64, u64), PlatformError> {
     detect_memory_info_windows()
 }
 
-// Unix memory detection with platform optimizations
 #[cfg(target_family = "unix")]
 fn detect_memory_info_unix() -> Result<(u64, u64), PlatformError> {
-    // Platform-specific implementations with conditional compilation
     #[cfg(target_os = "macos")]
     {
         detect_memory_info_macos()
@@ -512,7 +505,6 @@ fn detect_memory_info_macos() -> Result<(u64, u64), PlatformError> {
     Ok((total_memory, available_memory))
 }
 
-// FreeBSD memory detection using sysctl
 #[cfg(target_os = "freebsd")]
 fn detect_memory_info_freebsd() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
@@ -583,7 +575,6 @@ fn detect_memory_info_freebsd() -> Result<(u64, u64), PlatformError> {
     Ok((total_memory, available_memory))
 }
 
-// OpenBSD memory detection using sysctl
 #[cfg(target_os = "openbsd")]
 fn detect_memory_info_openbsd() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
@@ -611,7 +602,6 @@ fn detect_memory_info_openbsd() -> Result<(u64, u64), PlatformError> {
     Ok((total_memory, available_memory))
 }
 
-// NetBSD memory detection using sysctl
 #[cfg(target_os = "netbsd")]
 fn detect_memory_info_netbsd() -> Result<(u64, u64), PlatformError> {
     use std::process::Command;
@@ -639,7 +629,6 @@ fn detect_memory_info_netbsd() -> Result<(u64, u64), PlatformError> {
     Ok((total_memory, available_memory))
 }
 
-// Generic Unix fallback for Solaris, AIX, DragonFly BSD, etc.
 #[cfg(all(
     target_family = "unix",
     not(any(

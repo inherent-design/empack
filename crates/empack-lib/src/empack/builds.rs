@@ -848,7 +848,6 @@ impl<'a> BuildOrchestrator<'a> {
         })
     }
 
-    /// Register build targets
     #[cfg(test)]
     fn create_build_registry() -> HashMap<BuildTarget, BuildConfig> {
         let mut registry = HashMap::new();
@@ -1038,7 +1037,6 @@ impl<'a> BuildOrchestrator<'a> {
             .dist_dir
             .join(format!("{}-v{}.mrpack", pack_info.name, pack_info.version));
 
-        // Ensure dist directory exists
         self.session
             .filesystem()
             .create_dir_all(&self.dist_dir)
@@ -1174,10 +1172,7 @@ impl<'a> BuildOrchestrator<'a> {
 
     /// Build server implementation
     fn build_server_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
-        // Step 1: Clean the dist/server/ directory
         self.clean_target(BuildTarget::Server)?;
-
-        // Step 2: Refresh the pack using packwiz refresh
         self.refresh_pack()?;
 
         let dist_dir = self.dist_dir.join("server");
@@ -1188,14 +1183,11 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        // Step 3: Process templates from templates/server/ into dist/server/
         self.process_build_templates("templates/server", &dist_dir)?;
 
-        // Step 4: Copy the entire pack/ directory into dist/server/
         let pack_dir = self.workdir.join("pack");
         self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
 
-        // Step 5: Copy the packwiz-installer-bootstrap.jar into dist/server/
         let bootstrap_content = self
             .session
             .filesystem()
@@ -1213,7 +1205,6 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        // Step 6: Download the appropriate Minecraft server JAR
         let pack_info = self.load_pack_info()?.clone();
         if let Err(e) = self.download_server_jar(&dist_dir, &pack_info) {
             return Ok(BuildResult {
@@ -1225,17 +1216,15 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
-        // Step 7: Extract the .mrpack file (building it first if necessary)
+        // Extract mrpack overrides (builds mrpack first if needed)
         self.extract_mrpack()?;
 
-        // Step 8: Copy the overrides/ from the extracted mrpack into dist/server/
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
         let overrides_dir = temp_extract_dir.join("overrides");
         if self.session.filesystem().exists(&overrides_dir) {
             self.copy_dir_contents(&overrides_dir, &dist_dir)?;
         }
 
-        // Step 9: Create a final zip archive of the dist/server/ directory
         let zip_path = self.zip_distribution(BuildTarget::Server)?;
         let artifact = self.create_artifact(&zip_path)?;
 
@@ -1254,10 +1243,7 @@ impl<'a> BuildOrchestrator<'a> {
         bootstrap_jar_path: &Path,
         installer_jar_path: &Path,
     ) -> Result<BuildResult, BuildError> {
-        // Step 1: Clean the dist/client-full/ directory
         self.clean_target(BuildTarget::ClientFull)?;
-
-        // Step 2: Refresh the pack using packwiz refresh
         self.refresh_pack()?;
         self.load_pack_info()?;
 
@@ -1269,13 +1255,10 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        // Step 3: Execute packwiz-installer-bootstrap.jar with -g (no-GUI) and -s both flags
-
-        // Copy pack files to client-full directory for installer to use
+        // Copy pack files so the installer can resolve .toml mod entries
         let pack_dir = self.workdir.join("pack");
         self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
 
-        // Execute installer with PackwizInstaller abstraction
         let installer = PackwizInstaller::new(
             self.session,
             bootstrap_jar_path.to_owned(),
@@ -1291,7 +1274,6 @@ impl<'a> BuildOrchestrator<'a> {
                 command: format!("packwiz-installer-bootstrap.jar: {}", e),
             })?;
 
-        // Step 4: Create a final zip archive of the dist/client-full/ directory
         let zip_path = self.zip_distribution(BuildTarget::ClientFull)?;
         let artifact = self.create_artifact(&zip_path)?;
 
@@ -1310,10 +1292,7 @@ impl<'a> BuildOrchestrator<'a> {
         bootstrap_jar_path: &Path,
         installer_jar_path: &Path,
     ) -> Result<BuildResult, BuildError> {
-        // Step 1: Clean the dist/server-full/ directory
         self.clean_target(BuildTarget::ServerFull)?;
-
-        // Step 2: Refresh the pack using packwiz refresh
         self.refresh_pack()?;
 
         let dist_dir = self.dist_dir.join("server-full");
@@ -1324,10 +1303,8 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        // Step 3: Process templates from templates/server/ into dist/server-full/
         self.process_build_templates("templates/server", &dist_dir)?;
 
-        // Step 4: Download the appropriate Minecraft server JAR
         let pack_info = self.load_pack_info()?.clone();
         if let Err(e) = self.download_server_jar(&dist_dir, &pack_info) {
             return Ok(BuildResult {
@@ -1339,13 +1316,10 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
-        // Step 5: Execute packwiz-installer-bootstrap.jar with -g and -s server flags
-
-        // Copy pack files to server-full directory for installer to use
+        // Copy pack files so the installer can resolve .toml mod entries
         let pack_dir = self.workdir.join("pack");
         self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
 
-        // Execute installer with PackwizInstaller abstraction
         let installer = PackwizInstaller::new(
             self.session,
             bootstrap_jar_path.to_owned(),
@@ -1361,7 +1335,6 @@ impl<'a> BuildOrchestrator<'a> {
                 command: format!("packwiz-installer-bootstrap.jar: {}", e),
             })?;
 
-        // Step 6: Create a final zip archive of the dist/server-full/ directory
         let zip_path = self.zip_distribution(BuildTarget::ServerFull)?;
         let artifact = self.create_artifact(&zip_path)?;
 
@@ -1423,7 +1396,6 @@ impl<'a> BuildOrchestrator<'a> {
 
         self.prepare_build_environment()?;
 
-        // Get bootstrap and installer JAR paths from session
         let bootstrap_jar_path =
             self.session
                 .packwiz()
@@ -1501,7 +1473,6 @@ impl<'a> BuildOrchestrator<'a> {
     /// Inner clean pipeline logic, separated so the caller can guarantee
     /// state cleanup on early returns.
     fn execute_clean_pipeline_inner(&mut self, targets: &[BuildTarget]) -> Result<(), BuildError> {
-        // Clean each target
         for target in targets {
             self.clean_target(*target)?;
         }
@@ -1511,7 +1482,6 @@ impl<'a> BuildOrchestrator<'a> {
 
     /// Prepare build environment
     fn prepare_build_environment(&self) -> Result<(), BuildError> {
-        // Ensure pack directory exists
         let pack_dir = self.workdir.join("pack");
         if !self.session.filesystem().exists(&pack_dir) {
             return Err(BuildError::ConfigError {
@@ -1519,7 +1489,6 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
-        // Ensure dist directory exists
         self.session
             .filesystem()
             .create_dir_all(&self.dist_dir)
@@ -1527,12 +1496,9 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        // Note: Tool availability checking is now handled by the ProcessProvider
-        // and the requirements command, which is the correct architectural separation
         Ok(())
     }
 
-    /// Clean build target
     fn clean_target(&mut self, target: BuildTarget) -> Result<(), BuildError> {
         if self.pack_info.is_none() {
             let _ = self.load_pack_info();
@@ -1541,7 +1507,6 @@ impl<'a> BuildOrchestrator<'a> {
 
         let dist_dir = self.dist_dir.join(target.to_string());
 
-        // Preserve .gitkeep files
         if self.session.filesystem().exists(&dist_dir) {
             let files = self
                 .session
@@ -1593,7 +1558,7 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    /// Helper: Process build templates
+    /// Process build templates
     fn process_build_templates(
         &mut self,
         template_dir: &str,
@@ -1654,7 +1619,7 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    /// Helper: Copy directory contents recursively
+    /// Copy directory contents recursively
     fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), BuildError> {
         self.session
             .filesystem()
@@ -1696,7 +1661,7 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    /// Helper: Create build artifact metadata
+    /// Create build artifact metadata
     fn create_artifact(&self, path: &Path) -> Result<BuildArtifact, BuildError> {
         if !self.session.filesystem().exists(path) {
             return Err(BuildError::ValidationError {
@@ -1713,7 +1678,6 @@ impl<'a> BuildOrchestrator<'a> {
             .unwrap_or("unknown")
             .to_string();
 
-        // For mock filesystem, we'll use content length as size
         let size = self
             .session
             .filesystem()

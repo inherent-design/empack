@@ -4,8 +4,6 @@ use serde::Deserialize;
 use std::str::FromStr;
 use std::time::Duration;
 
-// Networking configuration primitives for HTTP clients and request handling.
-
 /// HTTP client configuration strategy
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -90,21 +88,13 @@ impl_fromstr_for_value_enum!(RequestTracingLevel, "request tracing level");
 /// Networking capability flags for feature detection
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetworkingCapabilities {
-    /// HTTP/1.1 support
     pub http1: bool,
-    /// HTTP/2 support
     pub http2: bool,
-    /// TLS/SSL support
     pub tls: bool,
-    /// Connection pooling available
     pub connection_pooling: bool,
-    /// Request compression support
     pub compression: bool,
-    /// Proxy support
     pub proxy_support: bool,
-    /// Custom headers support
     pub custom_headers: bool,
-    /// Authentication schemes supported
     pub authentication: bool,
 }
 
@@ -126,37 +116,26 @@ impl Default for NetworkingCapabilities {
 /// Network configuration for different API endpoints
 #[derive(Debug, Clone)]
 pub struct EndpointConfig {
-    /// Base URL for the API
     pub base_url: String,
-    /// Default timeout for requests
     pub timeout: Duration,
-    /// Required headers
     pub headers: Vec<(String, String)>,
-    /// Rate limiting information
     pub rate_limit: Option<RateLimit>,
-    /// Authentication configuration
     pub auth: Option<AuthConfig>,
 }
 
 /// Rate limiting configuration
 #[derive(Debug, Clone)]
 pub struct RateLimit {
-    /// Requests per second allowed
     pub requests_per_second: f32,
-    /// Burst capacity
     pub burst_capacity: u32,
-    /// Backoff strategy when rate limited
     pub backoff_strategy: BackoffStrategy,
 }
 
 /// Authentication configuration
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    /// Authentication type
     pub auth_type: AuthType,
-    /// API key or token
     pub credentials: String,
-    /// Header name for authentication
     pub header_name: String,
 }
 
@@ -197,23 +176,14 @@ impl_fromstr_for_value_enum!(BackoffStrategy, "backoff strategy");
 /// Networking configuration summary
 #[derive(Debug, Clone)]
 pub struct NetworkingConfig {
-    /// HTTP client strategy
     pub client_strategy: HttpClientStrategy,
-    /// Timeout configuration
     pub timeout_strategy: TimeoutStrategy,
-    /// Concurrency control method
     pub concurrency_method: ConcurrencyMethod,
-    /// Request tracing level
     pub tracing_level: RequestTracingLevel,
-    /// Maximum concurrent requests
     pub max_concurrent_requests: Option<u32>,
-    /// Default request timeout
     pub default_timeout: Duration,
-    /// Enable request/response compression
     pub enable_compression: bool,
-    /// User agent string
     pub user_agent: String,
-    /// Endpoint configurations
     pub endpoints: Vec<EndpointConfig>,
 }
 
@@ -236,19 +206,12 @@ impl Default for NetworkingConfig {
 /// Request metrics for monitoring and optimization
 #[derive(Debug, Clone)]
 pub struct RequestMetrics {
-    /// Total requests made
     pub total_requests: u64,
-    /// Successful requests
     pub successful_requests: u64,
-    /// Failed requests
     pub failed_requests: u64,
-    /// Average response time
     pub average_response_time: Duration,
-    /// Current concurrent requests
     pub current_concurrent: u32,
-    /// Peak concurrent requests
     pub peak_concurrent: u32,
-    /// Total bytes transferred
     pub bytes_transferred: u64,
 }
 
@@ -381,10 +344,10 @@ pub mod adapter {
             total_requests,
             successful_requests,
             failed_requests: total_requests.saturating_sub(successful_requests),
-            average_response_time: Duration::from_millis(0), // Would need actual timing data
+            average_response_time: Duration::from_millis(0),
             current_concurrent,
             peak_concurrent: current_concurrent,
-            bytes_transferred: 0, // Would need actual transfer tracking
+            bytes_transferred: 0,
         }
     }
 

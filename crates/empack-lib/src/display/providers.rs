@@ -1,7 +1,4 @@
-//! Display provider traits for dependency injection
-//!
-//! Abstracts all user communication behind testable traits, enabling the Handle Pattern
-//! for display operations while maintaining the rich display capabilities.
+//! Display provider traits for dependency injection.
 
 use std::fmt;
 

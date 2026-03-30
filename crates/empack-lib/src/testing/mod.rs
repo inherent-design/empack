@@ -8,17 +8,8 @@
 //! - RAII-based resource management
 
 pub mod filesystem;
-// pub mod environment;
-// pub mod fixtures;
-// pub mod macros;
 
-// Re-export core testing utilities
 pub use filesystem::TempDirFixture;
-// pub use environment::{TestEnvironment, UnitTestEnvironment, IntegrationTestEnvironment};
-// pub use fixtures::{MockServerFixture, EnvFixture};
-
-// Re-export test macros
-// pub use macros::{unit_test, integration_test, system_test};
 
 /// Test categories for different isolation levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +59,6 @@ impl TestRunner {
     }
 }
 
-/// Common test utilities
 pub struct TestUtils;
 
 impl TestUtils {

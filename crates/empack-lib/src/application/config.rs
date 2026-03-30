@@ -1,14 +1,10 @@
-//! Application configuration management
-//!
-//! Handles config loading, validation, and environment variable processing
-//! following the precedence: defaults -> .env -> env vars -> CLI args.
+//! Configuration precedence: defaults, .env, env vars, CLI args.
 
 use crate::primitives::*;
 use clap::Parser;
 use serde::Deserialize;
 use std::path::PathBuf;
 
-/// Default configuration values
 pub mod defaults {
     pub const LOG_LEVEL: &str = "0"; // Error-only logging by default
     pub const LOG_FORMAT: &str = "text";
@@ -20,7 +16,6 @@ pub mod defaults {
         "$2a$10$78GooA4YTCKFQI9vgZ1oEeVM.jNyeNKSIFUhFkwiA0L/Uwv19BFAq";
 }
 
-/// Default value functions for configuration fields
 mod default_fns {
     use super::*;
     use crate::primitives::{LogFormat, LogOutput, TerminalCapsDetectIntent};
@@ -54,7 +49,6 @@ mod default_fns {
     }
 }
 
-/// Application configuration structure
 #[derive(Debug, Clone, Parser, Deserialize)]
 pub struct AppConfig {
     /// Working directory for modpack operations
@@ -164,7 +158,6 @@ impl AppConfig {
 
     /// Merge this config with another, taking non-default values from other
     pub fn merge_with(mut self, other: Self) -> Self {
-        // For Option fields, take other if it's Some
         if other.workdir.is_some() {
             self.workdir = other.workdir;
         }
@@ -178,7 +171,6 @@ impl AppConfig {
             self.curseforge_api_client_key = other.curseforge_api_client_key;
         }
 
-        // For primitive fields, take other if it's not the default
         if other.log_level != default_fns::log_level() {
             self.log_level = other.log_level;
         }
@@ -189,7 +181,6 @@ impl AppConfig {
             self.cpu_jobs = other.cpu_jobs;
         }
 
-        // For booleans, take other if true (non-default)
         if other.yes {
             self.yes = other.yes;
         }
@@ -197,7 +188,6 @@ impl AppConfig {
             self.dry_run = other.dry_run;
         }
 
-        // For enums, detect if it's non-default
         if !matches!(other.log_format, LogFormat::Text) {
             self.log_format = other.log_format;
         }

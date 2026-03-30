@@ -34,7 +34,6 @@ pub mod terminal;
 
 pub mod testing;
 
-// Re-export commonly used types for convenience
 pub use api::{DependencyGraph, DependencyGraphError, DependencyNode};
 pub use application::{AppConfig, Cli, Commands, execute_command};
 pub use logger::Logger;
@@ -46,10 +45,8 @@ pub use primitives::{
 };
 pub use terminal::TerminalCapabilities;
 
-// Centralized Result type alias
 pub type Result<T> = anyhow::Result<T>;
 
-// Private imports for the main function
 use application::CliConfig;
 
 pub async fn main() -> Result<()> {

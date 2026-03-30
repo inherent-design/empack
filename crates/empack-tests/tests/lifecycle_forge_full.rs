@@ -1,7 +1,3 @@
-//! E2E test for complete lifecycle with Forge modloader
-//!
-//! Tests the full workflow: init -> add -> build -> clean with Forge modloader
-
 use anyhow::Result;
 use empack_lib::application::cli::{CliArchiveFormat, Commands};
 use empack_lib::application::commands::execute_command_with_session;
@@ -12,14 +8,6 @@ use empack_lib::primitives::ProjectPlatform;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::MockSessionBuilder;
 
-/// Test: Complete lifecycle with Forge modloader
-///
-/// Workflow:
-/// 1. Run `empack init -y --loader forge` in mock directory
-/// 2. Add mods: sodium (Modrinth), jei (CurseForge)
-/// 3. Build all targets
-/// 4. Clean builds
-/// 5. Verify all operations succeeded
 #[tokio::test]
 async fn test_lifecycle_forge_full() -> Result<()> {
     let workdir = mock_root().join("workdir");
@@ -303,10 +291,6 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     Ok(())
 }
 
-/// Test: Forge modloader initialization validates loader selection
-///
-/// This test specifically validates that Forge modloader can be initialized
-/// and that the modloader choice propagates through the configuration.
 #[tokio::test]
 async fn test_forge_modloader_initialization() -> Result<()> {
     let session = MockSessionBuilder::new().with_yes_flag().build();

@@ -708,15 +708,15 @@ fn test_get_installed_mods_only_includes_pw_toml_files() {
 
     let fs = MockFileSystemProvider::new()
         .with_current_dir(workdir.clone())
-        // Valid .pw.toml files — should be included
+        // Valid .pw.toml files; should be included
         .with_file(mods_dir.join("fabric-api.pw.toml"), "name = \"Fabric API\"".to_string())
         .with_file(mods_dir.join("sodium.pw.toml"), "name = \"Sodium\"".to_string())
-        // Plain .toml files — should NOT be included
+        // Plain .toml files; should NOT be included
         .with_file(mods_dir.join("config.toml"), "key = \"value\"".to_string())
         .with_file(mods_dir.join("mod-settings.toml"), "setting = true".to_string())
-        // Empty slug (.pw.toml with no prefix) — should NOT be included
+        // Empty slug (.pw.toml with no prefix); should NOT be included
         .with_file(mods_dir.join(".pw.toml"), "empty = true".to_string())
-        // Non-toml file — should NOT be included
+        // Non-toml file; should NOT be included
         .with_file(mods_dir.join("some-file.txt"), "text".to_string());
 
     let process = MockProcessProvider::new();

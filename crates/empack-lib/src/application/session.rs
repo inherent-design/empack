@@ -21,62 +21,40 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-// Abstract interface for state management operations.
-// StateManager trait removed - using concrete PackStateManager type instead.
-
-/// Provider trait for filesystem operations
 pub trait FileSystemProvider {
-    /// Get current working directory
     fn current_dir(&self) -> Result<PathBuf>;
 
-    /// Create a config manager for the given directory
     fn config_manager(&self, workdir: PathBuf) -> ConfigManager<'_>;
 
-    // Core file I/O operations for dependency injection
-    /// Read entire file contents as string
     fn read_to_string(&self, path: &Path) -> Result<String>;
 
-    /// Read entire file contents as bytes
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>>;
 
-    /// Write string content to file
     fn write_file(&self, path: &Path, content: &str) -> Result<()>;
 
-    /// Write binary content to file
     fn write_bytes(&self, path: &Path, content: &[u8]) -> Result<()>;
 
-    /// Check if path exists
     fn exists(&self, path: &Path) -> bool;
 
-    /// Check whether metadata can be read for a path
     fn metadata_exists(&self, path: &Path) -> bool;
 
-    /// Check if path is a directory
     fn is_directory(&self, path: &Path) -> bool;
 
-    /// Create directory and all parent directories
     fn create_dir_all(&self, path: &Path) -> Result<()>;
 
-    // Additional methods for state management
-    /// Get list of files and directories in a path
     fn get_file_list(&self, path: &Path) -> Result<HashSet<PathBuf>>;
 
-    /// Check if directory has build artifacts (mrpack, zip, jar files or build target dirs)
     fn has_build_artifacts(&self, dist_dir: &Path) -> Result<bool>;
 
-    /// Remove a file
     fn remove_file(&self, path: &Path) -> Result<()>;
 
-    /// Remove a directory and all its contents
     fn remove_dir_all(&self, path: &Path) -> Result<()>;
 }
 
 /// Provider trait for network operations
 pub trait NetworkProvider {
-    /// Create an HTTP client with appropriate timeout
     fn http_client(&self) -> Result<Client>;
 
-    /// Create a project resolver with HTTP client and API keys
     fn project_resolver(
         &self,
         client: Client,
@@ -92,28 +70,21 @@ pub struct ProcessOutput {
     pub success: bool,
 }
 
-/// Provider trait for process execution
 pub trait ProcessProvider {
-    /// Execute a command with given arguments in working directory
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput>;
 
-    /// Check if a program is available in PATH. Returns the program path if found.
-    /// Cross-platform: uses platform-appropriate lookup (which on Unix, where on Windows).
+    /// Returns the program path if found. Uses platform-appropriate lookup.
     fn find_program(&self, program: &str) -> Option<String>;
 }
 
-/// Provider trait for configuration access
 pub trait ConfigProvider {
-    /// Get the application configuration
     fn app_config(&self) -> &AppConfig;
 }
 
 /// Provider trait for archive operations (zip extraction, archive creation)
 pub trait ArchiveProvider {
-    /// Extract a zip archive to a directory.
     fn extract_zip(&self, archive_path: &Path, dest_dir: &Path) -> Result<()>;
 
-    /// Create an archive from a directory in the specified format.
     fn create_archive(
         &self,
         source_dir: &Path,
@@ -122,7 +93,6 @@ pub trait ArchiveProvider {
     ) -> Result<()>;
 }
 
-/// Live implementation of ArchiveProvider that delegates to `archive` module functions.
 pub struct LiveArchiveProvider;
 
 impl ArchiveProvider for LiveArchiveProvider {
@@ -142,56 +112,39 @@ impl ArchiveProvider for LiveArchiveProvider {
     }
 }
 
-/// Provider trait for interactive user input operations
 pub trait InteractiveProvider {
-    /// Prompt for text input with optional default value
     fn text_input(&self, prompt: &str, default: String) -> Result<String>;
 
-    /// Prompt for confirmation (yes/no)
     fn confirm(&self, prompt: &str, default: bool) -> Result<bool>;
 
-    /// Prompt for selection from a list of options
     fn select(&self, prompt: &str, options: &[&str]) -> Result<usize>;
 
-    /// Prompt for fuzzy selection from a list of options
-    /// Returns Some(index) if user selected, None if user pressed ESC
+    /// Returns Some(index) if user selected, None if user pressed ESC.
     fn fuzzy_select(&self, prompt: &str, options: &[String]) -> Result<Option<usize>>;
 }
 
-/// Session trait that both CommandSession and MockCommandSession can implement
 pub trait Session {
-    /// Get the display provider for this session
     fn display(&self) -> &dyn DisplayProvider;
 
-    /// Get the filesystem provider for this session
     fn filesystem(&self) -> &dyn FileSystemProvider;
 
-    /// Get the network provider for this session
     fn network(&self) -> &dyn NetworkProvider;
 
-    /// Get the process provider for this session
     fn process(&self) -> &dyn ProcessProvider;
 
-    /// Get the config provider for this session
     fn config(&self) -> &dyn ConfigProvider;
 
-    /// Get the interactive provider for this session
     fn interactive(&self) -> &dyn InteractiveProvider;
 
-    /// Get the terminal capabilities for this session
     fn terminal(&self) -> &TerminalCapabilities;
 
-    /// Get the archive operations provider for this session
     fn archive(&self) -> &dyn ArchiveProvider;
 
-    /// Get the packwiz operations provider for this session
     fn packwiz(&self) -> Box<dyn PackwizOps + '_>;
 
-    /// Get the state manager for this session
     fn state(&self) -> Result<PackStateManager<'_, dyn FileSystemProvider + '_>>;
 }
 
-/// Live implementation of FileSystemProvider
 pub struct LiveFileSystemProvider;
 
 impl FileSystemProvider for LiveFileSystemProvider {
@@ -311,7 +264,6 @@ impl FileSystemProvider for LiveFileSystemProvider {
     }
 }
 
-/// Live implementation of NetworkProvider
 pub struct LiveNetworkProvider {
     client: Client,
     cache: Arc<HttpCache>,
@@ -323,7 +275,6 @@ pub struct LiveNetworkProvider {
 }
 
 impl LiveNetworkProvider {
-    /// Production constructor - uses default API URLs
     pub fn new() -> Self {
         let cache_dir = std::env::temp_dir().join("empack").join("http_cache");
         let client = Client::builder()
@@ -341,7 +292,6 @@ impl LiveNetworkProvider {
         }
     }
 
-    /// Test-only constructor with custom base URLs
     #[cfg(feature = "test-utils")]
     pub fn new_for_test(
         modrinth_base_url: Option<String>,
@@ -406,26 +356,21 @@ impl NetworkProvider for LiveNetworkProvider {
 /// Prevents indefinite hangs from packwiz or java processes.
 const PROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
-/// Live implementation of ProcessProvider
 pub struct LiveProcessProvider {
-    /// Custom PATH override for hermetic testing
     custom_path: Option<String>,
 }
 
 impl LiveProcessProvider {
-    /// Create a new LiveProcessProvider with system PATH
     pub fn new() -> Self {
         Self { custom_path: None }
     }
 
-    /// Create a LiveProcessProvider with custom PATH for hermetic testing
     pub fn with_custom_path(path: String) -> Self {
         Self {
             custom_path: Some(path),
         }
     }
 
-    /// Create a LiveProcessProvider configured for testing with test environment
     pub fn new_for_test(test_bin_path: Option<String>) -> Self {
         match test_bin_path {
             Some(bin_path) => {
@@ -572,7 +517,6 @@ impl ProcessProvider for LiveProcessProvider {
     }
 }
 
-/// Live implementation of ConfigProvider
 pub struct LiveConfigProvider {
     app_config: AppConfig,
 }
@@ -589,7 +533,6 @@ impl ConfigProvider for LiveConfigProvider {
     }
 }
 
-/// Live implementation of InteractiveProvider
 pub struct LiveInteractiveProvider {
     yes_mode: bool,
     workdir: Option<PathBuf>,
@@ -719,7 +662,6 @@ impl InteractiveProvider for LiveInteractiveProvider {
     }
 }
 
-/// CommandSession owns all ephemeral state for a single command execution
 pub struct CommandSession<F, N, P, C, I>
 where
     F: FileSystemProvider,
@@ -728,23 +670,14 @@ where
     C: ConfigProvider,
     I: InteractiveProvider,
 {
-    /// Shared progress display infrastructure (also held by display_provider)
     multi_progress: Arc<MultiProgress>,
-    /// Display provider for this session
     display_provider: LiveDisplayProvider,
-    /// Terminal capabilities for this session
     terminal_capabilities: TerminalCapabilities,
-    /// Filesystem operations provider
     filesystem_provider: F,
-    /// Network operations provider
     network_provider: N,
-    /// Process execution provider
     process_provider: P,
-    /// Configuration provider
     config_provider: C,
-    /// Interactive input provider
     interactive_provider: I,
-    /// Archive operations provider
     archive_provider: LiveArchiveProvider,
 }
 
@@ -757,7 +690,6 @@ impl
         LiveInteractiveProvider,
     >
 {
-    /// Create a new command session with owned state (production composition)
     pub fn new(app_config: AppConfig) -> Self {
         // Initialize display and logger systems
         let terminal_capabilities = match TerminalCapabilities::detect_from_config(app_config.color)
@@ -801,7 +733,6 @@ where
     C: ConfigProvider,
     I: InteractiveProvider,
 {
-    /// Create a new generic command session with custom providers (for testing)
     #[cfg(feature = "test-utils")]
     pub fn new_with_providers(
         filesystem_provider: F,
@@ -826,37 +757,30 @@ where
         }
     }
 
-    /// Get the display provider for this session
     pub fn display(&self) -> &dyn DisplayProvider {
         &self.display_provider
     }
 
-    /// Get the filesystem provider for this session
     pub fn filesystem(&self) -> &dyn FileSystemProvider {
         &self.filesystem_provider
     }
 
-    /// Get the network provider for this session
     pub fn network(&self) -> &dyn NetworkProvider {
         &self.network_provider
     }
 
-    /// Get the process provider for this session
     pub fn process(&self) -> &dyn ProcessProvider {
         &self.process_provider
     }
 
-    /// Get the config provider for this session
     pub fn config(&self) -> &dyn ConfigProvider {
         &self.config_provider
     }
 
-    /// Get the interactive provider for this session
     pub fn interactive(&self) -> &dyn InteractiveProvider {
         &self.interactive_provider
     }
 
-    /// Get the terminal capabilities for this session
     pub fn terminal(&self) -> &TerminalCapabilities {
         &self.terminal_capabilities
     }

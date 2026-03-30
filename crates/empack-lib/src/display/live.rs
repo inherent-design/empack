@@ -10,7 +10,6 @@ use std::sync::Arc;
 
 /// Live implementation of DisplayProvider that owns display state for command lifecycle
 pub struct LiveDisplayProvider {
-    // Owned state for the entire command duration
     multi_progress: Arc<MultiProgress>,
 }
 
@@ -112,14 +111,12 @@ struct LiveProgressProvider {
 
 impl ProgressProvider for LiveProgressProvider {
     fn bar(&self, total: u64) -> Box<dyn ProgressTracker> {
-        // Create a simple progress bar adapter for the session-owned MultiProgress
         let progress_bar = indicatif::ProgressBar::new(total);
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
 
     fn spinner(&self, message: &str) -> Box<dyn ProgressTracker> {
-        // Create a simple spinner adapter for the session-owned MultiProgress
         let progress_bar = indicatif::ProgressBar::new_spinner();
         progress_bar.set_message(message.to_string());
         let bar = self.parent.add(progress_bar);
@@ -140,14 +137,12 @@ struct LiveMultiProgressProvider {
 
 impl MultiProgressProvider for LiveMultiProgressProvider {
     fn add_bar(&self, total: u64, _message: &str) -> Box<dyn ProgressTracker> {
-        // Create a progress bar and add it to the session's MultiProgress
         let progress_bar = indicatif::ProgressBar::new(total);
         let bar = self.parent.add(progress_bar);
         Box::new(SimpleProgressTracker::new(bar))
     }
 
     fn add_spinner(&self, message: &str) -> Box<dyn ProgressTracker> {
-        // Create a spinner and add it to the session's MultiProgress
         let progress_bar = indicatif::ProgressBar::new_spinner();
         progress_bar.set_message(message.to_string());
         let bar = self.parent.add(progress_bar);
@@ -155,8 +150,7 @@ impl MultiProgressProvider for LiveMultiProgressProvider {
     }
 
     fn clear(&self) {
-        // Clear implementation would interact with the MultiProgress
-        // For now, this is a no-op since we're using independent progress bars
+        // no-op: independent progress bars clear themselves on finish/abandon
     }
 }
 

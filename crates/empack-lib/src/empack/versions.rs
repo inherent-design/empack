@@ -1,7 +1,6 @@
 //! Dynamic version fetching for Minecraft and mod loaders
 //!
-//! This module provides intelligent version discovery by fetching the latest
-//! available versions from official APIs with caching for performance.
+//! Fetches available versions from official APIs with disk caching.
 
 use crate::Result;
 use crate::application::session::{FileSystemProvider, NetworkProvider};
@@ -453,9 +452,8 @@ impl<'a> VersionFetcher<'a> {
             }
         }
 
-        // CRITICAL: Never automatically add fallback loaders for unknown versions
-        // If no loaders are compatible, that's the honest answer
-        // (Snapshots and bleeding edge versions may genuinely have no mod loader support yet)
+        // Never add fallback loaders for unknown versions; empty result is
+        // the correct answer for snapshots and bleeding-edge releases.
 
         Ok(compatible_loaders)
     }
@@ -607,8 +605,7 @@ impl<'a> VersionFetcher<'a> {
                     }
                 }
 
-                // CRITICAL: Implement v1 compatibility logic - NeoForge only supports MC 1.20.2+
-                // This restores the API-driven intelligence that was lost in migration
+                // NeoForge only supports MC 1.20.2+
                 if parse_version(mc_version)
                     .is_none_or(|v| v < parse_version("1.20.2").expect("hardcoded version must parse"))
                 {

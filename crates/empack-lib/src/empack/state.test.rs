@@ -891,7 +891,6 @@ file = "index.toml"
     );
 }
 
-// --- Interrupted state detection and marker cleanup tests ---
 
 /// Test: discover_state returns Interrupted when building marker file exists
 #[test]
@@ -1123,7 +1122,6 @@ fn test_begin_cleaning_transition_writes_marker() {
     assert_eq!(content, "cleaning");
 }
 
-// ── can_transition layout closure tests ─────────────────────────────────────
 
 #[test]
 fn test_can_transition_with_layout_rejection() {
@@ -1164,7 +1162,6 @@ fn test_can_enter_marker_cleaning_rejects_bad_layout() {
     ));
 }
 
-// ── Interrupted build recovery tests ─────────────────────────────────────
 
 /// Test: can_transition allows Build from Interrupted { was: Building }
 #[test]

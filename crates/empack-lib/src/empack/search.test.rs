@@ -638,7 +638,7 @@ async fn test_cache_hit_skips_network_call() {
 
     let mut mr_server = mockito::Server::new_async().await;
 
-    // Only expect ONE network call — the second should be served from cache
+    // Only expect ONE network call; the second should be served from cache
     let mr_mock = mr_server
         .mock(
             "GET",
@@ -659,14 +659,14 @@ async fn test_cache_hit_skips_network_call() {
         rate_limiter,
     );
 
-    // First call — cache miss, hits network
+    // First call; cache miss, hits network
     let result1 = resolver
         .resolve_project("Sodium", Some("mod"), None, None, None)
         .await
         .expect("first resolve should succeed");
     assert_eq!(result1.project_id, "CACHED2");
 
-    // Second call — cache hit, no network call
+    // Second call; cache hit, no network call
     let result2 = resolver
         .resolve_project("Sodium", Some("mod"), None, None, None)
         .await

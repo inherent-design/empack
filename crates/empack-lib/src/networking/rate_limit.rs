@@ -11,11 +11,8 @@ pub use crate::primitives::ProjectPlatform as Platform;
 /// Backoff strategy for rate limiting
 #[derive(Debug, Clone)]
 pub struct BackoffConfig {
-    /// Initial backoff duration
     pub initial: Duration,
-    /// Maximum backoff duration
     pub max: Duration,
-    /// Multiplier for exponential backoff
     pub multiplier: f64,
 }
 
@@ -34,7 +31,6 @@ pub struct RateLimitedClient {
     client: Client,
     platform: Platform,
     backoff_config: BackoffConfig,
-    /// Current backoff state (duration for next retry)
     current_backoff: Arc<RwLock<Duration>>,
 }
 

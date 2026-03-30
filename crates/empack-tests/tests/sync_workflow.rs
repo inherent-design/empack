@@ -1,8 +1,3 @@
-//! Integration tests for `empack sync` workflow.
-//!
-//! These scenarios exercise real workflow planning with mock packwiz command
-//! assertions instead of only checking that the command doesn't panic.
-
 use anyhow::Result;
 use empack_lib::application::cli::Commands;
 use empack_lib::application::commands::execute_command_with_session;

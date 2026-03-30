@@ -9,7 +9,6 @@ pub mod state;
 pub mod templates;
 pub mod versions;
 
-// Re-export main types for convenience
 pub use archive::{ArchiveError, ArchiveFormat};
 pub use builds::{BuildOrchestrator, BuildResult, PackInfo};
 pub use config::{

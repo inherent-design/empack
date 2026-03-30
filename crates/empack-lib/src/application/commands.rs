@@ -134,14 +134,12 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
     }
 }
 
-// Session-based command handlers using dependency injection pattern
 async fn handle_requirements(session: &dyn Session) -> Result<()> {
     session
         .display()
         .status()
         .section("Checking tool dependencies");
 
-    // Check packwiz
     let workdir = session.filesystem().current_dir().unwrap_or_default();
     let packwiz = crate::empack::packwiz::check_packwiz_available(session.process(), &workdir);
     match packwiz {
@@ -163,7 +161,6 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         }
     }
 
-    // Check java availability
     match session.process().find_program("java") {
         Some(path) => {
             session.display().status().success("java", &path);
@@ -637,8 +634,6 @@ async fn handle_init(
         )?;
     }
 
-    // === Execute phase: all filesystem mutations happen below this line ===
-
     let created_dir = needs_mkdir;
 
     // Create directory if needed (deferred from path resolution)
@@ -794,29 +789,6 @@ fn validate_init_inputs(
     Ok(())
 }
 
-/// Handle `empack add` command - search, resolve, and install projects
-///
-/// ## Packwiz Integration Strategy
-///
-/// This function uses **direct ProcessProvider.execute()** to invoke packwiz CLI commands
-/// rather than the PackwizMetadata wrapper (defined in empack/packwiz.rs).
-///
-/// **Design Rationale:**
-/// - Single-command operations: Each mod is added via one packwiz invocation
-/// - Simplicity advantage: Direct CLI is ~17 lines vs wrapper's ~35 lines
-/// - No state management: Commands don't need cached availability checks
-/// - Computational desperation: Minimal abstractions until complexity justifies them
-/// - Resolution and command-planning errors stay typed at the shared seam; packwiz execution remains local here
-///
-/// **When to use PackwizMetadata wrapper instead:**
-/// PackwizMetadata should be integrated IF future commands need:
-/// - Cached availability checks across multiple invocations
-/// - Structured error parsing (HashMismatch, PackFormat detection)
-/// - Transactional behavior with rollback on failure
-/// - Complex multi-step validation (refresh_index, export_mrpack)
-/// - Better test isolation (mock wrapper instead of ProcessProvider)
-///
-/// **See also:** packwiz.rs module documentation for usage patterns
 async fn handle_add(
     session: &dyn Session,
     mods: Vec<String>,
@@ -915,7 +887,6 @@ async fn handle_add(
     let mut added_mods = Vec::new();
     let mut failed_mods: Vec<(String, String)> = Vec::new();
 
-    // === Gather phase: resolve all mods, no side effects ===
     let mut resolved_mods: Vec<ResolvedMod> = Vec::new();
     let mut batch_project_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -1022,7 +993,6 @@ async fn handle_add(
         return Ok(());
     }
 
-    // === Execute phase: all side effects happen below this line ===
     let all_content_folders: &[&str] = &["mods", "resourcepacks", "shaderpacks", "datapacks"];
     for resolved in resolved_mods {
         let (scan_folders, before_slugs) = match resolved.resolution.resolved_project_type {
@@ -1631,7 +1601,6 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     let mut removed_mods = Vec::new();
     let mut failed_mods = Vec::new();
 
-    // === Gather phase: validate mod names, no side effects ===
     let validated_mods: Vec<String> = mods
         .into_iter()
         .filter(|name| {
@@ -1662,7 +1631,6 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         return Ok(());
     }
 
-    // === Execute phase: all side effects happen below this line ===
     for mod_name in validated_mods {
         session
             .display()
@@ -2606,10 +2574,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 }
 
-// Helper functions
-
-/// Download a file from `url` and write it to `dest` with retry logic.
-/// Retries up to 3 times on transient failures with exponential backoff (1s, 2s).
 async fn download_to_cache(
     session: &dyn Session,
     url: &str,

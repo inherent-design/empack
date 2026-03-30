@@ -4,10 +4,6 @@ use std::io::{self, IsTerminal};
 use super::detection::*;
 use crate::primitives::terminal::TerminalGraphicsCaps;
 
-// ============================================================================
-// CORE TERMINAL CAPABILITY STRUCTURES
-// ============================================================================
-
 #[derive(Debug, Clone)]
 pub struct TerminalCapabilities {
     pub color: TerminalColorCaps,
@@ -53,7 +49,6 @@ pub struct TerminalInteractivity {
     pub supports_paste_mode: bool,
 }
 
-// Terminal-specific capability profiles
 #[derive(Debug, Clone)]
 pub struct TerminalSpecificCaps {
     pub expected_color: TerminalColorCaps,
@@ -65,15 +60,11 @@ pub struct TerminalSpecificCaps {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CapabilityReliability {
-    EnvironmentReliable, // TERM_PROGRAM matches exactly
-    TermVariableMatch,   // TERM variable pattern match
-    EnvironmentHints,    // Secondary environment variables
-    Unknown,             // Fallback detection
+    EnvironmentReliable,
+    TermVariableMatch,
+    EnvironmentHints,
+    Unknown,
 }
-
-// ============================================================================
-// MAIN DETECTION IMPLEMENTATION
-// ============================================================================
 
 impl TerminalCapabilities {
     /// Create minimal capabilities for non-interactive/fallback contexts.

@@ -112,7 +112,7 @@ fn test_levenshtein_unicode() {
 
 #[test]
 fn test_calculate_confidence_unicode_lowercase_expansion() {
-    // Turkish İ (U+0130) lowercases to "i\u{0307}" (2 chars) — max_len must use
+    // Turkish İ (U+0130) lowercases to "i\u{0307}" (2 chars); max_len must use
     // lowercased strings to avoid distance > max_len underflow.
     let result = calculate_confidence("İ", "i", 0);
     assert!(result <= 100, "confidence must not overflow: got {result}");

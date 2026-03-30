@@ -8,7 +8,6 @@ use clap::ValueEnum;
 use std::str::FromStr;
 use thiserror::Error;
 
-// Shared macros and patterns
 mod shared;
 use shared::impl_fromstr_for_value_enum;
 
@@ -64,10 +63,6 @@ pub enum LogFormat {
     Yaml,
 }
 
-// ============================================================================
-// LOGGER CONFIGURATION TYPES
-// ============================================================================
-
 /// Logger configuration combining terminal capabilities with application config
 #[derive(Debug, Clone)]
 pub struct LoggerConfig {
@@ -106,10 +101,6 @@ impl LogContext {
         self.current_item = Some(current);
     }
 }
-
-// ============================================================================
-// STRUCTURED ERROR TYPES
-// ============================================================================
 
 /// Application configuration loading and validation errors
 #[derive(Debug, Error)]
@@ -234,7 +225,6 @@ impl ValueEnum for LogFormat {
     }
 }
 
-// Generate FromStr implementations for all ValueEnum types
 impl_fromstr_for_value_enum!(LogLevel, "invalid log level");
 impl_fromstr_for_value_enum!(LogFormat, "invalid log format");
 impl_fromstr_for_value_enum!(LogOutput, "invalid log output stream");

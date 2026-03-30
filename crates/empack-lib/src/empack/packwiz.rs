@@ -1,32 +1,14 @@
-//! Packwiz integration layer for metadata management and mod installation
+//! Packwiz integration for metadata management and mod installation.
 //!
-//! Provides two main abstractions:
-//! - PackwizMetadata: OPTIONAL convenience wrapper for `packwiz modrinth/curseforge add/remove/refresh`
-//! - PackwizInstaller: Wraps `java -jar packwiz-installer-bootstrap.jar` invocation (used by build system)
+//! Two abstractions:
+//! - [`PackwizMetadata`]: convenience wrapper for `packwiz modrinth/curseforge add/remove/refresh`
+//! - [`PackwizInstaller`]: wraps `java -jar packwiz-installer-bootstrap.jar` invocation
 //!
-//! Both use ProcessProvider for command execution and follow the session-based DI pattern.
+//! Both use [`ProcessProvider`] for command execution and follow the session-based DI pattern.
 //!
-//! ## Usage Patterns
-//!
-//! PackwizMetadata is designed for complex packwiz operations that benefit from abstraction:
-//! - Multi-step validation (refresh_index with stderr parsing for HashMismatch/PackFormat errors)
-//! - Structured error handling (PackwizError variants vs generic anyhow errors)
-//! - Cached availability checks (ensure_packwiz caches result across multiple calls)
-//! - Future transactional behavior (rollback on partial failure)
-//!
-//! Commands MAY use either approach:
-//! - **DIRECT ProcessProvider**: For simple single-command operations (add, remove)
-//!   - Lower cognitive overhead
-//!   - Easier debugging (visible args in code)
-//!   - Matches computational desperation principle (minimal abstractions until complexity justifies)
-//! - **PackwizMetadata wrapper**: For complex operations with multi-step validation
-//!   - Better error context
-//!   - Consistent error types
-//!   - Easier to test in isolation (mock wrapper instead of ProcessProvider)
-//!
-//! **Current design (Phase 4):** Commands use direct ProcessProvider for simplicity.
-//! Future phases may integrate wrapper IF complexity emerges (dependency resolution, transactional behavior).
-//! See phase4-design-documentation report for rationale.
+//! Commands currently use direct `ProcessProvider` for simple single-command
+//! operations. The wrapper is reserved for cases requiring multi-step
+//! validation or structured error handling.
 
 use crate::application::session::{FileSystemProvider, ProcessProvider, Session};
 use crate::empack::state::StateError;

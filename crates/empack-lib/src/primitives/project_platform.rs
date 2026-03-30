@@ -1,6 +1,6 @@
 //! Project hosting platform types
 //!
-//! Canonical definition of project hosting platforms (NOT mod loaders).
+//! Canonical definition of project hosting platforms (not mod loaders).
 //! This module provides the single source of truth for platform enumeration
 //! across all empack modules (networking, search, dependency resolution).
 
@@ -9,12 +9,12 @@ use std::time::Duration;
 
 /// Project hosting platform enumeration
 ///
-/// Represents platforms where projects are downloaded from (NOT mod loaders).
+/// Represents platforms where projects are downloaded from (not mod loaders).
 /// - Modrinth: Open platform, no API key required
 /// - CurseForge: Requires API key
 ///
 /// # Important Distinction
-/// Forge/NeoForge/Fabric/Quilt are mod LOADERS, not platforms.
+/// Forge/NeoForge/Fabric/Quilt are mod loaders, not platforms.
 /// They specify runtime environments, not where projects are hosted.
 ///
 /// # Usage

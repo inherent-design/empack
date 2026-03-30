@@ -443,10 +443,10 @@ impl<'a> ConfigManager<'a> {
         let (minecraft_version, loader) = if let Some(metadata) = &pack_metadata {
             let loader = self
                 .infer_loader_from_metadata(metadata)
-                .unwrap_or(ModLoader::Fabric); // Default to Fabric if unclear
+                .unwrap_or(ModLoader::Fabric);
             (Some(metadata.versions.minecraft.clone()), Some(loader))
         } else {
-            (None, None) // Let user specify
+            (None, None)
         };
 
         let mut deps = BTreeMap::new();

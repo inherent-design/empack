@@ -13,14 +13,6 @@ use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::MockSessionBuilder;
 
-/// Test: empack init -y (zero-config with API-driven defaults)
-///
-/// Workflow:
-/// 1. Run `empack init -y` in empty mock directory
-/// 2. Verify empack.yml created with reasonable defaults
-/// 3. Verify pack/ directory created
-/// 4. Verify pack.toml exists (via MockPackwizOps init side effect)
-/// 5. Verify project structure matches expected layout
 #[tokio::test]
 async fn test_init_zero_config() -> Result<()> {
     let session = MockSessionBuilder::new().with_yes_flag().build();
@@ -66,12 +58,6 @@ async fn test_init_zero_config() -> Result<()> {
     Ok(())
 }
 
-/// Test: empack init with explicit CLI configuration
-///
-/// Workflow:
-/// 1. Run `empack init matrix-fabric --pack-name "Matrix Fabric" --modloader fabric --mc-version 1.21.1`
-/// 2. Verify the generated empack.yml reflects the explicit inputs
-/// 3. Verify pack.toml created via MockPackwizOps with correct content
 #[tokio::test]
 async fn test_init_with_explicit_flags() -> Result<()> {
     let session = MockSessionBuilder::new().with_yes_flag().build();
@@ -155,13 +141,6 @@ async fn test_init_with_explicit_flags() -> Result<()> {
     Ok(())
 }
 
-/// Test: empack init my-pack (creates directory and initializes inside)
-///
-/// Workflow:
-/// 1. Run `empack init my-pack -y` where my-pack doesn't exist
-/// 2. Verify my-pack/ directory was created
-/// 3. Verify empack.yml exists inside my-pack/
-/// 4. Verify pack/ directory created inside my-pack/
 #[tokio::test]
 async fn test_init_creates_directory_from_name() -> Result<()> {
     let session = MockSessionBuilder::new().with_yes_flag().build();
@@ -214,13 +193,6 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
     Ok(())
 }
 
-/// Test: empack init in directory with existing empack.yml (error handling)
-///
-/// Workflow:
-/// 1. Pre-populate empack.yml in mock filesystem
-/// 2. Run `empack init -y` (should detect existing project)
-/// 3. Verify appropriate error (existing project without --force)
-/// 4. Verify original empack.yml is preserved
 #[tokio::test]
 async fn test_init_existing_project_error() -> Result<()> {
     let session = MockSessionBuilder::new().with_yes_flag().build();
@@ -292,15 +264,6 @@ async fn test_init_existing_project_error() -> Result<()> {
     Ok(())
 }
 
-/// Test: empack init scaffolds template files and directory structure
-///
-/// Workflow:
-/// 1. Run `empack init my-templates --modloader fabric --mc-version 1.21.1`
-/// 2. Verify .gitignore exists in project root
-/// 3. Verify .packwizignore exists in pack/ directory
-/// 4. Verify templates/server/ directory exists
-/// 5. Verify templates/client/ directory exists
-/// 6. Verify dist/ build output directories exist
 #[tokio::test]
 async fn test_init_scaffolds_template_files() -> Result<()> {
     let session = MockSessionBuilder::new().with_yes_flag().build();
