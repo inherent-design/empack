@@ -293,8 +293,9 @@ async fn handle_init(
 
     // Phase B: Resolve pack_name (WHAT). Never affects directory.
     let dir_basename = target_dir
-        .file_name()
-        .and_then(|n| n.to_str())
+        .components()
+        .rfind(|c| matches!(c, std::path::Component::Normal(_)))
+        .and_then(|c| c.as_os_str().to_str())
         .unwrap_or("Pack")
         .to_string();
 
