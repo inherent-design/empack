@@ -13,7 +13,6 @@ empack requirements          # check for packwiz, java, etc.
 empack init my-pack          # create a new modpack project
 cd my-pack
 empack add sodium            # search and add a mod
-empack sync                  # reconcile dependencies; if editing empack.yml directly
 empack build all             # produce mrpack, client, and server artifacts
 ```
 
@@ -21,15 +20,16 @@ See [Usage Guide](docs/usage.md) for the full command reference, flags, and envi
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `empack requirements` | Check external tool availability |
-| `empack version` | Print version information |
-| `empack init` | Create or complete a modpack project |
-| `empack add` | Add mods by name, URL, or project ID |
-| `empack build` | Build mrpack, client, server, or all targets |
-| `empack remove` | Remove mods from the current project (alias: `rm`) |
-| `empack clean` | Remove build outputs from `dist/` |
+| Command               | Purpose                                              |
+| --------------------- | ---------------------------------------------------- |
+| `empack requirements` | Check external tool availability                     |
+| `empack version`      | Print version information                            |
+| `empack init`         | Create or complete a modpack project                 |
+| `empack add`          | Add mods by name, URL, or project ID                 |
+| `empack sync`         | Reconcile declared dependencies with installed state |
+| `empack build`        | Build mrpack, client, server, or all targets         |
+| `empack remove`       | Remove mods from the current project (alias: `rm`)   |
+| `empack clean`        | Remove build outputs from `dist/`                    |
 
 ## Project Model
 
@@ -41,15 +41,14 @@ Each empack project consists of three parts:
 
 ## Documentation
 
-| Document | Description |
-| --- | --- |
-| [Usage Guide](docs/usage.md) | Command reference, flags, and environment variables |
-| [Testing](docs/testing.md) | Test strategy, verification matrix, VCR fixtures |
-| [Contributing](CONTRIBUTING.md) | Development setup and workflow |
-| [Provider API: Modrinth](docs/reference/MODRINTH.md) | Modrinth API reference |
-| [Provider API: CurseForge](docs/reference/CURSEFORGE.md) | CurseForge API reference |
-| [Architecture Decision Record](docs/reference/historical-adr.md) | Historical architecture context |
-| [Changelog](CHANGELOG.md) | Release history |
+| Document                                                 | Description                                         |
+| -------------------------------------------------------- | --------------------------------------------------- |
+| [Usage Guide](docs/usage.md)                             | Command reference, flags, and environment variables |
+| [Testing](docs/testing.md)                               | Test strategy, verification matrix, VCR fixtures    |
+| [Contributing](CONTRIBUTING.md)                          | Development setup and workflow                      |
+| [Provider API: Modrinth](docs/reference/MODRINTH.md)     | Modrinth API reference                              |
+| [Provider API: CurseForge](docs/reference/CURSEFORGE.md) | CurseForge API reference                            |
+| [Changelog](CHANGELOG.md)                                | Release history                                     |
 
 ## Project Structure
 
