@@ -59,7 +59,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     // Step 1: Initialize with Forge modloader
     let init_result = execute_command_with_session(
         Commands::Init {
-            name: Some("forge-test-pack".to_string()),
+            dir: Some("forge-test-pack".to_string()),
             pack_name: Some("forge-test-pack".to_string()),
             force: false,
             modloader: Some("forge".to_string()),
@@ -318,7 +318,7 @@ async fn test_forge_modloader_initialization() -> Result<()> {
     // Execute init with explicit Forge loader (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("forge-loader-test".to_string()),
+            dir: Some("forge-loader-test".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("forge".to_string()),

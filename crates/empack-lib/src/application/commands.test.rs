@@ -3256,10 +3256,10 @@ mod init_interactive_tests {
         );
     }
 
-    // I2: handle_init with a positional name uses it as the default for the
+    // I2: handle_init with a positional dir uses it as the default for the
     // interactive name prompt (the --name flag is needed to skip the prompt).
     #[tokio::test]
-    async fn test_handle_init_positional_name_sets_prompt_default() {
+    async fn test_handle_init_positional_dir_sets_prompt_default() {
         let workdir = mock_root().join("positional-name-default");
         let session = MockCommandSession::new()
             .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
@@ -3267,7 +3267,7 @@ mod init_interactive_tests {
 
         let _result = handle_init(
             &session,
-            Some("my-pack".to_string()), // positional name
+            Some("my-pack".to_string()), // positional dir
             None,                         // no --name flag
             false,
             Some("fabric".to_string()),
@@ -3292,7 +3292,7 @@ mod init_interactive_tests {
         assert_eq!(
             name_call.unwrap().1,
             "my-pack",
-            "Positional name 'my-pack' should be the default for the name prompt"
+            "Positional dir 'my-pack' should be the default for the name prompt"
         );
     }
 

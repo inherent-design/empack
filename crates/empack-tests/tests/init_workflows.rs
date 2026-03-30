@@ -31,7 +31,7 @@ async fn test_init_zero_config() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: None,
+            dir: None,
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
@@ -82,7 +82,7 @@ async fn test_init_with_explicit_flags() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("matrix-fabric".to_string()),
+            dir: Some("matrix-fabric".to_string()),
             pack_name: Some("Matrix Fabric".to_string()),
             force: false,
             modloader: Some("fabric".to_string()),
@@ -172,7 +172,7 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("my-pack".to_string()),
+            dir: Some("my-pack".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
@@ -243,7 +243,7 @@ async fn test_init_existing_project_error() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: None,
+            dir: None,
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
@@ -311,7 +311,7 @@ async fn test_init_scaffolds_template_files() -> Result<()> {
 
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("my-templates".to_string()),
+            dir: Some("my-templates".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),

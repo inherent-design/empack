@@ -53,7 +53,7 @@ async fn test_init_packwiz_failure() -> Result<()> {
     // Execute init command - may fail or succeed via fallback (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("failure-test-pack".to_string()),
+            dir: Some("failure-test-pack".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
@@ -144,7 +144,7 @@ async fn test_init_filesystem_error() -> Result<()> {
     // Execute init command - should fail due to permission error (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("readonly-test".to_string()),
+            dir: Some("readonly-test".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
@@ -246,7 +246,7 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
     // Execute init command (--yes requires --modloader)
     let result = execute_command_with_session(
         Commands::Init {
-            name: Some("empty-loader-test".to_string()),
+            dir: Some("empty-loader-test".to_string()),
             pack_name: None,
             force: false,
             modloader: Some("fabric".to_string()),
