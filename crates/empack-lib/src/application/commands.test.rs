@@ -838,7 +838,7 @@ mod handle_add_tests {
                 }),
             ));
 
-        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None, None, None).await;
 
         if let Err(e) = &result {
             println!("Error: {}", e);
@@ -918,6 +918,8 @@ mod handle_add_tests {
             false,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -970,7 +972,7 @@ mod handle_add_tests {
                 }),
             ));
 
-        let result = handle_add(&session, vec!["AANobbMI".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["AANobbMI".to_string()], false, None, None, None, None).await;
 
         assert!(result.is_ok());
         assert!(session.process_provider.verify_call(
@@ -1010,6 +1012,8 @@ mod handle_add_tests {
             false,
             Some(crate::application::cli::SearchPlatform::Curseforge),
             None,
+            None,
+            None,
         )
         .await;
 
@@ -1025,7 +1029,7 @@ mod handle_add_tests {
     async fn it_handles_empty_mod_list() {
         let session = MockCommandSession::new();
 
-        let result = handle_add(&session, vec![], false, None, None).await;
+        let result = handle_add(&session, vec![], false, None, None, None, None).await;
 
         assert!(result.is_ok());
 
@@ -1041,7 +1045,7 @@ mod handle_add_tests {
                 .with_current_dir(mock_root().join("uninitialized-project")),
         );
 
-        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None, None, None).await;
 
         assert!(result.is_ok());
 
@@ -1093,7 +1097,7 @@ mod handle_add_tests {
                 }),
             ));
 
-        let result = handle_add(&session, vec!["sodium".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["sodium".to_string()], false, None, None, None, None).await;
 
         assert!(result.is_ok());
         assert!(session.process_provider.get_calls().is_empty());
@@ -1123,7 +1127,7 @@ mod handle_add_tests {
                 Err("Mock packwiz error".to_string()),
             ));
 
-        let result = handle_add(&session, vec!["failing-mod".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["failing-mod".to_string()], false, None, None, None, None).await;
 
         assert!(result.is_err(), "handle_add must return Err when packwiz fails");
 
@@ -1173,7 +1177,7 @@ mod handle_add_tests {
                     .with_packwiz_add_slug("YL57xq9U".to_string(), "iris".to_string()),
             );
 
-        let result = handle_add(&session, vec!["iris_shaders".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["iris_shaders".to_string()], false, None, None, None, None).await;
         assert!(result.is_ok(), "handle_add should succeed: {result:?}");
 
         // Verify empack.yml was updated with "iris" (from .pw.toml), NOT "iris_shaders" (from input)
@@ -1225,7 +1229,7 @@ mod handle_add_tests {
             ));
         // Note: No with_packwiz_add_slug → no .pw.toml created → fallback
 
-        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None, None, None).await;
         assert!(result.is_ok());
 
         // Verify empack.yml was updated with the fallback key "test-mod"
@@ -1282,7 +1286,7 @@ mod handle_add_tests {
                     .with_packwiz_add_slug("new-mod-id".to_string(), "new-mod".to_string()),
             );
 
-        let result = handle_add(&session, vec!["New Mod".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["New Mod".to_string()], false, None, None, None, None).await;
         assert!(result.is_ok(), "handle_add should succeed: {result:?}");
 
         // The dep_key should be "new-mod" (from the newly created .pw.toml),
@@ -1316,7 +1320,7 @@ mod handle_add_tests {
             );
         session.config_provider.app_config.dry_run = true;
 
-        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None).await;
+        let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None, None, None).await;
 
         assert!(result.is_ok());
         assert!(
@@ -2740,52 +2744,6 @@ async fn test_build_cleans_before_build_when_flag_set() {
     }
 }
 
-// ===== IS_CURSEFORGE_PROJECT_ID TESTS =====
-
-mod is_curseforge_project_id_tests {
-    use super::*;
-
-    #[test]
-    fn canonical_valid_id() {
-        assert!(is_curseforge_project_id("238222"));
-    }
-
-    #[test]
-    fn single_digit() {
-        assert!(is_curseforge_project_id("1"));
-    }
-
-    #[test]
-    fn large_number() {
-        assert!(is_curseforge_project_id("999999999"));
-    }
-
-    #[test]
-    fn leading_zeros() {
-        assert!(is_curseforge_project_id("00012345"));
-    }
-
-    #[test]
-    fn empty_string() {
-        assert!(!is_curseforge_project_id(""));
-    }
-
-    #[test]
-    fn has_letter() {
-        assert!(!is_curseforge_project_id("23822A"));
-    }
-
-    #[test]
-    fn has_dash() {
-        assert!(!is_curseforge_project_id("-238222"));
-    }
-
-    #[test]
-    fn has_space() {
-        assert!(!is_curseforge_project_id(" 238222"));
-    }
-}
-
 // ===== FROM_CLI_INPUT MATRIX TESTS =====
 
 mod from_cli_input_tests {
@@ -2805,9 +2763,11 @@ mod from_cli_input_tests {
 
     #[test]
     fn curseforge_id_no_platform() {
+        // All-digit strings are treated as search queries without explicit --platform.
+        // Direct CF project ID lookup requires --platform curseforge.
         let intent = AddResolutionIntent::from_cli_input("306612", None);
-        assert_eq!(intent.direct_project_id, Some("306612".to_string()));
-        assert_eq!(intent.direct_platform, Some(ProjectPlatform::CurseForge));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
         assert_eq!(intent.preferred_platform, None);
         assert_eq!(intent.search_query, "306612");
     }
@@ -2827,8 +2787,8 @@ mod from_cli_input_tests {
     fn modrinth_id_with_modrinth_platform() {
         let intent =
             AddResolutionIntent::from_cli_input("AANobbMI", Some(SearchPlatform::Modrinth));
-        assert_eq!(intent.direct_project_id, None);
-        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.direct_project_id, Some("AANobbMI".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
         assert_eq!(intent.preferred_platform, Some(ProjectPlatform::Modrinth));
         assert_eq!(intent.search_query, "AANobbMI");
     }
@@ -2837,8 +2797,8 @@ mod from_cli_input_tests {
     fn curseforge_id_with_modrinth_platform() {
         let intent =
             AddResolutionIntent::from_cli_input("306612", Some(SearchPlatform::Modrinth));
-        assert_eq!(intent.direct_project_id, None);
-        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.direct_project_id, Some("306612".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
         assert_eq!(intent.preferred_platform, Some(ProjectPlatform::Modrinth));
         assert_eq!(intent.search_query, "306612");
     }
@@ -2847,8 +2807,8 @@ mod from_cli_input_tests {
     fn search_query_with_modrinth_platform() {
         let intent =
             AddResolutionIntent::from_cli_input("sodium", Some(SearchPlatform::Modrinth));
-        assert_eq!(intent.direct_project_id, None);
-        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.direct_project_id, Some("sodium".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
         assert_eq!(intent.preferred_platform, Some(ProjectPlatform::Modrinth));
         assert_eq!(intent.search_query, "sodium");
     }
@@ -2872,8 +2832,8 @@ mod from_cli_input_tests {
     fn modrinth_id_with_curseforge_platform() {
         let intent =
             AddResolutionIntent::from_cli_input("AANobbMI", Some(SearchPlatform::Curseforge));
-        assert_eq!(intent.direct_project_id, None);
-        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.direct_project_id, Some("AANobbMI".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::CurseForge));
         assert_eq!(
             intent.preferred_platform,
             Some(ProjectPlatform::CurseForge)
@@ -2885,8 +2845,8 @@ mod from_cli_input_tests {
     fn search_query_with_curseforge_platform() {
         let intent =
             AddResolutionIntent::from_cli_input("sodium", Some(SearchPlatform::Curseforge));
-        assert_eq!(intent.direct_project_id, None);
-        assert_eq!(intent.direct_platform, None);
+        assert_eq!(intent.direct_project_id, Some("sodium".to_string()));
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::CurseForge));
         assert_eq!(
             intent.preferred_platform,
             Some(ProjectPlatform::CurseForge)
@@ -2908,10 +2868,11 @@ mod from_cli_input_tests {
 
     #[test]
     fn curseforge_id_with_both_platform() {
+        // --platform both does not auto-detect; treats input as search query.
         let intent =
             AddResolutionIntent::from_cli_input("306612", Some(SearchPlatform::Both));
-        assert_eq!(intent.direct_project_id, Some("306612".to_string()));
-        assert_eq!(intent.direct_platform, Some(ProjectPlatform::CurseForge));
+        assert_eq!(intent.direct_project_id, None);
+        assert_eq!(intent.direct_platform, None);
         assert_eq!(intent.preferred_platform, None);
         assert_eq!(intent.search_query, "306612");
     }
@@ -3004,9 +2965,8 @@ mod search_add_tests {
     use crate::application::sync::resolve_add_contract;
     use crate::empack::parsing::ModLoader;
 
-    // S1: CurseForge numeric ID without explicit --platform flag is auto-detected
-    // and produces valid packwiz curseforge add commands.
-    // The AddResolutionIntent auto-detects all-digit strings as CurseForge IDs.
+    // S1: CurseForge numeric ID with explicit --platform curseforge flag
+    // produces valid packwiz curseforge add commands.
     #[tokio::test]
     async fn test_handle_add_curseforge_direct_id() {
         let workdir = mock_root().join("cf-direct-id");
@@ -3036,7 +2996,9 @@ mod search_add_tests {
             &session,
             vec!["238222".to_string()],
             false,
-            None, // no --platform flag
+            Some(SearchPlatform::Curseforge),
+            None,
+            None,
             None,
         )
         .await;
@@ -3083,6 +3045,8 @@ mod search_add_tests {
             &session,
             vec!["238222".to_string()],
             false,
+            Some(SearchPlatform::Curseforge),
+            None,
             None,
             None,
         )
@@ -3146,6 +3110,8 @@ mod search_add_tests {
             false,
             None,
             Some(CliProjectType::Mod),
+            None,
+            None,
         )
         .await;
 
@@ -3558,6 +3524,8 @@ version = "nPGOChsP"
             false,
             Some(crate::application::cli::SearchPlatform::Curseforge),
             None,
+            None,
+            None,
         )
         .await;
 
@@ -3672,6 +3640,8 @@ project-id = 448233
             vec!["448233".to_string()],
             false,
             Some(crate::application::cli::SearchPlatform::Curseforge),
+            None,
+            None,
             None,
         )
         .await;
@@ -4083,6 +4053,8 @@ Once you have done so, place these files in \
             false,
             Some(crate::application::cli::SearchPlatform::Curseforge),
             None,
+            None,
+            None,
         )
         .await;
 
@@ -4154,6 +4126,8 @@ Once you have done so, place these files in \
             vec!["256717".to_string()],
             false,
             Some(crate::application::cli::SearchPlatform::Curseforge),
+            None,
+            None,
             None,
         )
         .await;
@@ -4350,6 +4324,8 @@ mod exit_code_tests {
             false,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -4382,6 +4358,8 @@ mod exit_code_tests {
             &session,
             vec!["nonexistent-mod".to_string()],
             false,
+            None,
+            None,
             None,
             None,
         )
@@ -4452,6 +4430,8 @@ mod exit_code_tests {
             &session,
             vec!["stderr-mod".to_string()],
             false,
+            None,
+            None,
             None,
             None,
         )

@@ -151,6 +151,14 @@ pub enum Commands {
         /// Project type to search for (skips tiered search when specified)
         #[arg(long = "type", value_enum)]
         project_type: Option<CliProjectType>,
+
+        /// Pin a specific Modrinth version ID (skips version selection)
+        #[arg(long, value_name = "ID")]
+        version_id: Option<String>,
+
+        /// Pin a specific CurseForge file ID (skips version selection)
+        #[arg(long, value_name = "ID")]
+        file_id: Option<String>,
     },
 
     /// Remove projects from the modpack

@@ -12,7 +12,7 @@ use crate::application::sync::{
 };
 use crate::application::{CliConfig, Commands};
 use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
-use crate::empack::content::UrlKind;
+use crate::empack::content::{JarResolver, UrlKind};
 use crate::empack::import::{
     ImportConfig, ModpackManifest, SourceKind, execute_import, parse_curseforge_zip,
     parse_modrinth_mrpack, resolve_manifest,
@@ -130,7 +130,9 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             force,
             platform,
             project_type,
-        } => handle_add(session, mods, force, platform, project_type).await,
+            version_id,
+            file_id,
+        } => handle_add(session, mods, force, platform, project_type, version_id, file_id).await,
         Commands::Remove { mods, deps } => handle_remove(session, mods, deps).await,
         Commands::Build {
             targets,
@@ -1095,6 +1097,8 @@ async fn handle_add(
     force: bool,
     platform: Option<SearchPlatform>,
     project_type: Option<CliProjectType>,
+    version_id: Option<String>,
+    file_id: Option<String>,
 ) -> Result<()> {
     if mods.is_empty() {
         session
@@ -1177,14 +1181,14 @@ async fn handle_add(
     // Create project resolver
     let resolver = session
         .network()
-        .project_resolver(client, curseforge_api_key);
+        .project_resolver(client.clone(), curseforge_api_key);
 
     session
         .display()
         .status()
         .section(&format!("Adding {} mod(s) to modpack", mods.len()));
 
-    let mut added_mods = Vec::new();
+    let mut added_mods: Vec<String> = Vec::new();
     let mut failed_mods: Vec<(String, String)> = Vec::new();
 
     let mut resolved_mods: Vec<ResolvedMod> = Vec::new();
@@ -1197,81 +1201,178 @@ async fn handle_add(
             .status()
             .checking(&format!("Resolving mod: {}", mod_query));
 
-        // Use project plan context if available
-        let minecraft_version = project_plan.as_ref().map(|p| p.minecraft_version.as_str());
-        let mod_loader = project_plan.as_ref().and_then(|p| p.loader);
+        match resolution_intent.kind.clone() {
+            AddIntentKind::Search => {
+                let minecraft_version =
+                    project_plan.as_ref().map(|p| p.minecraft_version.as_str());
+                let mod_loader = project_plan.as_ref().and_then(|p| p.loader);
 
-        // For CLI add, we resolve via search (empty project_id triggers search path)
-        let direct_project_id = resolution_intent.direct_project_id.as_deref().unwrap_or("");
-        let direct_platform = resolution_intent
-            .direct_platform
-            .unwrap_or(ProjectPlatform::Modrinth);
+                let direct_project_id =
+                    resolution_intent.direct_project_id.as_deref().unwrap_or("");
+                let direct_platform = resolution_intent
+                    .direct_platform
+                    .unwrap_or(ProjectPlatform::Modrinth);
 
-        let search_project_type = project_type.as_ref().map(|pt| pt.to_project_type());
-        match resolve_add_contract(
-            &resolution_intent.search_query,
-            search_project_type,
-            minecraft_version,
-            mod_loader,
-            direct_project_id,
-            direct_platform,
-            None,
-            resolution_intent.preferred_platform,
-            resolver.as_ref(),
-        )
-        .await
-        {
-            Ok(resolution) => {
-                let status_label = if resolution_intent.direct_project_id.is_some() {
-                    "Using direct project ID"
-                } else {
-                    "Found"
-                };
-                session.display().status().success(
-                    status_label,
-                    &format!("{} on {}", resolution.title, resolution.resolved_platform),
+                let version_pin = derive_version_pin(
+                    &version_id,
+                    &file_id,
+                    resolution_intent.direct_platform,
                 );
-                if let Some(confidence) = resolution.confidence {
-                    session
-                        .display()
-                        .status()
-                        .info(&format!("Confidence: {}%", confidence));
-                }
 
-                // Check for duplicate mod in existing dep graph (unless --force flag is set)
-                if !force && dep_graph.contains(&resolution.resolved_project_id) {
-                    session.display().status().warning(&format!(
-                        "Mod already installed: {} (use --force to reinstall)",
-                        resolution.title
-                    ));
-                    continue; // Skip this mod
-                }
+                let search_project_type = project_type.as_ref().map(|pt| pt.to_project_type());
+                match resolve_add_contract(
+                    &resolution_intent.search_query,
+                    search_project_type,
+                    minecraft_version,
+                    mod_loader,
+                    direct_project_id,
+                    direct_platform,
+                    version_pin,
+                    resolution_intent.preferred_platform,
+                    resolver.as_ref(),
+                )
+                .await
+                {
+                    Ok(resolution) => {
+                        let status_label =
+                            if resolution_intent.direct_project_id.is_some() {
+                                "Using direct project ID"
+                            } else {
+                                "Found"
+                            };
+                        session.display().status().success(
+                            status_label,
+                            &format!(
+                                "{} on {}",
+                                resolution.title, resolution.resolved_platform
+                            ),
+                        );
+                        if let Some(confidence) = resolution.confidence {
+                            session
+                                .display()
+                                .status()
+                                .info(&format!("Confidence: {}%", confidence));
+                        }
 
-                // Check for duplicate within this batch
-                if !force && batch_project_ids.contains(&resolution.resolved_project_id) {
-                    session.display().status().warning(&format!(
-                        "Duplicate in batch: {} (already queued for addition)",
-                        resolution.title
-                    ));
+                        if !force && dep_graph.contains(&resolution.resolved_project_id) {
+                            session.display().status().warning(&format!(
+                                "Mod already installed: {} (use --force to reinstall)",
+                                resolution.title
+                            ));
+                            continue;
+                        }
+
+                        if !force
+                            && batch_project_ids
+                                .contains(&resolution.resolved_project_id)
+                        {
+                            session.display().status().warning(&format!(
+                                "Duplicate in batch: {} (already queued for addition)",
+                                resolution.title
+                            ));
+                            continue;
+                        }
+
+                        batch_project_ids
+                            .insert(resolution.resolved_project_id.clone());
+                        let dep_key = mod_query.to_lowercase().replace(' ', "-");
+                        resolved_mods.push(ResolvedMod {
+                            query: mod_query,
+                            resolution,
+                            dep_key,
+                        });
+                    }
+                    Err(e) => {
+                        let rendered = render_add_contract_error(&e);
+                        session
+                            .display()
+                            .status()
+                            .error(&rendered.item, &rendered.details);
+                        failed_mods.push((mod_query, rendered.details));
+                    }
+                }
+            }
+            AddIntentKind::CurseForgeDirect { slug } => {
+                match resolve_curseforge_slug(
+                    &slug,
+                    &client,
+                    resolver.as_ref(),
+                    plan_mc_version(project_plan.as_ref()),
+                    plan_loader(project_plan.as_ref()),
+                    version_id.as_deref(),
+                    file_id.as_deref(),
+                    project_type.as_ref().map(|pt| pt.to_project_type()),
+                )
+                .await
+                {
+                    Ok(resolution) => {
+                        session.display().status().success(
+                            "Found",
+                            &format!(
+                                "{} on {}",
+                                resolution.title, resolution.resolved_platform
+                            ),
+                        );
+
+                        if !force && dep_graph.contains(&resolution.resolved_project_id) {
+                            session.display().status().warning(&format!(
+                                "Mod already installed: {} (use --force to reinstall)",
+                                resolution.title
+                            ));
+                            continue;
+                        }
+
+                        batch_project_ids
+                            .insert(resolution.resolved_project_id.clone());
+                        let dep_key = slug.to_lowercase();
+                        resolved_mods.push(ResolvedMod {
+                            query: mod_query,
+                            resolution,
+                            dep_key,
+                        });
+                    }
+                    Err(e) => {
+                        session
+                            .display()
+                            .status()
+                            .error("Failed to resolve CurseForge slug", &e.to_string());
+                        failed_mods.push((mod_query, e.to_string()));
+                    }
+                }
+            }
+            AddIntentKind::DirectDownload { ref url, ref extension } => {
+                if extension != "jar" {
+                    let msg = format!(
+                        "Adding non-JAR files via URL is not yet supported (got .{extension}). \
+                         For .jar files, the file will be identified and added automatically."
+                    );
+                    session.display().status().error("Unsupported file type", &msg);
+                    failed_mods.push((mod_query, msg));
                     continue;
                 }
 
-                batch_project_ids.insert(resolution.resolved_project_id.clone());
-                // Use the mod query lowercased as slug key
-                let dep_key = mod_query.to_lowercase().replace(' ', "-");
-                resolved_mods.push(ResolvedMod {
-                    query: mod_query,
-                    resolution,
-                    dep_key,
-                });
-            }
-            Err(e) => {
-                let rendered = render_add_contract_error(&e);
-                session
-                    .display()
-                    .status()
-                    .error(&rendered.item, &rendered.details);
-                failed_mods.push((mod_query, rendered.details));
+                match handle_direct_download_jar(
+                    session,
+                    url,
+                    resolver.as_ref(),
+                )
+                .await
+                {
+                    Ok(resolution) => {
+                        session.display().status().success(
+                            "Added",
+                            &format!("{}", resolution.title),
+                        );
+                        added_mods.push(mod_query);
+                    }
+                    Err(e) => {
+                        session
+                            .display()
+                            .status()
+                            .error("Direct download failed", &e.to_string());
+                        failed_mods.push((mod_query, e.to_string()));
+                    }
+                }
             }
         }
     }
@@ -1478,7 +1579,7 @@ async fn handle_add(
                             .status()
                             .warning(&format!("Failed to update empack.yml: {}", e));
                     }
-                    added_mods.push((resolved.query, resolved.resolution));
+                    added_mods.push(resolved.query);
                 }
             }
             Err(_) => {
@@ -1605,7 +1706,15 @@ fn format_downloads(downloads: u64) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum AddIntentKind {
+    Search,
+    CurseForgeDirect { slug: String },
+    DirectDownload { url: String, extension: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct AddResolutionIntent {
+    kind: AddIntentKind,
     search_query: String,
     direct_project_id: Option<String>,
     direct_platform: Option<ProjectPlatform>,
@@ -1620,23 +1729,53 @@ impl AddResolutionIntent {
             Some(SearchPlatform::Both) | None => None,
         };
 
-        // Auto-detect only CurseForge numeric IDs (unambiguous: all-digit strings).
-        // Modrinth IDs (8-char base62) are too easily confused with mod names
-        // (e.g. "faithful", "optifine"). Users must pass --platform modrinth
-        // for direct Modrinth ID lookup.
+        if mod_query.starts_with("http://") || mod_query.starts_with("https://") {
+            match crate::empack::content::classify_url(mod_query) {
+                Ok(UrlKind::ModrinthProject { slug }) => {
+                    return Self {
+                        kind: AddIntentKind::Search,
+                        search_query: slug.clone(),
+                        direct_project_id: Some(slug),
+                        direct_platform: Some(ProjectPlatform::Modrinth),
+                        preferred_platform: Some(ProjectPlatform::Modrinth),
+                    };
+                }
+                Ok(UrlKind::CurseForgeProject { slug }) => {
+                    return Self {
+                        kind: AddIntentKind::CurseForgeDirect { slug },
+                        search_query: mod_query.to_string(),
+                        direct_project_id: None,
+                        direct_platform: None,
+                        preferred_platform: Some(ProjectPlatform::CurseForge),
+                    };
+                }
+                Ok(UrlKind::DirectDownload { url, extension }) => {
+                    return Self {
+                        kind: AddIntentKind::DirectDownload { url, extension },
+                        search_query: mod_query.to_string(),
+                        direct_project_id: None,
+                        direct_platform: None,
+                        preferred_platform: None,
+                    };
+                }
+                _ => { /* unrecognized URL falls through to search */ }
+            }
+        }
+
         let (direct_project_id, direct_platform) = match preferred_platform {
-            Some(ProjectPlatform::CurseForge) if is_curseforge_project_id(mod_query) => (
+            Some(ProjectPlatform::CurseForge) => (
                 Some(mod_query.to_string()),
                 Some(ProjectPlatform::CurseForge),
             ),
-            None if is_curseforge_project_id(mod_query) => (
+            Some(ProjectPlatform::Modrinth) => (
                 Some(mod_query.to_string()),
-                Some(ProjectPlatform::CurseForge),
+                Some(ProjectPlatform::Modrinth),
             ),
-            _ => (None, None),
+            None => (None, None),
         };
 
         Self {
+            kind: AddIntentKind::Search,
             search_query: mod_query.to_string(),
             direct_project_id,
             direct_platform,
@@ -1717,10 +1856,6 @@ struct ResolvedMod {
     query: String,
     resolution: AddResolution,
     dep_key: String,
-}
-
-fn is_curseforge_project_id(value: &str) -> bool {
-    !value.is_empty() && value.chars().all(|c| c.is_ascii_digit())
 }
 
 struct RestrictedMod {
@@ -1849,6 +1984,277 @@ fn packwiz_user_cache_dir() -> std::path::PathBuf {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| crate::platform::home_dir().join(".cache"))
     }
+}
+
+fn derive_version_pin<'a>(
+    version_id: &'a Option<String>,
+    file_id: &'a Option<String>,
+    direct_platform: Option<ProjectPlatform>,
+) -> Option<&'a str> {
+    match (version_id, file_id) {
+        (Some(vid), Some(fid)) => {
+            if direct_platform == Some(ProjectPlatform::CurseForge) {
+                Some(fid.as_str())
+            } else {
+                Some(vid.as_str())
+            }
+        }
+        (Some(vid), None) => Some(vid.as_str()),
+        (None, Some(fid)) => Some(fid.as_str()),
+        (None, None) => None,
+    }
+}
+
+fn plan_mc_version(plan: Option<&crate::empack::config::ProjectPlan>) -> Option<&str> {
+    plan.map(|p| p.minecraft_version.as_str())
+}
+
+fn plan_loader(
+    plan: Option<&crate::empack::config::ProjectPlan>,
+) -> Option<crate::empack::parsing::ModLoader> {
+    plan.and_then(|p| p.loader)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn resolve_curseforge_slug(
+    slug: &str,
+    client: &reqwest::Client,
+    _resolver: &dyn crate::empack::search::ProjectResolverTrait,
+    minecraft_version: Option<&str>,
+    mod_loader: Option<ModLoader>,
+    version_pin_override: Option<&str>,
+    file_id_override: Option<&str>,
+    project_type: Option<ProjectType>,
+) -> std::result::Result<AddResolution, anyhow::Error> {
+    let search_url = format!(
+        "https://api.curseforge.com/v1/mods/search?gameId=432&slug={slug}"
+    );
+
+    let response = client.get(&search_url).send().await?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "CurseForge API returned {} for slug '{}'",
+            response.status(),
+            slug
+        );
+    }
+
+    #[derive(serde::Deserialize)]
+    struct CfSearchResponse {
+        data: Vec<CfModEntry>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct CfModEntry {
+        id: u64,
+        name: String,
+    }
+
+    let body: CfSearchResponse = response.json().await?;
+    let entry = body.data.into_iter().next().ok_or_else(|| {
+        anyhow::anyhow!("CurseForge project not found for slug '{}'", slug)
+    })?;
+
+    let project_id = entry.id.to_string();
+    let version_pin = file_id_override.or(version_pin_override);
+
+    resolve_add_contract(
+        &entry.name,
+        project_type,
+        minecraft_version,
+        mod_loader,
+        &project_id,
+        ProjectPlatform::CurseForge,
+        version_pin,
+        Some(ProjectPlatform::CurseForge),
+        _resolver,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("{}", e))
+}
+
+async fn handle_direct_download_jar(
+    session: &dyn Session,
+    url: &str,
+    _resolver: &dyn crate::empack::search::ProjectResolverTrait,
+) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
+    session.display().status().info(&format!("Downloading JAR from {}", url));
+
+    let client = session.network().http_client()?;
+    let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    let filename = url.rsplit('/').next().unwrap_or("download.jar");
+    let dest_path = tmp_dir.path().join(filename);
+
+    download_file(&client, url, &dest_path).await?;
+
+    let sha1 = {
+        let bytes = std::fs::read(&dest_path)?;
+        compute_sha1_hex_for_bytes(&bytes)
+    };
+
+    session
+        .display()
+        .status()
+        .info(&format!("SHA-1: {}", sha1));
+
+    let jar_resolver = crate::empack::content::ApiJarResolver {
+        modrinth: session.network(),
+        curseforge: session.network(),
+    };
+    let identify_request = crate::empack::content::JarIdentifyRequest {
+        path: dest_path.clone(),
+        sha1: Some(sha1),
+        sha512: None,
+    };
+
+    let identity = jar_resolver.identify(identify_request).await?;
+    let manager = session.state()?;
+    let workdir = manager.workdir.clone();
+    let mods_dir = workdir.join("pack").join("mods");
+
+    match identity {
+        crate::empack::content::JarIdentity::Modrinth {
+            project_id,
+            version_id,
+            title,
+        } => {
+            session.display().status().success(
+                "Identified",
+                &format!("{} on Modrinth", title),
+            );
+
+            let commands = crate::application::sync::build_packwiz_add_commands(
+                &project_id,
+                ProjectPlatform::Modrinth,
+                Some(&version_id),
+            )?;
+
+            let command = &commands[0];
+            let result = session.process().execute(
+                "packwiz",
+                &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                &workdir.join("pack"),
+            );
+            if let Ok(output) = result {
+                if !output.success {
+                    anyhow::bail!("packwiz add failed: {}", output.stderr);
+                }
+            } else {
+                anyhow::bail!("packwiz add failed: {}", result.unwrap_err());
+            }
+
+            Ok(DirectDownloadResult {
+                title: title.clone(),
+                platform: ProjectPlatform::Modrinth,
+                project_id: Some(project_id),
+                project_type: ProjectType::Mod,
+                local: false,
+            })
+        }
+        crate::empack::content::JarIdentity::CurseForge {
+            project_id,
+            file_id,
+            title,
+        } => {
+            session.display().status().success(
+                "Identified",
+                &format!("{} on CurseForge", title),
+            );
+
+            let pid_str = project_id.to_string();
+            let fid_str = file_id.to_string();
+            let commands = crate::application::sync::build_packwiz_add_commands(
+                &pid_str,
+                ProjectPlatform::CurseForge,
+                Some(&fid_str),
+            )?;
+
+            let command = &commands[0];
+            let result = session.process().execute(
+                "packwiz",
+                &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                &workdir.join("pack"),
+            );
+            if let Ok(output) = result {
+                if !output.success {
+                    anyhow::bail!("packwiz add failed: {}", output.stderr);
+                }
+            } else {
+                anyhow::bail!("packwiz add failed: {}", result.unwrap_err());
+            }
+
+            Ok(DirectDownloadResult {
+                title: title.clone(),
+                platform: ProjectPlatform::CurseForge,
+                project_id: Some(pid_str),
+                project_type: ProjectType::Mod,
+                local: false,
+            })
+        }
+        crate::empack::content::JarIdentity::Unidentified => {
+            session
+                .display()
+                .status()
+                .warning("Could not identify JAR via Modrinth or CurseForge");
+            session
+                .display()
+                .status()
+                .info("Copying JAR to mods/ as a local-only entry");
+
+            session
+                .filesystem()
+                .create_dir_all(&mods_dir)
+                .context("failed to create mods directory")?;
+
+            let jar_filename = filename.to_string();
+            let dest = mods_dir.join(&jar_filename);
+            let bytes = std::fs::read(&dest_path)?;
+            session
+                .filesystem()
+                .write_bytes(&dest, &bytes)
+                .context("failed to copy JAR to mods/")?;
+
+            session.display().status().info(&format!(
+                "Copied to {} (manage updates manually)",
+                dest.display()
+            ));
+
+            Ok(DirectDownloadResult {
+                title: jar_filename,
+                platform: ProjectPlatform::Modrinth,
+                project_id: None,
+                project_type: ProjectType::Mod,
+                local: true,
+            })
+        }
+    }
+}
+
+#[allow(dead_code)]
+struct DirectDownloadResult {
+    title: String,
+    platform: ProjectPlatform,
+    project_id: Option<String>,
+    project_type: ProjectType,
+    local: bool,
+}
+
+fn compute_sha1_hex_for_bytes(data: &[u8]) -> String {
+    use sha1::Digest;
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(data);
+    let result = hasher.finalize();
+    hex_encode_bytes(&result)
+}
+
+fn hex_encode_bytes(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
 }
 
 async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> Result<()> {
@@ -2455,7 +2861,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     // Create project resolver
     let resolver = session
         .network()
-        .project_resolver(client, curseforge_api_key);
+        .project_resolver(client.clone(), curseforge_api_key);
 
     // Phase 1: Resolve any Search entries before building the project plan
     let empack_config = config_manager
