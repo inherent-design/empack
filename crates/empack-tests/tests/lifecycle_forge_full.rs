@@ -142,6 +142,8 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             force: false,
             platform: None,
             project_type: None,
+            version_id: None,
+            file_id: None,
         },
         &session,
     )
@@ -164,6 +166,8 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             force: false,
             platform: None,
             project_type: None,
+            version_id: None,
+            file_id: None,
         },
         &session,
     )

@@ -39,9 +39,14 @@ fn test_build_sync_plan_preserves_direct_lookup_contracts() {
     let sync_plan = build_sync_plan(&plan, &HashSet::new());
     match &sync_plan.actions[0] {
         SyncPlanAction::Add(dep) => {
-            assert_eq!(dep.project_id, "238222");
-            assert_eq!(dep.project_platform, ProjectPlatform::CurseForge);
-            assert_eq!(dep.version_pin, Some("5678901".to_string()));
+            match &dep.source {
+                DependencySource::Platform { project_id, project_platform, version_pin } => {
+                    assert_eq!(project_id, "238222");
+                    assert_eq!(*project_platform, ProjectPlatform::CurseForge);
+                    assert_eq!(*version_pin, Some("5678901".to_string()));
+                }
+                DependencySource::Local { .. } => panic!("expected Platform source"),
+            }
         }
         other => panic!("expected add action, got {other:?}"),
     }
@@ -143,9 +148,11 @@ async fn test_resolve_add_contract_matches_sync_search_resolution() {
             project_type: ProjectType::Mod,
             minecraft_version: "1.21.1".to_string(),
             loader: Some(ModLoader::Fabric),
-            project_id: String::new(),
-            project_platform: ProjectPlatform::Modrinth,
-            version_pin: None,
+            source: DependencySource::Platform {
+                project_id: String::new(),
+                project_platform: ProjectPlatform::Modrinth,
+                version_pin: None,
+            },
         }),
         &resolver,
     )
@@ -194,9 +201,11 @@ async fn test_resolve_add_contract_matches_sync_curseforge_version_pin() {
             project_type: ProjectType::Mod,
             minecraft_version: "1.21.1".to_string(),
             loader: Some(ModLoader::Forge),
-            project_id: "238222".to_string(),
-            project_platform: ProjectPlatform::CurseForge,
-            version_pin: Some("5678901".to_string()),
+            source: DependencySource::Platform {
+                project_id: "238222".to_string(),
+                project_platform: ProjectPlatform::CurseForge,
+                version_pin: Some("5678901".to_string()),
+            },
         }),
         &resolver,
     )
@@ -245,9 +254,11 @@ async fn test_resolve_add_contract_matches_sync_modrinth_version_pin() {
             project_type: ProjectType::Mod,
             minecraft_version: "1.21.1".to_string(),
             loader: Some(ModLoader::Fabric),
-            project_id: "AANobbMI".to_string(),
-            project_platform: ProjectPlatform::Modrinth,
-            version_pin: Some("good-version".to_string()),
+            source: DependencySource::Platform {
+                project_id: "AANobbMI".to_string(),
+                project_platform: ProjectPlatform::Modrinth,
+                version_pin: Some("good-version".to_string()),
+            },
         }),
         &resolver,
     )

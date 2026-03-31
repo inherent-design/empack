@@ -95,6 +95,8 @@ async fn e2e_add_mod_successfully() -> Result<()> {
             force: false,
             platform: None,
             project_type: None,
+            version_id: None,
+            file_id: None,
         },
         &session,
     )

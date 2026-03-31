@@ -17,6 +17,20 @@ pub enum SyncPlanAction {
     Remove { key: String, title: String },
 }
 
+/// Source type for a dependency in the sync plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencySource {
+    Platform {
+        project_id: String,
+        project_platform: ProjectPlatform,
+        version_pin: Option<String>,
+    },
+    Local {
+        path: String,
+        hash: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncDependencyPlan {
     pub key: String,
@@ -24,9 +38,7 @@ pub struct SyncDependencyPlan {
     pub project_type: ProjectType,
     pub minecraft_version: String,
     pub loader: Option<ModLoader>,
-    pub project_id: String,
-    pub project_platform: ProjectPlatform,
-    pub version_pin: Option<String>,
+    pub source: DependencySource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +102,12 @@ pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<Stri
             continue;
         }
 
-        actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(dep_spec)));
+        let plan = SyncDependencyPlan::from_spec(dep_spec);
+        if matches!(plan.source, DependencySource::Local { .. }) {
+            continue;
+        }
+
+        actions.push(SyncPlanAction::Add(plan));
     }
 
     for installed_mod in installed_mods {
@@ -118,26 +135,37 @@ pub async fn resolve_sync_action(
             title: title.clone(),
         }),
         SyncPlanAction::Add(dep) => {
-            let resolution = resolve_add_contract(
-                &dep.search_query,
-                Some(dep.project_type),
-                Some(dep.minecraft_version.as_str()),
-                dep.loader,
-                &dep.project_id,
-                dep.project_platform,
-                dep.version_pin.as_deref(),
-                None,
-                resolver,
-            )
-            .await?;
+            match &dep.source {
+                DependencySource::Local { .. } => {
+                    unreachable!("build_sync_plan filters out Local entries before dispatch");
+                }
+                DependencySource::Platform {
+                    project_id,
+                    project_platform,
+                    version_pin,
+                } => {
+                    let resolution = resolve_add_contract(
+                        &dep.search_query,
+                        Some(dep.project_type),
+                        Some(dep.minecraft_version.as_str()),
+                        dep.loader,
+                        project_id,
+                        *project_platform,
+                        version_pin.as_deref(),
+                        None,
+                        resolver,
+                    )
+                    .await?;
 
-            Ok(SyncExecutionAction::Add {
-                key: dep.key.clone(),
-                title: resolution.title,
-                commands: resolution.commands,
-                resolved_project_id: resolution.resolved_project_id,
-                resolved_platform: resolution.resolved_platform,
-            })
+                    Ok(SyncExecutionAction::Add {
+                        key: dep.key.clone(),
+                        title: resolution.title,
+                        commands: resolution.commands,
+                        resolved_project_id: resolution.resolved_project_id,
+                        resolved_platform: resolution.resolved_platform,
+                    })
+                }
+            }
         }
     }
 }
@@ -273,9 +301,11 @@ impl SyncDependencyPlan {
             project_type: dep_spec.project_type,
             minecraft_version: dep_spec.minecraft_version.clone(),
             loader: dep_spec.loader,
-            project_id: dep_spec.project_id.clone(),
-            project_platform: dep_spec.project_platform,
-            version_pin: dep_spec.version_pin.clone(),
+            source: DependencySource::Platform {
+                project_id: dep_spec.project_id.clone(),
+                project_platform: dep_spec.project_platform,
+                version_pin: dep_spec.version_pin.clone(),
+            },
         }
     }
 }

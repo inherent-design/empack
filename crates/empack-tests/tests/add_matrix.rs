@@ -115,6 +115,8 @@ async fn test_add_type_resourcepack() -> Result<()> {
             force: false,
             platform: None,
             project_type: Some(CliProjectType::ResourcePack),
+            version_id: None,
+            file_id: None,
         },
         &session,
     )
@@ -185,6 +187,8 @@ async fn test_add_type_shader() -> Result<()> {
             force: false,
             platform: None,
             project_type: Some(CliProjectType::Shader),
+            version_id: None,
+            file_id: None,
         },
         &session,
     )
@@ -243,6 +247,8 @@ async fn test_add_dry_run() -> Result<()> {
             force: false,
             platform: None,
             project_type: None,
+            version_id: None,
+            file_id: None,
         },
         &session,
     )
