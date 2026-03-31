@@ -1,6 +1,7 @@
 pub mod archive;
 pub mod builds;
 pub mod config;
+pub mod content;
 pub mod fuzzy;
 pub mod packwiz;
 pub mod parsing;
@@ -14,6 +15,10 @@ pub use builds::{BuildOrchestrator, BuildResult, PackInfo};
 pub use config::{
     ConfigManager, Dependency, DependencyEntry, DependencyRecord, DependencySearch,
     DependencyStatus, EmpackConfig, ProjectPlan, ProjectSpec,
+};
+pub use content::{
+    ApiJarResolver, JarIdentifyRequest, JarIdentity, JarResolver, OverrideCategory, OverrideSide,
+    SideEnv, SideRequirement, UrlClassifyError, UrlKind,
 };
 #[cfg(feature = "test-utils")]
 pub use packwiz::MockPackwizOps;
