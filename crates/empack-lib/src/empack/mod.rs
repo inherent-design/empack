@@ -3,6 +3,7 @@ pub mod builds;
 pub mod config;
 pub mod content;
 pub mod fuzzy;
+pub mod import;
 pub mod packwiz;
 pub mod parsing;
 pub mod search;
@@ -19,6 +20,12 @@ pub use config::{
 pub use content::{
     ApiJarResolver, JarIdentifyRequest, JarIdentity, JarResolver, OverrideCategory, OverrideSide,
     SideEnv, SideRequirement, UrlClassifyError, UrlKind,
+};
+pub use import::{
+    BlockedEntry, ContentEntry, EmbeddedJar, ImportConfig, ImportError, ImportResult,
+    ImportStats, ModpackManifest, OverrideEntry, PackIdentity, PlatformRef, ResolvedManifest,
+    RuntimeTarget, SourceKind, classify_override, detect_local_source, execute_import,
+    parse_curseforge_zip, parse_modrinth_mrpack, resolve_manifest,
 };
 #[cfg(feature = "test-utils")]
 pub use packwiz::MockPackwizOps;

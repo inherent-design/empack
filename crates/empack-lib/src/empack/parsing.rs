@@ -69,6 +69,17 @@ pub enum ModLoader {
 }
 
 impl ModLoader {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ModLoader::NeoForge => "neoforge",
+            ModLoader::Fabric => "fabric",
+            ModLoader::Quilt => "quilt",
+            ModLoader::Forge => "forge",
+        }
+    }
+}
+
+impl ModLoader {
     pub fn parse(input: &str) -> Result<Self, ParseError> {
         match input.trim().to_lowercase().as_str() {
             "neoforge" => Ok(Self::NeoForge),
@@ -77,6 +88,24 @@ impl ModLoader {
             "forge" => Ok(Self::Forge),
             _ => Err(ParseError::ModLoader(input.to_string())),
         }
+    }
+
+    /// Parse a platform-specific loader ID into a canonical `ModLoader`.
+    ///
+    /// CurseForge format: `"{type}-{version}"` (e.g. `"fabric-0.16.0"`).
+    /// The version component after the first `-` is discarded.
+    ///
+    /// Modrinth format: `"fabric-loader"`, `"forge"`, `"neoforge"`,
+    /// `"quilt-loader"`. The `-loader` suffix is stripped when present.
+    pub fn parse_from_platform_id(platform_id: &str) -> Result<Self, ParseError> {
+        let id = platform_id.trim();
+
+        if id.contains('-') {
+            let loader_type = id.split_once('-').unwrap().0;
+            return Self::parse(loader_type);
+        }
+
+        Self::parse(id)
     }
 }
 

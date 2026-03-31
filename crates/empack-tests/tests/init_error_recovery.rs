@@ -48,7 +48,8 @@ async fn test_init_packwiz_failure() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-        },
+                    from_source: None,
+},
         &session,
     )
     .await;
@@ -132,7 +133,8 @@ async fn test_init_filesystem_error() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-        },
+                    from_source: None,
+},
         &session,
     )
     .await;
@@ -215,7 +217,8 @@ async fn test_init_empty_loader_list_graceful_handling() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-        },
+                    from_source: None,
+},
         &session,
     )
     .await;

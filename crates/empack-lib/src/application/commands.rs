@@ -12,11 +12,17 @@ use crate::application::sync::{
 };
 use crate::application::{CliConfig, Commands};
 use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
+use crate::empack::content::UrlKind;
+use crate::empack::import::{
+    ImportConfig, ModpackManifest, SourceKind, execute_import, parse_curseforge_zip,
+    parse_modrinth_mrpack, resolve_manifest,
+};
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::SearchError;
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
 use std::collections::{BTreeMap, HashSet};
+use std::path::PathBuf;
 
 /// Build an empack.yml string via serde serialization (injection-safe).
 fn format_empack_yml(
@@ -103,6 +109,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             pack_name,
             loader_version,
             pack_version,
+            from_source,
         } => {
             handle_init(
                 session,
@@ -114,6 +121,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
                 author,
                 loader_version,
                 pack_version,
+                from_source,
             )
             .await
         }
@@ -217,11 +225,16 @@ async fn handle_init(
     cli_author: Option<String>,
     cli_loader_version: Option<String>,
     cli_pack_version: Option<String>,
+    from_source: Option<String>,
 ) -> Result<()> {
-    if session.config().app_config().yes && cli_modloader.is_none() {
+    if session.config().app_config().yes && cli_modloader.is_none() && from_source.is_none() {
         return Err(anyhow::anyhow!(
             "--yes requires --modloader to be specified"
         ));
+    }
+
+    if let Some(ref source) = from_source {
+        return handle_init_from_source(session, source, positional_dir, force, cli_pack_name).await;
     }
 
     // Phase A: Resolve target_dir (WHERE). Only the positional arg affects directory.
@@ -785,6 +798,293 @@ fn validate_init_inputs(
     if loader_version.is_empty() {
         anyhow::bail!("Loader version is required for {}", loader_str);
     }
+
+    Ok(())
+}
+
+async fn handle_init_from_source(
+    session: &dyn Session,
+    source: &str,
+    positional_dir: Option<String>,
+    force: bool,
+    cli_pack_name: Option<String>,
+) -> Result<()> {
+    session
+        .display()
+        .status()
+        .section("Importing modpack from source");
+
+    let (manifest, _archive_path) = if source.starts_with("http://")
+        || source.starts_with("https://")
+    {
+        import_from_remote(session, source).await?
+    } else {
+        import_from_local(session, source)?
+    };
+
+    // Phase A: Resolve target_dir
+    let base_dir = session.config().app_config().workdir.clone().unwrap_or(
+        session
+            .filesystem()
+            .current_dir()
+            .context("Failed to get current directory")?,
+    );
+
+    let target_dir = if let Some(ref dir_arg) = positional_dir {
+        base_dir.join(dir_arg)
+    } else {
+        base_dir.join(&manifest.identity.name)
+    };
+
+    // Check state
+    if session.filesystem().exists(&target_dir) {
+        let manager = crate::empack::state::PackStateManager::new(
+            target_dir.clone(),
+            session.filesystem(),
+        );
+        let current_state = manager.discover_state()?;
+        if current_state != PackState::Uninitialized && !force {
+            session
+                .display()
+                .status()
+                .error("Directory already contains a modpack project", "");
+            session
+                .display()
+                .status()
+                .subtle("   Use --force to overwrite existing files");
+            return Err(anyhow::anyhow!(
+                "Directory already contains a modpack project. Use --force to overwrite."
+            ));
+        }
+    }
+
+    session.display().status().info(&format!(
+        "Importing '{}' for Minecraft {} ({})",
+        manifest.identity.name,
+        manifest.target.minecraft_version,
+        manifest.target.loader.as_str(),
+    ));
+
+    let pack_name = cli_pack_name.unwrap_or_else(|| manifest.identity.name.clone());
+    let author = manifest
+        .identity
+        .author
+        .clone()
+        .unwrap_or_else(|| "Unknown Author".to_string());
+    let version = manifest.identity.version.clone();
+
+    // Phase B: Resolve
+    let modrinth_api = session.network();
+    let curseforge_api = session.network();
+
+    let resolved = resolve_manifest(
+        manifest,
+        modrinth_api,
+        curseforge_api,
+    )
+    .await?;
+
+    for warning in &resolved.warnings {
+        session.display().status().warning(warning);
+    }
+
+    // Phase C: Execute
+    let config = ImportConfig {
+        target_dir: target_dir.clone(),
+        pack_name: pack_name.clone(),
+        author: author.clone(),
+        version: version.clone(),
+    };
+
+    let result = execute_import(resolved, config, session).await?;
+
+    session.display().status().section("Import Summary");
+    session.display().status().success(
+        "Platform references added",
+        &result.stats.platform_referenced.to_string(),
+    );
+    session.display().status().info(&format!(
+        "Embedded files extracted: {} (unidentified)",
+        result.stats.embedded_jars_unidentified
+    ));
+    session.display().status().info(&format!(
+        "Override files copied: {}",
+        result.stats.overrides_copied
+    ));
+
+    session
+        .display()
+        .status()
+        .complete("Modpack imported successfully");
+    session.display().status().subtle(&format!(
+        "Project directory: {}",
+        result.project_dir.display()
+    ));
+
+    Ok(())
+}
+
+fn import_from_local(
+    _session: &dyn Session,
+    path: &str,
+) -> Result<(ModpackManifest, PathBuf)> {
+    let source_path = PathBuf::from(path);
+    let kind = crate::empack::import::detect_local_source(&source_path)?;
+
+    match kind {
+        SourceKind::CurseForgeZip => {
+            let manifest = parse_curseforge_zip(&source_path)?;
+            Ok((manifest, source_path))
+        }
+        SourceKind::ModrinthMrpack => {
+            let manifest = parse_modrinth_mrpack(&source_path)?;
+            Ok((manifest, source_path))
+        }
+        SourceKind::PackwizDirectory => {
+            anyhow::bail!(
+                "packwiz directory import is not yet implemented; \
+                 initialize with empack init then use empack add for each mod"
+            );
+        }
+        _ => anyhow::bail!("unsupported source kind: {:?}", kind),
+    }
+}
+
+async fn import_from_remote(
+    session: &dyn Session,
+    source: &str,
+) -> Result<(ModpackManifest, PathBuf)> {
+    let url_kind = crate::empack::content::classify_url(source).map_err(|e| {
+        crate::empack::import::ImportError::UnrecognizedSource(e.to_string())
+    })?;
+
+    match url_kind {
+        UrlKind::ModrinthModpack { slug, version } => {
+            download_modrinth_modpack(session, &slug, version.as_deref()).await
+        }
+        UrlKind::CurseForgeModpack { .. } => {
+            Err(crate::empack::import::ImportError::RemoteCurseForgeNotSupported.into())
+        }
+        _ => Err(crate::empack::import::ImportError::UnrecognizedSource(
+            source.to_string(),
+        )
+        .into()),
+    }
+}
+
+async fn download_modrinth_modpack(
+    session: &dyn Session,
+    slug: &str,
+    version_filter: Option<&str>,
+) -> Result<(ModpackManifest, PathBuf)> {
+    session
+        .display()
+        .status()
+        .info(&format!("Fetching Modrinth modpack: {}", slug));
+
+    let client = session.network().http_client()?;
+
+    let version_url = format!(
+        "https://api.modrinth.com/v2/project/{}/version",
+        slug
+    );
+
+    let response = client
+        .get(&version_url)
+        .send()
+        .await
+        .context("failed to fetch Modrinth version list")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Modrinth API returned {} for project '{}'",
+            response.status(),
+            slug
+        );
+    }
+
+    let versions: Vec<serde_json::Value> = response
+        .json()
+        .await
+        .context("failed to parse Modrinth versions")?;
+
+    let version = if let Some(ref vf) = version_filter {
+        versions
+            .iter()
+            .find(|v| v.get("version_number").and_then(|n| n.as_str()) == Some(vf))
+            .ok_or_else(|| {
+                anyhow::anyhow!("version '{}' not found for Modrinth project '{}'", vf, slug)
+            })?
+    } else {
+        versions
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("no versions found for Modrinth project '{}'", slug))?
+    };
+
+    let files = version
+        .get("files")
+        .and_then(|f| f.as_array())
+        .ok_or_else(|| anyhow::anyhow!("no files in Modrinth version response"))?;
+
+    let file_entry = files
+        .iter()
+        .find(|f| {
+            let primary = f.get("primary").and_then(|p| p.as_bool()).unwrap_or(false);
+            let name = f
+                .get("filename")
+                .and_then(|n| n.as_str())
+                .unwrap_or("");
+            primary || name.ends_with(".mrpack")
+        })
+        .or_else(|| files.first())
+        .ok_or_else(|| anyhow::anyhow!("no downloadable file in Modrinth version"))?;
+
+    let download_url = file_entry
+        .get("url")
+        .and_then(|u| u.as_str())
+        .unwrap_or_default();
+
+    let filename = file_entry
+        .get("filename")
+        .and_then(|f| f.as_str())
+        .unwrap_or("modpack.mrpack");
+
+    session
+        .display()
+        .status()
+        .info(&format!("Downloading {}...", filename));
+
+    let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    let dest_path = tmp_dir.path().join(filename);
+
+    if let Some(parent) = dest_path.parent() {
+        session.filesystem().create_dir_all(parent)?;
+    }
+
+    download_file(&client, download_url, &dest_path).await?;
+
+    let manifest = parse_modrinth_mrpack(&dest_path)?;
+    Ok((manifest, dest_path))
+}
+
+async fn download_file(client: &reqwest::Client, url: &str, dest: &std::path::Path) -> Result<()> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("failed to download from {}", url))?;
+
+    if !response.status().is_success() {
+        anyhow::bail!("HTTP {} for {}", response.status(), url);
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .with_context(|| format!("failed to read response body from {}", url))?;
+
+    std::fs::write(dest, &bytes)
+        .with_context(|| format!("failed to write to {}", dest.display()))?;
 
     Ok(())
 }
