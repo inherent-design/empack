@@ -2953,6 +2953,109 @@ mod from_cli_input_tests {
         assert_eq!(intent.direct_platform, None);
         assert_eq!(intent.search_query, "AANobbMI");
     }
+
+    // --- URL inputs ---
+
+    #[test]
+    fn modrinth_project_url_produces_search_with_slug() {
+        let intent =
+            AddResolutionIntent::from_cli_input("https://modrinth.com/mod/sodium", None);
+        assert_eq!(intent.kind, AddIntentKind::Search);
+        assert_eq!(intent.search_query, "sodium");
+        assert_eq!(intent.direct_project_id, Some("sodium".to_string()));
+        assert_eq!(
+            intent.direct_platform,
+            Some(ProjectPlatform::Modrinth)
+        );
+    }
+
+    #[test]
+    fn modrinth_plugin_url_produces_search_with_slug() {
+        let intent = AddResolutionIntent::from_cli_input(
+            "https://modrinth.com/plugin/vault-hunters",
+            None,
+        );
+        assert_eq!(intent.kind, AddIntentKind::Search);
+        assert_eq!(intent.search_query, "vault-hunters");
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
+    }
+
+    #[test]
+    fn curseforge_project_url_produces_curseforge_direct() {
+        let intent = AddResolutionIntent::from_cli_input(
+            "https://www.curseforge.com/minecraft/mc-mods/jei",
+            None,
+        );
+        assert_eq!(intent.kind, AddIntentKind::CurseForgeDirect { slug: "jei".to_string() });
+        assert_eq!(intent.search_query, "https://www.curseforge.com/minecraft/mc-mods/jei");
+        assert_eq!(intent.direct_project_id, None);
+    }
+
+    #[test]
+    fn direct_download_jar_url_produces_direct_download() {
+        let intent = AddResolutionIntent::from_cli_input(
+            "https://example.com/downloads/sodium-0.6.0.jar",
+            None,
+        );
+        assert_eq!(
+            intent.kind,
+            AddIntentKind::DirectDownload {
+                url: "https://example.com/downloads/sodium-0.6.0.jar".to_string(),
+                extension: "jar".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn direct_download_zip_url_produces_direct_download() {
+        let intent = AddResolutionIntent::from_cli_input(
+            "https://example.com/pack.zip",
+            None,
+        );
+        assert_eq!(
+            intent.kind,
+            AddIntentKind::DirectDownload {
+                url: "https://example.com/pack.zip".to_string(),
+                extension: "zip".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn unrecognized_url_falls_through_to_search() {
+        let intent =
+            AddResolutionIntent::from_cli_input("https://unknown-site.com/project/123", None);
+        assert_eq!(intent.kind, AddIntentKind::Search);
+        assert_eq!(
+            intent.search_query,
+            "https://unknown-site.com/project/123"
+        );
+        assert_eq!(intent.direct_project_id, None);
+    }
+
+    #[test]
+    fn modpack_urls_are_ignored_by_from_cli_input() {
+        // Modpack URLs are not valid for empack add; classify_url returns
+        // ModrinthModpack/CurseForgeModpack which from_cli_input does not match.
+        // These fall through to Search with the raw URL as the query.
+        let intent = AddResolutionIntent::from_cli_input(
+            "https://modrinth.com/modpack/fabulously-optimized",
+            None,
+        );
+        assert_eq!(intent.kind, AddIntentKind::Search);
+        assert_eq!(
+            intent.search_query,
+            "https://modrinth.com/modpack/fabulously-optimized"
+        );
+    }
+
+    #[test]
+    fn http_url_is_also_classified() {
+        let intent =
+            AddResolutionIntent::from_cli_input("http://modrinth.com/mod/sodium", None);
+        assert_eq!(intent.kind, AddIntentKind::Search);
+        assert_eq!(intent.direct_platform, Some(ProjectPlatform::Modrinth));
+    }
 }
 
 // ===== SEARCH AND ADD TESTS (W1-T3) =====
