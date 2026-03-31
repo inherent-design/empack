@@ -3286,6 +3286,105 @@ mod search_add_tests {
             commands[0]
         );
     }
+
+    // version_id/file_id propagation through handle_add
+    #[tokio::test]
+    async fn test_handle_add_modrinth_version_id_propagates_to_packwiz() {
+        let workdir = mock_root().join("mr-version-id-add");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "modrinth".to_string(),
+                    "add".to_string(),
+                    "--project-id".to_string(),
+                    "AANobbMI".to_string(),
+                    "--version-id".to_string(),
+                    "mc1.21-fabric-0.16".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_add(
+            &session,
+            vec!["AANobbMI".to_string()],
+            false,
+            Some(SearchPlatform::Modrinth),
+            None,
+            Some("mc1.21-fabric-0.16".to_string()),
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok(), "handle_add with --version-id should succeed: {result:?}");
+
+        let calls = session.process_provider.get_calls_for_command("packwiz");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].args,
+            vec!["modrinth", "add", "--project-id", "AANobbMI", "--version-id", "mc1.21-fabric-0.16", "-y"],
+            "Packwiz command must include --version-id from CLI flag"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_add_curseforge_file_id_propagates_to_packwiz() {
+        let workdir = mock_root().join("cf-file-id-add");
+
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone()),
+            )
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec![
+                    "curseforge".to_string(),
+                    "add".to_string(),
+                    "--addon-id".to_string(),
+                    "238222".to_string(),
+                    "--file-id".to_string(),
+                    "5678901".to_string(),
+                    "-y".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_add(
+            &session,
+            vec!["238222".to_string()],
+            false,
+            Some(SearchPlatform::Curseforge),
+            None,
+            None,
+            Some("5678901".to_string()),
+        )
+        .await;
+
+        assert!(result.is_ok(), "handle_add with --file-id should succeed: {result:?}");
+
+        let calls = session.process_provider.get_calls_for_command("packwiz");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].args,
+            vec!["curseforge", "add", "--addon-id", "238222", "--file-id", "5678901", "-y"],
+            "Packwiz command must include --file-id from CLI flag"
+        );
+    }
 }
 
 // ===== EXIT CODE TESTS (W1-T1) =====

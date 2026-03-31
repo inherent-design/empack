@@ -169,6 +169,45 @@ fn classify_curseforge_modpack_with_files_path() {
     );
 }
 
+#[test]
+fn classify_modrinth_modpack_slug_shadows_mod_prefix() {
+    // "sodium" is also a valid mod slug; modpack must take priority.
+    let url = "https://modrinth.com/modpack/sodium/version/1.0.0";
+    let kind = classify_url(url).unwrap();
+    assert!(matches!(
+        kind,
+        UrlKind::ModrinthModpack {
+            slug,
+            version: Some(ref v),
+        } if slug == "sodium" && v == "1.0.0"
+    ));
+}
+
+#[test]
+fn classify_modrinth_project_trailing_slash() {
+    let url = "https://modrinth.com/mod/sodium/";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::ModrinthProject {
+            slug: "sodium".to_string(),
+        }
+    );
+}
+
+#[test]
+fn classify_modrinth_modpack_trailing_slash() {
+    let url = "https://modrinth.com/modpack/fabulously-optimized/";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::ModrinthModpack {
+            slug: "fabulously-optimized".to_string(),
+            version: None,
+        }
+    );
+}
+
 // ---------------------------------------------------------------------------
 // SideEnv / SideRequirement tests
 // ---------------------------------------------------------------------------
