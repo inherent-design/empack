@@ -177,6 +177,7 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             None,
+            None,
         )
         .await;
 
@@ -214,7 +215,7 @@ mod handle_init_tests {
             .read_to_string(&workdir.join("empack.yml"))
             .unwrap();
 
-        let result = handle_init(&session, None, None, false, None, None, None, None, None).await;
+        let result = handle_init(&session, None, None, false, None, None, None, None, None, None).await;
 
         assert!(
             result.is_err(),
@@ -255,6 +256,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Overwrite Author".to_string()),
+            None,
             None,
             None,
         )
@@ -299,6 +301,7 @@ mod handle_init_tests {
             Some("Overwrite Author".to_string()),
             None,
             None,
+            None,
         )
         .await;
 
@@ -326,6 +329,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Cancel Author".to_string()),
+            None,
             None,
             None,
         )
@@ -357,6 +361,7 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             None,
+            None,
         )
         .await;
 
@@ -384,6 +389,7 @@ mod handle_init_tests {
             Some("notaloader".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
             None,
             None,
         )
@@ -417,6 +423,7 @@ mod handle_init_tests {
             Some("TestAuthor".to_string()),
             Some("0.15.0".to_string()),
             None,
+            None,
         )
         .await;
 
@@ -444,6 +451,7 @@ mod handle_init_tests {
             Some("1.21.1".to_string()),
             Some("TestAuthor".to_string()),
             Some("99.99.99".to_string()),
+            None,
             None,
         )
         .await;
@@ -480,6 +488,7 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             None,
+            None,
         )
         .await;
 
@@ -506,6 +515,7 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             Some("2.0.0".to_string()),
+            None,
         )
         .await;
 
@@ -541,6 +551,7 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             None,
+            None,
         )
         .await;
 
@@ -573,6 +584,7 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             None,
+            None,
         )
         .await;
 
@@ -599,6 +611,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
             None,
             None,
         )
@@ -635,6 +648,7 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             None,
+            None,
         )
         .await;
 
@@ -660,6 +674,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
             None,
             None,
         )
@@ -693,6 +708,7 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
             None,
             None,
         )
@@ -3241,6 +3257,7 @@ mod init_interactive_tests {
             Some("Test Author".to_string()),
             None,
             None,
+            None,
         )
         .await;
 
@@ -3273,6 +3290,7 @@ mod init_interactive_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
             None,
             None,
         )
@@ -3312,6 +3330,7 @@ mod init_interactive_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
             None,
             None,
         )
@@ -3394,6 +3413,7 @@ mod init_interactive_tests {
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
             Some("0.15.0".to_string()),      // should warn or error
+            None,
             None,
         )
         .await;

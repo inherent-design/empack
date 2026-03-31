@@ -106,6 +106,10 @@ pub enum Commands {
             help = "Pack version (skips interactive prompt)"
         )]
         pack_version: Option<String>,
+
+        /// Import modpack from a source (file path or URL)
+        #[arg(long, value_name = "SOURCE")]
+        from_source: Option<String>,
     },
 
     /// Synchronize empack.yml dependencies with pack.toml reality

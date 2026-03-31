@@ -24,7 +24,8 @@ async fn test_build_with_missing_template() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-        },
+                    from_source: None,
+},
         &session,
     )
     .await?;

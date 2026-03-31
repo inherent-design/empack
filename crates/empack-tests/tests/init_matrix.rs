@@ -23,7 +23,8 @@ async fn test_init_neoforge() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-        },
+                    from_source: None,
+},
         &session,
     )
     .await;
@@ -81,7 +82,8 @@ async fn test_init_quilt() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-        },
+                    from_source: None,
+},
         &session,
     )
     .await;
@@ -139,7 +141,8 @@ async fn test_init_vanilla() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-        },
+                    from_source: None,
+},
         &session,
     )
     .await;
@@ -182,7 +185,8 @@ async fn test_init_fabric_older_mc() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-        },
+                    from_source: None,
+},
         &session,
     )
     .await;
