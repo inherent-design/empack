@@ -466,6 +466,28 @@ fn test_build_sync_plan_empty_both() {
     assert!(sync.expected_mods.is_empty());
 }
 
+#[test]
+fn test_build_sync_plan_from_spec_always_produces_platform_source() {
+    let dep = project_spec("sodium");
+    let plan = SyncDependencyPlan::from_spec(&dep);
+    assert!(matches!(plan.source, DependencySource::Platform { .. }));
+}
+
+#[test]
+fn test_build_sync_plan_tracks_local_keys_in_expected_mods() {
+    // Local-only entries (once empack.yml supports them) should be tracked
+    // in expected_mods so they are not removed by sync. The current
+    // from_spec always produces Platform, so this tests the key tracking
+    // for entries that happen to have empty project_id.
+    let mut dep = project_spec("local-mod");
+    dep.project_id = String::new();
+
+    let plan = make_plan(vec![dep]);
+    let sync = build_sync_plan(&plan, &HashSet::new());
+
+    assert!(sync.expected_mods.contains("local-mod"));
+}
+
 // ── build_packwiz_add_commands platform x version matrix ───────────────
 
 #[test]

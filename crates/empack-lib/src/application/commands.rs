@@ -1361,7 +1361,7 @@ async fn handle_add(
                     Ok(resolution) => {
                         session.display().status().success(
                             "Added",
-                            &format!("{}", resolution.title),
+                            &resolution.title,
                         );
                         added_mods.push(mod_query);
                     }
