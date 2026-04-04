@@ -389,15 +389,16 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
 
     let mut override_entries = Vec::new();
 
-    if let Some(ref overrides_dir) = mr.overrides {
-        collect_override_entries(&mut archive, overrides_dir, OverrideSide::Both, &mut override_entries)?;
-    }
-    if let Some(ref client_dir) = mr.client_overrides {
-        collect_override_entries(&mut archive, client_dir, OverrideSide::ClientOnly, &mut override_entries)?;
-    }
-    if let Some(ref server_dir) = mr.server_overrides {
-        collect_override_entries(&mut archive, server_dir, OverrideSide::ServerOnly, &mut override_entries)?;
-    }
+    // Modrinth mrpack spec uses hardcoded archive directory names for overrides;
+    // the JSON index does not contain these keys, so fall back to the convention.
+    let overrides_dir = mr.overrides.as_deref().unwrap_or("overrides");
+    collect_override_entries(&mut archive, overrides_dir, OverrideSide::Both, &mut override_entries)?;
+
+    let client_dir = mr.client_overrides.as_deref().unwrap_or("client-overrides");
+    collect_override_entries(&mut archive, client_dir, OverrideSide::ClientOnly, &mut override_entries)?;
+
+    let server_dir = mr.server_overrides.as_deref().unwrap_or("server-overrides");
+    collect_override_entries(&mut archive, server_dir, OverrideSide::ServerOnly, &mut override_entries)?;
 
     let content: Vec<ContentEntry> = mr
         .files

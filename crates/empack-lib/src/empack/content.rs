@@ -185,7 +185,7 @@ impl ApiJarResolver<'_> {
     /// Attempt to identify a JAR via Modrinth's `/v2/version_file/{sha1}` endpoint.
     async fn query_modrinth(&self, sha1: &str) -> Result<Option<JarIdentity>> {
         let client = self.modrinth.http_client()?;
-        let url = format!("https://api.modrinth.com/v2/version_file/{sha1}");
+        let url = format!("https://api.modrinth.com/v2/version_file/{sha1}?algorithm=sha1");
 
         let response = client.get(&url).send().await?;
         if !response.status().is_success() {
@@ -195,6 +195,7 @@ impl ApiJarResolver<'_> {
         #[derive(serde::Deserialize)]
         struct ModrinthVersionFile {
             project_id: String,
+            #[serde(rename = "id")]
             version_id: String,
             name: String,
         }
