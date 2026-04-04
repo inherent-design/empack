@@ -209,6 +209,201 @@ fn classify_modrinth_modpack_trailing_slash() {
 }
 
 // ---------------------------------------------------------------------------
+// URL classifier: new Modrinth path patterns (v0.2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn classify_modrinth_resourcepack() {
+    let url = "https://modrinth.com/resourcepack/complementary";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::ModrinthProject {
+            slug: "complementary".to_string(),
+        }
+    );
+}
+
+#[test]
+fn classify_modrinth_datapack() {
+    let url = "https://modrinth.com/datapack/terralith";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::ModrinthProject {
+            slug: "terralith".to_string(),
+        }
+    );
+}
+
+#[test]
+fn classify_modrinth_shader() {
+    let url = "https://modrinth.com/shader/bsl-shaders";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::ModrinthProject {
+            slug: "bsl-shaders".to_string(),
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// API contract tests: Modrinth version-file response
+// ---------------------------------------------------------------------------
+
+#[test]
+fn contract_modrinth_version_file_deserialization() {
+    #[derive(serde::Deserialize)]
+    struct ModrinthVersionFile {
+        project_id: String,
+        #[serde(rename = "id")]
+        version_id: String,
+        name: String,
+    }
+
+    let cassette_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../empack-tests/fixtures/cassettes/modrinth/version_file_sha1.json");
+    let content = std::fs::read_to_string(&cassette_path)
+        .expect("version_file_sha1.json cassette missing");
+    let cassette: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let body = &cassette["response"]["body"];
+
+    let parsed: ModrinthVersionFile = serde_json::from_value(body.clone()).unwrap();
+    assert_eq!(parsed.project_id, "AANobbMI");
+    assert!(!parsed.version_id.is_empty());
+    assert!(parsed.name.contains("Sodium"));
+}
+
+// ---------------------------------------------------------------------------
+// API contract tests: CurseForge fingerprint response
+// ---------------------------------------------------------------------------
+
+#[test]
+fn contract_curseforge_fingerprint_match_deserialization() {
+    #[derive(serde::Deserialize)]
+    struct DataEnvelope { data: FingerprintData }
+
+    #[derive(serde::Deserialize)]
+    struct FingerprintData {
+        #[serde(rename = "exactMatches", default)]
+        exact_matches: Vec<ExactMatch>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ExactMatch { file: ExactMatchFile }
+
+    #[derive(serde::Deserialize)]
+    struct ExactMatchFile {
+        id: u64,
+        #[serde(rename = "modId")]
+        mod_id: u64,
+        #[serde(rename = "displayName")]
+        display_name: String,
+    }
+
+    let cassette_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../empack-tests/fixtures/cassettes/curseforge/fingerprint_match.json");
+    let content = std::fs::read_to_string(&cassette_path)
+        .expect("fingerprint_match.json cassette missing");
+    let cassette: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let body = &cassette["response"]["body"];
+
+    let parsed: DataEnvelope = serde_json::from_value(body.clone()).unwrap();
+    assert!(!parsed.data.exact_matches.is_empty());
+
+    let m = &parsed.data.exact_matches[0];
+    assert_eq!(m.file.mod_id, 238222, "modId should be JEI project ID");
+    assert!(m.file.id > 0, "file.id should be a valid file ID");
+    assert_ne!(m.file.id, m.file.mod_id, "file.id must differ from modId");
+    assert!(!m.file.display_name.is_empty());
+}
+
+#[test]
+fn contract_curseforge_fingerprint_miss_deserialization() {
+    #[derive(serde::Deserialize)]
+    struct DataEnvelope { data: FingerprintData }
+
+    #[derive(serde::Deserialize)]
+    struct FingerprintData {
+        #[serde(rename = "exactMatches", default)]
+        exact_matches: Vec<serde_json::Value>,
+        #[serde(rename = "installedFingerprints", default)]
+        installed: Vec<u64>,
+    }
+
+    let cassette_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../empack-tests/fixtures/cassettes/curseforge/fingerprint_miss.json");
+    let content = std::fs::read_to_string(&cassette_path)
+        .expect("fingerprint_miss.json cassette missing");
+    let cassette: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let body = &cassette["response"]["body"];
+
+    let parsed: DataEnvelope = serde_json::from_value(body.clone()).unwrap();
+    assert!(parsed.data.exact_matches.is_empty());
+    assert!(parsed.data.installed.contains(&999999999));
+}
+
+// ---------------------------------------------------------------------------
+// API contract tests: CurseForge mod response
+// ---------------------------------------------------------------------------
+
+#[test]
+fn contract_curseforge_mod_deserialization() {
+    #[derive(serde::Deserialize)]
+    struct DataEnvelope { data: CfMod }
+
+    #[derive(serde::Deserialize)]
+    struct CfMod {
+        name: String,
+        #[serde(rename = "classId", default)]
+        class_id: Option<u32>,
+    }
+
+    let cassette_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../empack-tests/fixtures/cassettes/curseforge/mod_238222.json");
+    let content = std::fs::read_to_string(&cassette_path)
+        .expect("mod_238222.json cassette missing");
+    let cassette: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let body = &cassette["response"]["body"];
+
+    let parsed: DataEnvelope = serde_json::from_value(body.clone()).unwrap();
+    assert_eq!(parsed.data.name, "Just Enough Items (JEI)");
+    assert_eq!(parsed.data.class_id, Some(6));
+}
+
+// ---------------------------------------------------------------------------
+// API contract tests: CurseForge class taxonomy
+// ---------------------------------------------------------------------------
+
+#[test]
+fn contract_curseforge_class_taxonomy() {
+    let cassette_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../empack-tests/fixtures/cassettes/curseforge/categories_minecraft.json");
+    let content = std::fs::read_to_string(&cassette_path)
+        .expect("categories_minecraft.json cassette missing");
+    let cassette: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    let classes = cassette["response"]["body"]["data"]
+        .as_array()
+        .expect("data should be array");
+
+    let class_map: std::collections::HashMap<u32, String> = classes
+        .iter()
+        .filter(|c| c["isClass"].as_bool() == Some(true))
+        .map(|c| (c["id"].as_u64().unwrap() as u32, c["name"].as_str().unwrap().to_string()))
+        .collect();
+
+    assert_eq!(class_map.get(&6).map(|s| s.as_str()), Some("Mods"));
+    assert_eq!(class_map.get(&5).map(|s| s.as_str()), Some("Bukkit Plugins"));
+    assert_eq!(class_map.get(&12).map(|s| s.as_str()), Some("Resource Packs"));
+    assert_eq!(class_map.get(&17).map(|s| s.as_str()), Some("Worlds"));
+    assert_eq!(class_map.get(&6552).map(|s| s.as_str()), Some("Shaders"));
+    assert_eq!(class_map.get(&6945).map(|s| s.as_str()), Some("Data Packs"));
+    assert_eq!(class_map.get(&4471).map(|s| s.as_str()), Some("Modpacks"));
+}
+
+// ---------------------------------------------------------------------------
 // SideEnv / SideRequirement tests
 // ---------------------------------------------------------------------------
 
