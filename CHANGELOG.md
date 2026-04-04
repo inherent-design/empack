@@ -3,6 +3,69 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.2.0-alpha.1 - 2026-04-04
+
+### Features
+
+- **(content)** Add UrlKind classifier, JarResolver, and side types
+- **(import)** Add modpack import pipeline (Track A)
+- **(add)** Version pin flags, URL-based add, sync contract evolution
+
+### Bug Fixes
+
+- Resolve single-element loop clippy warning in template installer
+- Address review findings across import, content, and add pipelines
+- Zip slip, version ID lookup, batch dedup, dead code, path classifiers
+- **(import)** Correct CurseForge project resolution endpoint and auth
+- **(content)** Correct CurseForge fingerprint endpoint in ApiJarResolver
+- Modrinth version-file algorithm param and mrpack override extraction
+- Correct CurseForge classId mappings and add Modrinth URL patterns
+- **(content)** Use file.id for CurseForge file ID, not fingerprint hash
+- **(import)** Write DependencyRecord for all imported platform refs
+- **(import)** Add fileSize serde rename; expand VCR for v0.2 endpoints
+- **(import)** Add versionId serde rename for mrpack manifest
+
+### Testing
+
+- Add URL classification tests and fix clippy warning
+- Harden v0.2.0-alpha.1 test coverage
+- Record v0.2 VCR cassettes from live APIs
+- Add API contract tests and fix mrpack fixture field names
+
+### Documentation
+
+- Remove 'empack sync' from README.md start
+- Remove stale/historical ADR
+- Add doc comments, scoped commits, agent guidelines, changelog to CONTRIBUTING
+- Add behavioral spec decomposition for empack
+
+### Maintenance
+
+- Comment+docs clean-up
+- Remove obvious comments in import executor
+- Remove comments that restate what the code says
+
+## v0.1.0-alpha.4 - 2026-03-30
+
+### Bug Fixes
+
+- Rename Init positional field to dir, filter dot path defaults
+- Resolve actual directory basename for dot-path positional args
+
+### Refactoring
+
+- Separate directory resolution from pack name in init
+
+## v0.1.0-alpha.3 - 2026-03-29
+
+### Bug Fixes
+
+- Move template scaffolding after state transition in init
+
+### Maintenance
+
+- Update changelog
+
 ## v0.1.0-alpha.2 - 2026-03-29
 
 ### Bug Fixes
