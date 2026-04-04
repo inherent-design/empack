@@ -658,10 +658,11 @@ async fn resolve_curseforge_project(
 
     pref.resolved_type = body.class_id.map(|cid| match cid {
         6 => crate::primitives::ProjectType::Mod,
+        5 => crate::primitives::ProjectType::Mod, // Bukkit Plugins
         12 => crate::primitives::ProjectType::ResourcePack,
-        17 => crate::primitives::ProjectType::Datapack,
-        6552 => crate::primitives::ProjectType::Mod,
-        5 => crate::primitives::ProjectType::Mod,
+        17 => crate::primitives::ProjectType::Datapack, // Worlds (no World variant; closest match)
+        6945 => crate::primitives::ProjectType::Datapack,
+        6552 => crate::primitives::ProjectType::Shader,
         _ => crate::primitives::ProjectType::Mod,
     });
 }

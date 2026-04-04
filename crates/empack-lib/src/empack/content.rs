@@ -60,6 +60,21 @@ pub fn classify_url(url: &str) -> std::result::Result<UrlKind, UrlClassifyError>
         return Ok(UrlKind::ModrinthProject { slug });
     }
 
+    if url.contains("modrinth.com/resourcepack/") {
+        let slug = extract_after_segment(url, "modrinth.com/resourcepack/");
+        return Ok(UrlKind::ModrinthProject { slug });
+    }
+
+    if url.contains("modrinth.com/datapack/") {
+        let slug = extract_after_segment(url, "modrinth.com/datapack/");
+        return Ok(UrlKind::ModrinthProject { slug });
+    }
+
+    if url.contains("modrinth.com/shader/") {
+        let slug = extract_after_segment(url, "modrinth.com/shader/");
+        return Ok(UrlKind::ModrinthProject { slug });
+    }
+
     if url.contains("curseforge.com/minecraft/modpacks/") {
         let slug = extract_after_segment(url, "curseforge.com/minecraft/modpacks/");
         return Ok(UrlKind::CurseForgeModpack { slug });
