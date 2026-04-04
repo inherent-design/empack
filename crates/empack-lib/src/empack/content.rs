@@ -178,6 +178,7 @@ pub trait JarResolver {
 pub struct ApiJarResolver<'a> {
     pub modrinth: &'a dyn NetworkProvider,
     pub curseforge: &'a dyn NetworkProvider,
+    pub curseforge_api_key: Option<&'a str>,
 }
 
 impl ApiJarResolver<'_> {
@@ -207,45 +208,57 @@ impl ApiJarResolver<'_> {
     }
 
     /// Attempt to identify a JAR via CurseForge's fingerprint endpoint.
-    /// The endpoint expects a Murmur2 hash of the JAR contents.
+    /// POST https://api.curseforge.com/v1/fingerprints with Murmur2 hash.
     async fn query_curseforge(&self, murmur2_hash: u32) -> Result<Option<JarIdentity>> {
-        let client = self.curseforge.http_client()?;
-        let url = format!(
-            "https://legacy.curseforge.com/api/fingerprints/{murmur2_hash}"
-        );
+        let api_key = match self.curseforge_api_key {
+            Some(k) => k,
+            None => return Ok(None),
+        };
 
-        let response = client.get(&url).send().await?;
+        let client = self.curseforge.http_client()?;
+
+        let response = client
+            .post("https://api.curseforge.com/v1/fingerprints")
+            .header("x-api-key", api_key)
+            .json(&serde_json::json!({ "fingerprints": [murmur2_hash] }))
+            .send()
+            .await?;
+
         if !response.status().is_success() {
             return Ok(None);
         }
 
         #[derive(serde::Deserialize)]
-        struct FingerprintResponse {
-            #[serde(default)]
+        struct DataEnvelope {
+            data: FingerprintData,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct FingerprintData {
+            #[serde(rename = "exactMatches", default)]
             exact_matches: Vec<ExactMatch>,
         }
 
         #[derive(serde::Deserialize)]
         struct ExactMatch {
             id: u64,
-            #[serde(default)]
-            project: Option<FingerprintProject>,
+            file: ExactMatchFile,
         }
 
         #[derive(serde::Deserialize)]
-        struct FingerprintProject {
-            id: u64,
-            name: String,
+        struct ExactMatchFile {
+            #[serde(rename = "modId")]
+            mod_id: u64,
+            #[serde(rename = "displayName")]
+            display_name: String,
         }
 
-        let body: FingerprintResponse = response.json().await?;
-        if let Some(match_) = body.exact_matches.into_iter().next()
-            && let Some(project) = match_.project
-        {
+        let envelope: DataEnvelope = response.json().await?;
+        if let Some(match_) = envelope.data.exact_matches.into_iter().next() {
             return Ok(Some(JarIdentity::CurseForge {
-                project_id: project.id,
+                project_id: match_.file.mod_id,
                 file_id: match_.id,
-                title: project.name,
+                title: match_.file.display_name,
             }));
         }
 
