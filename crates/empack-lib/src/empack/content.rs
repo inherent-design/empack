@@ -257,12 +257,12 @@ impl ApiJarResolver<'_> {
 
         #[derive(serde::Deserialize)]
         struct ExactMatch {
-            id: u64,
             file: ExactMatchFile,
         }
 
         #[derive(serde::Deserialize)]
         struct ExactMatchFile {
+            id: u64,
             #[serde(rename = "modId")]
             mod_id: u64,
             #[serde(rename = "displayName")]
@@ -273,7 +273,7 @@ impl ApiJarResolver<'_> {
         if let Some(match_) = envelope.data.exact_matches.into_iter().next() {
             return Ok(Some(JarIdentity::CurseForge {
                 project_id: match_.file.mod_id,
-                file_id: match_.id,
+                file_id: match_.file.id,
                 title: match_.file.display_name,
             }));
         }
