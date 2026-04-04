@@ -844,7 +844,6 @@ async fn handle_init_from_source(
         base_dir.join(&safe_name)
     };
 
-    // Check state
     if session.filesystem().exists(&target_dir) {
         let manager = crate::empack::state::PackStateManager::new(
             target_dir.clone(),
@@ -1162,7 +1161,6 @@ async fn handle_add(
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
 
-    // Build dependency graph from existing mods to detect duplicates and cycles
     let mut dep_graph = crate::api::dependency_graph::DependencyGraph::new();
     let mods_dir = workdir.join("pack").join("mods");
 
@@ -1175,7 +1173,6 @@ async fn handle_add(
             .warning(&format!("Failed to build dependency graph: {}", e));
     }
 
-    // Try to load existing project plan to get context
     let project_plan = match config_manager.create_project_plan() {
         Ok(plan) => Some(plan),
         Err(_) => {
@@ -1187,17 +1184,12 @@ async fn handle_add(
         }
     };
 
-    // Create HTTP client for API requests
     let client = session.network().http_client()?;
-
-    // Get CurseForge API key from app configuration
     let curseforge_api_key = session
         .config()
         .app_config()
         .curseforge_api_client_key
         .clone();
-
-    // Create project resolver
     let resolver = session
         .network()
         .project_resolver(client.clone(), curseforge_api_key.clone());
@@ -1647,7 +1639,6 @@ async fn handle_add(
         }
     }
 
-    // Show summary
     session.display().status().section("Add Summary");
     session
         .display()
@@ -2030,7 +2021,6 @@ fn packwiz_user_cache_dir() -> std::path::PathBuf {
     }
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
-        // Go's os.UserCacheDir on Linux: $XDG_CACHE_HOME or $HOME/.cache
         std::env::var("XDG_CACHE_HOME")
             .ok()
             .filter(|s| !s.is_empty())
@@ -2566,7 +2556,6 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         }
     }
 
-    // Show summary
     session.display().status().section("Remove Summary");
     session
         .display()
@@ -2914,17 +2903,12 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
 
-    // Create HTTP client for API requests
     let client = session.network().http_client()?;
-
-    // Get CurseForge API key from app configuration
     let curseforge_api_key = session
         .config()
         .app_config()
         .curseforge_api_client_key
         .clone();
-
-    // Create project resolver
     let resolver = session
         .network()
         .project_resolver(client.clone(), curseforge_api_key);
@@ -3317,7 +3301,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         }
     }
 
-    // Show summary
     session.display().status().section("Sync Summary");
     session
         .display()
