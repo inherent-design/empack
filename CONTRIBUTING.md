@@ -67,13 +67,15 @@ empack/
 
 Conventional-style prefixes: `feat:`, `fix:`, `chore:`, `ci:`, `docs:`, `test:`, `refactor:`
 
-Subject line in imperative mood, under 72 characters. Body explains why, not what.
+Scopes are optional; use when the change targets a specific module or subsystem:
 
 ```
-docs: refresh usage guide
-fix: preserve dist metadata on clean
-test: harden sync workflow assertions
+feat(import): add modpack import pipeline
+fix(sync): handle local-only dependency sources
+test(add): URL classification coverage
 ```
+
+Subject line in imperative mood, under 72 characters. Body explains why, not what. For contributor PRs, the maintainer squash-merges with a clean conventional subject line.
 
 ## Code Style
 
@@ -97,6 +99,20 @@ Default to no comments. Code should be self-explanatory through naming and struc
 
 Do not comment what the code already says.
 
+### Doc Comments
+
+Every exported type, function, and trait gets a `///` doc comment. Write with `cargo doc` and future doc-gen tooling in mind. The first line is a summary; subsequent lines cover inputs, side effects, and error conditions.
+
+```rust
+/// Classify a URL into a known platform or direct download target.
+///
+/// Returns `UrlClassifyError` for URLs that do not match any supported
+/// platform pattern or recognized file extension.
+pub fn classify_url(url: &str) -> Result<UrlKind, UrlClassifyError> { ... }
+```
+
+Internal helpers and private functions do not require doc comments unless the behavior is non-obvious.
+
 ## Documentation
 
 ### Where Things Live
@@ -118,6 +134,22 @@ Technical reference tone. Use complete sentences with natural compound structure
 **Prohibited in prose:** em-dashes, en-dashes, double-hyphens. Use semicolons, commas, or colons instead. Double-hyphens in CLI flags and code are fine.
 
 **Avoid:** superlatives, fragment-sentence drama, marketing language. Always write `empack` in lowercase.
+
+## Changelog
+
+Release notes are generated from conventional commit history. Do not edit CHANGELOG.md manually; write good commit messages and the changelog follows.
+
+## Agent Guidelines
+
+These apply to LLM agents (Atlas sub-agents, Claude Code teammates) writing code, commits, or documentation for empack.
+
+**Code:** Follow all conventions in this file. Default to no comments. Write `///` doc comments on exports. Match surrounding style. Do not "improve" adjacent code, comments, or formatting that is not part of the task.
+
+**Commits:** Use conventional commits with scoped prefixes where applicable. Body explains why, not what.
+
+**Communication:** No preamble ("I aim to help"), no flattery ("Great question"), no superlatives. Direct answers. Use the standard status protocol (STATUS/PROGRESS/BLOCKERS/QUESTIONS/NEXT) for handoffs.
+
+**Errors:** State what happened, what was expected, and what to do about it. Do not apologize or catastrophize. Extract information from the error and move on.
 
 ## VCR Fixture Maintenance
 
