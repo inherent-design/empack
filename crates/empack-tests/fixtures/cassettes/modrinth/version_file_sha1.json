@@ -1,0 +1,57 @@
+{
+  "name": "modrinth/version_file_sha1",
+  "request": {
+    "method": "GET",
+    "url": "https://api.modrinth.com/v2/version_file/928a2598178c3a58b0638bab842f467d2e49251a",
+    "query": {
+      "algorithm": "sha1"
+    },
+    "headers": {
+      "User-Agent": "empack-tests/0.1.0"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "game_versions": [
+        "1.21",
+        "1.21.1"
+      ],
+      "loaders": [
+        "fabric"
+      ],
+      "id": "u1OEbNKx",
+      "project_id": "AANobbMI",
+      "author_id": "TEZXhE2U",
+      "featured": false,
+      "name": "Sodium 0.6.13 for Fabric 1.21.1",
+      "version_number": "mc1.21.1-0.6.13-fabric",
+      "changelog": "- Improved compatibility with some NeoForge mods that use the Fabric Rendering API.\n- Improved compatibility with some Fabric mods when they're used on NeoForge with Sinytra Connector.\n- Fixed an incompatibility with _Snow Real Magic!_ and some other mods that would cause holes to appear in the world.\n- Fixed an issue with mods that use animated sprites in the user interface which was causing their sprites to not be animated.\n- Disabled the use of certain developer options in production which were being modified unnecessarily by other mods.\n- Marked PojavLauncher as incompatible due to multiple severe and unresolved issues.\n- Marked BetterEnd as incompatible due to it enabling code when Sodium is present that causes frequent and difficult to understand crashes.\n- Added a warning for when resource packs try to replace the shaders used by Sodium's improved cloud renderer.",
+      "changelog_url": null,
+      "date_published": "2025-04-04T00:07:37.476142Z",
+      "downloads": 12613266,
+      "version_type": "release",
+      "status": "listed",
+      "requested_status": null,
+      "files": [
+        {
+          "id": "zDdYa3IL",
+          "hashes": {
+            "sha512": "13032e064c554fc8671573dadb07bc70e6ea2f68706c65c086c4feb1d2f664346a3414cbf9d1367b42b8d063a35e40f2f967ef9af31642e1f0093b852161fe91",
+            "sha1": "928a2598178c3a58b0638bab842f467d2e49251a"
+          },
+          "url": "https://cdn.modrinth.com/data/AANobbMI/versions/u1OEbNKx/sodium-fabric-0.6.13%2Bmc1.21.1.jar",
+          "filename": "sodium-fabric-0.6.13+mc1.21.1.jar",
+          "primary": true,
+          "size": 1297761,
+          "file_type": null
+        }
+      ],
+      "dependencies": []
+    }
+  },
+  "recorded_at": "2026-04-04T10:54:45Z"
+}
