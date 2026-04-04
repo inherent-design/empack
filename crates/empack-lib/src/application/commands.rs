@@ -1063,10 +1063,12 @@ async fn download_modrinth_modpack(
         .and_then(|u| u.as_str())
         .ok_or_else(|| anyhow::anyhow!("file entry missing url field in Modrinth version"))?;
 
-    let filename = file_entry
+    let raw_filename = file_entry
         .get("filename")
         .and_then(|f| f.as_str())
         .unwrap_or("modpack.mrpack");
+    // Strip path separators from API-supplied filename to prevent traversal
+    let filename = raw_filename.rsplit('/').next().unwrap_or(raw_filename);
 
     session
         .display()
