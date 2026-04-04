@@ -128,7 +128,7 @@ const MR_MANIFEST_JSON: &str = r#"{
       "downloads": ["https://cdn.modrinth.com/versions/abc123/sodium.jar"],
       "hashes": { "sha1": "deadbeef", "sha512": "feedface" },
       "env": { "client": "required", "server": "required" },
-      "file_size": 1024000
+      "fileSize": 1024000
     }
   ],
   "overrides": "overrides",
@@ -198,7 +198,7 @@ fn test_parse_modrinth_mrpack_embedded_jar() {
           "path": "mods/local-mod.jar",
           "hashes": { "sha1": "abcdef" },
           "env": { "client": "required", "server": "unsupported" },
-          "file_size": 512000
+          "fileSize": 512000
         }
       ],
       "overrides": "overrides",
@@ -729,7 +729,7 @@ fn test_parse_modrinth_non_jar_embedded() {
                 "downloads": [],
                 "hashes": { "sha1": "abc" },
                 "env": { "client": "required", "server": "required" },
-                "file_size": 2048
+                "fileSize": 2048
             }
         ],
         "overrides": "overrides",
