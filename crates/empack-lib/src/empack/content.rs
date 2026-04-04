@@ -280,7 +280,13 @@ impl JarResolver for ApiJarResolver<'_> {
                     .with_context(|| format!("reading JAR file: {:?}", request.path))?
             }
         };
-        let murmur2_hash = murmur2::murmur2(&bytes, 1);
+        // CurseForge fingerprint API requires whitespace bytes stripped before hashing
+        let filtered: Vec<u8> = bytes
+            .iter()
+            .copied()
+            .filter(|&b| b != 9 && b != 10 && b != 13 && b != 32)
+            .collect();
+        let murmur2_hash = murmur2::murmur2(&filtered, 1);
 
         if let Some(identity) = self.query_curseforge(murmur2_hash).await? {
             return Ok(identity);

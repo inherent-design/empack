@@ -816,7 +816,8 @@ async fn handle_init_from_source(
         .status()
         .section("Importing modpack from source");
 
-    let (manifest, _archive_path) = if source.starts_with("http://")
+    // _tmp_dir must be held alive until execute_import finishes reading the archive
+    let (manifest, _tmp_dir, _archive_path) = if source.starts_with("http://")
         || source.starts_with("https://")
     {
         import_from_remote(session, source).await?
@@ -929,18 +930,18 @@ async fn handle_init_from_source(
 fn import_from_local(
     _session: &dyn Session,
     path: &str,
-) -> Result<(ModpackManifest, PathBuf)> {
+) -> Result<(ModpackManifest, Option<tempfile::TempDir>, PathBuf)> {
     let source_path = PathBuf::from(path);
     let kind = crate::empack::import::detect_local_source(&source_path)?;
 
     match kind {
         SourceKind::CurseForgeZip => {
             let manifest = parse_curseforge_zip(&source_path)?;
-            Ok((manifest, source_path))
+            Ok((manifest, None, source_path))
         }
         SourceKind::ModrinthMrpack => {
             let manifest = parse_modrinth_mrpack(&source_path)?;
-            Ok((manifest, source_path))
+            Ok((manifest, None, source_path))
         }
         SourceKind::PackwizDirectory => {
             anyhow::bail!(
@@ -955,14 +956,16 @@ fn import_from_local(
 async fn import_from_remote(
     session: &dyn Session,
     source: &str,
-) -> Result<(ModpackManifest, PathBuf)> {
+) -> Result<(ModpackManifest, Option<tempfile::TempDir>, PathBuf)> {
     let url_kind = crate::empack::content::classify_url(source).map_err(|e| {
         crate::empack::import::ImportError::UnrecognizedSource(e.to_string())
     })?;
 
     match url_kind {
         UrlKind::ModrinthModpack { slug, version } => {
-            download_modrinth_modpack(session, &slug, version.as_deref()).await
+            let (manifest, tmp_dir, path) =
+                download_modrinth_modpack(session, &slug, version.as_deref()).await?;
+            Ok((manifest, Some(tmp_dir), path))
         }
         UrlKind::CurseForgeModpack { .. } => {
             Err(crate::empack::import::ImportError::RemoteCurseForgeNotSupported.into())
@@ -978,7 +981,7 @@ async fn download_modrinth_modpack(
     session: &dyn Session,
     slug: &str,
     version_filter: Option<&str>,
-) -> Result<(ModpackManifest, PathBuf)> {
+) -> Result<(ModpackManifest, tempfile::TempDir, PathBuf)> {
     session
         .display()
         .status()
@@ -1044,7 +1047,7 @@ async fn download_modrinth_modpack(
     let download_url = file_entry
         .get("url")
         .and_then(|u| u.as_str())
-        .unwrap_or_default();
+        .ok_or_else(|| anyhow::anyhow!("file entry missing url field in Modrinth version"))?;
 
     let filename = file_entry
         .get("filename")
@@ -1066,7 +1069,7 @@ async fn download_modrinth_modpack(
     download_file(&client, download_url, &dest_path).await?;
 
     let manifest = parse_modrinth_mrpack(&dest_path)?;
-    Ok((manifest, dest_path))
+    Ok((manifest, tmp_dir, dest_path))
 }
 
 async fn download_file(client: &reqwest::Client, url: &str, dest: &std::path::Path) -> Result<()> {
@@ -1181,7 +1184,7 @@ async fn handle_add(
     // Create project resolver
     let resolver = session
         .network()
-        .project_resolver(client.clone(), curseforge_api_key);
+        .project_resolver(client.clone(), curseforge_api_key.clone());
 
     session
         .display()
@@ -1296,12 +1299,13 @@ async fn handle_add(
                 match resolve_curseforge_slug(
                     &slug,
                     &client,
-                    resolver.as_ref(),
+                    curseforge_api_key.as_deref(),
                     plan_mc_version(project_plan.as_ref()),
                     plan_loader(project_plan.as_ref()),
                     version_id.as_deref(),
                     file_id.as_deref(),
                     project_type.as_ref().map(|pt| pt.to_project_type()),
+                    resolver.as_ref(),
                 )
                 .await
                 {
@@ -1363,6 +1367,28 @@ async fn handle_add(
                             "Added",
                             &resolution.title,
                         );
+                        if !resolution.local && let Some(ref pid) = resolution.project_id {
+                            let record = DependencyRecord {
+                                status: DependencyStatus::Resolved,
+                                title: resolution.title.clone(),
+                                platform: resolution.platform,
+                                project_id: pid.clone(),
+                                project_type: resolution.project_type,
+                                version: None,
+                            };
+                            let dep_key = resolution
+                                .title
+                                .to_lowercase()
+                                .replace(' ', "-");
+                            if let Err(e) =
+                                config_manager.add_dependency(&dep_key, record)
+                            {
+                                session.display().status().warning(&format!(
+                                    "Failed to update empack.yml: {}",
+                                    e
+                                ));
+                            }
+                        }
                         added_mods.push(mod_query);
                     }
                     Err(e) => {
@@ -2019,18 +2045,26 @@ fn plan_loader(
 async fn resolve_curseforge_slug(
     slug: &str,
     client: &reqwest::Client,
-    _resolver: &dyn crate::empack::search::ProjectResolverTrait,
+    curseforge_api_key: Option<&str>,
     minecraft_version: Option<&str>,
     mod_loader: Option<ModLoader>,
     version_pin_override: Option<&str>,
     file_id_override: Option<&str>,
     project_type: Option<ProjectType>,
+    resolver: &dyn crate::empack::search::ProjectResolverTrait,
 ) -> std::result::Result<AddResolution, anyhow::Error> {
+    let api_key = curseforge_api_key
+        .ok_or_else(|| anyhow::anyhow!("CurseForge API key required for slug resolution"))?;
+
     let search_url = format!(
         "https://api.curseforge.com/v1/mods/search?gameId=432&slug={slug}"
     );
 
-    let response = client.get(&search_url).send().await?;
+    let response = client
+        .get(&search_url)
+        .header("x-api-key", api_key)
+        .send()
+        .await?;
     if !response.status().is_success() {
         anyhow::bail!(
             "CurseForge API returned {} for slug '{}'",
@@ -2067,7 +2101,7 @@ async fn resolve_curseforge_slug(
         ProjectPlatform::CurseForge,
         version_pin,
         Some(ProjectPlatform::CurseForge),
-        _resolver,
+        resolver,
     )
     .await
     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -2230,7 +2264,6 @@ async fn handle_direct_download_jar(
     }
 }
 
-#[allow(dead_code)]
 struct DirectDownloadResult {
     title: String,
     platform: ProjectPlatform,
