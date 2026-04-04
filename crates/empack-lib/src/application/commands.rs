@@ -2156,9 +2156,15 @@ async fn handle_direct_download_jar(
         .status()
         .info(&format!("SHA-1: {}", sha1));
 
+    let cf_key = session
+        .config()
+        .app_config()
+        .curseforge_api_client_key
+        .clone();
     let jar_resolver = crate::empack::content::ApiJarResolver {
         modrinth: session.network(),
         curseforge: session.network(),
+        curseforge_api_key: cf_key.as_deref(),
     };
     let identify_request = crate::empack::content::JarIdentifyRequest {
         path: dest_path.clone(),
