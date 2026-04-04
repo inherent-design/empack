@@ -87,13 +87,6 @@ pub struct OverrideEntry {
 pub struct ResolvedManifest {
     pub manifest: ModpackManifest,
     pub warnings: Vec<String>,
-    pub blocked: Vec<BlockedEntry>,
-}
-
-#[derive(Debug)]
-pub struct BlockedEntry {
-    pub entry_index: usize,
-    pub reason: String,
 }
 
 /// Configuration for the import executor.
@@ -470,12 +463,18 @@ pub async fn resolve_manifest(
     curseforge_api: &dyn crate::application::session::NetworkProvider,
 ) -> Result<ResolvedManifest> {
     let mut warnings = Vec::new();
-    let blocked = Vec::new();
     let mut resolved_content = Vec::new();
 
-    for (idx, entry) in manifest.content.into_iter().enumerate() {
+    for entry in manifest.content.into_iter() {
         match entry {
             ContentEntry::PlatformReferenced(mut pref) => {
+                if pref.platform == ProjectPlatform::Modrinth && pref.project_id.is_empty() && pref.download_urls.is_empty() {
+                    warnings.push(format!(
+                        "Modrinth file '{}' has no project ID and no download URL; \
+                         skipping platform resolution",
+                        pref.destination_path
+                    ));
+                }
                 resolve_platform_ref(&mut pref, modrinth_api, curseforge_api, &mut warnings).await;
                 resolved_content.push(ContentEntry::PlatformReferenced(pref));
             }
@@ -488,20 +487,6 @@ pub async fn resolve_manifest(
                 resolved_content.push(ContentEntry::EmbeddedJar(embed));
             }
         }
-
-        // Track blocked entries
-        if let Some(ContentEntry::PlatformReferenced(pref)) = resolved_content.last() {
-            // If resolution left project_id empty for Modrinth, block it
-            if pref.platform == ProjectPlatform::Modrinth && pref.project_id.is_empty() {
-                warnings.push(format!(
-                    "Modrinth file '{}' has no project ID and no download URL; \
-                     skipping platform resolution",
-                    pref.destination_path
-                ));
-            }
-        }
-
-        let _ = idx; // idx used for blocked tracking if needed
     }
 
     Ok(ResolvedManifest {
@@ -510,7 +495,6 @@ pub async fn resolve_manifest(
             ..manifest
         },
         warnings,
-        blocked,
     })
 }
 
@@ -743,10 +727,11 @@ pub async fn execute_import(
                 }
             }
             ContentEntry::EmbeddedJar(embed) => {
+                let dest = sanitize_archive_path(&pack_dir, &embed.destination_path)?;
                 extract_embedded_from_archive(
                     &resolved.manifest.archive_path,
                     &embed.source_path,
-                    &pack_dir.join(&embed.destination_path),
+                    &dest,
                     session.filesystem(),
                 )?;
                 stats.embedded_jars_unidentified += 1;
@@ -756,10 +741,11 @@ pub async fn execute_import(
 
     // Copy override files from archive
     for override_entry in &resolved.manifest.overrides {
+        let dest = sanitize_archive_path(&pack_dir, &override_entry.destination_path)?;
         extract_embedded_from_archive(
             &resolved.manifest.archive_path,
             &override_entry.source_path,
-            &pack_dir.join(&override_entry.destination_path),
+            &dest,
             session.filesystem(),
         )?;
         stats.overrides_copied += 1;
@@ -844,6 +830,33 @@ async fn add_platform_ref(
             Ok(false)
         }
     }
+}
+
+/// Validate that a relative path from an archive does not escape the target directory.
+fn sanitize_archive_path(base: &Path, relative: &str) -> Result<PathBuf> {
+    let joined = base.join(relative);
+    let canonical_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
+    let canonical_dest = joined.canonicalize().unwrap_or_else(|_| {
+        // File doesn't exist yet; normalize by resolving .. components manually
+        let mut components = Vec::new();
+        for c in joined.components() {
+            match c {
+                std::path::Component::ParentDir => {
+                    components.pop();
+                }
+                std::path::Component::CurDir => {}
+                _ => components.push(c),
+            }
+        }
+        components.iter().collect()
+    });
+    if !canonical_dest.starts_with(&canonical_base) {
+        anyhow::bail!(
+            "path traversal detected: '{}' escapes target directory",
+            relative
+        );
+    }
+    Ok(joined)
 }
 
 fn extract_embedded_from_archive(
@@ -944,7 +957,7 @@ pub fn classify_override(path: &str) -> OverrideCategory {
     if lower.starts_with("world/") || lower.starts_with("dim-") {
         return OverrideCategory::World;
     }
-    if lower.starts_with("server.properties")
+    if lower == "server.properties"
         || lower.starts_with("server-config/")
     {
         return OverrideCategory::ServerConfig;
