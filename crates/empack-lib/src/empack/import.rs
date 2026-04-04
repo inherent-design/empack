@@ -232,6 +232,8 @@ struct MrFile {
     env: MrEnv,
     #[serde(default)]
     file_size: Option<u64>,
+    #[serde(default, rename = "projectId")]
+    project_id: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -412,7 +414,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
                 ContentEntry::PlatformReferenced(PlatformRef {
                     destination_path: f.path.clone(),
                     platform: ProjectPlatform::Modrinth,
-                    project_id: String::new(),
+                    project_id: f.project_id.clone().unwrap_or_default(),
                     file_id: None,
                     hashes: f.hashes,
                     download_urls: f.downloads,
@@ -737,19 +739,24 @@ pub async fn execute_import(
                 let added = add_platform_ref(pref, &pack_dir, session).await?;
                 if added {
                     stats.platform_referenced += 1;
-                    if let Some(name) = &pref.resolved_name {
-                        let record = DependencyRecord {
-                            status: DependencyStatus::Resolved,
-                            title: name.clone(),
-                            platform: pref.platform,
-                            project_id: pref.project_id.clone(),
-                            project_type: pref.resolved_type.unwrap_or(crate::primitives::ProjectType::Mod),
-                            version: pref.file_id.clone(),
-                        };
-                        let dep_key = name.to_lowercase().replace(' ', "-");
-                        if let Err(e) = config_manager.add_dependency(&dep_key, record) {
-                            session.display().status().warning(&format!("failed to update empack.yml: {}", e));
-                        }
+                    let name = pref.resolved_name.clone().unwrap_or_else(|| {
+                        std::path::Path::new(&pref.destination_path)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(&pref.destination_path)
+                            .to_string()
+                    });
+                    let record = DependencyRecord {
+                        status: DependencyStatus::Resolved,
+                        title: name.clone(),
+                        platform: pref.platform,
+                        project_id: pref.project_id.clone(),
+                        project_type: pref.resolved_type.unwrap_or(crate::primitives::ProjectType::Mod),
+                        version: pref.file_id.clone(),
+                    };
+                    let dep_key = name.to_lowercase().replace(' ', "-");
+                    if let Err(e) = config_manager.add_dependency(&dep_key, record) {
+                        session.display().status().warning(&format!("failed to update empack.yml: {}", e));
                     }
                 }
             }
