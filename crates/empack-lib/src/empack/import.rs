@@ -461,6 +461,7 @@ pub async fn resolve_manifest(
     manifest: ModpackManifest,
     modrinth_api: &dyn crate::application::session::NetworkProvider,
     curseforge_api: &dyn crate::application::session::NetworkProvider,
+    curseforge_api_key: Option<&str>,
 ) -> Result<ResolvedManifest> {
     let mut warnings = Vec::new();
     let mut resolved_content = Vec::new();
@@ -475,7 +476,7 @@ pub async fn resolve_manifest(
                         pref.destination_path
                     ));
                 }
-                resolve_platform_ref(&mut pref, modrinth_api, curseforge_api, &mut warnings).await;
+                resolve_platform_ref(&mut pref, modrinth_api, curseforge_api, curseforge_api_key, &mut warnings).await;
                 resolved_content.push(ContentEntry::PlatformReferenced(pref));
             }
             ContentEntry::EmbeddedJar(embed) => {
@@ -502,6 +503,7 @@ async fn resolve_platform_ref(
     pref: &mut PlatformRef,
     modrinth_api: &dyn crate::application::session::NetworkProvider,
     curseforge_api: &dyn crate::application::session::NetworkProvider,
+    curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
 ) {
     if pref.resolved_name.is_some() {
@@ -518,7 +520,7 @@ async fn resolve_platform_ref(
             resolve_modrinth_project(pref, modrinth_api, warnings).await;
         }
         ProjectPlatform::CurseForge => {
-            resolve_curseforge_project(pref, curseforge_api, warnings).await;
+            resolve_curseforge_project(pref, curseforge_api, curseforge_api_key, warnings).await;
         }
     }
 }
@@ -582,28 +584,50 @@ async fn resolve_modrinth_project(
 }
 
 #[derive(Deserialize)]
+struct CfDataEnvelope<T> {
+    data: T,
+}
+
+#[derive(Deserialize)]
 struct CfModResponse {
     name: String,
-    #[serde(default)]
+    #[serde(rename = "classId", default)]
     class_id: Option<u32>,
 }
 
 async fn resolve_curseforge_project(
     pref: &mut PlatformRef,
     api: &dyn crate::application::session::NetworkProvider,
+    curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
 ) {
+    let api_key = match curseforge_api_key {
+        Some(k) => k,
+        None => {
+            warnings.push(format!(
+                "CurseForge API key missing; cannot resolve mod '{}'",
+                pref.project_id
+            ));
+            return;
+        }
+    };
+
     let client = match api.http_client() {
         Ok(c) => c,
         Err(_) => return,
     };
 
     let url = format!(
-        "https://legacy.curseforge.com/api/v2/mods/{}",
+        "https://api.curseforge.com/v1/mods/{}",
         pref.project_id
     );
 
-    let response = match client.get(&url).send().await {
+    let response = match client
+        .get(&url)
+        .header("x-api-key", api_key)
+        .send()
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             warnings.push(format!("CurseForge API lookup failed for '{}': {}", pref.project_id, e));
@@ -620,13 +644,14 @@ async fn resolve_curseforge_project(
         return;
     }
 
-    let body: CfModResponse = match response.json().await {
+    let envelope: CfDataEnvelope<CfModResponse> = match response.json().await {
         Ok(b) => b,
         Err(e) => {
             warnings.push(format!("failed to parse CurseForge mod response: {}", e));
             return;
         }
     };
+    let body = envelope.data;
 
     pref.resolved_name = Some(body.name.clone());
 
