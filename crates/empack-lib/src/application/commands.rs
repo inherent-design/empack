@@ -884,11 +884,17 @@ async fn handle_init_from_source(
     // Phase B: Resolve
     let modrinth_api = session.network();
     let curseforge_api = session.network();
+    let cf_api_key = session
+        .config()
+        .app_config()
+        .curseforge_api_client_key
+        .clone();
 
     let resolved = resolve_manifest(
         manifest,
         modrinth_api,
         curseforge_api,
+        cf_api_key.as_deref(),
     )
     .await?;
 
