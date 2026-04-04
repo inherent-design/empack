@@ -135,7 +135,7 @@ const MR_MANIFEST_JSON: &str = r#"{
   "client-overrides": "client-overrides",
   "server-overrides": "server-overrides",
   "name": "ModrinthPack",
-  "versionId": "1.0.0",
+  "versionId": "2.5.0",
   "summary": "A test modpack"
 }"#;
 
@@ -155,7 +155,7 @@ fn test_parse_modrinth_mrpack_basic() {
     let manifest = parse_modrinth_mrpack(tmp.path()).unwrap();
 
     assert_eq!(manifest.identity.name, "ModrinthPack");
-    assert_eq!(manifest.identity.version, "1.0.0");
+    assert_eq!(manifest.identity.version, "2.5.0");
     assert_eq!(manifest.identity.summary.as_deref(), Some("A test modpack"));
     assert_eq!(manifest.target.minecraft_version, "1.20.1");
     assert_eq!(manifest.target.loader, ModLoader::Fabric);

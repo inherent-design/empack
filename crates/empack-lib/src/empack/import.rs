@@ -215,7 +215,7 @@ struct MrManifest {
     server_overrides: Option<String>,
     #[serde(default)]
     name: Option<String>,
-    #[serde(default)]
+    #[serde(default, rename = "versionId")]
     version_id: Option<String>,
     #[serde(default)]
     summary: Option<String>,
