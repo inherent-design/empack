@@ -1,0 +1,31 @@
+{
+  "name": "curseforge/fingerprint_miss",
+  "request": {
+    "method": "POST",
+    "url": "https://api.curseforge.com/v1/fingerprints",
+    "query": {},
+    "headers": {
+      "x-api-key": "REDACTED"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "isCacheBuilt": true,
+        "exactMatches": [],
+        "exactFingerprints": [],
+        "partialMatches": [],
+        "partialMatchFingerprints": {},
+        "installedFingerprints": [
+          999999999
+        ],
+        "unmatchedFingerprints": null
+      }
+    }
+  },
+  "recorded_at": "2026-04-04T10:54:01Z"
+}

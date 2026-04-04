@@ -136,8 +136,8 @@ declare -A CASSETTES=(
     # v0.2 Import/Add endpoints (6 cassettes)
 
     # Modrinth version-file by SHA-1 hash (used by ApiJarResolver)
-    # Uses sodium 0.6.14 fabric jar SHA-1; replace hash if recording fresh
-    ["modrinth/version_file_sha1"]="https://api.modrinth.com/v2/version_file/da39a3ee5e6b4b0d3255bfef95601890afd80709|{\"User-Agent\":\"empack-tests/0.1.0\"}|{\"algorithm\":\"sha1\"}"
+    # Uses sodium fabric 1.21.1 jar SHA-1 from versions_AANobbMI cassette
+    ["modrinth/version_file_sha1"]="https://api.modrinth.com/v2/version_file/928a2598178c3a58b0638bab842f467d2e49251a|{\"User-Agent\":\"empack-tests/0.1.0\"}|{\"algorithm\":\"sha1\"}"
 
     # Modrinth project versions for modpack download (used by init --from)
     ["modrinth/versions_sodium"]="https://api.modrinth.com/v2/project/sodium/version|{\"User-Agent\":\"empack-tests/0.1.0\"}|{}"

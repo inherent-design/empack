@@ -1,0 +1,124 @@
+{
+  "name": "curseforge/categories_minecraft",
+  "request": {
+    "method": "GET",
+    "url": "https://api.curseforge.com/v1/categories",
+    "query": {
+      "gameId": "432",
+      "classesOnly": "true"
+    },
+    "headers": {
+      "x-api-key": "REDACTED"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": [
+        {
+          "id": 4471,
+          "gameId": 432,
+          "name": "Modpacks",
+          "slug": "modpacks",
+          "url": "https://www.curseforge.com/minecraft/modpacks",
+          "iconUrl": "https://media.forgecdn.net/avatars/52/100/636111139251397737.png",
+          "dateModified": "2024-10-30T13:01:13.663Z",
+          "isClass": true,
+          "displayIndex": 0
+        },
+        {
+          "id": 6552,
+          "gameId": 432,
+          "name": "Shaders",
+          "slug": "shaders",
+          "url": "https://www.curseforge.com/minecraft/shaders",
+          "iconUrl": "https://media.forgecdn.net/avatars/862/442/638270957318933608.png",
+          "dateModified": "2025-06-03T10:55:45.117Z",
+          "isClass": true,
+          "displayIndex": 0
+        },
+        {
+          "id": 6,
+          "gameId": 432,
+          "name": "Mods",
+          "slug": "mc-mods",
+          "url": "https://www.curseforge.com/minecraft/mc-mods",
+          "iconUrl": "https://media.forgecdn.net/avatars/52/101/636111139584399357.png",
+          "dateModified": "2025-06-04T11:43:32.103Z",
+          "isClass": true,
+          "displayIndex": 1
+        },
+        {
+          "id": 5,
+          "gameId": 432,
+          "name": "Bukkit Plugins",
+          "slug": "bukkit-plugins",
+          "url": "https://www.curseforge.com/minecraft/bukkit-plugins",
+          "iconUrl": "https://media.forgecdn.net/avatars/65/443/636162895990633284.png",
+          "dateModified": "2022-11-10T20:44:39.38Z",
+          "isClass": true,
+          "displayIndex": 0
+        },
+        {
+          "id": 4559,
+          "gameId": 432,
+          "name": "Addons",
+          "slug": "mc-addons",
+          "url": "https://www.curseforge.com/minecraft/mc-addons",
+          "iconUrl": "https://media.forgecdn.net/avatars/53/339/636123919846079516.png",
+          "dateModified": "2023-07-26T11:51:11.64Z",
+          "isClass": true,
+          "displayIndex": 0
+        },
+        {
+          "id": 17,
+          "gameId": 432,
+          "name": "Worlds",
+          "slug": "worlds",
+          "url": "https://www.curseforge.com/minecraft/worlds",
+          "iconUrl": "https://media.forgecdn.net/avatars/52/103/636111139893035422.png",
+          "dateModified": "2016-10-03T22:53:09.303Z",
+          "isClass": true,
+          "displayIndex": 3
+        },
+        {
+          "id": 12,
+          "gameId": 432,
+          "name": "Resource Packs",
+          "slug": "texture-packs",
+          "url": "https://www.curseforge.com/minecraft/texture-packs",
+          "iconUrl": "https://media.forgecdn.net/avatars/52/102/636111139761599118.png",
+          "dateModified": "2025-05-15T11:32:10.117Z",
+          "isClass": true,
+          "displayIndex": 2
+        },
+        {
+          "id": 4546,
+          "gameId": 432,
+          "name": "Customization",
+          "slug": "customization",
+          "url": "https://www.curseforge.com/minecraft/customization",
+          "iconUrl": "https://media.forgecdn.net/avatars/52/99/636111139136535634.png",
+          "dateModified": "2023-12-03T14:20:25.777Z",
+          "isClass": true,
+          "displayIndex": 0
+        },
+        {
+          "id": 6945,
+          "gameId": 432,
+          "name": "Data Packs",
+          "slug": "data-packs",
+          "url": "https://www.curseforge.com/minecraft/data-packs",
+          "iconUrl": "https://media.forgecdn.net/avatars/944/326/638428200038821826.png",
+          "dateModified": "2025-05-12T07:45:34.39Z",
+          "isClass": true,
+          "displayIndex": 2
+        }
+      ]
+    }
+  },
+  "recorded_at": "2026-04-04T10:54:08Z"
+}
