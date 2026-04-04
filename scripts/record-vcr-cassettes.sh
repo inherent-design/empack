@@ -61,17 +61,23 @@ Prerequisites:
   - curl, jq installed
   - .env.local file with EMPACK_KEY_CURSEFORGE (script expects this variable name)
 
-Cassettes Recorded (Phase 1 - 12 total):
-  Modrinth (4):
+Cassettes Recorded (18 total):
+  Modrinth (6):
     - search_sodium
     - project_AANobbMI
     - dependencies_AANobbMI
     - versions_AANobbMI
+    - version_file_sha1          (v0.2: JAR identification)
+    - versions_sodium             (v0.2: init --from download)
 
-  CurseForge (3):
+  CurseForge (7):
     - search_jei
     - mod_238222
     - files_238222
+    - fingerprint_match           (v0.2: POST, JAR identification)
+    - fingerprint_miss            (v0.2: POST, unmatched JAR)
+    - categories_minecraft        (v0.2: class taxonomy)
+    - search_sodium_slug          (v0.2: slug resolution)
 
   Loaders (4):
     - fabric_versions_1.21.1
@@ -126,6 +132,28 @@ declare -A CASSETTES=(
 
     # Minecraft (1 cassette)
     ["minecraft/version_manifest"]="https://launchermeta.mojang.com/mc/game/version_manifest.json|{}|{}"
+
+    # v0.2 Import/Add endpoints (6 cassettes)
+
+    # Modrinth version-file by SHA-1 hash (used by ApiJarResolver)
+    # Uses sodium 0.6.14 fabric jar SHA-1; replace hash if recording fresh
+    ["modrinth/version_file_sha1"]="https://api.modrinth.com/v2/version_file/da39a3ee5e6b4b0d3255bfef95601890afd80709|{\"User-Agent\":\"empack-tests/0.1.0\"}|{\"algorithm\":\"sha1\"}"
+
+    # Modrinth project versions for modpack download (used by init --from)
+    ["modrinth/versions_sodium"]="https://api.modrinth.com/v2/project/sodium/version|{\"User-Agent\":\"empack-tests/0.1.0\"}|{}"
+
+    # CurseForge fingerprint match (POST; used by ApiJarResolver)
+    # Uses JEI 1.12.2 jar fingerprint 3089143260 from existing cassette
+    ["curseforge/fingerprint_match"]="https://api.curseforge.com/v1/fingerprints|{\"x-api-key\":\"$EMPACK_KEY_CURSEFORGE\"}|{}|POST|{\"fingerprints\":[3089143260]}"
+
+    # CurseForge fingerprint miss (POST; unmatched fingerprint)
+    ["curseforge/fingerprint_miss"]="https://api.curseforge.com/v1/fingerprints|{\"x-api-key\":\"$EMPACK_KEY_CURSEFORGE\"}|{}|POST|{\"fingerprints\":[999999999]}"
+
+    # CurseForge categories for Minecraft (class taxonomy verification)
+    ["curseforge/categories_minecraft"]="https://api.curseforge.com/v1/categories|{\"x-api-key\":\"$EMPACK_KEY_CURSEFORGE\"}|{\"gameId\":\"432\",\"classesOnly\":\"true\"}"
+
+    # CurseForge mod by slug (used by resolve_curseforge_slug in add)
+    ["curseforge/search_sodium_slug"]="https://api.curseforge.com/v1/mods/search|{\"x-api-key\":\"$EMPACK_KEY_CURSEFORGE\"}|{\"gameId\":\"432\",\"slug\":\"sodium\"}"
 )
 
 # Filter cassettes if --only specified
@@ -155,17 +183,20 @@ failed_count=0
 skipped_count=0
 
 for cassette_name in "${!CASSETTES[@]}"; do
-    # Parse cassette spec (URL|headers|query)
-    IFS='|' read -r url headers_json query_json <<< "${CASSETTES[$cassette_name]}"
+    # Parse cassette spec (URL|headers|query[|method[|body]])
+    IFS='|' read -r url headers_json query_json method body_json <<< "${CASSETTES[$cassette_name]}"
+    method="${method:-GET}"
+    body_json="${body_json:-}"
 
     # Build output path
     output_path="$CASSETTES_DIR/${cassette_name}.json"
 
     # Dry run mode
     if [[ "$DRY_RUN" == true ]]; then
-        log_info "DRY RUN: Would record $cassette_name"
+        log_info "DRY RUN: Would record $cassette_name ($method)"
         log_info "  URL: $url"
         log_info "  Query: $query_json"
+        [[ -n "$body_json" ]] && log_info "  Body: $body_json"
         log_info "  Output: $output_path"
         echo ""
         skipped_count=$((skipped_count + 1))
@@ -173,7 +204,7 @@ for cassette_name in "${!CASSETTES[@]}"; do
     fi
 
     # Record cassette
-    if record_endpoint "$cassette_name" "$url" "$headers_json" "$query_json" "$output_path"; then
+    if record_endpoint "$cassette_name" "$url" "$headers_json" "$query_json" "$output_path" "$method" "$body_json"; then
         recorded_count=$((recorded_count + 1))
 
         # Sanitize API keys from cassette

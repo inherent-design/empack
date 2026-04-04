@@ -77,16 +77,18 @@ validate_env_file() {
 }
 
 # Record endpoint to cassette
-# Usage: record_endpoint <cassette_name> <url> <headers_json> <query_params_json> <output_path>
+# Usage: record_endpoint <cassette_name> <url> <headers_json> <query_params_json> <output_path> [method] [body_json]
 record_endpoint() {
     local cassette_name="$1"
     local url="$2"
     local headers_json="${3:-"{}"}"
     local query_params_json="${4:-"{}"}"
     local output_path="$5"
+    local method="${6:-GET}"
+    local body_json="${7:-}"
 
     log_info "Recording cassette: $cassette_name"
-    log_info "  URL: $url"
+    log_info "  URL: $url ($method)"
 
     # Create output directory if needed
     local output_dir
@@ -95,6 +97,16 @@ record_endpoint() {
 
     # Build curl command with headers
     local curl_cmd=(curl -s -w '\n%{http_code}\n%{content_type}')
+
+    # Set HTTP method
+    if [[ "$method" != "GET" ]]; then
+        curl_cmd+=(-X "$method")
+    fi
+
+    # Add request body for POST/PUT
+    if [[ -n "$body_json" ]]; then
+        curl_cmd+=(-H "Content-Type: application/json" -d "$body_json")
+    fi
 
     # Add headers from JSON
     while IFS= read -r header; do
@@ -137,7 +149,7 @@ record_endpoint() {
                 200)
                     # Success - create cassette
                     create_cassette "$cassette_name" "$url" "$query_params_json" "$headers_json" \
-                        "$http_code" "$content_type" "$response_body" "$output_path"
+                        "$http_code" "$content_type" "$response_body" "$output_path" "$method"
                     log_success "Recorded: $cassette_name"
                     rm -f "$response_file"
                     return 0
@@ -158,7 +170,7 @@ record_endpoint() {
                     # Other error - record error response
                     log_warn "HTTP $http_code for $cassette_name - recording error response"
                     create_cassette "$cassette_name" "$url" "$query_params_json" "$headers_json" \
-                        "$http_code" "$content_type" "$response_body" "$output_path"
+                        "$http_code" "$content_type" "$response_body" "$output_path" "$method"
                     rm -f "$response_file"
                     return 0
                     ;;
@@ -186,6 +198,7 @@ create_cassette() {
     local content_type="$6"
     local response_body="$7"
     local output_path="$8"
+    local method="${9:-GET}"
 
     # Parse response body as JSON (if valid)
     local parsed_body
@@ -207,10 +220,11 @@ create_cassette() {
         --arg content_type "$content_type" \
         --argjson body "$response_body" \
         --arg recorded_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+        --arg method "$method" \
         '{
             name: $name,
             request: {
-                method: "GET",
+                method: $method,
                 url: $url,
                 query: $query,
                 headers: $req_headers

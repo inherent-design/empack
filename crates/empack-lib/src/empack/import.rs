@@ -230,7 +230,7 @@ struct MrFile {
     hashes: HashMap<String, String>,
     #[serde(default)]
     env: MrEnv,
-    #[serde(default)]
+    #[serde(default, rename = "fileSize")]
     file_size: Option<u64>,
     #[serde(default, rename = "projectId")]
     project_id: Option<String>,
