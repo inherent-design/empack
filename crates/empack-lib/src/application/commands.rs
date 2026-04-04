@@ -836,7 +836,12 @@ async fn handle_init_from_source(
     let target_dir = if let Some(ref dir_arg) = positional_dir {
         base_dir.join(dir_arg)
     } else {
-        base_dir.join(&manifest.identity.name)
+        // Sanitize manifest name to prevent path traversal from untrusted modpack metadata
+        let safe_name = manifest
+            .identity
+            .name
+            .replace(['/', '\\', '.'], "_");
+        base_dir.join(&safe_name)
     };
 
     // Check state
@@ -1016,7 +1021,10 @@ async fn download_modrinth_modpack(
     let version = if let Some(ref vf) = version_filter {
         versions
             .iter()
-            .find(|v| v.get("version_number").and_then(|n| n.as_str()) == Some(vf))
+            .find(|v| {
+                v.get("version_number").and_then(|n| n.as_str()) == Some(vf)
+                    || v.get("id").and_then(|n| n.as_str()) == Some(vf)
+            })
             .ok_or_else(|| {
                 anyhow::anyhow!("version '{}' not found for Modrinth project '{}'", vf, slug)
             })?
@@ -1321,6 +1329,17 @@ async fn handle_add(
                         if !force && dep_graph.contains(&resolution.resolved_project_id) {
                             session.display().status().warning(&format!(
                                 "Mod already installed: {} (use --force to reinstall)",
+                                resolution.title
+                            ));
+                            continue;
+                        }
+
+                        if !force
+                            && batch_project_ids
+                                .contains(&resolution.resolved_project_id)
+                        {
+                            session.display().status().warning(&format!(
+                                "Duplicate in batch: {} (already queued for addition)",
                                 resolution.title
                             ));
                             continue;

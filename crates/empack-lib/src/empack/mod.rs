@@ -22,7 +22,7 @@ pub use content::{
     SideEnv, SideRequirement, UrlClassifyError, UrlKind,
 };
 pub use import::{
-    BlockedEntry, ContentEntry, EmbeddedJar, ImportConfig, ImportError, ImportResult,
+    ContentEntry, EmbeddedJar, ImportConfig, ImportError, ImportResult,
     ImportStats, ModpackManifest, OverrideEntry, PackIdentity, PlatformRef, ResolvedManifest,
     RuntimeTarget, SourceKind, classify_override, detect_local_source, execute_import,
     parse_curseforge_zip, parse_modrinth_mrpack, resolve_manifest,
