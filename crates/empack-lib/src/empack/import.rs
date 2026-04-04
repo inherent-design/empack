@@ -264,7 +264,7 @@ pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
         .by_name("manifest.json")
         .map_err(|_| ImportError::CurseForgeManifestMissing)?;
 
-    let manifest_content = read_zip_entry_to_string(manifest_entry);
+    let manifest_content = read_zip_entry_to_string(manifest_entry)?;
     let cf: CfManifest =
         serde_json::from_str(&manifest_content).map_err(|e| ImportError::ParseFailed(e.to_string()))?;
 
@@ -352,7 +352,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
         .by_name("modrinth.index.json")
         .map_err(|_| ImportError::ModrinthManifestMissing)?;
 
-    let manifest_content = read_zip_entry_to_string(manifest_entry);
+    let manifest_content = read_zip_entry_to_string(manifest_entry)?;
     let mr: MrManifest =
         serde_json::from_str(&manifest_content).map_err(|e| ImportError::ParseFailed(e.to_string()))?;
 
@@ -414,13 +414,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
                 client: mr_side_requirement(f.env.client.as_deref()),
                 server: mr_side_requirement(f.env.server.as_deref()),
             };
-            let is_jar = f.path.to_lowercase().ends_with(".jar")
-                && f
-                    .path
-                    .rfind('/')
-                    .is_none_or(|pos| f.path[pos + 1..].to_lowercase().ends_with(".jar"));
-
-            if is_jar && !f.downloads.is_empty() {
+            if !f.downloads.is_empty() {
                 ContentEntry::PlatformReferenced(PlatformRef {
                     destination_path: f.path.clone(),
                     platform: ProjectPlatform::Modrinth,
@@ -771,8 +765,6 @@ pub async fn execute_import(
         stats.overrides_copied += 1;
     }
 
-    stats.warnings.extend(stats.warnings.clone());
-
     Ok(ImportResult {
         project_dir: config.target_dir,
         stats,
@@ -957,7 +949,11 @@ pub fn classify_override(path: &str) -> OverrideCategory {
     {
         return OverrideCategory::ServerConfig;
     }
-    if lower.contains("options.txt") || lower.contains("optionsof.txt") {
+    if lower == "options.txt"
+        || lower.ends_with("/options.txt")
+        || lower == "optionsof.txt"
+        || lower.ends_with("/optionsof.txt")
+    {
         return OverrideCategory::ClientConfig;
     }
     if lower.starts_with("mods/") {
@@ -1031,10 +1027,13 @@ fn parse_cf_loader(
     Ok((mod_loader, loader_version.to_string()))
 }
 
-fn read_zip_entry_to_string<R: std::io::Read>(mut entry: zip::read::ZipFile<'_, R>) -> String {
+fn read_zip_entry_to_string<R: std::io::Read>(
+    mut entry: zip::read::ZipFile<'_, R>,
+) -> Result<String> {
     let mut buf = String::new();
-    std::io::Read::read_to_string(&mut entry, &mut buf).unwrap_or_default();
-    buf
+    std::io::Read::read_to_string(&mut entry, &mut buf)
+        .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    Ok(buf)
 }
 
 fn mr_side_requirement(value: Option<&str>) -> SideRequirement {
