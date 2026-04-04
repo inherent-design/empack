@@ -732,7 +732,6 @@ pub async fn execute_import(
     let pack_dir = config.target_dir.join("pack");
     let config_manager = session.filesystem().config_manager(config.target_dir.clone());
 
-    // Process content entries
     for entry in &resolved.manifest.content {
         match entry {
             ContentEntry::PlatformReferenced(pref) => {
@@ -773,7 +772,6 @@ pub async fn execute_import(
         }
     }
 
-    // Copy override files from archive
     for override_entry in &resolved.manifest.overrides {
         let dest = sanitize_archive_path(&pack_dir, &override_entry.destination_path)?;
         extract_embedded_from_archive(
