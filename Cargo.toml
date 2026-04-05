@@ -7,7 +7,7 @@ authors = ["mannie.exe <mannie@inherent.design>"]
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/inherent-design/empack"
-version = "0.0.0-alpha.1"
+version = "0.2.0-alpha.1"
 
 [workspace.dependencies]
 empack-lib = { path = "crates/empack-lib", default-features = true }
