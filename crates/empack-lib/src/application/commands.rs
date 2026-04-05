@@ -248,7 +248,16 @@ async fn handle_init(
     }
 
     if let Some(ref source) = from_source {
-        return handle_init_from_source(session, source, positional_dir, force, cli_pack_name).await;
+        return handle_init_from_source(
+            session,
+            source,
+            positional_dir,
+            force,
+            cli_pack_name,
+            cli_datapack_folder,
+            cli_game_versions,
+        )
+        .await;
     }
 
     // Phase A: Resolve target_dir (WHERE). Only the positional arg affects directory.
@@ -879,6 +888,8 @@ async fn handle_init_from_source(
     positional_dir: Option<String>,
     force: bool,
     cli_pack_name: Option<String>,
+    cli_datapack_folder: Option<String>,
+    cli_game_versions: Option<Vec<String>>,
 ) -> Result<()> {
     session
         .display()
@@ -976,8 +987,8 @@ async fn handle_init_from_source(
         pack_name: pack_name.clone(),
         author: author.clone(),
         version: version.clone(),
-        datapack_folder: None,
-        acceptable_game_versions: None,
+        datapack_folder: cli_datapack_folder,
+        acceptable_game_versions: cli_game_versions,
     };
 
     let result = execute_import(resolved, config, session).await?;
