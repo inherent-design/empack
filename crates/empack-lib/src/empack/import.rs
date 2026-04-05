@@ -280,9 +280,7 @@ fn extract_forgecdn_file_id(url: &str) -> Option<String> {
     if p1.is_empty() || p2.is_empty() {
         return None;
     }
-    // p2 might contain the filename if the URL structure is /files/{p1}/{p2}/{filename}
-    // or it might be the second part of the ID. Check if p2 is numeric.
-    if p2.chars().all(|c| c.is_ascii_digit()) {
+    if p1.chars().all(|c| c.is_ascii_digit()) && p2.chars().all(|c| c.is_ascii_digit()) {
         Some(format!("{}{}", p1, p2))
     } else {
         None

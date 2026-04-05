@@ -72,7 +72,10 @@ from urllib.error import HTTPError, URLError
 # Constants
 # ---------------------------------------------------------------------------
 
-CURSEFORGE_API_KEY = "$2a$10$78GooA4YTCKFQI9vgZ1oEeVM.jNyeNKSIFUhFkwiA0L/Uwv19BFAq"
+CURSEFORGE_API_KEY = os.environ.get(
+    "EMPACK_KEY_CURSEFORGE",
+    "$2a$10$78GooA4YTCKFQI9vgZ1oEeVM.jNyeNKSIFUhFkwiA0L/Uwv19BFAq",
+)
 
 MODRINTH_API = "https://api.modrinth.com/v2"
 CURSEFORGE_API = "https://api.curseforge.com/v1"
