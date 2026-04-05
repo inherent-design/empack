@@ -44,9 +44,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-nextest
 
-      - name: Unit tests
-        run: cargo nextest run -p empack-lib --features test-utils -p empack-tests
-
       - name: Install packwiz (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -56,8 +53,8 @@ jobs:
       - name: Install packwiz (macOS)
         if: runner.os == 'macOS'
         run: |
-          curl -L https://github.com/packwiz/packwiz/releases/latest/download/packwiz-darwin-arm64 -o /usr/local/bin/packwiz
-          chmod +x /usr/local/bin/packwiz
+          sudo curl -L https://github.com/packwiz/packwiz/releases/latest/download/packwiz-darwin-arm64 -o /usr/local/bin/packwiz
+          sudo chmod +x /usr/local/bin/packwiz
 
       - name: Install packwiz (Windows)
         if: runner.os == 'Windows'
@@ -68,8 +65,8 @@ jobs:
       - name: Build empack binary
         run: cargo build -p empack
 
-      - name: E2E tests
-        run: cargo nextest run -p empack-tests -E 'test(~e2e_)'
+      - name: Tests (unit + E2E)
+        run: cargo nextest run -p empack-lib --features test-utils -p empack-tests
 
   coverage:
     needs: lint
@@ -87,6 +84,9 @@ jobs:
         run: |
           curl -L https://github.com/packwiz/packwiz/releases/latest/download/packwiz-linux-amd64 -o /usr/local/bin/packwiz
           chmod +x /usr/local/bin/packwiz
+
+      - name: Build empack binary
+        run: cargo build -p empack
 
       - run: cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info
       - run: cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
