@@ -31,8 +31,10 @@ async fn test_init_zero_config() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-                    from_source: None,
-},
+            datapack_folder: None,
+            game_versions: None,
+            from_source: None,
+        },
         &session,
     )
     .await;
@@ -77,8 +79,10 @@ async fn test_init_with_explicit_flags() -> Result<()> {
             author: Some("Workflow Test".to_string()),
             loader_version: None,
             pack_version: None,
-                    from_source: None,
-},
+            datapack_folder: None,
+            game_versions: None,
+            from_source: None,
+        },
         &session,
     )
     .await;
@@ -161,8 +165,10 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-                    from_source: None,
-},
+            datapack_folder: None,
+            game_versions: None,
+            from_source: None,
+        },
         &session,
     )
     .await;
@@ -226,8 +232,10 @@ async fn test_init_existing_project_error() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-                    from_source: None,
-},
+            datapack_folder: None,
+            game_versions: None,
+            from_source: None,
+        },
         &session,
     )
     .await;
@@ -286,8 +294,10 @@ async fn test_init_scaffolds_template_files() -> Result<()> {
             author: Some("Template Test".to_string()),
             loader_version: None,
             pack_version: None,
-                    from_source: None,
-},
+            datapack_folder: None,
+            game_versions: None,
+            from_source: None,
+        },
         &session,
     )
     .await;
