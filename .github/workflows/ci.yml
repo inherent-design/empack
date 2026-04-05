@@ -65,6 +65,9 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://github.com/packwiz/packwiz/releases/latest/download/packwiz-windows-amd64.exe" -OutFile "$env:USERPROFILE\.cargo\bin\packwiz.exe"
 
+      - name: Build empack binary
+        run: cargo build -p empack
+
       - name: E2E tests
         run: cargo nextest run -p empack-tests -E 'test(~e2e_)'
 

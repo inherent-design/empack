@@ -7,7 +7,7 @@ fn e2e_version_output() {
         .arg("version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("0.2.0-alpha.2"));
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
 
 #[test]
