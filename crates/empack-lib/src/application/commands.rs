@@ -25,6 +25,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 /// Build an empack.yml string via serde serialization (injection-safe).
+#[allow(clippy::too_many_arguments)]
 fn format_empack_yml(
     name: &str,
     author: &str,
@@ -32,12 +33,11 @@ fn format_empack_yml(
     minecraft_version: &str,
     loader: &str,
     loader_version: &str,
+    datapack_folder: Option<&str>,
+    acceptable_game_versions: Option<&[String]>,
 ) -> String {
     let loader_enum = ModLoader::parse(loader).ok();
 
-    // Dedicated struct for init output: includes loader_version (which
-    // EmpackProjectConfig doesn't carry) and always emits an empty
-    // dependencies map.
     #[derive(serde::Serialize)]
     struct InitEmpackYml<'a> {
         empack: InitFields<'a>,
@@ -53,6 +53,10 @@ fn format_empack_yml(
         loader: Option<ModLoader>,
         #[serde(skip_serializing_if = "str::is_empty")]
         loader_version: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        datapack_folder: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        acceptable_game_versions: Option<&'a [String]>,
         dependencies: BTreeMap<String, DependencyEntry>,
     }
 
@@ -64,6 +68,8 @@ fn format_empack_yml(
             minecraft_version,
             loader: loader_enum,
             loader_version,
+            datapack_folder,
+            acceptable_game_versions,
             dependencies: BTreeMap::new(),
         },
     };
@@ -109,6 +115,8 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             pack_name,
             loader_version,
             pack_version,
+            datapack_folder,
+            game_versions,
             from_source,
         } => {
             handle_init(
@@ -121,6 +129,8 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
                 author,
                 loader_version,
                 pack_version,
+                datapack_folder,
+                game_versions,
                 from_source,
             )
             .await
@@ -227,6 +237,8 @@ async fn handle_init(
     cli_author: Option<String>,
     cli_loader_version: Option<String>,
     cli_pack_version: Option<String>,
+    cli_datapack_folder: Option<String>,
+    cli_game_versions: Option<Vec<String>>,
     from_source: Option<String>,
 ) -> Result<()> {
     if session.config().app_config().yes && cli_modloader.is_none() && from_source.is_none() {
@@ -600,7 +612,23 @@ async fn handle_init(
         }
     };
 
-    // Step 5: Final Confirmation and Execution
+    // Step 5: Datapack folder prompt
+    let datapack_folder = if let Some(folder) = cli_datapack_folder {
+        session
+            .display()
+            .status()
+            .info(&format!("Using datapack folder: {}", folder));
+        Some(folder)
+    } else {
+        let input = session
+            .interactive()
+            .text_input("Datapack folder (leave empty to skip)", String::new())?;
+        if input.is_empty() { None } else { Some(input) }
+    };
+
+    let game_versions = cli_game_versions;
+
+    // Step 6: Final Confirmation and Execution
     session.display().status().info("Configuration Summary:");
     session
         .display()
@@ -625,6 +653,18 @@ async fn handle_init(
             .display()
             .status()
             .info(&format!("   Loader: {} v{}", loader_str, loader_version));
+    }
+    if let Some(ref folder) = datapack_folder {
+        session
+            .display()
+            .status()
+            .info(&format!("   Datapack folder: {}", folder));
+    }
+    if let Some(ref versions) = game_versions {
+        session
+            .display()
+            .status()
+            .info(&format!("   Game versions: {}", versions.join(", ")));
     }
 
     // Final confirmation
@@ -673,7 +713,14 @@ async fn handle_init(
         loader_version: &loader_version,
     };
 
-    let result = execute_init_phase(session, &target_dir, &init_config).await;
+    let result = execute_init_phase(
+        session,
+        &target_dir,
+        &init_config,
+        datapack_folder.as_deref(),
+        game_versions.as_deref(),
+    )
+    .await;
 
     if let Err(ref e) = result
         && created_dir
@@ -693,13 +740,33 @@ async fn handle_init(
         }
     }
 
-    result
+    result?;
+
+    if datapack_folder.is_some() || game_versions.is_some() {
+        let pack_toml_path = target_dir.join("pack").join("pack.toml");
+        crate::empack::packwiz::write_pack_toml_options(
+            &pack_toml_path,
+            datapack_folder.as_deref(),
+            game_versions.as_deref(),
+            session.filesystem(),
+        )
+        .context("failed to write pack.toml options")?;
+
+        session
+            .packwiz()
+            .run_packwiz_refresh(&target_dir)
+            .map_err(|e| anyhow::anyhow!("failed to refresh index after writing options: {}", e))?;
+    }
+
+    Ok(())
 }
 
 async fn execute_init_phase(
     session: &dyn Session,
     target_dir: &std::path::Path,
     config: &crate::primitives::InitializationConfig<'_>,
+    datapack_folder: Option<&str>,
+    acceptable_game_versions: Option<&[String]>,
 ) -> Result<()> {
     let manager =
         crate::empack::state::PackStateManager::new(target_dir.to_path_buf(), session.filesystem());
@@ -711,6 +778,8 @@ async fn execute_init_phase(
         config.mc_version,
         config.modloader,
         config.loader_version,
+        datapack_folder,
+        acceptable_game_versions,
     );
 
     session
@@ -907,6 +976,8 @@ async fn handle_init_from_source(
         pack_name: pack_name.clone(),
         author: author.clone(),
         version: version.clone(),
+        datapack_folder: None,
+        acceptable_game_versions: None,
     };
 
     let result = execute_import(resolved, config, session).await?;
