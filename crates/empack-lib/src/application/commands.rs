@@ -2575,7 +2575,7 @@ async fn handle_build(
             .context("Failed to create build orchestrator")?;
 
     // Execute build pipeline with state management
-    build_orchestrator
+    let results = build_orchestrator
         .execute_build_pipeline(&build_targets)
         .await
         .inspect_err(|_| {
@@ -2585,6 +2585,57 @@ async fn handle_build(
                 .info("If the build left partial artifacts, run 'empack clean --builds' to reset");
         })
         .context("Failed to execute build pipeline")?;
+
+    // Check for restricted mods across all build results
+    let all_restricted: Vec<_> = results
+        .iter()
+        .flat_map(|r| r.restricted_mods.iter())
+        .collect();
+
+    if !all_restricted.is_empty() {
+        session
+            .display()
+            .status()
+            .section(&format!(
+                "Build incomplete: {} mod(s) require manual download",
+                all_restricted.len()
+            ));
+        for rm in &all_restricted {
+            session.display().status().warning(&format!("  {}", rm.name));
+            session
+                .display()
+                .status()
+                .info(&format!("    Download: {}", rm.url));
+            if !rm.dest_path.is_empty() {
+                session
+                    .display()
+                    .status()
+                    .info(&format!("    Save to:  {}", rm.dest_path));
+            }
+        }
+        session
+            .display()
+            .status()
+            .info("Place files at the listed paths, then re-run the build command.");
+        return Err(anyhow::anyhow!(
+            "{} mod(s) require manual download from CurseForge. See output above for URLs.",
+            all_restricted.len()
+        ));
+    }
+
+    let any_failed = results.iter().any(|r| !r.success);
+    if any_failed {
+        let failed: Vec<_> = results.iter().filter(|r| !r.success).collect();
+        for r in &failed {
+            for w in &r.warnings {
+                session.display().status().warning(w);
+            }
+        }
+        return Err(anyhow::anyhow!(
+            "Build failed for {} target(s)",
+            failed.len()
+        ));
+    }
 
     session
         .display()

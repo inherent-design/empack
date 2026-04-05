@@ -720,6 +720,66 @@ impl<'a> PackwizMetadata<'a> {
     }
 }
 
+/// A CurseForge mod that packwiz-installer identified as restricted.
+#[derive(Debug, Clone)]
+pub struct RestrictedModInfo {
+    /// Mod display name.
+    pub name: String,
+    /// CurseForge download page URL.
+    pub url: String,
+    /// Absolute path where the file should be saved.
+    pub dest_path: String,
+}
+
+/// Result of running packwiz-installer.
+#[derive(Debug)]
+pub enum InstallResult {
+    /// All mods installed successfully.
+    Success,
+    /// Some mods are restricted and require manual download.
+    RestrictedMods(Vec<RestrictedModInfo>),
+}
+
+/// Parse packwiz-installer CLI output for restricted mod messages.
+///
+/// packwiz-installer prints (via CLIHandler.showExceptions):
+/// ```text
+/// Failed to download modpack, the following errors were encountered:
+/// ModName: ...Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+/// Please go to {url} and save this file to {path}
+/// ```
+fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
+    let mut results = Vec::new();
+    let lines: Vec<&str> = output.lines().collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        if !line.contains("excluded from the CurseForge API") {
+            continue;
+        }
+
+        // The mod name is the text before the first ":"
+        // Format: "ModName: ...Exception: This mod is excluded..."
+        let name = line.split(':').next().unwrap_or("Unknown").trim().to_string();
+
+        // The next line contains "Please go to {url} and save this file to {path}"
+        let mut url = String::new();
+        let mut dest = String::new();
+        if let Some(next_line) = lines.get(i + 1)
+            && let Some(rest) = next_line.strip_prefix("Please go to ")
+            && let Some((u, p)) = rest.split_once(" and save this file to ")
+        {
+            url = u.trim().to_string();
+            dest = p.trim().to_string();
+        }
+
+        if !url.is_empty() {
+            results.push(RestrictedModInfo { name, url, dest_path: dest });
+        }
+    }
+
+    results
+}
+
 /// Packwiz-installer wrapper for build-time JAR downloads
 ///
 /// Wraps: `java -jar packwiz-installer-bootstrap.jar --bootstrap-main-jar packwiz-installer.jar -g -s <side> <pack_toml_path>`
@@ -753,8 +813,7 @@ impl<'a> PackwizInstaller<'a> {
     /// Downloads: Mod JARs from URLs in .pw.toml files
     /// Verifies: SHA-512 hashes
     /// Side: "both" (client+server), "client" (client-only), "server" (server-only)
-    pub fn install_mods(&self, side: &str, working_dir: &Path) -> Result<(), PackwizError> {
-        // Validate side parameter
+    pub fn install_mods(&self, side: &str, working_dir: &Path) -> Result<InstallResult, PackwizError> {
         if !["both", "client", "server"].contains(&side) {
             return Err(PackwizError::CommandFailed {
                 command: format!("install_mods({})", side),
@@ -779,7 +838,6 @@ impl<'a> PackwizInstaller<'a> {
                     reason: "Installer JAR path contains invalid UTF-8".to_string(),
                 })?;
 
-        // --bootstrap-main-jar <installer.jar> -g -s <side> <pack.toml>
         let pack_toml_path = working_dir.join("pack").join("pack.toml");
         let pack_toml_str = pack_toml_path
             .to_str()
@@ -808,13 +866,18 @@ impl<'a> PackwizInstaller<'a> {
             })?;
 
         if !output.success {
+            let combined = format!("{}\n{}", output.stdout, output.stderr);
+            let restricted = parse_installer_restricted_output(&combined);
+            if !restricted.is_empty() {
+                return Ok(InstallResult::RestrictedMods(restricted));
+            }
             return Err(PackwizError::CommandFailed {
                 command: format!("packwiz-installer-bootstrap (side={})", side),
                 stderr: output.error_output().to_string(),
             });
         }
 
-        Ok(())
+        Ok(InstallResult::Success)
     }
 
     /// Check if packwiz-installer-bootstrap.jar is available

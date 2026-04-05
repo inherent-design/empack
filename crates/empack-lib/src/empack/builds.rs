@@ -156,6 +156,7 @@ pub struct BuildResult {
     pub output_path: Option<PathBuf>,
     pub artifacts: Vec<BuildArtifact>,
     pub warnings: Vec<String>,
+    pub restricted_mods: Vec<crate::empack::packwiz::RestrictedModInfo>,
 }
 
 /// Individual build artifact
@@ -1092,6 +1093,7 @@ impl<'a> BuildOrchestrator<'a> {
                 output_path: None,
                 artifacts: vec![],
                 warnings: vec![warning],
+                restricted_mods: vec![],
             });
         }
 
@@ -1103,6 +1105,7 @@ impl<'a> BuildOrchestrator<'a> {
             output_path: Some(output_file),
             artifacts: vec![artifact],
             warnings: vec![],
+            restricted_mods: vec![],
         })
     }
 
@@ -1167,6 +1170,7 @@ impl<'a> BuildOrchestrator<'a> {
             output_path: Some(zip_path),
             artifacts: vec![artifact],
             warnings: vec![],
+            restricted_mods: vec![],
         })
     }
 
@@ -1213,6 +1217,7 @@ impl<'a> BuildOrchestrator<'a> {
                 output_path: None,
                 artifacts: vec![],
                 warnings: vec![format!("failed to download server JAR: {}", e)],
+                restricted_mods: vec![],
             });
         }
 
@@ -1234,6 +1239,7 @@ impl<'a> BuildOrchestrator<'a> {
             output_path: Some(zip_path),
             artifacts: vec![artifact],
             warnings: vec![],
+            restricted_mods: vec![],
         })
     }
 
@@ -1268,11 +1274,23 @@ impl<'a> BuildOrchestrator<'a> {
             command: format!("PackwizInstaller initialization: {}", e),
         })?;
 
-        installer
+        match installer
             .install_mods("both", &dist_dir)
             .map_err(|e| BuildError::CommandFailed {
                 command: format!("packwiz-installer-bootstrap.jar: {}", e),
-            })?;
+            })? {
+            crate::empack::packwiz::InstallResult::Success => {}
+            crate::empack::packwiz::InstallResult::RestrictedMods(restricted) => {
+                return Ok(BuildResult {
+                    target: BuildTarget::ClientFull,
+                    success: false,
+                    output_path: None,
+                    artifacts: vec![],
+                    warnings: vec![],
+                    restricted_mods: restricted,
+                });
+            }
+        }
 
         let zip_path = self.zip_distribution(BuildTarget::ClientFull)?;
         let artifact = self.create_artifact(&zip_path)?;
@@ -1283,6 +1301,7 @@ impl<'a> BuildOrchestrator<'a> {
             output_path: Some(zip_path),
             artifacts: vec![artifact],
             warnings: vec![],
+            restricted_mods: vec![],
         })
     }
 
@@ -1313,6 +1332,7 @@ impl<'a> BuildOrchestrator<'a> {
                 output_path: None,
                 artifacts: vec![],
                 warnings: vec![format!("failed to download server JAR: {}", e)],
+                restricted_mods: vec![],
             });
         }
 
@@ -1329,11 +1349,23 @@ impl<'a> BuildOrchestrator<'a> {
             command: format!("PackwizInstaller initialization: {}", e),
         })?;
 
-        installer
+        match installer
             .install_mods("server", &dist_dir)
             .map_err(|e| BuildError::CommandFailed {
                 command: format!("packwiz-installer-bootstrap.jar: {}", e),
-            })?;
+            })? {
+            crate::empack::packwiz::InstallResult::Success => {}
+            crate::empack::packwiz::InstallResult::RestrictedMods(restricted) => {
+                return Ok(BuildResult {
+                    target: BuildTarget::ServerFull,
+                    success: false,
+                    output_path: None,
+                    artifacts: vec![],
+                    warnings: vec![],
+                    restricted_mods: restricted,
+                });
+            }
+        }
 
         let zip_path = self.zip_distribution(BuildTarget::ServerFull)?;
         let artifact = self.create_artifact(&zip_path)?;
@@ -1344,6 +1376,7 @@ impl<'a> BuildOrchestrator<'a> {
             output_path: Some(zip_path),
             artifacts: vec![artifact],
             warnings: vec![],
+            restricted_mods: vec![],
         })
     }
 
