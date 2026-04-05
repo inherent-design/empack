@@ -732,28 +732,40 @@ pub async fn execute_import(
     let pack_dir = config.target_dir.join("pack");
     let config_manager = session.filesystem().config_manager(config.target_dir.clone());
 
+    let content_dirs: &[&str] = &["mods", "resourcepacks", "shaderpacks", "datapacks"];
+
     for entry in &resolved.manifest.content {
         match entry {
             ContentEntry::PlatformReferenced(pref) => {
+                let before = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
                 let added = add_platform_ref(pref, &pack_dir, session).await?;
                 if added {
                     stats.platform_referenced += 1;
-                    let name = pref.resolved_name.clone().unwrap_or_else(|| {
-                        std::path::Path::new(&pref.destination_path)
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or(&pref.destination_path)
-                            .to_string()
-                    });
+                    let after = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
+                    let new_files: Vec<_> = after.difference(&before).collect();
+
+                    let dep_key = if new_files.len() == 1 {
+                        new_files[0].clone()
+                    } else {
+                        let name = pref.resolved_name.clone().unwrap_or_else(|| {
+                            std::path::Path::new(&pref.destination_path)
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(&pref.destination_path)
+                                .to_string()
+                        });
+                        name.to_lowercase().replace(' ', "-")
+                    };
+
+                    let title = pref.resolved_name.clone().unwrap_or_else(|| dep_key.clone());
                     let record = DependencyRecord {
                         status: DependencyStatus::Resolved,
-                        title: name.clone(),
+                        title,
                         platform: pref.platform,
                         project_id: pref.project_id.clone(),
                         project_type: pref.resolved_type.unwrap_or(crate::primitives::ProjectType::Mod),
                         version: pref.file_id.clone(),
                     };
-                    let dep_key = name.to_lowercase().replace(' ', "-");
                     if let Err(e) = config_manager.add_dependency(&dep_key, record) {
                         session.display().status().warning(&format!("failed to update empack.yml: {}", e));
                     }
@@ -1087,6 +1099,32 @@ fn mr_side_requirement(value: Option<&str>) -> SideRequirement {
         Some("unsupported") => SideRequirement::Unsupported,
         _ => SideRequirement::Unknown,
     }
+}
+
+/// Scan pack content directories for .pw.toml files and return their slugs.
+fn scan_pw_toml_stems(
+    pack_dir: &Path,
+    folders: &[&str],
+    fs: &dyn crate::application::session::FileSystemProvider,
+) -> std::collections::HashSet<String> {
+    let mut slugs = std::collections::HashSet::new();
+    for folder in folders {
+        let dir = pack_dir.join(folder);
+        if !fs.exists(&dir) {
+            continue;
+        }
+        if let Ok(files) = fs.get_file_list(&dir) {
+            for path in &files {
+                if path.extension().and_then(|e| e.to_str()) == Some("toml")
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    let slug = stem.strip_suffix(".pw").unwrap_or(stem);
+                    slugs.insert(slug.to_string());
+                }
+            }
+        }
+    }
+    slugs
 }
 
 // ---------------------------------------------------------------------------
