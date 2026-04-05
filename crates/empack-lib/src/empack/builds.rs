@@ -148,14 +148,20 @@ pub struct BuildConfig {
     pub output_dir: PathBuf,
 }
 
-/// Build result for a specific target
+/// Build result for a specific target.
 #[derive(Debug, Clone)]
 pub struct BuildResult {
+    /// The target that was built.
     pub target: BuildTarget,
+    /// Whether the build completed without errors.
     pub success: bool,
+    /// Path to the primary output artifact, if produced.
     pub output_path: Option<PathBuf>,
+    /// All generated artifacts with size metadata.
     pub artifacts: Vec<BuildArtifact>,
+    /// Non-fatal warnings encountered during the build.
     pub warnings: Vec<String>,
+    /// CurseForge mods that require manual download.
     pub restricted_mods: Vec<crate::empack::packwiz::RestrictedModInfo>,
 }
 
