@@ -1492,7 +1492,7 @@ async fn handle_add(
                 }
                 Ok(output) => {
                     packwiz_result = Err(());
-                    last_error = Some(anyhow::anyhow!("Packwiz command failed: {}", output.stderr));
+                    last_error = Some(anyhow::anyhow!("Packwiz command failed: {}", output.error_output()));
                 }
                 Err(error) => {
                     packwiz_result = Err(());
@@ -2213,7 +2213,7 @@ async fn handle_direct_download_jar(
             );
             if let Ok(output) = result {
                 if !output.success {
-                    anyhow::bail!("packwiz add failed: {}", output.stderr);
+                    anyhow::bail!("packwiz add failed: {}", output.error_output());
                 }
             } else {
                 anyhow::bail!("packwiz add failed: {}", result.unwrap_err());
@@ -2253,7 +2253,7 @@ async fn handle_direct_download_jar(
             );
             if let Ok(output) = result {
                 if !output.success {
-                    anyhow::bail!("packwiz add failed: {}", output.stderr);
+                    anyhow::bail!("packwiz add failed: {}", output.error_output());
                 }
             } else {
                 anyhow::bail!("packwiz add failed: {}", result.unwrap_err());
@@ -2429,7 +2429,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                 if output.success {
                     Ok(())
                 } else {
-                    Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                    Err(anyhow::anyhow!("Packwiz command failed: {}", output.error_output()))
                 }
             });
 
@@ -2534,7 +2534,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                                 } else {
                                     Err(anyhow::anyhow!(
                                         "Packwiz command failed: {}",
-                                        output.stderr
+                                        output.error_output()
                                     ))
                                 }
                             });
@@ -3266,7 +3266,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         Ok(output) => {
                             result = Err(());
                             last_error =
-                                Some(anyhow::anyhow!("Packwiz command failed: {}", output.stderr));
+                                Some(anyhow::anyhow!("Packwiz command failed: {}", output.error_output()));
                         }
                         Err(error) => {
                             result = Err(());
@@ -3299,7 +3299,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         if output.success {
                             Ok(())
                         } else {
-                            Err(anyhow::anyhow!("Packwiz command failed: {}", output.stderr))
+                            Err(anyhow::anyhow!("Packwiz command failed: {}", output.error_output()))
                         }
                     });
                 match result {

@@ -126,7 +126,7 @@ impl PackwizOps for LivePackwizOps<'_> {
 
         if !output.success {
             return Err(StateError::CommandFailed {
-                command: format!("packwiz init returned non-zero: {}", output.stderr),
+                command: format!("packwiz init returned non-zero: {}", output.error_output()),
             });
         }
 
@@ -153,7 +153,7 @@ impl PackwizOps for LivePackwizOps<'_> {
 
         if !output.success {
             return Err(StateError::CommandFailed {
-                command: format!("packwiz refresh returned non-zero: {}", output.stderr),
+                command: format!("packwiz refresh returned non-zero: {}", output.error_output()),
             });
         }
 
@@ -516,7 +516,7 @@ impl<'a> PackwizMetadata<'a> {
         if !output.success {
             return Err(PackwizError::CommandFailed {
                 command: format!("packwiz {} add {} {}", platform_cmd, id_flag, project_id),
-                stderr: output.stderr,
+                stderr: output.error_output().to_string(),
             });
         }
 
@@ -552,7 +552,7 @@ impl<'a> PackwizMetadata<'a> {
         if !output.success {
             return Err(PackwizError::CommandFailed {
                 command: format!("packwiz remove {}", mod_name),
-                stderr: output.stderr,
+                stderr: output.error_output().to_string(),
             });
         }
 
@@ -585,18 +585,19 @@ impl<'a> PackwizMetadata<'a> {
             })?;
 
         if !output.success {
-            // Parse stderr for specific errors
-            if output.stderr.contains("Hash mismatch") {
-                return Err(PackwizError::HashMismatchError(output.stderr.clone()));
+            let detail = output.error_output().to_string();
+
+            if detail.contains("Hash mismatch") {
+                return Err(PackwizError::HashMismatchError(detail));
             }
 
-            if output.stderr.contains("pack format") && output.stderr.contains("not supported") {
-                return Err(PackwizError::PackFormatError(output.stderr.clone()));
+            if detail.contains("pack format") && detail.contains("not supported") {
+                return Err(PackwizError::PackFormatError(detail));
             }
 
             return Err(PackwizError::CommandFailed {
                 command: "packwiz refresh".to_string(),
-                stderr: output.stderr,
+                stderr: output.error_output().to_string(),
             });
         }
 
@@ -644,7 +645,7 @@ impl<'a> PackwizMetadata<'a> {
         if !output.success {
             return Err(PackwizError::CommandFailed {
                 command: format!("packwiz modrinth export -o {}", output_path.display()),
-                stderr: output.stderr,
+                stderr: output.error_output().to_string(),
             });
         }
 
@@ -742,7 +743,7 @@ impl<'a> PackwizInstaller<'a> {
         if !output.success {
             return Err(PackwizError::CommandFailed {
                 command: format!("packwiz-installer-bootstrap (side={})", side),
-                stderr: output.stderr,
+                stderr: output.error_output().to_string(),
             });
         }
 

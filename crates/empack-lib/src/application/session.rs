@@ -70,6 +70,21 @@ pub struct ProcessOutput {
     pub success: bool,
 }
 
+impl ProcessOutput {
+    /// Returns the most informative error text on failure.
+    ///
+    /// Prefers stderr; falls back to stdout when stderr is empty.
+    /// Some tools (notably packwiz) write error messages to stdout.
+    pub fn error_output(&self) -> &str {
+        let stderr = self.stderr.trim();
+        if stderr.is_empty() {
+            self.stdout.trim()
+        } else {
+            stderr
+        }
+    }
+}
+
 pub trait ProcessProvider {
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput>;
 
