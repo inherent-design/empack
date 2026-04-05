@@ -108,7 +108,7 @@ pub enum Commands {
         pack_version: Option<String>,
 
         /// Import modpack from a source (file path or URL)
-        #[arg(long, value_name = "SOURCE")]
+        #[arg(long = "from", value_name = "SOURCE")]
         from_source: Option<String>,
     },
 
