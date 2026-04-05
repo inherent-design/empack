@@ -43,8 +43,14 @@ run_windows = "cargo run -p empack --release --"
 [tasks.test]
 alias = "t"
 description = "Run unit + integration tests"
-run = "cargo nextest run -p empack-lib --features test-utils -p empack-tests"
-run_windows = "cargo nextest run -p empack-lib --features test-utils -p empack-tests"
+run = """
+cargo build -p empack
+cargo nextest run -p empack-lib --features test-utils -p empack-tests
+"""
+run_windows = """
+cargo build -p empack
+cargo nextest run -p empack-lib --features test-utils -p empack-tests
+"""
 
 [tasks.e2e]
 alias = "e"
