@@ -60,8 +60,11 @@ sevenz-rust2 = { version = "0.20", default-features = false, features = ["compre
 handlebars = "6.4.0"
 
 # Dev dependencies
+assert_cmd = "2.2"
 criterion = "0.8.2"
+expectrl = "0.8"
 mockito = "1.7.2"
+predicates = "3"
 tempfile = "3.27.0"
 
 # Platform-specific dependencies
