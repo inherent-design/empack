@@ -1857,7 +1857,7 @@ fn discover_dep_key(
     match new_slugs.len() {
         1 => new_slugs[0].clone(),
         0 => {
-            // No new file detected — packwiz may have updated an existing file
+            // No new file detected; packwiz may have updated an existing file
             display.status().subtle(&format!(
                 "Could not detect new .pw.toml file; using '{}' as dependency key",
                 fallback_key
@@ -1865,7 +1865,7 @@ fn discover_dep_key(
             fallback_key.to_string()
         }
         _ => {
-            // Multiple new files — ambiguous, use fallback
+            // Multiple new files; ambiguous, use fallback
             display.status().subtle(&format!(
                 "Multiple new .pw.toml files detected; using '{}' as dependency key",
                 fallback_key
