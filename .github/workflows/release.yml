@@ -96,7 +96,7 @@ jobs:
           "ARCHIVE_NAME=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ARCHIVE_PATH=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ARCHIVE_NAME }}
           path: ${{ env.ARCHIVE_PATH }}
@@ -134,7 +134,7 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
