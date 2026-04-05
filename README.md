@@ -69,7 +69,7 @@ empack/
     usage.md             Command reference
     testing.md           Test strategy and verification
     reference/           Provider API documentation
-  v1/, v2/               Historical Bash implementations (reference only)
+  scripts/               Survey and VCR recording utilities
 ```
 
 ## Development
