@@ -1,0 +1,2 @@
+[settings]
+windows_default_inline_shell_args = "pwsh -NoProfile -NonInteractive -Command"
