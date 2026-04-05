@@ -53,6 +53,10 @@ jobs:
         shell: bash
         run: echo "clean=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Set version from tag
+        shell: bash
+        run: sed -i.bak "s/^version = .*/version = \"${{ steps.version.outputs.clean }}\"/" Cargo.toml
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -65,10 +69,16 @@ jobs:
 
       - name: Build with cargo
         if: ${{ !matrix.use_cross }}
+        env:
+          GIT_HASH: ${{ github.sha }}
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build with cross
         if: ${{ matrix.use_cross }}
+        env:
+          GIT_HASH: ${{ github.sha }}
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
         run: cross build --release --target ${{ matrix.target }}
 
       - name: Package archive (Unix)

@@ -54,10 +54,24 @@ Without arguments, empack initializes in the current directory and prompts for e
 | `--mc-version` | | `EMPACK_MC_VERSION` | Minecraft version |
 | `--author` | `-A` | `EMPACK_AUTHOR` | Author name |
 | `--loader-version` | | `EMPACK_LOADER_VERSION` | Loader version (e.g. `0.15.0` for Fabric) |
-| `--pack-version` | `-V` | `EMPACK_PACK_VERSION` | Pack version string (e.g. `1.0.0`) |
+| `--pack-version` | | `EMPACK_PACK_VERSION` | Pack version string (e.g. `1.0.0`) |
+| `--from` | | | Import from a local file or URL (`.mrpack`, `.zip`) |
+| `--datapack-folder` | | `EMPACK_DATAPACK_FOLDER` | Folder for datapacks relative to pack root |
+| `--game-versions` | | `EMPACK_GAME_VERSIONS` | Additional accepted MC versions (comma-separated) |
 | `--force` | `-f` | | Overwrite existing project files |
 
 Use `--modloader none` for vanilla (no mod loader) projects. When vanilla is selected, loader version prompts are skipped and no loader metadata is written to `empack.yml`.
+
+#### Importing modpacks
+
+Import an existing modpack from a Modrinth `.mrpack` or CurseForge `.zip` archive:
+
+```bash
+empack init --from fabulously-optimized.mrpack my-pack
+empack init --from https://cdn.modrinth.com/data/.../pack.mrpack my-pack --yes
+```
+
+The import pipeline parses the manifest, resolves platform references via Modrinth and CurseForge APIs, copies overrides, and auto-detects the datapack folder strategy (Paxi, Open Loader, or root datapacks).
 
 The `--force` flag overwrites existing project files:
 

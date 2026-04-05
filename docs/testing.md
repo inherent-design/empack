@@ -10,7 +10,7 @@ empack tests across two tiers: unit tests for pure functions and mock-based comm
 
 ## Unit Tests
 
-751 tests across two crates, all run via mise tasks:
+769 tests across two crates, all run via mise tasks:
 
 ```bash
 cargo check --workspace --all-targets
@@ -19,9 +19,9 @@ cargo nextest run -p empack-lib --features test-utils
 cargo nextest run -p empack-tests
 ```
 
-**empack-lib** (659 tests): co-located `.test.rs` files via `include!()`. Feature-gated behind `test-utils`. Includes command handler tests via `MockCommandSession`, API contract tests deserializing VCR cassettes, config/state/search/build/sync/parser unit tests.
+**empack-lib** (676 tests): co-located `.test.rs` files via `include!()`. Feature-gated behind `test-utils`. Includes command handler tests via `MockCommandSession`, API contract tests deserializing VCR cassettes, config/state/search/build/sync/parser/import unit tests.
 
-**empack-tests** (92 tests, 1 skipped): mock-based workflow tests via `MockSessionBuilder` + live E2E subprocess tests via `assert_cmd` and `expectrl`. E2E tests self-skip when prerequisites (packwiz, java, CF key) are missing.
+**empack-tests** (93 tests, 1 skipped): mock-based workflow tests via `MockSessionBuilder` + live E2E subprocess tests via `assert_cmd` and `expectrl`. E2E tests self-skip when prerequisites (packwiz, java, CF key) are missing.
 
 Use isolated reruns when iterating on specific behavior:
 
