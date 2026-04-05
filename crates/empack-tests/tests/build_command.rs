@@ -28,6 +28,7 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
             targets: vec!["mrpack".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -94,6 +95,7 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
             targets: vec!["mrpack".to_string()],
             clean: true,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -190,6 +192,7 @@ async fn e2e_build_packwiz_refresh_fails() -> Result<()> {
             targets: vec!["mrpack".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -261,6 +264,7 @@ async fn e2e_build_packwiz_export_fails() -> Result<()> {
             targets: vec!["mrpack".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )

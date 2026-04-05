@@ -94,6 +94,7 @@ async fn test_build_neoforge_mrpack() -> Result<()> {
             targets: vec!["mrpack".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -134,6 +135,7 @@ async fn test_build_neoforge_server() -> Result<()> {
             targets: vec!["server".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -190,6 +192,7 @@ async fn test_build_neoforge_server_full() -> Result<()> {
             targets: vec!["server-full".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -263,6 +266,7 @@ async fn test_build_quilt_mrpack() -> Result<()> {
             targets: vec!["mrpack".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -303,6 +307,7 @@ async fn test_build_quilt_server() -> Result<()> {
             targets: vec!["server".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -350,6 +355,7 @@ async fn test_build_quilt_server_full() -> Result<()> {
             targets: vec!["server-full".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -420,6 +426,7 @@ async fn test_build_vanilla_mrpack() -> Result<()> {
             targets: vec!["mrpack".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -460,6 +467,7 @@ async fn test_build_vanilla_server() -> Result<()> {
             targets: vec!["server".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -511,6 +519,7 @@ async fn test_build_fabric_client() -> Result<()> {
             targets: vec!["client".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
