@@ -244,6 +244,45 @@ struct MrEnv {
     server: Option<String>,
 }
 
+/// Extract a Modrinth project ID from a CDN download URL.
+///
+/// CDN URLs follow `https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/filename`.
+/// Returns `None` if the URL does not match the expected structure.
+fn extract_modrinth_project_id(url: &str) -> Option<String> {
+    let parts: Vec<&str> = url.split('/').collect();
+    let data_pos = parts.iter().position(|&s| s == "data")?;
+    let pid = parts.get(data_pos + 1)?;
+    if pid.is_empty() {
+        return None;
+    }
+    Some(pid.to_string())
+}
+
+/// Extract a CurseForge file ID from a ForgeCD CDN download URL.
+///
+/// CDN URLs follow `https://edge.forgecdn.net/files/{part1}/{part2}/filename`.
+/// The file ID is the concatenation of `part1` and `part2` (e.g. `3193` + `541` = `3193541`).
+/// Returns `None` if the URL does not match the expected structure.
+fn extract_forgecdn_file_id(url: &str) -> Option<String> {
+    if !url.contains("forgecdn.net") && !url.contains("curseforge.com") {
+        return None;
+    }
+    let parts: Vec<&str> = url.split('/').collect();
+    let files_pos = parts.iter().position(|&s| s == "files")?;
+    let p1 = parts.get(files_pos + 1)?;
+    let p2 = parts.get(files_pos + 2)?;
+    if p1.is_empty() || p2.is_empty() {
+        return None;
+    }
+    // p2 might contain the filename if the URL structure is /files/{p1}/{p2}/{filename}
+    // or it might be the second part of the ID. Check if p2 is numeric.
+    if p2.chars().all(|c| c.is_ascii_digit()) {
+        Some(format!("{}{}", p1, p2))
+    } else {
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Parsers
 // ---------------------------------------------------------------------------
@@ -411,11 +450,30 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
                 server: mr_side_requirement(f.env.server.as_deref()),
             };
             if !f.downloads.is_empty() {
+                let first_url = f.downloads.first().map(|s| s.as_str()).unwrap_or("");
+
+                // Classify by download URL origin. CurseForge CDN URLs in a
+                // Modrinth mrpack are reclassified so the CurseForge add path
+                // handles them. Modrinth CDN and unknown URLs stay as Modrinth
+                // (unknown URLs fall through to the packwiz url add path).
+                let (platform, project_id, file_id) =
+                    if let Some(cf_file_id) = extract_forgecdn_file_id(first_url) {
+                        (ProjectPlatform::CurseForge, String::new(), Some(cf_file_id))
+                    } else {
+                        let pid = f
+                            .project_id
+                            .clone()
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| extract_modrinth_project_id(first_url))
+                            .unwrap_or_default();
+                        (ProjectPlatform::Modrinth, pid, None)
+                    };
+
                 ContentEntry::PlatformReferenced(PlatformRef {
                     destination_path: f.path.clone(),
-                    platform: ProjectPlatform::Modrinth,
-                    project_id: f.project_id.clone().unwrap_or_default(),
-                    file_id: None,
+                    platform,
+                    project_id,
+                    file_id,
                     hashes: f.hashes,
                     download_urls: f.downloads,
                     env,
@@ -469,9 +527,39 @@ pub async fn resolve_manifest(
     let mut warnings = Vec::new();
     let mut resolved_content = Vec::new();
 
+    // Batch-resolve CurseForge file IDs to mod IDs. Entries reclassified from
+    // Modrinth mrpacks (ForgeCD URLs) have file_id set but project_id empty.
+    let cf_file_ids: Vec<u64> = manifest
+        .content
+        .iter()
+        .filter_map(|e| match e {
+            ContentEntry::PlatformReferenced(p)
+                if p.platform == ProjectPlatform::CurseForge && p.project_id.is_empty() =>
+            {
+                p.file_id.as_ref()?.parse::<u64>().ok()
+            }
+            _ => None,
+        })
+        .collect();
+
+    let cf_file_to_mod = if !cf_file_ids.is_empty() {
+        resolve_curseforge_file_ids(&cf_file_ids, curseforge_api, curseforge_api_key, &mut warnings).await
+    } else {
+        std::collections::HashMap::new()
+    };
+
     for entry in manifest.content.into_iter() {
         match entry {
             ContentEntry::PlatformReferenced(mut pref) => {
+                // Fill in CurseForge project_id from batch lookup.
+                if pref.platform == ProjectPlatform::CurseForge
+                    && pref.project_id.is_empty()
+                    && let Some(fid) = pref.file_id.as_ref().and_then(|s| s.parse::<u64>().ok())
+                    && let Some(mod_id) = cf_file_to_mod.get(&fid)
+                {
+                    pref.project_id = mod_id.to_string();
+                }
+
                 if pref.platform == ProjectPlatform::Modrinth && pref.project_id.is_empty() && pref.download_urls.is_empty() {
                     warnings.push(format!(
                         "Modrinth file '{}' has no project ID and no download URL; \
@@ -535,6 +623,11 @@ struct MrProjectResponse {
     project_type: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct MrVersionFileResponse {
+    id: String,
+}
+
 async fn resolve_modrinth_project(
     pref: &mut PlatformRef,
     api: &dyn crate::application::session::NetworkProvider,
@@ -544,6 +637,22 @@ async fn resolve_modrinth_project(
         Ok(c) => c,
         Err(_) => return,
     };
+
+    // Resolve the version ID from the file's SHA1 hash. This is more
+    // reliable than extracting from the CDN URL, which may contain a
+    // version number string instead of a base62 version ID on older uploads.
+    if pref.file_id.is_none() && let Some(sha1) = pref.hashes.get("sha1") {
+        let url = format!(
+            "https://api.modrinth.com/v2/version_file/{}?algorithm=sha1",
+            sha1
+        );
+        if let Ok(resp) = client.get(&url).send().await
+            && resp.status().is_success()
+            && let Ok(body) = resp.json::<MrVersionFileResponse>().await
+        {
+            pref.file_id = Some(body.id);
+        }
+    }
 
     let url = format!(
         "https://api.modrinth.com/v2/project/{}",
@@ -669,6 +778,72 @@ async fn resolve_curseforge_project(
     });
 }
 
+#[derive(Deserialize)]
+struct CfFileResponse {
+    id: u64,
+    #[serde(rename = "modId")]
+    mod_id: u64,
+}
+
+/// Batch-resolve CurseForge file IDs to mod IDs via `POST /v1/mods/files`.
+///
+/// Returns a map from file_id to mod_id for all successfully resolved entries.
+async fn resolve_curseforge_file_ids(
+    file_ids: &[u64],
+    api: &dyn crate::application::session::NetworkProvider,
+    api_key: Option<&str>,
+    warnings: &mut Vec<String>,
+) -> std::collections::HashMap<u64, u64> {
+    let mut result = std::collections::HashMap::new();
+
+    let api_key = match api_key {
+        Some(k) => k,
+        None => {
+            warnings.push("CurseForge API key missing; cannot resolve file IDs from ForgeCD URLs".to_string());
+            return result;
+        }
+    };
+
+    let client = match api.http_client() {
+        Ok(c) => c,
+        Err(_) => return result,
+    };
+
+    // CF API accepts batches; process in chunks of 50.
+    for chunk in file_ids.chunks(50) {
+        let body = serde_json::json!({ "fileIds": chunk });
+        let response = match client
+            .post("https://api.curseforge.com/v1/mods/files")
+            .header("x-api-key", api_key)
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                warnings.push(format!("CurseForge batch file lookup failed: {}", e));
+                continue;
+            }
+        };
+
+        if !response.status().is_success() {
+            warnings.push(format!(
+                "CurseForge batch file lookup returned {}",
+                response.status()
+            ));
+            continue;
+        }
+
+        if let Ok(envelope) = response.json::<CfDataEnvelope<Vec<CfFileResponse>>>().await {
+            for f in envelope.data {
+                result.insert(f.id, f.mod_id);
+            }
+        }
+    }
+
+    result
+}
+
 // ---------------------------------------------------------------------------
 // Executor
 // ---------------------------------------------------------------------------
@@ -734,40 +909,78 @@ pub async fn execute_import(
 
     let content_dirs: &[&str] = &["mods", "resourcepacks", "shaderpacks", "datapacks"];
 
+    // Build a set of override basenames so we can identify platform refs
+    // that are already covered by override files (e.g. datapacks distributed
+    // via Paxi that also appear in the mrpack files[] array).
+    let override_basenames: std::collections::HashSet<String> = resolved
+        .manifest
+        .overrides
+        .iter()
+        .filter_map(|o| {
+            std::path::Path::new(&o.destination_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
+
     for entry in &resolved.manifest.content {
         match entry {
             ContentEntry::PlatformReferenced(pref) => {
                 let before = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
-                let added = add_platform_ref(pref, &pack_dir, session).await?;
-                if added {
-                    stats.platform_referenced += 1;
-                    let after = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
-                    let new_files: Vec<_> = after.difference(&before).collect();
+                let result = add_platform_ref(pref, &pack_dir, session).await?;
 
-                    let dep_key = if new_files.len() == 1 {
-                        new_files[0].clone()
-                    } else {
-                        let name = pref.resolved_name.clone().unwrap_or_else(|| {
-                            std::path::Path::new(&pref.destination_path)
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or(&pref.destination_path)
-                                .to_string()
-                        });
-                        name.to_lowercase().replace(' ', "-")
-                    };
+                match result {
+                    AddRefResult::Skipped => {
+                        session.display().status().warning(&format!(
+                            "no project ID or download URL for '{}'; skipping",
+                            pref.destination_path
+                        ));
+                    }
+                    AddRefResult::Failed(detail) => {
+                        let basename = std::path::Path::new(&pref.destination_path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("");
+                        if override_basenames.contains(basename) {
+                            session.display().status().info(&format!(
+                                "skipped packwiz add for '{}' (already in overrides)",
+                                pref.destination_path
+                            ));
+                        } else {
+                            session.display().status().warning(&detail);
+                        }
+                    }
+                    AddRefResult::Added => {
+                        stats.platform_referenced += 1;
+                        let after = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
+                        let new_files: Vec<_> = after.difference(&before).collect();
 
-                    let title = pref.resolved_name.clone().unwrap_or_else(|| dep_key.clone());
-                    let record = DependencyRecord {
-                        status: DependencyStatus::Resolved,
-                        title,
-                        platform: pref.platform,
-                        project_id: pref.project_id.clone(),
-                        project_type: pref.resolved_type.unwrap_or(crate::primitives::ProjectType::Mod),
-                        version: pref.file_id.clone(),
-                    };
-                    if let Err(e) = config_manager.add_dependency(&dep_key, record) {
-                        session.display().status().warning(&format!("failed to update empack.yml: {}", e));
+                        let dep_key = if new_files.len() == 1 {
+                            new_files[0].clone()
+                        } else {
+                            let name = pref.resolved_name.clone().unwrap_or_else(|| {
+                                std::path::Path::new(&pref.destination_path)
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or(&pref.destination_path)
+                                    .to_string()
+                            });
+                            name.to_lowercase().replace(' ', "-")
+                        };
+
+                        let title = pref.resolved_name.clone().unwrap_or_else(|| dep_key.clone());
+                        let record = DependencyRecord {
+                            status: DependencyStatus::Resolved,
+                            title,
+                            platform: pref.platform,
+                            project_id: pref.project_id.clone(),
+                            project_type: pref.resolved_type.unwrap_or(crate::primitives::ProjectType::Mod),
+                            version: pref.file_id.clone(),
+                        };
+                        if let Err(e) = config_manager.add_dependency(&dep_key, record) {
+                            session.display().status().warning(&format!("failed to update empack.yml: {}", e));
+                        }
                     }
                 }
             }
@@ -801,19 +1014,46 @@ pub async fn execute_import(
     })
 }
 
+/// Outcome of attempting to add a platform reference via packwiz.
+enum AddRefResult {
+    /// packwiz add succeeded; the .pw.toml was created.
+    Added,
+    /// No identifiers available; nothing to attempt.
+    Skipped,
+    /// packwiz add failed; the detail string contains the error output.
+    Failed(String),
+}
+
 async fn add_platform_ref(
     pref: &PlatformRef,
     pack_dir: &Path,
     session: &dyn Session,
-) -> Result<bool> {
+) -> Result<AddRefResult> {
     match pref.platform {
         ProjectPlatform::Modrinth => {
             if pref.project_id.is_empty() && pref.download_urls.is_empty() {
-                session.display().status().warning(&format!(
-                    "no project ID or download URL for '{}'; skipping",
-                    pref.destination_path
-                ));
-                return Ok(false);
+                return Ok(AddRefResult::Skipped);
+            }
+
+            // If no project_id or file_id resolved, fall back to packwiz url add
+            // for direct download URLs (GitHub releases, etc.).
+            if pref.project_id.is_empty() && pref.file_id.is_none() {
+                if let Some(url) = pref.download_urls.first() {
+                    let name = std::path::Path::new(&pref.destination_path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("unknown");
+                    let args = ["url", "add", name, url, "-y"];
+                    let output = session.process().execute("packwiz", &args, pack_dir)?;
+                    if output.success {
+                        return Ok(AddRefResult::Added);
+                    }
+                    return Ok(AddRefResult::Failed(format!(
+                        "packwiz url add failed for '{}': {}",
+                        pref.destination_path, output.error_output()
+                    )));
+                }
+                return Ok(AddRefResult::Skipped);
             }
 
             let mut args = vec![
@@ -826,14 +1066,9 @@ async fn add_platform_ref(
                 args.push(pref.project_id.clone());
             }
 
-            // Extract version ID from CDN URL if available:
-            // https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/filename.jar
-            if let Some(vid) = pref.download_urls.first().and_then(|url| {
-                let parts: Vec<&str> = url.split('/').collect();
-                parts.iter().position(|&s| s == "versions").and_then(|i| parts.get(i + 1).map(|s| s.to_string()))
-            }) {
+            if let Some(vid) = &pref.file_id {
                 args.push("--version-id".to_string());
-                args.push(vid);
+                args.push(vid.clone());
             }
 
             args.push("-y".to_string());
@@ -845,14 +1080,13 @@ async fn add_platform_ref(
             )?;
 
             if output.success {
-                return Ok(true);
+                return Ok(AddRefResult::Added);
             }
 
-            session.display().status().warning(&format!(
+            Ok(AddRefResult::Failed(format!(
                 "packwiz modrinth add failed for '{}': {}",
-                pref.destination_path, output.stderr
-            ));
-            Ok(false)
+                pref.destination_path, output.error_output()
+            )))
         }
         ProjectPlatform::CurseForge => {
             let mod_id = &pref.project_id;
@@ -878,24 +1112,26 @@ async fn add_platform_ref(
             )?;
 
             if output.success {
-                return Ok(true);
+                return Ok(AddRefResult::Added);
             }
 
-            session.display().status().warning(&format!(
+            Ok(AddRefResult::Failed(format!(
                 "packwiz curseforge add failed for '{}': {}",
-                pref.destination_path, output.stderr
-            ));
-            Ok(false)
+                pref.destination_path, output.error_output()
+            )))
         }
     }
 }
 
 /// Validate that a relative path from an archive does not escape the target directory.
 fn sanitize_archive_path(base: &Path, relative: &str) -> Result<PathBuf> {
-    let joined = base.join(relative);
+    // Canonicalize the base first so the join inherits the resolved prefix.
+    // On macOS, /tmp is a symlink to /private/tmp; without this, the base
+    // canonicalizes to /private/tmp/... but the joined path stays at /tmp/...
+    // and the starts_with check fails.
     let canonical_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
+    let joined = canonical_base.join(relative);
     let canonical_dest = joined.canonicalize().unwrap_or_else(|_| {
-        // File doesn't exist yet; normalize by resolving .. components manually
         let mut components = Vec::new();
         for c in joined.components() {
             match c {
