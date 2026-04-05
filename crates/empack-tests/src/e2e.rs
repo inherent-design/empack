@@ -12,21 +12,21 @@ pub fn empack_bin() -> PathBuf {
 
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let target_root = manifest.join("../../target");
+    let exe = if cfg!(windows) { ".exe" } else { "" };
 
-    // llvm-cov instrumented binary (enables E2E coverage collection)
-    let llvm_cov = target_root.join("llvm-cov-target/debug/empack");
+    let llvm_cov = target_root.join(format!("llvm-cov-target/debug/empack{exe}"));
     if llvm_cov.exists() {
         return llvm_cov;
     }
 
     for profile in &["debug", "release"] {
-        let candidate = target_root.join(format!("{profile}/empack"));
+        let candidate = target_root.join(format!("{profile}/empack{exe}"));
         if candidate.exists() {
             return candidate;
         }
     }
 
-    PathBuf::from("empack")
+    PathBuf::from(format!("empack{exe}"))
 }
 
 pub fn has_packwiz() -> bool {
@@ -94,6 +94,12 @@ macro_rules! skip_if_no_cf_key {
 pub struct TestProject {
     _tmp: tempfile::TempDir,
     root: PathBuf,
+}
+
+impl Default for TestProject {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TestProject {
