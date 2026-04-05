@@ -4,8 +4,14 @@
 
 - [Rust toolchain](https://rustup.rs/) (stable)
 - [cargo-nextest](https://nexte.st/) (test runner; CI uses it exclusively)
-- [packwiz](https://packwiz.infra.link/) (required for live CLI workflows)
-- [Java](https://adoptium.net/) (required for Fabric, Quilt, NeoForge, and Forge server builds; only Vanilla does not require Java)
+- [mise](https://mise.jdx.dev/) (task runner)
+
+For E2E tests (not required for unit tests or development):
+
+- [packwiz](https://packwiz.infra.link/) (real CLI invocation in E2E)
+- [Java 21+](https://adoptium.net/) (server build E2E tests)
+- `.env.local` with `EMPACK_KEY_CURSEFORGE` (CurseForge API E2E tests)
+- Optional: [Colima](https://github.com/abiosoft/colima) (containerized E2E)
 - Optional: `jq` (VCR cassette recording)
 
 ## Getting Started
@@ -19,25 +25,37 @@ cargo check --workspace --all-targets
 
 ## Testing
 
-CI uses `cargo nextest` exclusively. The trusted release gate:
+empack uses two test tiers. See [docs/testing.md](docs/testing.md) for the full strategy, health inventory, and VCR fixture maintenance.
+
+### Unit tests (CI gate)
+
+Mock-based, cross-platform, fast. Run on every commit:
 
 ```bash
-cargo check --workspace --all-targets
-cargo clippy --workspace --all-targets
+mise run test
+# or directly:
 cargo nextest run -p empack-lib --features test-utils
 cargo nextest run -p empack-tests
 ```
 
-Grouped `cargo test` is advisory-only due to global state conflicts between workflow tests. Prefer nextest and targeted isolated reruns.
-
-Use isolated reruns for touched workflow behavior:
+Use isolated reruns when iterating on specific behavior:
 
 ```bash
-cargo nextest run -p empack-tests --test sync_workflow test_sync_workflow_full
-cargo nextest run -p empack-lib --features test-utils --lib handle_remove_tests
+cargo nextest run -p empack-lib --features test-utils --lib test_name
+cargo nextest run -p empack-tests --test sync_workflow
 ```
 
-See [docs/testing.md](docs/testing.md) for the full verification matrix and VCR fixture maintenance.
+### E2E tests (advisory)
+
+Run the compiled binary with real providers (real filesystem, real packwiz, real network). Not part of the CI gate; requires external tools.
+
+```bash
+mise run e2e                # full suite (requires packwiz, java)
+mise run fe2e "init"        # filtered subset
+mise run e2e:container      # containerized (requires Colima)
+```
+
+E2E tests self-skip when prerequisites are missing. Tests that hit live APIs are gated behind `EMPACK_KEY_CURSEFORGE` and `EMPACK_E2E_SKIP_LIVE`.
 
 ## Development Workflow
 
