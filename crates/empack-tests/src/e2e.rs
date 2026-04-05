@@ -11,7 +11,7 @@ pub fn empack_bin() -> PathBuf {
     }
 
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for profile in &["release", "debug"] {
+    for profile in &["debug", "release"] {
         let candidate = manifest.join(format!("../../target/{profile}/empack"));
         if candidate.exists() {
             return candidate;
