@@ -5,6 +5,7 @@ use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
 use empack_tests::{HermeticSessionBuilder, MockBehavior};
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_init_packwiz_failure() -> Result<()> {
     let (session, test_env) = HermeticSessionBuilder::new()?
