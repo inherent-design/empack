@@ -63,6 +63,8 @@ pub struct PlatformRef {
     pub required: bool,
     pub resolved_name: Option<String>,
     pub resolved_type: Option<crate::primitives::ProjectType>,
+    /// CurseForge classId for content-type routing (e.g. 6945 for Data Packs).
+    pub cf_class_id: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -356,6 +358,7 @@ pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
                 required: f.required,
                 resolved_name: None,
                 resolved_type: None,
+                cf_class_id: None,
             })
         })
         .collect();
@@ -484,6 +487,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
                     required: true,
                     resolved_name: None,
                     resolved_type: None,
+                    cf_class_id: None,
                 })
             } else {
                 ContentEntry::EmbeddedJar(EmbeddedJar {
@@ -770,6 +774,7 @@ async fn resolve_curseforge_project(
     let body = envelope.data;
 
     pref.resolved_name = Some(body.name.clone());
+    pref.cf_class_id = body.class_id;
 
     pref.resolved_type = body.class_id.map(|cid| match cid {
         6 => crate::primitives::ProjectType::Mod,
@@ -783,10 +788,13 @@ async fn resolve_curseforge_project(
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct CfFileResponse {
     id: u64,
     #[serde(rename = "modId")]
     mod_id: u64,
+    #[serde(rename = "classId", default)]
+    class_id: Option<u32>,
 }
 
 /// Batch-resolve CurseForge file IDs to mod IDs via `POST /v1/mods/files`.
@@ -910,11 +918,16 @@ pub async fn execute_import(
         session.display().status().warning(w);
     }
 
-    if config.datapack_folder.is_some() || config.acceptable_game_versions.is_some() {
+    let datapack_folder = config
+        .datapack_folder
+        .clone()
+        .or_else(|| detect_datapack_folder(&resolved.manifest));
+
+    if datapack_folder.is_some() || config.acceptable_game_versions.is_some() {
         let pack_toml_path = config.target_dir.join("pack").join("pack.toml");
         crate::empack::packwiz::write_pack_toml_options(
             &pack_toml_path,
-            config.datapack_folder.as_deref(),
+            datapack_folder.as_deref(),
             config.acceptable_game_versions.as_deref(),
             session.filesystem(),
         )
@@ -950,7 +963,7 @@ pub async fn execute_import(
         match entry {
             ContentEntry::PlatformReferenced(pref) => {
                 let before = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
-                let result = add_platform_ref(pref, &pack_dir, session).await?;
+                let result = add_platform_ref(pref, &pack_dir, session, datapack_folder.as_deref()).await?;
 
                 match result {
                     AddRefResult::Skipped => {
@@ -1050,6 +1063,7 @@ async fn add_platform_ref(
     pref: &PlatformRef,
     pack_dir: &Path,
     session: &dyn Session,
+    datapack_folder: Option<&str>,
 ) -> Result<AddRefResult> {
     match pref.platform {
         ProjectPlatform::Modrinth => {
@@ -1117,15 +1131,22 @@ async fn add_platform_ref(
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("CurseForge ref missing file_id"))?;
 
-            let args = [
+            let mut args = vec![
                 "curseforge".to_string(),
                 "add".to_string(),
                 "--addon-id".to_string(),
                 mod_id.clone(),
                 "--file-id".to_string(),
                 file_id.to_string(),
-                "-y".to_string(),
             ];
+
+            if pref.cf_class_id == Some(6945)
+                && let Some(folder) = datapack_folder
+            {
+                args.extend(["--meta-folder".to_string(), folder.to_string()]);
+            }
+
+            args.push("-y".to_string());
 
             let output = session.process().execute(
                 "packwiz",
@@ -1407,6 +1428,57 @@ fn scan_pw_toml_stems(
         }
     }
     slugs
+}
+
+// ---------------------------------------------------------------------------
+// Datapack strategy detection
+// ---------------------------------------------------------------------------
+
+/// Detect the appropriate datapack folder value from a modpack manifest.
+///
+/// Priority order:
+/// 1. Paxi loader detected in overrides -> "config/paxi/datapacks"
+/// 2. Open Loader detected in overrides -> "config/openloader/data"
+/// 3. Root datapacks/ with .zip files in overrides -> "datapacks"
+/// 4. Datapack-typed entries in files[] -> "datapacks"
+/// 5. No datapack signals -> None
+fn detect_datapack_folder(manifest: &ModpackManifest) -> Option<String> {
+    let has_paxi = manifest
+        .overrides
+        .iter()
+        .any(|o| o.destination_path.contains("config/paxi/datapacks"));
+
+    if has_paxi {
+        return Some("config/paxi/datapacks".to_string());
+    }
+
+    let has_openloader = manifest
+        .overrides
+        .iter()
+        .any(|o| o.destination_path.contains("config/openloader/data"));
+
+    if has_openloader {
+        return Some("config/openloader/data".to_string());
+    }
+
+    let has_datapack_zips = manifest.overrides.iter().any(|o| {
+        o.destination_path.starts_with("datapacks/") && o.destination_path.ends_with(".zip")
+    });
+
+    if has_datapack_zips {
+        return Some("datapacks".to_string());
+    }
+
+    let has_datapack_refs = manifest.content.iter().any(|e| match e {
+        ContentEntry::PlatformReferenced(p) => p.destination_path.starts_with("datapacks/"),
+        _ => false,
+    });
+
+    if has_datapack_refs {
+        return Some("datapacks".to_string());
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------

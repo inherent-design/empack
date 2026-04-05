@@ -437,6 +437,7 @@ fn test_modpack_manifest_construction() {
             required: true,
             resolved_name: Some("Sodium".to_string()),
             resolved_type: Some(crate::primitives::ProjectType::Mod),
+            cf_class_id: None,
         })],
         overrides: vec![OverrideEntry {
             source_path: "overrides/config/test.json".to_string(),
