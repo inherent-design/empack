@@ -135,6 +135,10 @@ pub enum Commands {
         /// Archive format for distribution packages
         #[arg(long, value_enum, default_value = "zip")]
         format: CliArchiveFormat,
+
+        /// Directory to scan for manually downloaded restricted mods
+        #[arg(long, env = "EMPACK_DOWNLOADS_DIR")]
+        downloads_dir: Option<String>,
     },
 
     /// Add projects to the modpack
