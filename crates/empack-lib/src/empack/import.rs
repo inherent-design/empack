@@ -883,6 +883,11 @@ pub async fn execute_import(
         loader_version: &resolved.manifest.target.loader_version,
     };
 
+    let datapack_folder = config
+        .datapack_folder
+        .clone()
+        .or_else(|| detect_datapack_folder(&resolved.manifest));
+
     let empack_yml_content = format_empack_yml(
         &config.pack_name,
         &config.author,
@@ -890,7 +895,7 @@ pub async fn execute_import(
         &resolved.manifest.target.minecraft_version,
         resolved.manifest.target.loader.as_str(),
         &resolved.manifest.target.loader_version,
-        config.datapack_folder.as_deref(),
+        datapack_folder.as_deref(),
         config.acceptable_game_versions.as_deref(),
     );
 
@@ -915,11 +920,6 @@ pub async fn execute_import(
     for w in &transition_result.warnings {
         session.display().status().warning(w);
     }
-
-    let datapack_folder = config
-        .datapack_folder
-        .clone()
-        .or_else(|| detect_datapack_folder(&resolved.manifest));
 
     if datapack_folder.is_some() || config.acceptable_game_versions.is_some() {
         let pack_toml_path = config.target_dir.join("pack").join("pack.toml");
