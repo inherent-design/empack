@@ -3,6 +3,126 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.3.0-alpha.2 - 2026-04-05
+
+### Features
+
+- **(build)** Parse packwiz-installer output for CF restricted mods
+- **(build)** Add --downloads-dir flag and interactive browser open for restricted mods
+- **(build)** Scan downloads dir for restricted mod files and auto-place
+
+### Bug Fixes
+
+- CF restricted mod detection now queries API instead of .pw.toml
+- Use filesystem abstraction for copy, check retry results, scan-ahead parser
+
+### Testing
+
+- **(e2e)** Add import+build lifecycle tests; writing guidelines pass
+
+### Refactoring
+
+- Remove broken CF restricted mod pre-flight scan
+
+## v0.3.0-alpha.1 - 2026-04-05
+
+### Features
+
+- **(test)** Scaffold live E2E harness with assert_cmd and expectrl
+- **(test)** Add TestProject, skip macros, and empack_cmd builder
+- **(test)** Enable E2E coverage via instrumented binary resolution
+- Add modpack survey script for import compatibility testing
+- **(config)** Add datapack_folder and acceptable_game_versions to empack.yml
+- **(init)** Add --datapack-folder and --game-versions CLI flags
+- **(import)** Auto-detect datapack folder and route CF datapacks
+
+### Bug Fixes
+
+- Return Err on error conditions instead of Ok(())
+- **(test)** Reduce MockNetworkProvider HTTP timeout from 30s to 1ms
+- Windows binary discovery, CI build step, clippy, version string
+- **(ci)** Build binary before all tests, add sudo for macOS packwiz
+- **(ci)** Remove cargo tools from mise, use taiki-e for nextest/llvm-cov
+- **(ci)** Add Go for packwiz build, build binary before all tests
+- **(test)** Gate HermeticSessionBuilder test on unix
+- Exclude E2E from test task to avoid double-run; add exit code assertion
+- Gate live API test, remove redundant build/env steps
+- **(ci)** Build instrumented empack binary before coverage tests
+- **(ci)** Use show-env to build instrumented binary for coverage
+- **(ci)** Use eval instead of bash process substitution for sh compat
+- **(ci)** Plain cargo build before llvm-cov nextest
+- Use ProcessOutput::error_output() for packwiz error reporting
+- **(import)** Resolve mrpack platform refs via SHA1 and CurseForge batch lookup
+- Remove unused variables in modpack survey script
+- Validate both ForgeCD URL segments as numeric; read CF key from env
+- **(import)** Detect CF datapacks (classId 6945) in detect_datapack_folder
+- Gate datapack folder prompt on --yes; short-circuit write_pack_toml_options when both params are None
+- **(import)** Detect datapack folder before writing empack.yml
+- Point badges at main branch
+- **(ci)** Commit changelog to main instead of dev on release
+
+### Testing
+
+- **(e2e)** Add init and build subprocess tests
+- **(e2e)** Add subprocess tests for add command and interactive init
+- **(e2e)** Add codegen matrix tests via macros
+- Delete test files replaced by E2E subprocess tests
+- Strengthen weak assertions; update testing docs
+- Add datapack folder detection and CLI flag tests
+
+### Documentation
+
+- Update specs and bootstrap for live E2E harness
+- Update CONTRIBUTING.md for mise-based workflow
+- Remove stale v1/v2 reference from project structure
+
+### Refactoring
+
+- Inline mise tasks, add packwiz/nextest to tools, use mise-action in CI
+- **(test)** Remove HermeticSessionBuilder and dead infrastructure
+- Deduplicate format_empack_yml; guard empty CF project_id in resolve
+
+### CI/CD
+
+- Unify CI workflows; add cross-platform E2E and coverage
+- **(release)** Generate and commit full changelog on release
+- Add Codecov integration and fix coverage summary formatting
+
+### Maintenance
+
+- Move archives to mannie-exe/empack-archive
+- **(deps)** Update sha1 0.11, sha2 0.11, serde-saphyr 0.23, actions v5
+- Remove unused sha2 dep; unify hex encoding via content::hex
+- **(deps)** Update github artifact actions
+- Set workspace version to 0.0.0-dev; inject from tag at release time
+
+## v0.2.0-alpha.2 - 2026-04-05
+
+### Features
+
+- V0.2.0-alpha.1 release
+
+### Bug Fixes
+
+- **(import)** Correct packwiz flags in add_platform_ref
+- **(cli)** Rename --from-source flag to --from
+- **(sync)** Derive dep keys from packwiz .pw.toml filenames
+- Require .pw suffix in toml scan; correct doc inconsistencies
+- **(import)** Use project-id and version-id for Modrinth packwiz add
+
+### Documentation
+
+- Rewrite testing.md for two-tier test architecture
+- Update CONTRIBUTING.md for two-tier test architecture
+
+### Maintenance
+
+- Bump workspace version to 0.2.0-alpha.1
+
+### Other
+
+- Add renovate.json
+
 ## v0.2.0-alpha.1 - 2026-04-04
 
 ### Features
