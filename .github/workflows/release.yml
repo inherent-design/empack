@@ -166,13 +166,15 @@ jobs:
         env:
           GITHUB_REPO: ${{ github.repository }}
 
-      - name: Commit changelog
+      - name: Commit changelog to main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git-cliff --config cliff.toml --output CHANGELOG.md
           git add CHANGELOG.md
           git diff --cached --quiet || git commit -m "chore: update changelog for ${{ steps.version.outputs.clean }}"
-          git push origin HEAD:dev
+          git push origin main
 
       - uses: softprops/action-gh-release@v2
         with:
