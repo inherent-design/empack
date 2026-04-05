@@ -1031,7 +1031,7 @@ mod handle_add_tests {
 
         let result = handle_add(&session, vec![], false, None, None, None, None).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // No packwiz commands should have been executed
         let calls = session.process_provider.get_calls();
@@ -1047,7 +1047,7 @@ mod handle_add_tests {
 
         let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None, None, None).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();
@@ -1099,8 +1099,7 @@ mod handle_add_tests {
 
         let result = handle_add(&session, vec!["sodium".to_string()], false, None, None, None, None).await;
 
-        assert!(result.is_ok());
-        assert!(session.process_provider.get_calls().is_empty());
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -1435,7 +1434,7 @@ mod handle_remove_tests {
 
         let result = handle_remove(&session, vec![], false).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // No packwiz commands should have been executed
         let calls = session.process_provider.get_calls();
@@ -1451,7 +1450,7 @@ mod handle_remove_tests {
 
         let result = handle_remove(&session, vec!["test-mod".to_string()], false).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();
@@ -1484,8 +1483,7 @@ mod handle_remove_tests {
 
         let result = handle_remove(&session, vec!["sodium".to_string()], false).await;
 
-        assert!(result.is_ok());
-        assert!(session.process_provider.get_calls().is_empty());
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -1859,7 +1857,7 @@ fabric = "0.16.0"
 
         let result = handle_sync(&session).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();

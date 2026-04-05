@@ -1127,12 +1127,11 @@ async fn handle_add(
             .display()
             .status()
             .subtle("   Usage: empack add <mod1> [mod2] [mod3]...");
-        return Ok(());
+        return Err(anyhow::anyhow!("No mods specified to add"));
     }
 
     let manager = session.state()?;
 
-    // Verify we're in a configured state
     let current_state = manager
         .discover_state()
         .map_err(|e| anyhow::anyhow!("State error: {:?}", e))?;
@@ -1145,7 +1144,7 @@ async fn handle_add(
             .display()
             .status()
             .subtle("   Run 'empack init' to set up a modpack project");
-        return Ok(());
+        return Err(anyhow::anyhow!("Not in a modpack directory"));
     }
     if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
         session
@@ -1155,7 +1154,7 @@ async fn handle_add(
         session.display().status().subtle(
             "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before adding dependencies",
         );
-        return Ok(());
+        return Err(anyhow::anyhow!("Project initialization is incomplete"));
     }
 
     let workdir = manager.workdir.clone();
@@ -2343,12 +2342,11 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             .display()
             .status()
             .subtle("   Usage: empack remove <mod1> [mod2] [mod3]...");
-        return Ok(());
+        return Err(anyhow::anyhow!("No mods specified to remove"));
     }
 
     let manager = session.state()?;
 
-    // Verify we're in a configured state
     let current_state = manager.discover_state()?;
     if current_state == PackState::Uninitialized {
         session
@@ -2359,7 +2357,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             .display()
             .status()
             .subtle("   Run 'empack init' to set up a modpack project");
-        return Ok(());
+        return Err(anyhow::anyhow!("Not in a modpack directory"));
     }
     if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
         session
@@ -2369,7 +2367,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         session.display().status().subtle(
             "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before removing dependencies",
         );
-        return Ok(());
+        return Err(anyhow::anyhow!("Project initialization is incomplete"));
     }
 
     session
@@ -2907,7 +2905,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .display()
             .status()
             .subtle("   Run 'empack init' to set up a modpack project");
-        return Ok(());
+        return Err(anyhow::anyhow!("Not in a modpack directory"));
     }
     if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
         session
@@ -2917,7 +2915,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         session.display().status().subtle(
             "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before synchronizing",
         );
-        return Ok(());
+        return Err(anyhow::anyhow!("Project initialization is incomplete"));
     }
 
     let workdir = manager.workdir.clone();
