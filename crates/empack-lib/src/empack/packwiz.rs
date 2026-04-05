@@ -761,20 +761,25 @@ fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
         // Format: "ModName: ...Exception: This mod is excluded..."
         let name = line.split(':').next().unwrap_or("Unknown").trim().to_string();
 
-        // The next line contains "Please go to {url} and save this file to {path}"
+        // Scan ahead for the "Please go to {url} and save this file to {path}" line.
+        // May not be immediately adjacent due to stack traces or blank lines.
         let mut url = String::new();
         let mut dest = String::new();
-        if let Some(next_line) = lines.get(i + 1)
-            && let Some(rest) = next_line.strip_prefix("Please go to ")
-            && let Some((u, p)) = rest.split_once(" and save this file to ")
-        {
-            url = u.trim().to_string();
-            dest = p.trim().to_string();
+        for next_line in lines.iter().skip(i + 1).take(5) {
+            if let Some(rest) = next_line.strip_prefix("Please go to ")
+                && let Some((u, p)) = rest.split_once(" and save this file to ")
+            {
+                url = u.trim().to_string();
+                dest = p.trim().to_string();
+                break;
+            }
         }
 
-        if !url.is_empty() {
-            results.push(RestrictedModInfo { name, url, dest_path: dest });
-        }
+        results.push(RestrictedModInfo {
+            name,
+            url,
+            dest_path: dest,
+        });
     }
 
     results
