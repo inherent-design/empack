@@ -2623,6 +2623,11 @@ async fn handle_build(
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| crate::platform::home_dir().join("Downloads"));
 
+        session
+            .display()
+            .status()
+            .info(&format!("Scanning {} for downloaded files...", dl_dir.display()));
+
         let mut remaining: Vec<&crate::empack::packwiz::RestrictedModInfo> = Vec::new();
         for rm in &all_restricted {
             let filename = std::path::Path::new(&rm.dest_path)
@@ -2635,7 +2640,9 @@ async fn handle_build(
                 if let Some(parent) = dest.parent() {
                     let _ = session.filesystem().create_dir_all(parent);
                 }
-                match std::fs::copy(&candidate, dest) {
+                match session.filesystem().read_bytes(&candidate)
+                    .and_then(|bytes| session.filesystem().write_bytes(dest, &bytes))
+                {
                     Ok(_) => {
                         session
                             .display()
@@ -2660,15 +2667,27 @@ async fn handle_build(
                 .display()
                 .status()
                 .success("All restricted mods placed", "Re-running build.");
-            // Recurse: re-run the build now that files are in place
             drop(results);
             let mut build_orchestrator =
                 crate::empack::builds::BuildOrchestrator::new(session, archive_format)
                     .context("Failed to create build orchestrator")?;
-            build_orchestrator
+            let retry_results = build_orchestrator
                 .execute_build_pipeline(&build_targets)
                 .await
                 .context("Failed to execute build pipeline")?;
+            let still_restricted: Vec<_> = retry_results
+                .iter()
+                .flat_map(|r| r.restricted_mods.iter())
+                .collect();
+            if !still_restricted.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "{} mod(s) still require manual download after retry",
+                    still_restricted.len()
+                ));
+            }
+            if retry_results.iter().any(|r| !r.success) {
+                return Err(anyhow::anyhow!("Build failed after retry"));
+            }
             session
                 .display()
                 .status()
@@ -2682,10 +2701,6 @@ async fn handle_build(
 
         if session.terminal().is_tty && !session.config().app_config().yes {
             session.display().status().message("");
-            session
-                .display()
-                .status()
-                .info(&format!("Scanning {} for downloaded files...", dl_dir.display()));
             let open = session
                 .interactive()
                 .confirm("Open download URLs in browser?", false)?;
