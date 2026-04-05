@@ -140,7 +140,6 @@ def curseforge_get(path: str, params: dict | None = None) -> dict:
 
 
 def curseforge_download(project_id: int, file_id: int, dest: Path) -> bool:
-    url = f"{CURSEFORGE_API}/mods/{project_id}/files/{file_id}/download-url"
     try:
         data = curseforge_get(f"/mods/{project_id}/files/{file_id}/download-url")
         dl_url = data.get("data", "")
@@ -389,7 +388,6 @@ def analyze_mrpack(path: Path) -> PackAnalysis:
             files = m.get("files", [])
             a.total_files = len(files)
 
-            loaders_seen = set()
             for f in files:
                 p = f.get("path", "")
                 if p.startswith("mods/"):
@@ -413,9 +411,8 @@ def analyze_mrpack(path: Path) -> PackAnalysis:
 
             # Detect datapack loader patterns
             for name in names:
-                lower = name.lower()
                 for mod_slug, dp_path in KNOWN_DATAPACK_LOADERS.items():
-                    if dp_path in name:
+                    if dp_path in name.lower():
                         a.datapack_loader_mod = mod_slug
                         a.datapack_override_path = dp_path
                         break
