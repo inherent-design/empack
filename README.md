@@ -16,6 +16,13 @@ empack add sodium            # search and add a mod
 empack build all             # produce mrpack, client, and server artifacts
 ```
 
+Import an existing modpack from a Modrinth `.mrpack` or CurseForge `.zip`:
+
+```bash
+empack init --from pack.mrpack my-imported-pack
+empack init --from https://cdn.modrinth.com/data/.../pack.mrpack my-pack
+```
+
 See [Usage Guide](docs/usage.md) for the full command reference, flags, and environment variables.
 
 ## Commands
@@ -24,7 +31,7 @@ See [Usage Guide](docs/usage.md) for the full command reference, flags, and envi
 | --------------------- | ---------------------------------------------------- |
 | `empack requirements` | Check external tool availability                     |
 | `empack version`      | Print version information                            |
-| `empack init`         | Create or complete a modpack project                 |
+| `empack init`         | Create or import a modpack project                   |
 | `empack add`          | Add mods by name, URL, or project ID                 |
 | `empack sync`         | Reconcile declared dependencies with installed state |
 | `empack build`        | Build mrpack, client, server, or all targets         |
