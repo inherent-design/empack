@@ -2452,7 +2452,7 @@ async fn handle_build(
     targets: Vec<String>,
     clean: bool,
     archive_format: crate::empack::archive::ArchiveFormat,
-    _downloads_dir: Option<String>,
+    downloads_dir: Option<String>,
 ) -> Result<()> {
     let manager = session.state()?;
 
@@ -2603,8 +2603,6 @@ async fn handle_build(
                 all_restricted.len()
             ));
 
-        let urls: Vec<String> = all_restricted.iter().map(|rm| rm.url.clone()).collect();
-
         for rm in &all_restricted {
             session.display().status().warning(&format!("  {}", rm.name));
             session
@@ -2619,16 +2617,83 @@ async fn handle_build(
             }
         }
 
+        // Check --downloads-dir (or platform default) for already-downloaded files
+        let dl_dir = downloads_dir
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| crate::platform::home_dir().join("Downloads"));
+
+        let mut remaining: Vec<&crate::empack::packwiz::RestrictedModInfo> = Vec::new();
+        for rm in &all_restricted {
+            let filename = std::path::Path::new(&rm.dest_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            let candidate = dl_dir.join(filename);
+            if !filename.is_empty() && session.filesystem().exists(&candidate) {
+                let dest = std::path::Path::new(&rm.dest_path);
+                if let Some(parent) = dest.parent() {
+                    let _ = session.filesystem().create_dir_all(parent);
+                }
+                match std::fs::copy(&candidate, dest) {
+                    Ok(_) => {
+                        session
+                            .display()
+                            .status()
+                            .success("Placed", &format!("{} → {}", candidate.display(), rm.dest_path));
+                    }
+                    Err(e) => {
+                        session
+                            .display()
+                            .status()
+                            .warning(&format!("Failed to copy {}: {}", candidate.display(), e));
+                        remaining.push(rm);
+                    }
+                }
+            } else {
+                remaining.push(rm);
+            }
+        }
+
+        if remaining.is_empty() {
+            session
+                .display()
+                .status()
+                .success("All restricted mods placed", "Re-running build.");
+            // Recurse: re-run the build now that files are in place
+            drop(results);
+            let mut build_orchestrator =
+                crate::empack::builds::BuildOrchestrator::new(session, archive_format)
+                    .context("Failed to create build orchestrator")?;
+            build_orchestrator
+                .execute_build_pipeline(&build_targets)
+                .await
+                .context("Failed to execute build pipeline")?;
+            session
+                .display()
+                .status()
+                .complete("Build completed successfully");
+            session
+                .display()
+                .status()
+                .subtle("   Check dist/ directory for build artifacts");
+            return Ok(());
+        }
+
         if session.terminal().is_tty && !session.config().app_config().yes {
             session.display().status().message("");
+            session
+                .display()
+                .status()
+                .info(&format!("Scanning {} for downloaded files...", dl_dir.display()));
             let open = session
                 .interactive()
-                .confirm("Open all download URLs in browser?", false)?;
+                .confirm("Open download URLs in browser?", false)?;
             if open {
                 let (cmd, prefix_args) = crate::platform::browser_open_command();
-                for url in &urls {
+                for rm in &remaining {
                     let mut args: Vec<&str> = prefix_args.clone();
-                    args.push(url);
+                    args.push(&rm.url);
                     let _ = session.process().execute(cmd, &args, std::path::Path::new("."));
                 }
             }
@@ -2637,10 +2702,17 @@ async fn handle_build(
         session
             .display()
             .status()
-            .info("Place files at the listed paths, then re-run the build command.");
+            .info(&format!(
+                "Download files and place in: {} (or use --downloads-dir)",
+                dl_dir.display()
+            ));
+        session
+            .display()
+            .status()
+            .info("Then re-run the build command.");
         return Err(anyhow::anyhow!(
             "{} mod(s) require manual download from CurseForge. See output above for URLs.",
-            all_restricted.len()
+            remaining.len()
         ));
     }
 
