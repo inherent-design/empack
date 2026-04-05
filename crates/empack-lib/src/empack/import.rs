@@ -1117,9 +1117,9 @@ fn scan_pw_toml_stems(
             for path in &files {
                 if path.extension().and_then(|e| e.to_str()) == Some("toml")
                     && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                    && stem.ends_with(".pw")
                 {
-                    let slug = stem.strip_suffix(".pw").unwrap_or(stem);
-                    slugs.insert(slug.to_string());
+                    slugs.insert(stem.strip_suffix(".pw").unwrap().to_string());
                 }
             }
         }

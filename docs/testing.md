@@ -47,11 +47,10 @@ E2E tests run the compiled empack binary as a child process against live provide
 ### Running Tests
 
 ```bash
-mise run e2e              # full E2E suite
-mise run e2e:filter init  # run only init-related E2E tests
+cargo nextest run -p empack-e2e       # full E2E suite
 ```
 
-E2E tests are advisory, not gating. Failures indicate API drift, environment issues, or real bugs.
+Mise task definitions (`e2e`, `e2e:filter`, `e2e:container`) are planned but not yet implemented. E2E tests are advisory, not gating. Failures indicate API drift, environment issues, or real bugs.
 
 ### Test Patterns
 
