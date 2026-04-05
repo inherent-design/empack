@@ -96,12 +96,14 @@ run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\coverage.ps1"
 alias = "e"
 description = "Run E2E tests (requires packwiz)"
 run = "sh tasks/sh/e2e.sh"
+run_windows = "& .\\tasks\\pwsh\\e2e.ps1"
 
 [tasks."e2e:filter"]
 alias = "fe"
 description = "Run filtered E2E tests"
 usage = 'arg "filter" help="nextest filter expression"'
 run = "sh tasks/sh/e2e.sh {{arg(name=\"filter\")}}"
+run_windows = "& .\\tasks\\pwsh\\e2e.ps1 {{arg(name=\"filter\")}}"
 
 # Maintenance
 
