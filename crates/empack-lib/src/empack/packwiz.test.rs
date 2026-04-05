@@ -732,3 +732,147 @@ fn test_get_installed_mods_only_includes_pw_toml_files() {
     assert!(!installed.contains(""), "should NOT contain empty slug");
     assert!(!installed.contains("some-file"), "should NOT contain non-toml files");
 }
+
+// ── write_pack_toml_options tests ────────────────────────────────────
+
+#[test]
+fn test_pack_toml_options_merge() {
+    let workdir = mock_root().join("workdir");
+    let pack_toml_path = workdir.join("pack").join("pack.toml");
+
+    let existing = r#"name = "Test Pack"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.20.1"
+fabric = "0.14.21"
+"#;
+
+    let fs = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(pack_toml_path.clone(), existing.to_string());
+
+    let versions = vec!["1.20".to_string(), "1.20.2".to_string()];
+    let result = write_pack_toml_options(
+        &pack_toml_path,
+        Some("datapacks"),
+        Some(&versions),
+        &fs,
+    );
+    assert!(result.is_ok(), "write_pack_toml_options failed: {result:?}");
+
+    let updated = fs.read_to_string(&pack_toml_path).unwrap();
+    let doc: toml::Table = toml::from_str(&updated).unwrap();
+
+    assert_eq!(
+        doc.get("name").and_then(|v| v.as_str()),
+        Some("Test Pack"),
+        "name should be preserved",
+    );
+    assert!(doc.get("versions").is_some(), "[versions] should be preserved");
+    assert!(doc.get("index").is_some(), "[index] should be preserved");
+
+    let options = doc.get("options").expect("[options] should exist");
+    assert_eq!(
+        options.get("datapack-folder").and_then(|v| v.as_str()),
+        Some("datapacks"),
+    );
+    let agv = options
+        .get("acceptable-game-versions")
+        .and_then(|v| v.as_array())
+        .expect("acceptable-game-versions should be an array");
+    let agv_strs: Vec<&str> = agv.iter().filter_map(|v| v.as_str()).collect();
+    assert_eq!(agv_strs, vec!["1.20", "1.20.2"]);
+}
+
+#[test]
+fn test_pack_toml_options_preserves_other_keys() {
+    let workdir = mock_root().join("workdir");
+    let pack_toml_path = workdir.join("pack").join("pack.toml");
+
+    let existing = r#"name = "Test Pack"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.20.1"
+
+[options]
+no-internal-hashes = true
+"#;
+
+    let fs = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(pack_toml_path.clone(), existing.to_string());
+
+    let result = write_pack_toml_options(
+        &pack_toml_path,
+        Some("datapacks"),
+        None,
+        &fs,
+    );
+    assert!(result.is_ok(), "write_pack_toml_options failed: {result:?}");
+
+    let updated = fs.read_to_string(&pack_toml_path).unwrap();
+    let doc: toml::Table = toml::from_str(&updated).unwrap();
+
+    let options = doc.get("options").expect("[options] should exist");
+    assert_eq!(
+        options.get("no-internal-hashes").and_then(|v| v.as_bool()),
+        Some(true),
+        "pre-existing options key should be preserved",
+    );
+    assert_eq!(
+        options.get("datapack-folder").and_then(|v| v.as_str()),
+        Some("datapacks"),
+    );
+    assert!(
+        options.get("acceptable-game-versions").is_none(),
+        "acceptable-game-versions should not be injected when None",
+    );
+}
+
+#[test]
+fn test_pack_toml_options_none_params_are_no_ops() {
+    let workdir = mock_root().join("workdir");
+    let pack_toml_path = workdir.join("pack").join("pack.toml");
+
+    let existing = r#"name = "Test Pack"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.20.1"
+"#;
+
+    let fs = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(pack_toml_path.clone(), existing.to_string());
+
+    let result = write_pack_toml_options(&pack_toml_path, None, None, &fs);
+    assert!(result.is_ok());
+
+    let updated = fs.read_to_string(&pack_toml_path).unwrap();
+    let doc: toml::Table = toml::from_str(&updated).unwrap();
+
+    let options = doc.get("options").expect("[options] created but should be empty");
+    assert!(
+        options.as_table().unwrap().is_empty(),
+        "options table should be empty when both params are None",
+    );
+}
