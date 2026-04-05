@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [Rust toolchain](https://rustup.rs/) (stable)
+- [Rust toolchain](https://rustup.rs/) (1.94.0, pinned via `rust-toolchain.toml`)
 - [cargo-nextest](https://nexte.st/) (test runner; CI uses it exclusively)
 - [mise](https://mise.jdx.dev/) (task runner)
 
@@ -50,12 +50,10 @@ cargo nextest run -p empack-tests --test sync_workflow
 Run the compiled binary with real providers (real filesystem, real packwiz, real network). Not part of the CI gate; requires external tools.
 
 ```bash
-mise run e2e                # full suite (requires packwiz, java)
-mise run fe2e "init"        # filtered subset
-mise run e2e:container      # containerized (requires Colima)
+cargo nextest run -p empack-e2e       # full suite (requires packwiz, java)
 ```
 
-E2E tests self-skip when prerequisites are missing. Tests that hit live APIs are gated behind `EMPACK_KEY_CURSEFORGE` and `EMPACK_E2E_SKIP_LIVE`.
+E2E tests self-skip when prerequisites are missing. Tests that hit live APIs are gated behind `EMPACK_KEY_CURSEFORGE`. The `empack-e2e` crate and mise task definitions are planned but not yet implemented.
 
 ## Development Workflow
 

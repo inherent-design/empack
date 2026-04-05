@@ -1872,9 +1872,9 @@ fn scan_pw_toml_slugs(
     for path in &file_list {
         if path.extension().and_then(|e| e.to_str()) == Some("toml")
             && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            && stem.ends_with(".pw")
         {
-            let slug = stem.strip_suffix(".pw").unwrap_or(stem);
-            slugs.insert(slug.to_string());
+            slugs.insert(stem.strip_suffix(".pw").unwrap().to_string());
         }
     }
     slugs
