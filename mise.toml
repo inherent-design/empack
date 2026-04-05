@@ -83,7 +83,7 @@ cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
 alias = "cov"
 description = "Run coverage (unit + E2E)"
 run = """
-source <(cargo llvm-cov show-env --export-prefix)
+eval "$(cargo llvm-cov show-env --export-prefix)"
 cargo build -p empack
 cargo llvm-cov nextest --workspace --features test-utils --no-clean --lcov --output-path lcov.info
 """
