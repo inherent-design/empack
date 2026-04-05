@@ -100,7 +100,7 @@ mod format_empack_yml_tests {
         loader: &str,
         loader_version: &str,
     ) -> InitYml {
-        let yaml = format_empack_yml(name, author, version, mc_version, loader, loader_version);
+        let yaml = format_empack_yml(name, author, version, mc_version, loader, loader_version, None, None);
         serde_saphyr::from_str(&yaml)
             .unwrap_or_else(|e| panic!("produced invalid YAML: {e}\n---\n{yaml}"))
     }
@@ -114,6 +114,8 @@ mod format_empack_yml_tests {
             "1.21.1",
             "fabric",
             "0.18.4",
+            None,
+            None,
         );
         // serde_saphyr omits quotes for plain strings
         assert!(result.contains("name: test-pack"));
@@ -178,6 +180,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -215,7 +219,7 @@ mod handle_init_tests {
             .read_to_string(&workdir.join("empack.yml"))
             .unwrap();
 
-        let result = handle_init(&session, None, None, false, None, None, None, None, None, None).await;
+        let result = handle_init(&session, None, None, false, None, None, None, None, None, None, None, None).await;
 
         assert!(
             result.is_err(),
@@ -256,6 +260,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Overwrite Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -302,6 +308,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -329,6 +337,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Cancel Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -362,6 +372,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -389,6 +401,8 @@ mod handle_init_tests {
             Some("notaloader".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -424,6 +438,8 @@ mod handle_init_tests {
             Some("0.15.0".to_string()),
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -451,6 +467,8 @@ mod handle_init_tests {
             Some("1.21.1".to_string()),
             Some("TestAuthor".to_string()),
             Some("99.99.99".to_string()),
+            None,
+            None,
             None,
             None,
         )
@@ -489,6 +507,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -523,6 +543,8 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             Some("2.0.0".to_string()),
+            None,
+            None,
             None,
         )
         .await;
@@ -560,6 +582,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -593,6 +617,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -619,6 +645,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -657,6 +685,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -682,6 +712,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -716,6 +748,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -3432,6 +3466,8 @@ mod init_interactive_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -3464,6 +3500,8 @@ mod init_interactive_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -3504,6 +3542,8 @@ mod init_interactive_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -3587,6 +3627,8 @@ mod init_interactive_tests {
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
             Some("0.15.0".to_string()),      // should warn or error
+            None,
+            None,
             None,
             None,
         )

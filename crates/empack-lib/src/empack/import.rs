@@ -96,6 +96,10 @@ pub struct ImportConfig {
     pub pack_name: String,
     pub author: String,
     pub version: String,
+    /// Folder for datapacks relative to pack root (written to empack.yml and pack.toml).
+    pub datapack_folder: Option<String>,
+    /// Additional accepted MC versions (written to empack.yml and pack.toml).
+    pub acceptable_game_versions: Option<Vec<String>>,
 }
 
 /// Result of executing an import.
@@ -880,6 +884,8 @@ pub async fn execute_import(
         &resolved.manifest.target.minecraft_version,
         resolved.manifest.target.loader.as_str(),
         &resolved.manifest.target.loader_version,
+        config.datapack_folder.as_deref(),
+        config.acceptable_game_versions.as_deref(),
     );
 
     session
@@ -902,6 +908,22 @@ pub async fn execute_import(
 
     for w in &transition_result.warnings {
         session.display().status().warning(w);
+    }
+
+    if config.datapack_folder.is_some() || config.acceptable_game_versions.is_some() {
+        let pack_toml_path = config.target_dir.join("pack").join("pack.toml");
+        crate::empack::packwiz::write_pack_toml_options(
+            &pack_toml_path,
+            config.datapack_folder.as_deref(),
+            config.acceptable_game_versions.as_deref(),
+            session.filesystem(),
+        )
+        .map_err(|e| anyhow::anyhow!("failed to write pack.toml options: {}", e))?;
+
+        session
+            .packwiz()
+            .run_packwiz_refresh(&config.target_dir)
+            .map_err(|e| anyhow::anyhow!("failed to refresh index after writing options: {}", e))?;
     }
 
     let pack_dir = config.target_dir.join("pack");
@@ -1179,6 +1201,7 @@ fn extract_embedded_from_archive(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn format_empack_yml(
     name: &str,
     author: &str,
@@ -1186,6 +1209,8 @@ fn format_empack_yml(
     minecraft_version: &str,
     loader: &str,
     loader_version: &str,
+    datapack_folder: Option<&str>,
+    acceptable_game_versions: Option<&[String]>,
 ) -> String {
     use std::collections::BTreeMap;
 
@@ -1206,6 +1231,10 @@ fn format_empack_yml(
         loader: Option<ModLoader>,
         #[serde(skip_serializing_if = "str::is_empty")]
         loader_version: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        datapack_folder: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        acceptable_game_versions: Option<&'a [String]>,
         dependencies: BTreeMap<String, DependencyEntry>,
     }
 
@@ -1217,6 +1246,8 @@ fn format_empack_yml(
             minecraft_version,
             loader: loader_enum,
             loader_version,
+            datapack_folder,
+            acceptable_game_versions,
             dependencies: BTreeMap::new(),
         },
     };
