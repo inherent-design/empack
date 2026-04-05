@@ -1374,6 +1374,15 @@ async fn handle_add(
                     continue;
                 }
 
+                let before_dd_slugs = {
+                    let mut s = std::collections::HashSet::new();
+                    for folder in &["mods", "resourcepacks", "shaderpacks", "datapacks"] {
+                        let dir = workdir.join("pack").join(folder);
+                        s.extend(scan_pw_toml_slugs(session.filesystem(), &dir));
+                    }
+                    s
+                };
+
                 match handle_direct_download_jar(
                     session,
                     url,
@@ -1387,6 +1396,21 @@ async fn handle_add(
                             &resolution.title,
                         );
                         if !resolution.local && let Some(ref pid) = resolution.project_id {
+                            let after_dd_slugs = {
+                                let mut s = std::collections::HashSet::new();
+                                for folder in &["mods", "resourcepacks", "shaderpacks", "datapacks"] {
+                                    let dir = workdir.join("pack").join(folder);
+                                    s.extend(scan_pw_toml_slugs(session.filesystem(), &dir));
+                                }
+                                s
+                            };
+                            let new_dd: Vec<_> = after_dd_slugs.difference(&before_dd_slugs).collect();
+                            let dep_key = if new_dd.len() == 1 {
+                                new_dd[0].clone()
+                            } else {
+                                resolution.title.to_lowercase().replace(' ', "-")
+                            };
+
                             let record = DependencyRecord {
                                 status: DependencyStatus::Resolved,
                                 title: resolution.title.clone(),
@@ -1395,10 +1419,6 @@ async fn handle_add(
                                 project_type: resolution.project_type,
                                 version: None,
                             };
-                            let dep_key = resolution
-                                .title
-                                .to_lowercase()
-                                .replace(' ', "-");
                             if let Err(e) =
                                 config_manager.add_dependency(&dep_key, record)
                             {
