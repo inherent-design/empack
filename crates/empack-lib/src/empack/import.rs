@@ -1476,6 +1476,15 @@ fn detect_datapack_folder(manifest: &ModpackManifest) -> Option<String> {
         return Some("datapacks".to_string());
     }
 
+    let has_cf_datapack_class = manifest.content.iter().any(|e| match e {
+        ContentEntry::PlatformReferenced(p) => p.cf_class_id == Some(6945),
+        _ => false,
+    });
+
+    if has_cf_datapack_class {
+        return Some("datapacks".to_string());
+    }
+
     None
 }
 
