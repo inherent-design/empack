@@ -6,7 +6,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 use crate::application::session::Session;
-use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
+use crate::empack::config::{DependencyRecord, DependencyStatus};
 use crate::empack::content::{OverrideCategory, OverrideSide, SideEnv, SideRequirement};
 use crate::empack::parsing::ModLoader;
 use crate::primitives::ProjectPlatform;
@@ -617,6 +617,9 @@ async fn resolve_platform_ref(
             resolve_modrinth_project(pref, modrinth_api, warnings).await;
         }
         ProjectPlatform::CurseForge => {
+            if pref.project_id.is_empty() {
+                return;
+            }
             resolve_curseforge_project(pref, curseforge_api, curseforge_api_key, warnings).await;
         }
     }
@@ -1220,59 +1223,7 @@ fn extract_embedded_from_archive(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn format_empack_yml(
-    name: &str,
-    author: &str,
-    version: &str,
-    minecraft_version: &str,
-    loader: &str,
-    loader_version: &str,
-    datapack_folder: Option<&str>,
-    acceptable_game_versions: Option<&[String]>,
-) -> String {
-    use std::collections::BTreeMap;
-
-    let loader_enum = ModLoader::parse(loader).ok();
-
-    #[derive(serde::Serialize)]
-    struct Yml<'a> {
-        empack: Fields<'a>,
-    }
-
-    #[derive(serde::Serialize)]
-    struct Fields<'a> {
-        name: &'a str,
-        author: &'a str,
-        version: &'a str,
-        minecraft_version: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        loader: Option<ModLoader>,
-        #[serde(skip_serializing_if = "str::is_empty")]
-        loader_version: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        datapack_folder: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        acceptable_game_versions: Option<&'a [String]>,
-        dependencies: BTreeMap<String, DependencyEntry>,
-    }
-
-    let config = Yml {
-        empack: Fields {
-            name,
-            author,
-            version,
-            minecraft_version,
-            loader: loader_enum,
-            loader_version,
-            datapack_folder,
-            acceptable_game_versions,
-            dependencies: BTreeMap::new(),
-        },
-    };
-
-    serde_saphyr::to_string(&config).expect("serializing import config should never fail")
-}
+use crate::empack::config::format_empack_yml;
 
 // ---------------------------------------------------------------------------
 // Override classification
