@@ -628,6 +628,8 @@ async fn handle_init(
             .status()
             .info(&format!("Using datapack folder: {}", folder));
         Some(folder)
+    } else if session.config().app_config().yes {
+        None
     } else {
         let input = session
             .interactive()
