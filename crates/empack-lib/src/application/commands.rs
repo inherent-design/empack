@@ -1587,78 +1587,7 @@ async fn handle_add(
                     }
                 }
 
-                // Phase A: detect CF-restricted mods before writing empack.yml
-                let mut is_restricted = false;
-                for folder in &scan_folders {
-                    let dir = workdir.join("pack").join(folder);
-                    let pw_toml_path = dir.join(format!("{}.pw.toml", dep_key));
-                    if let Ok(content) = session.filesystem().read_to_string(&pw_toml_path)
-                        && let Some(rm) = parse_restricted_pw_toml(&content)
-                    {
-                        let cf_url = rm.curseforge_url();
-                        session.display().status().warning(&format!(
-                            "\"{}\" has third-party downloads disabled on CurseForge.",
-                            rm.name
-                        ));
-                        session
-                            .display()
-                            .status()
-                            .warning(&format!("Download manually: {}", cf_url));
-                        session.display().status().warning(&format!(
-                            "Place the file in: {}",
-                            packwiz_cache_import_dir().display()
-                        ));
-
-                        if let Ok(modrinth_info) = resolver
-                            .resolve_project(
-                                &rm.name,
-                                Some("mod"),
-                                project_plan.as_ref().map(|p| p.minecraft_version.as_str()),
-                                project_plan.as_ref().and_then(|p| {
-                                    p.loader.map(crate::application::sync::loader_arg)
-                                }),
-                                Some(ProjectPlatform::Modrinth),
-                            )
-                            .await
-                            && modrinth_info.platform == ProjectPlatform::Modrinth
-                        {
-                            session.display().status().warning(&format!(
-                                "This mod may be available on Modrinth. Try: empack remove {} && empack add \"{}\"",
-                                dep_key, rm.name
-                            ));
-                        }
-
-                        // Clean up the .pw.toml that packwiz just created so it
-                        // doesn't cause confusing build pre-flight failures later.
-                        let pack_dir = workdir.join("pack");
-                        let packwiz_remove_ok = session
-                            .process()
-                            .execute("packwiz", &["remove", "-y", &dep_key], &pack_dir)
-                            .is_ok();
-
-                        if !packwiz_remove_ok
-                            && let Err(e) = session.filesystem().remove_file(&pw_toml_path)
-                        {
-                            session.display().status().warning(&format!(
-                                "Failed to remove {}: {}",
-                                pw_toml_path.display(),
-                                e
-                            ));
-                        }
-
-                        is_restricted = true;
-                        failed_mods.push((
-                            resolved.query.clone(),
-                            format!(
-                                "CurseForge restricted: \"{}\" has third-party downloads disabled. Manual download required: {}",
-                                rm.name, cf_url
-                            ),
-                        ));
-                        break;
-                    }
-                }
-
-                if !is_restricted {
+                {
                     let record = DependencyRecord {
                         status: DependencyStatus::Resolved,
                         title: resolved.resolution.title.clone(),
@@ -1970,13 +1899,20 @@ impl RestrictedMod {
     }
 }
 
-fn parse_restricted_pw_toml(content: &str) -> Option<RestrictedMod> {
+/// Parse a CurseForge metadata .pw.toml and extract mod info.
+///
+/// Returns `None` if the file is not a CF metadata mod. Note: this extracts
+/// ALL CF metadata mods, not just restricted ones. Restriction status cannot
+/// be determined from the .pw.toml alone; it requires a CF API query to check
+/// whether `downloadUrl` is null.
+fn parse_cf_metadata_pw_toml(content: &str) -> Option<RestrictedMod> {
     let parsed: toml::Value = toml::from_str(content).ok()?;
 
     let download = parsed.get("download")?;
     if download.get("mode")?.as_str()? != "metadata:curseforge" {
         return None;
     }
+    // If the .pw.toml has a url field, it's a direct download, not metadata-based
     if download.get("url").and_then(|v| v.as_str()).is_some() {
         return None;
     }
@@ -1996,12 +1932,17 @@ fn parse_restricted_pw_toml(content: &str) -> Option<RestrictedMod> {
     })
 }
 
-fn scan_restricted_mods(
-    filesystem: &dyn FileSystemProvider,
+/// Scan .pw.toml files for CurseForge metadata mods, then query the CF API
+/// to determine which ones actually have restricted downloads.
+///
+/// Returns only mods where the CF API confirms `downloadUrl` is null.
+async fn scan_restricted_mods(
+    session: &dyn Session,
     pack_dir: &std::path::Path,
 ) -> Vec<RestrictedMod> {
+    let filesystem = session.filesystem();
     let content_dirs = ["mods", "resourcepacks", "shaderpacks", "datapacks"];
-    let mut restricted = Vec::new();
+    let mut cf_mods: Vec<RestrictedMod> = Vec::new();
 
     for folder in &content_dirs {
         let dir = pack_dir.join(folder);
@@ -2026,14 +1967,74 @@ fn scan_restricted_mods(
             if ext_match
                 && stem_match
                 && let Ok(content) = filesystem.read_to_string(path)
-                && let Some(rm) = parse_restricted_pw_toml(&content)
+                && let Some(rm) = parse_cf_metadata_pw_toml(&content)
             {
-                restricted.push(rm);
+                cf_mods.push(rm);
             }
         }
     }
 
-    restricted
+    if cf_mods.is_empty() {
+        return Vec::new();
+    }
+
+    // Batch query CF API to check which file IDs have null downloadUrl
+    let cf_api_key = session
+        .config()
+        .app_config()
+        .curseforge_api_client_key
+        .clone();
+
+    let api_key = match cf_api_key.as_deref() {
+        Some(k) => k,
+        None => return Vec::new(),
+    };
+
+    let client = match session.network().http_client() {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let file_ids: Vec<u64> = cf_mods.iter().map(|m| m.file_id).collect();
+    let mut restricted_file_ids = std::collections::HashSet::new();
+
+    for chunk in file_ids.chunks(50) {
+        let body = serde_json::json!({ "fileIds": chunk });
+        let resp = match client
+            .post("https://api.curseforge.com/v1/mods/files")
+            .header("x-api-key", api_key)
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r,
+            _ => continue,
+        };
+
+        #[derive(serde::Deserialize)]
+        struct FileEntry {
+            id: u64,
+            #[serde(rename = "downloadUrl")]
+            download_url: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Envelope {
+            data: Vec<FileEntry>,
+        }
+
+        if let Ok(envelope) = resp.json::<Envelope>().await {
+            for entry in envelope.data {
+                if entry.download_url.is_none() {
+                    restricted_file_ids.insert(entry.id);
+                }
+            }
+        }
+    }
+
+    cf_mods
+        .into_iter()
+        .filter(|m| restricted_file_ids.contains(&m.file_id))
+        .collect()
 }
 
 fn packwiz_cache_import_dir() -> std::path::PathBuf {
@@ -2698,18 +2699,15 @@ async fn handle_build(
         return Ok(());
     }
 
-    // Phase B: pre-flight scan for CF-restricted mods
+    // Phase B: pre-flight scan for CF-restricted mods (queries CF API)
     let pack_dir = manager.workdir.join("pack");
-    let restricted_mods = scan_restricted_mods(session.filesystem(), &pack_dir);
+    let restricted_mods = scan_restricted_mods(session, &pack_dir).await;
     if !restricted_mods.is_empty() {
         let cache_dir = packwiz_cache_import_dir();
-        let mut blocked: Vec<&RestrictedMod> = Vec::new();
-        for rm in &restricted_mods {
-            let cached_path = cache_dir.join(&rm.filename);
-            if !session.filesystem().exists(&cached_path) {
-                blocked.push(rm);
-            }
-        }
+        let blocked: Vec<&RestrictedMod> = restricted_mods
+            .iter()
+            .filter(|rm| !session.filesystem().exists(&cache_dir.join(&rm.filename)))
+            .collect();
 
         if !blocked.is_empty() {
             session
@@ -2726,13 +2724,7 @@ async fn handle_build(
                 session
                     .display()
                     .status()
-                    .warning(&format!("Download manually: {}", url));
-                if session.terminal().is_tty {
-                    let (cmd, prefix_args) = crate::platform::browser_open_command();
-                    let mut args: Vec<&str> = prefix_args;
-                    args.push(&url);
-                    let _ = session.process().execute(cmd, &args, &pack_dir);
-                }
+                    .info(&format!("Download manually: {}", url));
                 mod_names.push(rm.name.clone());
             }
             session.display().status().warning(&format!(
