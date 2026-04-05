@@ -68,11 +68,18 @@ jobs:
         with:
           tool: cargo-llvm-cov,cargo-nextest
       - run: mise run coverage
-      - run: cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
-      - uses: actions/upload-artifact@v7
+      - name: Coverage summary
+        run: |
+          echo '## Coverage' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+      - uses: codecov/codecov-action@v6
         with:
-          name: coverage-lcov
-          path: lcov.info
+          files: lcov.info
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   cross-check:
     if: github.ref == 'refs/heads/main'

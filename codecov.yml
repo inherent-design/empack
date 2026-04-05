@@ -1,0 +1,22 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+    patch:
+      default:
+        target: auto
+        threshold: 5%
+
+ignore:
+  - "crates/empack-tests/**"
+  - "crates/empack/src/**"
+  - "scripts/**"
+  - "v1/**"
+  - "v2/**"
+
+comment:
+  layout: "diff, flags, files"
+  behavior: default
+  require_changes: false
