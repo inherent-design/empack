@@ -492,9 +492,17 @@ mod handle_init_tests {
         )
         .await;
 
-        // With fallback versions, "1.21.1" + "fabric" is valid and first fallback
-        // loader version "0.15.0" is selected. The final checkpoint should pass.
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "fallback loader init should succeed: {result:?}");
+
+        let target = mock_root().join("compatible-loader-fallback").join("test-pack");
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("loader: fabric"),
+            "empack.yml should contain fabric loader: {empack_yml}"
+        );
     }
 
     #[tokio::test]
