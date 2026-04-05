@@ -163,3 +163,43 @@ fn e2e_init_scaffolds_templates() {
         "templates/client/ not found"
     );
 }
+
+#[test]
+fn e2e_init_datapack_folder() {
+    empack_tests::skip_if_no_packwiz!();
+
+    let project = TestProject::new();
+    let status = project
+        .cmd()
+        .args([
+            "init", "--yes", "--modloader", "fabric", "--mc-version", "1.20.1",
+            "--datapack-folder", "datapacks", "test-pack",
+        ])
+        .status()
+        .expect("failed to spawn");
+    assert!(status.success());
+
+    let pack_dir = project.dir().join("test-pack");
+
+    let pack_toml = std::fs::read_to_string(pack_dir.join("pack").join("pack.toml"))
+        .expect("failed to read pack.toml");
+    assert!(
+        pack_toml.contains("datapack-folder"),
+        "pack.toml missing 'datapack-folder'\n{pack_toml}"
+    );
+    assert!(
+        pack_toml.contains("datapacks"),
+        "pack.toml missing 'datapacks' value\n{pack_toml}"
+    );
+
+    let config = std::fs::read_to_string(pack_dir.join("empack.yml"))
+        .expect("failed to read empack.yml");
+    assert!(
+        config.contains("datapack_folder"),
+        "empack.yml missing 'datapack_folder'\n{config}"
+    );
+    assert!(
+        config.contains("datapacks"),
+        "empack.yml missing 'datapacks' value\n{config}"
+    );
+}
