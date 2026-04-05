@@ -808,20 +808,35 @@ async fn add_platform_ref(
 ) -> Result<bool> {
     match pref.platform {
         ProjectPlatform::Modrinth => {
-            if pref.download_urls.is_empty() {
+            if pref.project_id.is_empty() && pref.download_urls.is_empty() {
                 session.display().status().warning(&format!(
-                    "no download URL for '{}'; skipping",
+                    "no project ID or download URL for '{}'; skipping",
                     pref.destination_path
                 ));
                 return Ok(false);
             }
 
-            let args = [
+            let mut args = vec![
                 "modrinth".to_string(),
                 "add".to_string(),
-                pref.download_urls[0].clone(),
-                "-y".to_string(),
             ];
+
+            if !pref.project_id.is_empty() {
+                args.push("--project-id".to_string());
+                args.push(pref.project_id.clone());
+            }
+
+            // Extract version ID from CDN URL if available:
+            // https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/filename.jar
+            if let Some(vid) = pref.download_urls.first().and_then(|url| {
+                let parts: Vec<&str> = url.split('/').collect();
+                parts.iter().position(|&s| s == "versions").and_then(|i| parts.get(i + 1).map(|s| s.to_string()))
+            }) {
+                args.push("--version-id".to_string());
+                args.push(vid);
+            }
+
+            args.push("-y".to_string());
 
             let output = session.process().execute(
                 "packwiz",
