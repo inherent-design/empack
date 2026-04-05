@@ -30,7 +30,8 @@ pub use import::{
 #[cfg(feature = "test-utils")]
 pub use packwiz::MockPackwizOps;
 pub use packwiz::{
-    PackwizError, PackwizInstaller, PackwizMetadata, PackwizOps, write_pack_toml_options,
+    InstallResult, PackwizError, PackwizInstaller, PackwizMetadata, PackwizOps,
+    RestrictedModInfo, write_pack_toml_options,
 };
 pub use state::{PackStateManager, StateTransitionResult};
 
