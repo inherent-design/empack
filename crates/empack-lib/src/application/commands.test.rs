@@ -2140,7 +2140,7 @@ mod handle_build_tests {
             )
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip).await;
+        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None).await;
 
         assert!(result.is_ok(), "mrpack build should succeed: {result:?}");
         assert!(session.filesystem().exists(&built_mrpack));
@@ -2172,7 +2172,7 @@ mod handle_build_tests {
             )
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip).await;
+        let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip, None).await;
 
         assert!(result.is_ok(), "clean-before-build should succeed: {result:?}");
         // Original artifacts should be cleaned
@@ -2202,7 +2202,7 @@ mod handle_build_tests {
                 .with_current_dir(mock_root().join("uninitialized-project")),
         );
 
-        let result = handle_build(&session, vec!["client".to_string()], false, crate::empack::archive::ArchiveFormat::Zip).await;
+        let result = handle_build(&session, vec!["client".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None).await;
 
         assert!(result.is_err(), "handle_build must return Err when not in a modpack directory");
     }
@@ -2219,7 +2219,7 @@ mod handle_build_tests {
                 ),
         );
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip).await;
+        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None).await;
 
         assert!(result.is_err(), "handle_build must return Err for incomplete project state");
         assert!(session.process_provider.get_calls().is_empty());
@@ -2238,7 +2238,7 @@ mod handle_build_tests {
             )
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip).await;
+        let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip, None).await;
 
         assert!(result.is_ok(), "clean-before-build should succeed: {result:?}");
         assert!(session.filesystem().exists(&workdir.join("empack.yml")));
@@ -2279,7 +2279,7 @@ mod handle_build_tests {
             );
         session.config_provider.app_config.dry_run = true;
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip).await;
+        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None).await;
 
         assert!(result.is_ok());
         assert!(
@@ -2742,7 +2742,7 @@ async fn test_build_with_invalid_target_string() {
             .with_configured_project(workdir),
     );
 
-    let err = handle_build(&session, vec!["not-a-real-target".to_string()], false, crate::empack::archive::ArchiveFormat::Zip)
+    let err = handle_build(&session, vec!["not-a-real-target".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None)
         .await
         .expect_err("Build should fail with invalid target");
     assert!(
@@ -2763,7 +2763,7 @@ async fn test_build_cleans_before_build_when_flag_set() {
     );
 
     // Build with clean=true
-    let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip).await;
+    let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip, None).await;
 
     // Should complete (clean happens before build attempt)
     // In mock environment, build might fail for other reasons, but clean should execute
@@ -3767,6 +3767,7 @@ mod exit_code_tests {
             vec!["mrpack".to_string()],
             false,
             crate::empack::archive::ArchiveFormat::Zip,
+            None,
         )
         .await;
 

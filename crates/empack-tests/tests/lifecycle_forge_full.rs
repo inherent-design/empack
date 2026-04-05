@@ -192,6 +192,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             targets: vec!["all".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )

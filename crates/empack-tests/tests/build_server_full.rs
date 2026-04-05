@@ -47,6 +47,7 @@ async fn e2e_build_server_full_successfully() -> Result<()> {
             targets: vec!["server-full".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -129,6 +130,7 @@ async fn e2e_build_server_full_missing_installer() -> Result<()> {
             targets: vec!["server-full".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -188,6 +190,7 @@ async fn e2e_build_server_full_with_templates() -> Result<()> {
             targets: vec!["server-full".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )

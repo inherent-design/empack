@@ -97,7 +97,8 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             targets,
             clean,
             format,
-        } => handle_build(session, targets, clean, format.to_archive_format()).await,
+            downloads_dir,
+        } => handle_build(session, targets, clean, format.to_archive_format(), downloads_dir).await,
         Commands::Clean { targets } => handle_clean(session, targets).await,
         Commands::Sync {} => handle_sync(session).await,
     }
@@ -2451,6 +2452,7 @@ async fn handle_build(
     targets: Vec<String>,
     clean: bool,
     archive_format: crate::empack::archive::ArchiveFormat,
+    _downloads_dir: Option<String>,
 ) -> Result<()> {
     let manager = session.state()?;
 
@@ -2600,6 +2602,9 @@ async fn handle_build(
                 "Build incomplete: {} mod(s) require manual download",
                 all_restricted.len()
             ));
+
+        let urls: Vec<String> = all_restricted.iter().map(|rm| rm.url.clone()).collect();
+
         for rm in &all_restricted {
             session.display().status().warning(&format!("  {}", rm.name));
             session
@@ -2613,6 +2618,22 @@ async fn handle_build(
                     .info(&format!("    Save to:  {}", rm.dest_path));
             }
         }
+
+        if session.terminal().is_tty && !session.config().app_config().yes {
+            session.display().status().message("");
+            let open = session
+                .interactive()
+                .confirm("Open all download URLs in browser?", false)?;
+            if open {
+                let (cmd, prefix_args) = crate::platform::browser_open_command();
+                for url in &urls {
+                    let mut args: Vec<&str> = prefix_args.clone();
+                    args.push(url);
+                    let _ = session.process().execute(cmd, &args, std::path::Path::new("."));
+                }
+            }
+        }
+
         session
             .display()
             .status()

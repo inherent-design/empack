@@ -26,6 +26,7 @@ async fn e2e_build_client_full_successfully() -> Result<()> {
             targets: vec!["client-full".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -103,6 +104,7 @@ async fn e2e_build_client_full_missing_installer() -> Result<()> {
             targets: vec!["client-full".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
@@ -168,6 +170,7 @@ async fn e2e_build_client_full_with_pack_structure() -> Result<()> {
             targets: vec!["client-full".to_string()],
             clean: false,
             format: CliArchiveFormat::Zip,
+            downloads_dir: None,
         },
         &session,
     )
