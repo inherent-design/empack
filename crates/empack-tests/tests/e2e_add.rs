@@ -27,6 +27,10 @@ fn e2e_add_to_uninitialized() {
 #[test]
 fn e2e_add_sodium_live() {
     empack_tests::skip_if_no_packwiz!();
+    if std::env::var("EMPACK_RUN_LIVE_TESTS").is_err() {
+        eprintln!("SKIP: set EMPACK_RUN_LIVE_TESTS=1 to run live network tests");
+        return;
+    }
 
     let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
     let output = project

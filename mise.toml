@@ -82,14 +82,8 @@ cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
 [tasks.coverage]
 alias = "cov"
 description = "Run coverage (unit + E2E)"
-run = """
-cargo build -p empack
-cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info
-"""
-run_windows = """
-cargo build -p empack
-cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info
-"""
+run = "cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info"
+run_windows = "cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info"
 
 # Lint
 

@@ -44,7 +44,6 @@ macro_rules! e2e_bad_flag_value {
         #[test]
         fn $name() {
             let mut cmd = empack_assert_cmd();
-            cmd.env("NO_COLOR", "1");
             $(cmd.arg($arg);)+
             cmd.assert()
                 .failure()
