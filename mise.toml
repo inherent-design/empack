@@ -90,6 +90,19 @@ description = "Run coverage (Release)"
 run = "BUILD_MODE=release sh tasks/sh/coverage.sh"
 run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\coverage.ps1"
 
+# E2E
+
+[tasks.e2e]
+alias = "e"
+description = "Run E2E tests (requires packwiz)"
+run = "sh tasks/sh/e2e.sh"
+
+[tasks."e2e:filter"]
+alias = "fe"
+description = "Run filtered E2E tests"
+usage = 'arg "filter" help="nextest filter expression"'
+run = "sh tasks/sh/e2e.sh {{arg(name=\"filter\")}}"
+
 # Maintenance
 
 [tasks.clean]
