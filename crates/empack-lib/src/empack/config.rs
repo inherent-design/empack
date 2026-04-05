@@ -152,6 +152,21 @@ pub struct EmpackProjectConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loader_version: Option<String>,
 
+    /// Relative path from the pack root where datapacks are installed.
+    ///
+    /// Required for packwiz to route datapack-typed content. When set,
+    /// empack writes `datapack-folder` into `pack.toml [options]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datapack_folder: Option<String>,
+
+    /// Additional Minecraft versions accepted during mod resolution.
+    ///
+    /// Widens version matching so a 1.20.1 pack can accept mods tagged
+    /// for 1.20 or 1.20.2. Written as `acceptable-game-versions` in
+    /// `pack.toml [options]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptable_game_versions: Option<Vec<String>>,
+
     /// Optional modpack metadata (if not specified, extracted from pack.toml)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -498,6 +513,8 @@ impl<'a> ConfigManager<'a> {
                 minecraft_version,
                 loader,
                 loader_version,
+                datapack_folder: None,
+                acceptable_game_versions: None,
                 name: pack_metadata.as_ref().map(|m| m.name.clone()),
                 author: pack_metadata.as_ref().and_then(|m| m.author.clone()),
                 version: pack_metadata.as_ref().and_then(|m| m.version.clone()),
@@ -610,6 +627,78 @@ impl<'a> ConfigManager<'a> {
         }
 
         // Serialize and write back
+        let yaml_content = serde_saphyr::to_string(&config)
+            .map_err(|e| ConfigError::YamlSerError { source: e })?;
+
+        self.fs_provider
+            .write_file(&empack_path, &yaml_content)
+            .map_err(|e| ConfigError::IoError {
+                source: std::io::Error::other(e),
+            })?;
+
+        Ok(())
+    }
+
+    /// Read the `datapack_folder` value from empack.yml.
+    pub fn datapack_folder(&self) -> Option<String> {
+        self.load_empack_config()
+            .ok()
+            .and_then(|c| c.empack.datapack_folder)
+    }
+
+    /// Read the `acceptable_game_versions` value from empack.yml.
+    pub fn acceptable_game_versions(&self) -> Option<Vec<String>> {
+        self.load_empack_config()
+            .ok()
+            .and_then(|c| c.empack.acceptable_game_versions)
+    }
+
+    /// Set `datapack_folder` in empack.yml.
+    ///
+    /// Loads the current config, sets the field, and writes back. Creates
+    /// a minimal config if empack.yml does not exist.
+    pub fn set_datapack_folder(&self, folder: &str) -> Result<(), ConfigError> {
+        let empack_path = self.workdir.join("empack.yml");
+
+        let mut config = match self.load_empack_config() {
+            Ok(cfg) => cfg,
+            Err(ConfigError::MissingField { .. }) => EmpackConfig {
+                empack: EmpackProjectConfig::default(),
+            },
+            Err(e) => return Err(e),
+        };
+
+        config.empack.datapack_folder = Some(folder.to_string());
+
+        let yaml_content = serde_saphyr::to_string(&config)
+            .map_err(|e| ConfigError::YamlSerError { source: e })?;
+
+        self.fs_provider
+            .write_file(&empack_path, &yaml_content)
+            .map_err(|e| ConfigError::IoError {
+                source: std::io::Error::other(e),
+            })?;
+
+        Ok(())
+    }
+
+    /// Set `acceptable_game_versions` in empack.yml.
+    ///
+    /// Loads the current config, sets the field, and writes back. Creates
+    /// a minimal config if empack.yml does not exist.
+    pub fn set_acceptable_game_versions(&self, versions: &[String]) -> Result<(), ConfigError> {
+        let empack_path = self.workdir.join("empack.yml");
+
+        let mut config = match self.load_empack_config() {
+            Ok(cfg) => cfg,
+            Err(ConfigError::MissingField { .. }) => EmpackConfig {
+                empack: EmpackProjectConfig::default(),
+            },
+            Err(e) => return Err(e),
+        };
+
+        config.empack.acceptable_game_versions = Some(versions.to_vec());
+
         let yaml_content = serde_saphyr::to_string(&config)
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 

@@ -1712,6 +1712,8 @@ fn test_empack_config_round_trip_multiple_dependencies() {
             minecraft_version: Some("1.21".to_string()),
             loader: Some(ModLoader::Fabric),
             loader_version: None,
+            datapack_folder: None,
+            acceptable_game_versions: None,
             name: Some("Test Pack".to_string()),
             author: Some("Tester".to_string()),
             version: Some("1.0.0".to_string()),
@@ -2099,6 +2101,8 @@ fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
             minecraft_version: Some("1.21".to_string()),
             loader: Some(ModLoader::Fabric),
             loader_version: None,
+            datapack_folder: None,
+            acceptable_game_versions: None,
             name: None,
             author: None,
             version: None,
@@ -2119,5 +2123,194 @@ fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
     assert!(
         middle_pos < zebra_pos,
         "middle ({middle_pos}) should come before zebra ({zebra_pos}) in YAML output"
+    );
+}
+
+// ─── datapack_folder / acceptable_game_versions tests ────────────────────
+
+#[test]
+fn test_empack_yml_datapack_folder_roundtrip() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies: {}
+  minecraft_version: "1.20.1"
+  loader: fabric
+  datapack_folder: "datapacks"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.datapack_folder, Some("datapacks".to_string()));
+
+    config_manager.set_datapack_folder("config/paxi/datapacks").unwrap();
+
+    let reloaded = config_manager.load_empack_config().unwrap();
+    assert_eq!(
+        reloaded.empack.datapack_folder,
+        Some("config/paxi/datapacks".to_string()),
+    );
+    assert_eq!(reloaded.empack.minecraft_version, Some("1.20.1".to_string()));
+}
+
+#[test]
+fn test_empack_yml_acceptable_game_versions_roundtrip() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies: {}
+  minecraft_version: "1.20.1"
+  acceptable_game_versions:
+    - "1.20"
+    - "1.20.2"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(
+        config.empack.acceptable_game_versions,
+        Some(vec!["1.20".to_string(), "1.20.2".to_string()]),
+    );
+
+    let new_versions = vec!["1.20".to_string(), "1.20.1".to_string(), "1.20.2".to_string()];
+    config_manager.set_acceptable_game_versions(&new_versions).unwrap();
+
+    let reloaded = config_manager.load_empack_config().unwrap();
+    assert_eq!(
+        reloaded.empack.acceptable_game_versions,
+        Some(new_versions),
+    );
+}
+
+#[test]
+fn test_empack_yml_without_optional_fields() {
+    let config = EmpackConfig {
+        empack: EmpackProjectConfig {
+            dependencies: BTreeMap::new(),
+            minecraft_version: Some("1.21".to_string()),
+            loader: Some(ModLoader::Fabric),
+            loader_version: None,
+            datapack_folder: None,
+            acceptable_game_versions: None,
+            name: Some("Test".to_string()),
+            author: None,
+            version: None,
+        },
+    };
+
+    let yaml = serde_saphyr::to_string(&config).unwrap();
+    assert!(
+        !yaml.contains("datapack_folder"),
+        "datapack_folder should be omitted when None; got:\n{yaml}",
+    );
+    assert!(
+        !yaml.contains("acceptable_game_versions"),
+        "acceptable_game_versions should be omitted when None; got:\n{yaml}",
+    );
+
+    let deserialized: EmpackConfig = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(deserialized.empack.datapack_folder, None);
+    assert_eq!(deserialized.empack.acceptable_game_versions, None);
+}
+
+#[test]
+fn test_config_manager_datapack_folder_accessor() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies: {}
+  minecraft_version: "1.21"
+  datapack_folder: "datapacks"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir);
+
+    assert_eq!(
+        config_manager.datapack_folder(),
+        Some("datapacks".to_string()),
+    );
+}
+
+#[test]
+fn test_config_manager_datapack_folder_returns_none_when_absent() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies: {}
+  minecraft_version: "1.21"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir);
+
+    assert_eq!(config_manager.datapack_folder(), None);
+    assert_eq!(config_manager.acceptable_game_versions(), None);
+}
+
+#[test]
+fn test_config_manager_set_datapack_folder_creates_config() {
+    let workdir = mock_root().join("config");
+    let provider = create_mock_config_provider(workdir.clone());
+    let config_manager = provider.config_manager(workdir.clone());
+
+    config_manager.set_datapack_folder("datapacks").unwrap();
+
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.datapack_folder, Some("datapacks".to_string()));
+}
+
+#[test]
+fn test_datapack_folder_preserved_after_add_dependency() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+  datapack_folder: "datapacks"
+  acceptable_game_versions:
+    - "1.20"
+    - "1.20.2"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let config_manager = provider.config_manager(workdir.clone());
+
+    config_manager
+        .add_dependency(
+            "lithium",
+            DependencyRecord {
+                status: DependencyStatus::Resolved,
+                title: "Lithium".to_string(),
+                platform: ProjectPlatform::Modrinth,
+                project_id: "gvQqBUqZ".to_string(),
+                project_type: ProjectType::Mod,
+                version: None,
+            },
+        )
+        .unwrap();
+
+    let config = config_manager.load_empack_config().unwrap();
+    assert_eq!(config.empack.dependencies.len(), 2);
+    assert_eq!(config.empack.datapack_folder, Some("datapacks".to_string()));
+    assert_eq!(
+        config.empack.acceptable_game_versions,
+        Some(vec!["1.20".to_string(), "1.20.2".to_string()]),
     );
 }
