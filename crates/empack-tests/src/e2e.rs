@@ -3,16 +3,24 @@ use std::process::Command;
 
 /// Resolve the empack binary path.
 ///
-/// Uses `EMPACK_E2E_BIN` env var if set; falls back to the cargo target
-/// directory (release then debug), then bare PATH lookup.
+/// Checks in order: `EMPACK_E2E_BIN` env var, llvm-cov instrumented
+/// binary, debug build, release build, bare PATH.
 pub fn empack_bin() -> PathBuf {
     if let Ok(bin) = std::env::var("EMPACK_E2E_BIN") {
         return PathBuf::from(bin);
     }
 
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let target_root = manifest.join("../../target");
+
+    // llvm-cov instrumented binary (enables E2E coverage collection)
+    let llvm_cov = target_root.join("llvm-cov-target/debug/empack");
+    if llvm_cov.exists() {
+        return llvm_cov;
+    }
+
     for profile in &["debug", "release"] {
-        let candidate = manifest.join(format!("../../target/{profile}/empack"));
+        let candidate = target_root.join(format!("{profile}/empack"));
         if candidate.exists() {
             return candidate;
         }
@@ -129,6 +137,16 @@ impl TestProject {
     pub fn assert_exists(&self, relative: &str) {
         assert_file_exists(&self.root.join(relative));
     }
+}
+
+/// Build an assert_cmd Command from the resolved empack binary.
+///
+/// Prefers the llvm-cov instrumented binary when available so E2E
+/// tests contribute to coverage reports.
+pub fn empack_assert_cmd() -> assert_cmd::Command {
+    let mut cmd = assert_cmd::Command::new(empack_bin());
+    cmd.env("NO_COLOR", "1");
+    cmd
 }
 
 /// Build an empack Command pointed at a specific directory with NO_COLOR.

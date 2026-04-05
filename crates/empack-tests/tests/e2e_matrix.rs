@@ -1,5 +1,4 @@
-use assert_cmd::Command;
-use empack_tests::e2e::TestProject;
+use empack_tests::e2e::{empack_assert_cmd, TestProject};
 use predicates::prelude::*;
 
 macro_rules! e2e_init_modloader {
@@ -44,7 +43,7 @@ macro_rules! e2e_bad_flag_value {
     ($name:ident, args: [$($arg:expr),+], stderr_contains: $expected:expr) => {
         #[test]
         fn $name() {
-            let mut cmd = Command::cargo_bin("empack").unwrap();
+            let mut cmd = empack_assert_cmd();
             cmd.env("NO_COLOR", "1");
             $(cmd.arg($arg);)+
             cmd.assert()
@@ -129,9 +128,7 @@ macro_rules! e2e_no_args_succeeds {
     ($name:ident, args: [$($arg:expr),+]) => {
         #[test]
         fn $name() {
-            Command::cargo_bin("empack")
-                .unwrap()
-                .env("NO_COLOR", "1")
+            empack_assert_cmd()
                 .args([$($arg),+])
                 .assert()
                 .success();

@@ -8,6 +8,7 @@ version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+assert_cmd.workspace = true
 directories.workspace = true
 empack-lib = { workspace = true, features = ["test-utils"] }
 indicatif.workspace = true
@@ -18,7 +19,6 @@ tempfile.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
-assert_cmd.workspace = true
 expectrl.workspace = true
 mockito.workspace = true
 predicates.workspace = true
