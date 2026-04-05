@@ -35,7 +35,6 @@ serde_json = "1.0.149"
 serde-saphyr = "0.0.23"
 semver = "1"
 sha1 = "0.11.0"
-sha2 = "0.11.0"
 murmur2 = "0.1" # Murmur2 hash for CurseForge fingerprint API
 thiserror = "2.0.18"
 toml = "1.0.7"

@@ -374,10 +374,7 @@ impl<'a> BuildOrchestrator<'a> {
             .map_err(|e| BuildError::ConfigError {
                 reason: format!("failed to read downloaded server JAR: {}", e),
             })?;
-        let hash = Sha1::digest(&jar_bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
+        let hash = crate::empack::content::hex::encode(Sha1::digest(&jar_bytes));
         if hash != expected_sha1 {
             let _ = self.session.filesystem().remove_file(jar_path);
             return Err(BuildError::ValidationError {
