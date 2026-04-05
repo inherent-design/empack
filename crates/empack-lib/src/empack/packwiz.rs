@@ -391,6 +391,69 @@ minecraft = "{}"
     }
 }
 
+/// Write `[options]` section to an existing pack.toml file.
+///
+/// Reads the file, parses as TOML, merges `datapack-folder` and
+/// `acceptable-game-versions` into the `[options]` table, preserves
+/// all other content, and writes back. Keys use kebab-case per
+/// packwiz convention.
+///
+/// Passing `None` for a parameter leaves any existing value for that
+/// key untouched. To clear a key, remove it from the TOML manually.
+pub fn write_pack_toml_options(
+    pack_toml_path: &Path,
+    datapack_folder: Option<&str>,
+    acceptable_game_versions: Option<&[String]>,
+    fs: &dyn FileSystemProvider,
+) -> Result<(), PackwizError> {
+    let content = fs.read_to_string(pack_toml_path).map_err(|e| {
+        PackwizError::ProcessFailed {
+            source: std::io::Error::other(e),
+        }
+    })?;
+
+    let mut table: toml::Table = toml::from_str(&content).map_err(|e| {
+        PackwizError::PackFormatError(format!("failed to parse pack.toml: {e}"))
+    })?;
+
+    let options = table
+        .entry("options")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+
+    let options_table = options
+        .as_table_mut()
+        .ok_or_else(|| PackwizError::PackFormatError("[options] is not a table".into()))?;
+
+    if let Some(folder) = datapack_folder {
+        options_table.insert(
+            "datapack-folder".to_string(),
+            toml::Value::String(folder.to_string()),
+        );
+    }
+
+    if let Some(versions) = acceptable_game_versions {
+        let arr: Vec<toml::Value> = versions
+            .iter()
+            .map(|v| toml::Value::String(v.clone()))
+            .collect();
+        options_table.insert(
+            "acceptable-game-versions".to_string(),
+            toml::Value::Array(arr),
+        );
+    }
+
+    let output = toml::to_string(&table).map_err(|e| {
+        PackwizError::PackFormatError(format!("failed to serialize pack.toml: {e}"))
+    })?;
+
+    fs.write_file(pack_toml_path, &output)
+        .map_err(|e| PackwizError::ProcessFailed {
+            source: std::io::Error::other(e),
+        })?;
+
+    Ok(())
+}
+
 /// Errors from packwiz operations
 #[derive(Debug, Error)]
 pub enum PackwizError {
