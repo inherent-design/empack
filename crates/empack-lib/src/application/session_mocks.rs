@@ -522,8 +522,11 @@ impl NetworkProvider for MockNetworkProvider {
         if self.fail_http_client {
             return Err(anyhow::anyhow!("Mock HTTP client unavailable (test mode)"));
         }
+        // 1ms timeout + unreachable proxy: any real HTTP request fails instantly
+        // instead of blocking for 30s on real network. The Client object itself is
+        // valid and can be passed to project_resolver() (which is mocked separately).
         Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_millis(1))
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))
     }
