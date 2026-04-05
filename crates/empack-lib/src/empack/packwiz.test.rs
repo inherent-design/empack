@@ -868,11 +868,8 @@ minecraft = "1.20.1"
     assert!(result.is_ok());
 
     let updated = fs.read_to_string(&pack_toml_path).unwrap();
-    let doc: toml::Table = toml::from_str(&updated).unwrap();
-
-    let options = doc.get("options").expect("[options] created but should be empty");
-    assert!(
-        options.as_table().unwrap().is_empty(),
-        "options table should be empty when both params are None",
+    assert_eq!(
+        updated, existing,
+        "file should be unchanged when both params are None",
     );
 }

@@ -406,6 +406,10 @@ pub fn write_pack_toml_options(
     acceptable_game_versions: Option<&[String]>,
     fs: &dyn FileSystemProvider,
 ) -> Result<(), PackwizError> {
+    if datapack_folder.is_none() && acceptable_game_versions.is_none() {
+        return Ok(());
+    }
+
     let content = fs.read_to_string(pack_toml_path).map_err(|e| {
         PackwizError::ProcessFailed {
             source: std::io::Error::other(e),
