@@ -3,10 +3,10 @@ name: CI
 on:
   push:
     branches: [main, dev]
-    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, tasks/**]
+    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, mise.toml]
   pull_request:
     branches: [dev, main]
-    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, tasks/**]
+    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, mise.toml]
   workflow_dispatch:
 
 permissions:
@@ -25,9 +25,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --all-targets
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: mise run check
+      - run: mise run clippy
 
   test:
     name: test (${{ matrix.os }})
@@ -41,32 +42,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cargo-nextest
-
-      - name: Install packwiz (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          curl -L https://github.com/packwiz/packwiz/releases/latest/download/packwiz-linux-amd64 -o /usr/local/bin/packwiz
-          chmod +x /usr/local/bin/packwiz
-
-      - name: Install packwiz (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          sudo curl -L https://github.com/packwiz/packwiz/releases/latest/download/packwiz-darwin-arm64 -o /usr/local/bin/packwiz
-          sudo chmod +x /usr/local/bin/packwiz
-
-      - name: Install packwiz (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/packwiz/packwiz/releases/latest/download/packwiz-windows-amd64.exe" -OutFile "$env:USERPROFILE\.cargo\bin\packwiz.exe"
-
-      - name: Build empack binary
-        run: cargo build -p empack
-
-      - name: Tests (unit + E2E)
-        run: cargo nextest run -p empack-lib --features test-utils -p empack-tests
+      - run: mise run test
+      - run: mise run e2e
 
   coverage:
     needs: lint
@@ -75,22 +54,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov,cargo-nextest
-
-      - name: Install packwiz
-        run: |
-          curl -L https://github.com/packwiz/packwiz/releases/latest/download/packwiz-linux-amd64 -o /usr/local/bin/packwiz
-          chmod +x /usr/local/bin/packwiz
-
-      - name: Build empack binary
-        run: cargo build -p empack
-
-      - run: cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info
+      - run: mise run coverage
       - run: cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
-
       - uses: actions/upload-artifact@v7
         with:
           name: coverage-lcov
