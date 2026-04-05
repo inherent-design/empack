@@ -55,8 +55,10 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             author: Some("Workflow Test".to_string()),
             loader_version: None,
             pack_version: None,
-                    from_source: None,
-},
+            datapack_folder: None,
+            game_versions: None,
+            from_source: None,
+        },
         &session,
     )
     .await;
@@ -315,8 +317,10 @@ async fn test_forge_modloader_initialization() -> Result<()> {
             author: None,
             loader_version: None,
             pack_version: None,
-                    from_source: None,
-},
+            datapack_folder: None,
+            game_versions: None,
+            from_source: None,
+        },
         &session,
     )
     .await;

@@ -59,17 +59,28 @@ The `Session` trait (session.rs) is the root accessor for all providers. Command
 | MockArchiveProvider | Spy vectors | Records create/extract calls |
 | MockInteractiveProvider | VecDeque queue + fallback | Pre-programmed prompt responses |
 
-### Session Builders
+### Session Builders (unit tests)
 
 | Builder | Providers | Cross-platform |
 |---------|-----------|---------------|
 | MockSessionBuilder | All mocks | Yes |
-| HermeticSessionBuilder | Real FS + real process + mock network | Unix only (shell scripts) |
 | CommandSession::new_with_providers | Mixed (real FS + mock process typical) | Yes, but ArchiveProvider hardcoded to live |
+| HermeticSessionBuilder | Real FS + real process + mock network | Unix only (shell scripts); being replaced by E2E subprocess tests |
+
+### E2E Test Harness
+
+E2E tests bypass the session layer entirely by running the empack binary as a subprocess via `assert_cmd` and `expectrl`. This tests the full stack including CLI parsing, session construction, and process exit codes.
+
+| Component | Purpose |
+|-----------|---------|
+| `TestProject` | Isolated TempDir + `cmd()` builder with NO_COLOR |
+| `empack_bin()` | Binary resolution: EMPACK_E2E_BIN → llvm-cov → debug → release → PATH |
+| `empack_assert_cmd()` | assert_cmd Command from resolved binary |
+| `skip_if_no_packwiz!()` | Skip macros for missing prerequisites (chained) |
 
 ### Abstraction Gaps
 
 - `LiveArchiveProvider` is hardcoded in `CommandSession`; cannot inject `MockArchiveProvider` through `new_with_providers`.
-- `LiveDisplayProvider` is not pluggable; stdout/stderr not capturable in tests.
+- `LiveDisplayProvider` is not pluggable; stdout/stderr not capturable in unit tests (use E2E subprocess tests instead).
 - `std::process::exit(130)` on Ctrl+C; interrupt recovery not testable.
 - Some import functions use `std::fs::File::open` directly, bypassing `FileSystemProvider`.

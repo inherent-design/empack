@@ -2,11 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
-    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, tasks/**]
+    branches: [main, dev]
+    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, mise.toml]
   pull_request:
     branches: [dev, main]
-    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, tasks/**]
+    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, mise.toml]
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  lint:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -26,52 +26,64 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: cargo check
-        run: cargo check --workspace --all-targets
-      - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo check --workspace --all-targets
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
-    name: Test (${{ matrix.runner }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    name: test (${{ matrix.os }})
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ fromJSON((github.base_ref == 'main' || github.ref == 'refs/heads/main') && '["blacksmith-4vcpu-ubuntu-2404","macos-26","windows-latest"]' || '["blacksmith-4vcpu-ubuntu-2404"]') }}
+        os: [blacksmith-4vcpu-ubuntu-2404, macos-26, windows-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-nextest
-      - name: cargo nextest
-        run: cargo nextest run --release -p empack-lib --features test-utils -p empack-tests
+      - run: mise run test
+      - run: mise run e2e
 
-  build-check:
-    if: github.ref == 'refs/heads/main'
-    name: Build check (${{ matrix.target }})
+  coverage:
+    needs: lint
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            use-cross: false
-          - target: aarch64-unknown-linux-gnu
-            use-cross: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
+      - run: mise run coverage
+      - run: cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-lcov
+          path: lcov.info
+
+  cross-check:
+    if: github.ref == 'refs/heads/main'
+    needs: lint
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
-      - if: matrix.use-cross
-        uses: taiki-e/install-action@cross
-      - name: build check
-        run: |
-          if [ "${{ matrix.use-cross }}" = "true" ]; then
-            cross check --workspace --target ${{ matrix.target }}
-          else
-            cargo check --workspace --target ${{ matrix.target }}
-          fi
+      - uses: taiki-e/install-action@cross
+      - run: cross check --workspace --target aarch64-unknown-linux-gnu

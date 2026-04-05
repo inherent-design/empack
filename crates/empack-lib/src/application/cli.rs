@@ -101,11 +101,18 @@ pub enum Commands {
         /// Pack version string (e.g., "1.0.0")
         #[arg(
             long,
-            short = 'V',
             env = "EMPACK_PACK_VERSION",
             help = "Pack version (skips interactive prompt)"
         )]
         pack_version: Option<String>,
+
+        /// Folder for datapacks relative to pack root
+        #[arg(long, env = "EMPACK_DATAPACK_FOLDER")]
+        datapack_folder: Option<String>,
+
+        /// Additional accepted MC versions (comma-separated)
+        #[arg(long, env = "EMPACK_GAME_VERSIONS", value_delimiter = ',')]
+        game_versions: Option<Vec<String>>,
 
         /// Import modpack from a source (file path or URL)
         #[arg(long = "from", value_name = "SOURCE")]

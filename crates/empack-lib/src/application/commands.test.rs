@@ -100,7 +100,7 @@ mod format_empack_yml_tests {
         loader: &str,
         loader_version: &str,
     ) -> InitYml {
-        let yaml = format_empack_yml(name, author, version, mc_version, loader, loader_version);
+        let yaml = format_empack_yml(name, author, version, mc_version, loader, loader_version, None, None);
         serde_saphyr::from_str(&yaml)
             .unwrap_or_else(|e| panic!("produced invalid YAML: {e}\n---\n{yaml}"))
     }
@@ -114,6 +114,8 @@ mod format_empack_yml_tests {
             "1.21.1",
             "fabric",
             "0.18.4",
+            None,
+            None,
         );
         // serde_saphyr omits quotes for plain strings
         assert!(result.contains("name: test-pack"));
@@ -178,6 +180,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -215,7 +219,7 @@ mod handle_init_tests {
             .read_to_string(&workdir.join("empack.yml"))
             .unwrap();
 
-        let result = handle_init(&session, None, None, false, None, None, None, None, None, None).await;
+        let result = handle_init(&session, None, None, false, None, None, None, None, None, None, None, None).await;
 
         assert!(
             result.is_err(),
@@ -256,6 +260,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Overwrite Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -302,6 +308,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -329,6 +337,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Cancel Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -362,6 +372,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -389,6 +401,8 @@ mod handle_init_tests {
             Some("notaloader".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -424,6 +438,8 @@ mod handle_init_tests {
             Some("0.15.0".to_string()),
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -451,6 +467,8 @@ mod handle_init_tests {
             Some("1.21.1".to_string()),
             Some("TestAuthor".to_string()),
             Some("99.99.99".to_string()),
+            None,
+            None,
             None,
             None,
         )
@@ -489,12 +507,22 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
-        // With fallback versions, "1.21.1" + "fabric" is valid and first fallback
-        // loader version "0.15.0" is selected. The final checkpoint should pass.
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "fallback loader init should succeed: {result:?}");
+
+        let target = mock_root().join("compatible-loader-fallback").join("test-pack");
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("loader: fabric"),
+            "empack.yml should contain fabric loader: {empack_yml}"
+        );
     }
 
     #[tokio::test]
@@ -515,6 +543,8 @@ mod handle_init_tests {
             Some("Test Author".to_string()),
             None,
             Some("2.0.0".to_string()),
+            None,
+            None,
             None,
         )
         .await;
@@ -552,6 +582,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -585,6 +617,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -611,6 +645,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -649,6 +685,8 @@ mod handle_init_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -674,6 +712,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -708,6 +748,8 @@ mod handle_init_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -1031,7 +1073,7 @@ mod handle_add_tests {
 
         let result = handle_add(&session, vec![], false, None, None, None, None).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // No packwiz commands should have been executed
         let calls = session.process_provider.get_calls();
@@ -1047,7 +1089,7 @@ mod handle_add_tests {
 
         let result = handle_add(&session, vec!["test-mod".to_string()], false, None, None, None, None).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();
@@ -1099,8 +1141,7 @@ mod handle_add_tests {
 
         let result = handle_add(&session, vec!["sodium".to_string()], false, None, None, None, None).await;
 
-        assert!(result.is_ok());
-        assert!(session.process_provider.get_calls().is_empty());
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -1435,7 +1476,7 @@ mod handle_remove_tests {
 
         let result = handle_remove(&session, vec![], false).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // No packwiz commands should have been executed
         let calls = session.process_provider.get_calls();
@@ -1451,7 +1492,7 @@ mod handle_remove_tests {
 
         let result = handle_remove(&session, vec!["test-mod".to_string()], false).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();
@@ -1484,8 +1525,7 @@ mod handle_remove_tests {
 
         let result = handle_remove(&session, vec!["sodium".to_string()], false).await;
 
-        assert!(result.is_ok());
-        assert!(session.process_provider.get_calls().is_empty());
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -1859,7 +1899,7 @@ fabric = "0.16.0"
 
         let result = handle_sync(&session).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_err());
 
         // Should not execute packwiz commands in uninitialized project
         let calls = session.process_provider.get_calls();
@@ -3426,6 +3466,8 @@ mod init_interactive_tests {
             None,
             None,
             None,
+            None,
+            None,
         )
         .await;
 
@@ -3458,6 +3500,8 @@ mod init_interactive_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -3498,6 +3542,8 @@ mod init_interactive_tests {
             Some("fabric".to_string()),
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
+            None,
+            None,
             None,
             None,
             None,
@@ -3581,6 +3627,8 @@ mod init_interactive_tests {
             Some("1.21.1".to_string()),
             Some("Test Author".to_string()),
             Some("0.15.0".to_string()),      // should warn or error
+            None,
+            None,
             None,
             None,
         )

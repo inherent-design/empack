@@ -448,7 +448,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         if !output.success {
             return Err(BuildError::CommandFailed {
-                command: format!("fabric installer failed: {}", output.stderr),
+                command: format!("fabric installer failed: {}", output.error_output()),
             });
         }
 
@@ -533,7 +533,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         if !output.success {
             return Err(BuildError::CommandFailed {
-                command: format!("quilt installer failed: {}", output.stderr),
+                command: format!("quilt installer failed: {}", output.error_output()),
             });
         }
 
@@ -615,7 +615,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         if !output.success {
             return Err(BuildError::CommandFailed {
-                command: format!("neoforge installer failed: {}", output.stderr),
+                command: format!("neoforge installer failed: {}", output.error_output()),
             });
         }
 
@@ -674,7 +674,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         if !output.success {
             return Err(BuildError::CommandFailed {
-                command: format!("forge installer failed: {}", output.stderr),
+                command: format!("forge installer failed: {}", output.error_output()),
             });
         }
 
@@ -932,7 +932,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         if !output.success {
             return Err(BuildError::CommandFailed {
-                command: format!("packwiz refresh: {}", output.stderr),
+                command: format!("packwiz refresh: {}", output.error_output()),
             });
         }
 

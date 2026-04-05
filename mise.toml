@@ -1,111 +1,114 @@
 [settings]
 windows_default_inline_shell_args = "pwsh -NoProfile -NonInteractive -Command"
 
-# Non-Rust developer tools only.
-# `cargo-nextest` and `cargo-llvm-cov` did not appear in `mise registry`,
-# so install them separately with `cargo install` if needed.
 [tools]
+"go:github.com/packwiz/packwiz" = "latest"
 git-cliff = "latest"
+# cargo-nextest and cargo-llvm-cov installed via taiki-e/install-action in CI
+# or cargo install locally; mise's cargo backend conflicts with dtolnay/rust-toolchain
 
 [env]
 CARGO_TERM_COLOR = "always"
 
-# Run
-
-[tasks.run]
-alias = ["r", "rd", "run:debug"]
-description = "Run empack (Debug)"
-run = "RUN_AFTER_BUILD=1 BUILD_MODE=debug sh tasks/sh/build.sh"
-run_windows = "$env:RUN_AFTER_BUILD='1'; $env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\build.ps1"
-
-[tasks."run:profile"]
-alias = "rp"
-description = "Run empack (Profile)"
-run = "RUN_AFTER_BUILD=1 BUILD_MODE=profile sh tasks/sh/build.sh"
-run_windows = "$env:RUN_AFTER_BUILD='1'; $env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\build.ps1"
-
-[tasks."run:release"]
-alias = "rr"
-description = "Run empack (Release)"
-run = "RUN_AFTER_BUILD=1 BUILD_MODE=release sh tasks/sh/build.sh"
-run_windows = "$env:RUN_AFTER_BUILD='1'; $env:BUILD_MODE='release'; & .\\tasks\\pwsh\\build.ps1"
-
 # Build
 
 [tasks.build]
-alias = ["b", "bd", "build:debug"]
-description = "Build workspace (Debug)"
-run = "BUILD_MODE=debug sh tasks/sh/build.sh"
-run_windows = "$env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\build.ps1"
-
-[tasks."build:profile"]
-alias = "bp"
-description = "Build workspace (Profile)"
-run = "BUILD_MODE=profile sh tasks/sh/build.sh"
-run_windows = "$env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\build.ps1"
+alias = ["b", "bd"]
+description = "Build workspace"
+run = "cargo build --workspace"
+run_windows = "cargo build --workspace"
 
 [tasks."build:release"]
 alias = "br"
-description = "Build workspace (Release)"
-run = "BUILD_MODE=release sh tasks/sh/build.sh"
-run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\build.ps1"
+description = "Build workspace (release)"
+run = "cargo build --workspace --release"
+run_windows = "cargo build --workspace --release"
+
+# Run
+
+[tasks.run]
+alias = ["r", "rd"]
+description = "Run empack"
+run = "cargo run -p empack --"
+run_windows = "cargo run -p empack --"
+
+[tasks."run:release"]
+alias = "rr"
+description = "Run empack (release)"
+run = "cargo run -p empack --release --"
+run_windows = "cargo run -p empack --release --"
 
 # Test
 
 [tasks.test]
-alias = ["t", "td", "test:debug"]
-description = "Run tests (Debug)"
-run = "BUILD_MODE=debug sh tasks/sh/test.sh"
-run_windows = "$env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\test.ps1"
+alias = "t"
+description = "Run unit + integration tests (excludes E2E)"
+run = """
+cargo build -p empack
+cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'
+"""
+run_windows = """
+cargo build -p empack
+cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'
+"""
 
-[tasks."test:profile"]
-alias = "tp"
-description = "Run tests (Profile)"
-run = "BUILD_MODE=profile sh tasks/sh/test.sh"
-run_windows = "$env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\test.ps1"
+[tasks.e2e]
+alias = "e"
+description = "Run E2E tests (builds binary first)"
+run = """
+cargo build -p empack
+cargo nextest run -p empack-tests -E 'test(~e2e_)'
+"""
+run_windows = """
+cargo build -p empack
+cargo nextest run -p empack-tests -E 'test(~e2e_)'
+"""
 
-[tasks."test:release"]
-alias = "tr"
-description = "Run tests (Release)"
-run = "BUILD_MODE=release sh tasks/sh/test.sh"
-run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\test.ps1"
+[tasks."e2e:filter"]
+alias = "fe"
+description = "Run filtered E2E tests"
+usage = 'arg "filter" help="nextest filter expression"'
+run = """
+cargo build -p empack
+cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
+"""
+run_windows = """
+cargo build -p empack
+cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
+"""
 
 # Coverage
 
 [tasks.coverage]
-alias = ["cov", "covd", "coverage:debug"]
-description = "Run coverage (Debug)"
-run = "BUILD_MODE=debug sh tasks/sh/coverage.sh"
-run_windows = "$env:BUILD_MODE='debug'; & .\\tasks\\pwsh\\coverage.ps1"
+alias = "cov"
+description = "Run coverage (unit + E2E)"
+run = """
+cargo build -p empack
+cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info
+"""
+run_windows = """
+cargo build -p empack
+cargo llvm-cov nextest --workspace --features test-utils --lcov --output-path lcov.info
+"""
 
-[tasks."coverage:profile"]
-alias = "covp"
-description = "Run coverage (Profile)"
-run = "BUILD_MODE=profile sh tasks/sh/coverage.sh"
-run_windows = "$env:BUILD_MODE='profile'; & .\\tasks\\pwsh\\coverage.ps1"
+# Lint
 
-[tasks."coverage:release"]
-alias = "covr"
-description = "Run coverage (Release)"
-run = "BUILD_MODE=release sh tasks/sh/coverage.sh"
-run_windows = "$env:BUILD_MODE='release'; & .\\tasks\\pwsh\\coverage.ps1"
+[tasks.check]
+alias = "chk"
+description = "Run cargo check"
+run = "cargo check --workspace --all-targets"
+run_windows = "cargo check --workspace --all-targets"
+
+[tasks.clippy]
+alias = "lint"
+description = "Run cargo clippy"
+run = "cargo clippy --workspace --all-targets -- -D warnings"
+run_windows = "cargo clippy --workspace --all-targets -- -D warnings"
 
 # Maintenance
 
 [tasks.clean]
 alias = "c"
 description = "Remove build artifacts"
-run = "sh tasks/sh/clean.sh"
-run_windows = "& .\\tasks\\pwsh\\clean.ps1"
-
-[tasks.check]
-alias = "chk"
-description = "Run cargo check"
-run = "sh tasks/sh/check.sh"
-run_windows = "& .\\tasks\\pwsh\\check.ps1"
-
-[tasks.clippy]
-alias = "lint"
-description = "Run cargo clippy"
-run = "CHECK_MODE=clippy sh tasks/sh/check.sh"
-run_windows = "$env:CHECK_MODE='clippy'; & .\\tasks\\pwsh\\check.ps1"
+run = "cargo clean"
+run_windows = "cargo clean"

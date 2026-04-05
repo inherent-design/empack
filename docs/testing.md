@@ -10,7 +10,7 @@ empack tests across two tiers: unit tests for pure functions and mock-based comm
 
 ## Unit Tests
 
-728 tests across two crates, all run with `cargo nextest`:
+751 tests across two crates, all run via mise tasks:
 
 ```bash
 cargo check --workspace --all-targets
@@ -19,12 +19,9 @@ cargo nextest run -p empack-lib --features test-utils
 cargo nextest run -p empack-tests
 ```
 
-**empack-lib** (659 tests): co-located `.test.rs` files via `include!()`. Feature-gated behind `test-utils`. Includes:
-- Command handler tests via `MockCommandSession`
-- API contract tests deserializing VCR cassettes into production structs
-- Config, state machine, search, build, sync, and parser unit tests
+**empack-lib** (659 tests): co-located `.test.rs` files via `include!()`. Feature-gated behind `test-utils`. Includes command handler tests via `MockCommandSession`, API contract tests deserializing VCR cassettes, config/state/search/build/sync/parser unit tests.
 
-**empack-tests** (69 tests): workflow tests using `MockSessionBuilder` (in-memory filesystem, mock process provider) and `CommandSession::new_with_providers` (real filesystem + mock process).
+**empack-tests** (92 tests, 1 skipped): mock-based workflow tests via `MockSessionBuilder` + live E2E subprocess tests via `assert_cmd` and `expectrl`. E2E tests self-skip when prerequisites (packwiz, java, CF key) are missing.
 
 Use isolated reruns when iterating on specific behavior:
 
@@ -106,13 +103,15 @@ E2E tests create temporary directories. No external resources need cleanup (unli
 ### E2E Test Structure
 
 ```
-test/e2e/
-  helpers.rs            # binary path resolution, project creators, disk assertions
-  init_test.rs          # init: interactive, --yes, --from, error recovery
-  add_test.rs           # add: by name, URL, direct download, version pins
-  sync_test.rs          # sync: reconciliation, dry-run
-  build_test.rs         # build: all targets, templates, clean
-  import_test.rs        # init --from: real .mrpack and .zip files
+crates/empack-tests/
+  src/e2e.rs              # TestProject, empack_bin(), skip macros, empack_assert_cmd()
+  tests/
+    e2e_version.rs        # version output, help, TestProject smoke
+    e2e_init.rs           # fabric, neoforge, missing modloader, existing project, force, scaffolding
+    e2e_build.rs          # mrpack export, clean
+    e2e_add.rs            # uninitialized, live sodium, nonexistent mod
+    e2e_interactive.rs    # expectrl PTY init flow (#[ignore])
+    e2e_matrix.rs         # macro-generated: modloader variants, bad flags, requires-modpack, build targets, help
 ```
 
 ---
@@ -156,22 +155,18 @@ Audited 2026-03-24 across 515 test functions. Subsequent work added contract tes
 | Infrastructure (networking, display, terminal) | 118 | 82 (69%) | 4 (3%) | 32 (27%) |
 | **Total** | **515** | **397 (77%)** | **53 (10%)** | **65 (13%)** |
 
-### Vacuous tests
+### Resolved since audit
 
-65 tests that cannot fail regardless of implementation correctness. See the audit tables below for specifics.
+- Vacuous integration tests deleted: `test_init_packwiz_unavailable`, `test_build_template_error_specificity`, `e2e_requirements_packwiz_missing`
+- `MockBehavior::Conditional`, `ConditionalRule`, `HermeticSessionBuilder`, `TestEnvironment` deleted
+- Weak loader version tests strengthened with value assertions
+- 8 error-path tests corrected from `is_ok()` to `is_err()` (exit code fix)
 
-**Unit (tautological construct-then-assert):** `test_sync_action_creation`, `test_sync_action_remove`, `test_build_result_structure`, `test_build_artifact_structure`, `test_pack_info_structure`.
-
-**Integration (both branches pass):** `test_init_packwiz_unavailable`, `test_build_template_error_specificity`, `e2e_requirements_packwiz_missing`.
-
-**Infrastructure (zero assertions):** 27 display tests, 1 networking test.
-
-### Known issues
+### Remaining known issues
 
 - `handle_remove_tests::it_rejects_incomplete_project_state` calls `handle_sync`, not `handle_remove`
 - 3 duplicate test pairs covering identical logic
-- 7 weak tests (is_ok/is_err only, no value verification)
-- `MockBehavior::Conditional` and `MockSessionBuilder::with_interactive_provider()` are unused infrastructure
+- 27 display infrastructure tests with zero assertions (untestable in unit tier; display output requires E2E)
 
 ---
 
@@ -188,24 +183,20 @@ Audited 2026-03-24 across 515 test functions. Subsequent work added contract tes
 
 ## Gaps and Next Steps
 
-### Architecture
+### Completed
 
-1. Scaffold `empack-e2e` crate with `assert_cmd` and `expectrl` dependencies
-2. Add `mise.toml` with `test`, `e2e`, `e2e:filter`, `lint`, `build` tasks
-3. Add Dockerfile for containerized E2E (Colima aarch64)
-4. Remove HermeticSessionBuilder (replaced by E2E subprocess tests)
+- E2E harness scaffolded in empack-tests (TestProject, skip macros, assert_cmd, expectrl)
+- 38 E2E tests across 6 files (init, build, add, interactive, version, matrix)
+- mise.toml with inline tasks; packwiz via Go backend
+- CI unified: lint, test (3 platforms), coverage, cross-check
+- HermeticSessionBuilder and dead infrastructure deleted
+- Vacuous integration tests deleted; weak tests strengthened
+- Coverage includes E2E via instrumented binary (82.8% line, 75.2% branch)
 
-### Test coverage
+### Remaining
 
-1. Add `cargo-llvm-cov` to CI for branch coverage measurement
-2. Write E2E tests for init, add, sync, build, import
+1. Fix the misplaced `handle_remove` test (calls handle_sync)
+2. Remove 3 duplicate test pairs
 3. Add `cargo-fuzz` targets for `classify_url`, `parse_curseforge_zip`, `parse_modrinth_mrpack`, `sanitize_archive_path`
-4. Add regression tests for the 9 review-round bugs
-
-### Cleanup
-
-1. Eliminate 65 vacuous tests (strengthen or remove)
-2. Fix the misplaced `handle_remove` test
-3. Remove 3 duplicate test pairs
-4. Strengthen 7 weak tests with specific value assertions
-5. Remove unused test infrastructure (`MockBehavior::Conditional`, `with_interactive_provider`)
+4. Add regression tests for the 9 review-round API contract bugs
+5. Containerized E2E via Colima (deferred)

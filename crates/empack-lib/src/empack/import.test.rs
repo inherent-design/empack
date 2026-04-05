@@ -437,6 +437,7 @@ fn test_modpack_manifest_construction() {
             required: true,
             resolved_name: Some("Sodium".to_string()),
             resolved_type: Some(crate::primitives::ProjectType::Mod),
+            cf_class_id: None,
         })],
         overrides: vec![OverrideEntry {
             source_path: "overrides/config/test.json".to_string(),
@@ -748,4 +749,149 @@ fn test_parse_modrinth_non_jar_embedded() {
         }
         _ => panic!("expected EmbeddedJar for non-JAR with no downloads"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Datapack folder detection
+// ---------------------------------------------------------------------------
+
+fn make_test_manifest(
+    content: Vec<ContentEntry>,
+    overrides: Vec<OverrideEntry>,
+) -> ModpackManifest {
+    ModpackManifest {
+        identity: PackIdentity {
+            name: "test".into(),
+            version: "1.0".into(),
+            author: None,
+            summary: None,
+        },
+        target: RuntimeTarget {
+            minecraft_version: "1.20.1".into(),
+            loader: ModLoader::Fabric,
+            loader_version: "0.14.21".into(),
+        },
+        content,
+        overrides,
+        source_platform: ProjectPlatform::Modrinth,
+        archive_path: PathBuf::from("/test.mrpack"),
+    }
+}
+
+fn make_override(destination_path: &str) -> OverrideEntry {
+    OverrideEntry {
+        source_path: format!("overrides/{}", destination_path),
+        destination_path: destination_path.to_string(),
+        side: OverrideSide::Both,
+        category: classify_override(destination_path),
+    }
+}
+
+fn make_platform_ref(destination_path: &str) -> ContentEntry {
+    ContentEntry::PlatformReferenced(PlatformRef {
+        destination_path: destination_path.to_string(),
+        platform: ProjectPlatform::Modrinth,
+        project_id: "AABBCCDD".to_string(),
+        file_id: Some("v1".to_string()),
+        hashes: HashMap::new(),
+        download_urls: vec!["https://cdn.modrinth.com/data/AABBCCDD/versions/v1/pack.zip".to_string()],
+        env: SideEnv {
+            client: SideRequirement::Required,
+            server: SideRequirement::Required,
+        },
+        required: true,
+        resolved_name: None,
+        resolved_type: None,
+        cf_class_id: None,
+    })
+}
+
+#[test]
+fn test_detect_datapack_folder_paxi() {
+    let manifest = make_test_manifest(
+        vec![],
+        vec![
+            make_override("config/paxi/datapacks/some.zip"),
+            make_override("config/sodium-options.json"),
+        ],
+    );
+    assert_eq!(
+        detect_datapack_folder(&manifest),
+        Some("config/paxi/datapacks".to_string())
+    );
+}
+
+#[test]
+fn test_detect_datapack_folder_openloader() {
+    let manifest = make_test_manifest(
+        vec![],
+        vec![
+            make_override("config/openloader/data/pack.zip"),
+            make_override("mods/openloader.jar"),
+        ],
+    );
+    assert_eq!(
+        detect_datapack_folder(&manifest),
+        Some("config/openloader/data".to_string())
+    );
+}
+
+#[test]
+fn test_detect_datapack_folder_root_zips() {
+    let manifest = make_test_manifest(
+        vec![],
+        vec![make_override("datapacks/custom.zip")],
+    );
+    assert_eq!(
+        detect_datapack_folder(&manifest),
+        Some("datapacks".to_string())
+    );
+}
+
+#[test]
+fn test_detect_datapack_folder_files_array() {
+    let manifest = make_test_manifest(
+        vec![make_platform_ref("datapacks/mypack.zip")],
+        vec![],
+    );
+    assert_eq!(
+        detect_datapack_folder(&manifest),
+        Some("datapacks".to_string())
+    );
+}
+
+#[test]
+fn test_detect_datapack_folder_none() {
+    let manifest = make_test_manifest(
+        vec![make_platform_ref("mods/sodium.jar")],
+        vec![
+            make_override("config/sodium-options.json"),
+            make_override("mods/local-mod.jar"),
+        ],
+    );
+    assert_eq!(detect_datapack_folder(&manifest), None);
+}
+
+#[test]
+fn test_detect_datapack_folder_raw_json_ignored() {
+    let manifest = make_test_manifest(
+        vec![],
+        vec![make_override("datapacks/pack/data/minecraft/tags/foo.json")],
+    );
+    assert_eq!(detect_datapack_folder(&manifest), None);
+}
+
+#[test]
+fn test_detect_datapack_folder_paxi_over_root() {
+    let manifest = make_test_manifest(
+        vec![],
+        vec![
+            make_override("config/paxi/datapacks/loader-pack.zip"),
+            make_override("datapacks/root-pack.zip"),
+        ],
+    );
+    assert_eq!(
+        detect_datapack_folder(&manifest),
+        Some("config/paxi/datapacks".to_string())
+    );
 }
