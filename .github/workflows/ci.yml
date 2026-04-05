@@ -25,10 +25,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
-      - run: mise run check
-      - run: mise run clippy
+      - run: cargo check --workspace --all-targets
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
     name: test (${{ matrix.os }})
@@ -44,6 +43,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-nextest
       - run: mise run test
       - run: mise run e2e
 
@@ -56,6 +56,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
       - run: mise run coverage
       - run: cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v7
