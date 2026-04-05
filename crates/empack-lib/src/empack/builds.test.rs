@@ -489,7 +489,7 @@ async fn test_verify_server_jar_sha1_accepts_correct_hash() {
     mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
     let jar_bytes = b"test jar content";
-    let correct_sha1 = format!("{:x}", Sha1::digest(jar_bytes));
+    let correct_sha1 = Sha1::digest(jar_bytes).iter().map(|b| format!("{b:02x}")).collect::<String>();
     let jar_path = dist_dir.join("srv.jar");
     mock.session.filesystem().write_bytes(&jar_path, jar_bytes).unwrap();
 
@@ -527,7 +527,7 @@ async fn test_verify_server_jar_sha1_rejects_wrong_hash_and_deletes_file() {
 async fn test_download_server_jar_vanilla_fetches_mojang_manifest() {
     let mut server = mockito::Server::new_async().await;
     let jar_bytes = b"fake server jar content";
-    let jar_sha1 = format!("{:x}", Sha1::digest(jar_bytes));
+    let jar_sha1 = Sha1::digest(jar_bytes).iter().map(|b| format!("{b:02x}")).collect::<String>();
 
     let version_meta = serde_json::json!({
         "downloads": {
@@ -583,7 +583,7 @@ async fn test_download_server_jar_vanilla_fetches_mojang_manifest() {
         .unwrap();
 
     let downloaded = mock.session.filesystem().read_bytes(&jar_path).unwrap();
-    let actual_hash = format!("{:x}", Sha1::digest(&downloaded));
+    let actual_hash = Sha1::digest(&downloaded).iter().map(|b| format!("{b:02x}")).collect::<String>();
     assert_eq!(actual_hash, jar_sha1);
 }
 
