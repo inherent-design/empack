@@ -1,12 +1,9 @@
-use assert_cmd::Command;
-use empack_tests::e2e::TestProject;
+use empack_tests::e2e::{empack_assert_cmd, TestProject};
 use predicates::prelude::*;
 
 #[test]
 fn e2e_version_output() {
-    Command::cargo_bin("empack")
-        .unwrap()
-        .env("NO_COLOR", "1")
+    empack_assert_cmd()
         .arg("version")
         .assert()
         .success()
@@ -15,8 +12,7 @@ fn e2e_version_output() {
 
 #[test]
 fn e2e_help_exits_zero() {
-    Command::cargo_bin("empack")
-        .unwrap()
+    empack_assert_cmd()
         .arg("--help")
         .assert()
         .success();
