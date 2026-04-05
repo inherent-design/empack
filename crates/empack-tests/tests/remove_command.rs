@@ -158,8 +158,8 @@ async fn e2e_remove_empty_mods_is_noop() -> Result<()> {
     .await;
 
     assert!(
-        result.is_ok(),
-        "remove with empty mods should not fail: {result:?}"
+        result.is_err(),
+        "remove with empty mods should return an error"
     );
 
     let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
