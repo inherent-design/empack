@@ -149,7 +149,7 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Generate changelog
+      - name: Generate release notes
         id: changelog
         uses: orhun/git-cliff-action@v4
         with:
@@ -157,6 +157,22 @@ jobs:
           args: --latest --strip header
         env:
           GITHUB_REPO: ${{ github.repository }}
+
+      - name: Generate full changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --output CHANGELOG.md
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Commit changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --cached --quiet || git commit -m "chore: update changelog for ${{ steps.version.outputs.clean }}"
+          git push origin HEAD:dev
 
       - uses: softprops/action-gh-release@v2
         with:
