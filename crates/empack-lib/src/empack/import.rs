@@ -807,7 +807,6 @@ async fn add_platform_ref(
             let args = [
                 "modrinth".to_string(),
                 "add".to_string(),
-                "--url".to_string(),
                 pref.download_urls[0].clone(),
                 "-y".to_string(),
             ];
@@ -838,7 +837,7 @@ async fn add_platform_ref(
             let args = [
                 "curseforge".to_string(),
                 "add".to_string(),
-                "--mod-id".to_string(),
+                "--addon-id".to_string(),
                 mod_id.clone(),
                 "--file-id".to_string(),
                 file_id.to_string(),
