@@ -21,61 +21,10 @@ use crate::empack::parsing::ModLoader;
 use crate::empack::search::SearchError;
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
-/// Build an empack.yml string via serde serialization (injection-safe).
-#[allow(clippy::too_many_arguments)]
-fn format_empack_yml(
-    name: &str,
-    author: &str,
-    version: &str,
-    minecraft_version: &str,
-    loader: &str,
-    loader_version: &str,
-    datapack_folder: Option<&str>,
-    acceptable_game_versions: Option<&[String]>,
-) -> String {
-    let loader_enum = ModLoader::parse(loader).ok();
-
-    #[derive(serde::Serialize)]
-    struct InitEmpackYml<'a> {
-        empack: InitFields<'a>,
-    }
-
-    #[derive(serde::Serialize)]
-    struct InitFields<'a> {
-        name: &'a str,
-        author: &'a str,
-        version: &'a str,
-        minecraft_version: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        loader: Option<ModLoader>,
-        #[serde(skip_serializing_if = "str::is_empty")]
-        loader_version: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        datapack_folder: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        acceptable_game_versions: Option<&'a [String]>,
-        dependencies: BTreeMap<String, DependencyEntry>,
-    }
-
-    let config = InitEmpackYml {
-        empack: InitFields {
-            name,
-            author,
-            version,
-            minecraft_version,
-            loader: loader_enum,
-            loader_version,
-            datapack_folder,
-            acceptable_game_versions,
-            dependencies: BTreeMap::new(),
-        },
-    };
-
-    serde_saphyr::to_string(&config).expect("serializing init config should never fail")
-}
+use crate::empack::config::format_empack_yml;
 
 /// Execute CLI commands using the new session-based architecture
 pub async fn execute_command(config: CliConfig) -> Result<()> {

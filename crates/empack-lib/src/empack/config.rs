@@ -712,6 +712,63 @@ impl<'a> ConfigManager<'a> {
     }
 }
 
+/// Serialize a fresh empack.yml string for a new project.
+///
+/// Uses serde serialization to produce injection-safe YAML. Optional fields
+/// are omitted when `None`. The `dependencies` map is always empty (populated
+/// later by add/import).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn format_empack_yml(
+    name: &str,
+    author: &str,
+    version: &str,
+    minecraft_version: &str,
+    loader: &str,
+    loader_version: &str,
+    datapack_folder: Option<&str>,
+    acceptable_game_versions: Option<&[String]>,
+) -> String {
+    let loader_enum = ModLoader::parse(loader).ok();
+
+    #[derive(serde::Serialize)]
+    struct Root<'a> {
+        empack: Fields<'a>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct Fields<'a> {
+        name: &'a str,
+        author: &'a str,
+        version: &'a str,
+        minecraft_version: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        loader: Option<ModLoader>,
+        #[serde(skip_serializing_if = "str::is_empty")]
+        loader_version: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        datapack_folder: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        acceptable_game_versions: Option<&'a [String]>,
+        dependencies: BTreeMap<String, DependencyEntry>,
+    }
+
+    let config = Root {
+        empack: Fields {
+            name,
+            author,
+            version,
+            minecraft_version,
+            loader: loader_enum,
+            loader_version,
+            datapack_folder,
+            acceptable_game_versions,
+            dependencies: BTreeMap::new(),
+        },
+    };
+
+    serde_saphyr::to_string(&config).expect("serializing empack.yml should never fail")
+}
+
 #[cfg(test)]
 mod tests {
     include!("config.test.rs");
