@@ -9,6 +9,10 @@ fn e2e_add_to_uninitialized() {
         .output()
         .expect("failed to spawn empack");
 
+    assert!(
+        !output.status.success(),
+        "empack add in uninitialized dir should exit non-zero"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{stdout}{stderr}");
