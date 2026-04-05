@@ -27,40 +27,35 @@ cargo check --workspace --all-targets
 
 empack uses two test tiers. See [docs/testing.md](docs/testing.md) for the full strategy, health inventory, and VCR fixture maintenance.
 
-### Unit tests (CI gate)
+### Unit tests (excludes E2E)
 
 Mock-based, cross-platform, fast. Run on every commit:
 
 ```bash
 mise run test
-# or directly:
-cargo nextest run -p empack-lib --features test-utils
-cargo nextest run -p empack-tests
 ```
 
-Use isolated reruns when iterating on specific behavior:
+### E2E tests
+
+Run the compiled binary with real providers (real filesystem, real packwiz, real network). Self-skip when prerequisites (packwiz, java, CF key) are missing.
 
 ```bash
-cargo nextest run -p empack-lib --features test-utils --lib test_name
-cargo nextest run -p empack-tests --test sync_workflow
+mise run e2e
+mise run e2e:filter init    # filtered subset
 ```
 
-### E2E tests (advisory)
-
-Run the compiled binary with real providers (real filesystem, real packwiz, real network). Not part of the CI gate; requires external tools.
+### Coverage
 
 ```bash
-cargo nextest run -p empack-e2e       # full suite (requires packwiz, java)
+mise run coverage
 ```
-
-E2E tests self-skip when prerequisites are missing. Tests that hit live APIs are gated behind `EMPACK_KEY_CURSEFORGE`. The `empack-e2e` crate and mise task definitions are planned but not yet implemented.
 
 ## Development Workflow
 
 1. Create a feature branch from `dev`
 2. Make changes
-3. Lint: `cargo clippy --workspace --all-targets`
-4. Test: run the relevant nextest commands above
+3. Lint: `mise run clippy`
+4. Test: `mise run test && mise run e2e`
 5. Submit PR against `dev`
 
 ## Project Structure
@@ -182,7 +177,7 @@ Live recording requires `curl`, `jq`, and `.env.local` with `EMPACK_KEY_CURSEFOR
 - [ ] Scope is narrow and explicit
 - [ ] Docs match the current verified behavior
 - [ ] Verification commands are listed in the change summary
-- [ ] Tests pass: `cargo nextest run -p empack-lib --features test-utils && cargo nextest run -p empack-tests`
+- [ ] Tests pass: `mise run test && mise run e2e`
 
 ## License
 
