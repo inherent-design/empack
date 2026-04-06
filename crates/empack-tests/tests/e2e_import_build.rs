@@ -90,12 +90,10 @@ fn e2e_import_modrinth_and_build_mrpack() {
 fn e2e_import_curseforge_and_check_restricted() {
     empack_tests::skip_if_no_packwiz!();
     empack_tests::skip_if_no_java!();
-    empack_tests::skip_if_no_cf_key!();
 
-    let cf_key = std::env::var("EMPACK_KEY_CURSEFORGE")
-        .unwrap_or_else(|_| {
-            "$2a$10$78GooA4YTCKFQI9vgZ1oEeVM.jNyeNKSIFUhFkwiA0L/Uwv19BFAq".to_string()
-        });
+    let cf_key = std::env::var("EMPACK_KEY_CURSEFORGE").unwrap_or_else(|_| {
+        "$2a$10$78GooA4YTCKFQI9vgZ1oEeVM.jNyeNKSIFUhFkwiA0L/Uwv19BFAq".to_string()
+    });
 
     let client = reqwest::blocking::Client::new();
 
@@ -192,7 +190,6 @@ fn e2e_import_curseforge_and_check_restricted() {
 #[test]
 fn e2e_init_from_curseforge_url() {
     empack_tests::skip_if_no_packwiz!();
-    empack_tests::skip_if_no_cf_key!();
 
     let project = TestProject::new();
     let output = empack_cmd(project.dir())
