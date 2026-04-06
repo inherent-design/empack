@@ -3721,3 +3721,662 @@ mod exit_code_tests {
     }
 }
 
+// ===== DERIVE_VERSION_PIN TESTS =====
+
+mod derive_version_pin_tests {
+    use super::*;
+
+    #[test]
+    fn both_version_id_and_file_id_curseforge_prefers_file_id() {
+        let vid = Some("ver-123".to_string());
+        let fid = Some("file-456".to_string());
+        let result = derive_version_pin(&vid, &fid, Some(ProjectPlatform::CurseForge));
+        assert_eq!(result, Some("file-456"));
+    }
+
+    #[test]
+    fn both_version_id_and_file_id_modrinth_prefers_version_id() {
+        let vid = Some("ver-123".to_string());
+        let fid = Some("file-456".to_string());
+        let result = derive_version_pin(&vid, &fid, Some(ProjectPlatform::Modrinth));
+        assert_eq!(result, Some("ver-123"));
+    }
+
+    #[test]
+    fn both_version_id_and_file_id_no_platform_prefers_version_id() {
+        let vid = Some("ver-123".to_string());
+        let fid = Some("file-456".to_string());
+        let result = derive_version_pin(&vid, &fid, None);
+        assert_eq!(result, Some("ver-123"));
+    }
+
+    #[test]
+    fn version_id_only() {
+        let vid = Some("ver-123".to_string());
+        let fid = None;
+        let result = derive_version_pin(&vid, &fid, None);
+        assert_eq!(result, Some("ver-123"));
+    }
+
+    #[test]
+    fn file_id_only() {
+        let vid = None;
+        let fid = Some("file-456".to_string());
+        let result = derive_version_pin(&vid, &fid, None);
+        assert_eq!(result, Some("file-456"));
+    }
+
+    #[test]
+    fn neither_version_id_nor_file_id() {
+        let vid: Option<String> = None;
+        let fid: Option<String> = None;
+        let result = derive_version_pin(&vid, &fid, None);
+        assert_eq!(result, None);
+    }
+}
+
+// ===== CONTENT_FOLDER_FOR_TYPE TESTS =====
+
+mod content_folder_for_type_tests {
+    use super::*;
+
+    #[test]
+    fn mod_maps_to_mods() {
+        assert_eq!(content_folder_for_type(ProjectType::Mod), "mods");
+    }
+
+    #[test]
+    fn resourcepack_maps_to_resourcepacks() {
+        assert_eq!(content_folder_for_type(ProjectType::ResourcePack), "resourcepacks");
+    }
+
+    #[test]
+    fn shader_maps_to_shaderpacks() {
+        assert_eq!(content_folder_for_type(ProjectType::Shader), "shaderpacks");
+    }
+
+    #[test]
+    fn datapack_maps_to_datapacks() {
+        assert_eq!(content_folder_for_type(ProjectType::Datapack), "datapacks");
+    }
+}
+
+// ===== SCAN_PW_TOML_SLUGS TESTS =====
+
+mod scan_pw_toml_slugs_tests {
+    use super::*;
+
+    #[test]
+    fn returns_empty_for_nonexistent_dir() {
+        let fs = MockFileSystemProvider::new();
+        let slugs = scan_pw_toml_slugs(&fs, &mock_root().join("nonexistent"));
+        assert!(slugs.is_empty());
+    }
+
+    #[test]
+    fn extracts_slugs_from_pw_toml_files() {
+        let mods_dir = mock_root().join("project").join("pack").join("mods");
+        let fs = MockFileSystemProvider::new()
+            .with_file(
+                mods_dir.join("sodium.pw.toml"),
+                "name = \"Sodium\"".to_string(),
+            )
+            .with_file(
+                mods_dir.join("iris.pw.toml"),
+                "name = \"Iris\"".to_string(),
+            )
+            .with_file(
+                mods_dir.join("not-a-pw.toml"),
+                "something".to_string(),
+            );
+
+        let slugs = scan_pw_toml_slugs(&fs, &mods_dir);
+        assert!(slugs.contains("sodium"));
+        assert!(slugs.contains("iris"));
+        assert!(!slugs.contains("not-a-pw"), "non .pw.toml files should not be included");
+    }
+}
+
+// ===== DISCOVER_DEP_KEY TESTS =====
+
+mod discover_dep_key_tests {
+    use super::*;
+
+    #[test]
+    fn returns_new_slug_when_exactly_one_new_file() {
+        let mods_dir = mock_root().join("discover").join("pack").join("mods");
+        let fs = MockFileSystemProvider::new()
+            .with_file(
+                mods_dir.join("sodium.pw.toml"),
+                "name = \"Sodium\"".to_string(),
+            )
+            .with_file(
+                mods_dir.join("iris.pw.toml"),
+                "name = \"Iris\"".to_string(),
+            );
+
+        let mut before = HashSet::new();
+        before.insert("sodium".to_string());
+
+        let session = MockCommandSession::new();
+        let result = discover_dep_key(&fs, &mods_dir, &before, "fallback", session.display());
+        assert_eq!(result, "iris");
+    }
+
+    #[test]
+    fn returns_fallback_when_no_new_files() {
+        let mods_dir = mock_root().join("discover-none").join("pack").join("mods");
+        let fs = MockFileSystemProvider::new()
+            .with_file(
+                mods_dir.join("sodium.pw.toml"),
+                "name = \"Sodium\"".to_string(),
+            );
+
+        let mut before = HashSet::new();
+        before.insert("sodium".to_string());
+
+        let session = MockCommandSession::new();
+        let result = discover_dep_key(&fs, &mods_dir, &before, "my-fallback", session.display());
+        assert_eq!(result, "my-fallback");
+    }
+
+    #[test]
+    fn returns_fallback_when_multiple_new_files() {
+        let mods_dir = mock_root().join("discover-multi").join("pack").join("mods");
+        let fs = MockFileSystemProvider::new()
+            .with_file(mods_dir.join("a.pw.toml"), "".to_string())
+            .with_file(mods_dir.join("b.pw.toml"), "".to_string())
+            .with_file(mods_dir.join("c.pw.toml"), "".to_string());
+
+        let before = HashSet::new();
+
+        let session = MockCommandSession::new();
+        let result = discover_dep_key(&fs, &mods_dir, &before, "ambig-key", session.display());
+        assert_eq!(result, "ambig-key");
+    }
+}
+
+// ===== RENDER_ADD_CONTRACT_ERROR EDGE CASE TESTS =====
+
+mod render_error_edge_case_tests {
+    use super::*;
+
+    #[test]
+    fn incompatible_project_version_only_no_loader() {
+        let rendered = render_add_contract_error(&AddContractError::ResolveProject {
+            query: "sodium".to_string(),
+            source: crate::empack::search::SearchError::IncompatibleProject {
+                query: "sodium".to_string(),
+                project_title: "Sodium".to_string(),
+                project_slug: "sodium".to_string(),
+                available_loaders: vec!["fabric".to_string()],
+                available_versions: vec!["1.21.4".to_string()],
+                requested_loader: None,
+                requested_version: Some("1.20.1".to_string()),
+                downloads: 100_000_000,
+            },
+        });
+
+        assert_eq!(rendered.item, "Mod found but incompatible");
+        assert!(
+            rendered.details.contains("has no version for 1.20.1"),
+            "should mention version mismatch: {}",
+            rendered.details
+        );
+        assert!(
+            rendered.details.contains("100M"),
+            "should contain download count: {}",
+            rendered.details
+        );
+    }
+
+    #[test]
+    fn incompatible_project_neither_loader_nor_version() {
+        let rendered = render_add_contract_error(&AddContractError::ResolveProject {
+            query: "sodium".to_string(),
+            source: crate::empack::search::SearchError::IncompatibleProject {
+                query: "sodium".to_string(),
+                project_title: "Sodium".to_string(),
+                project_slug: "sodium".to_string(),
+                available_loaders: vec![],
+                available_versions: vec![],
+                requested_loader: None,
+                requested_version: None,
+                downloads: 0,
+            },
+        });
+
+        assert_eq!(rendered.item, "Mod found but incompatible");
+        assert!(
+            rendered.details.contains("sodium"),
+            "fallback should use query: {}",
+            rendered.details
+        );
+    }
+}
+
+// ===== HEX_ENCODE_BYTES TESTS =====
+
+mod hex_encode_bytes_tests {
+    use super::*;
+
+    #[test]
+    fn encodes_empty_bytes() {
+        assert_eq!(hex_encode_bytes(&[]), "");
+    }
+
+    #[test]
+    fn encodes_known_bytes() {
+        assert_eq!(hex_encode_bytes(&[0x00, 0xff, 0xab, 0xcd]), "00ffabcd");
+    }
+
+    #[test]
+    fn encodes_single_byte() {
+        assert_eq!(hex_encode_bytes(&[0x42]), "42");
+    }
+}
+
+// ===== COMPUTE_SHA1_HEX_FOR_BYTES TESTS =====
+
+mod compute_sha1_tests {
+    use super::*;
+
+    #[test]
+    fn sha1_of_empty_bytes() {
+        let hash = compute_sha1_hex_for_bytes(b"");
+        assert_eq!(hash, "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    }
+
+    #[test]
+    fn sha1_of_known_content() {
+        let hash = compute_sha1_hex_for_bytes(b"hello world");
+        assert_eq!(hash, "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
+    }
+}
+
+// ===== HANDLE_INIT VANILLA TESTS =====
+
+mod handle_init_vanilla_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn vanilla_init_succeeds() {
+        let workdir = mock_root().join("vanilla-init");
+        let target_dir = workdir.join("vanilla-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            &InitArgs {
+                dir: Some("vanilla-pack".to_string()),
+                modloader: Some("none".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok(), "vanilla init should succeed: {result:?}");
+        assert!(session.filesystem().is_directory(&target_dir));
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("empack.yml"))
+            .unwrap();
+        // "none" is not a real ModLoader, so the loader field is omitted from empack.yml
+        assert!(!empack_yml.contains("loader:"), "vanilla pack should not have loader field: {empack_yml}");
+        assert!(empack_yml.contains("minecraft_version: 1.21.1"));
+    }
+
+    #[tokio::test]
+    async fn vanilla_init_dry_run_makes_no_changes() {
+        let workdir = mock_root().join("vanilla-dry-run");
+        let target_dir = workdir.join("test-pack");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+        session.config_provider.app_config.dry_run = true;
+
+        let result = handle_init(
+            &session,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("none".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(
+            !session.filesystem().is_directory(&target_dir),
+            "dry run should not create directory"
+        );
+    }
+}
+
+// ===== HANDLE_INIT WITH DATAPACK FOLDER AND GAME VERSIONS =====
+
+mod handle_init_options_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn init_with_datapack_folder() {
+        let workdir = mock_root().join("dp-folder-init");
+        let target_dir = workdir.join("test-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                datapack_folder: Some("config/paxi/datapacks".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok(), "init with datapack folder should succeed: {result:?}");
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("datapack_folder"),
+            "empack.yml should contain datapack_folder: {empack_yml}"
+        );
+    }
+
+    #[tokio::test]
+    async fn init_with_game_versions() {
+        let workdir = mock_root().join("gv-init");
+        let target_dir = workdir.join("test-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                game_versions: Some(vec!["1.21".to_string(), "1.21.2".to_string()]),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok(), "init with game versions should succeed: {result:?}");
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("empack.yml"))
+            .unwrap();
+        assert!(
+            empack_yml.contains("acceptable_game_versions"),
+            "empack.yml should contain acceptable_game_versions: {empack_yml}"
+        );
+    }
+}
+
+// ===== HANDLE_ADD NON-JAR URL REJECTION =====
+
+mod handle_add_non_jar_url_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rejects_non_jar_direct_download_url() {
+        let workdir = mock_root().join("non-jar-url");
+        let session = configured_session(&workdir);
+
+        let result = handle_add(
+            &session,
+            vec!["https://example.com/pack.zip".to_string()],
+            false,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "non-jar URL should fail");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("not yet supported") || err_msg.contains("Unsupported"),
+            "Error should mention unsupported file type: {err_msg}"
+        );
+    }
+}
+
+// ===== HANDLE_CLEAN DRY-RUN WITH ALL =====
+
+mod handle_clean_dry_run_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dry_run_all_preserves_artifacts() {
+        let workdir = mock_root().join("built-project");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            );
+        session.config_provider.app_config.dry_run = true;
+
+        let result = handle_clean(&session, vec!["all".to_string()]).await;
+
+        assert!(result.is_ok());
+        assert!(
+            session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")),
+            "Dry-run with 'all' should not remove artifacts"
+        );
+    }
+
+    #[tokio::test]
+    async fn dry_run_cache_target() {
+        let workdir = mock_root().join("configured-project");
+        let mut session = configured_session(&workdir);
+        session.config_provider.app_config.dry_run = true;
+
+        let result = handle_clean(&session, vec!["cache".to_string()]).await;
+        assert!(result.is_ok());
+    }
+}
+
+// ===== EXECUTE_COMMAND_WITH_SESSION DISPATCH TESTS =====
+
+mod execute_command_dispatch_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dispatches_version_command() {
+        let session = MockCommandSession::new();
+        let result = execute_command_with_session(Commands::Version, &session).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn dispatches_requirements_command() {
+        let session = MockCommandSession::new()
+            .with_process(MockProcessProvider::new().with_packwiz_version("1.2.3".to_string()));
+        let result = execute_command_with_session(Commands::Requirements, &session).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn dispatches_clean_command() {
+        let workdir = mock_root().join("configured-project");
+        let session = configured_session(&workdir);
+        let result = execute_command_with_session(
+            Commands::Clean { targets: vec!["cache".to_string()] },
+            &session,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn dispatches_sync_uninitialized_returns_error() {
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(mock_root().join("uninit-dispatch")),
+        );
+        let result = execute_command_with_session(Commands::Sync {}, &session).await;
+        assert!(result.is_err());
+    }
+}
+
+// ===== HANDLE_REMOVE EMPTY MOD NAME FILTER =====
+
+mod handle_remove_empty_name_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn filters_empty_mod_names() {
+        let workdir = mock_root().join("configured-project");
+        let session = configured_session(&workdir)
+            .with_process(MockProcessProvider::new().with_packwiz_result(
+                vec!["remove".to_string(), "-y".to_string(), "sodium".to_string()],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            ));
+
+        let result = handle_remove(
+            &session,
+            vec!["".to_string(), "  ".to_string(), "sodium".to_string()],
+            false,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let calls = session.process_provider.get_calls();
+        assert_eq!(calls.len(), 1, "only non-empty mod names should be processed");
+    }
+}
+
+// ===== HANDLE_BUILD DRY RUN WITH MULTIPLE TARGETS =====
+
+mod handle_build_dry_run_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dry_run_multiple_targets() {
+        let workdir = mock_root().join("built-project");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone()),
+            );
+        session.config_provider.app_config.dry_run = true;
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["mrpack".to_string(), "client".to_string(), "server".to_string()],
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(
+            session.process_provider.get_calls().is_empty(),
+            "dry run should not execute any build commands"
+        );
+    }
+}
+
+// ===== FORMAT_DOWNLOADS EDGE CASES =====
+
+mod format_downloads_edge_cases {
+    use super::*;
+
+    #[test]
+    fn boundary_values() {
+        assert_eq!(format_downloads(999_999), "999K");
+        assert_eq!(format_downloads(1_999_999), "1M");
+        assert_eq!(format_downloads(1), "1");
+    }
+}
+
+// ===== PLAN_MC_VERSION AND PLAN_LOADER TESTS =====
+
+mod plan_helpers_tests {
+    use super::*;
+    use crate::empack::config::ProjectPlan;
+
+    #[test]
+    fn plan_mc_version_returns_none_for_none() {
+        assert!(plan_mc_version(None).is_none());
+    }
+
+    #[test]
+    fn plan_mc_version_returns_version_from_plan() {
+        let plan = ProjectPlan {
+            name: "test".to_string(),
+            author: None,
+            version: None,
+            minecraft_version: "1.21.1".to_string(),
+            loader: Some(crate::empack::parsing::ModLoader::Fabric),
+            loader_version: "0.15.0".to_string(),
+            dependencies: vec![],
+        };
+        assert_eq!(plan_mc_version(Some(&plan)), Some("1.21.1"));
+    }
+
+    #[test]
+    fn plan_loader_returns_none_for_none() {
+        assert!(plan_loader(None).is_none());
+    }
+
+    #[test]
+    fn plan_loader_returns_loader_from_plan() {
+        let plan = ProjectPlan {
+            name: "test".to_string(),
+            author: None,
+            version: None,
+            minecraft_version: "1.21.1".to_string(),
+            loader: Some(crate::empack::parsing::ModLoader::Forge),
+            loader_version: "47.3.0".to_string(),
+            dependencies: vec![],
+        };
+        assert_eq!(
+            plan_loader(Some(&plan)),
+            Some(crate::empack::parsing::ModLoader::Forge)
+        );
+    }
+
+    #[test]
+    fn plan_loader_returns_none_when_plan_has_no_loader() {
+        let plan = ProjectPlan {
+            name: "test".to_string(),
+            author: None,
+            version: None,
+            minecraft_version: "1.21.1".to_string(),
+            loader: None,
+            loader_version: String::new(),
+            dependencies: vec![],
+        };
+        assert!(plan_loader(Some(&plan)).is_none());
+    }
+}
+
