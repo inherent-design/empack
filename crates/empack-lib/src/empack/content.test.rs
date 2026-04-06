@@ -516,3 +516,305 @@ fn url_kind_modrinth_modpack_equality() {
     };
     assert_ne!(a, c);
 }
+
+// ---------------------------------------------------------------------------
+// hex::encode tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn hex_encode_empty() {
+    assert_eq!(hex::encode([] as [u8; 0]), "");
+}
+
+#[test]
+fn hex_encode_known_bytes() {
+    assert_eq!(hex::encode([0x00, 0xff, 0xab, 0xcd]), "00ffabcd");
+}
+
+#[test]
+fn hex_encode_all_zeros() {
+    assert_eq!(hex::encode([0x00, 0x00, 0x00]), "000000");
+}
+
+#[test]
+fn hex_encode_all_ones() {
+    assert_eq!(hex::encode([0xff, 0xff]), "ffff");
+}
+
+#[test]
+fn hex_encode_single_byte() {
+    assert_eq!(hex::encode([0x42]), "42");
+}
+
+// ---------------------------------------------------------------------------
+// compute_sha1_hex tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sha1_of_empty_data() {
+    let hash = compute_sha1_hex(b"");
+    assert_eq!(hash, "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+}
+
+#[test]
+fn sha1_of_hello_world() {
+    let hash = compute_sha1_hex(b"hello world");
+    assert_eq!(hash, "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
+}
+
+#[test]
+fn sha1_has_correct_length() {
+    let hash = compute_sha1_hex(b"test data");
+    assert_eq!(hash.len(), 40, "SHA-1 hex should be 40 characters");
+}
+
+// ---------------------------------------------------------------------------
+// URL classifier: additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn classify_modrinth_modpack_version_with_query_string() {
+    let url = "https://modrinth.com/modpack/pack-name/version/1.0.0?utm_source=app";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::ModrinthModpack {
+            slug: "pack-name".to_string(),
+            version: Some("1.0.0".to_string()),
+        }
+    );
+}
+
+#[test]
+fn classify_modrinth_modpack_version_with_fragment() {
+    let url = "https://modrinth.com/modpack/pack-name/version/2.0.0#changelog";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::ModrinthModpack {
+            slug: "pack-name".to_string(),
+            version: Some("2.0.0".to_string()),
+        }
+    );
+}
+
+#[test]
+fn classify_curseforge_project_trailing_slash() {
+    let url = "https://www.curseforge.com/minecraft/mc-mods/jei/";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::CurseForgeProject {
+            slug: "jei".to_string(),
+        }
+    );
+}
+
+#[test]
+fn classify_curseforge_modpack_trailing_slash() {
+    let url = "https://www.curseforge.com/minecraft/modpacks/rlcraft/";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::CurseForgeModpack {
+            slug: "rlcraft".to_string(),
+        }
+    );
+}
+
+#[test]
+fn classify_jar_url_with_uppercase_extension() {
+    let url = "https://example.com/downloads/Mod-1.0.JAR";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::DirectDownload {
+            url: url.to_string(),
+            extension: "jar".to_string(),
+        }
+    );
+}
+
+#[test]
+fn classify_url_without_extension() {
+    let url = "https://example.com/random/page";
+    let err = classify_url(url).unwrap_err();
+    assert!(err.to_string().contains("unrecognized"));
+}
+
+#[test]
+fn classify_url_with_unsupported_extension_txt() {
+    let url = "https://example.com/readme.txt";
+    let err = classify_url(url).unwrap_err();
+    assert!(err.to_string().contains("unrecognized"));
+}
+
+#[test]
+fn classify_modrinth_mod_with_fragment() {
+    let url = "https://modrinth.com/mod/sodium#description";
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::ModrinthProject {
+            slug: "sodium".to_string(),
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// split_slug_version edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn split_slug_version_empty_segment() {
+    let (slug, version) = split_slug_version("");
+    assert_eq!(slug, "");
+    assert_eq!(version, None);
+}
+
+#[test]
+fn split_slug_version_slug_only() {
+    let (slug, version) = split_slug_version("my-pack");
+    assert_eq!(slug, "my-pack");
+    assert_eq!(version, None);
+}
+
+#[test]
+fn split_slug_version_with_version_segment() {
+    let (slug, version) = split_slug_version("my-pack/version/1.2.3");
+    assert_eq!(slug, "my-pack");
+    assert_eq!(version, Some("1.2.3".to_string()));
+}
+
+#[test]
+fn split_slug_version_version_segment_empty_version() {
+    let (slug, version) = split_slug_version("my-pack/version/");
+    // Empty version after "version/" causes splitn to produce ["my-pack", "version", ""]
+    // The guard !version.is_empty() fails, so the whole string is returned as slug
+    assert_eq!(slug, "my-pack/version/");
+    assert_eq!(version, None);
+}
+
+#[test]
+fn split_slug_version_non_version_segment() {
+    let (slug, version) = split_slug_version("my-pack/files");
+    assert_eq!(slug, "my-pack");
+    assert_eq!(version, None);
+}
+
+// ---------------------------------------------------------------------------
+// UrlKind variant coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn url_kind_direct_download_equality() {
+    let a = UrlKind::DirectDownload {
+        url: "https://a.com/f.jar".to_string(),
+        extension: "jar".to_string(),
+    };
+    let b = UrlKind::DirectDownload {
+        url: "https://a.com/f.jar".to_string(),
+        extension: "jar".to_string(),
+    };
+    assert_eq!(a, b);
+
+    let c = UrlKind::DirectDownload {
+        url: "https://b.com/f.jar".to_string(),
+        extension: "jar".to_string(),
+    };
+    assert_ne!(a, c);
+}
+
+#[test]
+fn url_kind_curseforge_project_equality() {
+    let a = UrlKind::CurseForgeProject { slug: "jei".to_string() };
+    let b = UrlKind::CurseForgeProject { slug: "jei".to_string() };
+    assert_eq!(a, b);
+
+    let c = UrlKind::CurseForgeProject { slug: "rei".to_string() };
+    assert_ne!(a, c);
+}
+
+#[test]
+fn url_kind_curseforge_modpack_equality() {
+    let a = UrlKind::CurseForgeModpack { slug: "atm9".to_string() };
+    let b = UrlKind::CurseForgeModpack { slug: "atm9".to_string() };
+    assert_eq!(a, b);
+}
+
+// ---------------------------------------------------------------------------
+// JarIdentity coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn jar_identity_modrinth_equality() {
+    let a = JarIdentity::Modrinth {
+        project_id: "AANobbMI".to_string(),
+        version_id: "v1".to_string(),
+        title: "Sodium".to_string(),
+    };
+    let b = JarIdentity::Modrinth {
+        project_id: "AANobbMI".to_string(),
+        version_id: "v1".to_string(),
+        title: "Sodium".to_string(),
+    };
+    assert_eq!(a, b);
+}
+
+#[test]
+fn jar_identity_curseforge_equality() {
+    let a = JarIdentity::CurseForge {
+        project_id: 238222,
+        file_id: 5678,
+        title: "JEI".to_string(),
+    };
+    let b = JarIdentity::CurseForge {
+        project_id: 238222,
+        file_id: 5678,
+        title: "JEI".to_string(),
+    };
+    assert_eq!(a, b);
+}
+
+#[test]
+fn jar_identity_unidentified() {
+    assert_eq!(JarIdentity::Unidentified, JarIdentity::Unidentified);
+}
+
+#[test]
+fn jar_identity_variants_are_distinct() {
+    let modrinth = JarIdentity::Modrinth {
+        project_id: "id".to_string(),
+        version_id: "v".to_string(),
+        title: "t".to_string(),
+    };
+    let curseforge = JarIdentity::CurseForge {
+        project_id: 1,
+        file_id: 2,
+        title: "t".to_string(),
+    };
+    let unidentified = JarIdentity::Unidentified;
+
+    assert_ne!(modrinth, curseforge);
+    assert_ne!(modrinth, unidentified);
+    assert_ne!(curseforge, unidentified);
+}
+
+// ---------------------------------------------------------------------------
+// UrlClassifyError coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn url_classify_error_display() {
+    let err = UrlClassifyError::Unrecognized("https://bad.url".to_string());
+    let msg = format!("{}", err);
+    assert!(msg.contains("unrecognized URL"));
+    assert!(msg.contains("https://bad.url"));
+}
+
+#[test]
+fn url_classify_error_debug() {
+    let err = UrlClassifyError::Unrecognized("test".to_string());
+    let debug = format!("{:?}", err);
+    assert!(debug.contains("Unrecognized"));
+}

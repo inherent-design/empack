@@ -459,3 +459,248 @@ fn test_fabric_versions_order_descending() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// is_stable_minecraft_version tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_is_stable_minecraft_version_releases() {
+    assert!(is_stable_minecraft_version("1.21.4"));
+    assert!(is_stable_minecraft_version("1.20.1"));
+    assert!(is_stable_minecraft_version("1.7.10"));
+    assert!(is_stable_minecraft_version("1.21"));
+    assert!(is_stable_minecraft_version("1.8"));
+}
+
+#[test]
+fn test_is_stable_minecraft_version_snapshots() {
+    assert!(!is_stable_minecraft_version("24w45a"));
+    assert!(!is_stable_minecraft_version("25w14a"));
+    assert!(!is_stable_minecraft_version("1.21-pre1"));
+    assert!(!is_stable_minecraft_version("1.21.4-rc1"));
+    assert!(!is_stable_minecraft_version("snapshot-1.0"));
+}
+
+#[test]
+fn test_is_stable_minecraft_version_edge_cases() {
+    assert!(!is_stable_minecraft_version(""));
+    assert!(!is_stable_minecraft_version("abc"));
+    assert!(!is_stable_minecraft_version("1.21.4a"));
+    assert!(!is_stable_minecraft_version("1.21-pre"));
+}
+
+// ---------------------------------------------------------------------------
+// parse_version edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_parse_version_two_component() {
+    let v = parse_version("1.21").unwrap();
+    assert_eq!(v, Version::new(1, 21, 0));
+}
+
+#[test]
+fn test_parse_version_three_component() {
+    let v = parse_version("1.20.4").unwrap();
+    assert_eq!(v, Version::new(1, 20, 4));
+}
+
+#[test]
+fn test_parse_version_four_component_forge_legacy() {
+    let v = parse_version("11.14.4.1577");
+    assert!(v.is_some(), "4-component Forge versions should parse");
+    let v = v.unwrap();
+    assert_eq!(v.major, 11);
+    assert_eq!(v.minor, 14);
+    assert_eq!(v.patch, 4);
+}
+
+#[test]
+fn test_parse_version_returns_none_for_garbage() {
+    assert!(parse_version("").is_none());
+    assert!(parse_version("abc").is_none());
+    assert!(parse_version("...").is_none());
+}
+
+#[test]
+fn test_parse_version_with_prerelease() {
+    let v = parse_version("21.1.67-beta");
+    assert!(v.is_some());
+    let v = v.unwrap();
+    assert_eq!(v.major, 21);
+    assert_eq!(v.minor, 1);
+    assert_eq!(v.patch, 67);
+    assert!(!v.pre.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// sort_versions_desc edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_sort_versions_desc_empty() {
+    let mut versions: Vec<String> = vec![];
+    sort_versions_desc(&mut versions);
+    assert!(versions.is_empty());
+}
+
+#[test]
+fn test_sort_versions_desc_single() {
+    let mut versions = vec!["1.0.0".to_string()];
+    sort_versions_desc(&mut versions);
+    assert_eq!(versions, vec!["1.0.0"]);
+}
+
+#[test]
+fn test_sort_versions_desc_unparseable_sorts_to_end() {
+    let mut versions = vec![
+        "invalid".to_string(),
+        "1.0.0".to_string(),
+        "2.0.0".to_string(),
+    ];
+    sort_versions_desc(&mut versions);
+    assert_eq!(versions[0], "2.0.0");
+    assert_eq!(versions[1], "1.0.0");
+    assert_eq!(versions[2], "invalid");
+}
+
+#[test]
+fn test_sort_versions_desc_all_unparseable() {
+    let mut versions = vec![
+        "zzz".to_string(),
+        "aaa".to_string(),
+        "mmm".to_string(),
+    ];
+    sort_versions_desc(&mut versions);
+    assert_eq!(versions, vec!["aaa", "mmm", "zzz"]);
+}
+
+#[test]
+fn test_sort_versions_desc_two_component() {
+    let mut versions = vec![
+        "1.20".to_string(),
+        "1.21".to_string(),
+        "1.19".to_string(),
+    ];
+    sort_versions_desc(&mut versions);
+    assert_eq!(versions, vec!["1.21", "1.20", "1.19"]);
+}
+
+// ---------------------------------------------------------------------------
+// ModLoader conversion
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_modloader_from_parsing_modloader() {
+    use crate::empack::parsing::ModLoader as P;
+
+    assert_eq!(ModLoader::from(P::Fabric).as_str(), "fabric");
+    assert_eq!(ModLoader::from(P::Forge).as_str(), "forge");
+    assert_eq!(ModLoader::from(P::NeoForge).as_str(), "neoforge");
+    assert_eq!(ModLoader::from(P::Quilt).as_str(), "quilt");
+}
+
+// ---------------------------------------------------------------------------
+// CachedVersions edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_cached_versions_new_is_not_expired() {
+    let cached = CachedVersions::new(vec!["1.0.0".to_string()]);
+    assert!(!cached.is_expired(24));
+}
+
+#[test]
+fn test_cached_versions_old_is_expired() {
+    let cached = CachedVersions {
+        versions: vec!["1.0.0".to_string()],
+        cached_at: 0,
+    };
+    assert!(cached.is_expired(1));
+}
+
+#[test]
+fn test_cached_versions_zero_max_age_freshly_created() {
+    // max_age_hours=0 means max_age_seconds=0. A freshly created cache
+    // has now - cached_at ≈ 0, so 0 > 0 is false (not expired).
+    let cached = CachedVersions::new(vec![]);
+    assert!(!cached.is_expired(0));
+}
+
+#[test]
+fn test_cached_versions_zero_max_age_old_entry() {
+    // An old entry with max_age_hours=0 should be expired
+    let cached = CachedVersions {
+        versions: vec![],
+        cached_at: 1000,
+    };
+    assert!(cached.is_expired(0));
+}
+
+// ---------------------------------------------------------------------------
+// Fallback versions edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_fallback_loader_versions_forge() {
+    let versions = VersionFetcher::get_fallback_loader_versions("forge", "1.20.1");
+    assert!(!versions.is_empty());
+}
+
+#[test]
+fn test_fallback_loader_versions_neoforge() {
+    let versions = VersionFetcher::get_fallback_loader_versions("neoforge", "1.21.1");
+    assert!(!versions.is_empty());
+}
+
+#[test]
+fn test_fallback_loader_versions_quilt() {
+    let versions = VersionFetcher::get_fallback_loader_versions("quilt", "1.20.1");
+    assert!(!versions.is_empty());
+}
+
+#[test]
+fn test_fallback_loader_versions_unknown_loader() {
+    let versions = VersionFetcher::get_fallback_loader_versions("unknown", "1.20.1");
+    assert_eq!(versions, vec!["latest"], "unknown loader should fall back to [\"latest\"]");
+}
+
+// ---------------------------------------------------------------------------
+// NeoForge filter: MC version format edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_filter_neoforge_invalid_mc_format() {
+    let versions = vec!["21.1.69".to_string()];
+    let result = filter_neoforge_versions_by_minecraft(&versions, "2.0.0").unwrap();
+    assert!(result.is_empty(), "non-1.X.Y MC version should return empty");
+}
+
+#[test]
+fn test_filter_neoforge_empty_versions() {
+    let versions: Vec<String> = vec![];
+    let result = filter_neoforge_versions_by_minecraft(&versions, "1.21.1").unwrap();
+    assert!(result.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Forge filter: edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_filter_forge_empty_versions() {
+    let versions: Vec<String> = vec![];
+    let result = filter_forge_versions_by_minecraft(&versions, "1.20.1").unwrap();
+    assert!(result.is_empty());
+}
+
+#[test]
+fn test_filter_forge_mc_version_normalization_21() {
+    let versions = vec![
+        "1.21-51.0.33".to_string(),
+    ];
+    let result = filter_forge_versions_by_minecraft(&versions, "1.21").unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0], "51.0.33");
+}

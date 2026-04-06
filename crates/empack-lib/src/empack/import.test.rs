@@ -895,3 +895,216 @@ fn test_detect_datapack_folder_paxi_over_root() {
         Some("config/paxi/datapacks".to_string())
     );
 }
+
+// ---------------------------------------------------------------------------
+// Source detection: additional edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_detect_local_source_unknown_extension() {
+    let tmp = NamedTempFile::with_suffix(".tar.gz").unwrap();
+    let result = detect_local_source(tmp.path());
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("cannot detect source type"));
+}
+
+#[test]
+fn test_detect_local_source_no_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("somefile");
+    std::fs::write(&file, "content").unwrap();
+    let result = detect_local_source(&file);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_detect_local_source_empty_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let result = detect_local_source(dir.path());
+    assert!(result.is_err());
+}
+
+// ---------------------------------------------------------------------------
+// CurseForge manifest: author and name defaults
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_parse_curseforge_missing_name_defaults() {
+    let json = r#"{
+        "minecraft": {
+            "version": "1.20.1",
+            "modLoaders": [{ "id": "fabric-0.16.0", "primary": true }]
+        },
+        "files": [],
+        "manifestType": "minecraftModpack",
+        "overrides": "overrides"
+    }"#;
+    let tmp = create_cf_zip(json);
+    let manifest = parse_curseforge_zip(tmp.path()).unwrap();
+    assert!(!manifest.identity.name.is_empty());
+}
+
+#[test]
+fn test_parse_curseforge_missing_version_defaults() {
+    let json = r#"{
+        "minecraft": {
+            "version": "1.20.1",
+            "modLoaders": [{ "id": "fabric-0.16.0", "primary": true }]
+        },
+        "files": [],
+        "manifestType": "minecraftModpack",
+        "overrides": "overrides",
+        "name": "TestPack"
+    }"#;
+    let tmp = create_cf_zip(json);
+    let manifest = parse_curseforge_zip(tmp.path()).unwrap();
+    assert!(!manifest.identity.version.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Modrinth mrpack: edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_parse_modrinth_multiple_downloads_first_used() {
+    let json = r#"{
+      "dependencies": {
+        "minecraft": "1.20.1",
+        "fabric-loader": "0.14.0"
+      },
+      "files": [
+        {
+          "path": "mods/test.jar",
+          "downloads": [
+            "https://cdn.modrinth.com/versions/abc/test.jar",
+            "https://mirror.example.com/test.jar"
+          ],
+          "hashes": { "sha1": "abc123" },
+          "env": { "client": "required", "server": "optional" },
+          "fileSize": 1024
+        }
+      ],
+      "overrides": "overrides",
+      "name": "MultiDownload",
+      "versionId": "1.0.0"
+    }"#;
+
+    let tmp = create_mr_zip(json);
+    let manifest = parse_modrinth_mrpack(tmp.path()).unwrap();
+    assert_eq!(manifest.content.len(), 1);
+
+    match &manifest.content[0] {
+        ContentEntry::PlatformReferenced(pref) => {
+            assert_eq!(pref.download_urls.len(), 2);
+            assert!(pref.download_urls[0].contains("cdn.modrinth.com"));
+        }
+        _ => panic!("expected PlatformReferenced"),
+    }
+}
+
+#[test]
+fn test_parse_modrinth_optional_env_fields() {
+    let json = r#"{
+      "dependencies": {
+        "minecraft": "1.20.1",
+        "fabric-loader": "0.14.0"
+      },
+      "files": [
+        {
+          "path": "mods/test.jar",
+          "downloads": ["https://cdn.modrinth.com/test.jar"],
+          "hashes": { "sha1": "abc" },
+          "fileSize": 512
+        }
+      ],
+      "overrides": "overrides",
+      "name": "NoEnv",
+      "versionId": "1.0.0"
+    }"#;
+
+    let tmp = create_mr_zip(json);
+    let manifest = parse_modrinth_mrpack(tmp.path()).unwrap();
+    assert_eq!(manifest.content.len(), 1);
+
+    match &manifest.content[0] {
+        ContentEntry::PlatformReferenced(pref) => {
+            assert_eq!(pref.env.client, SideRequirement::Unknown);
+            assert_eq!(pref.env.server, SideRequirement::Unknown);
+        }
+        _ => panic!("expected PlatformReferenced"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ImportError display
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_import_error_display_variants() {
+    let errors: Vec<ImportError> = vec![
+        ImportError::ArchiveRead("test".to_string()),
+        ImportError::CurseForgeManifestMissing,
+        ImportError::ModrinthManifestMissing,
+        ImportError::ParseFailed("bad".to_string()),
+        ImportError::MissingField { field: "name".to_string() },
+        ImportError::UnknownLoader("liteloader".to_string()),
+        ImportError::AlreadyEmpackProject,
+        ImportError::UnrecognizedSource("file.tar".to_string()),
+        ImportError::DownloadFailed("timeout".to_string()),
+    ];
+
+    for err in &errors {
+        let msg = format!("{}", err);
+        assert!(!msg.is_empty(), "error display should not be empty");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SourceKind Debug
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_source_kind_debug() {
+    let kinds = vec![
+        SourceKind::CurseForgeZip,
+        SourceKind::ModrinthMrpack,
+        SourceKind::PackwizDirectory,
+        SourceKind::ModrinthRemote { slug: "test".to_string(), version: None },
+        SourceKind::CurseForgeRemote { slug: "test".to_string() },
+    ];
+
+    for kind in &kinds {
+        let debug = format!("{:?}", kind);
+        assert!(!debug.is_empty());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Override classification: additional patterns
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_classify_override_dim_dash_world() {
+    assert_eq!(classify_override("DIM-1/data.dat"), OverrideCategory::World);
+    assert_eq!(classify_override("dim-2/data.dat"), OverrideCategory::World);
+}
+
+#[test]
+fn test_classify_override_dim_no_dash_is_other() {
+    assert_eq!(classify_override("DIM1/data.dat"), OverrideCategory::Other);
+}
+
+#[test]
+fn test_classify_override_nested_config() {
+    assert_eq!(
+        classify_override("defaultconfigs/mycoolmod/settings.toml"),
+        OverrideCategory::Config
+    );
+}
+
+#[test]
+fn test_classify_override_options_variants() {
+    assert_eq!(classify_override("optionsof.txt"), OverrideCategory::ClientConfig);
+    // optionsshaders.txt does not match the optionsof.txt pattern
+    assert_eq!(classify_override("optionsshaders.txt"), OverrideCategory::Other);
+}
