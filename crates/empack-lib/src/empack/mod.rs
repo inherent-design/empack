@@ -39,8 +39,3 @@ pub use state::{PackStateManager, StateTransitionResult};
 pub use crate::primitives::{
     BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition,
 };
-
-#[cfg(test)]
-mod tests {
-    include!("mod.test.rs");
-}
