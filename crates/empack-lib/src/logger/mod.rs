@@ -3,14 +3,45 @@ use std::sync::OnceLock;
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+#[cfg(feature = "telemetry")]
+use opentelemetry::trace::TracerProvider as _;
+#[cfg(feature = "telemetry")]
+use opentelemetry_sdk::trace::SdkTracerProvider;
+
 static GLOBAL_LOGGER: OnceLock<Logger> = OnceLock::new();
 
-#[derive(Debug)]
+/// Global structured logging with optional telemetry layers.
+///
+/// When the `telemetry` feature is enabled and `EMPACK_PROFILE` is set,
+/// additional tracing layers are composed into the subscriber stack:
+/// - `chrome`: writes Perfetto-compatible `trace-*.json` files
+/// - `otlp`: exports spans via OTLP HTTP/protobuf to a collector
+/// - `all`: enables both layers simultaneously
 pub struct Logger {
-    _guard: (),
+    #[cfg(feature = "telemetry")]
+    _chrome_guard: Option<std::sync::Mutex<tracing_chrome::FlushGuard>>,
+    #[cfg(feature = "telemetry")]
+    _tracer_provider: Option<SdkTracerProvider>,
+}
+
+impl std::fmt::Debug for Logger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_struct("Logger");
+        #[cfg(feature = "telemetry")]
+        {
+            dbg.field("chrome", &self._chrome_guard.is_some());
+            dbg.field("otlp", &self._tracer_provider.is_some());
+        }
+        dbg.finish()
+    }
 }
 
 impl Logger {
+    /// Initialize the global logger with the given configuration.
+    ///
+    /// Composes: `registry + env_filter + fmt_layer + indicatif_layer`
+    /// and, when the `telemetry` feature is enabled, optional Chrome and
+    /// OTLP layers selected by the `EMPACK_PROFILE` env var.
     pub fn init(config: LoggerConfig) -> Result<&'static Self, LoggerError> {
         if GLOBAL_LOGGER.get().is_some() {
             return Err(LoggerError::AlreadyInitialized);
@@ -66,16 +97,77 @@ impl Logger {
                 .boxed(),
         };
 
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(fmt_layer)
-            .with(indicatif_layer)
-            .try_init()
-            .map_err(|e| LoggerError::InitializationFailed {
-                reason: e.to_string(),
-            })?;
+        #[cfg(feature = "telemetry")]
+        let profile = std::env::var("EMPACK_PROFILE").ok();
 
-        let logger = Logger { _guard: () };
+        #[cfg(feature = "telemetry")]
+        let (chrome_layer, chrome_guard) = if profile
+            .as_deref()
+            .is_some_and(|p| p == "chrome" || p == "all")
+        {
+            let (layer, guard) = tracing_chrome::ChromeLayerBuilder::new()
+                .include_args(true)
+                .include_locations(true)
+                .build();
+            (Some(layer), Some(guard))
+        } else {
+            (None, None)
+        };
+
+        #[cfg(feature = "telemetry")]
+        let (otel_layer, tracer_provider) = if profile
+            .as_deref()
+            .is_some_and(|p| p == "otlp" || p == "all")
+        {
+            let exporter = opentelemetry_otlp::SpanExporter::builder()
+                .with_http()
+                .build()
+                .map_err(|e| LoggerError::InitializationFailed {
+                    reason: format!("OTLP exporter: {e}"),
+                })?;
+            let provider = SdkTracerProvider::builder()
+                .with_batch_exporter(exporter)
+                .build();
+            let tracer = provider.tracer("empack");
+            let layer = tracing_opentelemetry::OpenTelemetryLayer::new(tracer);
+            (Some(layer), Some(provider))
+        } else {
+            (None, None)
+        };
+
+        // When telemetry is enabled, compose chrome and otel layers (Option<L>
+        // is a no-op when None). When disabled, the subscriber stack is unchanged.
+        #[cfg(feature = "telemetry")]
+        {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .with(indicatif_layer)
+                .with(chrome_layer)
+                .with(otel_layer)
+                .try_init()
+                .map_err(|e| LoggerError::InitializationFailed {
+                    reason: e.to_string(),
+                })?;
+        }
+        #[cfg(not(feature = "telemetry"))]
+        {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt_layer)
+                .with(indicatif_layer)
+                .try_init()
+                .map_err(|e| LoggerError::InitializationFailed {
+                    reason: e.to_string(),
+                })?;
+        }
+
+        let logger = Logger {
+            #[cfg(feature = "telemetry")]
+            _chrome_guard: chrome_guard.map(std::sync::Mutex::new),
+            #[cfg(feature = "telemetry")]
+            _tracer_provider: tracer_provider,
+        };
 
         GLOBAL_LOGGER
             .set(logger)
@@ -92,12 +184,26 @@ impl Logger {
         Ok(GLOBAL_LOGGER.get().unwrap())
     }
 
+    /// Retrieve the global logger instance, if initialized.
     pub fn global() -> Option<&'static Self> {
         GLOBAL_LOGGER.get()
     }
 
+    /// Returns `true` if the global logger has been initialized.
     pub fn is_initialized() -> bool {
         GLOBAL_LOGGER.get().is_some()
+    }
+
+    /// Flush OTLP batch exporter with a bounded timeout.
+    ///
+    /// Chrome `FlushGuard` flushes on drop; no explicit call needed.
+    /// `SdkTracerProvider` requires explicit shutdown (drop alone does NOT
+    /// flush the batch exporter).
+    pub fn shutdown(&self) {
+        #[cfg(feature = "telemetry")]
+        if let Some(ref provider) = self._tracer_provider {
+            let _ = provider.shutdown_with_timeout(std::time::Duration::from_secs(2));
+        }
     }
 
     /// Log an error message with optional context.
@@ -164,6 +270,17 @@ impl Logger {
         } else {
             tracing::trace!("{}", message);
         }
+    }
+}
+
+/// Flush telemetry providers on the global logger, if initialized.
+///
+/// Safe to call from signal handlers and panic hooks. No-op when the
+/// logger has not been initialized or when the `telemetry` feature is
+/// disabled.
+pub fn global_shutdown() {
+    if let Some(logger) = Logger::global() {
+        logger.shutdown();
     }
 }
 

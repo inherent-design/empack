@@ -107,6 +107,31 @@ description = "Run cargo clippy"
 run = "cargo clippy --workspace --all-targets -- -D warnings"
 run_windows = "cargo clippy --workspace --all-targets -- -D warnings"
 
+# Profiling
+
+[tasks.profile]
+alias = "p"
+description = "Run with Perfetto trace profiling"
+run = """
+EMPACK_PROFILE=chrome cargo run -p empack --features telemetry -- "$@"
+echo "Trace written to trace-*.json; open at https://ui.perfetto.dev"
+"""
+
+[tasks."profile:otlp"]
+description = "Run with OTLP export (requires collector at localhost:4318)"
+run = "EMPACK_PROFILE=otlp cargo run -p empack --features telemetry -- \"$@\""
+
+[tasks."profile:samply"]
+description = "Run under samply sampling profiler (release build)"
+run = """
+cargo build --release -p empack
+samply record ./target/release/empack "$@"
+"""
+
+[tasks."profile:all"]
+description = "Run with all telemetry layers enabled"
+run = "EMPACK_PROFILE=all cargo run -p empack --features telemetry -- \"$@\""
+
 # Maintenance
 
 [tasks.clean]

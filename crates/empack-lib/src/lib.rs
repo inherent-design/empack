@@ -63,10 +63,12 @@ pub async fn main() -> Result<()> {
         biased;
         result = execute_command(config) => {
             terminal::cursor::force_show_cursor();
+            logger::global_shutdown();
             result
         }
         _ = tokio::signal::ctrl_c() => {
             terminal::cursor::force_show_cursor();
+            logger::global_shutdown();
 
             // Best-effort state marker cleanup using configured workdir
             let marker_dir = workdir.or_else(|| std::env::current_dir().ok());

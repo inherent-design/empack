@@ -59,6 +59,13 @@ flate2 = "1.1" # Gzip compression paired with tar
 sevenz-rust2 = { version = "0.20", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
 handlebars = "6.4.0"
 
+# Telemetry (optional, behind `telemetry` feature gate)
+tracing-chrome = "0.7"
+tracing-opentelemetry = "0.32"
+opentelemetry = "0.31"
+opentelemetry_sdk = { version = "0.31", features = ["trace"] }
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["http-proto", "reqwest-blocking-client"] }
+
 # Dev dependencies
 assert_cmd = "2.2"
 criterion = "0.8.2"

@@ -25,6 +25,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::empack::config::format_empack_yml;
+use tracing::instrument;
 
 /// Execute CLI commands using the new session-based architecture
 pub async fn execute_command(config: CliConfig) -> Result<()> {
@@ -144,6 +145,7 @@ async fn handle_version(session: &dyn Session) -> Result<()> {
 }
 
 /// Handle the `init` subcommand.
+#[instrument(skip_all, fields(dir = ?args.dir, modloader = ?args.modloader))]
 async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
     if session.config().app_config().yes && args.modloader.is_none() && args.from_source.is_none() {
         return Err(anyhow::anyhow!(
@@ -798,6 +800,7 @@ fn validate_init_inputs(
     Ok(())
 }
 
+#[instrument(skip_all, fields(source))]
 async fn handle_init_from_source(
     session: &dyn Session,
     source: &str,
@@ -1278,6 +1281,7 @@ async fn download_file(client: &reqwest::Client, url: &str, dest: &std::path::Pa
     Ok(())
 }
 
+#[instrument(skip_all, fields(mod_count = mods.len()))]
 async fn handle_add(
     session: &dyn Session,
     mods: Vec<String>,
@@ -2304,6 +2308,7 @@ fn hex_encode_bytes(bytes: &[u8]) -> String {
     out
 }
 
+#[instrument(skip_all, fields(mod_count = mods.len()))]
 async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> Result<()> {
     if mods.is_empty() {
         session
@@ -2583,6 +2588,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 }
 
 /// Handle the `build` subcommand.
+#[instrument(skip_all, fields(targets = ?args.targets))]
 async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     let manager = session.state()?;
 
@@ -2895,6 +2901,7 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     Ok(())
 }
 
+#[instrument(skip_all, fields(targets = ?targets))]
 async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()> {
     let manager = session.state()?;
 
@@ -2974,6 +2981,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn handle_sync(session: &dyn Session) -> Result<()> {
     let manager = session.state()?;
 

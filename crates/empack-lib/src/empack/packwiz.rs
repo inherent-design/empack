@@ -16,6 +16,7 @@ use crate::primitives::ProjectPlatform;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use tracing::instrument;
 
 /// Trait for packwiz CLI operations extracted from FileSystemProvider.
 ///
@@ -400,6 +401,7 @@ minecraft = "{}"
 ///
 /// Passing `None` for a parameter leaves any existing value for that
 /// key untouched. To clear a key, remove it from the TOML manually.
+#[instrument(skip_all)]
 pub fn write_pack_toml_options(
     pack_toml_path: &Path,
     datapack_folder: Option<&str>,
@@ -542,6 +544,7 @@ impl<'a> PackwizMetadata<'a> {
     /// Executes: `packwiz modrinth add --project-id <id> -y`
     /// Creates: pack/mods/<mod-name>.pw.toml
     /// Updates: pack/index.toml
+    #[instrument(skip_all, fields(project_id, platform = ?platform))]
     pub fn add_mod(
         &mut self,
         project_id: &str,
