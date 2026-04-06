@@ -4,7 +4,7 @@
 //! Implements the Session-Scoped Dependency Injection Pattern.
 
 use crate::Result;
-use crate::application::cli::{CliProjectType, SearchPlatform};
+use crate::application::cli::{BuildArgs, CliProjectType, InitArgs, SearchPlatform};
 use crate::application::session::{CommandSession, FileSystemProvider, Session};
 use crate::application::sync::{
     AddContractError, AddResolution, SyncExecutionAction, SyncPlanAction, build_sync_plan,
@@ -55,35 +55,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
     match command {
         Commands::Requirements => handle_requirements(session).await,
         Commands::Version => handle_version(session).await,
-        Commands::Init {
-            dir,
-            force,
-            modloader,
-            mc_version,
-            author,
-            pack_name,
-            loader_version,
-            pack_version,
-            datapack_folder,
-            game_versions,
-            from_source,
-        } => {
-            handle_init(
-                session,
-                dir,
-                pack_name,
-                force,
-                modloader,
-                mc_version,
-                author,
-                loader_version,
-                pack_version,
-                datapack_folder,
-                game_versions,
-                from_source,
-            )
-            .await
-        }
+        Commands::Init(args) => handle_init(session, &args).await,
         Commands::Add {
             mods,
             force,
@@ -93,12 +65,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             file_id,
         } => handle_add(session, mods, force, platform, project_type, version_id, file_id).await,
         Commands::Remove { mods, deps } => handle_remove(session, mods, deps).await,
-        Commands::Build {
-            targets,
-            clean,
-            format,
-            downloads_dir,
-        } => handle_build(session, targets, clean, format.to_archive_format(), downloads_dir).await,
+        Commands::Build(args) => handle_build(session, &args).await,
         Commands::Clean { targets } => handle_clean(session, targets).await,
         Commands::Sync {} => handle_sync(session).await,
     }
@@ -176,36 +143,23 @@ async fn handle_version(session: &dyn Session) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn handle_init(
-    session: &dyn Session,
-    positional_dir: Option<String>,
-    cli_pack_name: Option<String>,
-    force: bool,
-    cli_modloader: Option<String>,
-    cli_mc_version: Option<String>,
-    cli_author: Option<String>,
-    cli_loader_version: Option<String>,
-    cli_pack_version: Option<String>,
-    cli_datapack_folder: Option<String>,
-    cli_game_versions: Option<Vec<String>>,
-    from_source: Option<String>,
-) -> Result<()> {
-    if session.config().app_config().yes && cli_modloader.is_none() && from_source.is_none() {
+/// Handle the `init` subcommand.
+async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
+    if session.config().app_config().yes && args.modloader.is_none() && args.from_source.is_none() {
         return Err(anyhow::anyhow!(
             "--yes requires --modloader to be specified"
         ));
     }
 
-    if let Some(ref source) = from_source {
+    if let Some(ref source) = args.from_source {
         return handle_init_from_source(
             session,
             source,
-            positional_dir,
-            force,
-            cli_pack_name,
-            cli_datapack_folder,
-            cli_game_versions,
+            args.dir.clone(),
+            args.force,
+            args.pack_name.clone(),
+            args.datapack_folder.clone(),
+            args.game_versions.clone(),
         )
         .await;
     }
@@ -218,7 +172,7 @@ async fn handle_init(
             .context("Failed to get current directory")?,
     );
 
-    let (target_dir, needs_mkdir) = if let Some(ref dir_arg) = positional_dir {
+    let (target_dir, needs_mkdir) = if let Some(ref dir_arg) = args.dir {
         let target = base_dir.join(dir_arg);
         let needs_mkdir = !session.filesystem().exists(&target);
         (target, needs_mkdir)
@@ -233,7 +187,7 @@ async fn handle_init(
 
         let mut current_state = manager.discover_state()?;
         if current_state != PackState::Uninitialized {
-            if !force {
+            if !args.force {
                 session
                     .display()
                     .status()
@@ -282,7 +236,7 @@ async fn handle_init(
         .unwrap_or("Pack")
         .to_string();
 
-    let modpack_name = if let Some(name) = cli_pack_name.clone() {
+    let modpack_name = if let Some(name) = args.pack_name.clone() {
         // --name flag is the explicit display name; highest priority
         session
             .display()
@@ -291,7 +245,8 @@ async fn handle_init(
         name
     } else {
         // Default: directory basename; filter "." and ".." from positional arg
-        let default = positional_dir
+        let default = args
+            .dir
             .as_deref()
             .filter(|s| *s != "." && *s != "..")
             .map(String::from)
@@ -322,22 +277,22 @@ async fn handle_init(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Unknown Author".to_string());
 
-    let author = if let Some(author) = cli_author {
+    let author = if let Some(ref author) = args.author {
         session
             .display()
             .status()
             .info(&format!("Using author: {}", author));
-        author
+        author.clone()
     } else {
         session.interactive().text_input("Author", default_author)?
     };
 
-    let version = if let Some(v) = cli_pack_version {
+    let version = if let Some(ref v) = args.pack_version {
         session
             .display()
             .status()
             .info(&format!("Using pack version: {}", v));
-        v
+        v.clone()
     } else {
         session
             .interactive()
@@ -372,14 +327,14 @@ async fn handle_init(
     };
 
     // Minecraft version selection with FuzzySelect (pagination enabled, 6 items per page)
-    let minecraft_version = if let Some(mc_ver) = cli_mc_version {
+    let minecraft_version = if let Some(ref mc_ver) = args.mc_version {
         session
             .display()
             .status()
             .info(&format!("Using Minecraft version: {}", mc_ver));
         if !minecraft_versions
             .iter()
-            .any(|v| v.eq_ignore_ascii_case(&mc_ver))
+            .any(|v| v.eq_ignore_ascii_case(mc_ver))
         {
             anyhow::bail!(
                 "Minecraft version '{}' not found. Available versions include: {}",
@@ -392,7 +347,7 @@ async fn handle_init(
                     .join(", ")
             );
         }
-        mc_ver
+        mc_ver.clone()
     } else {
         let mc_version_index = session
             .interactive()
@@ -408,12 +363,13 @@ async fn handle_init(
     // loader fetching, loader version fetching, and loader version prompts
     // are all skipped.
 
-    let is_vanilla = cli_modloader
+    let is_vanilla = args
+        .modloader
         .as_deref()
         .is_some_and(|s| s.eq_ignore_ascii_case("none"));
 
     let (loader_str, loader_version) = if is_vanilla {
-        if cli_loader_version.is_some() {
+        if args.loader_version.is_some() {
             return Err(anyhow::anyhow!(
                 "--loader-version is not allowed for vanilla packs"
             ));
@@ -478,12 +434,12 @@ async fn handle_init(
             ));
         }
 
-        let (selected_loader, loader_str) = if let Some(loader_str) = cli_modloader {
+        let (selected_loader, loader_str) = if let Some(ref loader_str) = args.modloader {
             session
                 .display()
                 .status()
                 .info(&format!("Using loader: {}", loader_str));
-            let parsed_loader = ModLoader::parse(&loader_str)
+            let parsed_loader = ModLoader::parse(loader_str)
                 .with_context(|| format!("Invalid mod loader: {}", loader_str))?;
 
             let versions_loader: crate::empack::versions::ModLoader = parsed_loader.into();
@@ -537,12 +493,12 @@ async fn handle_init(
                     loader_str,
                     minecraft_version
                 ));
-            } else if let Some(lv) = cli_loader_version {
+            } else if let Some(ref lv) = args.loader_version {
                 session
                     .display()
                     .status()
                     .info(&format!("Using {} version: {}", loader_str, lv));
-                if !loader_versions.iter().any(|v| v == &lv) {
+                if !loader_versions.iter().any(|v| v == lv) {
                     anyhow::bail!(
                         "Loader version '{}' not found for {} on Minecraft {}. Available versions include: {}",
                         lv,
@@ -556,7 +512,7 @@ async fn handle_init(
                             .join(", ")
                     );
                 }
-                lv
+                lv.clone()
             } else {
                 let loader_version_index = session
                     .interactive()
@@ -572,12 +528,12 @@ async fn handle_init(
     };
 
     // Step 5: Datapack folder prompt
-    let datapack_folder = if let Some(folder) = cli_datapack_folder {
+    let datapack_folder = if let Some(ref folder) = args.datapack_folder {
         session
             .display()
             .status()
             .info(&format!("Using datapack folder: {}", folder));
-        Some(folder)
+        Some(folder.clone())
     } else if session.config().app_config().yes {
         None
     } else {
@@ -587,7 +543,7 @@ async fn handle_init(
         if input.is_empty() { None } else { Some(input) }
     };
 
-    let game_versions = cli_game_versions;
+    let game_versions = args.game_versions.clone();
 
     // Step 6: Final Confirmation and Execution
     session.display().status().info("Configuration Summary:");
@@ -2626,13 +2582,8 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     Ok(())
 }
 
-async fn handle_build(
-    session: &dyn Session,
-    targets: Vec<String>,
-    clean: bool,
-    archive_format: crate::empack::archive::ArchiveFormat,
-    downloads_dir: Option<String>,
-) -> Result<()> {
+/// Handle the `build` subcommand.
+async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     let manager = session.state()?;
 
     // Verify we're in a configured state
@@ -2660,7 +2611,7 @@ async fn handle_build(
     }
 
     // Parse build targets
-    let build_targets = parse_build_targets(targets)?;
+    let build_targets = parse_build_targets(args.targets.clone())?;
 
     session
         .display()
@@ -2682,8 +2633,10 @@ async fn handle_build(
         return Ok(());
     }
 
+    let archive_format = args.format.to_archive_format();
+
     // Clean if requested (after dry-run check to prevent side effects during preview)
-    if clean {
+    if args.clean {
         session
             .display()
             .status()
@@ -2802,7 +2755,8 @@ async fn handle_build(
         }
 
         // Check --downloads-dir (or platform default) for already-downloaded files
-        let dl_dir = downloads_dir
+        let dl_dir = args
+            .downloads_dir
             .as_ref()
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| crate::platform::home_dir().join("Downloads"));

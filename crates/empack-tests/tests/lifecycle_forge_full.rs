@@ -1,5 +1,5 @@
 use anyhow::Result;
-use empack_lib::application::cli::{CliArchiveFormat, Commands};
+use empack_lib::application::cli::{BuildArgs, Commands, InitArgs};
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::session_mocks::mock_root;
 use empack_lib::display::Display;
@@ -46,19 +46,14 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     // Step 1: Initialize with Forge modloader
     let init_result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("forge-test-pack".to_string()),
             pack_name: Some("forge-test-pack".to_string()),
-            force: false,
             modloader: Some("forge".to_string()),
             mc_version: Some("1.21.1".to_string()),
             author: Some("Workflow Test".to_string()),
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -188,12 +183,10 @@ async fn test_lifecycle_forge_full() -> Result<()> {
 
     // Step 3: Build all targets
     let build_result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["all".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -309,19 +302,12 @@ async fn test_forge_modloader_initialization() -> Result<()> {
 
     // Execute init with explicit Forge loader (--yes requires --modloader)
     let result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("forge-loader-test".to_string()),
-            pack_name: None,
-            force: false,
             modloader: Some("forge".to_string()),
             mc_version: Some("1.21.1".to_string()),
-            author: None,
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;

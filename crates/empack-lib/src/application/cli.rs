@@ -1,5 +1,5 @@
 use crate::primitives::ConfigError;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 use super::config::AppConfig;
 
@@ -36,6 +36,112 @@ impl CliConfig {
     }
 }
 
+/// Arguments for the `init` subcommand.
+#[derive(Args, Debug, Default, Clone)]
+pub struct InitArgs {
+    /// Target directory for the modpack project
+    #[arg(help = "Directory for the modpack project (created if needed)")]
+    pub dir: Option<String>,
+
+    /// Force overwrite existing files
+    #[arg(short, long, help = "Force overwrite existing modpack files")]
+    pub force: bool,
+
+    /// Mod loader (neoforge, fabric, forge, quilt, none)
+    #[arg(
+        long,
+        short = 'm',
+        env = "EMPACK_MODLOADER",
+        help = "Mod loader to use (none for vanilla; skips interactive prompt)"
+    )]
+    pub modloader: Option<String>,
+
+    /// Minecraft version
+    #[arg(
+        long,
+        env = "EMPACK_MC_VERSION",
+        help = "Minecraft version (skips interactive prompt)"
+    )]
+    pub mc_version: Option<String>,
+
+    /// Author name
+    #[arg(
+        long,
+        short = 'A',
+        env = "EMPACK_AUTHOR",
+        help = "Author name (skips interactive prompt)"
+    )]
+    pub author: Option<String>,
+
+    /// Modpack display name
+    #[arg(
+        long,
+        short = 'n',
+        env = "EMPACK_NAME",
+        help = "Modpack display name (default: directory basename)"
+    )]
+    pub pack_name: Option<String>,
+
+    /// Loader version (e.g., "0.15.0" for Fabric, "21.1.172" for NeoForge)
+    #[arg(
+        long,
+        env = "EMPACK_LOADER_VERSION",
+        help = "Loader version (skips interactive prompt)"
+    )]
+    pub loader_version: Option<String>,
+
+    /// Pack version string (e.g., "1.0.0")
+    #[arg(
+        long,
+        env = "EMPACK_PACK_VERSION",
+        help = "Pack version (skips interactive prompt)"
+    )]
+    pub pack_version: Option<String>,
+
+    /// Folder for datapacks relative to pack root
+    #[arg(long, env = "EMPACK_DATAPACK_FOLDER")]
+    pub datapack_folder: Option<String>,
+
+    /// Additional accepted MC versions (comma-separated)
+    #[arg(long, env = "EMPACK_GAME_VERSIONS", value_delimiter = ',')]
+    pub game_versions: Option<Vec<String>>,
+
+    /// Import modpack from a source (file path or URL)
+    #[arg(long = "from", value_name = "SOURCE")]
+    pub from_source: Option<String>,
+}
+
+/// Arguments for the `build` subcommand.
+#[derive(Args, Debug, Clone)]
+pub struct BuildArgs {
+    /// Build targets to execute
+    #[arg(help = "Build targets: mrpack, client, server, client-full, server-full, all")]
+    pub targets: Vec<String>,
+
+    /// Clean before building
+    #[arg(short, long, help = "Clean build directories before building")]
+    pub clean: bool,
+
+    /// Archive format for distribution packages
+    #[arg(long, value_enum, default_value = "zip")]
+    pub format: CliArchiveFormat,
+
+    /// Directory to scan for manually downloaded restricted mods
+    #[arg(long, env = "EMPACK_DOWNLOADS_DIR")]
+    pub downloads_dir: Option<String>,
+}
+
+impl Default for BuildArgs {
+    fn default() -> Self {
+        Self {
+            targets: Vec::new(),
+            clean: false,
+            format: CliArchiveFormat::Zip,
+            downloads_dir: None,
+        }
+    }
+}
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {
@@ -46,100 +152,13 @@ pub enum Commands {
     Version,
 
     /// Initialize modpack development environment
-    Init {
-        /// Target directory for the modpack project
-        #[arg(help = "Directory for the modpack project (created if needed)")]
-        dir: Option<String>,
-
-        /// Force overwrite existing files
-        #[arg(short, long, help = "Force overwrite existing modpack files")]
-        force: bool,
-
-        /// Mod loader (neoforge, fabric, forge, quilt, none)
-        #[arg(
-            long,
-            short = 'm',
-            env = "EMPACK_MODLOADER",
-            help = "Mod loader to use (none for vanilla; skips interactive prompt)"
-        )]
-        modloader: Option<String>,
-
-        /// Minecraft version
-        #[arg(
-            long,
-            env = "EMPACK_MC_VERSION",
-            help = "Minecraft version (skips interactive prompt)"
-        )]
-        mc_version: Option<String>,
-
-        /// Author name
-        #[arg(
-            long,
-            short = 'A',
-            env = "EMPACK_AUTHOR",
-            help = "Author name (skips interactive prompt)"
-        )]
-        author: Option<String>,
-
-        /// Modpack display name
-        #[arg(
-            long,
-            short = 'n',
-            env = "EMPACK_NAME",
-            help = "Modpack display name (default: directory basename)"
-        )]
-        pack_name: Option<String>,
-
-        /// Loader version (e.g., "0.15.0" for Fabric, "21.1.172" for NeoForge)
-        #[arg(
-            long,
-            env = "EMPACK_LOADER_VERSION",
-            help = "Loader version (skips interactive prompt)"
-        )]
-        loader_version: Option<String>,
-
-        /// Pack version string (e.g., "1.0.0")
-        #[arg(
-            long,
-            env = "EMPACK_PACK_VERSION",
-            help = "Pack version (skips interactive prompt)"
-        )]
-        pack_version: Option<String>,
-
-        /// Folder for datapacks relative to pack root
-        #[arg(long, env = "EMPACK_DATAPACK_FOLDER")]
-        datapack_folder: Option<String>,
-
-        /// Additional accepted MC versions (comma-separated)
-        #[arg(long, env = "EMPACK_GAME_VERSIONS", value_delimiter = ',')]
-        game_versions: Option<Vec<String>>,
-
-        /// Import modpack from a source (file path or URL)
-        #[arg(long = "from", value_name = "SOURCE")]
-        from_source: Option<String>,
-    },
+    Init(InitArgs),
 
     /// Synchronize empack.yml dependencies with pack.toml reality
     Sync {},
 
     /// Build modpack targets
-    Build {
-        /// Build targets to execute
-        #[arg(help = "Build targets: mrpack, client, server, client-full, server-full, all")]
-        targets: Vec<String>,
-
-        /// Clean before building
-        #[arg(short, long, help = "Clean build directories before building")]
-        clean: bool,
-
-        /// Archive format for distribution packages
-        #[arg(long, value_enum, default_value = "zip")]
-        format: CliArchiveFormat,
-
-        /// Directory to scan for manually downloaded restricted mods
-        #[arg(long, env = "EMPACK_DOWNLOADS_DIR")]
-        downloads_dir: Option<String>,
-    },
+    Build(BuildArgs),
 
     /// Add projects to the modpack
     Add {
@@ -271,9 +290,9 @@ impl Commands {
         match self {
             Commands::Requirements => false,
             Commands::Version => false,
-            Commands::Init { .. } => false,
+            Commands::Init(..) => false,
             Commands::Sync { .. } => true,
-            Commands::Build { .. } => true,
+            Commands::Build(..) => true,
             Commands::Add { .. } => true,
             Commands::Remove { .. } => true,
             Commands::Clean { .. } => true,
@@ -285,12 +304,12 @@ impl Commands {
         match self {
             Commands::Requirements => 0,
             Commands::Version => 0,
-            Commands::Init { .. } => 1,
+            Commands::Init(..) => 1,
             Commands::Clean { .. } => 2,
             Commands::Sync { .. } => 5,
             Commands::Add { .. } => 6,
             Commands::Remove { .. } => 7,
-            Commands::Build { .. } => 10,
+            Commands::Build(..) => 10,
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use empack_lib::application::Commands;
-use empack_lib::application::cli::CliArchiveFormat;
+use empack_lib::application::cli::BuildArgs;
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::session_mocks::mock_root;
 use empack_lib::display::Display;
@@ -43,12 +43,10 @@ async fn e2e_build_server_successfully() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["server".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -116,12 +114,10 @@ async fn e2e_build_server_missing_installer() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["server".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -178,12 +174,10 @@ async fn e2e_build_server_with_templates() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["server".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;

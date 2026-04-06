@@ -1,7 +1,7 @@
 //! E2E tests for the build command
 
 use anyhow::Result;
-use empack_lib::application::cli::{CliArchiveFormat, Commands};
+use empack_lib::application::cli::{BuildArgs, Commands};
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::session::ProcessOutput;
 use empack_lib::application::session_mocks::mock_root;
@@ -24,12 +24,10 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
         .join("workflow-build-pack-v1.0.0.mrpack");
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["mrpack".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -91,12 +89,11 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
 
     let pack_file = workdir.join("pack").join("pack.toml");
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["mrpack".to_string()],
             clean: true,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -188,12 +185,10 @@ async fn e2e_build_packwiz_refresh_fails() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["mrpack".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -260,12 +255,10 @@ async fn e2e_build_packwiz_export_fails() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["mrpack".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;

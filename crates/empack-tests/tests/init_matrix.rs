@@ -1,5 +1,5 @@
 use anyhow::Result;
-use empack_lib::application::cli::Commands;
+use empack_lib::application::cli::{Commands, InitArgs};
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
@@ -14,19 +14,12 @@ async fn test_init_neoforge() -> Result<()> {
     let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("neoforge-pack".to_string()),
-            pack_name: None,
-            force: false,
             modloader: Some("neoforge".to_string()),
             mc_version: Some("1.21.4".to_string()),
-            author: None,
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -75,19 +68,12 @@ async fn test_init_quilt() -> Result<()> {
     let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("quilt-pack".to_string()),
-            pack_name: None,
-            force: false,
             modloader: Some("quilt".to_string()),
             mc_version: Some("1.21.4".to_string()),
-            author: None,
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -136,19 +122,12 @@ async fn test_init_vanilla() -> Result<()> {
     let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("vanilla-pack".to_string()),
-            pack_name: None,
-            force: false,
             modloader: Some("none".to_string()),
             mc_version: Some("1.21.4".to_string()),
-            author: None,
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -182,19 +161,12 @@ async fn test_init_fabric_older_mc() -> Result<()> {
     let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("fabric-old-mc".to_string()),
-            pack_name: None,
-            force: false,
             modloader: Some("fabric".to_string()),
             mc_version: Some("1.20.1".to_string()),
-            author: None,
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
