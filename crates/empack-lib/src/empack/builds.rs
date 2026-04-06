@@ -1466,7 +1466,7 @@ impl<'a> BuildOrchestrator<'a> {
                 }
             };
 
-            if !result.success {
+            if !result.success && result.restricted_mods.is_empty() {
                 let details = if result.warnings.is_empty() {
                     "no additional details".to_string()
                 } else {
