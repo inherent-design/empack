@@ -147,6 +147,8 @@ async fn handle_version(session: &dyn Session) -> Result<()> {
 /// Handle the `init` subcommand.
 #[instrument(skip_all, fields(dir = ?args.dir, modloader = ?args.modloader))]
 async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
+    let start = std::time::Instant::now();
+
     if session.config().app_config().yes && args.modloader.is_none() && args.from_source.is_none() {
         return Err(anyhow::anyhow!(
             "--yes requires --modloader to be specified"
@@ -685,6 +687,13 @@ async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
             .map_err(|e| anyhow::anyhow!("failed to refresh index after writing options: {}", e))?;
     }
 
+    tracing::info!(
+        command = "init",
+        duration_ms = start.elapsed().as_millis() as u64,
+        exit_code = 0,
+        "command complete"
+    );
+
     Ok(())
 }
 
@@ -810,6 +819,8 @@ async fn handle_init_from_source(
     cli_datapack_folder: Option<String>,
     cli_game_versions: Option<Vec<String>>,
 ) -> Result<()> {
+    let start = std::time::Instant::now();
+
     session
         .display()
         .status()
@@ -954,6 +965,15 @@ async fn handle_init_from_source(
         "Project directory: {}",
         result.project_dir.display()
     ));
+
+    tracing::info!(
+        command = "init_from_source",
+        duration_ms = start.elapsed().as_millis() as u64,
+        mod_count = result.stats.platform_referenced,
+        overrides_copied = result.stats.overrides_copied,
+        exit_code = 0,
+        "command complete"
+    );
 
     Ok(())
 }
@@ -1291,6 +1311,8 @@ async fn handle_add(
     version_id: Option<String>,
     file_id: Option<String>,
 ) -> Result<()> {
+    let start = std::time::Instant::now();
+
     if mods.is_empty() {
         session
             .display()
@@ -1786,6 +1808,14 @@ async fn handle_add(
             summary
         ));
     }
+
+    tracing::info!(
+        command = "add",
+        duration_ms = start.elapsed().as_millis() as u64,
+        mod_count = added_mods.len(),
+        exit_code = 0,
+        "command complete"
+    );
 
     Ok(())
 }
@@ -2310,6 +2340,8 @@ fn hex_encode_bytes(bytes: &[u8]) -> String {
 
 #[instrument(skip_all, fields(mod_count = mods.len()))]
 async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> Result<()> {
+    let start = std::time::Instant::now();
+
     if mods.is_empty() {
         session
             .display()
@@ -2584,12 +2616,22 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         ));
     }
 
+    tracing::info!(
+        command = "remove",
+        duration_ms = start.elapsed().as_millis() as u64,
+        removed_count = removed_mods.len(),
+        orphans_removed = removed_orphans.len(),
+        exit_code = 0,
+        "command complete"
+    );
+
     Ok(())
 }
 
 /// Handle the `build` subcommand.
 #[instrument(skip_all, fields(targets = ?args.targets))]
 async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
+    let start = std::time::Instant::now();
     let manager = session.state()?;
 
     // Verify we're in a configured state
@@ -2898,6 +2940,14 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
         .status()
         .subtle("   Check dist/ directory for build artifacts");
 
+    tracing::info!(
+        command = "build",
+        duration_ms = start.elapsed().as_millis() as u64,
+        target_count = build_targets.len(),
+        exit_code = 0,
+        "command complete"
+    );
+
     Ok(())
 }
 
@@ -2983,6 +3033,7 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
 
 #[instrument(skip_all)]
 async fn handle_sync(session: &dyn Session) -> Result<()> {
+    let start = std::time::Instant::now();
     let manager = session.state()?;
 
     // Verify we're in a configured state
@@ -3431,6 +3482,15 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .display()
             .status()
             .complete("empack.yml synchronized successfully with packwiz");
+
+        tracing::info!(
+            command = "sync",
+            duration_ms = start.elapsed().as_millis() as u64,
+            action_count = success_count,
+            exit_code = 0,
+            "command complete"
+        );
+
         Ok(())
     } else {
         session
