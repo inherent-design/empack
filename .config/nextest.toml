@@ -4,7 +4,12 @@ fail-fast = false
 # Default 100ms is too tight for TempDir cleanup on slower disks/CI runners
 leak-timeout = "500ms"
 
-[profile.ci]  
+[[profile.default.overrides]]
+# Live import tests hit real APIs and run packwiz; allow 5 minutes
+filter = "test(e2e_init_from_cobblemon_updated) | test(e2e_init_from_fabulously_optimized) | test(e2e_import_and_build_fabulously_optimized)"
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+[profile.ci]
 # Don't fail fast in CI either to see all failures
 fail-fast = false
 # Retry failed tests once in CI environment for flaky test resilience

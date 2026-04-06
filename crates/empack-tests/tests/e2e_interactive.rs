@@ -88,3 +88,94 @@ fn e2e_init_interactive_prompts() {
         "empack.yml not found after interactive init"
     );
 }
+
+/// Interactive init with CLI flags that pre-fill the hard prompts.
+///
+/// Uses `--modloader` and `--mc-version` flags to bypass FuzzySelect/Select
+/// widgets, which are unreliable under PTY. Only text_input prompts and the
+/// confirm prompt remain; these render as simple line-oriented I/O.
+///
+/// Kept as `#[ignore]` because dialoguer text_input still uses terminal raw
+/// mode and cursor control that varies by platform. Run manually with:
+/// `cargo nextest run -p empack-tests e2e_init_interactive_responds_to_prompts -- --ignored`
+#[test]
+#[ignore]
+fn e2e_init_interactive_responds_to_prompts() {
+    empack_tests::skip_if_no_packwiz!();
+
+    let project = TestProject::new();
+    let bin = empack_bin();
+
+    let mut cmd = Command::new(bin);
+    cmd.args([
+        "init",
+        "--modloader",
+        "fabric",
+        "--mc-version",
+        "1.21.1",
+        "interactive-test",
+    ]);
+    cmd.current_dir(project.dir());
+    cmd.env("NO_COLOR", "1");
+
+    let mut session = Session::spawn(cmd).expect("failed to spawn empack init");
+    session.set_expect_timeout(Some(Duration::from_secs(30)));
+
+    // Prompt 1: Modpack name (default: "interactive-test")
+    let _ = session
+        .expect(Regex("(?i)modpack.*name|name"))
+        .expect("expected modpack name prompt");
+    session
+        .send_line("my-test-pack")
+        .expect("failed to send pack name");
+
+    // Prompt 2: Author
+    let _ = session
+        .expect(Regex("(?i)author"))
+        .expect("expected author prompt");
+    session
+        .send_line("Test Author")
+        .expect("failed to send author");
+
+    // Prompt 3: Version
+    let _ = session
+        .expect(Regex("(?i)version"))
+        .expect("expected version prompt");
+    session.send_line("").expect("failed to accept default version");
+
+    // Prompt 4: Datapack folder (text_input, skip by sending empty)
+    match session.expect(Regex("(?i)datapack|folder")) {
+        Ok(_) => {
+            session.send_line("").expect("failed to skip datapack folder");
+        }
+        Err(_) => {
+            // May jump straight to confirm if loader version fetch is fast.
+        }
+    }
+
+    // Prompt 5: Confirm creation
+    match session.expect(Regex("(?i)create.*modpack|settings")) {
+        Ok(_) => {
+            session.send_line("y").expect("failed to confirm");
+        }
+        Err(_) => {
+            // Process may have already completed.
+        }
+    }
+
+    // Wait for completion
+    let _ = session.expect(Regex("(?i)initialized|created|successfully"));
+
+    let pack_dir = project.dir().join("interactive-test");
+    assert!(
+        pack_dir.join("empack.yml").exists(),
+        "empack.yml not found after interactive init"
+    );
+
+    let config =
+        std::fs::read_to_string(pack_dir.join("empack.yml")).expect("failed to read empack.yml");
+    assert!(
+        config.contains("loader: fabric"),
+        "empack.yml should contain 'loader: fabric'\n{config}"
+    );
+}

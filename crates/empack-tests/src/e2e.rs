@@ -199,3 +199,17 @@ pub fn assert_file_contains(path: &Path, expected: &str) {
 pub fn assert_file_exists(path: &Path) {
     assert!(path.exists(), "expected file at {}", path.display());
 }
+
+/// Count `.pw.toml` files recursively under `pack_root/mods`.
+///
+/// Returns 0 if the directory does not exist.
+pub fn count_pw_toml_files(pack_root: &Path) -> usize {
+    let mods_dir = pack_root.join("mods");
+    std::fs::read_dir(mods_dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
+                .count()
+        })
+        .unwrap_or(0)
+}
