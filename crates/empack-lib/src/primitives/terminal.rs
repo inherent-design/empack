@@ -48,90 +48,6 @@ pub enum TerminalUnicodeCaps {
 pub enum TerminalGraphicsCaps {
     #[default]
     None,
-    Kitty(KittyGraphicsCaps),
-    Sixel(SixelCaps),
-    ITerm2(ITerm2Caps),
-}
-
-/// Kitty graphics protocol capabilities
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-pub struct KittyGraphicsCaps {
-    pub supports_direct: bool,
-    pub supports_file: bool,
-    pub supports_temp_file: bool,
-    pub supports_shared_memory: bool,
-    pub supports_animation: bool,
-    pub supports_unicode_placeholders: bool,
-    pub supports_z_index: bool,
-    pub cell_width_pixels: u16,
-    pub cell_height_pixels: u16,
-    pub max_image_width: Option<u32>,
-    pub max_image_height: Option<u32>,
-    pub protocol_version: u8,
-    pub detection_method: GraphicsDetectionMethod,
-}
-
-impl Default for KittyGraphicsCaps {
-    fn default() -> Self {
-        Self {
-            supports_direct: true,
-            supports_file: false,
-            supports_temp_file: false,
-            supports_shared_memory: false,
-            supports_animation: false,
-            supports_unicode_placeholders: false,
-            supports_z_index: false,
-            cell_width_pixels: 0,
-            cell_height_pixels: 0,
-            max_image_width: None,
-            max_image_height: None,
-            protocol_version: 1,
-            detection_method: GraphicsDetectionMethod::ProtocolProbe,
-        }
-    }
-}
-
-/// Sixel graphics capabilities
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-pub struct SixelCaps {
-    pub max_colors: u16,
-    pub max_width: Option<u16>,
-    pub max_height: Option<u16>,
-}
-
-impl Default for SixelCaps {
-    fn default() -> Self {
-        Self {
-            max_colors: 256,
-            max_width: None,
-            max_height: None,
-        }
-    }
-}
-
-/// iTerm2 graphics capabilities
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-pub struct ITerm2Caps {
-    pub supports_inline: bool,
-    pub supports_file_download: bool,
-}
-
-impl Default for ITerm2Caps {
-    fn default() -> Self {
-        Self {
-            supports_inline: true,
-            supports_file_download: false,
-        }
-    }
-}
-
-/// Graphics detection method used
-#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
-pub enum GraphicsDetectionMethod {
-    EnvironmentReliable,  // TERM_PROGRAM=kitty
-    EnvironmentVariables, // KITTY_WINDOW_ID, etc.
-    ProtocolProbe,        // Escape sequence query
-    ProtocolProbeTimeout, // Probe with no response
 }
 
 /// Simple terminal capabilities container (shared interface)
@@ -145,32 +61,11 @@ pub struct BasicTerminalCapabilities {
 /// Terminal detection and capability probing errors
 #[derive(Debug, Error)]
 pub enum TerminalError {
-    #[error("Cannot probe capabilities on non-interactive terminal")]
-    NotInteractive,
-
-    #[error("Terminal capability probing timed out after {timeout}ms")]
-    ProbeTimeout { timeout: u64 },
-
-    #[error("Graphics protocol not supported: {protocol}")]
-    UnsupportedGraphics { protocol: String },
-
-    #[error("Failed to read terminal response: {source}")]
-    ResponseReadFailed {
-        #[from]
-        source: std::io::Error,
-    },
-
     #[error("Terminal response contains invalid UTF-8: {source}")]
     InvalidUtf8Response {
         #[from]
         source: std::string::FromUtf8Error,
     },
-
-    #[error("Terminal dimension detection failed: {reason}")]
-    DimensionDetectionFailed { reason: String },
-
-    #[error("Raw mode setup failed: {reason}")]
-    RawModeSetupFailed { reason: String },
 
     #[error("Environment variable parsing failed: {source}")]
     EnvironmentParsingFailed {
@@ -195,7 +90,6 @@ impl_fromstr_for_value_enum!(
 /// Same interface, different escape codes under the hood
 #[derive(Debug, Clone)]
 pub struct TerminalPrimitives {
-    // Basic color primitives
     pub red: &'static str,
     pub green: &'static str,
     pub blue: &'static str,
@@ -205,7 +99,6 @@ pub struct TerminalPrimitives {
     pub white: &'static str,
     pub black: &'static str,
 
-    // Background colors
     pub bg_red: &'static str,
     pub bg_green: &'static str,
     pub bg_blue: &'static str,
@@ -215,7 +108,6 @@ pub struct TerminalPrimitives {
     pub bg_white: &'static str,
     pub bg_black: &'static str,
 
-    // Semantic colors (for UX messaging)
     pub success: &'static str,
     pub error: &'static str,
     pub warning: &'static str,
@@ -223,7 +115,6 @@ pub struct TerminalPrimitives {
     pub debug: &'static str,
     pub muted: &'static str,
 
-    // Style primitives
     pub bold: &'static str,
     pub dim: &'static str,
     pub italic: &'static str,
@@ -232,7 +123,6 @@ pub struct TerminalPrimitives {
     pub strikethrough: &'static str,
     pub reset: &'static str,
 
-    // Unicode symbols (adapt based on unicode support)
     pub checkmark: &'static str,
     pub cross: &'static str,
     pub warning_symbol: &'static str,
@@ -255,7 +145,6 @@ impl TerminalPrimitives {
     /// True color (24-bit) primitives
     fn truecolor_primitives(caps: &BasicTerminalCapabilities) -> Self {
         Self {
-            // Enhanced true color palette
             red: "\x1b[38;2;220;50;47m",
             green: "\x1b[38;2;0;136;0m",
             blue: "\x1b[38;2;38;139;210m",
@@ -265,7 +154,6 @@ impl TerminalPrimitives {
             white: "\x1b[38;2;238;232;213m",
             black: "\x1b[38;2;0;43;54m",
 
-            // Background colors
             bg_red: "\x1b[48;2;220;50;47m",
             bg_green: "\x1b[48;2;0;136;0m",
             bg_blue: "\x1b[48;2;38;139;210m",
@@ -275,15 +163,13 @@ impl TerminalPrimitives {
             bg_white: "\x1b[48;2;238;232;213m",
             bg_black: "\x1b[48;2;0;43;54m",
 
-            // Semantic colors
-            success: "\x1b[38;2;0;136;0m",   // Green
-            error: "\x1b[38;2;220;50;47m",   // Red
-            warning: "\x1b[38;2;181;137;0m", // Yellow
-            info: "\x1b[38;2;38;139;210m",   // Blue
-            debug: "\x1b[38;2;42;161;152m",  // Cyan
-            muted: "\x1b[38;2;147;161;161m", // Gray
+            success: "\x1b[38;2;0;136;0m",
+            error: "\x1b[38;2;220;50;47m",
+            warning: "\x1b[38;2;181;137;0m",
+            info: "\x1b[38;2;38;139;210m",
+            debug: "\x1b[38;2;42;161;152m",
+            muted: "\x1b[38;2;147;161;161m",
 
-            // Enhanced styling for modern terminals
             bold: "\x1b[1m",
             dim: "\x1b[2m",
             italic: "\x1b[3m",
@@ -292,7 +178,6 @@ impl TerminalPrimitives {
             strikethrough: "\x1b[9m",
             reset: "\x1b[0m",
 
-            // Unicode symbols based on unicode support
             checkmark: if caps.unicode == TerminalUnicodeCaps::ExtendedUnicode {
                 "✓"
             } else {
@@ -329,7 +214,6 @@ impl TerminalPrimitives {
     /// 256-color primitives
     fn ansi256_primitives(caps: &BasicTerminalCapabilities) -> Self {
         Self {
-            // 256-color enhanced palette
             red: "\x1b[38;5;160m",
             green: "\x1b[38;5;28m",
             blue: "\x1b[38;5;33m",
@@ -339,7 +223,6 @@ impl TerminalPrimitives {
             white: "\x1b[38;5;230m",
             black: "\x1b[38;5;235m",
 
-            // Background colors
             bg_red: "\x1b[48;5;160m",
             bg_green: "\x1b[48;5;28m",
             bg_blue: "\x1b[48;5;33m",
@@ -349,15 +232,13 @@ impl TerminalPrimitives {
             bg_white: "\x1b[48;5;230m",
             bg_black: "\x1b[48;5;235m",
 
-            // Semantic colors
-            success: "\x1b[38;5;28m",  // Green
-            error: "\x1b[38;5;160m",   // Red
-            warning: "\x1b[38;5;136m", // Yellow
-            info: "\x1b[38;5;33m",     // Blue
-            debug: "\x1b[38;5;37m",    // Cyan
-            muted: "\x1b[38;5;243m",   // Gray
+            success: "\x1b[38;5;28m",
+            error: "\x1b[38;5;160m",
+            warning: "\x1b[38;5;136m",
+            info: "\x1b[38;5;33m",
+            debug: "\x1b[38;5;37m",
+            muted: "\x1b[38;5;243m",
 
-            // Standard styling
             bold: "\x1b[1m",
             dim: "\x1b[2m",
             italic: "\x1b[3m",
@@ -366,7 +247,6 @@ impl TerminalPrimitives {
             strikethrough: "\x1b[9m",
             reset: "\x1b[0m",
 
-            // Unicode symbols based on unicode support
             checkmark: if caps.unicode != TerminalUnicodeCaps::Ascii {
                 "✓"
             } else {
@@ -403,17 +283,15 @@ impl TerminalPrimitives {
     /// 16-color primitives
     fn ansi16_primitives(_caps: &BasicTerminalCapabilities) -> Self {
         Self {
-            // Bright 16-color ANSI
-            red: "\x1b[0;91m",     // Bright red
-            green: "\x1b[0;92m",   // Bright green
-            blue: "\x1b[0;94m",    // Bright blue
-            yellow: "\x1b[0;93m",  // Bright yellow
-            cyan: "\x1b[0;96m",    // Bright cyan
-            magenta: "\x1b[0;95m", // Bright magenta
-            white: "\x1b[0;97m",   // Bright white
-            black: "\x1b[0;30m",   // Normal black
+            red: "\x1b[0;91m",
+            green: "\x1b[0;92m",
+            blue: "\x1b[0;94m",
+            yellow: "\x1b[0;93m",
+            cyan: "\x1b[0;96m",
+            magenta: "\x1b[0;95m",
+            white: "\x1b[0;97m",
+            black: "\x1b[0;30m",
 
-            // Background colors
             bg_red: "\x1b[0;101m",
             bg_green: "\x1b[0;102m",
             bg_blue: "\x1b[0;104m",
@@ -423,24 +301,21 @@ impl TerminalPrimitives {
             bg_white: "\x1b[0;107m",
             bg_black: "\x1b[0;40m",
 
-            // Semantic colors
-            success: "\x1b[0;92m", // Bright green
-            error: "\x1b[0;91m",   // Bright red
-            warning: "\x1b[0;93m", // Bright yellow
-            info: "\x1b[0;94m",    // Bright blue
-            debug: "\x1b[0;96m",   // Bright cyan
-            muted: "\x1b[2;37m",   // Dim white
+            success: "\x1b[0;92m",
+            error: "\x1b[0;91m",
+            warning: "\x1b[0;93m",
+            info: "\x1b[0;94m",
+            debug: "\x1b[0;96m",
+            muted: "\x1b[2;37m",
 
-            // Basic styling
             bold: "\x1b[1m",
             dim: "\x1b[2m",
             italic: "\x1b[3m",
             underline: "\x1b[4m",
             reverse: "\x1b[7m",
-            strikethrough: "", // Not supported
+            strikethrough: "",
             reset: "\x1b[0m",
 
-            // ASCII symbols only
             checkmark: "+",
             cross: "x",
             warning_symbol: "!",
@@ -453,7 +328,6 @@ impl TerminalPrimitives {
     /// No-color primitives
     fn no_color_primitives(_caps: &BasicTerminalCapabilities) -> Self {
         Self {
-            // All colors are empty strings
             red: "",
             green: "",
             blue: "",
@@ -463,7 +337,6 @@ impl TerminalPrimitives {
             white: "",
             black: "",
 
-            // No background colors
             bg_red: "",
             bg_green: "",
             bg_blue: "",
@@ -473,7 +346,6 @@ impl TerminalPrimitives {
             bg_white: "",
             bg_black: "",
 
-            // No semantic colors
             success: "",
             error: "",
             warning: "",
@@ -481,7 +353,6 @@ impl TerminalPrimitives {
             debug: "",
             muted: "",
 
-            // No escape codes when color is None (NO_COLOR compliance)
             bold: "",
             dim: "",
             italic: "",
@@ -490,7 +361,6 @@ impl TerminalPrimitives {
             strikethrough: "",
             reset: "",
 
-            // ASCII symbols only
             checkmark: "+",
             cross: "x",
             warning_symbol: "!",
@@ -513,7 +383,6 @@ pub fn init_primitives(caps: &BasicTerminalCapabilities) {
 /// Get reference to global terminal primitives (auto-initializes with basic fallback)
 pub fn primitives() -> &'static TerminalPrimitives {
     TERMINAL_PRIMITIVES.get_or_init(|| {
-        // Fallback to no-color primitives if not explicitly initialized
         let basic_caps = BasicTerminalCapabilities {
             color: TerminalColorCaps::None,
             unicode: TerminalUnicodeCaps::Ascii,
@@ -531,12 +400,9 @@ pub fn primitives() -> &'static TerminalPrimitives {
 pub fn from_terminal_capabilities(
     caps: &crate::terminal::TerminalCapabilities,
 ) -> BasicTerminalCapabilities {
-    // Since terminal module now uses primitives types, just copy the graphics directly
-    let shared_graphics = caps.graphics;
-
     BasicTerminalCapabilities {
         color: caps.color,
         unicode: caps.unicode,
-        graphics: shared_graphics,
+        graphics: TerminalGraphicsCaps::None,
     }
 }
