@@ -45,7 +45,7 @@ jobs:
         with:
           go-version: stable
           cache: false
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-nextest
       - run: mise run test
@@ -62,7 +62,7 @@ jobs:
         with:
           go-version: stable
           cache: false
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:

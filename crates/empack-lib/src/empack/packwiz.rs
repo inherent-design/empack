@@ -742,12 +742,16 @@ pub enum InstallResult {
 
 /// Parse packwiz-installer CLI output for restricted mod messages.
 ///
-/// packwiz-installer prints (via CLIHandler.showExceptions):
-/// ```text
-/// Failed to download modpack, the following errors were encountered:
-/// ModName: ...Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
-/// Please go to {url} and save this file to {path}
-/// ```
+/// packwiz-installer CLIHandler prints:
+///   stdout: `"Failed to download modpack, the following errors were encountered:\n"`
+///   stdout: `"SomeMod.jar: "` (no newline)
+///   stderr: `"java.lang.Exception: This mod is excluded from the CurseForge API...\nPlease go to {url} and save this file to {path}\n\tat ..."`
+///
+/// When empack combines stdout + stderr, the result is:
+///   `"...SomeMod.jar: \njava.lang.Exception: This mod is excluded...\nPlease go to ..."`
+///
+/// The mod name is on the line BEFORE the "excluded" line (stdout portion).
+/// The URL and path are on lines after the "excluded" line (stderr stack trace).
 fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
     let mut results = Vec::new();
     let lines: Vec<&str> = output.lines().collect();
@@ -757,12 +761,16 @@ fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
             continue;
         }
 
-        // The mod name is the text before the first ":"
-        // Format: "ModName: ...Exception: This mod is excluded..."
-        let name = line.split(':').next().unwrap_or("Unknown").trim().to_string();
+        // The mod name is on the preceding line (from stdout: "ModName.jar: ")
+        // Fall back to parsing from the exception line if no preceding line.
+        let name = if i > 0 {
+            let prev = lines[i - 1].trim();
+            prev.trim_end_matches(':').trim().to_string()
+        } else {
+            "Unknown".to_string()
+        };
 
-        // Scan ahead for the "Please go to {url} and save this file to {path}" line.
-        // May not be immediately adjacent due to stack traces or blank lines.
+        // Scan ahead for the URL line in the stack trace output.
         let mut url = String::new();
         let mut dest = String::new();
         for next_line in lines.iter().skip(i + 1).take(5) {
@@ -775,11 +783,13 @@ fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
             }
         }
 
-        results.push(RestrictedModInfo {
-            name,
-            url,
-            dest_path: dest,
-        });
+        if !url.is_empty() {
+            results.push(RestrictedModInfo {
+                name,
+                url,
+                dest_path: dest,
+            });
+        }
     }
 
     results
