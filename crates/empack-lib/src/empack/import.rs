@@ -520,8 +520,18 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
 // Resolver
 // ---------------------------------------------------------------------------
 
+/// Concurrency bound for the resolve phase. Each task performs one or two
+/// HTTP requests. The Modrinth and CurseForge rate limits are the true
+/// bottleneck; 10 concurrent tasks saturates available throughput without
+/// triggering 429 responses.
+const RESOLVE_CONCURRENCY: usize = 10;
+
 /// Enrich a raw manifest via platform APIs to resolve names, types, and
 /// identify embedded JARs.
+///
+/// Platform references are resolved concurrently (bounded by
+/// [`RESOLVE_CONCURRENCY`]) to reduce wall-clock time on large modpacks.
+/// The output order matches the input order.
 #[instrument(skip_all, fields(content_count = manifest.content.len()))]
 pub async fn resolve_manifest(
     manifest: ModpackManifest,
@@ -530,14 +540,16 @@ pub async fn resolve_manifest(
     curseforge_api_key: Option<&str>,
     display: &dyn crate::display::providers::DisplayProvider,
 ) -> Result<ResolvedManifest> {
+    let resolve_start = std::time::Instant::now();
     let mut warnings = Vec::new();
-    let mut resolved_content = Vec::new();
     let total = manifest.content.len();
     let progress = display.progress().bar(total as u64);
     progress.set_message("Resolving platform references");
 
-    // Batch-resolve CurseForge file IDs to mod IDs. Entries reclassified from
-    // Modrinth mrpacks (ForgeCD URLs) have file_id set but project_id empty.
+    let mr_client = modrinth_api.http_client()?;
+    let cf_client = curseforge_api.http_client()?;
+    let cf_key: Option<String> = curseforge_api_key.map(|k| k.to_string());
+
     let cf_file_ids: Vec<u64> = manifest
         .content
         .iter()
@@ -557,10 +569,14 @@ pub async fn resolve_manifest(
         std::collections::HashMap::new()
     };
 
-    for entry in manifest.content.into_iter() {
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(RESOLVE_CONCURRENCY));
+    type ResolveHandle = (usize, tokio::task::JoinHandle<(ContentEntry, Vec<String>)>);
+    let mut handles: Vec<ResolveHandle> = Vec::new();
+    let mut passthrough: Vec<(usize, ContentEntry, Vec<String>)> = Vec::new();
+
+    for (i, entry) in manifest.content.into_iter().enumerate() {
         match entry {
             ContentEntry::PlatformReferenced(mut pref) => {
-                // Fill in CurseForge project_id from batch lookup.
                 if pref.platform == ProjectPlatform::CurseForge
                     && pref.project_id.is_empty()
                     && let Some(fid) = pref.file_id.as_ref().and_then(|s| s.parse::<u64>().ok())
@@ -569,28 +585,95 @@ pub async fn resolve_manifest(
                     pref.project_id = mod_id.to_string();
                 }
 
-                if pref.platform == ProjectPlatform::Modrinth && pref.project_id.is_empty() && pref.download_urls.is_empty() {
-                    warnings.push(format!(
-                        "Modrinth file '{}' has no project ID and no download URL; \
-                         skipping platform resolution",
-                        pref.destination_path
-                    ));
-                }
-                resolve_platform_ref(&mut pref, modrinth_api, curseforge_api, curseforge_api_key, &mut warnings).await;
-                resolved_content.push(ContentEntry::PlatformReferenced(pref));
+                let mr = mr_client.clone();
+                let cf = cf_client.clone();
+                let key = cf_key.clone();
+                let sem = semaphore.clone();
+
+                handles.push((i, tokio::spawn(async move {
+                    let _permit = sem.acquire().await;
+                    let resolve_start = std::time::Instant::now();
+                    let mut task_warnings = Vec::new();
+
+                    if pref.platform == ProjectPlatform::Modrinth
+                        && pref.project_id.is_empty()
+                        && pref.download_urls.is_empty()
+                    {
+                        task_warnings.push(format!(
+                            "Modrinth file '{}' has no project ID and no download URL; \
+                             skipping platform resolution",
+                            pref.destination_path
+                        ));
+                    } else {
+                        resolve_platform_ref_with_client(
+                            &mut pref,
+                            &mr,
+                            &cf,
+                            key.as_deref(),
+                            &mut task_warnings,
+                        )
+                        .await;
+                    }
+
+                    tracing::trace!(
+                        slug = %pref.project_id,
+                        platform = %pref.platform,
+                        resolve_ms = resolve_start.elapsed().as_millis() as u64,
+                        "ref resolved"
+                    );
+
+                    (ContentEntry::PlatformReferenced(pref), task_warnings)
+                })));
             }
             ContentEntry::EmbeddedJar(embed) => {
-                warnings.push(format!(
+                let w = vec![format!(
                     "embedded JAR '{}' cannot be identified while inside archive; \
                      resolve after extraction",
                     embed.source_path
-                ));
-                resolved_content.push(ContentEntry::EmbeddedJar(embed));
+                )];
+                passthrough.push((i, ContentEntry::EmbeddedJar(embed), w));
+            }
+        }
+    }
+
+    let mut results: Vec<Option<(ContentEntry, Vec<String>)>> = (0..total).map(|_| None).collect();
+
+    for (i, entry, w) in passthrough {
+        results[i] = Some((entry, w));
+        progress.inc();
+    }
+
+    for (i, handle) in handles {
+        match handle.await {
+            Ok((entry, w)) => {
+                results[i] = Some((entry, w));
+            }
+            Err(e) => {
+                warnings.push(format!("resolve task panicked: {}", e));
             }
         }
         progress.inc();
     }
     progress.finish("Platform references resolved");
+
+    let mut resolved_content = Vec::with_capacity(total);
+    for (entry, w) in results.into_iter().flatten() {
+        warnings.extend(w);
+        resolved_content.push(entry);
+    }
+
+    let resolve_elapsed = resolve_start.elapsed();
+    let resolved_count = resolved_content
+        .iter()
+        .filter(|e| matches!(e, ContentEntry::PlatformReferenced(_)))
+        .count();
+    tracing::info!(
+        phase = "resolve_manifest",
+        total_ms = resolve_elapsed.as_millis() as u64,
+        count = resolved_count,
+        concurrency = RESOLVE_CONCURRENCY,
+        "resolve phase complete"
+    );
 
     Ok(ResolvedManifest {
         manifest: ModpackManifest {
@@ -601,10 +684,14 @@ pub async fn resolve_manifest(
     })
 }
 
-async fn resolve_platform_ref(
+/// Resolve a single platform reference using pre-extracted HTTP clients.
+///
+/// This variant accepts `reqwest::Client` directly so it can be called from
+/// `tokio::spawn` tasks (which require `Send` futures).
+async fn resolve_platform_ref_with_client(
     pref: &mut PlatformRef,
-    modrinth_api: &dyn crate::application::session::NetworkProvider,
-    curseforge_api: &dyn crate::application::session::NetworkProvider,
+    modrinth_client: &reqwest::Client,
+    curseforge_client: &reqwest::Client,
     curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
 ) {
@@ -615,17 +702,21 @@ async fn resolve_platform_ref(
     match pref.platform {
         ProjectPlatform::Modrinth => {
             if pref.project_id.is_empty() {
-                // Modrinth files without project IDs are likely pre-modrinth or
-                // embedded content; nothing to resolve.
                 return;
             }
-            resolve_modrinth_project(pref, modrinth_api, warnings).await;
+            resolve_modrinth_project_with_client(pref, modrinth_client, warnings).await;
         }
         ProjectPlatform::CurseForge => {
             if pref.project_id.is_empty() {
                 return;
             }
-            resolve_curseforge_project(pref, curseforge_api, curseforge_api_key, warnings).await;
+            resolve_curseforge_project_with_client(
+                pref,
+                curseforge_client,
+                curseforge_api_key,
+                warnings,
+            )
+            .await;
         }
     }
 }
@@ -642,19 +733,11 @@ struct MrVersionFileResponse {
     id: String,
 }
 
-async fn resolve_modrinth_project(
+async fn resolve_modrinth_project_with_client(
     pref: &mut PlatformRef,
-    api: &dyn crate::application::session::NetworkProvider,
+    client: &reqwest::Client,
     warnings: &mut Vec<String>,
 ) {
-    let client = match api.http_client() {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-
-    // Resolve the version ID from the file's SHA1 hash. This is more
-    // reliable than extracting from the CDN URL, which may contain a
-    // version number string instead of a base62 version ID on older uploads.
     if pref.file_id.is_none() && let Some(sha1) = pref.hashes.get("sha1") {
         let url = format!(
             "https://api.modrinth.com/v2/version_file/{}?algorithm=sha1",
@@ -721,9 +804,9 @@ struct CfModResponse {
     class_id: Option<u32>,
 }
 
-async fn resolve_curseforge_project(
+async fn resolve_curseforge_project_with_client(
     pref: &mut PlatformRef,
-    api: &dyn crate::application::session::NetworkProvider,
+    client: &reqwest::Client,
     curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
 ) {
@@ -736,11 +819,6 @@ async fn resolve_curseforge_project(
             ));
             return;
         }
-    };
-
-    let client = match api.http_client() {
-        Ok(c) => c,
-        Err(_) => return,
     };
 
     let url = format!(
@@ -784,9 +862,9 @@ async fn resolve_curseforge_project(
 
     pref.resolved_type = body.class_id.map(|cid| match cid {
         6 => crate::primitives::ProjectType::Mod,
-        5 => crate::primitives::ProjectType::Mod, // Bukkit Plugins
+        5 => crate::primitives::ProjectType::Mod,
         12 => crate::primitives::ProjectType::ResourcePack,
-        17 => crate::primitives::ProjectType::Datapack, // Worlds (no World variant; closest match)
+        17 => crate::primitives::ProjectType::Datapack,
         6945 => crate::primitives::ProjectType::Datapack,
         6552 => crate::primitives::ProjectType::Shader,
         _ => crate::primitives::ProjectType::Mod,
@@ -970,12 +1048,21 @@ pub async fn execute_import(
     let content_progress = session.display().progress().bar(content_total as u64);
     content_progress.set_message("Adding mods");
 
+    let mut add_durations: Vec<std::time::Duration> = Vec::with_capacity(content_total);
+    let mut scan_duration_total = std::time::Duration::ZERO;
+
     for entry in &resolved.manifest.content {
         match entry {
             ContentEntry::PlatformReferenced(pref) => {
                 content_progress.tick(&pref.destination_path);
+
+                let scan_start = std::time::Instant::now();
                 let before = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
+                scan_duration_total += scan_start.elapsed();
+
+                let add_start = std::time::Instant::now();
                 let result = add_platform_ref(pref, &pack_dir, session, datapack_folder.as_deref()).await?;
+                add_durations.push(add_start.elapsed());
 
                 match result {
                     AddRefResult::Skipped => {
@@ -1000,7 +1087,11 @@ pub async fn execute_import(
                     }
                     AddRefResult::Added => {
                         stats.platform_referenced += 1;
+
+                        let scan_start = std::time::Instant::now();
                         let after = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
+                        scan_duration_total += scan_start.elapsed();
+
                         let new_files: Vec<_> = after.difference(&before).collect();
 
                         let dep_key = if new_files.len() == 1 {
@@ -1045,6 +1136,29 @@ pub async fn execute_import(
         content_progress.inc();
     }
     content_progress.finish(&format!("{} platform references processed", content_total));
+
+    if !add_durations.is_empty() {
+        let total: std::time::Duration = add_durations.iter().sum();
+        let min = add_durations.iter().min().unwrap();
+        let max = add_durations.iter().max().unwrap();
+        tracing::info!(
+            phase = "content_loop",
+            total_ms = total.as_millis() as u64,
+            count = add_durations.len(),
+            min_ms = min.as_millis() as u64,
+            max_ms = max.as_millis() as u64,
+            avg_ms = (total.as_millis() as u64) / (add_durations.len() as u64),
+            "content loop complete"
+        );
+    }
+
+    if scan_duration_total > std::time::Duration::ZERO {
+        tracing::info!(
+            phase = "scan_pw_toml",
+            total_ms = scan_duration_total.as_millis() as u64,
+            "scan_pw_toml_stems total"
+        );
+    }
 
     let override_total = resolved.manifest.overrides.len();
     let override_progress = session.display().progress().bar(override_total as u64);
