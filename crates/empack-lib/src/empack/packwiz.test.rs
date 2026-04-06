@@ -699,6 +699,211 @@ fn test_packwiz_invalid_toml_syntax() {
     );
 }
 
+// ── parse_installer_restricted_output tests ─────────────────────────────
+
+#[test]
+fn test_parse_single_restricted_mod() {
+    let output = "\
+Failed to download modpack, the following errors were encountered:
+OptiFine_1.20.1_HD_U_I6.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+Please go to https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891 and save this file to /tmp/pack/.minecraft/mods/OptiFine_1.20.1_HD_U_I6.jar
+\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "OptiFine_1.20.1_HD_U_I6.jar");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+    );
+    assert_eq!(
+        results[0].dest_path,
+        "/tmp/pack/.minecraft/mods/OptiFine_1.20.1_HD_U_I6.jar"
+    );
+}
+
+#[test]
+fn test_parse_multiple_restricted_mods() {
+    let output = "\
+Failed to download modpack, the following errors were encountered:
+OptiFine.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+Please go to https://www.curseforge.com/minecraft/mc-mods/optifine/download/111 and save this file to /mods/OptiFine.jar
+\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)
+Replay-Mod.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+Please go to https://www.curseforge.com/minecraft/mc-mods/replay-mod/download/222 and save this file to /mods/Replay-Mod.jar
+\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)
+Vivecraft.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+Please go to https://www.curseforge.com/minecraft/mc-mods/vivecraft/download/333 and save this file to /mods/Vivecraft.jar
+\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].name, "OptiFine.jar");
+    assert_eq!(results[1].name, "Replay-Mod.jar");
+    assert_eq!(results[2].name, "Vivecraft.jar");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/optifine/download/111"
+    );
+    assert_eq!(
+        results[1].url,
+        "https://www.curseforge.com/minecraft/mc-mods/replay-mod/download/222"
+    );
+    assert_eq!(
+        results[2].url,
+        "https://www.curseforge.com/minecraft/mc-mods/vivecraft/download/333"
+    );
+}
+
+#[test]
+fn test_parse_no_restricted_mods() {
+    let output = "\
+Downloading installer... Done!
+Installing modpack...
+Downloaded 42 mods
+All mods installed successfully.";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert!(results.is_empty());
+}
+
+#[test]
+fn test_parse_interleaved_stack_trace() {
+    let output = "\
+Failed to download modpack, the following errors were encountered:
+OptiFine.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)
+\tat link.infra.packwiz.installer.DownloadTask.call(DownloadTask.java:30)
+\tat java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+Please go to https://www.curseforge.com/minecraft/mc-mods/optifine/download/999 and save this file to /mods/OptiFine.jar
+\tat java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "OptiFine.jar");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/optifine/download/999"
+    );
+    assert_eq!(results[0].dest_path, "/mods/OptiFine.jar");
+}
+
+#[test]
+fn test_parse_empty_url_not_pushed() {
+    let output = "\
+Failed to download modpack, the following errors were encountered:
+OptiFine.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)
+\tat link.infra.packwiz.installer.DownloadTask.call(DownloadTask.java:30)
+\tat java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+\tat java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+\tat java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+\tat java.base/java.lang.Thread.run(Thread.java:842)";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert!(
+        results.is_empty(),
+        "should not produce an entry when URL line is beyond the 5-line lookahead"
+    );
+}
+
+#[test]
+fn test_parse_name_from_stdout_line() {
+    let output = "\
+Failed to download modpack, the following errors were encountered:
+MyCustomMod-1.2.3.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+Please go to https://www.curseforge.com/minecraft/mc-mods/mycustommod/download/555 and save this file to /mods/MyCustomMod-1.2.3.jar
+\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].name, "MyCustomMod-1.2.3.jar",
+        "name should come from the preceding stdout line, not the exception line"
+    );
+}
+
+#[test]
+fn test_parse_excluded_on_first_line_falls_back_to_unknown() {
+    let output = "\
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+Please go to https://www.curseforge.com/minecraft/mc-mods/unknown/download/1 and save this file to /mods/unknown.jar";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].name, "Unknown",
+        "should fall back to 'Unknown' when excluded line is the first line"
+    );
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/unknown/download/1"
+    );
+}
+
+#[test]
+fn test_parse_url_at_lookahead_boundary() {
+    let output = "\
+Failed to download modpack, the following errors were encountered:
+BoundaryMod.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+\tat stack.trace.line1(File.java:1)
+\tat stack.trace.line2(File.java:2)
+\tat stack.trace.line3(File.java:3)
+\tat stack.trace.line4(File.java:4)
+Please go to https://www.curseforge.com/minecraft/mc-mods/boundary/download/42 and save this file to /mods/BoundaryMod.jar";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert_eq!(results.len(), 1, "URL on the 5th line after excluded should be found");
+    assert_eq!(results[0].name, "BoundaryMod.jar");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/boundary/download/42"
+    );
+}
+
+#[test]
+fn test_parse_url_beyond_lookahead_boundary() {
+    let output = "\
+Failed to download modpack, the following errors were encountered:
+TooFarMod.jar:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+\tat stack.trace.line1(File.java:1)
+\tat stack.trace.line2(File.java:2)
+\tat stack.trace.line3(File.java:3)
+\tat stack.trace.line4(File.java:4)
+\tat stack.trace.line5(File.java:5)
+Please go to https://www.curseforge.com/minecraft/mc-mods/toofar/download/42 and save this file to /mods/TooFarMod.jar";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert!(
+        results.is_empty(),
+        "URL on the 6th line after excluded should be outside the 5-line lookahead"
+    );
+}
+
+#[test]
+fn test_parse_empty_output() {
+    let results = parse_installer_restricted_output("");
+    assert!(results.is_empty());
+}
+
 // ── get_installed_mods .pw.toml filter tests ───────────────────────────
 
 #[test]

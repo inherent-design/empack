@@ -154,6 +154,98 @@ mod format_empack_yml_tests {
         let parsed = round_trip("Pack\nName", "Author", "1.0.0", "1.21.1", "fabric", "0.1");
         assert_eq!(parsed.empack.name, "Pack\nName");
     }
+
+    #[test]
+    fn it_includes_datapack_folder_when_some() {
+        let result = format_empack_yml(
+            "dp-pack",
+            "Author",
+            "1.0.0",
+            "1.20.1",
+            "fabric",
+            "0.16.0",
+            Some("config/paxi/datapacks"),
+            None,
+        );
+        assert!(
+            result.contains("datapack_folder: config/paxi/datapacks"),
+            "datapack_folder should appear in output; got:\n{result}",
+        );
+    }
+
+    #[test]
+    fn it_omits_none_fields() {
+        let result = format_empack_yml(
+            "minimal",
+            "Author",
+            "1.0.0",
+            "1.21.1",
+            "fabric",
+            "0.18.0",
+            None,
+            None,
+        );
+        assert!(
+            !result.contains("datapack_folder"),
+            "datapack_folder should be omitted when None; got:\n{result}",
+        );
+        assert!(
+            !result.contains("acceptable_game_versions"),
+            "acceptable_game_versions should be omitted when None; got:\n{result}",
+        );
+    }
+
+    #[test]
+    fn it_includes_acceptable_game_versions_when_some() {
+        let versions = vec!["1.20".to_string(), "1.20.2".to_string()];
+        let result = format_empack_yml(
+            "ver-pack",
+            "Author",
+            "1.0.0",
+            "1.20.1",
+            "fabric",
+            "0.16.0",
+            None,
+            Some(&versions),
+        );
+        assert!(
+            result.contains("acceptable_game_versions"),
+            "acceptable_game_versions should appear when Some; got:\n{result}",
+        );
+        assert!(result.contains("1.20"), "should contain version 1.20");
+        assert!(result.contains("1.20.2"), "should contain version 1.20.2");
+    }
+
+    #[test]
+    fn it_round_trips_through_empack_project_config() {
+        use crate::empack::config::EmpackConfig;
+
+        let yaml = format_empack_yml(
+            "roundtrip-pack",
+            "Test Author",
+            "2.0.0",
+            "1.21.1",
+            "fabric",
+            "0.18.4",
+            Some("datapacks"),
+            Some(&["1.21".to_string(), "1.21.2".to_string()]),
+        );
+
+        let parsed: EmpackConfig = serde_saphyr::from_str(&yaml)
+            .unwrap_or_else(|e| panic!("format_empack_yml output failed to parse: {e}\n---\n{yaml}"));
+
+        assert_eq!(parsed.empack.name, Some("roundtrip-pack".to_string()));
+        assert_eq!(parsed.empack.author, Some("Test Author".to_string()));
+        assert_eq!(parsed.empack.version, Some("2.0.0".to_string()));
+        assert_eq!(parsed.empack.minecraft_version, Some("1.21.1".to_string()));
+        assert_eq!(parsed.empack.loader_version, Some("0.18.4".to_string()));
+        assert_eq!(parsed.empack.datapack_folder, Some("datapacks".to_string()));
+        assert_eq!(
+            parsed.empack.acceptable_game_versions,
+            Some(vec!["1.21".to_string(), "1.21.2".to_string()]),
+        );
+        assert!(parsed.empack.dependencies.is_empty());
+    }
 }
 
 // ===== HANDLE_INIT TESTS =====
