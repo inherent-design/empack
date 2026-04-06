@@ -14,9 +14,11 @@ pub fn empack_bin() -> PathBuf {
     let target_root = manifest.join("../../target");
     let exe = if cfg!(windows) { ".exe" } else { "" };
 
-    let llvm_cov = target_root.join(format!("llvm-cov-target/debug/empack{exe}"));
-    if llvm_cov.exists() {
-        return llvm_cov;
+    for cov_dir in &["llvm-cov-target/debug", "llvm-cov-target/release"] {
+        let candidate = target_root.join(format!("{cov_dir}/empack{exe}"));
+        if candidate.exists() {
+            return candidate;
+        }
     }
 
     for profile in &["debug", "release"] {

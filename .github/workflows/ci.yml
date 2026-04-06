@@ -68,6 +68,8 @@ jobs:
         with:
           tool: cargo-llvm-cov,cargo-nextest
       - run: mise run coverage
+        env:
+          EMPACK_KEY_CURSEFORGE: ${{ secrets.EMPACK_KEY_CURSEFORGE }}
       - name: Coverage summary
         run: |
           echo '## Coverage' >> $GITHUB_STEP_SUMMARY
