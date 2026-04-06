@@ -1,17 +1,15 @@
 use crate::display::Display;
 use crate::display::test_utils::create_test_capabilities;
-use crate::primitives::{TerminalColorCaps, TerminalGraphicsCaps, TerminalUnicodeCaps};
-use crate::terminal::{TerminalCapabilities, TerminalDimensions, TerminalInteractivity};
+use crate::primitives::{TerminalColorCaps, TerminalUnicodeCaps};
+use crate::terminal::TerminalCapabilities;
 
 #[test]
 fn test_style_manager_truecolor_palette() {
     let caps = TerminalCapabilities {
         color: TerminalColorCaps::TrueColor,
         unicode: TerminalUnicodeCaps::Ascii,
-        graphics: TerminalGraphicsCaps::None,
-        dimensions: TerminalDimensions::default(),
-        interactivity: TerminalInteractivity::default(),
         is_tty: false,
+        cols: 80,
     };
     Display::init_or_get(caps);
     let prims = Display::styling().primitives();
@@ -24,10 +22,8 @@ fn test_style_manager_no_color_palette() {
     let caps = TerminalCapabilities {
         color: TerminalColorCaps::None,
         unicode: TerminalUnicodeCaps::Ascii,
-        graphics: TerminalGraphicsCaps::None,
-        dimensions: TerminalDimensions::default(),
-        interactivity: TerminalInteractivity::default(),
         is_tty: false,
+        cols: 80,
     };
     Display::init_or_get(caps);
     let prims = Display::styling().primitives();
@@ -41,10 +37,8 @@ fn test_style_manager_ansi256_palette() {
     let caps = TerminalCapabilities {
         color: TerminalColorCaps::Ansi256,
         unicode: TerminalUnicodeCaps::BasicUnicode,
-        graphics: TerminalGraphicsCaps::None,
-        dimensions: TerminalDimensions::default(),
-        interactivity: TerminalInteractivity::default(),
         is_tty: false,
+        cols: 80,
     };
     Display::init_or_get(caps);
     let prims = Display::styling().primitives();
@@ -57,12 +51,10 @@ fn test_style_manager_ansi256_palette() {
 
 #[test]
 fn test_display_global_auto_init() {
-    // Display::global() should auto-initialize with minimal capabilities
     let display = Display::global();
     let caps = Display::capabilities();
     assert_eq!(caps.color, TerminalColorCaps::None);
     assert!(!caps.is_tty);
-    // Styling should still work (returns empty strings for no-color)
     let prims = display.styling.primitives();
     assert!(prims.red.is_empty());
 }
@@ -73,7 +65,6 @@ fn test_style_manager_format_methods() {
     Display::init_or_get(caps);
     let styling = Display::styling();
 
-    // With no-color caps, formatted messages should still produce output
     let success = styling.format_success("done");
     assert!(success.contains("done"), "Success message should contain text");
 
@@ -95,7 +86,6 @@ fn test_display_status_progress_table_accessors() {
     let caps = create_test_capabilities();
     Display::init_or_get(caps);
 
-    // These should not panic; they return display subsystem handles
     let _status = Display::status();
     let _progress = Display::progress();
     let _table = Display::table();

@@ -213,8 +213,8 @@ fn test_terminal_capability_types_basic() {
     let unicode = TerminalUnicodeCaps::ExtendedUnicode;
     assert_eq!(format!("{:?}", unicode), "ExtendedUnicode");
 
-    let graphics = TerminalGraphicsCaps::Kitty(Default::default());
-    assert!(format!("{:?}", graphics).contains("Kitty"));
+    let graphics = TerminalGraphicsCaps::None;
+    assert_eq!(format!("{:?}", graphics), "None");
 }
 
 #[test]

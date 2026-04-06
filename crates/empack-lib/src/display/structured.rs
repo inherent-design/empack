@@ -124,7 +124,7 @@ impl<'a> TableDisplay<'a> {
 
         let terminal_width = self
             .max_width
-            .unwrap_or(self.capabilities.dimensions.cols as usize);
+            .unwrap_or(self.capabilities.cols as usize);
 
         // Calculate column widths
         let num_cols = if !self.headers.is_empty() {
