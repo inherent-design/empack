@@ -171,17 +171,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            Some("test-pack".to_string()),
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -219,7 +215,7 @@ mod handle_init_tests {
             .read_to_string(&workdir.join("empack.yml"))
             .unwrap();
 
-        let result = handle_init(&session, None, None, false, None, None, None, None, None, None, None, None).await;
+        let result = handle_init(&session, &InitArgs::default()).await;
 
         assert!(
             result.is_err(),
@@ -254,17 +250,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            None,
-            None,
-            true,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Overwrite Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                force: true,
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Overwrite Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -299,17 +291,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            None,
-            None,
-            true,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Overwrite Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                force: true,
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Overwrite Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -331,17 +319,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            Some("cancel-test".to_string()),
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Cancel Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("cancel-test".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Cancel Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -363,17 +347,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            Some("test-pack".to_string()),
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("99.99.99".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("99.99.99".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -395,17 +375,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            Some("test-pack".to_string()),
-            None,
-            false,
-            Some("notaloader".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("notaloader".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -429,17 +405,14 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            None,
-            Some("test-pack".to_string()),
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("TestAuthor".to_string()),
-            Some("0.15.0".to_string()),
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                pack_name: Some("test-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("TestAuthor".to_string()),
+                loader_version: Some("0.15.0".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -460,17 +433,14 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            None,
-            Some("test-pack".to_string()),
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("TestAuthor".to_string()),
-            Some("99.99.99".to_string()),
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                pack_name: Some("test-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("TestAuthor".to_string()),
+                loader_version: Some("99.99.99".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -498,17 +468,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            Some("test-pack".to_string()),
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -535,17 +501,14 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            Some("test-pack".to_string()),
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            Some("2.0.0".to_string()),
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                pack_version: Some("2.0.0".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -573,17 +536,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            Some("fail-pack".to_string()),
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("fail-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -608,17 +567,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            None,
-            None,
-            true,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                force: true,
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -639,17 +594,14 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            Some("my-dir".to_string()),
-            Some("My Display Name".to_string()),
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("my-dir".to_string()),
+                pack_name: Some("My Display Name".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -676,17 +628,12 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            None,
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -706,17 +653,12 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            None,
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -742,17 +684,13 @@ mod handle_init_tests {
 
         let result = handle_init(
             &session,
-            None,
-            Some("My Cool Pack".to_string()),
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                pack_name: Some("My Cool Pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -2140,7 +2078,7 @@ mod handle_build_tests {
             )
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None).await;
+        let result = handle_build(&session, &BuildArgs { targets: vec!["mrpack".to_string()], ..Default::default() }).await;
 
         assert!(result.is_ok(), "mrpack build should succeed: {result:?}");
         assert!(session.filesystem().exists(&built_mrpack));
@@ -2172,7 +2110,7 @@ mod handle_build_tests {
             )
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip, None).await;
+        let result = handle_build(&session, &BuildArgs { targets: vec!["mrpack".to_string()], clean: true, ..Default::default() }).await;
 
         assert!(result.is_ok(), "clean-before-build should succeed: {result:?}");
         // Original artifacts should be cleaned
@@ -2202,7 +2140,7 @@ mod handle_build_tests {
                 .with_current_dir(mock_root().join("uninitialized-project")),
         );
 
-        let result = handle_build(&session, vec!["client".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None).await;
+        let result = handle_build(&session, &BuildArgs { targets: vec!["client".to_string()], ..Default::default() }).await;
 
         assert!(result.is_err(), "handle_build must return Err when not in a modpack directory");
     }
@@ -2219,7 +2157,7 @@ mod handle_build_tests {
                 ),
         );
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None).await;
+        let result = handle_build(&session, &BuildArgs { targets: vec!["mrpack".to_string()], ..Default::default() }).await;
 
         assert!(result.is_err(), "handle_build must return Err for incomplete project state");
         assert!(session.process_provider.get_calls().is_empty());
@@ -2238,7 +2176,7 @@ mod handle_build_tests {
             )
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip, None).await;
+        let result = handle_build(&session, &BuildArgs { targets: vec!["mrpack".to_string()], clean: true, ..Default::default() }).await;
 
         assert!(result.is_ok(), "clean-before-build should succeed: {result:?}");
         assert!(session.filesystem().exists(&workdir.join("empack.yml")));
@@ -2279,7 +2217,7 @@ mod handle_build_tests {
             );
         session.config_provider.app_config.dry_run = true;
 
-        let result = handle_build(&session, vec!["mrpack".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None).await;
+        let result = handle_build(&session, &BuildArgs { targets: vec!["mrpack".to_string()], ..Default::default() }).await;
 
         assert!(result.is_ok());
         assert!(
@@ -2742,7 +2680,7 @@ async fn test_build_with_invalid_target_string() {
             .with_configured_project(workdir),
     );
 
-    let err = handle_build(&session, vec!["not-a-real-target".to_string()], false, crate::empack::archive::ArchiveFormat::Zip, None)
+    let err = handle_build(&session, &BuildArgs { targets: vec!["not-a-real-target".to_string()], ..Default::default() })
         .await
         .expect_err("Build should fail with invalid target");
     assert!(
@@ -2763,7 +2701,7 @@ async fn test_build_cleans_before_build_when_flag_set() {
     );
 
     // Build with clean=true
-    let result = handle_build(&session, vec!["mrpack".to_string()], true, crate::empack::archive::ArchiveFormat::Zip, None).await;
+    let result = handle_build(&session, &BuildArgs { targets: vec!["mrpack".to_string()], clean: true, ..Default::default() }).await;
 
     // Should complete (clean happens before build attempt)
     // In mock environment, build might fail for other reasons, but clean should execute
@@ -3457,17 +3395,12 @@ mod init_interactive_tests {
 
         let result = handle_init(
             &session,
-            Some("test-pack".to_string()),
-            None,
-            false,
-            None,  // no --modloader
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -3494,17 +3427,13 @@ mod init_interactive_tests {
 
         let _result = handle_init(
             &session,
-            Some("my-pack".to_string()), // positional dir
-            None,                         // no --name flag
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("my-pack".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -3536,17 +3465,13 @@ mod init_interactive_tests {
 
         let _result = handle_init(
             &session,
-            Some(".".to_string()),
-            None,
-            false,
-            Some("fabric".to_string()),
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some(".".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -3620,17 +3545,14 @@ mod init_interactive_tests {
 
         let result = handle_init(
             &session,
-            Some("test-pack".to_string()),
-            None,
-            false,
-            Some("none".to_string()),       // vanilla
-            Some("1.21.1".to_string()),
-            Some("Test Author".to_string()),
-            Some("0.15.0".to_string()),      // should warn or error
-            None,
-            None,
-            None,
-            None,
+            &InitArgs {
+                dir: Some("test-pack".to_string()),
+                modloader: Some("none".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Test Author".to_string()),
+                loader_version: Some("0.15.0".to_string()),
+                ..Default::default()
+            },
         )
         .await;
 
@@ -3764,10 +3686,10 @@ mod exit_code_tests {
 
         let result = handle_build(
             &session,
-            vec!["mrpack".to_string()],
-            false,
-            crate::empack::archive::ArchiveFormat::Zip,
-            None,
+            &BuildArgs {
+                targets: vec!["mrpack".to_string()],
+                ..Default::default()
+            },
         )
         .await;
 

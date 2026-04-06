@@ -1,6 +1,6 @@
 use anyhow::Result;
 use empack_lib::application::Commands;
-use empack_lib::application::cli::CliArchiveFormat;
+use empack_lib::application::cli::BuildArgs;
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::application::session_mocks::mock_root;
 use empack_lib::display::Display;
@@ -90,12 +90,10 @@ async fn test_build_neoforge_mrpack() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["mrpack".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -131,12 +129,10 @@ async fn test_build_neoforge_server() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["server".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -188,12 +184,10 @@ async fn test_build_neoforge_server_full() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["server-full".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -262,12 +256,10 @@ async fn test_build_quilt_mrpack() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["mrpack".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -303,12 +295,10 @@ async fn test_build_quilt_server() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["server".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -351,12 +341,10 @@ async fn test_build_quilt_server_full() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["server-full".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -422,12 +410,10 @@ async fn test_build_vanilla_mrpack() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["mrpack".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -463,12 +449,10 @@ async fn test_build_vanilla_server() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["server".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -515,12 +499,10 @@ async fn test_build_fabric_client() -> Result<()> {
     Display::init_or_get(TerminalCapabilities::minimal());
 
     let result = execute_command_with_session(
-        Commands::Build {
+        Commands::Build(BuildArgs {
             targets: vec!["client".to_string()],
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;

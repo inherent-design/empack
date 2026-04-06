@@ -7,7 +7,7 @@
 //! - Error handling for existing projects
 
 use anyhow::Result;
-use empack_lib::application::cli::Commands;
+use empack_lib::application::cli::{Commands, InitArgs};
 use empack_lib::application::commands::execute_command_with_session;
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
@@ -22,19 +22,11 @@ async fn test_init_zero_config() -> Result<()> {
     let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
-        Commands::Init {
-            dir: None,
-            pack_name: None,
-            force: false,
+        Commands::Init(InitArgs {
             modloader: Some("fabric".to_string()),
             mc_version: Some("1.21.4".to_string()),
-            author: None,
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -70,19 +62,14 @@ async fn test_init_with_explicit_flags() -> Result<()> {
     let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("matrix-fabric".to_string()),
             pack_name: Some("Matrix Fabric".to_string()),
-            force: false,
             modloader: Some("fabric".to_string()),
             mc_version: Some("1.21.1".to_string()),
             author: Some("Workflow Test".to_string()),
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -156,19 +143,12 @@ async fn test_init_creates_directory_from_name() -> Result<()> {
     let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("my-pack".to_string()),
-            pack_name: None,
-            force: false,
             modloader: Some("fabric".to_string()),
             mc_version: Some("1.21.4".to_string()),
-            author: None,
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -223,19 +203,11 @@ async fn test_init_existing_project_error() -> Result<()> {
         .write_file(&workdir.join("empack.yml"), existing_yml)?;
 
     let result = execute_command_with_session(
-        Commands::Init {
-            dir: None,
-            pack_name: None,
-            force: false,
+        Commands::Init(InitArgs {
             modloader: Some("fabric".to_string()),
             mc_version: Some("1.21.4".to_string()),
-            author: None,
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
@@ -285,19 +257,13 @@ async fn test_init_scaffolds_template_files() -> Result<()> {
     let workdir = session.filesystem().current_dir()?;
 
     let result = execute_command_with_session(
-        Commands::Init {
+        Commands::Init(InitArgs {
             dir: Some("my-templates".to_string()),
-            pack_name: None,
-            force: false,
             modloader: Some("fabric".to_string()),
             mc_version: Some("1.21.1".to_string()),
             author: Some("Template Test".to_string()),
-            loader_version: None,
-            pack_version: None,
-            datapack_folder: None,
-            game_versions: None,
-            from_source: None,
-        },
+            ..Default::default()
+        }),
         &session,
     )
     .await;
