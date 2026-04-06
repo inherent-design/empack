@@ -3,22 +3,8 @@
 //! Provides shared helper functions for creating test fixtures and cleaning
 //! test environment state. Only compiled in test builds.
 
-use crate::display::styling::StyleManager;
 use crate::primitives::{TerminalColorCaps, TerminalGraphicsCaps, TerminalUnicodeCaps};
 use crate::terminal::{TerminalCapabilities, TerminalDimensions, TerminalInteractivity};
-
-/// Create test styling with minimal capabilities
-pub fn create_test_styling() -> StyleManager {
-    let caps = TerminalCapabilities {
-        color: TerminalColorCaps::None,
-        unicode: TerminalUnicodeCaps::Ascii,
-        graphics: TerminalGraphicsCaps::None,
-        dimensions: TerminalDimensions::default(),
-        interactivity: TerminalInteractivity::default(),
-        is_tty: false,
-    };
-    StyleManager::new(&caps)
-}
 
 /// Create test terminal capabilities with minimal features
 pub fn create_test_capabilities() -> TerminalCapabilities {

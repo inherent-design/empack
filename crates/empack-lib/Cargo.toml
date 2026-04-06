@@ -7,7 +7,15 @@ license.workspace = true
 repository = "https://github.com/inherent-design/empack/crates/empack-lib"
 
 [features]
+default = []
 test-utils = []
+telemetry = [
+    "dep:tracing-chrome",
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -38,6 +46,11 @@ windows-core = { workspace = true }
 tempfile = { workspace = true }
 handlebars = { workspace = true }
 semver = { workspace = true }
+tracing-chrome = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
 zip = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }

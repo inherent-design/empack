@@ -11,6 +11,7 @@ use crate::empack::content::{OverrideCategory, OverrideSide, SideEnv, SideRequir
 use crate::empack::parsing::ModLoader;
 use crate::primitives::ProjectPlatform;
 use crate::Result;
+use tracing::instrument;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -521,6 +522,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
 
 /// Enrich a raw manifest via platform APIs to resolve names, types, and
 /// identify embedded JARs.
+#[instrument(skip_all, fields(content_count = manifest.content.len()))]
 pub async fn resolve_manifest(
     manifest: ModpackManifest,
     modrinth_api: &dyn crate::application::session::NetworkProvider,
@@ -865,6 +867,7 @@ async fn resolve_curseforge_file_ids(
 // ---------------------------------------------------------------------------
 
 /// Transform a resolved manifest into an empack project on disk.
+#[instrument(skip_all, fields(content_count = resolved.manifest.content.len()))]
 pub async fn execute_import(
     resolved: ResolvedManifest,
     config: ImportConfig,
@@ -1370,6 +1373,7 @@ fn mr_side_requirement(value: Option<&str>) -> SideRequirement {
 }
 
 /// Scan pack content directories for .pw.toml files and return their slugs.
+#[instrument(skip_all, fields(dir_count = folders.len()))]
 fn scan_pw_toml_stems(
     pack_dir: &Path,
     folders: &[&str],

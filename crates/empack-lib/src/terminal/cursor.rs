@@ -20,6 +20,8 @@ pub fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         force_show_cursor();
+        // Best-effort telemetry flush; may fail if a lock is poisoned
+        crate::logger::global_shutdown();
         default_hook(info);
     }));
 }
