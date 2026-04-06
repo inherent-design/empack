@@ -153,6 +153,60 @@ async fn test_init_vanilla() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_init_forge() -> Result<()> {
+    let session = MockSessionBuilder::new().with_yes_flag().build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let workdir = session.filesystem().current_dir()?;
+
+    let result = execute_command_with_session(
+        Commands::Init(InitArgs {
+            dir: Some("forge-pack".to_string()),
+            modloader: Some("forge".to_string()),
+            mc_version: Some("1.21.4".to_string()),
+            ..Default::default()
+        }),
+        &session,
+    )
+    .await;
+
+    assert!(result.is_ok(), "Init with Forge failed: {:?}", result);
+
+    let project_dir = workdir.join("forge-pack");
+    assert!(
+        session.filesystem().exists(&project_dir),
+        "forge-pack directory should exist"
+    );
+
+    let empack_yml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("empack.yml"))?;
+    assert!(
+        empack_yml.contains("loader: forge"),
+        "empack.yml should have loader: forge, got: {}",
+        empack_yml
+    );
+    assert!(
+        empack_yml.contains("minecraft_version: 1.21.4")
+            || empack_yml.contains("minecraft_version: \"1.21.4\""),
+        "empack.yml should have minecraft_version 1.21.4, got: {}",
+        empack_yml
+    );
+
+    let pack_toml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("pack").join("pack.toml"))?;
+    assert!(
+        pack_toml.contains("forge = "),
+        "pack.toml [versions] should contain forge entry, got: {}",
+        pack_toml
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_init_fabric_older_mc() -> Result<()> {
     let session = MockSessionBuilder::new().with_yes_flag().build();
 

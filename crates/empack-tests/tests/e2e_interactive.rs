@@ -3,11 +3,13 @@ use expectrl::{Expect, Regex, Session};
 use std::process::Command;
 use std::time::Duration;
 
+// Reference only: kept as a manual verification aid, not run in CI.
+//
 // The interactive init flow relies on dialoguer terminal widgets (FuzzySelect,
 // Input) which render escape sequences that are difficult to match reliably
 // across terminal emulators and CI environments. This test exercises the prompt
-// sequence through a PTY but may need #[ignore] if the dialoguer rendering
-// changes or the PTY layer behaves differently on a given platform.
+// sequence through a PTY but dialoguer rendering varies across platforms and
+// CI runners, so it remains permanently ignored.
 #[test]
 #[ignore]
 fn e2e_init_interactive_prompts() {
