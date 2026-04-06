@@ -203,3 +203,23 @@ fn e2e_init_datapack_folder() {
         "empack.yml missing 'datapacks' value\n{config}"
     );
 }
+
+#[test]
+fn e2e_init_dry_run_exits_zero() {
+    empack_tests::skip_if_no_packwiz!();
+
+    let project = TestProject::new();
+    let output = project
+        .cmd()
+        .args([
+            "init", "--dry-run", "--yes", "--modloader", "fabric", "--mc-version", "1.20.1",
+            "test-dry-run",
+        ])
+        .output()
+        .expect("failed to spawn");
+    assert!(
+        output.status.success(),
+        "init --dry-run should exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
