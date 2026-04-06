@@ -106,3 +106,4 @@ $RECYCLE.BIN/
 .claude
 .intent
 *.profraw
+lcov.info
