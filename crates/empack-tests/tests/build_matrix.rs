@@ -66,11 +66,7 @@ fn setup_server_session(project_name: &str, loader: &str) -> MockSessionBuilder 
 }
 
 fn setup_server_full_session(project_name: &str, loader: &str) -> MockSessionBuilder {
-    let workdir = mock_root().join("workdir");
-    let builder = setup_mrpack_session(project_name, loader)
-        .with_pre_cached_jars()
-        .with_server_jar_stub();
-    create_server_templates(builder, &workdir)
+    setup_server_session(project_name, loader)
 }
 
 fn setup_client_session(project_name: &str, loader: &str) -> MockSessionBuilder {
