@@ -19,8 +19,8 @@ pub mod test_utils;
 
 pub use live::LiveDisplayProvider;
 pub use providers::{
-    DisplayProvider, DisplayProviderExt, MultiProgressProvider, OperationSummary, ProgressProvider,
-    ProgressTracker, StatusProvider, StructuredProvider,
+    DisplayProvider, MultiProgressProvider, ProgressProvider, ProgressTracker, StatusProvider,
+    StructuredProvider,
 };
 
 static GLOBAL_DISPLAY: OnceLock<Display> = OnceLock::new();

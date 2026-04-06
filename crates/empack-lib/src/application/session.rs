@@ -570,6 +570,7 @@ impl LiveInteractiveProvider {
 
     fn handle_interrupt(&self) -> ! {
         crate::terminal::cursor::force_show_cursor();
+        crate::logger::global_shutdown();
 
         // Best-effort state marker cleanup
         let marker_dir = self

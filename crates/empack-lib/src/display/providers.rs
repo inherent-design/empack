@@ -1,6 +1,5 @@
 //! Display provider traits for dependency injection.
 
-use std::fmt;
 
 /// Provider trait for all user-facing communication
 ///
@@ -122,92 +121,3 @@ pub trait StructuredProvider {
     fn properties(&self, pairs: &[(&str, &str)]);
 }
 
-/// Summary information for batch operations
-#[derive(Debug, Clone)]
-pub struct OperationSummary {
-    pub successful: usize,
-    pub failed: usize,
-    pub total: usize,
-}
-
-impl OperationSummary {
-    pub fn new(successful: usize, failed: usize) -> Self {
-        Self {
-            successful,
-            failed,
-            total: successful + failed,
-        }
-    }
-
-    pub fn success_rate(&self) -> f64 {
-        if self.total == 0 {
-            0.0
-        } else {
-            self.successful as f64 / self.total as f64
-        }
-    }
-
-    pub fn is_success(&self) -> bool {
-        self.failed == 0 && self.successful > 0
-    }
-
-    pub fn is_partial_success(&self) -> bool {
-        self.successful > 0 && self.failed > 0
-    }
-
-    pub fn is_failure(&self) -> bool {
-        self.failed > 0 && self.successful == 0
-    }
-}
-
-impl fmt::Display for OperationSummary {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} successful, {} failed", self.successful, self.failed)
-    }
-}
-
-/// Extension trait for common display patterns used in commands
-pub trait DisplayProviderExt: DisplayProvider {
-    /// Display an operation summary with appropriate status
-    fn display_summary(&self, operation: &str, summary: &OperationSummary) {
-        let status = self.status();
-        let p = crate::primitives::terminal::primitives();
-
-        if summary.is_success() {
-            status.complete(&format!("{} completed successfully", operation));
-            status.subtle(&format!(
-                "   {} {} operation{} successful",
-                p.checkmark,
-                summary.successful,
-                if summary.successful == 1 { "" } else { "s" }
-            ));
-        } else if summary.is_partial_success() {
-            status.warning(&format!("{} completed with issues", operation));
-            status.subtle(&format!(
-                "   {} {} successful, {} {} failed",
-                p.checkmark, summary.successful, p.cross, summary.failed
-            ));
-        } else if summary.is_failure() {
-            status.error(operation, "failed");
-            status.subtle(&format!(
-                "   {} {} operation{} failed",
-                p.cross,
-                summary.failed,
-                if summary.failed == 1 { "" } else { "s" }
-            ));
-        } else {
-            status.info(&format!("{} - no operations performed", operation));
-        }
-    }
-
-    /// Display a step with progress context
-    fn display_step(&self, current: usize, total: usize, description: &str, detail: Option<&str>) {
-        let status = self.status();
-        status.step(current, total, description);
-        if let Some(detail) = detail {
-            status.subtle(&format!("   {}", detail));
-        }
-    }
-}
-
-impl<T: DisplayProvider> DisplayProviderExt for T {}

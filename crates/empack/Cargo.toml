@@ -6,6 +6,9 @@ authors.workspace = true
 license.workspace = true
 repository = "https://github.com/inherent-design/empack/crates/empack"
 
+[features]
+telemetry = ["empack-lib/telemetry"]
+
 [dependencies]
 empack-lib = { workspace = true }
 tokio = { workspace = true }
