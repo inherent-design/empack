@@ -4,6 +4,7 @@ use crate::application::session_mocks::*;
 use crate::empack::search::ProjectInfo;
 use crate::primitives::{BuildTarget, ProjectPlatform};
 use std::collections::HashSet;
+use std::path::Path;
 
 fn modrinth_project(project_id: &str, title: &str) -> ProjectInfo {
     ProjectInfo {
@@ -14,6 +15,14 @@ fn modrinth_project(project_id: &str, title: &str) -> ProjectInfo {
         confidence: 95,
         project_type: "mod".to_string(),
     }
+}
+
+fn configured_session(workdir: &Path) -> MockCommandSession {
+    MockCommandSession::new().with_filesystem(
+        MockFileSystemProvider::new()
+            .with_current_dir(workdir.to_path_buf())
+            .with_configured_project(workdir.to_path_buf()),
+    )
 }
 
 // ===== HANDLE_VERSION TESTS =====
@@ -296,11 +305,7 @@ mod handle_init_tests {
     #[tokio::test]
     async fn it_refuses_to_overwrite_existing_without_force() {
         let workdir = mock_root().join("existing-project");
-        let session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new()
-                .with_current_dir(workdir.clone())
-                .with_configured_project(workdir.clone()),
-        );
+        let session = configured_session(&workdir);
 
         let original_empack_yml = session
             .filesystem()
@@ -332,12 +337,7 @@ mod handle_init_tests {
     #[tokio::test]
     async fn it_overwrites_existing_with_force() {
         let workdir = mock_root().join("force-pack");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
 
         let result = handle_init(
@@ -648,12 +648,7 @@ mod handle_init_tests {
     #[tokio::test]
     async fn it_preserves_existing_directory_on_force_init_failure() {
         let workdir = mock_root().join("force-init-fail");
-        let mut session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let mut session = configured_session(&workdir)
             .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
         session.packwiz_provider.fail_init = true;
 
@@ -885,12 +880,7 @@ mod handle_add_tests {
         // Create a mock project info for successful resolution
         let mock_project = modrinth_project("test-mod-id", "Test Mod");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_project_response("test-mod".to_string(), mock_project),
@@ -935,12 +925,7 @@ mod handle_add_tests {
     #[tokio::test]
     async fn it_adds_multiple_mods_successfully() {
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_project_response(
@@ -1016,12 +1001,7 @@ mod handle_add_tests {
         // After removing Modrinth ID auto-detection, "AANobbMI" without --platform
         // is treated as a search query, not a direct ID lookup.
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_project_response(
@@ -1057,12 +1037,7 @@ mod handle_add_tests {
     #[tokio::test]
     async fn it_uses_curseforge_direct_ids_when_platform_is_explicit() {
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
                     "curseforge".to_string(),
@@ -1177,12 +1152,7 @@ mod handle_add_tests {
     #[tokio::test]
     async fn it_handles_packwiz_failures() {
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(MockNetworkProvider::new().with_project_response(
                 "failing-mod".to_string(),
                 modrinth_project("failing-mod-id", "Failing Mod"),
@@ -1218,12 +1188,7 @@ mod handle_add_tests {
         let workdir = mock_root().join("configured-project");
         let mock_project = modrinth_project("YL57xq9U", "Iris Shaders");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_project_response("iris_shaders".to_string(), mock_project),
@@ -1274,12 +1239,7 @@ mod handle_add_tests {
         let workdir = mock_root().join("configured-project");
         let mock_project = modrinth_project("test-mod-id", "Test Mod");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_project_response("test-mod".to_string(), mock_project),
@@ -1379,12 +1339,7 @@ mod handle_add_tests {
         let workdir = mock_root().join("configured-project");
         let mock_project = modrinth_project("test-mod-id", "Test Mod");
 
-        let mut session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir),
-            )
+        let mut session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_project_response("test-mod".to_string(), mock_project),
@@ -1409,12 +1364,7 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_removes_single_mod_successfully() {
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir),
-            )
+        let session = configured_session(&workdir)
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec!["remove".to_string(), "-y".to_string(), "test-mod".to_string()],
                 Ok(ProcessOutput {
@@ -1439,12 +1389,7 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_removes_multiple_mods_successfully() {
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir),
-            )
+        let session = configured_session(&workdir)
             .with_process(MockProcessProvider::new());
 
         let result = handle_remove(
@@ -1472,12 +1417,7 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_removes_mod_with_dependencies() {
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir),
-            )
+        let session = configured_session(&workdir)
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec!["remove".to_string(), "-y".to_string(), "test-mod".to_string()],
                 Ok(ProcessOutput {
@@ -1561,12 +1501,7 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_skips_side_effects_in_dry_run() {
         let workdir = mock_root().join("configured-project");
-        let mut session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir),
-            );
+        let mut session = configured_session(&workdir);
         session.config_provider.app_config.dry_run = true;
 
         let result = handle_remove(&session, vec!["test-mod".to_string()], false).await;
@@ -1581,12 +1516,7 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_returns_error_when_remove_fails() {
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir),
-            )
+        let session = configured_session(&workdir)
             .with_process(
                 MockProcessProvider::new().with_packwiz_result(
                     vec!["remove".to_string(), "-y".to_string(), "bad-mod".to_string()],
@@ -2363,11 +2293,7 @@ mod handle_clean_tests {
     #[tokio::test]
     async fn it_cleans_cache_when_requested() {
         let workdir = mock_root().join("configured-project");
-        let session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new()
-                .with_current_dir(workdir.clone())
-                .with_configured_project(workdir),
-        );
+        let session = configured_session(&workdir);
 
         let result = handle_clean(&session, vec!["cache".to_string()]).await;
 
@@ -2450,11 +2376,7 @@ mod handle_clean_tests {
     #[tokio::test]
     async fn it_reports_nothing_to_clean_when_dist_absent() {
         let workdir = mock_root().join("configured-no-dist");
-        let session = MockCommandSession::new().with_filesystem(
-            MockFileSystemProvider::new()
-                .with_current_dir(workdir.clone())
-                .with_configured_project(workdir.clone()),
-        );
+        let session = configured_session(&workdir);
 
         assert!(
             !session.filesystem().is_directory(&workdir.join("dist")),
@@ -2766,11 +2688,7 @@ async fn test_all_valid_build_targets_individually() {
 #[tokio::test]
 async fn test_build_with_invalid_target_string() {
     let workdir = mock_root().join("configured-project");
-    let session = MockCommandSession::new().with_filesystem(
-        MockFileSystemProvider::new()
-            .with_current_dir(workdir.clone())
-            .with_configured_project(workdir),
-    );
+    let session = configured_session(&workdir);
 
     let err = handle_build(&session, &BuildArgs { targets: vec!["not-a-real-target".to_string()], ..Default::default() })
         .await
@@ -2786,11 +2704,7 @@ async fn test_build_with_invalid_target_string() {
 #[tokio::test]
 async fn test_build_cleans_before_build_when_flag_set() {
     let workdir = mock_root().join("configured-project");
-    let session = MockCommandSession::new().with_filesystem(
-        MockFileSystemProvider::new()
-            .with_current_dir(workdir.clone())
-            .with_configured_project(workdir.clone()),
-    );
+    let session = configured_session(&workdir);
 
     // Build with clean=true
     let result = handle_build(&session, &BuildArgs { targets: vec!["mrpack".to_string()], clean: true, ..Default::default() }).await;
@@ -3144,12 +3058,7 @@ mod search_add_tests {
     async fn test_handle_add_curseforge_direct_id() {
         let workdir = mock_root().join("cf-direct-id");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
                     "curseforge".to_string(),
@@ -3193,12 +3102,7 @@ mod search_add_tests {
     async fn test_handle_add_curseforge_id_propagates_stderr() {
         let workdir = mock_root().join("cf-id-stderr");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
                     "curseforge".to_string(),
@@ -3250,12 +3154,7 @@ mod search_add_tests {
     async fn test_search_type_mod_prevents_resourcepack() {
         let workdir = mock_root().join("type-mod-filter");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new().with_project_response(
                     "faithful".to_string(),
@@ -3362,12 +3261,7 @@ mod search_add_tests {
     async fn test_handle_add_modrinth_version_id_propagates_to_packwiz() {
         let workdir = mock_root().join("mr-version-id-add");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
                     "modrinth".to_string(),
@@ -3411,12 +3305,7 @@ mod search_add_tests {
     async fn test_handle_add_curseforge_file_id_propagates_to_packwiz() {
         let workdir = mock_root().join("cf-file-id-add");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
                     "curseforge".to_string(),
@@ -3689,12 +3578,7 @@ mod exit_code_tests {
         let workdir = mock_root().join("exit-code-packwiz-fail");
         let mock_project = modrinth_project("fail-mod-id", "Fail Mod");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_project_response("fail-mod".to_string(), mock_project),
@@ -3736,12 +3620,7 @@ mod exit_code_tests {
     async fn test_handle_add_no_results_returns_error() {
         let workdir = mock_root().join("exit-code-no-results");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_error_response(
@@ -3798,12 +3677,7 @@ mod exit_code_tests {
         let workdir = mock_root().join("exit-code-stderr-prop");
         let mock_project = modrinth_project("stderr-mod-id", "Stderr Mod");
 
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new()
-                    .with_current_dir(workdir.clone())
-                    .with_configured_project(workdir.clone()),
-            )
+        let session = configured_session(&workdir)
             .with_network(
                 MockNetworkProvider::new()
                     .with_project_response("stderr-mod".to_string(), mock_project),

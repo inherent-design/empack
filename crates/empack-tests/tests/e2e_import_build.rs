@@ -188,3 +188,39 @@ fn e2e_import_curseforge_and_check_restricted() {
     // If exit == 0: the pack built successfully, which is also acceptable
     // since CurseForge restriction status can change over time.
 }
+
+#[test]
+fn e2e_init_from_curseforge_url() {
+    empack_tests::skip_if_no_packwiz!();
+    empack_tests::skip_if_no_cf_key!();
+
+    let project = TestProject::new();
+    let output = empack_cmd(project.dir())
+        .args([
+            "init",
+            "--from",
+            "https://www.curseforge.com/minecraft/modpacks/cobblemon-updated",
+            "--yes",
+            "cf-url-imported",
+        ])
+        .output()
+        .expect("failed to spawn empack init --from (CF URL)");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "empack init --from CF URL failed:\nstdout: {stdout}\nstderr: {stderr}",
+    );
+
+    let pack_dir = project.dir().join("cf-url-imported");
+    assert!(
+        pack_dir.join("empack.yml").exists(),
+        "empack.yml not found after CF URL import"
+    );
+    assert!(
+        pack_dir.join("pack").join("pack.toml").exists(),
+        "pack/pack.toml not found after CF URL import"
+    );
+}
