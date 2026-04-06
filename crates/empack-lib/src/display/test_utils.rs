@@ -3,18 +3,16 @@
 //! Provides shared helper functions for creating test fixtures and cleaning
 //! test environment state. Only compiled in test builds.
 
-use crate::primitives::{TerminalColorCaps, TerminalGraphicsCaps, TerminalUnicodeCaps};
-use crate::terminal::{TerminalCapabilities, TerminalDimensions, TerminalInteractivity};
+use crate::primitives::{TerminalColorCaps, TerminalUnicodeCaps};
+use crate::terminal::TerminalCapabilities;
 
 /// Create test terminal capabilities with minimal features
 pub fn create_test_capabilities() -> TerminalCapabilities {
     TerminalCapabilities {
         color: TerminalColorCaps::None,
         unicode: TerminalUnicodeCaps::Ascii,
-        graphics: TerminalGraphicsCaps::None,
-        dimensions: TerminalDimensions::default(),
-        interactivity: TerminalInteractivity::default(),
         is_tty: false,
+        cols: 80,
     }
 }
 

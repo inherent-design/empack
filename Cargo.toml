@@ -39,7 +39,7 @@ murmur2 = "0.1" # Murmur2 hash for CurseForge fingerprint API
 thiserror = "2.0.18"
 toml = "1.0.7"
 tokio = { version = "1.50.0", features = ["full"] }
-terminal_size = "0.4"
+console = "0.16"
 tower = "0.5.3"
 tower_governor = "0.8.0" # Rate limiting middleware
 tracing = "0.1.44"

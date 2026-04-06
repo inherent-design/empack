@@ -1,69 +1,16 @@
 use crate::primitives::*;
-use std::io::{self, IsTerminal};
+use std::io::IsTerminal;
 
-use super::detection::*;
-use crate::primitives::terminal::TerminalGraphicsCaps;
-
+/// Runtime terminal capabilities detected at session startup.
+///
+/// Fields drive styling (color, unicode), progress bar rendering (is_tty),
+/// and table column layout (cols).
 #[derive(Debug, Clone)]
 pub struct TerminalCapabilities {
     pub color: TerminalColorCaps,
     pub unicode: TerminalUnicodeCaps,
-    pub graphics: TerminalGraphicsCaps,
-    pub dimensions: TerminalDimensions,
-    pub interactivity: TerminalInteractivity,
     pub is_tty: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TerminalDimensions {
     pub cols: u16,
-    pub rows: u16,
-    pub width_pixels: Option<u16>,
-    pub height_pixels: Option<u16>,
-    pub detection_source: DimensionSource,
-}
-
-impl Default for TerminalDimensions {
-    fn default() -> Self {
-        Self {
-            cols: 80,
-            rows: 24,
-            width_pixels: None,
-            height_pixels: None,
-            detection_source: DimensionSource::Default,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum DimensionSource {
-    Environment,
-    Default,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct TerminalInteractivity {
-    pub supports_queries: bool,
-    pub supports_mouse: bool,
-    pub supports_focus_events: bool,
-    pub supports_paste_mode: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct TerminalSpecificCaps {
-    pub expected_color: TerminalColorCaps,
-    pub expected_unicode: TerminalUnicodeCaps,
-    pub expected_graphics: TerminalGraphicsCaps,
-    pub expected_interactivity: TerminalInteractivity,
-    pub reliability: CapabilityReliability,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CapabilityReliability {
-    EnvironmentReliable,
-    TermVariableMatch,
-    EnvironmentHints,
-    Unknown,
 }
 
 impl TerminalCapabilities {
@@ -73,100 +20,132 @@ impl TerminalCapabilities {
         Self {
             color: TerminalColorCaps::None,
             unicode: TerminalUnicodeCaps::Ascii,
-            graphics: TerminalGraphicsCaps::None,
-            dimensions: TerminalDimensions::default(),
-            interactivity: TerminalInteractivity::default(),
             is_tty: false,
+            cols: 80,
         }
     }
 
+    /// Detect terminal capabilities from environment, respecting the color intent.
+    ///
+    /// Delegates to the `console` crate for color and dimension detection.
+    /// Unicode support is inferred from locale environment variables.
     pub fn detect_from_config(
         color_intent: TerminalCapsDetectIntent,
     ) -> Result<Self, TerminalError> {
-        // Load environment variables
-        let env_config = envy::from_env::<TerminalEnvConfig>()
-            .map_err(|e| TerminalError::EnvironmentParsingFailed { source: e })?;
+        let is_tty = std::io::stdout().is_terminal();
 
-        // Check if we're in a TTY first
-        let is_tty = io::stdout().is_terminal();
-
-        // Get terminal-specific capability expectations
-        let terminal_specific = detect_terminal_specific_capabilities(&env_config);
-
-        // Pure environment-based detection (no probing)
-        let color = if is_tty && color_intent != TerminalCapsDetectIntent::Never {
-            match color_intent {
-                TerminalCapsDetectIntent::Always => {
-                    let env_color = detect_color_from_environment(&env_config, &terminal_specific);
-                    if env_color == TerminalColorCaps::None {
-                        terminal_specific.expected_color
-                    } else {
-                        env_color
-                    }
-                }
-                TerminalCapsDetectIntent::Auto => {
-                    detect_color_from_environment(&env_config, &terminal_specific)
-                }
-                TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
-            }
-        } else {
-            match color_intent {
-                TerminalCapsDetectIntent::Always => terminal_specific.expected_color,
-                TerminalCapsDetectIntent::Auto => {
-                    detect_color_from_environment(&env_config, &terminal_specific)
-                }
-                TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
-            }
-        };
-
-        let graphics = if is_tty {
-            terminal_specific.expected_graphics
-        } else {
-            TerminalGraphicsCaps::None
-        };
-
-        let dimensions = detect_dimensions_from_env();
-
-        // Detect unicode capabilities
-        let unicode = detect_unicode_capabilities(&env_config, is_tty)?;
+        let color = detect_color(color_intent, is_tty);
+        let unicode = detect_unicode(is_tty)?;
+        let (_, cols) = console::Term::stderr().size();
 
         Ok(Self {
             color,
             unicode,
-            graphics,
-            dimensions,
-            interactivity: terminal_specific.expected_interactivity,
             is_tty,
+            cols,
         })
     }
 }
 
-/// Detect terminal dimensions from environment variables.
-fn detect_dimensions_from_env() -> TerminalDimensions {
-    if let Some((terminal_size::Width(w), terminal_size::Height(h))) =
-        terminal_size::terminal_size()
+/// Detect color capability level using `console` crate and COLORTERM env var.
+fn detect_color(intent: TerminalCapsDetectIntent, is_tty: bool) -> TerminalColorCaps {
+    match intent {
+        TerminalCapsDetectIntent::Never => TerminalColorCaps::None,
+        TerminalCapsDetectIntent::Always => truecolor_or_256(),
+        TerminalCapsDetectIntent::Auto => {
+            if !is_tty && !console::colors_enabled_stderr() {
+                return TerminalColorCaps::None;
+            }
+            if console::colors_enabled_stderr() {
+                truecolor_or_256()
+            } else {
+                TerminalColorCaps::None
+            }
+        }
+    }
+}
+
+/// Check COLORTERM for truecolor support; fall back to Ansi256.
+fn truecolor_or_256() -> TerminalColorCaps {
+    if std::env::var("COLORTERM")
+        .ok()
+        .is_some_and(|v| v == "truecolor" || v == "24bit")
     {
-        return TerminalDimensions {
-            cols: w,
-            rows: h,
-            width_pixels: None,
-            height_pixels: None,
-            detection_source: DimensionSource::Environment,
-        };
+        TerminalColorCaps::TrueColor
+    } else {
+        TerminalColorCaps::Ansi256
+    }
+}
+
+/// Detect unicode capability from locale environment variables.
+///
+/// Priority: LC_ALL > LC_CTYPE > LANG. Falls back to `locale charmap` on Unix.
+fn detect_unicode(is_tty: bool) -> Result<TerminalUnicodeCaps, TerminalError> {
+    if !is_tty {
+        return Ok(TerminalUnicodeCaps::Ascii);
     }
 
-    let cols = std::env::var("COLUMNS").ok().and_then(|s| s.parse().ok());
-    let rows = std::env::var("LINES").ok().and_then(|s| s.parse().ok());
+    let locale_var = std::env::var("LC_ALL")
+        .ok()
+        .or_else(|| std::env::var("LC_CTYPE").ok())
+        .or_else(|| std::env::var("LANG").ok());
 
-    match (cols, rows) {
-        (Some(c), Some(r)) => TerminalDimensions {
-            cols: c,
-            rows: r,
-            width_pixels: None,
-            height_pixels: None,
-            detection_source: DimensionSource::Environment,
-        },
-        _ => TerminalDimensions::default(),
+    if let Some(locale) = locale_var
+        && locale.to_lowercase().contains("utf")
+    {
+        return Ok(TerminalUnicodeCaps::BasicUnicode);
+    }
+
+    #[cfg(unix)]
+    {
+        if let Ok(charset) = get_unix_charset()
+            && charset.to_lowercase().contains("utf")
+        {
+            return Ok(TerminalUnicodeCaps::BasicUnicode);
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Globalization::{GetACP, GetOEMCP};
+        use windows_sys::Win32::System::Console::{GetConsoleCP, GetConsoleOutputCP};
+
+        unsafe {
+            let acp = GetACP();
+            let oemp = GetOEMCP();
+            let console_cp = GetConsoleCP();
+            let console_output_cp = GetConsoleOutputCP();
+
+            if acp == 65001 || oemp == 65001 || console_cp == 65001 || console_output_cp == 65001 {
+                return Ok(TerminalUnicodeCaps::BasicUnicode);
+            }
+        }
+
+        return Ok(TerminalUnicodeCaps::Ascii);
+    }
+
+    Ok(TerminalUnicodeCaps::Ascii)
+}
+
+#[cfg(unix)]
+fn get_unix_charset() -> Result<String, TerminalError> {
+    use std::process::Command;
+
+    let output = Command::new("locale")
+        .arg("charmap")
+        .output()
+        .map_err(|_| TerminalError::CommandFailed {
+            command: "locale charmap".to_string(),
+        })?;
+
+    if output.status.success() {
+        String::from_utf8(output.stdout)
+            .map_err(|e| TerminalError::InvalidUtf8Response { source: e })
+            .map(|s| s.trim().to_string())
+    } else {
+        Err(TerminalError::CommandFailed {
+            command: "locale charmap".to_string(),
+        })
     }
 }
 
