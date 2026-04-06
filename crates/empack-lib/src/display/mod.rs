@@ -8,7 +8,6 @@ use crate::terminal::TerminalCapabilities;
 use std::sync::OnceLock;
 
 pub mod live;
-pub mod mock;
 pub mod progress;
 pub mod providers;
 pub mod status;
@@ -19,7 +18,6 @@ pub mod styling;
 pub mod test_utils;
 
 pub use live::LiveDisplayProvider;
-pub use mock::{DisplayCall, MockDisplayProvider};
 pub use providers::{
     DisplayProvider, DisplayProviderExt, MultiProgressProvider, OperationSummary, ProgressProvider,
     ProgressTracker, StatusProvider, StructuredProvider,

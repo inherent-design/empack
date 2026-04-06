@@ -19,9 +19,6 @@ pub use empack::*;
 pub mod terminal;
 pub use terminal::*;
 
-/// Async HTTP client with concurrency limiting
-pub mod networking;
-
 /// Project hosting platform types
 pub mod project_platform;
 pub use project_platform::*;
