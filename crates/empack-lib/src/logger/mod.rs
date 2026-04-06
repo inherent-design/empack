@@ -19,7 +19,7 @@ static GLOBAL_LOGGER: OnceLock<Logger> = OnceLock::new();
 /// - `all`: enables both layers simultaneously
 pub struct Logger {
     #[cfg(feature = "telemetry")]
-    _chrome_guard: Option<std::sync::Mutex<tracing_chrome::FlushGuard>>,
+    _chrome_guard: std::sync::Mutex<Option<tracing_chrome::FlushGuard>>,
     #[cfg(feature = "telemetry")]
     _tracer_provider: Option<SdkTracerProvider>,
 }
@@ -29,7 +29,7 @@ impl std::fmt::Debug for Logger {
         let mut dbg = f.debug_struct("Logger");
         #[cfg(feature = "telemetry")]
         {
-            dbg.field("chrome", &self._chrome_guard.is_some());
+            dbg.field("chrome", &self._chrome_guard.lock().ok().map(|g| g.is_some()));
             dbg.field("otlp", &self._tracer_provider.is_some());
         }
         dbg.finish()
@@ -135,14 +135,31 @@ impl Logger {
             (None, None)
         };
 
-        // When telemetry is enabled, compose chrome and otel layers (Option<L>
-        // is a no-op when None). When disabled, the subscriber stack is unchanged.
+        // Per-layer filtering when telemetry is enabled: fmt and indicatif
+        // layers get the user's configured filter; telemetry layers (chrome,
+        // otlp) run unfiltered so #[instrument] spans at INFO level are always
+        // captured. Two separate EnvFilter instances because EnvFilter is not
+        // Clone. The indicatif layer MUST be filtered identically to fmt;
+        // otherwise it receives span events for progress bars that fmt never
+        // created, causing a panic in pb_manager.
         #[cfg(feature = "telemetry")]
         {
+            let indicatif_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                let level_str = match config.level {
+                    LogLevel::Error => "error",
+                    LogLevel::Warning => "warn",
+                    LogLevel::Info => "info",
+                    LogLevel::Debug => "debug",
+                    LogLevel::Trace => "trace",
+                };
+                let filter_str = format!("empack={},hyper_util=warn,reqwest=warn,h2=warn,tower=warn,tokio=warn,mio=warn,want=warn,{}",
+                    level_str, level_str);
+                EnvFilter::new(filter_str)
+            });
+
             tracing_subscriber::registry()
-                .with(env_filter)
-                .with(fmt_layer)
-                .with(indicatif_layer)
+                .with(fmt_layer.with_filter(env_filter))
+                .with(indicatif_layer.with_filter(indicatif_filter))
                 .with(chrome_layer)
                 .with(otel_layer)
                 .try_init()
@@ -164,7 +181,7 @@ impl Logger {
 
         let logger = Logger {
             #[cfg(feature = "telemetry")]
-            _chrome_guard: chrome_guard.map(std::sync::Mutex::new),
+            _chrome_guard: std::sync::Mutex::new(chrome_guard),
             #[cfg(feature = "telemetry")]
             _tracer_provider: tracer_provider,
         };
@@ -194,15 +211,20 @@ impl Logger {
         GLOBAL_LOGGER.get().is_some()
     }
 
-    /// Flush OTLP batch exporter with a bounded timeout.
+    /// Flush all telemetry providers.
     ///
-    /// Chrome `FlushGuard` flushes on drop; no explicit call needed.
-    /// `SdkTracerProvider` requires explicit shutdown (drop alone does NOT
-    /// flush the batch exporter).
+    /// Takes the Chrome `FlushGuard` and drops it (signals write thread to
+    /// flush and join). Calls `shutdown_with_timeout` on the OTLP
+    /// `SdkTracerProvider` (drop alone does NOT flush the batch exporter).
     pub fn shutdown(&self) {
         #[cfg(feature = "telemetry")]
-        if let Some(ref provider) = self._tracer_provider {
-            let _ = provider.shutdown_with_timeout(std::time::Duration::from_secs(2));
+        {
+            if let Ok(mut guard) = self._chrome_guard.lock() {
+                drop(guard.take());
+            }
+            if let Some(ref provider) = self._tracer_provider {
+                let _ = provider.shutdown_with_timeout(std::time::Duration::from_secs(2));
+            }
         }
     }
 
