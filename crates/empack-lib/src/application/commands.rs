@@ -3320,7 +3320,9 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let mut success_count = 0;
     let mut failure_count = 0;
     let sync_progress = session.display().progress().bar(planned_actions.len() as u64);
-    sync_progress.set_message("Syncing");
+    if !planned_actions.is_empty() {
+        sync_progress.set_message("Syncing");
+    }
 
     for action in planned_actions {
         match action {
