@@ -742,8 +742,6 @@ pub enum InstallResult {
 
 /// Parse packwiz-installer CLI output for restricted mod messages.
 ///
-/// Parse packwiz-installer CLI output for restricted mod messages.
-///
 /// packwiz-installer CLIHandler prints:
 ///   stdout: `"Failed to download modpack, the following errors were encountered:\n"`
 ///   stdout: `"SomeMod.jar: "` (no newline)
@@ -785,11 +783,13 @@ fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
             }
         }
 
-        results.push(RestrictedModInfo {
-            name,
-            url,
-            dest_path: dest,
-        });
+        if !url.is_empty() {
+            results.push(RestrictedModInfo {
+                name,
+                url,
+                dest_path: dest,
+            });
+        }
     }
 
     results

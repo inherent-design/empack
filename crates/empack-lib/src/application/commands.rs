@@ -2616,11 +2616,16 @@ async fn handle_build(
         })
         .context("Failed to execute build pipeline")?;
 
-    // Check for restricted mods across all build results
-    let all_restricted: Vec<_> = results
-        .iter()
-        .flat_map(|r| r.restricted_mods.iter())
-        .collect();
+    // Check for restricted mods across all build results, deduplicating
+    // by URL (the same mod appears in both client-full and server-full).
+    let all_restricted: Vec<_> = {
+        let mut seen = std::collections::HashSet::new();
+        results
+            .iter()
+            .flat_map(|r| r.restricted_mods.iter())
+            .filter(|rm| seen.insert(rm.url.clone()))
+            .collect()
+    };
 
     if !all_restricted.is_empty() {
         session
