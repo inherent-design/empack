@@ -234,6 +234,8 @@ impl CliArchiveFormat {
 #[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum)]
 pub enum CliProjectType {
     Mod,
+    #[value(name = "datapack")]
+    Datapack,
     #[value(name = "resourcepack")]
     ResourcePack,
     Shader,
@@ -243,6 +245,7 @@ impl CliProjectType {
     pub fn to_project_type(&self) -> crate::primitives::ProjectType {
         match self {
             CliProjectType::Mod => crate::primitives::ProjectType::Mod,
+            CliProjectType::Datapack => crate::primitives::ProjectType::Datapack,
             CliProjectType::ResourcePack => crate::primitives::ProjectType::ResourcePack,
             CliProjectType::Shader => crate::primitives::ProjectType::Shader,
         }

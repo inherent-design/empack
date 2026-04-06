@@ -291,9 +291,13 @@ pub struct LiveNetworkProvider {
 
 impl LiveNetworkProvider {
     pub fn new() -> Self {
+        Self::with_timeout(30)
+    }
+
+    pub fn with_timeout(timeout_secs: u64) -> Self {
         let cache_dir = std::env::temp_dir().join("empack").join("http_cache");
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(timeout_secs))
             .build()
             .expect("Failed to build HTTP client");
         Self {
@@ -728,7 +732,7 @@ impl
             display_provider,
             terminal_capabilities,
             filesystem_provider: LiveFileSystemProvider,
-            network_provider: LiveNetworkProvider::new(),
+            network_provider: LiveNetworkProvider::with_timeout(app_config.net_timeout),
             process_provider: LiveProcessProvider::new(),
             config_provider: LiveConfigProvider::new(app_config.clone()),
             interactive_provider: LiveInteractiveProvider::new(

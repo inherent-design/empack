@@ -529,9 +529,13 @@ pub async fn resolve_manifest(
     modrinth_api: &dyn crate::application::session::NetworkProvider,
     curseforge_api: &dyn crate::application::session::NetworkProvider,
     curseforge_api_key: Option<&str>,
+    display: &dyn crate::display::providers::DisplayProvider,
 ) -> Result<ResolvedManifest> {
     let mut warnings = Vec::new();
     let mut resolved_content = Vec::new();
+    let total = manifest.content.len();
+    let progress = display.progress().bar(total as u64);
+    progress.set_message("Resolving platform references");
 
     // Batch-resolve CurseForge file IDs to mod IDs. Entries reclassified from
     // Modrinth mrpacks (ForgeCD URLs) have file_id set but project_id empty.
@@ -585,7 +589,9 @@ pub async fn resolve_manifest(
                 resolved_content.push(ContentEntry::EmbeddedJar(embed));
             }
         }
+        progress.inc();
     }
+    progress.finish("Platform references resolved");
 
     Ok(ResolvedManifest {
         manifest: ModpackManifest {
@@ -960,9 +966,14 @@ pub async fn execute_import(
         })
         .collect();
 
+    let content_total = resolved.manifest.content.len();
+    let content_progress = session.display().progress().bar(content_total as u64);
+    content_progress.set_message("Adding mods");
+
     for entry in &resolved.manifest.content {
         match entry {
             ContentEntry::PlatformReferenced(pref) => {
+                content_progress.tick(&pref.destination_path);
                 let before = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
                 let result = add_platform_ref(pref, &pack_dir, session, datapack_folder.as_deref()).await?;
 
@@ -1031,7 +1042,13 @@ pub async fn execute_import(
                 stats.embedded_jars_unidentified += 1;
             }
         }
+        content_progress.inc();
     }
+    content_progress.finish(&format!("{} platform references processed", content_total));
+
+    let override_total = resolved.manifest.overrides.len();
+    let override_progress = session.display().progress().bar(override_total as u64);
+    override_progress.set_message("Copying overrides");
 
     for override_entry in &resolved.manifest.overrides {
         let dest = sanitize_archive_path(&pack_dir, &override_entry.destination_path)?;
@@ -1042,7 +1059,9 @@ pub async fn execute_import(
             session.filesystem(),
         )?;
         stats.overrides_copied += 1;
+        override_progress.inc();
     }
+    override_progress.finish(&format!("{} overrides copied", override_total));
 
     Ok(ImportResult {
         project_dir: config.target_dir,
