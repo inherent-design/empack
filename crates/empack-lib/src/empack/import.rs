@@ -150,9 +150,6 @@ pub enum ImportError {
     #[error("cannot detect source type for: {0}")]
     UnrecognizedSource(String),
 
-    #[error("remote CurseForge modpack download is not yet supported; download the .zip manually and pass the local path")]
-    RemoteCurseForgeNotSupported,
-
     #[error("failed to download modpack: {0}")]
     DownloadFailed(String),
 }

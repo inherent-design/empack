@@ -1039,8 +1039,10 @@ async fn import_from_remote(
                 download_modrinth_modpack(session, &slug, version.as_deref()).await?;
             Ok((manifest, Some(tmp_dir), path))
         }
-        UrlKind::CurseForgeModpack { .. } => {
-            Err(crate::empack::import::ImportError::RemoteCurseForgeNotSupported.into())
+        UrlKind::CurseForgeModpack { slug } => {
+            let (manifest, tmp_dir, path) =
+                download_curseforge_modpack(session, &slug).await?;
+            Ok((manifest, Some(tmp_dir), path))
         }
         _ => Err(crate::empack::import::ImportError::UnrecognizedSource(
             source.to_string(),
@@ -1146,6 +1148,155 @@ async fn download_modrinth_modpack(
     download_file(&client, download_url, &dest_path).await?;
 
     let manifest = parse_modrinth_mrpack(&dest_path)?;
+    Ok((manifest, tmp_dir, dest_path))
+}
+
+async fn download_curseforge_modpack(
+    session: &dyn Session,
+    slug: &str,
+) -> Result<(ModpackManifest, tempfile::TempDir, PathBuf)> {
+    session
+        .display()
+        .status()
+        .info(&format!("Fetching CurseForge modpack: {}", slug));
+
+    let client = session.network().http_client()?;
+    let api_key = session
+        .config()
+        .app_config()
+        .curseforge_api_client_key
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("CurseForge API key required for remote modpack download"))?;
+
+    // Resolve slug to project ID via search
+    let search_url = format!(
+        "https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&slug={}",
+        slug
+    );
+    let search_resp = client
+        .get(&search_url)
+        .header("x-api-key", &api_key)
+        .send()
+        .await
+        .context("failed to search CurseForge for modpack")?;
+
+    if !search_resp.status().is_success() {
+        anyhow::bail!(
+            "CurseForge search returned {}: {}",
+            search_resp.status(),
+            search_resp.text().await.unwrap_or_default()
+        );
+    }
+
+    #[derive(serde::Deserialize)]
+    struct SearchData {
+        data: Vec<SearchMod>,
+    }
+    #[derive(serde::Deserialize)]
+    struct SearchMod {
+        id: u64,
+        name: String,
+    }
+
+    let search_data: SearchData = search_resp.json().await.context("failed to parse CurseForge search response")?;
+    let project = search_data
+        .data
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("no CurseForge modpack found for slug '{}'", slug))?;
+
+    session
+        .display()
+        .status()
+        .info(&format!("Found: {} (ID: {})", project.name, project.id));
+
+    // Get latest file
+    let files_url = format!(
+        "https://api.curseforge.com/v1/mods/{}/files?pageSize=1",
+        project.id
+    );
+    let files_resp = client
+        .get(&files_url)
+        .header("x-api-key", &api_key)
+        .send()
+        .await
+        .context("failed to fetch CurseForge file list")?;
+
+    if !files_resp.status().is_success() {
+        anyhow::bail!("CurseForge files endpoint returned {}", files_resp.status());
+    }
+
+    #[derive(serde::Deserialize)]
+    struct FilesData {
+        data: Vec<FileEntry>,
+    }
+    #[derive(serde::Deserialize)]
+    struct FileEntry {
+        id: u64,
+        #[serde(rename = "fileName")]
+        file_name: String,
+        #[serde(rename = "downloadUrl")]
+        download_url: Option<String>,
+    }
+
+    let files_data: FilesData = files_resp.json().await.context("failed to parse CurseForge files response")?;
+    let file = files_data
+        .data
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("no files found for CurseForge modpack '{}'", slug))?;
+
+    // Get download URL (may be null for restricted modpacks)
+    let dl_url = if let Some(ref url) = file.download_url {
+        url.clone()
+    } else {
+        // Try the download-url endpoint as fallback
+        let dl_endpoint = format!(
+            "https://api.curseforge.com/v1/mods/{}/files/{}/download-url",
+            project.id, file.id
+        );
+        let dl_resp = client
+            .get(&dl_endpoint)
+            .header("x-api-key", &api_key)
+            .send()
+            .await
+            .context("failed to fetch CurseForge download URL")?;
+
+        if !dl_resp.status().is_success() {
+            anyhow::bail!(
+                "CurseForge modpack '{}' has restricted downloads. \
+                 Download the .zip manually from https://www.curseforge.com/minecraft/modpacks/{} \
+                 and pass the local path to --from.",
+                project.name, slug
+            );
+        }
+
+        #[derive(serde::Deserialize)]
+        struct DlData {
+            data: String,
+        }
+        let dl_data: DlData = dl_resp.json().await.context("failed to parse download URL response")?;
+        if dl_data.data.is_empty() {
+            anyhow::bail!(
+                "CurseForge modpack '{}' has restricted downloads. \
+                 Download the .zip manually from https://www.curseforge.com/minecraft/modpacks/{} \
+                 and pass the local path to --from.",
+                project.name, slug
+            );
+        }
+        dl_data.data
+    };
+
+    let filename = &file.file_name;
+    session
+        .display()
+        .status()
+        .info(&format!("Downloading {}...", filename));
+
+    let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    let dest_path = tmp_dir.path().join(filename);
+
+    download_file(&client, &dl_url, &dest_path).await?;
+
+    let manifest = parse_curseforge_zip(&dest_path)?;
     Ok((manifest, tmp_dir, dest_path))
 }
 
@@ -3214,6 +3365,8 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     session.display().status().section("Executing sync actions");
     let mut success_count = 0;
     let mut failure_count = 0;
+    let sync_progress = session.display().progress().bar(planned_actions.len() as u64);
+    sync_progress.set_message("Syncing");
 
     for action in planned_actions {
         match action {
@@ -3295,7 +3448,9 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 }
             }
         }
+        sync_progress.inc();
     }
+    sync_progress.finish(&format!("{} actions completed", success_count + failure_count));
 
     session.display().status().section("Sync Summary");
     session
