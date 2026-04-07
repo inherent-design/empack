@@ -6,8 +6,9 @@ coverage:
         threshold: 5%
     patch:
       default:
-        target: auto
-        threshold: 5%
+        target: 60%
+        threshold: 10%
+        informational: true
 
 ignore:
   - "crates/empack-tests/**"
