@@ -78,27 +78,25 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         .status()
         .section("Checking tool dependencies");
 
-    match crate::platform::packwiz_bin::resolve_packwiz_binary() {
-        Ok(path) => {
-            session.display().status().success(
-                "packwiz-tx",
-                &format!(
-                    "{} ({})",
-                    crate::platform::packwiz_bin::PACKWIZ_TX_VERSION,
-                    path.display()
-                ),
-            );
-        }
-        Err(e) => {
-            session
-                .display()
-                .status()
-                .error("packwiz-tx", &format!("not available: {e}"));
-            session.display().status().subtle(&format!(
-                "   Required: {}",
-                crate::platform::packwiz_bin::PACKWIZ_TX_REQUIREMENT
-            ));
-        }
+    let packwiz_path = session.packwiz_bin();
+    if packwiz_path != crate::empack::packwiz::PACKWIZ_BIN {
+        session.display().status().success(
+            "packwiz-tx",
+            &format!(
+                "{} ({})",
+                crate::platform::packwiz_bin::PACKWIZ_TX_VERSION,
+                packwiz_path
+            ),
+        );
+    } else {
+        session
+            .display()
+            .status()
+            .error("packwiz-tx", "not available (managed download failed at session init)");
+        session.display().status().subtle(&format!(
+            "   Required: {}",
+            crate::platform::packwiz_bin::PACKWIZ_TX_REQUIREMENT
+        ));
     }
 
     match session.process().find_program("java") {
