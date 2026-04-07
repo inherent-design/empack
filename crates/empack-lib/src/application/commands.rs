@@ -3519,13 +3519,16 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     sync_progress.finish(&format!("{} actions completed", success_count + failure_count));
 
     if use_no_refresh {
-        session
+        let refresh_output = session
             .process()
             .execute(
                 session.packwiz_bin(),
                 &["refresh"],
                 &workdir.join("pack"),
             )?;
+        if !refresh_output.success {
+            anyhow::bail!("packwiz refresh failed: {}", refresh_output.error_output());
+        }
     }
 
     session.display().status().section("Sync Summary");
