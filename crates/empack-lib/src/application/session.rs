@@ -158,6 +158,13 @@ pub trait Session {
     fn packwiz(&self) -> Box<dyn PackwizOps + '_>;
 
     fn state(&self) -> Result<PackStateManager<'_, dyn FileSystemProvider + '_>>;
+
+    /// Resolved path to the packwiz-tx binary for process execution.
+    ///
+    /// Resolved once at session construction via `resolve_packwiz_binary()`.
+    /// All callsites that execute packwiz-tx should use this instead of the
+    /// bare `PACKWIZ_BIN` constant, which only works when the binary is in PATH.
+    fn packwiz_bin(&self) -> &str;
 }
 
 pub struct LiveFileSystemProvider;
@@ -699,6 +706,9 @@ where
     config_provider: C,
     interactive_provider: I,
     archive_provider: LiveArchiveProvider,
+    /// Resolved packwiz-tx binary path for process execution.
+    /// Computed once at session construction via `resolve_packwiz_binary()`.
+    packwiz_bin_path: String,
 }
 
 impl
@@ -728,6 +738,12 @@ impl
         let multi_progress = Arc::new(MultiProgress::new());
         let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
 
+        // Resolve packwiz-tx binary once at session construction.
+        // This is a blocking call that may download the binary on first use.
+        let packwiz_bin_path = crate::platform::packwiz_bin::resolve_packwiz_binary()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| crate::empack::packwiz::PACKWIZ_BIN.to_string());
+
         Self {
             multi_progress,
             display_provider,
@@ -741,6 +757,7 @@ impl
                 app_config.workdir.clone(),
             ),
             archive_provider: LiveArchiveProvider,
+            packwiz_bin_path,
         }
     }
 }
@@ -774,6 +791,7 @@ where
             config_provider,
             interactive_provider,
             archive_provider: LiveArchiveProvider,
+            packwiz_bin_path: crate::empack::packwiz::PACKWIZ_BIN.to_string(),
         }
     }
 
@@ -846,8 +864,16 @@ where
         &self.archive_provider
     }
 
+    fn packwiz_bin(&self) -> &str {
+        &self.packwiz_bin_path
+    }
+
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
-        Box::new(LivePackwizOps::new(self.process(), self.filesystem()))
+        Box::new(LivePackwizOps::new(
+            self.process(),
+            self.filesystem(),
+            &self.packwiz_bin_path,
+        ))
     }
 
     fn state(&self) -> Result<PackStateManager<'_, dyn FileSystemProvider + '_>> {

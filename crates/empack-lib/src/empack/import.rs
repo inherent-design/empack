@@ -1170,7 +1170,7 @@ pub async fn execute_import(
 
     if use_no_refresh {
         session.process().execute(
-            crate::empack::packwiz::PACKWIZ_BIN,
+            session.packwiz_bin(),
             &["refresh"],
             &pack_dir,
         )?;
@@ -1335,7 +1335,7 @@ async fn add_platform_ref(
                         args.push("--no-refresh");
                     }
                     args.extend(["url", "add", name, url, "-y"]);
-                    let output = session.process().execute(crate::empack::packwiz::PACKWIZ_BIN, &args, pack_dir)?;
+                    let output = session.process().execute(session.packwiz_bin(), &args, pack_dir)?;
                     if output.success {
                         return Ok(AddRefResult::Added);
                     }
@@ -1367,7 +1367,7 @@ async fn add_platform_ref(
             args.push("-y".to_string());
 
             let output = session.process().execute(
-                crate::empack::packwiz::PACKWIZ_BIN,
+                session.packwiz_bin(),
                 &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 pack_dir,
             )?;
@@ -1410,7 +1410,7 @@ async fn add_platform_ref(
             args.push("-y".to_string());
 
             let output = session.process().execute(
-                crate::empack::packwiz::PACKWIZ_BIN,
+                session.packwiz_bin(),
                 &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 pack_dir,
             )?;
