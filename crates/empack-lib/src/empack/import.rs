@@ -63,6 +63,8 @@ pub struct PlatformRef {
     pub env: SideEnv,
     pub required: bool,
     pub resolved_name: Option<String>,
+    /// Platform slug used by packwiz for .pw.toml filename (e.g., "jei" not "Just Enough Items").
+    pub resolved_slug: Option<String>,
     pub resolved_type: Option<crate::primitives::ProjectType>,
     /// CurseForge classId for content-type routing (e.g. 6945 for Data Packs).
     pub cf_class_id: Option<u32>,
@@ -353,6 +355,7 @@ pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
                 },
                 required: f.required,
                 resolved_name: None,
+                resolved_slug: None,
                 resolved_type: None,
                 cf_class_id: None,
             })
@@ -482,6 +485,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
                     env,
                     required: true,
                     resolved_name: None,
+                resolved_slug: None,
                     resolved_type: None,
                     cf_class_id: None,
                 })
@@ -591,7 +595,7 @@ pub async fn resolve_manifest(
                 let sem = semaphore.clone();
 
                 handles.push((i, tokio::spawn(async move {
-                    let _permit = sem.acquire().await;
+                    let _permit = sem.acquire().await.expect("semaphore closed");
                     let resolve_start = std::time::Instant::now();
                     let mut task_warnings = Vec::new();
 
@@ -725,6 +729,8 @@ async fn resolve_platform_ref_with_client(
 struct MrProjectResponse {
     title: String,
     #[serde(default)]
+    slug: Option<String>,
+    #[serde(default)]
     project_type: Option<String>,
 }
 
@@ -782,6 +788,7 @@ async fn resolve_modrinth_project_with_client(
     };
 
     pref.resolved_name = Some(body.title.clone());
+    pref.resolved_slug = body.slug.clone();
 
     pref.resolved_type = body.project_type.as_deref().map(|pt| match pt {
         "mod" => crate::primitives::ProjectType::Mod,
@@ -800,6 +807,8 @@ struct CfDataEnvelope<T> {
 #[derive(Deserialize)]
 struct CfModResponse {
     name: String,
+    #[serde(default)]
+    slug: Option<String>,
     #[serde(rename = "classId", default)]
     class_id: Option<u32>,
 }
@@ -858,6 +867,7 @@ async fn resolve_curseforge_project_with_client(
     let body = envelope.data;
 
     pref.resolved_name = Some(body.name.clone());
+    pref.resolved_slug = body.slug.clone();
     pref.cf_class_id = body.class_id;
 
     pref.resolved_type = body.class_id.map(|cid| match cid {
@@ -1097,7 +1107,8 @@ pub async fn execute_import(
                     AddRefResult::Added => {
                         stats.platform_referenced += 1;
 
-                        let derived_key = derive_dep_key_from_name(
+                        let derived_key = derive_dep_key(
+                            pref.resolved_slug.as_deref(),
                             pref.resolved_name.as_deref(),
                             &pref.destination_path,
                         );
@@ -1499,12 +1510,16 @@ fn mr_side_requirement(value: Option<&str>) -> SideRequirement {
     }
 }
 
-/// Derive a dependency key from the resolved name or destination path.
+/// Derive a dependency key from the platform slug, display name, or destination path.
 ///
-/// packwiz names `.pw.toml` files from the mod slug (lowercased, spaces
-/// replaced with hyphens). This function replicates that convention so
-/// the dep_key can be derived without a filesystem scan.
-fn derive_dep_key_from_name(resolved_name: Option<&str>, destination_path: &str) -> String {
+/// packwiz names `.pw.toml` files from the project slug (e.g., "jei" not
+/// "Just Enough Items"). Prefers the API slug when available; falls back
+/// to the display title (lowercased, spaces to hyphens) then the
+/// destination filename.
+fn derive_dep_key(slug: Option<&str>, resolved_name: Option<&str>, destination_path: &str) -> String {
+    if let Some(s) = slug {
+        return s.to_lowercase();
+    }
     let name = resolved_name
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
