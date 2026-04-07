@@ -436,6 +436,7 @@ fn test_modpack_manifest_construction() {
             },
             required: true,
             resolved_name: Some("Sodium".to_string()),
+            resolved_slug: Some("sodium".to_string()),
             resolved_type: Some(crate::primitives::ProjectType::Mod),
             cf_class_id: None,
         })],
@@ -801,6 +802,7 @@ fn make_platform_ref(destination_path: &str) -> ContentEntry {
         },
         required: true,
         resolved_name: None,
+        resolved_slug: None,
         resolved_type: None,
         cf_class_id: None,
     })

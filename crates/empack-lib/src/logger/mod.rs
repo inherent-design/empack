@@ -49,20 +49,10 @@ impl Logger {
 
         let indicatif_layer = IndicatifLayer::new();
 
-        let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            let level_str = match config.level {
-                LogLevel::Error => "error",
-                LogLevel::Warning => "warn",
-                LogLevel::Info => "info",
-                LogLevel::Debug => "debug",
-                LogLevel::Trace => "trace",
-            };
+        let filter_string = Self::build_filter_string(&config);
 
-            let filter_str = format!("empack={},hyper_util=warn,reqwest=warn,h2=warn,tower=warn,tokio=warn,mio=warn,want=warn,{}",
-                level_str, level_str);
-
-            EnvFilter::new(filter_str)
-        });
+        let env_filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new(&filter_string));
 
         let fmt_layer = match (config.output, config.format) {
             (LogOutput::Stderr, LogFormat::Text) => fmt::layer()
@@ -144,18 +134,8 @@ impl Logger {
         // created, causing a panic in pb_manager.
         #[cfg(feature = "telemetry")]
         {
-            let indicatif_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                let level_str = match config.level {
-                    LogLevel::Error => "error",
-                    LogLevel::Warning => "warn",
-                    LogLevel::Info => "info",
-                    LogLevel::Debug => "debug",
-                    LogLevel::Trace => "trace",
-                };
-                let filter_str = format!("empack={},hyper_util=warn,reqwest=warn,h2=warn,tower=warn,tokio=warn,mio=warn,want=warn,{}",
-                    level_str, level_str);
-                EnvFilter::new(filter_str)
-            });
+            let indicatif_filter = EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(&filter_string));
 
             tracing_subscriber::registry()
                 .with(fmt_layer.with_filter(env_filter))
@@ -209,6 +189,20 @@ impl Logger {
     /// Returns `true` if the global logger has been initialized.
     pub fn is_initialized() -> bool {
         GLOBAL_LOGGER.get().is_some()
+    }
+
+    fn build_filter_string(config: &LoggerConfig) -> String {
+        let level_str = match config.level {
+            LogLevel::Error => "error",
+            LogLevel::Warning => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
+        };
+        format!(
+            "empack={},hyper_util=warn,reqwest=warn,h2=warn,tower=warn,tokio=warn,mio=warn,want=warn,{}",
+            level_str, level_str
+        )
     }
 
     /// Flush all telemetry providers.
