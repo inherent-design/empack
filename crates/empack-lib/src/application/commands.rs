@@ -948,6 +948,17 @@ async fn handle_init_from_source(
         "Platform references added",
         &result.stats.platform_referenced.to_string(),
     );
+    if result.stats.platform_failed > 0 {
+        session.display().status().error(
+            "Platform references failed",
+            &result.stats.platform_failed.to_string(),
+        );
+    }
+    if result.stats.platform_skipped > 0 {
+        session.display().status().subtle(&format!(
+            "  Skipped (no identifier): {}", result.stats.platform_skipped
+        ));
+    }
     session.display().status().info(&format!(
         "Embedded files extracted: {} (unidentified)",
         result.stats.embedded_jars_unidentified
@@ -956,6 +967,29 @@ async fn handle_init_from_source(
         "Override files copied: {}",
         result.stats.overrides_copied
     ));
+
+    if result.stats.platform_failed > 0 {
+        let total = result.stats.platform_failed
+            + result.stats.platform_referenced
+            + result.stats.platform_skipped;
+
+        tracing::info!(
+            command = "init_from_source",
+            duration_ms = start.elapsed().as_millis() as u64,
+            mod_count = result.stats.platform_referenced,
+            mod_failed = result.stats.platform_failed,
+            mod_skipped = result.stats.platform_skipped,
+            overrides_copied = result.stats.overrides_copied,
+            exit_code = 1,
+            "command complete with failures"
+        );
+
+        return Err(anyhow::anyhow!(
+            "import incomplete: {} of {} platform references failed to add",
+            result.stats.platform_failed,
+            total
+        ));
+    }
 
     session
         .display()
