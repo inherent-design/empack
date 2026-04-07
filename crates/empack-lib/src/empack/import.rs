@@ -1365,10 +1365,17 @@ async fn add_platform_ref(
                 return Ok(AddRefResult::Skipped);
             }
 
+            let has_offline_data = !pref.download_urls.is_empty()
+                && !pref.hashes.is_empty()
+                && pref.resolved_name.is_some()
+                && pref.file_id.is_some();
+
             let mut args = Vec::new();
             if no_refresh {
                 args.push("--no-refresh".to_string());
-                args.push("--offline".to_string());
+                if has_offline_data {
+                    args.push("--offline".to_string());
+                }
             }
             args.push("modrinth".to_string());
             args.push("add".to_string());
@@ -1381,7 +1388,7 @@ async fn add_platform_ref(
                 args.push(vid.clone());
             }
 
-            if no_refresh {
+            if has_offline_data {
                 let name = pref.resolved_name.as_deref().unwrap_or("Unknown");
                 args.push("--name".to_string());
                 args.push(name.to_string());
@@ -1451,10 +1458,15 @@ async fn add_platform_ref(
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("CurseForge ref missing file_id"))?;
 
+            let has_cf_offline_data = !pref.hashes.is_empty()
+                && pref.resolved_name.is_some();
+
             let mut args = Vec::new();
             if no_refresh {
                 args.push("--no-refresh".to_string());
-                args.push("--offline".to_string());
+                if has_cf_offline_data {
+                    args.push("--offline".to_string());
+                }
             }
             args.extend([
                 "curseforge".to_string(),
@@ -1465,7 +1477,7 @@ async fn add_platform_ref(
                 file_id.to_string(),
             ]);
 
-            if no_refresh {
+            if has_cf_offline_data {
                 let name = pref.resolved_name.as_deref().unwrap_or("Unknown");
                 args.push("--name".to_string());
                 args.push(name.to_string());
