@@ -528,8 +528,8 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
 
 /// Concurrency bound for the resolve phase. Each task performs one or two
 /// HTTP requests. The Modrinth and CurseForge rate limits are the true
-/// bottleneck; 10 concurrent tasks saturates available throughput without
-/// triggering 429 responses.
+/// bottleneck; 5 concurrent tasks balances throughput against 429 risk,
+/// leaving rate limit headroom for the subsequent packwiz add phase.
 const RESOLVE_CONCURRENCY: usize = 5;
 
 /// Enrich a raw manifest via platform APIs to resolve names, types, and
@@ -650,15 +650,28 @@ pub async fn resolve_manifest(
         progress.inc();
     }
 
-    for (i, backup, handle) in handles {
-        match handle.await {
-            Ok((entry, w)) => {
+    let mut pending: std::collections::HashMap<usize, ContentEntry> = handles
+        .iter()
+        .map(|(i, backup, _)| (*i, backup.clone()))
+        .collect();
+    let mut join_set = tokio::task::JoinSet::new();
+    for (i, _backup, handle) in handles {
+        join_set.spawn(async move { (i, handle.await) });
+    }
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok((i, Ok((entry, w)))) => {
                 results[i] = Some((entry, w));
             }
-            Err(e) => {
+            Ok((i, Err(e))) => {
                 let msg = format!("resolve task panicked: {}", e);
                 warnings.push(msg.clone());
-                results[i] = Some((backup, vec![msg]));
+                if let Some(backup) = pending.remove(&i) {
+                    results[i] = Some((backup, vec![msg]));
+                }
+            }
+            Err(e) => {
+                warnings.push(format!("resolve join error: {}", e));
             }
         }
         progress.inc();
@@ -1193,11 +1206,20 @@ pub async fn execute_import(
         "batched scan_pw_toml_stems (2 scans total)"
     );
 
+    for dep in &pending_deps {
+        if !new_stems.contains(&dep.derived_key) {
+            tracing::warn!(
+                key = %dep.derived_key,
+                title = %dep.title,
+                "dep key does not match any .pw.toml stem; empack.yml may diverge from packwiz state"
+            );
+        }
+    }
     if new_stems.len() != pending_deps.len() {
         tracing::warn!(
             expected = pending_deps.len(),
             actual = new_stems.len(),
-            "pw.toml count mismatch: dep keys may diverge from packwiz filenames"
+            "pw.toml count mismatch"
         );
     }
 
