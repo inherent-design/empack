@@ -1562,6 +1562,7 @@ mod handle_sync_tests {
                 MockProcessProvider::new()
                     .with_packwiz_result(
                         vec![
+                            "--no-refresh".to_string(),
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
@@ -1576,12 +1577,21 @@ mod handle_sync_tests {
                     )
                     .with_packwiz_result(
                         vec![
+                            "--no-refresh".to_string(),
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
                             "AANobbMI".to_string(),
                             "-y".to_string(),
                         ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    .with_packwiz_result(
+                        vec!["refresh".to_string()],
                         Ok(ProcessOutput {
                             stdout: String::new(),
                             stderr: String::new(),
@@ -1595,15 +1605,20 @@ mod handle_sync_tests {
         assert!(result.is_ok());
 
         let calls = session.process_provider.get_calls();
-        assert_eq!(calls.len(), 2);
+        assert_eq!(calls.len(), 3);
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
-            &["modrinth", "add", "--project-id", "P7dR8mSH", "-y"],
+            &["--no-refresh", "modrinth", "add", "--project-id", "P7dR8mSH", "-y"],
             &workdir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
-            &["modrinth", "add", "--project-id", "AANobbMI", "-y"],
+            &["--no-refresh", "modrinth", "add", "--project-id", "AANobbMI", "-y"],
+            &workdir.join("pack")
+        ));
+        assert!(session.process_provider.verify_call(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["refresh"],
             &workdir.join("pack")
         ));
     }
@@ -2031,7 +2046,6 @@ fabric = "0.15.0"
 
     #[tokio::test]
     async fn it_succeeds_normally_when_no_planning_resolutions_fail() {
-        // Regression test: all resolutions succeed, no warnings, normal execution
         let installed_mods = HashSet::new();
         let workdir = mock_root().join("configured-project");
         let session = MockCommandSession::new()
@@ -2046,6 +2060,7 @@ fabric = "0.15.0"
                 MockProcessProvider::new()
                     .with_packwiz_result(
                         vec![
+                            "--no-refresh".to_string(),
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
@@ -2060,12 +2075,21 @@ fabric = "0.15.0"
                     )
                     .with_packwiz_result(
                         vec![
+                            "--no-refresh".to_string(),
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
                             "AANobbMI".to_string(),
                             "-y".to_string(),
                         ],
+                        Ok(ProcessOutput {
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            success: true,
+                        }),
+                    )
+                    .with_packwiz_result(
+                        vec!["refresh".to_string()],
                         Ok(ProcessOutput {
                             stdout: String::new(),
                             stderr: String::new(),
@@ -2078,7 +2102,7 @@ fabric = "0.15.0"
 
         assert!(result.is_ok(), "handle_sync should succeed when all resolutions pass: {result:?}");
         let calls = session.process_provider.get_calls();
-        assert_eq!(calls.len(), 2, "Both resolved actions should execute");
+        assert_eq!(calls.len(), 3, "Both resolved actions + final refresh should execute");
     }
 }
 
