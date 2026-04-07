@@ -742,7 +742,10 @@ impl
         // This is a blocking call that may download the binary on first use.
         let packwiz_bin_path = crate::platform::packwiz_bin::resolve_packwiz_binary()
             .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| crate::empack::packwiz::PACKWIZ_BIN.to_string());
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "packwiz-tx binary resolution failed; falling back to PATH lookup");
+                crate::empack::packwiz::PACKWIZ_BIN.to_string()
+            });
 
         Self {
             multi_progress,

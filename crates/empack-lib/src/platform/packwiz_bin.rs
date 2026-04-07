@@ -82,7 +82,7 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
         .args([
             "--proto", "=https",
             "--tlsv1.2",
-            "-fSL",
+            "-fsSL",
             "--retry", "3",
             "-o", &output_file.to_string_lossy(),
             &url,
