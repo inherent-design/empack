@@ -27,6 +27,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-targets
+      - run: cargo check --workspace --all-targets --features telemetry
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
