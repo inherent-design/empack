@@ -78,24 +78,26 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         .status()
         .section("Checking tool dependencies");
 
-    let workdir = session.filesystem().current_dir().unwrap_or_default();
-    let packwiz = crate::empack::packwiz::check_packwiz_available(session.process(), &workdir);
-    match packwiz {
-        Ok((true, version)) => {
-            session.display().status().success("packwiz-tx", &version);
+    match crate::platform::packwiz_bin::resolve_packwiz_binary() {
+        Ok(path) => {
+            session.display().status().success(
+                "packwiz-tx",
+                &format!(
+                    "{} ({})",
+                    crate::platform::packwiz_bin::PACKWIZ_TX_VERSION,
+                    path.display()
+                ),
+            );
         }
-        _ => {
-            session.display().status().error("packwiz-tx", "not found");
+        Err(e) => {
             session
                 .display()
                 .status()
-                .subtle("   Install from: https://packwiz.infra.link/installation/");
-            if session.process().find_program("go").is_some() {
-                session
-                    .display()
-                    .status()
-                    .subtle("   Or via Go: go install github.com/packwiz/packwiz@latest");
-            }
+                .error("packwiz-tx", &format!("not available: {e}"));
+            session.display().status().subtle(&format!(
+                "   Required: {}",
+                crate::platform::packwiz_bin::PACKWIZ_TX_REQUIREMENT
+            ));
         }
     }
 

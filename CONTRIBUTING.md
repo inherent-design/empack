@@ -6,9 +6,10 @@
 - [cargo-nextest](https://nexte.st/) (test runner; CI uses it exclusively)
 - [mise](https://mise.jdx.dev/) (task runner)
 
+packwiz-tx is auto-managed by empack (downloaded on first use). Override: `EMPACK_PACKWIZ_BIN=/path/to/packwiz-tx` for development.
+
 For E2E tests (not required for unit tests or development):
 
-- [packwiz](https://packwiz.infra.link/) (real CLI invocation in E2E)
 - [Java 21+](https://adoptium.net/) (server build E2E tests)
 - `.env.local` with `EMPACK_KEY_CURSEFORGE` (CurseForge API E2E tests)
 - Optional: [Colima](https://github.com/abiosoft/colima) (containerized E2E)

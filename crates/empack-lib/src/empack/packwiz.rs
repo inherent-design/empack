@@ -498,7 +498,7 @@ pub enum PackwizError {
 pub struct PackwizMetadata<'a> {
     process_provider: &'a dyn ProcessProvider,
     pack_dir: PathBuf,
-    packwiz_available: Option<bool>,
+    packwiz_path: Option<PathBuf>,
 }
 
 impl<'a> PackwizMetadata<'a> {
@@ -522,27 +522,52 @@ impl<'a> PackwizMetadata<'a> {
         Ok(Self {
             process_provider: session.process(),
             pack_dir,
-            packwiz_available: None,
+            packwiz_path: None,
         })
     }
 
-    /// Check if packwiz is available (cached check)
+    /// Resolve the packwiz-tx binary path (cached after first call).
+    ///
+    /// Resolution order:
+    /// 1. `EMPACK_PACKWIZ_BIN` env var override
+    /// 2. PATH lookup via `find_program(PACKWIZ_BIN)`
+    /// 3. Cached/downloaded managed binary via `resolve_packwiz_binary()`
     fn ensure_packwiz(&mut self) -> Result<(), PackwizError> {
-        if let Some(true) = self.packwiz_available {
+        if self.packwiz_path.is_some() {
             return Ok(());
         }
 
-        let (available, _version) = check_packwiz_available(self.process_provider, &self.pack_dir)
-            .map_err(|e| PackwizError::NotAvailable(e.to_string()))?;
-
-        if !available {
-            return Err(PackwizError::NotAvailable(
-                "packwiz CLI not found in PATH. Install from: https://packwiz.infra.link/installation/".to_string(),
-            ));
+        if let Ok(env_path) = std::env::var("EMPACK_PACKWIZ_BIN") {
+            let path = std::path::PathBuf::from(&env_path);
+            if path.exists() {
+                tracing::debug!(path = %path.display(), "using EMPACK_PACKWIZ_BIN override");
+                self.packwiz_path = Some(path);
+                return Ok(());
+            }
         }
 
-        self.packwiz_available = Some(true);
-        Ok(())
+        if self.process_provider.find_program(PACKWIZ_BIN).is_some() {
+            self.packwiz_path = Some(std::path::PathBuf::from(PACKWIZ_BIN));
+            return Ok(());
+        }
+
+        match crate::platform::packwiz_bin::resolve_packwiz_binary() {
+            Ok(path) => {
+                self.packwiz_path = Some(path);
+                Ok(())
+            }
+            Err(e) => Err(PackwizError::NotAvailable(format!(
+                "packwiz-tx not in PATH and managed download failed: {e}"
+            ))),
+        }
+    }
+
+    /// Return the resolved binary path as a string slice for process execution.
+    fn packwiz_bin(&self) -> &str {
+        self.packwiz_path
+            .as_ref()
+            .and_then(|p| p.to_str())
+            .unwrap_or(PACKWIZ_BIN)
     }
 
     /// Add a project from Modrinth
@@ -573,7 +598,7 @@ impl<'a> PackwizMetadata<'a> {
         let output = self
             .process_provider
             .execute(
-                PACKWIZ_BIN,
+                self.packwiz_bin(),
                 &[
                     "--pack-file",
                     pack_toml_str,
@@ -617,7 +642,7 @@ impl<'a> PackwizMetadata<'a> {
         let output = self
             .process_provider
             .execute(
-                PACKWIZ_BIN,
+                self.packwiz_bin(),
                 &["--pack-file", pack_toml_str, "remove", mod_name, "-y"],
                 &self.pack_dir,
             )
@@ -652,7 +677,7 @@ impl<'a> PackwizMetadata<'a> {
         let output = self
             .process_provider
             .execute(
-                PACKWIZ_BIN,
+                self.packwiz_bin(),
                 &["--pack-file", pack_toml_str, "refresh"],
                 &self.pack_dir,
             )
@@ -703,7 +728,7 @@ impl<'a> PackwizMetadata<'a> {
         let output = self
             .process_provider
             .execute(
-                PACKWIZ_BIN,
+                self.packwiz_bin(),
                 &[
                     "--pack-file",
                     pack_toml_str,
