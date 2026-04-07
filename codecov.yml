@@ -13,10 +13,8 @@ ignore:
   - "crates/empack-tests/**"
   - "crates/empack/src/**"
   - "scripts/**"
-  - "v1/**"
-  - "v2/**"
 
 comment:
-  layout: "diff, flags, files"
+  layout: "condensed_header, condensed_files, condensed_footer"
   behavior: default
   require_changes: false

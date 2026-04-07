@@ -8,7 +8,7 @@ use empack_tests::e2e::{count_pw_toml_files, empack_cmd, TestProject};
 /// Runtime: 30-120s depending on network conditions.
 #[test]
 fn e2e_init_from_cobblemon_updated() {
-    empack_tests::skip_if_no_packwiz!();
+    empack_tests::skip_if_no_cf_key!();
 
     let project = TestProject::new();
     let start = Instant::now();
