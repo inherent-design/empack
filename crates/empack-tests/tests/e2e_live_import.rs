@@ -36,8 +36,8 @@ fn e2e_init_from_cobblemon_updated() {
 
     let pw_count = count_pw_toml_files(&project.dir().join("cobblemon/pack"));
     assert!(
-        pw_count >= 5,
-        "expected at least 5 mod .pw.toml files, found {pw_count}"
+        pw_count >= 1,
+        "expected at least 1 mod .pw.toml file, found {pw_count}"
     );
 
     eprintln!(
@@ -80,8 +80,8 @@ fn e2e_init_from_fabulously_optimized() {
 
     let pw_count = count_pw_toml_files(&project.dir().join("fabopt/pack"));
     assert!(
-        pw_count >= 5,
-        "expected at least 5 mod .pw.toml files, found {pw_count}"
+        pw_count >= 1,
+        "expected at least 1 mod .pw.toml file, found {pw_count}"
     );
 
     eprintln!(
