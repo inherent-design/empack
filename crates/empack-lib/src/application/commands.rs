@@ -82,10 +82,10 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
     let packwiz = crate::empack::packwiz::check_packwiz_available(session.process(), &workdir);
     match packwiz {
         Ok((true, version)) => {
-            session.display().status().success("packwiz", &version);
+            session.display().status().success("packwiz-tx", &version);
         }
         _ => {
-            session.display().status().error("packwiz", "not found");
+            session.display().status().error("packwiz-tx", "not found");
             session
                 .display()
                 .status()
@@ -1710,7 +1710,7 @@ async fn handle_add(
         let mut last_error = None;
         for command in &resolved.resolution.commands {
             match session.process().execute(
-                "packwiz",
+                crate::empack::packwiz::PACKWIZ_BIN,
                 &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 &workdir.join("pack"),
             ) {
@@ -2247,7 +2247,7 @@ async fn handle_direct_download_jar(
 
             let command = &commands[0];
             let result = session.process().execute(
-                "packwiz",
+                crate::empack::packwiz::PACKWIZ_BIN,
                 &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 &workdir.join("pack"),
             );
@@ -2287,7 +2287,7 @@ async fn handle_direct_download_jar(
 
             let command = &commands[0];
             let result = session.process().execute(
-                "packwiz",
+                crate::empack::packwiz::PACKWIZ_BIN,
                 &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 &workdir.join("pack"),
             );
@@ -2467,7 +2467,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
         let result = session
             .process()
-            .execute("packwiz", &packwiz_args, &workdir.join("pack"))
+            .execute(crate::empack::packwiz::PACKWIZ_BIN, &packwiz_args, &workdir.join("pack"))
             .and_then(|output| {
                 if output.success {
                     Ok(())
@@ -2570,7 +2570,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                     for orphan in orphans {
                         let result = session
                             .process()
-                            .execute("packwiz", &["remove", "-y", &orphan], &workdir.join("pack"))
+                            .execute(crate::empack::packwiz::PACKWIZ_BIN, &["remove", "-y", &orphan], &workdir.join("pack"))
                             .and_then(|output| {
                                 if output.success {
                                     Ok(())
@@ -3434,7 +3434,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 let mut result = Ok(());
                 for command in &commands {
                     match session.process().execute(
-                        "packwiz",
+                        crate::empack::packwiz::PACKWIZ_BIN,
                         &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                         &workdir.join("pack"),
                     ) {
@@ -3474,7 +3474,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     .checking(&format!("Removing: {}", key));
                 let result = session
                     .process()
-                    .execute("packwiz", &["remove", "-y", &key], &workdir.join("pack"))
+                    .execute(crate::empack::packwiz::PACKWIZ_BIN, &["remove", "-y", &key], &workdir.join("pack"))
                     .and_then(|output| {
                         if output.success {
                             Ok(())

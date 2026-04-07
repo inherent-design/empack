@@ -38,7 +38,7 @@ fn test_add_mod_modrinth_success() {
     assert!(result.is_ok());
     let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
-        "packwiz",
+        crate::empack::packwiz::PACKWIZ_BIN,
         &[
             "--pack-file",
             &pack_file_str,
@@ -83,7 +83,7 @@ fn test_add_mod_curseforge_success() {
     assert!(result.is_ok());
     let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
-        "packwiz",
+        crate::empack::packwiz::PACKWIZ_BIN,
         &[
             "--pack-file",
             &pack_file_str,
@@ -163,7 +163,7 @@ fn test_remove_mod_success() {
     assert!(result.is_ok());
     let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
-        "packwiz",
+        crate::empack::packwiz::PACKWIZ_BIN,
         &[
             "--pack-file",
             &pack_file_str,
@@ -241,7 +241,7 @@ fn test_refresh_index_success() {
     assert!(result.is_ok());
     let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
-        "packwiz",
+        crate::empack::packwiz::PACKWIZ_BIN,
         &[
             "--pack-file",
             &pack_file_str,
@@ -350,7 +350,7 @@ fn test_export_mrpack_success() {
     let pack_file_str = mock_root().join("workdir").join("pack").join("pack.toml").to_string_lossy().to_string();
     let output_str = output_path.to_string_lossy().to_string();
     assert!(session.process_provider.verify_call(
-        "packwiz",
+        crate::empack::packwiz::PACKWIZ_BIN,
         &[
             "--pack-file",
             &pack_file_str,
