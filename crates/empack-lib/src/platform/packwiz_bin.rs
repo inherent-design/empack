@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 /// Semver requirement for compatible packwiz-tx releases.
-pub const PACKWIZ_TX_REQUIREMENT: &str = ">=0.1.0, <0.2.0";
+pub const PACKWIZ_TX_REQUIREMENT: &str = ">=0.2.0, <0.3.0";
 
 /// Pinned version to download when no cached binary exists.
-pub const PACKWIZ_TX_VERSION: &str = "v0.1.1";
+pub const PACKWIZ_TX_VERSION: &str = "v0.2.0";
 
 /// GitHub repository for packwiz-tx releases.
 const PACKWIZ_TX_REPO: &str = "mannie-exe/packwiz-tx";
