@@ -3414,6 +3414,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     session.display().status().section("Executing sync actions");
     let mut success_count = 0;
     let mut failure_count = 0;
+    let use_no_refresh = planned_actions.len() > 1;
     let sync_progress = session.display().progress().bar(planned_actions.len() as u64);
     if !planned_actions.is_empty() {
         sync_progress.set_message("Syncing");
@@ -3435,9 +3436,14 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 let mut last_error = None;
                 let mut result = Ok(());
                 for command in &commands {
+                    let mut args: Vec<String> = Vec::new();
+                    if use_no_refresh {
+                        args.push("--no-refresh".to_string());
+                    }
+                    args.extend(command.iter().cloned());
                     match session.process().execute(
                         crate::empack::packwiz::PACKWIZ_BIN,
-                        &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                        &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                         &workdir.join("pack"),
                     ) {
                         Ok(output) if output.success => {
@@ -3474,9 +3480,14 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     .display()
                     .status()
                     .checking(&format!("Removing: {}", key));
+                let mut remove_args: Vec<&str> = Vec::new();
+                if use_no_refresh {
+                    remove_args.push("--no-refresh");
+                }
+                remove_args.extend(["remove", "-y", &key]);
                 let result = session
                     .process()
-                    .execute(crate::empack::packwiz::PACKWIZ_BIN, &["remove", "-y", &key], &workdir.join("pack"))
+                    .execute(crate::empack::packwiz::PACKWIZ_BIN, &remove_args, &workdir.join("pack"))
                     .and_then(|output| {
                         if output.success {
                             Ok(())
@@ -3502,6 +3513,16 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         sync_progress.inc();
     }
     sync_progress.finish(&format!("{} actions completed", success_count + failure_count));
+
+    if use_no_refresh {
+        session
+            .process()
+            .execute(
+                crate::empack::packwiz::PACKWIZ_BIN,
+                &["refresh"],
+                &workdir.join("pack"),
+            )?;
+    }
 
     session.display().status().section("Sync Summary");
     session

@@ -1080,6 +1080,7 @@ pub async fn execute_import(
         .collect();
 
     let content_total = resolved.manifest.content.len();
+    let use_no_refresh = content_total > 1;
     let content_progress = session.display().progress().bar(content_total as u64);
     content_progress.set_message("Adding mods");
 
@@ -1105,7 +1106,7 @@ pub async fn execute_import(
                 content_progress.tick(&pref.destination_path);
 
                 let add_start = std::time::Instant::now();
-                let result = add_platform_ref_with_retry(pref, &pack_dir, session, datapack_folder.as_deref()).await?;
+                let result = add_platform_ref_with_retry(pref, &pack_dir, session, datapack_folder.as_deref(), use_no_refresh).await?;
                 add_durations.push(add_start.elapsed());
 
                 match result {
@@ -1166,6 +1167,14 @@ pub async fn execute_import(
         content_progress.inc();
     }
     content_progress.finish(&format!("{} platform references processed", content_total));
+
+    if use_no_refresh {
+        session.process().execute(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["refresh"],
+            &pack_dir,
+        )?;
+    }
 
     let scan_start = std::time::Instant::now();
     let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
@@ -1276,9 +1285,10 @@ async fn add_platform_ref_with_retry(
     pack_dir: &Path,
     session: &dyn Session,
     datapack_folder: Option<&str>,
+    no_refresh: bool,
 ) -> Result<AddRefResult> {
     for attempt in 0..=MAX_ADD_RETRIES {
-        let result = add_platform_ref(pref, pack_dir, session, datapack_folder).await?;
+        let result = add_platform_ref(pref, pack_dir, session, datapack_folder, no_refresh).await?;
         match &result {
             AddRefResult::Added | AddRefResult::Skipped => return Ok(result),
             AddRefResult::Failed(detail) => {
@@ -1306,6 +1316,7 @@ async fn add_platform_ref(
     pack_dir: &Path,
     session: &dyn Session,
     datapack_folder: Option<&str>,
+    no_refresh: bool,
 ) -> Result<AddRefResult> {
     match pref.platform {
         ProjectPlatform::Modrinth => {
@@ -1313,15 +1324,17 @@ async fn add_platform_ref(
                 return Ok(AddRefResult::Skipped);
             }
 
-            // If no project_id or file_id resolved, fall back to packwiz url add
-            // for direct download URLs (GitHub releases, etc.).
             if pref.project_id.is_empty() && pref.file_id.is_none() {
                 if let Some(url) = pref.download_urls.first() {
                     let name = std::path::Path::new(&pref.destination_path)
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown");
-                    let args = ["url", "add", name, url, "-y"];
+                    let mut args: Vec<&str> = Vec::new();
+                    if no_refresh {
+                        args.push("--no-refresh");
+                    }
+                    args.extend(["url", "add", name, url, "-y"]);
                     let output = session.process().execute(crate::empack::packwiz::PACKWIZ_BIN, &args, pack_dir)?;
                     if output.success {
                         return Ok(AddRefResult::Added);
@@ -1334,10 +1347,12 @@ async fn add_platform_ref(
                 return Ok(AddRefResult::Skipped);
             }
 
-            let mut args = vec![
-                "modrinth".to_string(),
-                "add".to_string(),
-            ];
+            let mut args = Vec::new();
+            if no_refresh {
+                args.push("--no-refresh".to_string());
+            }
+            args.push("modrinth".to_string());
+            args.push("add".to_string());
 
             if !pref.project_id.is_empty() {
                 args.push("--project-id".to_string());
@@ -1373,14 +1388,18 @@ async fn add_platform_ref(
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("CurseForge ref missing file_id"))?;
 
-            let mut args = vec![
+            let mut args = Vec::new();
+            if no_refresh {
+                args.push("--no-refresh".to_string());
+            }
+            args.extend([
                 "curseforge".to_string(),
                 "add".to_string(),
                 "--addon-id".to_string(),
                 mod_id.clone(),
                 "--file-id".to_string(),
                 file_id.to_string(),
-            ];
+            ]);
 
             if pref.cf_class_id == Some(6945)
                 && let Some(folder) = datapack_folder
