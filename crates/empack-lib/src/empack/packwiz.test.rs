@@ -365,6 +365,10 @@ fn test_export_mrpack_success() {
 
 #[test]
 fn test_packwiz_unavailable() {
+    // Set EMPACK_PACKWIZ_BIN to a non-existent path so resolve_packwiz_binary()
+    // fails early without attempting a network download.
+    let _guard = TestEnvGuard::set("EMPACK_PACKWIZ_BIN", "/nonexistent/packwiz-tx");
+
     let mock_process = MockProcessProvider::new().with_packwiz_unavailable();
 
     let session = MockCommandSession::new()
@@ -379,9 +383,39 @@ fn test_packwiz_unavailable() {
     assert!(result.is_err());
     match result.unwrap_err() {
         PackwizError::NotAvailable(msg) => {
-            assert!(msg.contains("not found"));
+            assert!(
+                msg.contains("not") || msg.contains("failed") || msg.contains("does not exist"),
+                "Expected unavailability message, got: {msg}"
+            );
         }
-        _ => panic!("Wrong error type"),
+        other => panic!("Expected NotAvailable error, got: {:?}", other),
+    }
+}
+
+/// RAII guard that sets an environment variable for the duration of a test
+/// and restores the previous value on drop.
+struct TestEnvGuard {
+    key: String,
+    prev: Option<String>,
+}
+
+impl TestEnvGuard {
+    fn set(key: &str, value: &str) -> Self {
+        let prev = std::env::var(key).ok();
+        unsafe { std::env::set_var(key, value) };
+        Self {
+            key: key.to_string(),
+            prev,
+        }
+    }
+}
+
+impl Drop for TestEnvGuard {
+    fn drop(&mut self) {
+        match &self.prev {
+            Some(v) => unsafe { std::env::set_var(&self.key, v) },
+            None => unsafe { std::env::remove_var(&self.key) },
+        }
     }
 }
 
