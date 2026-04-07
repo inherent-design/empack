@@ -33,6 +33,19 @@ pub fn resolve_packwiz_binary() -> Result<PathBuf> {
         );
     }
 
+    // Tier 2: PATH lookup (user-installed or mise-managed)
+    if std::process::Command::new(crate::empack::packwiz::PACKWIZ_BIN)
+        .arg("--help")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
+    {
+        tracing::debug!("found {} in PATH", crate::empack::packwiz::PACKWIZ_BIN);
+        return Ok(PathBuf::from(crate::empack::packwiz::PACKWIZ_BIN));
+    }
+
+    // Tier 3: cached/downloaded managed binary
     let cache_dir = crate::platform::cache::cache_root()?
         .join("bin")
         .join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION));

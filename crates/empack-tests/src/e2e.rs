@@ -32,12 +32,7 @@ pub fn empack_bin() -> PathBuf {
 }
 
 pub fn has_packwiz() -> bool {
-    Command::new("packwiz-tx")
-        .arg("--help")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok()
+    empack_lib::platform::packwiz_bin::resolve_packwiz_binary().is_ok()
 }
 
 pub fn has_java() -> bool {
