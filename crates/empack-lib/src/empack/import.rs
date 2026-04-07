@@ -1630,7 +1630,7 @@ fn scan_pw_toml_stems(
                     && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
                     && stem.ends_with(".pw")
                 {
-                    slugs.insert(stem.strip_suffix(".pw").unwrap().to_string());
+                    slugs.insert(stem.strip_suffix(".pw").unwrap().to_lowercase());
                 }
             }
         }
