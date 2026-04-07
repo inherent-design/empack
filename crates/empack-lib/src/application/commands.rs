@@ -1712,7 +1712,7 @@ async fn handle_add(
         let mut last_error = None;
         for command in &resolved.resolution.commands {
             match session.process().execute(
-                crate::empack::packwiz::PACKWIZ_BIN,
+                session.packwiz_bin(),
                 &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 &workdir.join("pack"),
             ) {
@@ -2249,7 +2249,7 @@ async fn handle_direct_download_jar(
 
             let command = &commands[0];
             let result = session.process().execute(
-                crate::empack::packwiz::PACKWIZ_BIN,
+                session.packwiz_bin(),
                 &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 &workdir.join("pack"),
             );
@@ -2289,7 +2289,7 @@ async fn handle_direct_download_jar(
 
             let command = &commands[0];
             let result = session.process().execute(
-                crate::empack::packwiz::PACKWIZ_BIN,
+                session.packwiz_bin(),
                 &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 &workdir.join("pack"),
             );
@@ -2469,7 +2469,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
         let result = session
             .process()
-            .execute(crate::empack::packwiz::PACKWIZ_BIN, &packwiz_args, &workdir.join("pack"))
+            .execute(session.packwiz_bin(), &packwiz_args, &workdir.join("pack"))
             .and_then(|output| {
                 if output.success {
                     Ok(())
@@ -2572,7 +2572,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                     for orphan in orphans {
                         let result = session
                             .process()
-                            .execute(crate::empack::packwiz::PACKWIZ_BIN, &["remove", "-y", &orphan], &workdir.join("pack"))
+                            .execute(session.packwiz_bin(), &["remove", "-y", &orphan], &workdir.join("pack"))
                             .and_then(|output| {
                                 if output.success {
                                     Ok(())
@@ -3442,7 +3442,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     }
                     args.extend(command.iter().cloned());
                     match session.process().execute(
-                        crate::empack::packwiz::PACKWIZ_BIN,
+                        session.packwiz_bin(),
                         &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                         &workdir.join("pack"),
                     ) {
@@ -3487,7 +3487,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 remove_args.extend(["remove", "-y", &key]);
                 let result = session
                     .process()
-                    .execute(crate::empack::packwiz::PACKWIZ_BIN, &remove_args, &workdir.join("pack"))
+                    .execute(session.packwiz_bin(), &remove_args, &workdir.join("pack"))
                     .and_then(|output| {
                         if output.success {
                             Ok(())
@@ -3518,7 +3518,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         session
             .process()
             .execute(
-                crate::empack::packwiz::PACKWIZ_BIN,
+                session.packwiz_bin(),
                 &["refresh"],
                 &workdir.join("pack"),
             )?;

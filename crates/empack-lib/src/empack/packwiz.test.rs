@@ -959,7 +959,7 @@ fn test_get_installed_mods_only_includes_pw_toml_files() {
         .with_file(mods_dir.join("some-file.txt"), "text".to_string());
 
     let process = MockProcessProvider::new();
-    let ops = LivePackwizOps::new(&process, &fs);
+    let ops = LivePackwizOps::new(&process, &fs, PACKWIZ_BIN);
 
     let installed = ops.get_installed_mods(&workdir).unwrap();
 

@@ -1527,6 +1527,10 @@ impl Session for MockCommandSession {
         &self.archive_provider
     }
 
+    fn packwiz_bin(&self) -> &str {
+        crate::empack::packwiz::PACKWIZ_BIN
+    }
+
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
         let mut mock = MockPackwizOps::new()
             .with_current_dir(self.packwiz_provider.current_dir.clone())
