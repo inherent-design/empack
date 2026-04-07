@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -73,10 +74,24 @@ jobs:
       - run: mise run coverage
       - name: Coverage summary
         run: |
-          echo '## Coverage' >> $GITHUB_STEP_SUMMARY
+          TOTAL=$(cargo llvm-cov report --summary-only 2>&1 | grep '^TOTAL' | awk '{print $10}')
+          echo "## Coverage: ${TOTAL}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Lines | Coverage |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|----------|" >> $GITHUB_STEP_SUMMARY
+          cargo llvm-cov report --summary-only 2>&1 \
+            | grep -E '^\S+\.rs\s' \
+            | grep -v 'test\.rs' \
+            | awk '{printf "| `%s` | %s/%s | %s |\n", $1, $2-$4, $2, $10}' \
+            | sort -t'|' -k4 -n \
+            | head -30 >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "<details><summary>Full report</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
       - uses: codecov/codecov-action@v6
         with:
           files: lcov.info

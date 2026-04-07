@@ -15,6 +15,6 @@ ignore:
   - "scripts/**"
 
 comment:
-  layout: "condensed_header, condensed_files, condensed_footer"
+  layout: "condensed_header, diff, condensed_files, condensed_footer"
   behavior: default
   require_changes: false
