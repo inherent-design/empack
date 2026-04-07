@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Modpack Survey Script
+Import Smoke Test
 empack - Minecraft Modpack Lifecycle Management
 
 Discovers, downloads, and analyzes the most popular modpacks from
@@ -19,22 +19,22 @@ Prerequisites:
 
 Usage:
     # Discover packs across all 8 default MC versions (no download)
-    python3 scripts/modpack-survey.py --discover-only
+    python3 scripts/import-smoke-test.py --discover-only
 
     # Full survey: discover, download, analyze structure
-    python3 scripts/modpack-survey.py
+    python3 scripts/import-smoke-test.py
 
     # Full survey with import testing (runs empack init --from on each)
-    python3 scripts/modpack-survey.py --import-test
+    python3 scripts/import-smoke-test.py --import-test
 
     # Narrow to specific versions, fewer packs per version
-    python3 scripts/modpack-survey.py --mc-versions 1.20.1,1.16.5 --limit 3
+    python3 scripts/import-smoke-test.py --mc-versions 1.20.1,1.16.5 --limit 3
 
     # Re-analyze cached packs without re-downloading
-    python3 scripts/modpack-survey.py --skip-download --import-test
+    python3 scripts/import-smoke-test.py --skip-download --import-test
 
     # Use a specific empack binary
-    python3 scripts/modpack-survey.py --import-test --empack-bin ./target/release/empack
+    python3 scripts/import-smoke-test.py --import-test --empack-bin ./target/release/empack
 
 Phases:
     1. Discover: query Modrinth + CurseForge for top modpacks per MC version
@@ -57,6 +57,8 @@ import json
 import os
 import re
 import shutil
+import socket
+import string
 import subprocess
 import sys
 import tempfile
@@ -64,7 +66,8 @@ import time
 import zipfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from urllib.parse import quote
+from typing import Optional
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -142,23 +145,39 @@ def curseforge_get(path: str, params: dict | None = None) -> dict:
         return json.loads(resp.read())
 
 
-def curseforge_download(project_id: int, file_id: int, dest: Path) -> bool:
+def curseforge_download(project_id: int, file_id: int, dest: Path, timeout: int = 120) -> bool:
     try:
         data = curseforge_get(f"/mods/{project_id}/files/{file_id}/download-url")
         dl_url = data.get("data", "")
         if not dl_url:
             return False
         req = Request(dl_url, headers={"User-Agent": "empack-survey/1.0"})
-        with urlopen(req, timeout=120) as resp:
+        with urlopen(req, timeout=timeout) as resp:
             dest.write_bytes(resp.read())
         return True
-    except (HTTPError, URLError, KeyError):
+    except (HTTPError, URLError, KeyError, socket.timeout):
         return False
 
 
 # ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
+
+def normalize_name(name: str) -> str:
+    """Normalize a pack name for deduplication: lowercase, strip punctuation, collapse whitespace."""
+    name = name.lower()
+    name = name.translate(str.maketrans("", "", string.punctuation))
+    name = re.sub(r"\s+", " ", name).strip()
+    return name
+
+
+def filename_from_url(url: str) -> str:
+    """Extract the filename component from a URL for dedup."""
+    if not url:
+        return ""
+    path = urlparse(url).path
+    return path.rsplit("/", 1)[-1].lower() if "/" in path else path.lower()
+
 
 @dataclass
 class PackCandidate:
@@ -169,9 +188,11 @@ class PackCandidate:
     project_id: str
     downloads: int
     loader: str
-    # filled after download
+    # filled after resolve
     file_url: str = ""
     file_id: str = ""
+    file_size: Optional[int] = None
+    # filled after download
     local_path: str = ""
     format: str = ""  # "mrpack" or "cfzip"
 
@@ -269,10 +290,15 @@ def resolve_download_url(c: PackCandidate) -> bool:
                 if f.get("primary", False) or len(ver["files"]) == 1:
                     c.file_url = f["url"]
                     c.file_id = ver["id"]
+                    if "size" in f:
+                        c.file_size = f["size"]
                     return True
             if ver.get("files"):
-                c.file_url = ver["files"][0]["url"]
+                chosen = ver["files"][0]
+                c.file_url = chosen["url"]
                 c.file_id = ver["id"]
+                if "size" in chosen:
+                    c.file_size = chosen["size"]
                 return True
         except (HTTPError, URLError, KeyError, IndexError):
             pass
@@ -286,6 +312,8 @@ def resolve_download_url(c: PackCandidate) -> bool:
             })
             for f in files.get("data", []):
                 c.file_id = str(f["id"])
+                if "fileLength" in f:
+                    c.file_size = f["fileLength"]
                 return True
         except (HTTPError, URLError, KeyError):
             pass
@@ -298,7 +326,7 @@ def resolve_download_url(c: PackCandidate) -> bool:
 # Download
 # ---------------------------------------------------------------------------
 
-def download_pack(c: PackCandidate) -> bool:
+def download_pack(c: PackCandidate, timeout: int = 60) -> bool:
     safe_name = f"{c.slug}_{c.mc_version}_{c.source}"
     ext = ".mrpack" if c.format == "mrpack" else ".zip"
     dest = PACKS_DIR / f"{safe_name}{ext}"
@@ -312,19 +340,26 @@ def download_pack(c: PackCandidate) -> bool:
             return False
         try:
             req = Request(c.file_url, headers={"User-Agent": "empack-survey/1.0"})
-            with urlopen(req, timeout=300) as resp:
+            with urlopen(req, timeout=timeout) as resp:
                 dest.write_bytes(resp.read())
             c.local_path = str(dest)
             return True
-        except (HTTPError, URLError):
+        except (HTTPError, URLError, socket.timeout):
+            # Clean up partial download
+            if dest.exists():
+                dest.unlink()
             return False
 
     elif c.source == "curseforge":
         if not c.file_id:
             return False
-        ok = curseforge_download(int(c.project_id), int(c.file_id), dest)
+        ok = curseforge_download(int(c.project_id), int(c.file_id), dest, timeout=timeout)
         if ok:
             c.local_path = str(dest)
+        else:
+            # Clean up partial download
+            if dest.exists():
+                dest.unlink()
         return ok
 
     return False
@@ -694,7 +729,7 @@ def find_empack_bin() -> Path:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="empack modpack survey")
+    parser = argparse.ArgumentParser(description="empack import smoke test")
     parser.add_argument("--discover-only", action="store_true",
                         help="List packs without downloading")
     parser.add_argument("--skip-download", action="store_true",
@@ -702,7 +737,7 @@ def main():
     parser.add_argument("--import-test", action="store_true",
                         help="Run empack init --from on each pack")
     parser.add_argument("--mc-versions", type=str, default=None,
-                        help="Comma-separated MC versions (default: top 8)")
+                        help="Comma-separated MC versions (default: top 3)")
     parser.add_argument("--limit", type=int, default=5,
                         help="Top N modpacks per version per platform (default: 5)")
     parser.add_argument("--all-versions", action="store_true",
@@ -711,7 +746,13 @@ def main():
                         help="Path to empack binary")
     parser.add_argument("--clean", choices=["projects", "all"],
                         help="Remove import output (projects) or everything (all) and exit")
+    parser.add_argument("--download-timeout", type=int, default=60,
+                        help="Per-pack download timeout in seconds (default: 60)")
+    parser.add_argument("--max-file-size", type=int, default=100,
+                        help="Max file size in MB; skip packs exceeding this (default: 100)")
     args = parser.parse_args()
+
+    max_file_size_bytes = args.max_file_size * 1024 * 1024
 
     if args.clean:
         if args.clean == "all":
@@ -734,27 +775,60 @@ def main():
     PACKS_DIR.mkdir(parents=True, exist_ok=True)
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Phase 1: Discover
-    print("Phase 1: Discovering modpacks...")
+    # Phase 1: Discover (fetch limit * 2 for backfill buffer)
+    fetch_limit = args.limit * 2
+    print(f"Phase 1: Discovering modpacks (fetching {fetch_limit} per platform for backfill buffer)...")
     all_candidates = []
     for ver in mc_versions:
         print(f"  MC {ver}...")
-        mr = discover_modrinth(ver, args.limit)
-        cf = discover_curseforge(ver, args.limit)
+        mr = discover_modrinth(ver, fetch_limit)
+        cf = discover_curseforge(ver, fetch_limit)
+        # Modrinth first so it wins dedup ties (preferred: direct download URLs)
         all_candidates.extend(mr)
         all_candidates.extend(cf)
         time.sleep(0.5)  # rate limit courtesy
 
-    # Deduplicate by slug+version (prefer modrinth for dual-listed packs)
-    seen = set()
-    deduped = []
+    # First-pass dedup: normalized name + mc_version (catches cross-platform dupes)
+    # Prefer Modrinth over CurseForge (direct download URLs, no restricted files)
+    seen_names: dict[tuple[str, str], PackCandidate] = {}
     for c in all_candidates:
-        key = (c.slug.lower().replace("-", "").replace(" ", ""), c.mc_version)
-        if key not in seen:
-            seen.add(key)
-            deduped.append(c)
+        key = (normalize_name(c.name), c.mc_version)
+        if key not in seen_names:
+            seen_names[key] = c
+        elif c.source == "modrinth" and seen_names[key].source == "curseforge":
+            # Replace CF with Modrinth
+            seen_names[key] = c
 
-    print(f"  Found {len(deduped)} unique packs across {len(mc_versions)} MC versions")
+    # Also dedup by slug (original behavior, catches slug-based dupes)
+    seen_slugs: set[tuple[str, str]] = set()
+    deduped_all: list[PackCandidate] = []
+    for c in seen_names.values():
+        slug_key = (c.slug.lower().replace("-", "").replace(" ", ""), c.mc_version)
+        if slug_key not in seen_slugs:
+            seen_slugs.add(slug_key)
+            deduped_all.append(c)
+
+    # Sort by downloads descending within each version to prioritize popular packs
+    deduped_all.sort(key=lambda c: (-DEFAULT_MC_VERSIONS.index(c.mc_version) if c.mc_version in DEFAULT_MC_VERSIONS else -99, -c.downloads))
+
+    # Split into primary candidates and backfill buffer
+    # Group by mc_version, take first `limit` as primary, rest as buffer
+    by_version: dict[str, list[PackCandidate]] = {}
+    for c in deduped_all:
+        by_version.setdefault(c.mc_version, []).append(c)
+
+    primary: list[PackCandidate] = []
+    buffer: list[PackCandidate] = []
+    for ver in mc_versions:
+        ver_candidates = by_version.get(ver, [])
+        # Sort by downloads descending within version
+        ver_candidates.sort(key=lambda c: -c.downloads)
+        primary.extend(ver_candidates[:args.limit])
+        buffer.extend(ver_candidates[args.limit:])
+
+    deduped = primary  # active working set
+    total_discovered = len(deduped) + len(buffer)
+    print(f"  Found {total_discovered} unique packs ({len(deduped)} primary + {len(buffer)} buffer) across {len(mc_versions)} MC versions")
     print_discovery(deduped)
 
     if args.discover_only:
@@ -763,20 +837,73 @@ def main():
     # Phase 2: Resolve download URLs
     print("\nPhase 2: Resolving download URLs...")
     resolved = []
+    skipped_resolve = 0
     for c in deduped:
         ok = resolve_download_url(c)
         if ok:
-            resolved.append(c)
+            # Check max file size
+            if c.file_size is not None and c.file_size > max_file_size_bytes:
+                size_mb = c.file_size / (1024 * 1024)
+                print(f"  SKIP {c.name} ({c.source}): {size_mb:.0f}MB exceeds --max-file-size {args.max_file_size}MB", file=sys.stderr)
+                skipped_resolve += 1
+            else:
+                resolved.append(c)
         else:
             print(f"  SKIP {c.name} ({c.source}): no download URL", file=sys.stderr)
+            skipped_resolve += 1
         time.sleep(0.3)
+
+    # Backfill from buffer for packs skipped during resolve
+    if skipped_resolve > 0 and buffer:
+        print(f"  Backfilling {min(skipped_resolve, len(buffer))} candidates from buffer...")
+        # Second-pass dedup: by downloaded filename (after resolve, before download)
+        resolved_filenames: set[str] = set()
+        for c in resolved:
+            fn = filename_from_url(c.file_url)
+            if fn:
+                resolved_filenames.add(fn)
+
+        backfilled = 0
+        while backfilled < skipped_resolve and buffer:
+            bc = buffer.pop(0)
+            ok = resolve_download_url(bc)
+            if not ok:
+                continue
+            # Check max file size for backfill candidate
+            if bc.file_size is not None and bc.file_size > max_file_size_bytes:
+                continue
+            # Filename dedup
+            fn = filename_from_url(bc.file_url)
+            if fn and fn in resolved_filenames:
+                continue
+            if fn:
+                resolved_filenames.add(fn)
+            resolved.append(bc)
+            backfilled += 1
+            time.sleep(0.3)
+        if backfilled:
+            print(f"  Backfilled {backfilled} packs from buffer")
+
+    # Second-pass dedup on resolved set: by downloaded filename
+    seen_filenames: set[str] = set()
+    filename_deduped: list[PackCandidate] = []
+    for c in resolved:
+        fn = filename_from_url(c.file_url)
+        if fn and fn in seen_filenames:
+            print(f"  DEDUP {c.name} ({c.source}): duplicate filename {fn}", file=sys.stderr)
+            continue
+        if fn:
+            seen_filenames.add(fn)
+        filename_deduped.append(c)
+    resolved = filename_deduped
 
     print(f"  Resolved {len(resolved)}/{len(deduped)} packs")
 
     # Phase 3: Download
     if not args.skip_download:
-        print("\nPhase 3: Downloading...")
+        print(f"\nPhase 3: Downloading (timeout={args.download_timeout}s per pack)...")
         downloaded = []
+        skipped_download = 0
         for i, c in enumerate(resolved):
             safe = f"{c.slug}_{c.mc_version}_{c.source}"
             ext = ".mrpack" if c.format == "mrpack" else ".zip"
@@ -788,14 +915,40 @@ def main():
                 continue
 
             print(f"  [{i+1}/{len(resolved)}] {c.name}...", end=" ", flush=True)
-            ok = download_pack(c)
+            ok = download_pack(c, timeout=args.download_timeout)
             if ok:
                 size_mb = Path(c.local_path).stat().st_size / (1024 * 1024)
                 print(f"{size_mb:.1f}MB")
                 downloaded.append(c)
             else:
-                print("FAILED")
+                print("FAILED (timeout or error)")
+                skipped_download += 1
             time.sleep(0.3)
+
+        # Backfill from buffer for download failures
+        if skipped_download > 0 and buffer:
+            print(f"  Backfilling {min(skipped_download, len(buffer))} candidates from buffer for download failures...")
+            dl_backfilled = 0
+            while dl_backfilled < skipped_download and buffer:
+                bc = buffer.pop(0)
+                if not bc.file_url:
+                    ok = resolve_download_url(bc)
+                    if not ok:
+                        continue
+                    if bc.file_size is not None and bc.file_size > max_file_size_bytes:
+                        continue
+                print(f"  [backfill] {bc.name}...", end=" ", flush=True)
+                ok = download_pack(bc, timeout=args.download_timeout)
+                if ok:
+                    size_mb = Path(bc.local_path).stat().st_size / (1024 * 1024)
+                    print(f"{size_mb:.1f}MB")
+                    downloaded.append(bc)
+                    dl_backfilled += 1
+                else:
+                    print("FAILED")
+                time.sleep(0.3)
+            if dl_backfilled:
+                print(f"  Backfilled {dl_backfilled} packs from buffer")
 
         print(f"  Downloaded {len(downloaded)}/{len(resolved)} packs")
     else:
