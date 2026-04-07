@@ -1,4 +1,4 @@
-use empack_tests::e2e::{empack_assert_cmd, empack_bin, TestProject};
+use empack_tests::e2e::{empack_assert_cmd, empack_bin, empack_cmd, TestProject};
 use predicates::prelude::*;
 
 #[test]
@@ -62,4 +62,31 @@ fn e2e_telemetry_chrome_trace() {
     if !has_trace {
         eprintln!("SKIP: binary lacks telemetry feature; trace file not produced");
     }
+}
+
+/// Verify empack requirements shows packwiz-tx with version and path.
+///
+/// Exercises the managed binary download path: if packwiz-tx is not
+/// cached, empack downloads it from GitHub releases on first use.
+#[test]
+fn e2e_requirements_shows_packwiz_tx() {
+    let project = TestProject::new();
+    let output = empack_cmd(project.dir())
+        .arg("requirements")
+        .output()
+        .expect("spawn failed");
+    assert!(
+        output.status.success(),
+        "empack requirements failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("packwiz-tx"),
+        "requirements output should mention packwiz-tx:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("v0.1"),
+        "requirements output should show packwiz-tx version:\n{stdout}",
+    );
 }
