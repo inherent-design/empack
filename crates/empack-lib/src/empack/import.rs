@@ -1049,16 +1049,25 @@ pub async fn execute_import(
     content_progress.set_message("Adding mods");
 
     let mut add_durations: Vec<std::time::Duration> = Vec::with_capacity(content_total);
-    let mut scan_duration_total = std::time::Duration::ZERO;
+
+    let scan_start = std::time::Instant::now();
+    let pre_stems = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
+    let pre_scan_ms = scan_start.elapsed().as_millis() as u64;
+
+    struct PendingDep {
+        derived_key: String,
+        title: String,
+        platform: ProjectPlatform,
+        project_id: String,
+        project_type: crate::primitives::ProjectType,
+        version: Option<String>,
+    }
+    let mut pending_deps: Vec<PendingDep> = Vec::new();
 
     for entry in &resolved.manifest.content {
         match entry {
             ContentEntry::PlatformReferenced(pref) => {
                 content_progress.tick(&pref.destination_path);
-
-                let scan_start = std::time::Instant::now();
-                let before = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
-                scan_duration_total += scan_start.elapsed();
 
                 let add_start = std::time::Instant::now();
                 let result = add_platform_ref(pref, &pack_dir, session, datapack_folder.as_deref()).await?;
@@ -1088,37 +1097,20 @@ pub async fn execute_import(
                     AddRefResult::Added => {
                         stats.platform_referenced += 1;
 
-                        let scan_start = std::time::Instant::now();
-                        let after = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
-                        scan_duration_total += scan_start.elapsed();
+                        let derived_key = derive_dep_key_from_name(
+                            pref.resolved_name.as_deref(),
+                            &pref.destination_path,
+                        );
+                        let title = pref.resolved_name.clone().unwrap_or_else(|| derived_key.clone());
 
-                        let new_files: Vec<_> = after.difference(&before).collect();
-
-                        let dep_key = if new_files.len() == 1 {
-                            new_files[0].clone()
-                        } else {
-                            let name = pref.resolved_name.clone().unwrap_or_else(|| {
-                                std::path::Path::new(&pref.destination_path)
-                                    .file_stem()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or(&pref.destination_path)
-                                    .to_string()
-                            });
-                            name.to_lowercase().replace(' ', "-")
-                        };
-
-                        let title = pref.resolved_name.clone().unwrap_or_else(|| dep_key.clone());
-                        let record = DependencyRecord {
-                            status: DependencyStatus::Resolved,
+                        pending_deps.push(PendingDep {
+                            derived_key,
                             title,
                             platform: pref.platform,
                             project_id: pref.project_id.clone(),
                             project_type: pref.resolved_type.unwrap_or(crate::primitives::ProjectType::Mod),
                             version: pref.file_id.clone(),
-                        };
-                        if let Err(e) = config_manager.add_dependency(&dep_key, record) {
-                            session.display().status().warning(&format!("failed to update empack.yml: {}", e));
-                        }
+                        });
                     }
                 }
             }
@@ -1137,6 +1129,26 @@ pub async fn execute_import(
     }
     content_progress.finish(&format!("{} platform references processed", content_total));
 
+    let scan_start = std::time::Instant::now();
+    let post_stems = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
+    let post_scan_ms = scan_start.elapsed().as_millis() as u64;
+
+    let new_stems: std::collections::HashSet<_> = post_stems.difference(&pre_stems).cloned().collect();
+
+    for dep in &pending_deps {
+        let record = DependencyRecord {
+            status: DependencyStatus::Resolved,
+            title: dep.title.clone(),
+            platform: dep.platform,
+            project_id: dep.project_id.clone(),
+            project_type: dep.project_type,
+            version: dep.version.clone(),
+        };
+        if let Err(e) = config_manager.add_dependency(&dep.derived_key, record) {
+            session.display().status().warning(&format!("failed to update empack.yml: {}", e));
+        }
+    }
+
     if !add_durations.is_empty() {
         let total: std::time::Duration = add_durations.iter().sum();
         let min = add_durations.iter().min().unwrap();
@@ -1152,13 +1164,14 @@ pub async fn execute_import(
         );
     }
 
-    if scan_duration_total > std::time::Duration::ZERO {
-        tracing::info!(
-            phase = "scan_pw_toml",
-            total_ms = scan_duration_total.as_millis() as u64,
-            "scan_pw_toml_stems total"
-        );
-    }
+    tracing::info!(
+        phase = "scan_pw_toml",
+        pre_scan_ms,
+        post_scan_ms,
+        new_stems = new_stems.len(),
+        pending_deps = pending_deps.len(),
+        "batched scan_pw_toml_stems (2 scans total)"
+    );
 
     let override_total = resolved.manifest.overrides.len();
     let override_progress = session.display().progress().bar(override_total as u64);
@@ -1484,6 +1497,24 @@ fn mr_side_requirement(value: Option<&str>) -> SideRequirement {
         Some("unsupported") => SideRequirement::Unsupported,
         _ => SideRequirement::Unknown,
     }
+}
+
+/// Derive a dependency key from the resolved name or destination path.
+///
+/// packwiz names `.pw.toml` files from the mod slug (lowercased, spaces
+/// replaced with hyphens). This function replicates that convention so
+/// the dep_key can be derived without a filesystem scan.
+fn derive_dep_key_from_name(resolved_name: Option<&str>, destination_path: &str) -> String {
+    let name = resolved_name
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            std::path::Path::new(destination_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(destination_path)
+                .to_string()
+        });
+    name.to_lowercase().replace(' ', "-")
 }
 
 /// Scan pack content directories for .pw.toml files and return their slugs.
