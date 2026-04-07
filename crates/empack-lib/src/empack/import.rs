@@ -530,7 +530,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
 /// HTTP requests. The Modrinth and CurseForge rate limits are the true
 /// bottleneck; 10 concurrent tasks saturates available throughput without
 /// triggering 429 responses.
-const RESOLVE_CONCURRENCY: usize = 10;
+const RESOLVE_CONCURRENCY: usize = 5;
 
 /// Enrich a raw manifest via platform APIs to resolve names, types, and
 /// identify embedded JARs.
@@ -1234,13 +1234,16 @@ enum AddRefResult {
     Failed(String),
 }
 
-const MAX_ADD_RETRIES: u32 = 3;
+const MAX_ADD_RETRIES: u32 = 5;
+const RETRY_BASE_DELAY_SECS: u64 = 5;
 
 /// Wrap [`add_platform_ref`] with exponential backoff retries.
 ///
 /// Retries up to [`MAX_ADD_RETRIES`] times on `AddRefResult::Failed`,
-/// using 1s / 2s / 4s delays to ride out transient rate limits (429)
-/// and network timeouts. `Added` and `Skipped` return immediately.
+/// using 5s base with exponential growth (5s/10s/20s/40s/80s) to ride
+/// out Modrinth 429 rate limits. packwiz makes 2 API calls per add even
+/// with `--version-id`, so rate limit exhaustion is common in batch
+/// imports. `Added` and `Skipped` return immediately.
 async fn add_platform_ref_with_retry(
     pref: &PlatformRef,
     pack_dir: &Path,
@@ -1253,13 +1256,13 @@ async fn add_platform_ref_with_retry(
             AddRefResult::Added | AddRefResult::Skipped => return Ok(result),
             AddRefResult::Failed(detail) => {
                 if attempt < MAX_ADD_RETRIES {
-                    let delay = std::time::Duration::from_secs(1 << attempt);
+                    let delay = std::time::Duration::from_secs(RETRY_BASE_DELAY_SECS * (1 << attempt));
                     tracing::warn!(
                         attempt = attempt + 1,
                         max = MAX_ADD_RETRIES,
-                        delay_ms = delay.as_millis() as u64,
+                        delay_secs = delay.as_secs(),
                         detail = %detail,
-                        "packwiz add failed; retrying"
+                        "packwiz add failed (likely 429); retrying"
                     );
                     tokio::time::sleep(delay).await;
                 } else {
