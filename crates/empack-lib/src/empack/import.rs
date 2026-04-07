@@ -1057,7 +1057,12 @@ pub async fn execute_import(
     let pack_dir = config.target_dir.join("pack");
     let config_manager = session.filesystem().config_manager(config.target_dir.clone());
 
-    let content_dirs: &[&str] = &["mods", "resourcepacks", "shaderpacks", "datapacks"];
+    let mut content_dirs: Vec<&str> = vec!["mods", "resourcepacks", "shaderpacks", "datapacks"];
+    if let Some(ref df) = datapack_folder
+        && !content_dirs.contains(&df.as_str())
+    {
+        content_dirs.push(df);
+    }
 
     // Build a set of override basenames so we can identify platform refs
     // that are already covered by override files (e.g. datapacks distributed
@@ -1081,7 +1086,7 @@ pub async fn execute_import(
     let mut add_durations: Vec<std::time::Duration> = Vec::with_capacity(content_total);
 
     let scan_start = std::time::Instant::now();
-    let pre_stems = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
+    let pre_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
     let pre_scan_ms = scan_start.elapsed().as_millis() as u64;
 
     struct PendingDep {
@@ -1163,7 +1168,7 @@ pub async fn execute_import(
     content_progress.finish(&format!("{} platform references processed", content_total));
 
     let scan_start = std::time::Instant::now();
-    let post_stems = scan_pw_toml_stems(&pack_dir, content_dirs, session.filesystem());
+    let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
     let post_scan_ms = scan_start.elapsed().as_millis() as u64;
 
     let new_stems: std::collections::HashSet<_> = post_stems.difference(&pre_stems).cloned().collect();
