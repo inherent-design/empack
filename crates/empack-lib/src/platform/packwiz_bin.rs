@@ -64,28 +64,26 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(target_dir)
         .with_context(|| format!("failed to create cache directory: {}", target_dir.display()))?;
 
-    let client = reqwest::blocking::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .context("failed to build HTTP client")?;
+    let output_file = target_dir.join(&asset);
+    let status = std::process::Command::new("curl")
+        .args([
+            "--proto", "=https",
+            "--tlsv1.2",
+            "-fSL",
+            "--retry", "3",
+            "-o", &output_file.to_string_lossy(),
+            &url,
+        ])
+        .status()
+        .with_context(|| format!("failed to run curl for {}", url))?;
 
-    let response = client
-        .get(&url)
-        .header("User-Agent", "empack")
-        .send()
-        .with_context(|| format!("failed to download {}", url))?;
-
-    if !response.status().is_success() {
-        anyhow::bail!(
-            "download failed: HTTP {} for {}",
-            response.status(),
-            url
-        );
+    if !status.success() {
+        anyhow::bail!("download failed: curl exited {} for {}", status, url);
     }
 
-    let bytes = response
-        .bytes()
-        .context("failed to read response body")?;
+    let bytes = std::fs::read(&output_file)
+        .with_context(|| format!("failed to read downloaded file: {}", output_file.display()))?;
+    let _ = std::fs::remove_file(&output_file);
 
     extract_tarball(&bytes, target_dir)?;
 
