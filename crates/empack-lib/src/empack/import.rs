@@ -46,13 +46,13 @@ pub struct RuntimeTarget {
     pub loader_version: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ContentEntry {
     PlatformReferenced(PlatformRef),
     EmbeddedJar(EmbeddedJar),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PlatformRef {
     pub destination_path: String,
     pub platform: ProjectPlatform,
@@ -70,7 +70,7 @@ pub struct PlatformRef {
     pub cf_class_id: Option<u32>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EmbeddedJar {
     pub source_path: String,
     pub destination_path: String,
@@ -117,6 +117,8 @@ pub struct ImportResult {
 #[derive(Debug)]
 pub struct ImportStats {
     pub platform_referenced: usize,
+    pub platform_failed: usize,
+    pub platform_skipped: usize,
     pub embedded_jars_identified: usize,
     pub embedded_jars_unidentified: usize,
     pub overrides_copied: usize,
@@ -574,7 +576,7 @@ pub async fn resolve_manifest(
     };
 
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(RESOLVE_CONCURRENCY));
-    type ResolveHandle = (usize, tokio::task::JoinHandle<(ContentEntry, Vec<String>)>);
+    type ResolveHandle = (usize, ContentEntry, tokio::task::JoinHandle<(ContentEntry, Vec<String>)>);
     let mut handles: Vec<ResolveHandle> = Vec::new();
     let mut passthrough: Vec<(usize, ContentEntry, Vec<String>)> = Vec::new();
 
@@ -589,12 +591,13 @@ pub async fn resolve_manifest(
                     pref.project_id = mod_id.to_string();
                 }
 
+                let backup = ContentEntry::PlatformReferenced(pref.clone());
                 let mr = mr_client.clone();
                 let cf = cf_client.clone();
                 let key = cf_key.clone();
                 let sem = semaphore.clone();
 
-                handles.push((i, tokio::spawn(async move {
+                handles.push((i, backup, tokio::spawn(async move {
                     let _permit = sem.acquire().await.expect("semaphore closed");
                     let resolve_start = std::time::Instant::now();
                     let mut task_warnings = Vec::new();
@@ -647,13 +650,15 @@ pub async fn resolve_manifest(
         progress.inc();
     }
 
-    for (i, handle) in handles {
+    for (i, backup, handle) in handles {
         match handle.await {
             Ok((entry, w)) => {
                 results[i] = Some((entry, w));
             }
             Err(e) => {
-                warnings.push(format!("resolve task panicked: {}", e));
+                let msg = format!("resolve task panicked: {}", e);
+                warnings.push(msg.clone());
+                results[i] = Some((backup, vec![msg]));
             }
         }
         progress.inc();
@@ -963,6 +968,8 @@ pub async fn execute_import(
 ) -> Result<ImportResult> {
     let mut stats = ImportStats {
         platform_referenced: 0,
+        platform_failed: 0,
+        platform_skipped: 0,
         embedded_jars_identified: 0,
         embedded_jars_unidentified: 0,
         overrides_copied: 0,
@@ -1080,11 +1087,12 @@ pub async fn execute_import(
                 content_progress.tick(&pref.destination_path);
 
                 let add_start = std::time::Instant::now();
-                let result = add_platform_ref(pref, &pack_dir, session, datapack_folder.as_deref()).await?;
+                let result = add_platform_ref_with_retry(pref, &pack_dir, session, datapack_folder.as_deref()).await?;
                 add_durations.push(add_start.elapsed());
 
                 match result {
                     AddRefResult::Skipped => {
+                        stats.platform_skipped += 1;
                         session.display().status().warning(&format!(
                             "no project ID or download URL for '{}'; skipping",
                             pref.destination_path
@@ -1101,6 +1109,7 @@ pub async fn execute_import(
                                 pref.destination_path
                             ));
                         } else {
+                            stats.platform_failed += 1;
                             session.display().status().warning(&detail);
                         }
                     }
@@ -1223,6 +1232,43 @@ enum AddRefResult {
     Skipped,
     /// packwiz add failed; the detail string contains the error output.
     Failed(String),
+}
+
+const MAX_ADD_RETRIES: u32 = 3;
+
+/// Wrap [`add_platform_ref`] with exponential backoff retries.
+///
+/// Retries up to [`MAX_ADD_RETRIES`] times on `AddRefResult::Failed`,
+/// using 1s / 2s / 4s delays to ride out transient rate limits (429)
+/// and network timeouts. `Added` and `Skipped` return immediately.
+async fn add_platform_ref_with_retry(
+    pref: &PlatformRef,
+    pack_dir: &Path,
+    session: &dyn Session,
+    datapack_folder: Option<&str>,
+) -> Result<AddRefResult> {
+    for attempt in 0..=MAX_ADD_RETRIES {
+        let result = add_platform_ref(pref, pack_dir, session, datapack_folder).await?;
+        match &result {
+            AddRefResult::Added | AddRefResult::Skipped => return Ok(result),
+            AddRefResult::Failed(detail) => {
+                if attempt < MAX_ADD_RETRIES {
+                    let delay = std::time::Duration::from_secs(1 << attempt);
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        max = MAX_ADD_RETRIES,
+                        delay_ms = delay.as_millis() as u64,
+                        detail = %detail,
+                        "packwiz add failed; retrying"
+                    );
+                    tokio::time::sleep(delay).await;
+                } else {
+                    return Ok(result);
+                }
+            }
+        }
+    }
+    unreachable!()
 }
 
 async fn add_platform_ref(
