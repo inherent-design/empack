@@ -1169,11 +1169,14 @@ pub async fn execute_import(
     content_progress.finish(&format!("{} platform references processed", content_total));
 
     if use_no_refresh {
-        session.process().execute(
+        let refresh_output = session.process().execute(
             session.packwiz_bin(),
             &["refresh"],
             &pack_dir,
         )?;
+        if !refresh_output.success {
+            anyhow::bail!("packwiz refresh failed after batch import: {}", refresh_output.error_output());
+        }
     }
 
     let scan_start = std::time::Instant::now();
