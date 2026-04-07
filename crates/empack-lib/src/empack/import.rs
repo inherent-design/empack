@@ -1311,6 +1311,23 @@ async fn add_platform_ref_with_retry(
     unreachable!()
 }
 
+fn side_from_env(env: &crate::empack::content::SideEnv) -> &'static str {
+    use crate::empack::content::SideRequirement::*;
+    match (&env.client, &env.server) {
+        (Required, Unsupported) | (Required, Unknown) | (Optional, Unsupported) => "client",
+        (Unsupported, Required) | (Unknown, Required) | (Unsupported, Optional) => "server",
+        _ => "both",
+    }
+}
+
+fn filename_from_path(dest: &str) -> String {
+    std::path::Path::new(dest)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("unknown.jar")
+        .to_string()
+}
+
 async fn add_platform_ref(
     pref: &PlatformRef,
     pack_dir: &Path,
@@ -1324,6 +1341,7 @@ async fn add_platform_ref(
                 return Ok(AddRefResult::Skipped);
             }
 
+            // Fallback to url add for direct downloads without project/version IDs
             if pref.project_id.is_empty() && pref.file_id.is_none() {
                 if let Some(url) = pref.download_urls.first() {
                     let name = std::path::Path::new(&pref.destination_path)
@@ -1350,18 +1368,63 @@ async fn add_platform_ref(
             let mut args = Vec::new();
             if no_refresh {
                 args.push("--no-refresh".to_string());
+                args.push("--offline".to_string());
             }
             args.push("modrinth".to_string());
             args.push("add".to_string());
 
-            if !pref.project_id.is_empty() {
-                args.push("--project-id".to_string());
-                args.push(pref.project_id.clone());
-            }
+            args.push("--project-id".to_string());
+            args.push(pref.project_id.clone());
 
             if let Some(vid) = &pref.file_id {
                 args.push("--version-id".to_string());
                 args.push(vid.clone());
+            }
+
+            if no_refresh {
+                let name = pref.resolved_name.as_deref().unwrap_or("Unknown");
+                args.push("--name".to_string());
+                args.push(name.to_string());
+
+                args.push("--filename".to_string());
+                args.push(filename_from_path(&pref.destination_path));
+
+                if let Some(url) = pref.download_urls.first() {
+                    args.push("--url".to_string());
+                    args.push(url.clone());
+                }
+
+                let (hash_format, hash_value) = pref
+                    .hashes
+                    .get("sha512")
+                    .map(|h| ("sha512", h.as_str()))
+                    .or_else(|| pref.hashes.get("sha1").map(|h| ("sha1", h.as_str())))
+                    .unwrap_or(("sha512", ""));
+                if !hash_value.is_empty() {
+                    args.push("--hash".to_string());
+                    args.push(hash_value.to_string());
+                    args.push("--hash-format".to_string());
+                    args.push(hash_format.to_string());
+                }
+
+                args.push("--side".to_string());
+                args.push(side_from_env(&pref.env).to_string());
+
+                if let Some(slug) = &pref.resolved_slug {
+                    args.push("--slug".to_string());
+                    args.push(slug.clone());
+                }
+
+                if let Some(pt) = &pref.resolved_type {
+                    let pt_str = match pt {
+                        crate::primitives::ProjectType::Mod => "mod",
+                        crate::primitives::ProjectType::ResourcePack => "resourcepack",
+                        crate::primitives::ProjectType::Shader => "shader",
+                        crate::primitives::ProjectType::Datapack => "datapack",
+                    };
+                    args.push("--project-type".to_string());
+                    args.push(pt_str.to_string());
+                }
             }
 
             args.push("-y".to_string());
@@ -1391,6 +1454,7 @@ async fn add_platform_ref(
             let mut args = Vec::new();
             if no_refresh {
                 args.push("--no-refresh".to_string());
+                args.push("--offline".to_string());
             }
             args.extend([
                 "curseforge".to_string(),
@@ -1400,6 +1464,38 @@ async fn add_platform_ref(
                 "--file-id".to_string(),
                 file_id.to_string(),
             ]);
+
+            if no_refresh {
+                let name = pref.resolved_name.as_deref().unwrap_or("Unknown");
+                args.push("--name".to_string());
+                args.push(name.to_string());
+
+                args.push("--filename".to_string());
+                args.push(filename_from_path(&pref.destination_path));
+
+                let (hash_format, hash_value) = pref
+                    .hashes
+                    .get("sha1")
+                    .map(|h| ("sha1", h.as_str()))
+                    .or_else(|| pref.hashes.get("md5").map(|h| ("md5", h.as_str())))
+                    .unwrap_or(("sha1", ""));
+                if !hash_value.is_empty() {
+                    args.push("--hash".to_string());
+                    args.push(hash_value.to_string());
+                    args.push("--hash-format".to_string());
+                    args.push(hash_format.to_string());
+                }
+
+                if let Some(slug) = &pref.resolved_slug {
+                    args.push("--slug".to_string());
+                    args.push(slug.clone());
+                }
+
+                if let Some(class_id) = pref.cf_class_id {
+                    args.push("--class-id".to_string());
+                    args.push(class_id.to_string());
+                }
+            }
 
             if pref.cf_class_id == Some(6945)
                 && let Some(folder) = datapack_folder
