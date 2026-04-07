@@ -716,12 +716,12 @@ impl MockProcessProvider {
     pub fn new() -> Self {
         let packwiz_path = mock_root()
             .join("bin")
-            .join("packwiz")
+            .join(crate::empack::packwiz::PACKWIZ_BIN)
             .to_string_lossy()
             .to_string();
 
         let mut programs = HashMap::new();
-        programs.insert("packwiz".to_string(), Some(packwiz_path.clone()));
+        programs.insert(crate::empack::packwiz::PACKWIZ_BIN.to_string(), Some(packwiz_path.clone()));
 
         let mut provider = Self {
             calls: Arc::new(Mutex::new(Vec::new())),
@@ -734,7 +734,7 @@ impl MockProcessProvider {
             directories: None,
         };
         provider.results.insert(
-            ("which".to_string(), vec!["packwiz".to_string()]),
+            ("which".to_string(), vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()]),
             Ok(ProcessOutput {
                 stdout: format!("{}\n", packwiz_path),
                 stderr: String::new(),
@@ -745,9 +745,9 @@ impl MockProcessProvider {
     }
 
     pub fn with_packwiz_unavailable(mut self) -> Self {
-        self.programs.insert("packwiz".to_string(), None);
+        self.programs.insert(crate::empack::packwiz::PACKWIZ_BIN.to_string(), None);
         self.results.insert(
-            ("which".to_string(), vec!["packwiz".to_string()]),
+            ("which".to_string(), vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()]),
             Ok(ProcessOutput {
                 stdout: String::new(),
                 stderr: "packwiz not found".to_string(),
@@ -760,15 +760,15 @@ impl MockProcessProvider {
     pub fn with_packwiz_version(mut self, version: String) -> Self {
         let packwiz_path = mock_root()
             .join("bin")
-            .join("packwiz")
+            .join(crate::empack::packwiz::PACKWIZ_BIN)
             .to_string_lossy()
             .to_string();
 
         // Ensure packwiz is available via find_program
         self.programs
-            .insert("packwiz".to_string(), Some(packwiz_path.clone()));
+            .insert(crate::empack::packwiz::PACKWIZ_BIN.to_string(), Some(packwiz_path.clone()));
         self.results.insert(
-            ("which".to_string(), vec!["packwiz".to_string()]),
+            ("which".to_string(), vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()]),
             Ok(ProcessOutput {
                 stdout: format!("{}\n", packwiz_path),
                 stderr: String::new(),
@@ -812,7 +812,7 @@ impl MockProcessProvider {
         args: Vec<String>,
         result: std::result::Result<ProcessOutput, String>,
     ) -> Self {
-        self.results.insert(("packwiz".to_string(), args), result);
+        self.results.insert((crate::empack::packwiz::PACKWIZ_BIN.to_string(), args), result);
         self
     }
 
@@ -844,7 +844,7 @@ impl MockProcessProvider {
         args: &[&str],
         output: &ProcessOutput,
     ) {
-        if command != "packwiz" || !self.materialize_mrpack_exports || !output.success {
+        if command != crate::empack::packwiz::PACKWIZ_BIN || !self.materialize_mrpack_exports || !output.success {
             return;
         }
 
@@ -883,7 +883,7 @@ impl MockProcessProvider {
         working_dir: &std::path::Path,
         output: &ProcessOutput,
     ) {
-        if command != "packwiz" || self.packwiz_add_slugs.is_empty() || !output.success {
+        if command != crate::empack::packwiz::PACKWIZ_BIN || self.packwiz_add_slugs.is_empty() || !output.success {
             return;
         }
 
@@ -1589,7 +1589,7 @@ mod tests {
         let provider = MockProcessProvider::new()
             .with_packwiz_version("2.0.0".to_string())
             .with_result(
-                "packwiz".to_string(),
+                crate::empack::packwiz::PACKWIZ_BIN.to_string(),
                 vec!["add".to_string(), "test-mod".to_string()],
                 Err("Mock error".to_string()),
             );
@@ -1600,7 +1600,7 @@ mod tests {
         );
         let packwiz_path = mock_root()
             .join("bin")
-            .join("packwiz")
+            .join(crate::empack::packwiz::PACKWIZ_BIN)
             .to_string_lossy()
             .to_string();
         assert_eq!(
@@ -1609,25 +1609,25 @@ mod tests {
         );
 
         // Test successful command (uses default behavior)
-        let result = provider.execute("packwiz", &["list"], &working_dir);
+        let result = provider.execute(crate::empack::packwiz::PACKWIZ_BIN, &["list"], &working_dir);
         assert!(result.is_ok());
         assert!(result.unwrap().success);
 
         // Test command with specific result
-        let result = provider.execute("packwiz", &["add", "test-mod"], &working_dir);
+        let result = provider.execute(crate::empack::packwiz::PACKWIZ_BIN, &["add", "test-mod"], &working_dir);
         assert!(result.is_err());
 
         // Test spy pattern - verify packwiz calls were recorded
         // (go version calls from check_packwiz_available are also recorded but filtered out)
-        let packwiz_calls = provider.get_calls_for_command("packwiz");
+        let packwiz_calls = provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
         assert_eq!(packwiz_calls.len(), 2);
         assert_eq!(packwiz_calls[0].args, vec!["list"]);
         assert_eq!(packwiz_calls[1].args, vec!["add", "test-mod"]);
 
         // Test verification helper
-        assert!(provider.verify_call("packwiz", &["list"], &working_dir));
-        assert!(provider.verify_call("packwiz", &["add", "test-mod"], &working_dir));
-        assert!(!provider.verify_call("packwiz", &["remove", "test-mod"], &working_dir));
+        assert!(provider.verify_call(crate::empack::packwiz::PACKWIZ_BIN, &["list"], &working_dir));
+        assert!(provider.verify_call(crate::empack::packwiz::PACKWIZ_BIN, &["add", "test-mod"], &working_dir));
+        assert!(!provider.verify_call(crate::empack::packwiz::PACKWIZ_BIN, &["remove", "test-mod"], &working_dir));
     }
 
     #[test]

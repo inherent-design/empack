@@ -104,7 +104,7 @@ async fn test_build_neoforge_mrpack() -> Result<()> {
         "mrpack artifact should be created in dist/"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()
@@ -159,7 +159,7 @@ async fn test_build_neoforge_server() -> Result<()> {
         "Server archive should be created: {create_calls:?}"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()
@@ -270,7 +270,7 @@ async fn test_build_quilt_mrpack() -> Result<()> {
         "mrpack artifact should be created in dist/"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()
@@ -424,7 +424,7 @@ async fn test_build_vanilla_mrpack() -> Result<()> {
         "mrpack artifact should be created in dist/"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()
@@ -513,7 +513,7 @@ async fn test_build_forge_mrpack() -> Result<()> {
         "mrpack artifact should be created in dist/"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()
@@ -568,7 +568,7 @@ async fn test_build_forge_server() -> Result<()> {
         "Server archive should be created: {create_calls:?}"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()
@@ -699,7 +699,7 @@ async fn test_build_fabric_client() -> Result<()> {
         "Client archive should be created: {create_calls:?}"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()
@@ -811,7 +811,7 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
         "mrpack build should create an artifact in dist/"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     let pack_file_str = pack_file.to_string_lossy();
     let mrpack_path_str = mrpack_path.to_string_lossy();
     assert!(
@@ -906,7 +906,7 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
         "clean-before-build should not remove unrelated project files outside dist/"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     let pack_file_str = pack_file.to_string_lossy();
     let mrpack_path_str = mrpack_path.to_string_lossy();
     assert!(
@@ -1112,7 +1112,7 @@ async fn e2e_build_client_full_successfully() -> Result<()> {
         "Standalone client-full builds should not materialize the client target directory"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()
@@ -1342,7 +1342,7 @@ async fn e2e_build_server_successfully() -> Result<()> {
         "Server archive should be created: {create_calls:?}"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls
             .iter()

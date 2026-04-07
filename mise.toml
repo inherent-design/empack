@@ -2,7 +2,7 @@
 windows_default_inline_shell_args = "pwsh -NoProfile -NonInteractive -Command"
 
 [tools]
-"go:github.com/packwiz/packwiz" = "latest"
+"go:github.com/mannie-exe/packwiz-tx" = "latest"
 git-cliff = "latest"
 # cargo-nextest and cargo-llvm-cov installed via taiki-e/install-action in CI
 # or cargo install locally; mise's cargo backend conflicts with dtolnay/rust-toolchain
