@@ -23,6 +23,11 @@ description = "Build workspace (release)"
 run = "cargo build --workspace --release"
 run_windows = "cargo build --workspace --release"
 
+[tasks."build:bin"]
+description = "Build empack binary"
+run = "cargo build -p empack"
+run_windows = "cargo build -p empack"
+
 # Run
 
 [tasks.run]
@@ -41,38 +46,27 @@ run_windows = "cargo run -p empack --release --"
 
 [tasks.test]
 alias = "t"
+depends = ["build:bin"]
 description = "Run unit + integration tests (excludes E2E)"
-run = """
-cargo build -p empack
-cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'
-"""
-run_windows = """
-cargo build -p empack
-cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'
-"""
+run = "cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'"
+run_windows = "cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'"
 
 [tasks.e2e]
 alias = "e"
-description = "Run E2E tests (builds binary first)"
-run = """
-cargo build -p empack
-cargo nextest run -p empack-tests -E 'test(~e2e_)'
-"""
-run_windows = """
-cargo build -p empack
-cargo nextest run -p empack-tests -E 'test(~e2e_)'
-"""
+depends = ["build:bin"]
+description = "Run E2E tests"
+run = "cargo nextest run -p empack-tests -E 'test(~e2e_)'"
+run_windows = "cargo nextest run -p empack-tests -E 'test(~e2e_)'"
 
 [tasks."e2e:filter"]
 alias = "fe"
+depends = ["build:bin"]
 description = "Run filtered E2E tests"
 usage = 'arg "filter" help="nextest filter expression"'
 run = """
-cargo build -p empack
 cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
 """
 run_windows = """
-cargo build -p empack
 cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
 """
 
@@ -121,11 +115,9 @@ description = "Run with OTLP export (requires collector at localhost:4318)"
 run = "EMPACK_PROFILE=otlp cargo run -p empack --features telemetry -- \"$@\""
 
 [tasks."profile:samply"]
+depends = ["build:release"]
 description = "Run under samply sampling profiler (release build)"
-run = """
-cargo build --release -p empack
-samply record ./target/release/empack "$@"
-"""
+run = "samply record ./target/release/empack \"$@\""
 
 [tasks."profile:all"]
 description = "Run with all telemetry layers enabled"
