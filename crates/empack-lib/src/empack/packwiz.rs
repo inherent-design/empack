@@ -59,13 +59,20 @@ pub trait PackwizOps {
 pub struct LivePackwizOps<'a> {
     process: &'a dyn ProcessProvider,
     filesystem: &'a dyn FileSystemProvider,
+    /// Resolved packwiz-tx binary path (absolute path or bare name).
+    packwiz_bin: &'a str,
 }
 
 impl<'a> LivePackwizOps<'a> {
-    pub fn new(process: &'a dyn ProcessProvider, filesystem: &'a dyn FileSystemProvider) -> Self {
+    pub fn new(
+        process: &'a dyn ProcessProvider,
+        filesystem: &'a dyn FileSystemProvider,
+        packwiz_bin: &'a str,
+    ) -> Self {
         Self {
             process,
             filesystem,
+            packwiz_bin,
         }
     }
 }
@@ -126,7 +133,7 @@ impl PackwizOps for LivePackwizOps<'_> {
 
         let output = self
             .process
-            .execute(PACKWIZ_BIN, &args, &pack_dir)
+            .execute(self.packwiz_bin, &args, &pack_dir)
             .map_err(|e| StateError::CommandFailed {
                 command: format!("packwiz init failed: {}", e),
             })?;
@@ -150,7 +157,7 @@ impl PackwizOps for LivePackwizOps<'_> {
         let output = self
             .process
             .execute(
-                PACKWIZ_BIN,
+                self.packwiz_bin,
                 &["--pack-file", pack_file_str, "refresh"],
                 workdir,
             )
