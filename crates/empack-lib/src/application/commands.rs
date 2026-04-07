@@ -79,7 +79,13 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         .section("Checking tool dependencies");
 
     let packwiz_path = session.packwiz_bin();
-    if packwiz_path != crate::empack::packwiz::PACKWIZ_BIN {
+    let packwiz_works = std::process::Command::new(packwiz_path)
+        .arg("--help")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok();
+    if packwiz_works {
         session.display().status().success(
             "packwiz-tx",
             &format!(
@@ -92,7 +98,7 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         session
             .display()
             .status()
-            .error("packwiz-tx", "not available (managed download failed at session init)");
+            .error("packwiz-tx", &format!("not available at '{packwiz_path}'"));
         session.display().status().subtle(&format!(
             "   Required: {}",
             crate::platform::packwiz_bin::PACKWIZ_TX_REQUIREMENT
