@@ -1184,6 +1184,14 @@ pub async fn execute_import(
         "batched scan_pw_toml_stems (2 scans total)"
     );
 
+    if new_stems.len() != pending_deps.len() {
+        tracing::warn!(
+            expected = pending_deps.len(),
+            actual = new_stems.len(),
+            "pw.toml count mismatch: dep keys may diverge from packwiz filenames"
+        );
+    }
+
     let override_total = resolved.manifest.overrides.len();
     let override_progress = session.display().progress().bar(override_total as u64);
     override_progress.set_message("Copying overrides");
