@@ -13,6 +13,12 @@
 use crate::application::session::{FileSystemProvider, ProcessProvider, Session};
 use crate::empack::state::StateError;
 use crate::primitives::ProjectPlatform;
+
+/// Binary name for packwiz CLI operations.
+///
+/// Uses `packwiz-tx` fork (mannie-exe/packwiz-tx) which adds `--no-refresh`
+/// for batch operations. Override at runtime via `EMPACK_PACKWIZ_BIN`.
+pub const PACKWIZ_BIN: &str = "packwiz-tx";
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -120,7 +126,7 @@ impl PackwizOps for LivePackwizOps<'_> {
 
         let output = self
             .process
-            .execute("packwiz", &args, &pack_dir)
+            .execute(PACKWIZ_BIN, &args, &pack_dir)
             .map_err(|e| StateError::CommandFailed {
                 command: format!("packwiz init failed: {}", e),
             })?;
@@ -144,7 +150,7 @@ impl PackwizOps for LivePackwizOps<'_> {
         let output = self
             .process
             .execute(
-                "packwiz",
+                PACKWIZ_BIN,
                 &["--pack-file", pack_file_str, "refresh"],
                 workdir,
             )
@@ -203,7 +209,7 @@ pub fn check_packwiz_available(
     process: &dyn ProcessProvider,
     workdir: &Path,
 ) -> crate::Result<(bool, String)> {
-    match process.find_program("packwiz") {
+    match process.find_program(PACKWIZ_BIN) {
         Some(path) => {
             let version = get_packwiz_version(process, &path, workdir)
                 .unwrap_or_else(|| "unknown".to_string());
@@ -567,7 +573,7 @@ impl<'a> PackwizMetadata<'a> {
         let output = self
             .process_provider
             .execute(
-                "packwiz",
+                PACKWIZ_BIN,
                 &[
                     "--pack-file",
                     pack_toml_str,
@@ -611,7 +617,7 @@ impl<'a> PackwizMetadata<'a> {
         let output = self
             .process_provider
             .execute(
-                "packwiz",
+                PACKWIZ_BIN,
                 &["--pack-file", pack_toml_str, "remove", mod_name, "-y"],
                 &self.pack_dir,
             )
@@ -646,7 +652,7 @@ impl<'a> PackwizMetadata<'a> {
         let output = self
             .process_provider
             .execute(
-                "packwiz",
+                PACKWIZ_BIN,
                 &["--pack-file", pack_toml_str, "refresh"],
                 &self.pack_dir,
             )
@@ -697,7 +703,7 @@ impl<'a> PackwizMetadata<'a> {
         let output = self
             .process_provider
             .execute(
-                "packwiz",
+                PACKWIZ_BIN,
                 &[
                     "--pack-file",
                     pack_toml_str,

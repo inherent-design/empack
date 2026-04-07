@@ -32,7 +32,7 @@ pub fn empack_bin() -> PathBuf {
 }
 
 pub fn has_packwiz() -> bool {
-    Command::new("packwiz")
+    Command::new("packwiz-tx")
         .arg("--help")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

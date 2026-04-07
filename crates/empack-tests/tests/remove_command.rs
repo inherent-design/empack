@@ -54,7 +54,7 @@ async fn e2e_remove_single_mod() -> Result<()> {
 
     assert!(result.is_ok(), "remove command failed: {result:?}");
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.iter().any(
             |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
@@ -103,7 +103,7 @@ async fn e2e_remove_multiple_mods() -> Result<()> {
 
     assert!(result.is_ok(), "remove command failed: {result:?}");
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.iter().any(
             |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
@@ -162,7 +162,7 @@ async fn e2e_remove_empty_mods_is_noop() -> Result<()> {
         "remove with empty mods should return an error"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.is_empty(),
         "remove with empty mods should not call packwiz: {packwiz_calls:?}"

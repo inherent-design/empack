@@ -262,7 +262,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
     );
 
     // Verify packwiz was called during workflow via process provider spy
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.iter().any(|call| {
             call.args.iter().any(|a| a == "modrinth")

@@ -916,7 +916,7 @@ mod handle_add_tests {
         let calls = session.process_provider.get_calls();
         assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["modrinth", "add", "--project-id", "test-mod-id", "-y"],
             &workdir.join("pack")
         ));
@@ -985,12 +985,12 @@ mod handle_add_tests {
         let calls = session.process_provider.get_calls();
         assert_eq!(calls.len(), 2);
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["modrinth", "add", "--project-id", "mod1-id", "-y"],
             &workdir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["modrinth", "add", "--project-id", "mod2-id", "-y"],
             &workdir.join("pack")
         ));
@@ -1028,7 +1028,7 @@ mod handle_add_tests {
 
         assert!(result.is_ok());
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["modrinth", "add", "--project-id", "AANobbMI", "-y"],
             &workdir.join("pack")
         ));
@@ -1066,7 +1066,7 @@ mod handle_add_tests {
 
         assert!(result.is_ok());
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["curseforge", "add", "--addon-id", "238222", "-y"],
             &workdir.join("pack")
         ));
@@ -1175,7 +1175,7 @@ mod handle_add_tests {
         let calls = session.process_provider.get_calls();
         assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["modrinth", "add", "--project-id", "failing-mod-id", "-y"],
             &workdir.join("pack")
         ));
@@ -1380,7 +1380,7 @@ mod handle_remove_tests {
 
         // Verify packwiz remove command was called
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["remove", "-y", "test-mod"],
             &session.filesystem_provider.current_dir.join("pack")
         ));
@@ -1403,12 +1403,12 @@ mod handle_remove_tests {
 
         // Verify multiple remove commands were called
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["remove", "-y", "mod1"],
             &session.filesystem_provider.current_dir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["remove", "-y", "mod2"],
             &session.filesystem_provider.current_dir.join("pack")
         ));
@@ -1434,7 +1434,7 @@ mod handle_remove_tests {
         // Verify packwiz remove command was called (without --remove-deps flag)
         // Note: packwiz does not support --remove-deps, orphan detection is implemented separately
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["remove", "-y", "test-mod"],
             &session.filesystem_provider.current_dir.join("pack")
         ));
@@ -1597,12 +1597,12 @@ mod handle_sync_tests {
         let calls = session.process_provider.get_calls();
         assert_eq!(calls.len(), 2);
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["modrinth", "add", "--project-id", "P7dR8mSH", "-y"],
             &workdir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["modrinth", "add", "--project-id", "AANobbMI", "-y"],
             &workdir.join("pack")
         ));
@@ -1639,7 +1639,7 @@ mod handle_sync_tests {
         let calls = session.process_provider.get_calls();
         assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["remove", "-y", "extra_mod"],
             &workdir.join("pack")
         ));
@@ -1760,7 +1760,7 @@ forge = "47.3.0"
 
         assert!(result.is_ok());
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &[
                 "curseforge",
                 "add",
@@ -1836,7 +1836,7 @@ fabric = "0.16.0"
         let calls = session.process_provider.get_calls();
         assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &[
                 "modrinth",
                 "add",
@@ -2023,7 +2023,7 @@ fabric = "0.15.0"
             calls.len()
         );
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["modrinth", "add", "--project-id", "BBNobbMI", "-y"],
             &workdir.join("pack")
         ));
@@ -2108,12 +2108,12 @@ mod handle_build_tests {
         let pack_file_arg = pack_file.display().to_string();
         let built_mrpack_arg = built_mrpack.display().to_string();
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["--pack-file", &pack_file_arg, "refresh"],
             &workdir
         ), "expected packwiz refresh call");
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
             &workdir
         ), "expected packwiz mr export call");
@@ -2144,12 +2144,12 @@ mod handle_build_tests {
         let pack_file_arg = pack_file.display().to_string();
         let rebuilt_mrpack_arg = rebuilt_mrpack.display().to_string();
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["--pack-file", &pack_file_arg, "refresh"],
             &workdir
         ), "expected packwiz refresh call");
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["--pack-file", &pack_file_arg, "mr", "export", "-o", &rebuilt_mrpack_arg],
             &workdir
         ), "expected packwiz mr export call");
@@ -2210,12 +2210,12 @@ mod handle_build_tests {
         let pack_file_arg = pack_file.display().to_string();
         let rebuilt_mrpack_arg = rebuilt_mrpack.display().to_string();
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &["--pack-file", &pack_file_arg, "refresh"],
             &workdir
         ));
         assert!(session.process_provider.verify_call(
-            "packwiz",
+            crate::empack::packwiz::PACKWIZ_BIN,
             &[
                 "--pack-file",
                 &pack_file_arg,
@@ -3087,7 +3087,7 @@ mod search_add_tests {
 
         assert!(result.is_ok(), "handle_add with CF numeric ID should succeed: {result:?}");
 
-        let calls = session.process_provider.get_calls_for_command("packwiz");
+        let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
         assert_eq!(calls.len(), 1, "Expected exactly one packwiz call");
         assert_eq!(
             calls[0].args,
@@ -3189,7 +3189,7 @@ mod search_add_tests {
 
         assert!(result.is_ok(), "handle_add with --type mod should succeed: {result:?}");
 
-        let calls = session.process_provider.get_calls_for_command("packwiz");
+        let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
         assert_eq!(calls.len(), 1);
         assert_eq!(
             calls[0].args,
@@ -3292,7 +3292,7 @@ mod search_add_tests {
 
         assert!(result.is_ok(), "handle_add with --version-id should succeed: {result:?}");
 
-        let calls = session.process_provider.get_calls_for_command("packwiz");
+        let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
         assert_eq!(calls.len(), 1);
         assert_eq!(
             calls[0].args,
@@ -3336,7 +3336,7 @@ mod search_add_tests {
 
         assert!(result.is_ok(), "handle_add with --file-id should succeed: {result:?}");
 
-        let calls = session.process_provider.get_calls_for_command("packwiz");
+        let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
         assert_eq!(calls.len(), 1);
         assert_eq!(
             calls[0].args,

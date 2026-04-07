@@ -1322,7 +1322,7 @@ async fn add_platform_ref(
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown");
                     let args = ["url", "add", name, url, "-y"];
-                    let output = session.process().execute("packwiz", &args, pack_dir)?;
+                    let output = session.process().execute(crate::empack::packwiz::PACKWIZ_BIN, &args, pack_dir)?;
                     if output.success {
                         return Ok(AddRefResult::Added);
                     }
@@ -1352,7 +1352,7 @@ async fn add_platform_ref(
             args.push("-y".to_string());
 
             let output = session.process().execute(
-                "packwiz",
+                crate::empack::packwiz::PACKWIZ_BIN,
                 &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 pack_dir,
             )?;
@@ -1391,7 +1391,7 @@ async fn add_platform_ref(
             args.push("-y".to_string());
 
             let output = session.process().execute(
-                "packwiz",
+                crate::empack::packwiz::PACKWIZ_BIN,
                 &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                 pack_dir,
             )?;

@@ -50,7 +50,7 @@ async fn test_sync_workflow_full() -> Result<()> {
     let sync_result = execute_command_with_session(Commands::Sync {}, &session).await;
     assert!(sync_result.is_ok(), "sync command failed: {sync_result:?}");
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.iter().any(|call| {
             let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
@@ -101,7 +101,7 @@ async fn test_sync_dry_run_no_modifications() -> Result<()> {
         "dry-run sync command failed: {sync_result:?}"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         !packwiz_calls.iter().any(|call| {
             call.args
@@ -146,7 +146,7 @@ async fn test_sync_normalized_installed_names_noop() -> Result<()> {
         "slug-matching installed names should produce a no-op sync: {sync_result:?}"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command("packwiz");
+    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.is_empty(),
         "all-installed sync should not call packwiz at all: {packwiz_calls:?}"

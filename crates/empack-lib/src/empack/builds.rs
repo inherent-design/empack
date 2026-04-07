@@ -929,7 +929,7 @@ impl<'a> BuildOrchestrator<'a> {
             .session
             .process()
             .execute(
-                "packwiz",
+                crate::empack::packwiz::PACKWIZ_BIN,
                 &["--pack-file", &pack_file.to_string_lossy(), "refresh"],
                 &self.workdir,
             )
@@ -1065,7 +1065,7 @@ impl<'a> BuildOrchestrator<'a> {
             .session
             .process()
             .execute(
-                "packwiz",
+                crate::empack::packwiz::PACKWIZ_BIN,
                 &[
                     "--pack-file",
                     &pack_file.to_string_lossy(),
