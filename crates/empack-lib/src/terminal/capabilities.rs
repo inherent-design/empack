@@ -32,7 +32,7 @@ impl TerminalCapabilities {
     pub fn detect_from_config(
         color_intent: TerminalCapsDetectIntent,
     ) -> Result<Self, TerminalError> {
-        let is_tty = std::io::stdout().is_terminal();
+        let is_tty = std::io::stderr().is_terminal();
 
         let color = detect_color(color_intent, is_tty);
         let unicode = detect_unicode(is_tty)?;
