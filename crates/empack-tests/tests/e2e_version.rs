@@ -86,7 +86,7 @@ fn e2e_requirements_shows_packwiz_tx() {
         "requirements output should mention packwiz-tx:\n{stdout}",
     );
     assert!(
-        stdout.contains("v0.1"),
+        stdout.contains(empack_lib::platform::packwiz_bin::PACKWIZ_TX_VERSION),
         "requirements output should show packwiz-tx version:\n{stdout}",
     );
 }
