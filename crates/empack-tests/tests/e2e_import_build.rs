@@ -21,6 +21,55 @@ fn download_file(url: &str, dest: &std::path::Path) {
         .unwrap_or_else(|e| panic!("failed to write {}: {}", dest.display(), e));
 }
 
+fn download_featured_modrinth_mrpack(project_id: &str, dest: &std::path::Path) {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .expect("build reqwest client");
+    let resp = client
+        .get(format!(
+            "https://api.modrinth.com/v2/project/{project_id}/version?featured=true"
+        ))
+        .send()
+        .unwrap_or_else(|e| panic!("failed to query Modrinth versions for {project_id}: {e}"));
+    assert!(
+        resp.status().is_success(),
+        "HTTP {} for Modrinth project {}",
+        resp.status(),
+        project_id
+    );
+
+    let versions: serde_json::Value = resp
+        .json()
+        .expect("failed to parse Modrinth versions response");
+    let download_url = versions
+        .as_array()
+        .and_then(|versions| versions.first())
+        .and_then(|version| version.get("files"))
+        .and_then(|files| files.as_array())
+        .and_then(|files| {
+            files
+                .iter()
+                .find(|file| {
+                    file.get("filename")
+                        .and_then(|filename| filename.as_str())
+                        .is_some_and(|filename| filename.ends_with(".mrpack"))
+                })
+                .or_else(|| {
+                    files.iter().find(|file| {
+                        file.get("primary")
+                            .and_then(|primary| primary.as_bool())
+                            .unwrap_or(false)
+                    })
+                })
+        })
+        .and_then(|file| file.get("url"))
+        .and_then(|url| url.as_str())
+        .expect("no downloadable mrpack URL in Modrinth versions response");
+
+    download_file(download_url, dest);
+}
+
 #[test]
 fn e2e_import_modrinth_and_build_mrpack() {
     empack_tests::skip_if_no_java!();
@@ -28,10 +77,7 @@ fn e2e_import_modrinth_and_build_mrpack() {
     let project = TestProject::new();
     let mrpack_path = project.dir().join("fabulously-optimized.mrpack");
 
-    download_file(
-        "https://cdn.modrinth.com/data/1KVo5zza/versions/2ZbcYfCj/Fabulously.Optimized-5.4.1.mrpack",
-        &mrpack_path,
-    );
+    download_featured_modrinth_mrpack("1KVo5zza", &mrpack_path);
 
     let output = empack_cmd(project.dir())
         .args([
@@ -88,7 +134,6 @@ fn e2e_import_modrinth_and_build_mrpack() {
 
 #[test]
 fn e2e_import_local_mrpack_and_build_mrpack() {
-    empack_tests::skip_if_no_packwiz!();
     empack_tests::skip_if_no_java!();
 
     let project = TestProject::new();
