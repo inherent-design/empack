@@ -134,39 +134,37 @@ pub async fn resolve_sync_action(
             key: key.clone(),
             title: title.clone(),
         }),
-        SyncPlanAction::Add(dep) => {
-            match &dep.source {
-                DependencySource::Local { .. } => {
-                    unreachable!("build_sync_plan filters out Local entries before dispatch");
-                }
-                DependencySource::Platform {
-                    project_id,
-                    project_platform,
-                    version_pin,
-                } => {
-                    let resolution = resolve_add_contract(
-                        &dep.search_query,
-                        Some(dep.project_type),
-                        Some(dep.minecraft_version.as_str()),
-                        dep.loader,
-                        project_id,
-                        *project_platform,
-                        version_pin.as_deref(),
-                        None,
-                        resolver,
-                    )
-                    .await?;
-
-                    Ok(SyncExecutionAction::Add {
-                        key: dep.key.clone(),
-                        title: resolution.title,
-                        commands: resolution.commands,
-                        resolved_project_id: resolution.resolved_project_id,
-                        resolved_platform: resolution.resolved_platform,
-                    })
-                }
+        SyncPlanAction::Add(dep) => match &dep.source {
+            DependencySource::Local { .. } => {
+                unreachable!("build_sync_plan filters out Local entries before dispatch");
             }
-        }
+            DependencySource::Platform {
+                project_id,
+                project_platform,
+                version_pin,
+            } => {
+                let resolution = resolve_add_contract(
+                    &dep.search_query,
+                    Some(dep.project_type),
+                    Some(dep.minecraft_version.as_str()),
+                    dep.loader,
+                    project_id,
+                    *project_platform,
+                    version_pin.as_deref(),
+                    None,
+                    resolver,
+                )
+                .await?;
+
+                Ok(SyncExecutionAction::Add {
+                    key: dep.key.clone(),
+                    title: resolution.title,
+                    commands: resolution.commands,
+                    resolved_project_id: resolution.resolved_project_id,
+                    resolved_platform: resolution.resolved_platform,
+                })
+            }
+        },
     }
 }
 

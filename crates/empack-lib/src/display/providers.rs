@@ -1,6 +1,5 @@
 //! Display provider traits for dependency injection.
 
-
 /// Provider trait for all user-facing communication
 ///
 /// This trait abstracts all display operations, enabling dependency injection
@@ -120,4 +119,3 @@ pub trait StructuredProvider {
     /// Display key-value pairs
     fn properties(&self, pairs: &[(&str, &str)]);
 }
-

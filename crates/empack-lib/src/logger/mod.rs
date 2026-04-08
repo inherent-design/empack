@@ -29,7 +29,10 @@ impl std::fmt::Debug for Logger {
         let mut dbg = f.debug_struct("Logger");
         #[cfg(feature = "telemetry")]
         {
-            dbg.field("chrome", &self._chrome_guard.lock().ok().map(|g| g.is_some()));
+            dbg.field(
+                "chrome",
+                &self._chrome_guard.lock().ok().map(|g| g.is_some()),
+            );
             dbg.field("otlp", &self._tracer_provider.is_some());
         }
         dbg.finish()
@@ -51,8 +54,8 @@ impl Logger {
 
         let filter_string = Self::build_filter_string(&config);
 
-        let env_filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new(&filter_string));
+        let env_filter =
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&filter_string));
 
         let fmt_layer = match (config.output, config.format) {
             (LogOutput::Stderr, LogFormat::Text) => fmt::layer()

@@ -1,9 +1,9 @@
-use empack_tests::e2e::{empack_cmd, TestProject};
+use empack_tests::e2e::{TestProject, empack_cmd};
 
 /// Download a file via HTTP to a local path using reqwest blocking.
 fn download_file(url: &str, dest: &std::path::Path) {
-    let resp = reqwest::blocking::get(url)
-        .unwrap_or_else(|e| panic!("failed to download {}: {}", url, e));
+    let resp =
+        reqwest::blocking::get(url).unwrap_or_else(|e| panic!("failed to download {}: {}", url, e));
     assert!(
         resp.status().is_success(),
         "HTTP {} for {}",
@@ -46,11 +46,10 @@ fn e2e_import_modrinth_and_build_mrpack() {
     );
 
     let pack_dir = project.dir().join("imported-pack");
-    let config = std::fs::read_to_string(pack_dir.join("empack.yml"))
-        .expect("failed to read empack.yml");
+    let config =
+        std::fs::read_to_string(pack_dir.join("empack.yml")).expect("failed to read empack.yml");
     assert!(
-        config.contains("name: Fabulously Optimized")
-            || config.contains("Fabulously Optimized"),
+        config.contains("name: Fabulously Optimized") || config.contains("Fabulously Optimized"),
         "empack.yml should contain 'Fabulously Optimized'\n{config}"
     );
 
@@ -77,12 +76,7 @@ fn e2e_import_modrinth_and_build_mrpack() {
     let has_mrpack = std::fs::read_dir(&dist)
         .expect("failed to read dist/")
         .filter_map(Result::ok)
-        .any(|entry| {
-            entry
-                .path()
-                .extension()
-                .is_some_and(|ext| ext == "mrpack")
-        });
+        .any(|entry| entry.path().extension().is_some_and(|ext| ext == "mrpack"));
     assert!(has_mrpack, "no .mrpack file found in dist/");
 }
 
@@ -109,8 +103,9 @@ fn e2e_import_curseforge_and_check_restricted() {
         files_resp.status()
     );
 
-    let files_json: serde_json::Value =
-        files_resp.json().expect("failed to parse CF files response");
+    let files_json: serde_json::Value = files_resp
+        .json()
+        .expect("failed to parse CF files response");
 
     let file_id = files_json["data"][0]["id"]
         .as_u64()
@@ -131,8 +126,9 @@ fn e2e_import_curseforge_and_check_restricted() {
         dl_resp.status()
     );
 
-    let dl_json: serde_json::Value =
-        dl_resp.json().expect("failed to parse CF download-url response");
+    let dl_json: serde_json::Value = dl_resp
+        .json()
+        .expect("failed to parse CF download-url response");
 
     let download_url = dl_json["data"]
         .as_str()

@@ -51,11 +51,7 @@ fn e2e_add_sodium_live() {
     let has_pw_toml = std::fs::read_dir(&mods_dir)
         .unwrap_or_else(|_| panic!("failed to read {}", mods_dir.display()))
         .filter_map(|e| e.ok())
-        .any(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "toml")
-        });
+        .any(|e| e.path().extension().is_some_and(|ext| ext == "toml"));
     assert!(has_pw_toml, "expected at least one .pw.toml in pack/mods/");
 }
 

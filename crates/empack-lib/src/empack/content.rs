@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use anyhow::Context;
 use thiserror::Error;
 
-use crate::application::session::NetworkProvider;
 use crate::Result;
+use crate::application::session::NetworkProvider;
 
 // ---------------------------------------------------------------------------
 // SF-1: UrlKind classifier
@@ -149,7 +149,11 @@ fn url_extension(url: &str) -> Option<String> {
     let filename = path.rsplit('/').next().unwrap_or(path);
     let dot_pos = filename.rfind('.')?;
     let ext = filename.get(dot_pos + 1..)?;
-    if ext.is_empty() { None } else { Some(ext.to_lowercase()) }
+    if ext.is_empty() {
+        None
+    } else {
+        Some(ext.to_lowercase())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -304,10 +308,8 @@ impl JarResolver for ApiJarResolver<'_> {
 
         let bytes = match bytes {
             Some(b) => b,
-            None => {
-                std::fs::read(&request.path)
-                    .with_context(|| format!("reading JAR file: {:?}", request.path))?
-            }
+            None => std::fs::read(&request.path)
+                .with_context(|| format!("reading JAR file: {:?}", request.path))?,
         };
         // CurseForge fingerprint API requires whitespace bytes stripped before hashing
         let filtered: Vec<u8> = bytes

@@ -1,6 +1,7 @@
 //! Build system for empack targets
 //! Five-target system: mrpack, client, server, client-full, server-full
 
+use crate::application::session::execute_process_with_live_issues;
 use crate::empack::PackwizInstaller;
 use crate::empack::templates::TemplateEngine;
 use crate::primitives::*;
@@ -445,10 +446,7 @@ impl<'a> BuildOrchestrator<'a> {
             args.insert(args.len() - 1, "-loader");
             args.insert(args.len() - 1, &loader_flag);
         }
-        let output = self
-            .session
-            .process()
-            .execute("java", &args, dist_dir)
+        let output = execute_process_with_live_issues(self.session, "java", &args, dist_dir)
             .map_err(|_| BuildError::MissingTool {
                 tool: "java".to_string(),
             })?;
@@ -530,10 +528,7 @@ impl<'a> BuildOrchestrator<'a> {
         args.push(&install_dir_flag);
         args.push("--create-scripts");
         args.push("--download-server");
-        let output = self
-            .session
-            .process()
-            .execute("java", &args, dist_dir)
+        let output = execute_process_with_live_issues(self.session, "java", &args, dist_dir)
             .map_err(|_| BuildError::MissingTool {
                 tool: "java".to_string(),
             })?;
@@ -925,17 +920,15 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
-        let output = self
-            .session
-            .process()
-            .execute(
-                self.session.packwiz_bin(),
-                &["--pack-file", &pack_file.to_string_lossy(), "refresh"],
-                &self.workdir,
-            )
-            .map_err(|e| BuildError::CommandFailed {
-                command: format!("packwiz refresh: {}", e),
-            })?;
+        let output = execute_process_with_live_issues(
+            self.session,
+            self.session.packwiz_bin(),
+            &["--pack-file", &pack_file.to_string_lossy(), "refresh"],
+            &self.workdir,
+        )
+        .map_err(|e| BuildError::CommandFailed {
+            command: format!("packwiz refresh: {}", e),
+        })?;
 
         if !output.success {
             return Err(BuildError::CommandFailed {
@@ -1061,24 +1054,22 @@ impl<'a> BuildOrchestrator<'a> {
                 })?;
         }
 
-        let output = self
-            .session
-            .process()
-            .execute(
-                self.session.packwiz_bin(),
-                &[
-                    "--pack-file",
-                    &pack_file.to_string_lossy(),
-                    "mr",
-                    "export",
-                    "-o",
-                    &output_file.to_string_lossy(),
-                ],
-                &self.workdir,
-            )
-            .map_err(|e| BuildError::CommandFailed {
-                command: format!("packwiz mr export: {}", e),
-            })?;
+        let output = execute_process_with_live_issues(
+            self.session,
+            self.session.packwiz_bin(),
+            &[
+                "--pack-file",
+                &pack_file.to_string_lossy(),
+                "mr",
+                "export",
+                "-o",
+                &output_file.to_string_lossy(),
+            ],
+            &self.workdir,
+        )
+        .map_err(|e| BuildError::CommandFailed {
+            command: format!("packwiz mr export: {}", e),
+        })?;
 
         if !output.success {
             let combined_output = format!("{}{}", output.stdout, output.stderr);
@@ -1355,11 +1346,11 @@ impl<'a> BuildOrchestrator<'a> {
             command: format!("PackwizInstaller initialization: {}", e),
         })?;
 
-        match installer
-            .install_mods("server", &dist_dir)
-            .map_err(|e| BuildError::CommandFailed {
+        match installer.install_mods("server", &dist_dir).map_err(|e| {
+            BuildError::CommandFailed {
                 command: format!("packwiz-installer-bootstrap.jar: {}", e),
-            })? {
+            }
+        })? {
             crate::empack::packwiz::InstallResult::Success => {}
             crate::empack::packwiz::InstallResult::RestrictedMods(restricted) => {
                 return Ok(BuildResult {

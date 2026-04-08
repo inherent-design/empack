@@ -134,7 +134,9 @@ async fn test_remove_dry_run() -> Result<()> {
         result
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
+    let packwiz_calls = session
+        .process_provider
+        .get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     let remove_calls: Vec<_> = packwiz_calls
         .iter()
         .filter(|call| call.args.contains(&"remove".to_string()))
@@ -198,7 +200,9 @@ async fn test_init_dry_run() -> Result<()> {
         "dry-run should not create the project directory"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
+    let packwiz_calls = session
+        .process_provider
+        .get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.is_empty(),
         "dry-run should not invoke packwiz: {packwiz_calls:?}"
@@ -232,15 +236,15 @@ async fn test_build_dry_run_mrpack() -> Result<()> {
         result
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
+    let packwiz_calls = session
+        .process_provider
+        .get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.is_empty(),
         "dry-run should not invoke packwiz: {packwiz_calls:?}"
     );
 
-    let mrpack_path = workdir
-        .join("dist")
-        .join("dry-run-build-v1.0.0.mrpack");
+    let mrpack_path = workdir.join("dist").join("dry-run-build-v1.0.0.mrpack");
     assert!(
         !session.filesystem().exists(&mrpack_path),
         "dry-run should not produce build artifacts"

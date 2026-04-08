@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::application::session::Session;
+use crate::Result;
+use crate::application::session::{Session, execute_process_with_live_issues};
 use crate::empack::config::{DependencyRecord, DependencyStatus};
 use crate::empack::content::{OverrideCategory, OverrideSide, SideEnv, SideRequirement};
 use crate::empack::parsing::ModLoader;
+use crate::networking::rate_budget::RateBudget;
 use crate::primitives::ProjectPlatform;
-use crate::Result;
 use tracing::instrument;
 
 // ---------------------------------------------------------------------------
@@ -297,16 +299,16 @@ fn extract_forgecdn_file_id(url: &str) -> Option<String> {
 pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
     let file = std::fs::File::open(archive_path)
         .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
 
     let manifest_entry = archive
         .by_name("manifest.json")
         .map_err(|_| ImportError::CurseForgeManifestMissing)?;
 
     let manifest_content = read_zip_entry_to_string(manifest_entry)?;
-    let cf: CfManifest =
-        serde_json::from_str(&manifest_content).map_err(|e| ImportError::ParseFailed(e.to_string()))?;
+    let cf: CfManifest = serde_json::from_str(&manifest_content)
+        .map_err(|e| ImportError::ParseFailed(e.to_string()))?;
 
     if cf.manifest_type != "minecraftModpack" {
         return Err(ImportError::ParseFailed(format!(
@@ -326,9 +328,13 @@ pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
 
     let (loader, loader_version) = parse_cf_loader(&cf.minecraft.mod_loaders)?;
 
-    let name = cf
-        .name
-        .unwrap_or_else(|| archive_path.file_stem().and_then(|s| s.to_str()).unwrap_or("Pack").to_string());
+    let name = cf.name.unwrap_or_else(|| {
+        archive_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Pack")
+            .to_string()
+    });
     let version = cf.version.unwrap_or_else(|| "1.0.0".to_string());
 
     let overrides_dir = if cf.overrides.is_empty() {
@@ -338,7 +344,12 @@ pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
     };
 
     let mut override_entries = Vec::new();
-    collect_override_entries(&mut archive, &overrides_dir, OverrideSide::Both, &mut override_entries)?;
+    collect_override_entries(
+        &mut archive,
+        &overrides_dir,
+        OverrideSide::Both,
+        &mut override_entries,
+    )?;
 
     let content: Vec<ContentEntry> = cf
         .files
@@ -387,16 +398,16 @@ pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
 pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
     let file = std::fs::File::open(file_path)
         .with_context(|| format!("opening mrpack: {}", file_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
 
     let manifest_entry = archive
         .by_name("modrinth.index.json")
         .map_err(|_| ImportError::ModrinthManifestMissing)?;
 
     let manifest_content = read_zip_entry_to_string(manifest_entry)?;
-    let mr: MrManifest =
-        serde_json::from_str(&manifest_content).map_err(|e| ImportError::ParseFailed(e.to_string()))?;
+    let mr: MrManifest = serde_json::from_str(&manifest_content)
+        .map_err(|e| ImportError::ParseFailed(e.to_string()))?;
 
     let mc_version = mr
         .dependencies
@@ -412,10 +423,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
         .keys()
         .find(|k| {
             let k = k.as_str();
-            k == "forge"
-                || k == "neoforge"
-                || k == "fabric-loader"
-                || k == "quilt-loader"
+            k == "forge" || k == "neoforge" || k == "fabric-loader" || k == "quilt-loader"
         })
         .ok_or_else(|| ImportError::MissingField {
             field: "dependencies.<loader>".to_string(),
@@ -431,9 +439,13 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
     let loader = ModLoader::parse_from_platform_id(loader_id)
         .map_err(|_| ImportError::UnknownLoader(loader_id.clone()))?;
 
-    let name = mr
-        .name
-        .unwrap_or_else(|| file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("Pack").to_string());
+    let name = mr.name.unwrap_or_else(|| {
+        file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Pack")
+            .to_string()
+    });
     let version = mr.version_id.unwrap_or_else(|| "1.0.0".to_string());
 
     let mut override_entries = Vec::new();
@@ -441,13 +453,28 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
     // Modrinth mrpack spec uses hardcoded archive directory names for overrides;
     // the JSON index does not contain these keys, so fall back to the convention.
     let overrides_dir = mr.overrides.as_deref().unwrap_or("overrides");
-    collect_override_entries(&mut archive, overrides_dir, OverrideSide::Both, &mut override_entries)?;
+    collect_override_entries(
+        &mut archive,
+        overrides_dir,
+        OverrideSide::Both,
+        &mut override_entries,
+    )?;
 
     let client_dir = mr.client_overrides.as_deref().unwrap_or("client-overrides");
-    collect_override_entries(&mut archive, client_dir, OverrideSide::ClientOnly, &mut override_entries)?;
+    collect_override_entries(
+        &mut archive,
+        client_dir,
+        OverrideSide::ClientOnly,
+        &mut override_entries,
+    )?;
 
     let server_dir = mr.server_overrides.as_deref().unwrap_or("server-overrides");
-    collect_override_entries(&mut archive, server_dir, OverrideSide::ServerOnly, &mut override_entries)?;
+    collect_override_entries(
+        &mut archive,
+        server_dir,
+        OverrideSide::ServerOnly,
+        &mut override_entries,
+    )?;
 
     let content: Vec<ContentEntry> = mr
         .files
@@ -487,7 +514,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
                     env,
                     required: true,
                     resolved_name: None,
-                resolved_slug: None,
+                    resolved_slug: None,
                     resolved_type: None,
                     cf_class_id: None,
                 })
@@ -526,11 +553,9 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
 // Resolver
 // ---------------------------------------------------------------------------
 
-/// Concurrency bound for the resolve phase. Each task performs one or two
-/// HTTP requests. The Modrinth and CurseForge rate limits are the true
-/// bottleneck; 5 concurrent tasks balances throughput against 429 risk,
-/// leaving rate limit headroom for the subsequent packwiz add phase.
-const RESOLVE_CONCURRENCY: usize = 5;
+/// Concurrency bound for the resolve phase. Adaptive budgets handle request
+/// pacing; the semaphore now only caps task and connection pressure.
+const RESOLVE_CONCURRENCY: usize = 10;
 
 /// Enrich a raw manifest via platform APIs to resolve names, types, and
 /// identify embedded JARs.
@@ -545,6 +570,7 @@ pub async fn resolve_manifest(
     curseforge_api: &dyn crate::application::session::NetworkProvider,
     curseforge_api_key: Option<&str>,
     display: &dyn crate::display::providers::DisplayProvider,
+    rate_budgets: &crate::networking::rate_budget::HostBudgetRegistry,
 ) -> Result<ResolvedManifest> {
     let resolve_start = std::time::Instant::now();
     let mut warnings = Vec::new();
@@ -569,14 +595,28 @@ pub async fn resolve_manifest(
         })
         .collect();
 
+    let cf_budget = rate_budgets.for_host("api.curseforge.com");
+    let mr_budget = rate_budgets.for_host("api.modrinth.com");
+
     let cf_file_to_mod = if !cf_file_ids.is_empty() {
-        resolve_curseforge_file_ids(&cf_file_ids, curseforge_api, curseforge_api_key, &mut warnings).await
+        resolve_curseforge_file_ids(
+            &cf_file_ids,
+            curseforge_api,
+            curseforge_api_key,
+            &mut warnings,
+            cf_budget.as_ref(),
+        )
+        .await
     } else {
         std::collections::HashMap::new()
     };
 
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(RESOLVE_CONCURRENCY));
-    type ResolveHandle = (usize, ContentEntry, tokio::task::JoinHandle<(ContentEntry, Vec<String>)>);
+    type ResolveHandle = (
+        usize,
+        ContentEntry,
+        tokio::task::JoinHandle<(ContentEntry, Vec<String>)>,
+    );
     let mut handles: Vec<ResolveHandle> = Vec::new();
     let mut passthrough: Vec<(usize, ContentEntry, Vec<String>)> = Vec::new();
 
@@ -596,41 +636,49 @@ pub async fn resolve_manifest(
                 let cf = cf_client.clone();
                 let key = cf_key.clone();
                 let sem = semaphore.clone();
+                let task_mr_budget = mr_budget.clone();
+                let task_cf_budget = cf_budget.clone();
 
-                handles.push((i, backup, tokio::spawn(async move {
-                    let _permit = sem.acquire().await.expect("semaphore closed");
-                    let resolve_start = std::time::Instant::now();
-                    let mut task_warnings = Vec::new();
+                handles.push((
+                    i,
+                    backup,
+                    tokio::spawn(async move {
+                        let _permit = sem.acquire().await.expect("semaphore closed");
+                        let resolve_start = std::time::Instant::now();
+                        let mut task_warnings = Vec::new();
 
-                    if pref.platform == ProjectPlatform::Modrinth
-                        && pref.project_id.is_empty()
-                        && pref.download_urls.is_empty()
-                    {
-                        task_warnings.push(format!(
-                            "Modrinth file '{}' has no project ID and no download URL; \
+                        if pref.platform == ProjectPlatform::Modrinth
+                            && pref.project_id.is_empty()
+                            && pref.download_urls.is_empty()
+                        {
+                            task_warnings.push(format!(
+                                "Modrinth file '{}' has no project ID and no download URL; \
                              skipping platform resolution",
-                            pref.destination_path
-                        ));
-                    } else {
-                        resolve_platform_ref_with_client(
-                            &mut pref,
-                            &mr,
-                            &cf,
-                            key.as_deref(),
-                            &mut task_warnings,
-                        )
-                        .await;
-                    }
+                                pref.destination_path
+                            ));
+                        } else {
+                            resolve_platform_ref_with_client(
+                                &mut pref,
+                                &mr,
+                                &cf,
+                                key.as_deref(),
+                                &mut task_warnings,
+                                task_mr_budget,
+                                task_cf_budget,
+                            )
+                            .await;
+                        }
 
-                    tracing::trace!(
-                        slug = %pref.project_id,
-                        platform = %pref.platform,
-                        resolve_ms = resolve_start.elapsed().as_millis() as u64,
-                        "ref resolved"
-                    );
+                        tracing::trace!(
+                            slug = %pref.project_id,
+                            platform = %pref.platform,
+                            resolve_ms = resolve_start.elapsed().as_millis() as u64,
+                            "ref resolved"
+                        );
 
-                    (ContentEntry::PlatformReferenced(pref), task_warnings)
-                })));
+                        (ContentEntry::PlatformReferenced(pref), task_warnings)
+                    }),
+                ));
             }
             ContentEntry::EmbeddedJar(embed) => {
                 let w = vec![format!(
@@ -716,6 +764,8 @@ async fn resolve_platform_ref_with_client(
     curseforge_client: &reqwest::Client,
     curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
+    modrinth_budget: Option<Arc<dyn RateBudget>>,
+    curseforge_budget: Option<Arc<dyn RateBudget>>,
 ) {
     if pref.resolved_name.is_some() {
         return;
@@ -726,7 +776,13 @@ async fn resolve_platform_ref_with_client(
             if pref.project_id.is_empty() {
                 return;
             }
-            resolve_modrinth_project_with_client(pref, modrinth_client, warnings).await;
+            resolve_modrinth_project_with_client(
+                pref,
+                modrinth_client,
+                warnings,
+                modrinth_budget.as_ref(),
+            )
+            .await;
         }
         ProjectPlatform::CurseForge => {
             if pref.project_id.is_empty() {
@@ -737,9 +793,27 @@ async fn resolve_platform_ref_with_client(
                 curseforge_client,
                 curseforge_api_key,
                 warnings,
+                curseforge_budget.as_ref(),
             )
             .await;
         }
+    }
+}
+
+async fn apply_rate_budget(budget: Option<&Arc<dyn RateBudget>>) {
+    let Some(budget) = budget else {
+        return;
+    };
+
+    let delay = budget.acquire();
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
+    }
+}
+
+fn record_rate_budget(budget: Option<&Arc<dyn RateBudget>>, response: &reqwest::Response) {
+    if let Some(budget) = budget {
+        budget.record_response(response.headers(), response.status());
     }
 }
 
@@ -761,32 +835,40 @@ async fn resolve_modrinth_project_with_client(
     pref: &mut PlatformRef,
     client: &reqwest::Client,
     warnings: &mut Vec<String>,
+    budget: Option<&Arc<dyn RateBudget>>,
 ) {
-    if pref.file_id.is_none() && let Some(sha1) = pref.hashes.get("sha1") {
+    if pref.file_id.is_none()
+        && let Some(sha1) = pref.hashes.get("sha1")
+    {
         let url = format!(
             "https://api.modrinth.com/v2/version_file/{}?algorithm=sha1",
             sha1
         );
-        if let Ok(resp) = client.get(&url).send().await
-            && resp.status().is_success()
-            && let Ok(body) = resp.json::<MrVersionFileResponse>().await
-        {
-            pref.file_id = Some(body.id);
+        apply_rate_budget(budget).await;
+        if let Ok(resp) = client.get(&url).send().await {
+            record_rate_budget(budget, &resp);
+            if resp.status().is_success()
+                && let Ok(body) = resp.json::<MrVersionFileResponse>().await
+            {
+                pref.file_id = Some(body.id);
+            }
         }
     }
 
-    let url = format!(
-        "https://api.modrinth.com/v2/project/{}",
-        pref.project_id
-    );
+    let url = format!("https://api.modrinth.com/v2/project/{}", pref.project_id);
 
+    apply_rate_budget(budget).await;
     let response = match client.get(&url).send().await {
         Ok(r) => r,
         Err(e) => {
-            warnings.push(format!("Modrinth API lookup failed for '{}': {}", pref.project_id, e));
+            warnings.push(format!(
+                "Modrinth API lookup failed for '{}': {}",
+                pref.project_id, e
+            ));
             return;
         }
     };
+    record_rate_budget(budget, &response);
 
     if !response.status().is_success() {
         warnings.push(format!(
@@ -836,6 +918,7 @@ async fn resolve_curseforge_project_with_client(
     client: &reqwest::Client,
     curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
+    budget: Option<&Arc<dyn RateBudget>>,
 ) {
     let api_key = match curseforge_api_key {
         Some(k) => k,
@@ -848,23 +931,20 @@ async fn resolve_curseforge_project_with_client(
         }
     };
 
-    let url = format!(
-        "https://api.curseforge.com/v1/mods/{}",
-        pref.project_id
-    );
+    let url = format!("https://api.curseforge.com/v1/mods/{}", pref.project_id);
 
-    let response = match client
-        .get(&url)
-        .header("x-api-key", api_key)
-        .send()
-        .await
-    {
+    apply_rate_budget(budget).await;
+    let response = match client.get(&url).header("x-api-key", api_key).send().await {
         Ok(r) => r,
         Err(e) => {
-            warnings.push(format!("CurseForge API lookup failed for '{}': {}", pref.project_id, e));
+            warnings.push(format!(
+                "CurseForge API lookup failed for '{}': {}",
+                pref.project_id, e
+            ));
             return;
         }
     };
+    record_rate_budget(budget, &response);
 
     if !response.status().is_success() {
         warnings.push(format!(
@@ -917,13 +997,16 @@ async fn resolve_curseforge_file_ids(
     api: &dyn crate::application::session::NetworkProvider,
     api_key: Option<&str>,
     warnings: &mut Vec<String>,
+    budget: Option<&Arc<dyn RateBudget>>,
 ) -> std::collections::HashMap<u64, u64> {
     let mut result = std::collections::HashMap::new();
 
     let api_key = match api_key {
         Some(k) => k,
         None => {
-            warnings.push("CurseForge API key missing; cannot resolve file IDs from ForgeCD URLs".to_string());
+            warnings.push(
+                "CurseForge API key missing; cannot resolve file IDs from ForgeCD URLs".to_string(),
+            );
             return result;
         }
     };
@@ -936,6 +1019,7 @@ async fn resolve_curseforge_file_ids(
     // CF API accepts batches; process in chunks of 50.
     for chunk in file_ids.chunks(50) {
         let body = serde_json::json!({ "fileIds": chunk });
+        apply_rate_budget(budget).await;
         let response = match client
             .post("https://api.curseforge.com/v1/mods/files")
             .header("x-api-key", api_key)
@@ -949,6 +1033,7 @@ async fn resolve_curseforge_file_ids(
                 continue;
             }
         };
+        record_rate_budget(budget, &response);
 
         if !response.status().is_success() {
             warnings.push(format!(
@@ -1055,7 +1140,9 @@ pub async fn execute_import(
     }
 
     let pack_dir = config.target_dir.join("pack");
-    let config_manager = session.filesystem().config_manager(config.target_dir.clone());
+    let config_manager = session
+        .filesystem()
+        .config_manager(config.target_dir.clone());
 
     let mut content_dirs: Vec<&str> = vec!["mods", "resourcepacks", "shaderpacks", "datapacks"];
     if let Some(ref df) = datapack_folder
@@ -1106,7 +1193,14 @@ pub async fn execute_import(
                 content_progress.tick(&pref.destination_path);
 
                 let add_start = std::time::Instant::now();
-                let result = add_platform_ref_with_retry(pref, &pack_dir, session, datapack_folder.as_deref(), use_no_refresh).await?;
+                let result = add_platform_ref_with_retry(
+                    pref,
+                    &pack_dir,
+                    session,
+                    datapack_folder.as_deref(),
+                    use_no_refresh,
+                )
+                .await?;
                 add_durations.push(add_start.elapsed());
 
                 match result {
@@ -1140,14 +1234,19 @@ pub async fn execute_import(
                             pref.resolved_name.as_deref(),
                             &pref.destination_path,
                         );
-                        let title = pref.resolved_name.clone().unwrap_or_else(|| derived_key.clone());
+                        let title = pref
+                            .resolved_name
+                            .clone()
+                            .unwrap_or_else(|| derived_key.clone());
 
                         pending_deps.push(PendingDep {
                             derived_key,
                             title,
                             platform: pref.platform,
                             project_id: pref.project_id.clone(),
-                            project_type: pref.resolved_type.unwrap_or(crate::primitives::ProjectType::Mod),
+                            project_type: pref
+                                .resolved_type
+                                .unwrap_or(crate::primitives::ProjectType::Mod),
                             version: pref.file_id.clone(),
                         });
                     }
@@ -1169,13 +1268,17 @@ pub async fn execute_import(
     content_progress.finish(&format!("{} platform references processed", content_total));
 
     if use_no_refresh {
-        let refresh_output = session.process().execute(
+        let refresh_output = execute_process_with_live_issues(
+            session,
             session.packwiz_bin(),
             &["refresh"],
             &pack_dir,
         )?;
         if !refresh_output.success {
-            anyhow::bail!("packwiz refresh failed after batch import: {}", refresh_output.error_output());
+            anyhow::bail!(
+                "packwiz refresh failed after batch import: {}",
+                refresh_output.error_output()
+            );
         }
     }
 
@@ -1183,7 +1286,8 @@ pub async fn execute_import(
     let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
     let post_scan_ms = scan_start.elapsed().as_millis() as u64;
 
-    let new_stems: std::collections::HashSet<_> = post_stems.difference(&pre_stems).cloned().collect();
+    let new_stems: std::collections::HashSet<_> =
+        post_stems.difference(&pre_stems).cloned().collect();
 
     for dep in &pending_deps {
         let record = DependencyRecord {
@@ -1195,7 +1299,10 @@ pub async fn execute_import(
             version: dep.version.clone(),
         };
         if let Err(e) = config_manager.add_dependency(&dep.derived_key, record) {
-            session.display().status().warning(&format!("failed to update empack.yml: {}", e));
+            session
+                .display()
+                .status()
+                .warning(&format!("failed to update empack.yml: {}", e));
         }
     }
 
@@ -1296,7 +1403,8 @@ async fn add_platform_ref_with_retry(
             AddRefResult::Added | AddRefResult::Skipped => return Ok(result),
             AddRefResult::Failed(detail) => {
                 if attempt < MAX_ADD_RETRIES {
-                    let delay = std::time::Duration::from_secs(RETRY_BASE_DELAY_SECS * (1 << attempt));
+                    let delay =
+                        std::time::Duration::from_secs(RETRY_BASE_DELAY_SECS * (1 << attempt));
                     tracing::warn!(
                         attempt = attempt + 1,
                         max = MAX_ADD_RETRIES,
@@ -1356,13 +1464,17 @@ async fn add_platform_ref(
                         args.push("--no-refresh");
                     }
                     args.extend(["url", "add", name, url, "-y"]);
-                    let output = session.process().execute(session.packwiz_bin(), &args, pack_dir)?;
+                    let output =
+                        session
+                            .process()
+                            .execute(session.packwiz_bin(), &args, pack_dir)?;
                     if output.success {
                         return Ok(AddRefResult::Added);
                     }
                     return Ok(AddRefResult::Failed(format!(
                         "packwiz url add failed for '{}': {}",
-                        pref.destination_path, output.error_output()
+                        pref.destination_path,
+                        output.error_output()
                     )));
                 }
                 return Ok(AddRefResult::Skipped);
@@ -1439,9 +1551,11 @@ async fn add_platform_ref(
 
             args.push("-y".to_string());
 
-            let output = session.process().execute(
+            let arg_refs = args.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+            let output = execute_process_with_live_issues(
+                session,
                 session.packwiz_bin(),
-                &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                &arg_refs,
                 pack_dir,
             )?;
 
@@ -1451,7 +1565,8 @@ async fn add_platform_ref(
 
             Ok(AddRefResult::Failed(format!(
                 "packwiz modrinth add failed for '{}': {}",
-                pref.destination_path, output.error_output()
+                pref.destination_path,
+                output.error_output()
             )))
         }
         ProjectPlatform::CurseForge => {
@@ -1461,8 +1576,7 @@ async fn add_platform_ref(
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("CurseForge ref missing file_id"))?;
 
-            let has_cf_offline_data = !pref.hashes.is_empty()
-                && pref.resolved_name.is_some();
+            let has_cf_offline_data = !pref.hashes.is_empty() && pref.resolved_name.is_some();
 
             let mut args = Vec::new();
             if no_refresh {
@@ -1520,9 +1634,11 @@ async fn add_platform_ref(
 
             args.push("-y".to_string());
 
-            let output = session.process().execute(
+            let arg_refs = args.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+            let output = execute_process_with_live_issues(
+                session,
                 session.packwiz_bin(),
-                &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                &arg_refs,
                 pack_dir,
             )?;
 
@@ -1532,7 +1648,8 @@ async fn add_platform_ref(
 
             Ok(AddRefResult::Failed(format!(
                 "packwiz curseforge add failed for '{}': {}",
-                pref.destination_path, output.error_output()
+                pref.destination_path,
+                output.error_output()
             )))
         }
     }
@@ -1580,8 +1697,8 @@ fn extract_embedded_from_archive(
 
     let file = std::fs::File::open(archive_path)
         .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
 
     let mut entry = archive
         .by_name(source_path)
@@ -1623,9 +1740,7 @@ pub fn classify_override(path: &str) -> OverrideCategory {
     if lower.starts_with("world/") || lower.starts_with("dim-") {
         return OverrideCategory::World;
     }
-    if lower == "server.properties"
-        || lower.starts_with("server-config/")
-    {
+    if lower == "server.properties" || lower.starts_with("server-config/") {
         return OverrideCategory::ServerConfig;
     }
     if lower == "options.txt"
@@ -1683,9 +1798,7 @@ fn collect_override_entries(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn parse_cf_loader(
-    loaders: &[CfModLoader],
-) -> Result<(ModLoader, String)> {
+fn parse_cf_loader(loaders: &[CfModLoader]) -> Result<(ModLoader, String)> {
     let primary = loaders
         .iter()
         .find(|l| l.primary)
@@ -1730,19 +1843,21 @@ fn mr_side_requirement(value: Option<&str>) -> SideRequirement {
 /// "Just Enough Items"). Prefers the API slug when available; falls back
 /// to the display title (lowercased, spaces to hyphens) then the
 /// destination filename.
-fn derive_dep_key(slug: Option<&str>, resolved_name: Option<&str>, destination_path: &str) -> String {
+fn derive_dep_key(
+    slug: Option<&str>,
+    resolved_name: Option<&str>,
+    destination_path: &str,
+) -> String {
     if let Some(s) = slug {
         return s.to_lowercase();
     }
-    let name = resolved_name
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            std::path::Path::new(destination_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(destination_path)
-                .to_string()
-        });
+    let name = resolved_name.map(|s| s.to_string()).unwrap_or_else(|| {
+        std::path::Path::new(destination_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(destination_path)
+            .to_string()
+    });
     name.to_lowercase().replace(' ', "-")
 }
 
@@ -1877,8 +1992,13 @@ pub enum SourceKind {
     CurseForgeZip,
     ModrinthMrpack,
     PackwizDirectory,
-    ModrinthRemote { slug: String, version: Option<String> },
-    CurseForgeRemote { slug: String },
+    ModrinthRemote {
+        slug: String,
+        version: Option<String>,
+    },
+    CurseForgeRemote {
+        slug: String,
+    },
 }
 
 #[cfg(test)]

@@ -1,128 +1,72 @@
 # Testing
 
-empack tests across two tiers: unit tests for pure functions and mock-based command logic, and E2E tests against live providers with the real binary.
+empack uses deterministic in-process tests as the primary proof layer, then live E2E to confirm real CLI, filesystem, subprocess, and provider behavior.
 
-## Philosophy
+## Current Commands
 
-- **Real providers for E2E.** E2E tests run the empack binary as a subprocess with real filesystem, real packwiz, real network. No mocks. Interactive flows use `expectrl` (cross-platform PTY). Non-interactive flows use `assert_cmd`.
-- **Mock-based unit tests.** Command handlers, config parsing, state machines, URL classification, override categorization, and sync logic are tested in isolation through provider mocks.
-- **VCR cassettes for contract verification.** Recorded API responses verify that deserialization structs match real response shapes. Contract tests live in the unit tier.
-
-## Unit Tests
-
-769 tests across two crates, all run via mise tasks:
+Use the `mise` tasks in [`../mise.toml`](../mise.toml):
 
 ```bash
-cargo check --workspace --all-targets
-cargo clippy --workspace --all-targets
-cargo nextest run -p empack-lib --features test-utils
-cargo nextest run -p empack-tests
+mise run test              # unit + mock/integration, excludes E2E
+mise run e2e               # live E2E suite only
+mise run e2e:filter add    # filtered E2E slice
+mise run coverage          # instrumented binary + workspace coverage
+mise run check             # cargo check --workspace --all-targets
+mise run clippy            # cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-**empack-lib** (676 tests): co-located `.test.rs` files via `include!()`. Feature-gated behind `test-utils`. Includes command handler tests via `MockCommandSession`, API contract tests deserializing VCR cassettes, config/state/search/build/sync/parser/import unit tests.
+`mise run test` is the fast default gate. `mise run e2e` is a separate live suite because it depends on external tools and network conditions.
 
-**empack-tests** (93 tests, 1 skipped): mock-based workflow tests via `MockSessionBuilder` + live E2E subprocess tests via `assert_cmd` and `expectrl`. E2E tests self-skip when prerequisites (packwiz, java, CF key) are missing.
+## Test Layers
 
-Use isolated reruns when iterating on specific behavior:
+### Category A: Unit and deterministic integration
 
-```bash
-cargo nextest run -p empack-lib --features test-utils --lib test_name
-cargo nextest run -p empack-tests --test sync_workflow
-```
+This is the first line of proof.
 
-## E2E Tests
+- Pure functions, parser behavior, state transitions, config formatting, dependency graph logic, and mock-backed command flows live here.
+- Networking contract tests use recorded fixtures rather than live services when possible.
+- New branch-heavy behavior should land here first, especially if it can be driven without a subprocess or live API.
+- Adaptive rate-budget coverage belongs here first: header parsing, pacing, shared-budget behavior, and request-path integration should be proven with deterministic tests before relying on E2E.
 
-E2E tests run the compiled empack binary as a child process against live providers. Requires packwiz and Java installed.
+### Category B: Live E2E
 
-### Prerequisites
+The E2E suite runs the compiled `empack` binary against real tools and, where required, live providers.
 
-- [packwiz](https://packwiz.infra.link/)
-- [Java 21+](https://adoptium.net/) (for server builds)
-- [mise](https://mise.jdx.dev/) (task runner)
-- `.env.local` with `EMPACK_KEY_CURSEFORGE` (for CurseForge API tests)
+- Location: `crates/empack-tests/tests/e2e_*.rs`
+- Supporting matrix/workflow coverage also lives in `crates/empack-tests/tests/`
+- Harness utilities live in `crates/empack-tests/src/e2e.rs`
+- Interactive paths use `expectrl`
+- Non-interactive paths use `assert_cmd`
 
-### Running Tests
+E2E is confirmation, not the only proof. If behavior depends on rare server headers, throttling, timing, or concurrency, add a deterministic in-process test instead of waiting for a live environment to reproduce it.
 
-```bash
-cargo nextest run -p empack-e2e       # full E2E suite
-```
+### Category C: Interactive and PTY-backed flows
 
-Mise task definitions (`e2e`, `e2e:filter`, `e2e:container`) are planned but not yet implemented. E2E tests are advisory, not gating. Failures indicate API drift, environment issues, or real bugs.
+Use PTY-backed tests or smoke scripts when the UX itself matters:
 
-### Test Patterns
+- interactive init/search flows
+- subprocess output that only appears correctly under a terminal
+- long-running smoke runs where live error visibility matters
 
-Non-interactive commands via `assert_cmd`:
+`scripts/import-smoke-test.py` now uses a POSIX PTY path when available so import failures can surface warning/error lines while the run is still in progress, while still capturing full output for the final report.
 
-```rust
-Command::cargo_bin("empack")?
-    .args(["init", "--yes", "--modloader", "fabric", "--mc-version", "1.21.1", "test-pack"])
-    .current_dir(&workdir)
-    .assert()
-    .success();
+## E2E Prerequisites
 
-let yml = fs::read_to_string(workdir.join("test-pack/empack.yml"))?;
-assert!(yml.contains("loader: fabric"));
-```
+Live E2E coverage requires:
 
-Interactive prompts via `expectrl`:
+- `packwiz`
+- Java 21+
+- `mise`
+- network access
+- `.env.local` with `EMPACK_KEY_CURSEFORGE` for CurseForge-backed cases
 
-```rust
-let mut session = expectrl::spawn(format!("{} init my-pack", empack_bin.display()))?;
-session.expect("Minecraft version")?;
-session.send_line("1.21.1")?;
-session.expect("Mod loader")?;
-session.send_line("fabric")?;
-session.expect("Initialized")?;
-```
-
-Live API verification:
-
-```rust
-Command::cargo_bin("empack")?
-    .args(["add", "sodium"])
-    .current_dir(&project_dir)
-    .assert()
-    .success();
-
-let yml = fs::read_to_string(project_dir.join("empack.yml"))?;
-assert!(yml.contains("sodium"));
-```
-
-### Containerized E2E
-
-For CI, E2E tests run in a Colima container (aarch64 Linux) with Java, packwiz, and network access:
-
-```bash
-mise run e2e:container    # build container + run E2E
-```
-
-### E2E Cleanup
-
-E2E tests create temporary directories. No external resources need cleanup (unlike cfgate's Cloudflare resources). Each test starts from a fresh temp directory.
-
-### E2E Test Structure
-
-```
-crates/empack-tests/
-  src/e2e.rs              # TestProject, empack_bin(), skip macros, empack_assert_cmd()
-  tests/
-    e2e_version.rs        # version output, help, TestProject smoke
-    e2e_init.rs           # fabric, neoforge, missing modloader, existing project, force, scaffolding
-    e2e_build.rs          # mrpack export, clean
-    e2e_add.rs            # uninitialized, live sodium, nonexistent mod
-    e2e_interactive.rs    # expectrl PTY init flow (#[ignore])
-    e2e_matrix.rs         # macro-generated: modloader variants, bad flags, requires-modpack, build targets, help
-```
-
----
+Some live tests self-skip when prerequisites are missing. That is expected.
 
 ## VCR Fixtures
 
-Recorded HTTP fixtures under `crates/empack-tests/fixtures/cassettes/` provide real API response data. Used by contract tests in the unit tier.
+Recorded HTTP fixtures live under `crates/empack-tests/fixtures/cassettes/`.
 
-### Recording cassettes
-
-Prerequisites: `curl`, `jq`, `.env.local` with `EMPACK_KEY_CURSEFORGE`.
+Use them for contract verification and response-shape coverage:
 
 ```bash
 ./scripts/record-vcr-cassettes.sh --help
@@ -131,72 +75,25 @@ Prerequisites: `curl`, `jq`, `.env.local` with `EMPACK_KEY_CURSEFORGE`.
 ./scripts/record-vcr-cassettes.sh
 ```
 
-The script supports GET and POST endpoints, sanitizes API keys, and validates JSON output. 18 cassettes across four directories: `modrinth/`, `curseforge/`, `loaders/`, `minecraft/`.
+These fixtures should carry API-shape assertions that do not need live network timing or throttling behavior.
 
-### Verifying cassettes
+## Current State
 
-```bash
-jq empty crates/empack-tests/fixtures/cassettes/modrinth/search_sodium.json
-cargo nextest run -p empack-tests --lib fixtures::tests
-```
+- `mise run test` is implemented and intentionally excludes E2E.
+- `mise run e2e` is implemented and runs the live `e2e_` suite.
+- `mise run e2e:filter` is implemented for targeted live reruns.
+- `mise run coverage` is the path for combined instrumented coverage.
+- Containerized E2E is still deferred; there is no `mise run e2e:container` task today.
 
----
+## Target End State
 
-## Test Health Inventory
+The 100% coverage plan should not turn E2E into the only source of truth.
 
-Audited 2026-03-24 across 515 test functions. Subsequent work added contract tests and import/content tests; these are not individually categorized below.
+Final expectation:
 
-### Assertion quality
+- `mise run test` remains the primary fast gate and owns most line coverage through deterministic unit and mock-backed integration tests.
+- Edge-heavy features such as adaptive rate budgets get focused in-process integration tests that prove pacing and shared-state behavior without depending on live API throttling.
+- `mise run e2e` stays green as live confirmation for real subprocess, PTY, filesystem, and provider behavior.
+- `mise run coverage` combines the instrumented binary, deterministic tests, and E2E coverage to close the remaining gaps.
 
-| Category | Tests | Strong | Weak | Vacuous |
-|----------|-------|--------|------|---------|
-| Unit (commands, config, state, search, builds) | 358 | 290 (81%) | 42 (12%) | 26 (7%) |
-| Integration (mock sessions) | 39 | 25 (64%) | 7 (18%) | 7 (18%) |
-| Infrastructure (networking, display, terminal) | 118 | 82 (69%) | 4 (3%) | 32 (27%) |
-| **Total** | **515** | **397 (77%)** | **53 (10%)** | **65 (13%)** |
-
-### Resolved since audit
-
-- Vacuous integration tests deleted: `test_init_packwiz_unavailable`, `test_build_template_error_specificity`, `e2e_requirements_packwiz_missing`
-- `MockBehavior::Conditional`, `ConditionalRule`, `HermeticSessionBuilder`, `TestEnvironment` deleted
-- Weak loader version tests strengthened with value assertions
-- 8 error-path tests corrected from `is_ok()` to `is_err()` (exit code fix)
-
-### Remaining known issues
-
-- `handle_remove_tests::it_rejects_incomplete_project_state` calls `handle_sync`, not `handle_remove`
-- 3 duplicate test pairs covering identical logic
-- 27 display infrastructure tests with zero assertions (untestable in unit tier; display output requires E2E)
-
----
-
-## External Tool Dependencies
-
-| Tool | Used by | Unit test fidelity | E2E fidelity |
-|------|---------|-------------------|-------------|
-| packwiz | init, add, remove, sync, build | MockProcessProvider verifies args | Real packwiz |
-| java | server builds, packwiz-installer | MockProcessProvider verifies args | Real Java |
-| zip/unzip | build client, server, full | MockArchiveProvider records calls | Real archive operations |
-| HTTP (Modrinth, CurseForge) | add, search, import, JAR identification | mockito + VCR cassettes | Real API calls |
-
----
-
-## Gaps and Next Steps
-
-### Completed
-
-- E2E harness scaffolded in empack-tests (TestProject, skip macros, assert_cmd, expectrl)
-- 38 E2E tests across 6 files (init, build, add, interactive, version, matrix)
-- mise.toml with inline tasks; packwiz via Go backend
-- CI unified: lint, test (3 platforms), coverage, cross-check
-- HermeticSessionBuilder and dead infrastructure deleted
-- Vacuous integration tests deleted; weak tests strengthened
-- Coverage includes E2E via instrumented binary (82.8% line, 75.2% branch)
-
-### Remaining
-
-1. Fix the misplaced `handle_remove` test (calls handle_sync)
-2. Remove 3 duplicate test pairs
-3. Add `cargo-fuzz` targets for `classify_url`, `parse_curseforge_zip`, `parse_modrinth_mrpack`, `sanitize_archive_path`
-4. Add regression tests for the 9 review-round API contract bugs
-5. Containerized E2E via Colima (deferred)
+That split keeps coverage high without making correctness depend on flaky live conditions.
