@@ -139,7 +139,8 @@ impl RateBudget for HeaderDrivenBudget {
 ///
 /// Tracks requests in a sliding time window and blocks when the budget
 /// is depleted. On 403 responses (CurseForge uses Cloudflare WAF),
-/// forces exhaustion with a 30-second backoff.
+/// forces exhaustion for the remainder of the current window
+/// (up to `window_duration_secs`).
 pub struct FixedWindowBudget {
     requests_this_window: AtomicU32,
     window_start: AtomicU64,
@@ -181,8 +182,6 @@ impl FixedWindowBudget {
 
 impl RateBudget for FixedWindowBudget {
     fn record_response(&self, _headers: &HeaderMap, status: StatusCode) {
-        self.requests_this_window.fetch_add(1, Ordering::Relaxed);
-
         if status == StatusCode::FORBIDDEN {
             self.requests_this_window
                 .store(self.max_per_window, Ordering::Relaxed);
@@ -192,7 +191,7 @@ impl RateBudget for FixedWindowBudget {
     fn acquire(&self) -> Duration {
         self.maybe_reset_window();
 
-        let count = self.requests_this_window.load(Ordering::Relaxed);
+        let count = self.requests_this_window.fetch_add(1, Ordering::Relaxed);
 
         if count >= self.max_per_window {
             let start = self.window_start.load(Ordering::Relaxed);
@@ -495,6 +494,14 @@ mod tests {
     #[test]
     fn fixed_budget_record_increments() {
         let budget = FixedWindowBudget::new(150, Duration::from_secs(60));
+        budget.acquire();
+        assert_eq!(budget.requests_this_window.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn fixed_budget_success_response_does_not_double_count() {
+        let budget = FixedWindowBudget::new(150, Duration::from_secs(60));
+        budget.acquire();
         budget.record_response(&HeaderMap::new(), StatusCode::OK);
         assert_eq!(budget.requests_this_window.load(Ordering::Relaxed), 1);
     }
@@ -528,6 +535,19 @@ mod tests {
         budget.requests_this_window.store(121, Ordering::Relaxed);
         let delay = budget.acquire();
         assert_eq!(delay, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn fixed_budget_acquire_preclaims_slots_before_response() {
+        let budget = FixedWindowBudget::new(10, Duration::from_secs(60));
+
+        for _ in 0..10 {
+            let delay = budget.acquire();
+            assert!(delay <= Duration::from_millis(100));
+        }
+
+        let delay = budget.acquire();
+        assert!(delay >= Duration::from_secs(59));
     }
 
     #[test]
