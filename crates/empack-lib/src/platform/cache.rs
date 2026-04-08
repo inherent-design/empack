@@ -31,35 +31,50 @@ pub fn cache_root() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        unsafe fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.previous {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
 
     #[test]
     fn cache_root_uses_env_override() {
         let _guard = crate::test_support::env_lock().lock().unwrap();
         let temp_dir = tempfile::TempDir::new().expect("temp dir");
-        unsafe {
-            std::env::set_var("EMPACK_CACHE_DIR", temp_dir.path());
-        }
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", temp_dir.path()) };
 
         let cache_root = cache_root().expect("cache root");
         assert_eq!(cache_root, temp_dir.path());
-
-        unsafe {
-            std::env::remove_var("EMPACK_CACHE_DIR");
-        }
     }
 
     #[test]
     fn cache_root_ignores_empty_override() {
         let _guard = crate::test_support::env_lock().lock().unwrap();
-        unsafe {
-            std::env::set_var("EMPACK_CACHE_DIR", "");
-        }
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", "") };
 
         let cache_root = cache_root().expect("cache root");
         assert!(!cache_root.as_os_str().is_empty());
-
-        unsafe {
-            std::env::remove_var("EMPACK_CACHE_DIR");
-        }
     }
 }
