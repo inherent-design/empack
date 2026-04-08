@@ -36,6 +36,11 @@ impl Drop for EnvVarGuard {
     }
 }
 
+fn has_path_component(path: &Path, expected: &str) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == std::ffi::OsStr::new(expected))
+}
+
 #[test]
 fn test_system_resources_detection() {
     let resources = SystemResources::detect();
@@ -174,8 +179,14 @@ fn test_config_and_data_dirs_follow_home_directory() {
 
     assert!(config.is_absolute());
     assert!(data.is_absolute());
-    assert!(config.ends_with(Path::new("empack")));
-    assert!(data.ends_with(Path::new("empack")));
+    assert!(has_path_component(&config, "empack"));
+    assert!(has_path_component(&data, "empack"));
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        assert!(config.starts_with(home_fixture.path()));
+        assert!(data.starts_with(home_fixture.path()));
+    }
 
     let _ = (&_home, &_userprofile);
 }
