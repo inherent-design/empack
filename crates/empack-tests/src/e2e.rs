@@ -250,9 +250,8 @@ fi
 : > index.toml
 "#;
 
-    std::fs::write(&path, script).unwrap_or_else(|e| {
-        panic!("failed to write fake packwiz at {}: {}", path.display(), e)
-    });
+    std::fs::write(&path, script)
+        .unwrap_or_else(|e| panic!("failed to write fake packwiz at {}: {}", path.display(), e));
 
     #[cfg(unix)]
     {
