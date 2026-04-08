@@ -299,7 +299,71 @@ fn set_executable(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use tempfile::TempDir;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        unsafe fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+
+        unsafe fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match self.previous.as_ref() {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    fn write_executable_script(path: &std::path::Path) {
+        std::fs::write(path, b"#!/bin/sh\nexit 0\n").expect("write script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(path).expect("metadata").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(path, perms).expect("set executable");
+        }
+    }
+
+    fn make_tarball(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        {
+            let mut archive = tar::Builder::new(&mut encoder);
+            for (name, contents) in entries {
+                let mut header = tar::Header::new_gnu();
+                header.set_mode(0o755);
+                header.set_size(contents.len() as u64);
+                header.set_cksum();
+                archive
+                    .append_data(&mut header, *name, *contents)
+                    .expect("append tar entry");
+            }
+            archive.finish().expect("finish tar archive");
+        }
+        encoder.finish().expect("finish gzip stream")
+    }
 
     #[test]
     fn test_release_asset_name_strips_v_prefix() {
@@ -357,5 +421,126 @@ mod tests {
             std::fs::read(&resolved).expect("read staged copy"),
             std::fs::read(&original).expect("read original"),
         );
+    }
+
+    #[test]
+    fn resolve_packwiz_binary_uses_explicit_env_override() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let override_path = temp.path().join(binary_name());
+        write_executable_script(&override_path);
+
+        let _env = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", &override_path) };
+        let resolved = resolve_packwiz_binary().expect("resolve override");
+
+        assert_eq!(resolved, override_path);
+    }
+
+    #[test]
+    fn resolve_packwiz_binary_errors_for_missing_env_override() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let missing = TempDir::new()
+            .expect("temp dir")
+            .path()
+            .join(binary_name());
+        let _env = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", &missing) };
+
+        let error = resolve_packwiz_binary().expect_err("missing override should fail");
+        assert!(error.to_string().contains("EMPACK_PACKWIZ_BIN is set"));
+        assert!(error.to_string().contains(&missing.display().to_string()));
+    }
+
+    #[test]
+    fn resolve_packwiz_binary_uses_path_lookup_before_cache() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let packwiz_bin = temp.path().join(crate::empack::packwiz::PACKWIZ_BIN);
+        write_executable_script(&packwiz_bin);
+
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+        let _cache = unsafe { EnvVarGuard::remove("EMPACK_CACHE_DIR") };
+        let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
+
+        let resolved = resolve_packwiz_binary().expect("resolve from path");
+        assert_eq!(resolved, PathBuf::from(crate::empack::packwiz::PACKWIZ_BIN));
+    }
+
+    #[test]
+    fn resolve_packwiz_binary_uses_cached_binary_when_present() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let cache_dir = temp
+            .path()
+            .join("bin")
+            .join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION));
+        std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+        let cached_bin = cache_dir.join(binary_name());
+        write_executable_script(&cached_bin);
+
+        let empty_path = TempDir::new().expect("empty path dir");
+        let _path = unsafe { EnvVarGuard::set("PATH", empty_path.path()) };
+        let _cache = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", temp.path()) };
+        let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
+
+        let resolved = resolve_packwiz_binary().expect("resolve cached binary");
+        assert_eq!(resolved, cached_bin);
+    }
+
+    #[test]
+    fn validate_or_stage_binary_reports_error_when_staged_copy_also_fails() {
+        let temp = TempDir::new().expect("temp dir");
+        let original = temp.path().join(binary_name());
+        std::fs::write(&original, b"fake-binary").expect("write fake binary");
+
+        let original_for_probe = original.clone();
+        let error = validate_or_stage_binary_with_probe(&original, |candidate| {
+            if candidate == original_for_probe.as_path() {
+                anyhow::bail!("original probe failed")
+            }
+            anyhow::bail!("staged probe failed")
+        })
+        .expect_err("staged probe should fail");
+
+        let message = error.to_string();
+        assert!(message.contains("staged copy"));
+        assert!(message.contains("original probe failed"));
+    }
+
+    #[test]
+    fn probe_binary_runnable_reports_missing_binary_path() {
+        let temp = TempDir::new().expect("temp dir");
+        let missing = temp.path().join(binary_name());
+
+        let error = probe_binary_runnable(&missing).expect_err("missing binary should fail");
+        assert!(error.to_string().contains("failed to execute managed packwiz-tx"));
+        assert!(error.to_string().contains(&missing.display().to_string()));
+    }
+
+    #[test]
+    fn extract_tarball_extracts_managed_binary() {
+        let temp = TempDir::new().expect("temp dir");
+        let archive = make_tarball(&[
+            ("README.md", b"ignored"),
+            (&binary_name(), b"#!/bin/sh\necho ok\n"),
+        ]);
+
+        extract_tarball(&archive, temp.path()).expect("extract tarball");
+
+        let extracted = temp.path().join(binary_name());
+        assert!(extracted.exists(), "managed binary should be extracted");
+        assert_eq!(
+            std::fs::read(&extracted).expect("read extracted binary"),
+            b"#!/bin/sh\necho ok\n"
+        );
+    }
+
+    #[test]
+    fn extract_tarball_errors_when_binary_is_missing() {
+        let temp = TempDir::new().expect("temp dir");
+        let archive = make_tarball(&[("README.md", b"no binary here")]);
+
+        let error = extract_tarball(&archive, temp.path()).expect_err("missing binary should fail");
+        assert!(error.to_string().contains("binary"));
+        assert!(error.to_string().contains("not found in tarball"));
     }
 }

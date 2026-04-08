@@ -234,3 +234,82 @@ fn test_config_error_display() {
         "Invalid working directory: /invalid/path"
     );
 }
+
+fn basic_caps(color: TerminalColorCaps, unicode: TerminalUnicodeCaps) -> BasicTerminalCapabilities {
+    BasicTerminalCapabilities {
+        color,
+        unicode,
+        graphics: TerminalGraphicsCaps::None,
+    }
+}
+
+#[test]
+fn test_terminal_primitives_truecolor_extended_unicode() {
+    let primitives = TerminalPrimitives::new(&basic_caps(
+        TerminalColorCaps::TrueColor,
+        TerminalUnicodeCaps::ExtendedUnicode,
+    ));
+
+    assert!(primitives.red.contains("38;2;"));
+    assert!(primitives.bg_blue.contains("48;2;"));
+    assert_eq!(primitives.checkmark, "✓");
+    assert_eq!(primitives.cross, "✗");
+    assert_eq!(primitives.warning_symbol, "⚠");
+    assert_eq!(primitives.info_symbol, "ℹ");
+    assert_eq!(primitives.bullet, "●");
+    assert_eq!(primitives.arrow, "→");
+}
+
+#[test]
+fn test_terminal_primitives_ansi256_ascii() {
+    let primitives = TerminalPrimitives::new(&basic_caps(
+        TerminalColorCaps::Ansi256,
+        TerminalUnicodeCaps::Ascii,
+    ));
+
+    assert!(primitives.red.contains("38;5;"));
+    assert!(primitives.bg_green.contains("48;5;"));
+    assert_eq!(primitives.checkmark, "+");
+    assert_eq!(primitives.cross, "x");
+    assert_eq!(primitives.warning_symbol, "!");
+    assert_eq!(primitives.info_symbol, "i");
+    assert_eq!(primitives.bullet, "*");
+    assert_eq!(primitives.arrow, "->");
+}
+
+#[test]
+fn test_terminal_primitives_ansi16_and_no_color() {
+    let ansi16 = TerminalPrimitives::new(&basic_caps(
+        TerminalColorCaps::Ansi16,
+        TerminalUnicodeCaps::BasicUnicode,
+    ));
+    assert_eq!(ansi16.red, "\x1b[0;91m");
+    assert_eq!(ansi16.strikethrough, "");
+    assert_eq!(ansi16.checkmark, "+");
+    assert_eq!(ansi16.arrow, "->");
+
+    let no_color = TerminalPrimitives::new(&basic_caps(
+        TerminalColorCaps::None,
+        TerminalUnicodeCaps::Ascii,
+    ));
+    assert!(no_color.red.is_empty());
+    assert!(no_color.bold.is_empty());
+    assert!(no_color.reset.is_empty());
+    assert_eq!(no_color.checkmark, "+");
+    assert_eq!(no_color.bullet, "*");
+}
+
+#[test]
+fn test_terminal_capability_bridge_to_basic() {
+    let caps = crate::terminal::TerminalCapabilities {
+        color: TerminalColorCaps::Ansi256,
+        unicode: TerminalUnicodeCaps::BasicUnicode,
+        is_tty: true,
+        cols: 120,
+    };
+
+    let basic = from_terminal_capabilities(&caps);
+    assert_eq!(basic.color, TerminalColorCaps::Ansi256);
+    assert_eq!(basic.unicode, TerminalUnicodeCaps::BasicUnicode);
+    assert_eq!(basic.graphics, TerminalGraphicsCaps::None);
+}

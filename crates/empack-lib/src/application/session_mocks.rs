@@ -1582,7 +1582,55 @@ impl Session for MockCommandSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::ProjectPlatform;
     use std::collections::HashSet;
+
+    #[tokio::test]
+    async fn test_mock_network_provider_records_http_and_resolver_calls() {
+        let expected = ProjectInfo {
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            title: "Sodium".to_string(),
+            downloads: 100,
+            confidence: 95,
+            project_type: "mod".to_string(),
+        };
+        let provider = MockNetworkProvider::new()
+            .with_project_response("sodium".to_string(), expected.clone());
+
+        let client = provider.http_client().unwrap();
+        let resolver = provider.project_resolver(client, Some("cf-key".to_string()));
+        let resolved = resolver
+            .resolve_project("sodium", Some("mod"), Some("1.21.1"), Some("fabric"), None)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.platform, expected.platform);
+        assert_eq!(resolved.project_id, expected.project_id);
+        assert_eq!(resolved.title, expected.title);
+        assert_eq!(resolved.downloads, expected.downloads);
+        assert_eq!(resolved.confidence, expected.confidence);
+        assert_eq!(resolved.project_type, expected.project_type);
+        assert_eq!(*provider.client_calls.lock().unwrap(), 1);
+        assert_eq!(provider.resolver_calls.lock().unwrap().len(), 1);
+        assert!(
+            provider
+                .rate_budgets()
+                .for_host("api.modrinth.com")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_mock_network_provider_can_fail_http_client() {
+        let provider = MockNetworkProvider::new().with_failing_http_client();
+        let error = provider.http_client().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Mock HTTP client unavailable (test mode)")
+        );
+    }
 
     #[test]
     fn test_mock_filesystem_provider() {
@@ -1716,6 +1764,31 @@ mod tests {
                 .fuzzy_select("Search:", &["a".to_string(), "b".to_string()])
                 .unwrap(),
             Some(0)
+        );
+    }
+
+    #[test]
+    fn test_mock_interactive_queue_mismatch_falls_back_without_consuming() {
+        let provider = MockInteractiveProvider::new()
+            .queue_confirm(false)
+            .with_text_input("typed".to_string())
+            .with_select(1)
+            .with_fuzzy_select(2);
+
+        assert_eq!(
+            provider.text_input("Name?", "default".to_string()).unwrap(),
+            "typed"
+        );
+        assert!(!provider.confirm("Continue?", true).unwrap());
+        assert_eq!(provider.select("Pick one:", &["a", "b", "c"]).unwrap(), 1);
+        assert_eq!(
+            provider
+                .fuzzy_select(
+                    "Search:",
+                    &["a".to_string(), "b".to_string(), "c".to_string()]
+                )
+                .unwrap(),
+            Some(2)
         );
     }
 
