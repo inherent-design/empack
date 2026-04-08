@@ -15,6 +15,12 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 filter = "test(e2e_import_modrinth_and_build_mrpack) | test(e2e_import_and_build_fabulously_optimized)"
 slow-timeout = { period = "60s", terminate-after = 10 }
 
+[[profile.default.overrides]]
+# Archive build E2Es are local but can still run slowly on Linux CI runners
+# when Java startup and compression are both expensive.
+filter = "test(e2e_build_mrpack) | test(e2e_build_client_tar_gz) | test(e2e_build_server_sevenz)"
+slow-timeout = { period = "60s", terminate-after = 4 }
+
 [profile.ci]
 # Don't fail fast in CI either to see all failures
 fail-fast = false
