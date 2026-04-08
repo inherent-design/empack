@@ -100,6 +100,31 @@ pub(crate) mod test_support {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
     }
+
+    pub fn clear_cli_env() {
+        unsafe {
+            std::env::remove_var("EMPACK_WORKDIR");
+            std::env::remove_var("EMPACK_CPU_JOBS");
+            std::env::remove_var("EMPACK_NET_TIMEOUT");
+            std::env::remove_var("EMPACK_ID_MODRINTH");
+            std::env::remove_var("EMPACK_KEY_MODRINTH");
+            std::env::remove_var("EMPACK_KEY_CURSEFORGE");
+            std::env::remove_var("EMPACK_LOG_LEVEL");
+            std::env::remove_var("EMPACK_LOG_FORMAT");
+            std::env::remove_var("EMPACK_LOG_OUTPUT");
+            std::env::remove_var("EMPACK_COLOR");
+            std::env::remove_var("EMPACK_YES");
+            std::env::remove_var("EMPACK_DRY_RUN");
+            std::env::remove_var("EMPACK_MODLOADER");
+            std::env::remove_var("EMPACK_MC_VERSION");
+            std::env::remove_var("EMPACK_AUTHOR");
+            std::env::remove_var("EMPACK_NAME");
+            std::env::remove_var("EMPACK_LOADER_VERSION");
+            std::env::remove_var("EMPACK_PACK_VERSION");
+            std::env::remove_var("EMPACK_DATAPACK_FOLDER");
+            std::env::remove_var("EMPACK_GAME_VERSIONS");
+        }
+    }
 }
 
 #[cfg(test)]
