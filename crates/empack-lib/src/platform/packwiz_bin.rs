@@ -55,10 +55,11 @@ pub fn resolve_packwiz_binary() -> Result<PathBuf> {
 
     if cached_bin.exists() && is_executable(&cached_bin) {
         tracing::debug!(path = %cached_bin.display(), "using cached packwiz-tx binary");
-        return Ok(cached_bin);
+        return prepare_managed_binary(&cached_bin);
     }
 
-    download_release(PACKWIZ_TX_VERSION, &cache_dir)
+    let downloaded = download_release(PACKWIZ_TX_VERSION, &cache_dir)?;
+    prepare_managed_binary(&downloaded)
 }
 
 /// Download the platform-specific packwiz-tx binary from a GitHub release.
@@ -119,6 +120,87 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
     tracing::info!(path = %bin_path.display(), "packwiz-tx cached");
 
     Ok(bin_path)
+}
+
+/// Verify that the managed binary is directly runnable from its cache location.
+///
+/// Some environments mount cache directories with `noexec`, which makes a
+/// downloaded binary look valid on disk but fail with `EACCES` at spawn time.
+/// In that case, stage a copy in the system temp directory and use that path.
+fn prepare_managed_binary(path: &Path) -> Result<PathBuf> {
+    validate_or_stage_binary_with_probe(path, probe_binary_runnable)
+}
+
+fn validate_or_stage_binary_with_probe<F>(path: &Path, probe: F) -> Result<PathBuf>
+where
+    F: Fn(&Path) -> Result<()>,
+{
+    match probe(path) {
+        Ok(()) => Ok(path.to_path_buf()),
+        Err(original_error) => {
+            let staged = stage_binary_for_execution(path)?;
+            if staged == path {
+                return Err(original_error);
+            }
+
+            match probe(&staged) {
+                Ok(()) => {
+                    tracing::warn!(
+                        original = %path.display(),
+                        staged = %staged.display(),
+                        error = %original_error,
+                        "managed packwiz-tx was not runnable from cache; using staged copy"
+                    );
+                    Ok(staged)
+                }
+                Err(staged_error) => Err(staged_error).with_context(|| {
+                    format!(
+                        "managed packwiz-tx was not runnable from '{}' and staged copy '{}' also failed after initial probe error: {}",
+                        path.display(),
+                        staged.display(),
+                        original_error
+                    )
+                }),
+            }
+        }
+    }
+}
+
+fn probe_binary_runnable(path: &Path) -> Result<()> {
+    std::process::Command::new(path)
+        .arg("--help")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|_| ())
+        .with_context(|| format!("failed to execute managed packwiz-tx at {}", path.display()))
+}
+
+fn stage_binary_for_execution(path: &Path) -> Result<PathBuf> {
+    let staging_dir = std::env::temp_dir()
+        .join("empack-bin")
+        .join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION));
+    std::fs::create_dir_all(&staging_dir).with_context(|| {
+        format!(
+            "failed to create temporary staging directory: {}",
+            staging_dir.display()
+        )
+    })?;
+
+    let staged_path = staging_dir.join(binary_name());
+    if staged_path != path {
+        std::fs::copy(path, &staged_path).with_context(|| {
+            format!(
+                "failed to copy managed packwiz-tx from '{}' to '{}'",
+                path.display(),
+                staged_path.display()
+            )
+        })?;
+        #[cfg(unix)]
+        set_executable(&staged_path)?;
+    }
+
+    Ok(staged_path)
 }
 
 /// Extract a `.tar.gz` tarball into the target directory.
@@ -217,6 +299,7 @@ fn set_executable(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_release_asset_name_strips_v_prefix() {
@@ -239,5 +322,40 @@ mod tests {
         } else {
             assert_eq!(name, "packwiz-tx");
         }
+    }
+
+    #[test]
+    fn validate_or_stage_binary_returns_original_when_probe_succeeds() {
+        let temp = TempDir::new().expect("temp dir");
+        let original = temp.path().join(binary_name());
+        std::fs::write(&original, b"fake-binary").expect("write fake binary");
+
+        let resolved =
+            validate_or_stage_binary_with_probe(&original, |_| Ok(())).expect("resolution");
+
+        assert_eq!(resolved, original);
+    }
+
+    #[test]
+    fn validate_or_stage_binary_stages_copy_when_original_probe_fails() {
+        let temp = TempDir::new().expect("temp dir");
+        let original = temp.path().join(binary_name());
+        std::fs::write(&original, b"fake-binary").expect("write fake binary");
+
+        let original_for_probe = original.clone();
+        let resolved = validate_or_stage_binary_with_probe(&original, |candidate| {
+            if candidate == original_for_probe.as_path() {
+                anyhow::bail!("permission denied")
+            }
+            Ok(())
+        })
+        .expect("staged resolution");
+
+        assert_ne!(resolved, original);
+        assert!(resolved.exists(), "staged copy should exist");
+        assert_eq!(
+            std::fs::read(&resolved).expect("read staged copy"),
+            std::fs::read(&original).expect("read original"),
+        );
     }
 }
