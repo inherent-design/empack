@@ -35,7 +35,41 @@ async fn test_job_calculation_with_limit() {
     };
     let manager = NetworkingManager::new(config).await.unwrap();
 
-    // Should respect the max_jobs limit
     assert!(manager.optimal_jobs() <= 2, "Should respect max jobs limit");
     assert!(manager.optimal_jobs() > 0, "Should have at least 1 job");
+}
+
+#[tokio::test]
+async fn test_resolve_mods_success_and_error_results() {
+    let config = NetworkingConfig {
+        max_jobs: Some(4),
+        trace_requests: true,
+        ..Default::default()
+    };
+    let manager = NetworkingManager::new(config).await.unwrap();
+
+    let results = manager
+        .resolve_mods(
+            vec!["alpha".to_string(), "beta".to_string()],
+            |client, mod_id| async move {
+                let _ = client.get("https://example.com");
+                match mod_id.as_str() {
+                    "alpha" => Ok(format!("resolved-{mod_id}")),
+                    "beta" => Err(NetworkingError::RateLimitError {
+                        message: "simulated failure".to_string(),
+                    }),
+                    _ => Ok(mod_id),
+                }
+            },
+        )
+        .await
+        .expect("resolve mods");
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].as_ref().expect("alpha"), "resolved-alpha");
+    assert!(matches!(
+        results[1],
+        Err(NetworkingError::RateLimitError { .. })
+    ));
+    assert!(manager.client().get("https://example.com").build().is_ok());
 }

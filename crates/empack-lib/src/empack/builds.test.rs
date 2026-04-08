@@ -1,6 +1,8 @@
 use super::*;
 use crate::application::session::ProcessOutput;
-use crate::application::session_mocks::{mock_root, MockCommandSession, MockFileSystemProvider, MockProcessProvider};
+use crate::application::session_mocks::{
+    MockCommandSession, MockFileSystemProvider, MockProcessProvider, mock_root,
+};
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -16,16 +18,12 @@ impl MockBuildOrchestrator {
         let workdir = temp_dir.path().to_path_buf();
 
         // Create mock session with the temp directory as working directory
-        let session = MockCommandSession::new()
-            .with_filesystem(
-                crate::application::session_mocks::MockFileSystemProvider::new()
-                    .with_current_dir(workdir)
-            );
+        let session = MockCommandSession::new().with_filesystem(
+            crate::application::session_mocks::MockFileSystemProvider::new()
+                .with_current_dir(workdir),
+        );
 
-        Self {
-            temp_dir,
-            session,
-        }
+        Self { temp_dir, session }
     }
 
     fn orchestrator(&self) -> BuildOrchestrator<'_> {
@@ -41,7 +39,11 @@ impl MockBuildOrchestrator {
 
         // Create pack directory
         let pack_dir = workdir.join("pack");
-        filesystem.create_dir_all(&pack_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem
+            .create_dir_all(&pack_dir)
+            .map_err(|e: anyhow::Error| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
 
         // Create basic pack.toml
         let pack_toml = pack_dir.join("pack.toml");
@@ -54,7 +56,11 @@ version = "1.0.0"
 minecraft = "1.21"
 fabric = "0.15.11"
 "#;
-        filesystem.write_file(&pack_toml, toml_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem
+            .write_file(&pack_toml, toml_content)
+            .map_err(|e: anyhow::Error| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
 
         // Create basic index.toml
         let index_toml = pack_dir.join("index.toml");
@@ -65,11 +71,19 @@ hash-format = "sha1"
 file = "mods/test-mod.pw.toml"
 hash = "abcd1234"
 "#;
-        filesystem.write_file(&index_toml, index_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem
+            .write_file(&index_toml, index_content)
+            .map_err(|e: anyhow::Error| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
 
         // Create mods directory
         let mods_dir = pack_dir.join("mods");
-        filesystem.create_dir_all(&mods_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem
+            .create_dir_all(&mods_dir)
+            .map_err(|e: anyhow::Error| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
 
         // Create a test mod file
         let mod_file = mods_dir.join("test-mod.pw.toml");
@@ -83,7 +97,11 @@ url = "https://example.com/test-mod-1.0.0.jar"
 hash-format = "sha1"
 hash = "abcd1234"
 "#;
-        filesystem.write_file(&mod_file, mod_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem
+            .write_file(&mod_file, mod_content)
+            .map_err(|e: anyhow::Error| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
 
         Ok(())
     }
@@ -93,7 +111,11 @@ hash = "abcd1234"
         let filesystem = self.session.filesystem();
 
         let templates_dir = workdir.join("templates").join("client");
-        filesystem.create_dir_all(&templates_dir).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem
+            .create_dir_all(&templates_dir)
+            .map_err(|e: anyhow::Error| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
 
         // Create a test template file
         let template_file = templates_dir.join("launcher.json.template");
@@ -104,7 +126,11 @@ hash = "abcd1234"
     "mcVersion": "{{MC_VERSION}}",
     "loaderVersion": "{{MODLOADER_VERSION}}"
 }"#;
-        filesystem.write_file(&template_file, template_content).map_err(|e: anyhow::Error| BuildError::ConfigError { reason: e.to_string() })?;
+        filesystem
+            .write_file(&template_file, template_content)
+            .map_err(|e: anyhow::Error| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
 
         Ok(())
     }
@@ -155,7 +181,8 @@ fn test_build_registry() {
 #[test]
 fn test_prepare_build_environment() {
     let (_temp_dir, session) = create_test_orchestrator();
-    let orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).expect("Failed to create orchestrator");
+    let orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip)
+        .expect("Failed to create orchestrator");
 
     // Should fail without pack directory
     let result = orchestrator.prepare_build_environment();
@@ -168,7 +195,10 @@ fn test_prepare_build_environment() {
     }
 
     // Create pack directory through the session filesystem
-    session.filesystem().create_dir_all(&orchestrator.workdir.join("pack")).unwrap();
+    session
+        .filesystem()
+        .create_dir_all(&orchestrator.workdir.join("pack"))
+        .unwrap();
 
     // Should succeed now that pack directory exists
     // (tool validation is handled by ProcessProvider, not BuildOrchestrator)
@@ -195,7 +225,9 @@ fn test_load_pack_info() {
 #[test]
 fn test_load_pack_info_missing_file() {
     let (_temp_dir, session) = create_test_orchestrator();
-    let mut orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).expect("Failed to create orchestrator");
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip)
+            .expect("Failed to create orchestrator");
 
     let result = orchestrator.load_pack_info();
     assert!(result.is_err());
@@ -217,7 +249,9 @@ fn test_load_pack_info_invalid_toml() {
     let pack_dir = workdir.join("pack");
     filesystem.create_dir_all(&pack_dir).unwrap();
     let pack_toml = pack_dir.join("pack.toml");
-    filesystem.write_file(&pack_toml, "invalid toml content [ unclosed bracket").unwrap();
+    filesystem
+        .write_file(&pack_toml, "invalid toml content [ unclosed bracket")
+        .unwrap();
 
     let mut orchestrator = mock.orchestrator();
     let result = orchestrator.load_pack_info();
@@ -310,12 +344,18 @@ fn test_copy_dir_contents() {
     let filesystem = mock.session.filesystem();
     let src_dir = workdir.join("test-src");
     filesystem.create_dir_all(&src_dir).unwrap();
-    filesystem.write_file(&src_dir.join("file1.txt"), "content1").unwrap();
-    filesystem.write_file(&src_dir.join("file2.txt"), "content2").unwrap();
+    filesystem
+        .write_file(&src_dir.join("file1.txt"), "content1")
+        .unwrap();
+    filesystem
+        .write_file(&src_dir.join("file2.txt"), "content2")
+        .unwrap();
 
     let sub_dir = src_dir.join("subdir");
     filesystem.create_dir_all(&sub_dir).unwrap();
-    filesystem.write_file(&sub_dir.join("file3.txt"), "content3").unwrap();
+    filesystem
+        .write_file(&sub_dir.join("file3.txt"), "content3")
+        .unwrap();
 
     // Copy to destination
     let dst_dir = workdir.join("test-dst");
@@ -364,12 +404,18 @@ fn test_clean_target() {
     let filesystem = mock.session.filesystem();
     let target_dir = workdir.join("dist").join("client");
     filesystem.create_dir_all(&target_dir).unwrap();
-    filesystem.write_file(&target_dir.join("test.txt"), "content").unwrap();
-    filesystem.write_file(&target_dir.join(".gitkeep"), "").unwrap();
+    filesystem
+        .write_file(&target_dir.join("test.txt"), "content")
+        .unwrap();
+    filesystem
+        .write_file(&target_dir.join(".gitkeep"), "")
+        .unwrap();
 
     // Create zip file
     let zip_file = workdir.join("dist").join("TestPack-v1.0.0-client.zip");
-    filesystem.write_file(&zip_file, "mock zip content").unwrap();
+    filesystem
+        .write_file(&zip_file, "mock zip content")
+        .unwrap();
 
     // Clean target
     let result = orchestrator.clean_target(BuildTarget::Client);
@@ -379,6 +425,208 @@ fn test_clean_target() {
     assert!(!filesystem.exists(&target_dir.join("test.txt")));
     assert!(filesystem.exists(&target_dir.join(".gitkeep")));
     assert!(!filesystem.exists(&zip_file));
+}
+
+#[test]
+fn test_clean_target_removes_all_archive_formats() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+
+    let workdir = mock.workdir().to_path_buf();
+    let mut orchestrator = mock.orchestrator();
+
+    orchestrator.load_pack_info().unwrap();
+
+    let filesystem = mock.session.filesystem();
+    let target_dir = workdir.join("dist").join("client");
+    filesystem.create_dir_all(&target_dir).unwrap();
+    filesystem
+        .write_file(&target_dir.join("test.txt"), "content")
+        .unwrap();
+    filesystem
+        .write_file(&target_dir.join(".gitkeep"), "")
+        .unwrap();
+
+    for ext in ["zip", "tar.gz", "7z"] {
+        let archive = workdir
+            .join("dist")
+            .join(format!("TestPack-v1.0.0-client.{ext}"));
+        filesystem.write_file(&archive, "mock archive").unwrap();
+    }
+
+    let result = orchestrator.clean_target(BuildTarget::Client);
+    assert!(result.is_ok());
+
+    assert!(!filesystem.exists(&target_dir.join("test.txt")));
+    assert!(filesystem.exists(&target_dir.join(".gitkeep")));
+    assert!(!filesystem.exists(&workdir.join("dist").join("TestPack-v1.0.0-client.zip")));
+    assert!(!filesystem.exists(&workdir.join("dist").join("TestPack-v1.0.0-client.tar.gz")));
+    assert!(!filesystem.exists(&workdir.join("dist").join("TestPack-v1.0.0-client.7z")));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_fetch_url_bytes_rejects_current_thread_runtime() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let result = orchestrator.fetch_url_bytes("https://example.com/test.bin");
+    match result {
+        Err(BuildError::ConfigError { reason }) => {
+            assert!(reason.contains("multi-threaded tokio runtime"));
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_install_neoforge_server_mc_1_20_1_uses_forge_namespace() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "NeoForgeTestPack"
+author = "TestAuthor"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.20.1"
+neoforge = "47.3.0"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        );
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+    session.filesystem().create_dir_all(&dist_dir).unwrap();
+    session
+        .filesystem()
+        .write_bytes(
+            &dist_dir.join("forge-1.20.1-47.3.0-installer.jar"),
+            b"installer",
+        )
+        .unwrap();
+    session
+        .filesystem()
+        .write_bytes(&dist_dir.join("srv.jar"), b"server starter jar")
+        .unwrap();
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let pack_info = orchestrator.load_pack_info().unwrap().clone();
+    let result = orchestrator.install_neoforge_server(&dist_dir, &pack_info);
+
+    assert!(result.is_ok(), "{result:?}");
+    assert!(session.filesystem().exists(&dist_dir.join("run.sh")));
+    assert!(session.filesystem().exists(&dist_dir.join("run.bat")));
+    assert!(session.filesystem().exists(&dist_dir.join("srv.jar")));
+    assert!(
+        !session
+            .filesystem()
+            .exists(&dist_dir.join("forge-1.20.1-47.3.0-installer.jar")),
+        "installer jar should be cleaned up after a successful run"
+    );
+
+    let java_calls = session.process_provider.get_calls_for_command("java");
+    assert!(java_calls.iter().any(|call| {
+        call.args.iter().any(|a| a == "--install-server")
+            && call
+                .args
+                .iter()
+                .any(|a| a.contains("forge-1.20.1-47.3.0-installer.jar"))
+    }));
+}
+
+#[test]
+fn test_install_forge_server_creates_run_scripts_and_cleans_up() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "ForgeTestPack"
+author = "TestAuthor"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.20.1"
+forge = "47.3.0"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        );
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+    session.filesystem().create_dir_all(&dist_dir).unwrap();
+    session
+        .filesystem()
+        .write_bytes(
+            &dist_dir.join("forge-1.20.1-47.3.0-installer.jar"),
+            b"installer",
+        )
+        .unwrap();
+    session
+        .filesystem()
+        .write_bytes(&dist_dir.join("srv.jar"), b"server starter jar")
+        .unwrap();
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let pack_info = orchestrator.load_pack_info().unwrap().clone();
+    let result = orchestrator.install_forge_server(&dist_dir, &pack_info);
+
+    assert!(result.is_ok(), "{result:?}");
+    assert!(session.filesystem().exists(&dist_dir.join("run.sh")));
+    assert!(session.filesystem().exists(&dist_dir.join("run.bat")));
+    assert!(session.filesystem().exists(&dist_dir.join("srv.jar")));
+    assert!(
+        !session
+            .filesystem()
+            .exists(&dist_dir.join("forge-1.20.1-47.3.0-installer.jar")),
+        "installer jar should be cleaned up after a successful run"
+    );
+
+    let java_calls = session.process_provider.get_calls_for_command("java");
+    assert!(java_calls.iter().any(|call| {
+        call.args.iter().any(|a| a == "--installServer")
+            && call
+                .args
+                .iter()
+                .any(|a| a.contains("forge-1.20.1-47.3.0-installer.jar"))
+    }));
 }
 
 #[tokio::test]
@@ -417,7 +665,8 @@ async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
                 .with_configured_project(workdir.clone()),
         )
         .with_process(process);
-    let mut orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let error = orchestrator
         .execute_build_pipeline(&[BuildTarget::Mrpack])
         .await
@@ -464,7 +713,8 @@ async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_e
                 .with_configured_project(workdir.clone()),
         )
         .with_process(process);
-    let mut orchestrator = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let error = orchestrator
         .execute_build_pipeline(&[BuildTarget::Mrpack])
         .await
@@ -491,7 +741,10 @@ async fn test_verify_server_jar_sha1_accepts_correct_hash() {
     let jar_bytes = b"test jar content";
     let correct_sha1 = crate::empack::content::hex::encode(Sha1::digest(jar_bytes));
     let jar_path = dist_dir.join("srv.jar");
-    mock.session.filesystem().write_bytes(&jar_path, jar_bytes).unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(&jar_path, jar_bytes)
+        .unwrap();
 
     let result = orchestrator.verify_server_jar_sha1(&jar_path, &correct_sha1);
     assert!(result.is_ok());
@@ -510,7 +763,10 @@ async fn test_verify_server_jar_sha1_rejects_wrong_hash_and_deletes_file() {
     let jar_bytes = b"test jar content";
     let wrong_sha1 = "0000000000000000000000000000000000000000";
     let jar_path = dist_dir.join("srv.jar");
-    mock.session.filesystem().write_bytes(&jar_path, jar_bytes).unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(&jar_path, jar_bytes)
+        .unwrap();
 
     let result = orchestrator.verify_server_jar_sha1(&jar_path, wrong_sha1);
     match result {
@@ -545,15 +801,21 @@ async fn test_download_server_jar_vanilla_fetches_mojang_manifest() {
         }]
     });
 
-    let _m1 = server.mock("GET", "/mc/game/version_manifest_v2.json")
+    let _m1 = server
+        .mock("GET", "/mc/game/version_manifest_v2.json")
         .with_body(manifest.to_string())
-        .create_async().await;
-    let _m2 = server.mock("GET", "/v1/packages/1.21.json")
+        .create_async()
+        .await;
+    let _m2 = server
+        .mock("GET", "/v1/packages/1.21.json")
         .with_body(version_meta.to_string())
-        .create_async().await;
-    let _m3 = server.mock("GET", "/server.jar")
+        .create_async()
+        .await;
+    let _m3 = server
+        .mock("GET", "/server.jar")
         .with_body(jar_bytes.as_slice())
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -566,7 +828,10 @@ async fn test_download_server_jar_vanilla_fetches_mojang_manifest() {
     // Since install_vanilla_server hardcodes the Mojang URL, we test via
     // fetch_url_text + download_file helpers and the JSON parsing.
     let manifest_text = orchestrator
-        .fetch_url_text(&format!("{}/mc/game/version_manifest_v2.json", server.url()))
+        .fetch_url_text(&format!(
+            "{}/mc/game/version_manifest_v2.json",
+            server.url()
+        ))
         .unwrap();
     let parsed: MojangVersionManifest = serde_json::from_str(&manifest_text).unwrap();
     assert_eq!(parsed.versions[0].id, "1.21");
@@ -596,9 +861,11 @@ async fn test_download_server_jar_fabric_resolves_installer_and_constructs_maven
         { "version": "1.1.0", "stable": true }
     ]);
 
-    let _m1 = server.mock("GET", "/v2/versions/installer")
+    let _m1 = server
+        .mock("GET", "/v2/versions/installer")
         .with_body(installer_json.to_string())
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -636,17 +903,21 @@ async fn test_fabric_installer_produces_srv_jar_after_rename() {
     mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
     // Simulate installer output: fabric-server-launch.jar + server.jar + libraries/
-    mock.session.filesystem().write_bytes(
-        &dist_dir.join("fabric-server-launch.jar"),
-        b"fabric launcher jar",
-    ).unwrap();
-    mock.session.filesystem().write_bytes(
-        &dist_dir.join("server.jar"),
-        b"vanilla server jar",
-    ).unwrap();
-    mock.session.filesystem().create_dir_all(
-        &dist_dir.join("libraries"),
-    ).unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(
+            &dist_dir.join("fabric-server-launch.jar"),
+            b"fabric launcher jar",
+        )
+        .unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(&dist_dir.join("server.jar"), b"vanilla server jar")
+        .unwrap();
+    mock.session
+        .filesystem()
+        .create_dir_all(&dist_dir.join("libraries"))
+        .unwrap();
 
     // Perform the rename that install_fabric_server does after running the installer
     let launcher_jar = dist_dir.join("fabric-server-launch.jar");
@@ -654,13 +925,24 @@ async fn test_fabric_installer_produces_srv_jar_after_rename() {
     assert!(mock.session.filesystem().exists(&launcher_jar));
 
     let bytes = mock.session.filesystem().read_bytes(&launcher_jar).unwrap();
-    mock.session.filesystem().write_bytes(&srv_jar, &bytes).unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(&srv_jar, &bytes)
+        .unwrap();
     let _ = mock.session.filesystem().remove_file(&launcher_jar);
 
     assert!(mock.session.filesystem().exists(&srv_jar));
     assert!(!mock.session.filesystem().exists(&launcher_jar));
-    assert!(mock.session.filesystem().exists(&dist_dir.join("server.jar")));
-    assert!(mock.session.filesystem().exists(&dist_dir.join("libraries")));
+    assert!(
+        mock.session
+            .filesystem()
+            .exists(&dist_dir.join("server.jar"))
+    );
+    assert!(
+        mock.session
+            .filesystem()
+            .exists(&dist_dir.join("libraries"))
+    );
 
     let srv_bytes = mock.session.filesystem().read_bytes(&srv_jar).unwrap();
     assert_eq!(srv_bytes, b"fabric launcher jar");
@@ -677,12 +959,22 @@ async fn test_download_server_jar_quilt_parses_maven_and_invokes_java() {
   </versioning>
 </metadata>"#;
 
-    let _m1 = server.mock("GET", "/repository/release/org/quiltmc/quilt-installer/maven-metadata.xml")
+    let _m1 = server
+        .mock(
+            "GET",
+            "/repository/release/org/quiltmc/quilt-installer/maven-metadata.xml",
+        )
         .with_body(maven_xml)
-        .create_async().await;
-    let _m2 = server.mock("GET", "/repository/release/org/quiltmc/quilt-installer/0.12.0/quilt-installer-0.12.0.jar")
+        .create_async()
+        .await;
+    let _m2 = server
+        .mock(
+            "GET",
+            "/repository/release/org/quiltmc/quilt-installer/0.12.0/quilt-installer-0.12.0.jar",
+        )
         .with_body("quilt installer jar bytes")
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -693,7 +985,10 @@ async fn test_download_server_jar_quilt_parses_maven_and_invokes_java() {
 
     // Test the Maven XML parsing step
     let xml_text = orchestrator
-        .fetch_url_text(&format!("{}/repository/release/org/quiltmc/quilt-installer/maven-metadata.xml", server.url()))
+        .fetch_url_text(&format!(
+            "{}/repository/release/org/quiltmc/quilt-installer/maven-metadata.xml",
+            server.url()
+        ))
         .unwrap();
     let metadata: QuiltMavenMetadata = quick_xml::de::from_str(&xml_text).unwrap();
     assert_eq!(metadata.versioning.release, "0.12.0");
@@ -704,7 +999,9 @@ async fn test_download_server_jar_quilt_parses_maven_and_invokes_java() {
         server.url()
     );
     let installer_path = dist_dir.join("quilt-installer-0.12.0.jar");
-    orchestrator.download_file(&installer_url, &installer_path).unwrap();
+    orchestrator
+        .download_file(&installer_url, &installer_path)
+        .unwrap();
     assert!(mock.session.filesystem().exists(&installer_path));
 }
 
@@ -717,17 +1014,21 @@ async fn test_quilt_installer_renames_launch_jar_not_vanilla() {
     mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
     // Simulate Quilt installer output
-    mock.session.filesystem().write_bytes(
-        &dist_dir.join("quilt-server-launch.jar"),
-        b"quilt launcher jar",
-    ).unwrap();
-    mock.session.filesystem().write_bytes(
-        &dist_dir.join("server.jar"),
-        b"vanilla server jar",
-    ).unwrap();
-    mock.session.filesystem().create_dir_all(
-        &dist_dir.join("libraries"),
-    ).unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(
+            &dist_dir.join("quilt-server-launch.jar"),
+            b"quilt launcher jar",
+        )
+        .unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(&dist_dir.join("server.jar"), b"vanilla server jar")
+        .unwrap();
+    mock.session
+        .filesystem()
+        .create_dir_all(&dist_dir.join("libraries"))
+        .unwrap();
 
     // Perform the rename that install_quilt_server does after running the installer
     let launcher_jar = dist_dir.join("quilt-server-launch.jar");
@@ -735,27 +1036,43 @@ async fn test_quilt_installer_renames_launch_jar_not_vanilla() {
     assert!(mock.session.filesystem().exists(&launcher_jar));
 
     let bytes = mock.session.filesystem().read_bytes(&launcher_jar).unwrap();
-    mock.session.filesystem().write_bytes(&srv_jar, &bytes).unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(&srv_jar, &bytes)
+        .unwrap();
     let _ = mock.session.filesystem().remove_file(&launcher_jar);
 
     // srv.jar should contain the Quilt launcher, NOT the vanilla server
     assert!(mock.session.filesystem().exists(&srv_jar));
     assert!(!mock.session.filesystem().exists(&launcher_jar));
-    assert!(mock.session.filesystem().exists(&dist_dir.join("server.jar")));
+    assert!(
+        mock.session
+            .filesystem()
+            .exists(&dist_dir.join("server.jar"))
+    );
 
     let srv_bytes = mock.session.filesystem().read_bytes(&srv_jar).unwrap();
     assert_eq!(srv_bytes, b"quilt launcher jar");
 
-    let vanilla_bytes = mock.session.filesystem().read_bytes(&dist_dir.join("server.jar")).unwrap();
+    let vanilla_bytes = mock
+        .session
+        .filesystem()
+        .read_bytes(&dist_dir.join("server.jar"))
+        .unwrap();
     assert_eq!(vanilla_bytes, b"vanilla server jar");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_download_server_jar_neoforge_downloads_and_runs_installer() {
     let mut server = mockito::Server::new_async().await;
-    let _m = server.mock("GET", "/releases/net/neoforged/neoforge/21.1.86/neoforge-21.1.86-installer.jar")
+    let _m = server
+        .mock(
+            "GET",
+            "/releases/net/neoforged/neoforge/21.1.86/neoforge-21.1.86-installer.jar",
+        )
         .with_body("neoforge installer bytes")
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -766,7 +1083,10 @@ async fn test_download_server_jar_neoforge_downloads_and_runs_installer() {
 
     // Test the download helper independently
     let installer_path = dist_dir.join("neoforge-21.1.86-installer.jar");
-    let url = format!("{}/releases/net/neoforged/neoforge/21.1.86/neoforge-21.1.86-installer.jar", server.url());
+    let url = format!(
+        "{}/releases/net/neoforged/neoforge/21.1.86/neoforge-21.1.86-installer.jar",
+        server.url()
+    );
     orchestrator.download_file(&url, &installer_path).unwrap();
     assert!(mock.session.filesystem().exists(&installer_path));
 
@@ -836,9 +1156,14 @@ async fn test_download_server_jar_neoforge_mc_1_20_1_uses_forge_namespace() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_download_server_jar_forge_downloads_and_runs_installer() {
     let mut server = mockito::Server::new_async().await;
-    let _m = server.mock("GET", "/net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar")
+    let _m = server
+        .mock(
+            "GET",
+            "/net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar",
+        )
         .with_body("forge installer bytes")
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -848,7 +1173,10 @@ async fn test_download_server_jar_forge_downloads_and_runs_installer() {
     mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
     let installer_path = dist_dir.join("forge-1.20.1-47.3.0-installer.jar");
-    let url = format!("{}/net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar", server.url());
+    let url = format!(
+        "{}/net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar",
+        server.url()
+    );
     orchestrator.download_file(&url, &installer_path).unwrap();
     assert!(mock.session.filesystem().exists(&installer_path));
 
@@ -870,9 +1198,11 @@ async fn test_download_server_jar_forge_downloads_and_runs_installer() {
 async fn test_download_server_starter_jar_succeeds_when_run_scripts_exist() {
     let mut server = mockito::Server::new_async().await;
     let ssj_bytes = b"server starter jar content";
-    let _m = server.mock("GET", "/releases/latest/download/server.jar")
+    let _m = server
+        .mock("GET", "/releases/latest/download/server.jar")
         .with_body(ssj_bytes.as_slice())
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -882,21 +1212,29 @@ async fn test_download_server_starter_jar_succeeds_when_run_scripts_exist() {
     mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
     // Simulate installer output: run.sh + run.bat
-    mock.session.filesystem().write_file(
-        &dist_dir.join("run.sh"),
-        "#!/usr/bin/env sh\njava @user_jvm_args.txt @libraries/.../unix_args.txt \"$@\"",
-    ).unwrap();
-    mock.session.filesystem().write_file(
-        &dist_dir.join("run.bat"),
-        "java @user_jvm_args.txt @libraries\\.../win_args.txt %*",
-    ).unwrap();
+    mock.session
+        .filesystem()
+        .write_file(
+            &dist_dir.join("run.sh"),
+            "#!/usr/bin/env sh\njava @user_jvm_args.txt @libraries/.../unix_args.txt \"$@\"",
+        )
+        .unwrap();
+    mock.session
+        .filesystem()
+        .write_file(
+            &dist_dir.join("run.bat"),
+            "java @user_jvm_args.txt @libraries\\.../win_args.txt %*",
+        )
+        .unwrap();
 
     // Download ServerStarterJar using the mock server URL directly
     let srv_jar = dist_dir.join("srv.jar");
-    orchestrator.download_file(
-        &format!("{}/releases/latest/download/server.jar", server.url()),
-        &srv_jar,
-    ).unwrap();
+    orchestrator
+        .download_file(
+            &format!("{}/releases/latest/download/server.jar", server.url()),
+            &srv_jar,
+        )
+        .unwrap();
 
     assert!(mock.session.filesystem().exists(&srv_jar));
     let downloaded = mock.session.filesystem().read_bytes(&srv_jar).unwrap();
@@ -930,10 +1268,13 @@ async fn test_download_server_starter_jar_accepts_run_sh_only() {
     mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
     // Only run.sh, no run.bat
-    mock.session.filesystem().write_file(
-        &dist_dir.join("run.sh"),
-        "#!/usr/bin/env sh\njava @user_jvm_args.txt @libraries/.../unix_args.txt \"$@\"",
-    ).unwrap();
+    mock.session
+        .filesystem()
+        .write_file(
+            &dist_dir.join("run.sh"),
+            "#!/usr/bin/env sh\njava @user_jvm_args.txt @libraries/.../unix_args.txt \"$@\"",
+        )
+        .unwrap();
 
     // The pre-download validation should not return an error (run.sh exists).
     // We cannot call download_server_starter_jar end-to-end here because
@@ -955,10 +1296,7 @@ async fn test_download_server_jar_unknown_loader_returns_error() {
     let orchestrator = mock.orchestrator();
 
     let dist_dir = mock.workdir().join("dist").join("server");
-    mock.session
-        .filesystem()
-        .create_dir_all(&dist_dir)
-        .unwrap();
+    mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
     let pack_info = PackInfo {
         author: "A".to_string(),
@@ -999,10 +1337,16 @@ async fn test_download_file_skips_http_when_dest_exists() {
     // URL is unreachable; download_file must return Ok because the cache hit
     // prevents the HTTP call entirely.
     let result = orchestrator.download_file("http://unreachable.invalid/file.jar", &dest);
-    assert!(result.is_ok(), "cache-first check should skip HTTP: {result:?}");
+    assert!(
+        result.is_ok(),
+        "cache-first check should skip HTTP: {result:?}"
+    );
 
     let bytes = mock.session.filesystem().read_bytes(&dest).unwrap();
-    assert_eq!(bytes, b"cached content", "existing file should be untouched");
+    assert_eq!(
+        bytes, b"cached content",
+        "existing file should be untouched"
+    );
 }
 
 // ===== W2-F4: FETCH RETRY TESTS =====
@@ -1012,15 +1356,19 @@ async fn test_fetch_url_bytes_retries_on_server_error_then_succeeds() {
     let mut server = mockito::Server::new_async().await;
     let body = b"downloaded content";
 
-    let _m = server.mock("GET", "/retry-test")
+    let _m = server
+        .mock("GET", "/retry-test")
         .with_status(503)
         .with_body("Service Unavailable")
         .expect_at_most(2)
-        .create_async().await;
-    let _m_ok = server.mock("GET", "/retry-test")
+        .create_async()
+        .await;
+    let _m_ok = server
+        .mock("GET", "/retry-test")
         .with_status(200)
         .with_body(body.as_slice())
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -1028,7 +1376,11 @@ async fn test_fetch_url_bytes_retries_on_server_error_then_succeeds() {
 
     let url = format!("{}/retry-test", server.url());
     let result = orchestrator.fetch_url_bytes(&url);
-    assert!(result.is_ok(), "should succeed after retries: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "should succeed after retries: {:?}",
+        result.err()
+    );
     assert_eq!(result.unwrap(), body);
 }
 
@@ -1036,11 +1388,13 @@ async fn test_fetch_url_bytes_retries_on_server_error_then_succeeds() {
 async fn test_fetch_url_bytes_does_not_retry_on_client_error() {
     let mut server = mockito::Server::new_async().await;
 
-    let _m = server.mock("GET", "/not-found")
+    let _m = server
+        .mock("GET", "/not-found")
         .with_status(404)
         .with_body("Not Found")
         .expect(1)
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -1050,18 +1404,23 @@ async fn test_fetch_url_bytes_does_not_retry_on_client_error() {
     let result = orchestrator.fetch_url_bytes(&url);
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
-    assert!(err_msg.contains("404"), "error should contain status code: {err_msg}");
+    assert!(
+        err_msg.contains("404"),
+        "error should contain status code: {err_msg}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_fetch_url_bytes_exhausts_retries_on_persistent_server_error() {
     let mut server = mockito::Server::new_async().await;
 
-    let _m = server.mock("GET", "/always-failing")
+    let _m = server
+        .mock("GET", "/always-failing")
         .with_status(502)
         .with_body("Bad Gateway")
         .expect(3)
-        .create_async().await;
+        .create_async()
+        .await;
 
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -1071,7 +1430,10 @@ async fn test_fetch_url_bytes_exhausts_retries_on_persistent_server_error() {
     let result = orchestrator.fetch_url_bytes(&url);
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
-    assert!(err_msg.contains("502"), "error should contain status code: {err_msg}");
+    assert!(
+        err_msg.contains("502"),
+        "error should contain status code: {err_msg}"
+    );
 }
 
 // ===== W1-T4: NEOFORGE BUILD TESTS (B1) =====
@@ -1098,7 +1460,11 @@ neoforge = "{loader_version}"
         )
     }
 
-    fn setup_neoforge_project(mock: &MockBuildOrchestrator, mc_version: &str, loader_version: &str) {
+    fn setup_neoforge_project(
+        mock: &MockBuildOrchestrator,
+        mc_version: &str,
+        loader_version: &str,
+    ) {
         let workdir = mock.workdir().to_path_buf();
         let filesystem = mock.session.filesystem();
         let pack_dir = workdir.join("pack");
@@ -1110,10 +1476,7 @@ neoforge = "{loader_version}"
             )
             .unwrap();
         filesystem
-            .write_file(
-                &pack_dir.join("index.toml"),
-                "hash-format = \"sha256\"\n",
-            )
+            .write_file(&pack_dir.join("index.toml"), "hash-format = \"sha256\"\n")
             .unwrap();
     }
 
@@ -1154,7 +1517,10 @@ neoforge = "{loader_version}"
         };
 
         assert_eq!(actual_url, expected_url);
-        assert_eq!(actual_filename, format!("neoforge-{}-installer.jar", version));
+        assert_eq!(
+            actual_filename,
+            format!("neoforge-{}-installer.jar", version)
+        );
 
         assert!(actual_url.starts_with("https://maven.neoforged.net/releases/"));
         assert!(actual_url.contains("/net/neoforged/neoforge/"));
@@ -1224,7 +1590,8 @@ neoforge = "{loader_version}"
                 "Java should be invoked with -jar: {args:?}"
             );
             assert!(
-                args.iter().any(|a| a.contains("neoforge") && a.contains("installer")),
+                args.iter()
+                    .any(|a| a.contains("neoforge") && a.contains("installer")),
                 "Java should receive the neoforge installer jar path: {args:?}"
             );
             assert!(
@@ -1255,10 +1622,7 @@ neoforge = "{loader_version}"
         // Verify that download_server_jar dispatches to install_neoforge_server
         // by checking it does NOT return "unsupported loader type"
         let dist_dir = mock.workdir().join("dist").join("server");
-        mock.session
-            .filesystem()
-            .create_dir_all(&dist_dir)
-            .unwrap();
+        mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
         let result = orchestrator.download_server_jar(&dist_dir, &pack_info);
         // The call will fail (no HTTP server), but should NOT be "unsupported loader type"
@@ -1307,4 +1671,3 @@ neoforge = "{loader_version}"
         assert_eq!(filename, "forge-1.20.1-47.3.0-installer.jar");
     }
 }
-

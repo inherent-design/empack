@@ -1,4 +1,5 @@
 use crate::primitives::ConfigError;
+use std::ffi::OsString;
 use std::sync::OnceLock;
 
 use super::{cli::CliConfig, config::AppConfig, env::EnvironmentConfig};
@@ -8,6 +9,33 @@ static GLOBAL_CONFIG: OnceLock<AppConfig> = OnceLock::new();
 impl AppConfig {
     /// Load config: defaults -> .env -> env vars -> CLI
     pub fn load() -> Result<Self, ConfigError> {
+        use dotenvy::from_filename;
+
+        let mut config = Self::default();
+
+        if std::path::Path::new(".env").exists() {
+            from_filename(".env").map_err(|e| ConfigError::EnvFileError {
+                file: ".env".to_string(),
+                source: e,
+            })?;
+        }
+
+        let env_config = EnvironmentConfig::load()?;
+        config.color = env_config.apply_color_config(config.color);
+
+        let cli_config = CliConfig::load()?;
+        config = config.merge_with(cli_config.app_config);
+
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Load config from explicit command line arguments.
+    pub fn load_from<I, T>(args: I) -> Result<Self, ConfigError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
         use dotenvy::from_filename;
 
         let mut config = Self::default();
@@ -28,7 +56,7 @@ impl AppConfig {
         let env_config = EnvironmentConfig::load()?;
         config.color = env_config.apply_color_config(config.color);
 
-        let cli_config = CliConfig::load()?;
+        let cli_config = CliConfig::load_from(args)?;
         config = config.merge_with(cli_config.app_config);
 
         config.validate()?;

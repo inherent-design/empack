@@ -1,5 +1,6 @@
 use crate::primitives::ConfigError;
 use clap::{Args, Parser, Subcommand};
+use std::ffi::OsString;
 
 use super::config::AppConfig;
 
@@ -29,6 +30,22 @@ impl CliConfig {
     /// Load configuration from command line arguments
     pub fn load() -> Result<Self, ConfigError> {
         let cli = Cli::parse();
+        Ok(Self {
+            app_config: cli.config,
+            command: cli.command,
+        })
+    }
+
+    /// Load configuration from explicit command line arguments.
+    pub fn load_from<I, T>(args: I) -> Result<Self, ConfigError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let cli = Cli::try_parse_from(args).map_err(|e| ConfigError::ParseError {
+            value: "command line".to_string(),
+            reason: e.to_string(),
+        })?;
         Ok(Self {
             app_config: cli.config,
             command: cli.command,
@@ -311,5 +328,166 @@ impl Commands {
             Commands::Remove { .. } => 7,
             Commands::Build(..) => 10,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::empack::archive::ArchiveFormat;
+    use crate::primitives::ProjectType;
+    use std::str::FromStr;
+
+    fn clear_cli_env() {
+        unsafe {
+            std::env::remove_var("EMPACK_WORKDIR");
+            std::env::remove_var("EMPACK_CPU_JOBS");
+            std::env::remove_var("EMPACK_NET_TIMEOUT");
+            std::env::remove_var("EMPACK_ID_MODRINTH");
+            std::env::remove_var("EMPACK_KEY_MODRINTH");
+            std::env::remove_var("EMPACK_KEY_CURSEFORGE");
+            std::env::remove_var("EMPACK_LOG_LEVEL");
+            std::env::remove_var("EMPACK_LOG_FORMAT");
+            std::env::remove_var("EMPACK_LOG_OUTPUT");
+            std::env::remove_var("EMPACK_COLOR");
+            std::env::remove_var("EMPACK_YES");
+            std::env::remove_var("EMPACK_DRY_RUN");
+            std::env::remove_var("EMPACK_MODLOADER");
+            std::env::remove_var("EMPACK_MC_VERSION");
+            std::env::remove_var("EMPACK_AUTHOR");
+            std::env::remove_var("EMPACK_NAME");
+            std::env::remove_var("EMPACK_LOADER_VERSION");
+            std::env::remove_var("EMPACK_PACK_VERSION");
+            std::env::remove_var("EMPACK_DATAPACK_FOLDER");
+            std::env::remove_var("EMPACK_GAME_VERSIONS");
+        }
+    }
+
+    #[test]
+    fn cli_archive_format_to_archive_format_maps_variants() {
+        assert_eq!(
+            CliArchiveFormat::Zip.to_archive_format(),
+            ArchiveFormat::Zip
+        );
+        assert_eq!(
+            CliArchiveFormat::TarGz.to_archive_format(),
+            ArchiveFormat::TarGz
+        );
+        assert_eq!(
+            CliArchiveFormat::SevenZ.to_archive_format(),
+            ArchiveFormat::SevenZ
+        );
+    }
+
+    #[test]
+    fn cli_project_type_to_project_type_maps_variants() {
+        assert_eq!(CliProjectType::Mod.to_project_type(), ProjectType::Mod);
+        assert_eq!(
+            CliProjectType::Datapack.to_project_type(),
+            ProjectType::Datapack
+        );
+        assert_eq!(
+            CliProjectType::ResourcePack.to_project_type(),
+            ProjectType::ResourcePack
+        );
+        assert_eq!(
+            CliProjectType::Shader.to_project_type(),
+            ProjectType::Shader
+        );
+    }
+
+    #[test]
+    fn search_platform_from_str_supports_known_aliases() {
+        assert_eq!(
+            SearchPlatform::from_str("modrinth").unwrap(),
+            SearchPlatform::Modrinth
+        );
+        assert_eq!(
+            SearchPlatform::from_str("curseforge").unwrap(),
+            SearchPlatform::Curseforge
+        );
+        assert_eq!(
+            SearchPlatform::from_str("both").unwrap(),
+            SearchPlatform::Both
+        );
+        assert!(SearchPlatform::from_str("unknown").is_err());
+    }
+
+    #[test]
+    fn commands_surface_metadata_matches_expected_values() {
+        assert!(!Commands::Requirements.requires_modpack());
+        assert!(!Commands::Version.requires_modpack());
+        assert!(Commands::Sync {}.requires_modpack());
+        assert!(Commands::Build(BuildArgs::default()).requires_modpack());
+        assert_eq!(Commands::Requirements.execution_order(), 0);
+        assert_eq!(Commands::Version.execution_order(), 0);
+        assert_eq!(Commands::Init(InitArgs::default()).execution_order(), 1);
+        assert_eq!(Commands::Clean { targets: vec![] }.execution_order(), 2);
+        assert_eq!(Commands::Sync {}.execution_order(), 5);
+        assert_eq!(
+            Commands::Add {
+                mods: vec![],
+                force: false,
+                platform: None,
+                project_type: None,
+                version_id: None,
+                file_id: None,
+            }
+            .execution_order(),
+            6
+        );
+        assert_eq!(
+            Commands::Remove {
+                mods: vec![],
+                deps: false
+            }
+            .execution_order(),
+            7
+        );
+        assert_eq!(Commands::Build(BuildArgs::default()).execution_order(), 10);
+    }
+
+    #[test]
+    fn build_args_default_matches_expected_defaults() {
+        let args = BuildArgs::default();
+        assert!(args.targets.is_empty());
+        assert!(!args.clean);
+        assert_eq!(args.format, CliArchiveFormat::Zip);
+        assert_eq!(args.downloads_dir, None);
+    }
+
+    #[test]
+    fn cli_config_load_from_parses_arguments_and_config() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        crate::display::test_utils::clean_test_env();
+        clear_cli_env();
+
+        let config = CliConfig::load_from([
+            "empack",
+            "--color",
+            "always",
+            "--log-level",
+            "4",
+            "--net-timeout",
+            "45",
+            "-j",
+            "8",
+            "--yes",
+            "--dry-run",
+            "init",
+            "--force",
+        ])
+        .expect("parse cli config");
+
+        assert_eq!(
+            config.app_config.color,
+            crate::primitives::TerminalCapsDetectIntent::Always
+        );
+        assert_eq!(config.app_config.log_level, 4);
+        assert_eq!(config.app_config.net_timeout, 45);
+        assert_eq!(config.app_config.cpu_jobs, 8);
+        assert!(config.app_config.yes);
+        assert!(config.app_config.dry_run);
+        assert!(matches!(config.command, Some(Commands::Init(_))));
     }
 }

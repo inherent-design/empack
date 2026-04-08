@@ -27,3 +27,39 @@ pub fn cache_root() -> Result<PathBuf> {
         Ok(fallback)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_root_uses_env_override() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        unsafe {
+            std::env::set_var("EMPACK_CACHE_DIR", temp_dir.path());
+        }
+
+        let cache_root = cache_root().expect("cache root");
+        assert_eq!(cache_root, temp_dir.path());
+
+        unsafe {
+            std::env::remove_var("EMPACK_CACHE_DIR");
+        }
+    }
+
+    #[test]
+    fn cache_root_ignores_empty_override() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("EMPACK_CACHE_DIR", "");
+        }
+
+        let cache_root = cache_root().expect("cache root");
+        assert!(!cache_root.as_os_str().is_empty());
+
+        unsafe {
+            std::env::remove_var("EMPACK_CACHE_DIR");
+        }
+    }
+}
