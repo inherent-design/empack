@@ -1,8 +1,8 @@
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Per-host rate budget tracking.
@@ -95,35 +95,50 @@ impl RateBudget for HeaderDrivenBudget {
     }
 
     fn acquire(&self) -> Duration {
-        let remaining = self.remaining.load(Ordering::Relaxed);
+        loop {
+            let mut remaining = self.remaining.load(Ordering::Relaxed);
 
-        if remaining == 0 {
-            let reset_at = self.reset_at.load(Ordering::Relaxed);
-            let now = Self::now_secs();
-            if reset_at > now {
-                return Duration::from_secs(reset_at - now);
+            if remaining == 0 {
+                let reset_at = self.reset_at.load(Ordering::Relaxed);
+                let now = Self::now_secs();
+                if reset_at > now {
+                    return Duration::from_secs(reset_at - now);
+                }
+
+                let limit = self.limit.load(Ordering::Relaxed);
+                if self
+                    .remaining
+                    .compare_exchange(0, limit, Ordering::Relaxed, Ordering::Relaxed)
+                    .is_err()
+                {
+                    continue;
+                }
+                remaining = limit;
             }
-            let limit = self.limit.load(Ordering::Relaxed);
-            self.remaining.store(limit, Ordering::Relaxed);
-            return Duration::ZERO;
+
+            let delay = match remaining {
+                201.. => Duration::ZERO,
+                101..=200 => Duration::ZERO,
+                51..=100 => Duration::from_millis(50),
+                21..=50 => Duration::from_millis(100),
+                6..=20 => Duration::from_millis(500),
+                1..=5 => Duration::from_millis(500),
+                0 => continue,
+            };
+
+            if self
+                .remaining
+                .compare_exchange(
+                    remaining,
+                    remaining.saturating_sub(1),
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                return delay;
+            }
         }
-
-        let delay = match remaining {
-            201.. => Duration::ZERO,
-            101..=200 => Duration::ZERO,
-            51..=100 => Duration::from_millis(50),
-            21..=50 => Duration::from_millis(100),
-            6..=20 => Duration::from_millis(500),
-            1..=5 => Duration::from_millis(500),
-            0 => unreachable!(),
-        };
-
-        let _ = self
-            .remaining
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some(current.saturating_sub(1))
-            });
-        delay
     }
 
     fn is_exhausted(&self) -> bool {
@@ -141,9 +156,14 @@ impl RateBudget for HeaderDrivenBudget {
 /// is depleted. On 403 responses (CurseForge uses Cloudflare WAF),
 /// forces exhaustion for the remainder of the current window
 /// (up to `window_duration_secs`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FixedWindowState {
+    window_start: u64,
+    reserved_in_window: u32,
+}
+
 pub struct FixedWindowBudget {
-    requests_this_window: AtomicU32,
-    window_start: AtomicU64,
+    state: Mutex<FixedWindowState>,
     max_per_window: u32,
     window_duration_secs: u64,
 }
@@ -156,8 +176,10 @@ impl FixedWindowBudget {
             .unwrap_or_default()
             .as_secs();
         Self {
-            requests_this_window: AtomicU32::new(0),
-            window_start: AtomicU64::new(now),
+            state: Mutex::new(FixedWindowState {
+                window_start: now,
+                reserved_in_window: 0,
+            }),
             max_per_window,
             window_duration_secs: window_duration.as_secs(),
         }
@@ -170,12 +192,12 @@ impl FixedWindowBudget {
             .as_secs()
     }
 
-    fn maybe_reset_window(&self) {
-        let now = Self::now_secs();
-        let start = self.window_start.load(Ordering::Relaxed);
-        if now.saturating_sub(start) >= self.window_duration_secs {
-            self.requests_this_window.store(0, Ordering::Relaxed);
-            self.window_start.store(now, Ordering::Relaxed);
+    fn maybe_reset_window(state: &mut FixedWindowState, now: u64, window_duration_secs: u64) {
+        if state.window_start <= now
+            && now.saturating_sub(state.window_start) >= window_duration_secs
+        {
+            state.reserved_in_window = 0;
+            state.window_start = now;
         }
     }
 }
@@ -183,29 +205,46 @@ impl FixedWindowBudget {
 impl RateBudget for FixedWindowBudget {
     fn record_response(&self, _headers: &HeaderMap, status: StatusCode) {
         if status == StatusCode::FORBIDDEN {
-            self.requests_this_window
-                .store(self.max_per_window, Ordering::Relaxed);
+            let now = Self::now_secs();
+            let mut state = self.state.lock().expect("fixed window budget poisoned");
+            Self::maybe_reset_window(&mut state, now, self.window_duration_secs);
+            if state.window_start > now {
+                state.window_start = now;
+            }
+            state.reserved_in_window = self.max_per_window;
         }
     }
 
     fn acquire(&self) -> Duration {
-        self.maybe_reset_window();
+        let now = Self::now_secs();
+        let mut state = self.state.lock().expect("fixed window budget poisoned");
+        Self::maybe_reset_window(&mut state, now, self.window_duration_secs);
+        let threshold = (self.max_per_window as f64 * 0.8) as u32;
 
-        let count = self.requests_this_window.fetch_add(1, Ordering::Relaxed);
-
-        if count >= self.max_per_window {
-            let start = self.window_start.load(Ordering::Relaxed);
-            let now = Self::now_secs();
-            let window_end = start + self.window_duration_secs;
-            if window_end > now {
-                return Duration::from_secs(window_end - now);
+        if state.window_start > now {
+            let delay = Duration::from_secs(state.window_start - now);
+            if state.reserved_in_window >= self.max_per_window {
+                state.window_start = state.window_start.saturating_add(self.window_duration_secs);
+                state.reserved_in_window = 1;
+                return Duration::from_secs(state.window_start - now);
             }
-            self.requests_this_window.store(0, Ordering::Relaxed);
-            self.window_start.store(now, Ordering::Relaxed);
-            return Duration::ZERO;
+
+            let count = state.reserved_in_window;
+            state.reserved_in_window = state.reserved_in_window.saturating_add(1);
+            if count >= threshold {
+                return delay.max(Duration::from_millis(100));
+            }
+            return delay;
         }
 
-        let threshold = (self.max_per_window as f64 * 0.8) as u32;
+        if state.reserved_in_window >= self.max_per_window {
+            state.window_start = state.window_start.saturating_add(self.window_duration_secs);
+            state.reserved_in_window = 1;
+            return Duration::from_secs(state.window_start.saturating_sub(now));
+        }
+
+        let count = state.reserved_in_window;
+        state.reserved_in_window = state.reserved_in_window.saturating_add(1);
         if count >= threshold {
             return Duration::from_millis(100);
         }
@@ -214,8 +253,10 @@ impl RateBudget for FixedWindowBudget {
     }
 
     fn is_exhausted(&self) -> bool {
-        self.maybe_reset_window();
-        self.requests_this_window.load(Ordering::Relaxed) >= self.max_per_window
+        let now = Self::now_secs();
+        let mut state = self.state.lock().expect("fixed window budget poisoned");
+        Self::maybe_reset_window(&mut state, now, self.window_duration_secs);
+        state.window_start > now || state.reserved_in_window >= self.max_per_window
     }
 }
 
@@ -472,7 +513,7 @@ mod tests {
     fn header_budget_acquire_refills_after_reset_passes() {
         let budget = HeaderDrivenBudget::new(300);
         budget.remaining.store(0, Ordering::Relaxed);
-        budget.limit.store(42, Ordering::Relaxed);
+        budget.limit.store(300, Ordering::Relaxed);
         budget.reset_at.store(
             HeaderDrivenBudget::now_secs().saturating_sub(1),
             Ordering::Relaxed,
@@ -480,7 +521,7 @@ mod tests {
 
         let delay = budget.acquire();
         assert_eq!(delay, Duration::ZERO);
-        assert_eq!(budget.remaining.load(Ordering::Relaxed), 42);
+        assert_eq!(budget.remaining.load(Ordering::Relaxed), 299);
     }
 
     // -- FixedWindowBudget --------------------------------------------------
@@ -495,7 +536,7 @@ mod tests {
     fn fixed_budget_record_increments() {
         let budget = FixedWindowBudget::new(150, Duration::from_secs(60));
         budget.acquire();
-        assert_eq!(budget.requests_this_window.load(Ordering::Relaxed), 1);
+        assert_eq!(budget.state.lock().unwrap().reserved_in_window, 1);
     }
 
     #[test]
@@ -503,7 +544,7 @@ mod tests {
         let budget = FixedWindowBudget::new(150, Duration::from_secs(60));
         budget.acquire();
         budget.record_response(&HeaderMap::new(), StatusCode::OK);
-        assert_eq!(budget.requests_this_window.load(Ordering::Relaxed), 1);
+        assert_eq!(budget.state.lock().unwrap().reserved_in_window, 1);
     }
 
     #[test]
@@ -511,14 +552,16 @@ mod tests {
         let budget = FixedWindowBudget::new(150, Duration::from_secs(60));
         budget.record_response(&HeaderMap::new(), StatusCode::FORBIDDEN);
         assert!(budget.is_exhausted());
-        assert_eq!(budget.requests_this_window.load(Ordering::Relaxed), 150);
+        assert_eq!(budget.state.lock().unwrap().reserved_in_window, 150);
     }
 
     #[test]
     fn fixed_budget_window_expiry_resets() {
         let budget = FixedWindowBudget::new(150, Duration::from_secs(60));
-        budget.requests_this_window.store(150, Ordering::Relaxed);
-        budget.window_start.store(0, Ordering::Relaxed);
+        *budget.state.lock().unwrap() = FixedWindowState {
+            window_start: 0,
+            reserved_in_window: 150,
+        };
         assert!(!budget.is_exhausted());
     }
 
@@ -532,7 +575,10 @@ mod tests {
     #[test]
     fn fixed_budget_acquire_delay_near_threshold() {
         let budget = FixedWindowBudget::new(150, Duration::from_secs(60));
-        budget.requests_this_window.store(121, Ordering::Relaxed);
+        *budget.state.lock().unwrap() = FixedWindowState {
+            window_start: FixedWindowBudget::now_secs(),
+            reserved_in_window: 121,
+        };
         let delay = budget.acquire();
         assert_eq!(delay, Duration::from_millis(100));
     }
@@ -553,10 +599,10 @@ mod tests {
     #[test]
     fn fixed_budget_acquire_waits_when_window_exhausted() {
         let budget = FixedWindowBudget::new(150, Duration::from_secs(2));
-        budget.requests_this_window.store(150, Ordering::Relaxed);
-        budget
-            .window_start
-            .store(FixedWindowBudget::now_secs(), Ordering::Relaxed);
+        *budget.state.lock().unwrap() = FixedWindowState {
+            window_start: FixedWindowBudget::now_secs(),
+            reserved_in_window: 150,
+        };
 
         let delay = budget.acquire();
         assert!(delay >= Duration::from_secs(1));
@@ -569,6 +615,23 @@ mod tests {
 
         let delay = budget.acquire();
         assert!(delay >= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn fixed_budget_overflow_reserves_next_window_slot() {
+        let budget = FixedWindowBudget::new(2, Duration::from_secs(60));
+        let now = FixedWindowBudget::now_secs();
+        *budget.state.lock().unwrap() = FixedWindowState {
+            window_start: now,
+            reserved_in_window: 2,
+        };
+
+        let delay = budget.acquire();
+        let state = *budget.state.lock().unwrap();
+
+        assert!(delay >= Duration::from_secs(59));
+        assert_eq!(state.window_start, now + 60);
+        assert_eq!(state.reserved_in_window, 1);
     }
 
     // -- NoOpBudget ---------------------------------------------------------

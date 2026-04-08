@@ -135,6 +135,11 @@ impl<'a> IssueStreamObserver<'a> {
             || lower.starts_with("warning:")
             || lower.starts_with("failed to ")
     }
+
+    fn should_echo_stderr(line: &str) -> bool {
+        let trimmed = line.trim_start();
+        !trimmed.starts_with("at ") && !trimmed.starts_with("... ")
+    }
 }
 
 impl ProcessObserver for IssueStreamObserver<'_> {
@@ -145,10 +150,11 @@ impl ProcessObserver for IssueStreamObserver<'_> {
         }
 
         match stream {
-            ProcessStream::Stderr => self
+            ProcessStream::Stderr if Self::should_echo_stderr(clean) => self
                 .display
                 .status()
                 .warning(&format!("{}: {}", self.label, clean)),
+            ProcessStream::Stderr => {}
             ProcessStream::Stdout if Self::should_echo_stdout(clean) => self
                 .display
                 .status()
@@ -1108,5 +1114,19 @@ mod tests {
         assert!(!IssueStreamObserver::should_echo_stdout(
             "resolved without errors"
         ));
+    }
+
+    #[test]
+    fn issue_stream_observer_suppresses_stack_frame_stderr() {
+        assert!(IssueStreamObserver::should_echo_stderr(
+            "java.lang.IllegalStateException: boom"
+        ));
+        assert!(IssueStreamObserver::should_echo_stderr(
+            "Caused by: network timeout"
+        ));
+        assert!(!IssueStreamObserver::should_echo_stderr(
+            "at com.example.Main.main(Main.java:42)"
+        ));
+        assert!(!IssueStreamObserver::should_echo_stderr("... 12 more"));
     }
 }
