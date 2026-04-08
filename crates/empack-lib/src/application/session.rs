@@ -11,6 +11,7 @@ use crate::empack::packwiz::{LivePackwizOps, PackwizOps};
 use crate::empack::search::{ProjectResolver, ProjectResolverTrait};
 use crate::empack::state::PackStateManager;
 use crate::networking::cache::HttpCache;
+use crate::networking::rate_budget::HostBudgetRegistry;
 use crate::networking::rate_limit::RateLimiterManager;
 use crate::terminal::TerminalCapabilities;
 use anyhow::Context;
@@ -18,8 +19,9 @@ use indicatif::MultiProgress;
 use reqwest::Client;
 use std::collections::HashSet;
 use std::env;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub trait FileSystemProvider {
     fn current_dir(&self) -> Result<PathBuf>;
@@ -60,6 +62,9 @@ pub trait NetworkProvider {
         client: Client,
         curseforge_api_key: Option<String>,
     ) -> Box<dyn ProjectResolverTrait + Send + Sync>;
+
+    /// Per-host adaptive rate budget registry.
+    fn rate_budgets(&self) -> &HostBudgetRegistry;
 }
 
 /// Process execution output
@@ -85,11 +90,91 @@ impl ProcessOutput {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessStream {
+    Stdout,
+    Stderr,
+}
+
+pub trait ProcessObserver {
+    fn on_line(&self, stream: ProcessStream, line: &str);
+}
+
 pub trait ProcessProvider {
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput>;
 
+    fn execute_streaming(
+        &self,
+        command: &str,
+        args: &[&str],
+        working_dir: &Path,
+        observer: &dyn ProcessObserver,
+    ) -> Result<ProcessOutput> {
+        let _ = observer;
+        self.execute(command, args, working_dir)
+    }
+
     /// Returns the program path if found. Uses platform-appropriate lookup.
     fn find_program(&self, program: &str) -> Option<String>;
+}
+
+pub struct IssueStreamObserver<'a> {
+    display: &'a dyn DisplayProvider,
+    label: &'a str,
+}
+
+impl<'a> IssueStreamObserver<'a> {
+    pub fn new(display: &'a dyn DisplayProvider, label: &'a str) -> Self {
+        Self { display, label }
+    }
+
+    fn should_echo_stdout(line: &str) -> bool {
+        let lower = line.to_ascii_lowercase();
+        line.starts_with("Error:")
+            || line.starts_with("Caused by:")
+            || line.starts_with("Warning:")
+            || lower.contains("failed")
+            || lower.contains("warning")
+            || lower.contains("error")
+    }
+}
+
+impl ProcessObserver for IssueStreamObserver<'_> {
+    fn on_line(&self, stream: ProcessStream, line: &str) {
+        let clean = line.trim();
+        if clean.is_empty() {
+            return;
+        }
+
+        match stream {
+            ProcessStream::Stderr => self
+                .display
+                .status()
+                .warning(&format!("{}: {}", self.label, clean)),
+            ProcessStream::Stdout if Self::should_echo_stdout(clean) => self
+                .display
+                .status()
+                .message(&format!("{}: {}", self.label, clean)),
+            ProcessStream::Stdout => {}
+        }
+    }
+}
+
+pub fn execute_process_with_live_issues(
+    session: &dyn Session,
+    command: &str,
+    args: &[&str],
+    working_dir: &Path,
+) -> Result<ProcessOutput> {
+    let label = Path::new(command)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(command)
+        .to_string();
+    let observer = IssueStreamObserver::new(session.display(), &label);
+    session
+        .process()
+        .execute_streaming(command, args, working_dir, &observer)
 }
 
 pub trait ConfigProvider {
@@ -290,6 +375,7 @@ pub struct LiveNetworkProvider {
     client: Client,
     cache: Arc<HttpCache>,
     rate_limiter: Arc<RateLimiterManager>,
+    rate_budgets: Arc<HostBudgetRegistry>,
     #[cfg(feature = "test-utils")]
     modrinth_base_url: Option<String>,
     #[cfg(feature = "test-utils")]
@@ -307,10 +393,12 @@ impl LiveNetworkProvider {
             .timeout(std::time::Duration::from_secs(timeout_secs))
             .build()
             .expect("Failed to build HTTP client");
+        let rate_budgets = Arc::new(HostBudgetRegistry::new());
         Self {
             client: client.clone(),
             cache: Arc::new(HttpCache::new(cache_dir)),
-            rate_limiter: Arc::new(RateLimiterManager::new(client)),
+            rate_limiter: Arc::new(RateLimiterManager::new_with_budgets(client, &rate_budgets)),
+            rate_budgets,
             #[cfg(feature = "test-utils")]
             modrinth_base_url: None,
             #[cfg(feature = "test-utils")]
@@ -328,10 +416,12 @@ impl LiveNetworkProvider {
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .expect("Failed to build HTTP client");
+        let rate_budgets = Arc::new(HostBudgetRegistry::new());
         Self {
             client: client.clone(),
             cache: Arc::new(HttpCache::new(cache_dir)),
-            rate_limiter: Arc::new(RateLimiterManager::new(client)),
+            rate_limiter: Arc::new(RateLimiterManager::new_with_budgets(client, &rate_budgets)),
+            rate_budgets,
             modrinth_base_url,
             curseforge_base_url,
         }
@@ -347,6 +437,10 @@ impl Default for LiveNetworkProvider {
 impl NetworkProvider for LiveNetworkProvider {
     fn http_client(&self) -> Result<Client> {
         Ok(self.client.clone())
+    }
+
+    fn rate_budgets(&self) -> &HostBudgetRegistry {
+        &self.rate_budgets
     }
 
     fn project_resolver(
@@ -422,6 +516,22 @@ impl Default for LiveProcessProvider {
 
 impl ProcessProvider for LiveProcessProvider {
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput> {
+        struct NoopProcessObserver;
+
+        impl ProcessObserver for NoopProcessObserver {
+            fn on_line(&self, _stream: ProcessStream, _line: &str) {}
+        }
+
+        self.execute_streaming(command, args, working_dir, &NoopProcessObserver)
+    }
+
+    fn execute_streaming(
+        &self,
+        command: &str,
+        args: &[&str],
+        working_dir: &Path,
+        observer: &dyn ProcessObserver,
+    ) -> Result<ProcessOutput> {
         use std::process::Command;
 
         let mut cmd = Command::new(command);
@@ -431,99 +541,164 @@ impl ProcessProvider for LiveProcessProvider {
             cmd.env("PATH", custom_path);
         }
 
-        let child = cmd
+        let mut child = cmd
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
             .with_context(|| format!("Failed to spawn command: {}", command))?;
-
-        // Share the Child between the wait thread and the timeout handler.
-        // Uses try_wait() polling so the mutex is NOT held while blocking,
-        // allowing the timeout handler to acquire the lock and call kill().
-        let child_handle = Arc::new(Mutex::new(child));
-        let child_for_timeout = Arc::clone(&child_handle);
         let cmd_name = command.to_string();
 
-        // Take stdout/stderr pipes up front so we can drain them on
-        // separate threads (avoids deadlock if pipe buffers fill).
-        let stdout_pipe = child_handle.lock().unwrap().stdout.take();
-        let stderr_pipe = child_handle.lock().unwrap().stderr.take();
+        enum ProcessEvent {
+            Chunk(ProcessStream, String),
+            ReaderFailed(ProcessStream, String),
+        }
 
-        let stdout_thread = std::thread::spawn(move || {
-            let mut s = String::new();
-            if let Some(mut pipe) = stdout_pipe {
-                use std::io::Read;
-                let _ = pipe.read_to_string(&mut s);
-            }
-            s
-        });
-        let stderr_thread = std::thread::spawn(move || {
-            let mut s = String::new();
-            if let Some(mut pipe) = stderr_pipe {
-                use std::io::Read;
-                let _ = pipe.read_to_string(&mut s);
-            }
-            s
-        });
-
-        let (tx, rx) = std::sync::mpsc::channel::<anyhow::Result<ProcessOutput>>();
-        std::thread::spawn(move || {
-            loop {
-                {
-                    let mut guard = child_handle.lock().unwrap();
-                    match guard.try_wait() {
-                        Ok(Some(status)) => {
-                            drop(guard);
-                            let stdout = stdout_thread.join().unwrap_or_default();
-                            let stderr = stderr_thread.join().unwrap_or_default();
-                            let _ = tx.send(Ok(ProcessOutput {
-                                stdout,
-                                stderr,
-                                success: status.success(),
-                            }));
-                            return;
+        fn spawn_reader(
+            pipe: impl std::io::Read + Send + 'static,
+            stream: ProcessStream,
+            tx: std::sync::mpsc::Sender<ProcessEvent>,
+        ) -> std::thread::JoinHandle<()> {
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(pipe);
+                loop {
+                    let mut buf = Vec::new();
+                    match reader.read_until(b'\n', &mut buf) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let chunk = String::from_utf8_lossy(&buf).into_owned();
+                            if tx.send(ProcessEvent::Chunk(stream, chunk)).is_err() {
+                                break;
+                            }
                         }
-                        Ok(None) => {
-                            // Still running -- release lock and poll again
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Err(e.into()));
-                            return;
+                        Err(error) => {
+                            let _ = tx.send(ProcessEvent::ReaderFailed(stream, error.to_string()));
+                            break;
                         }
                     }
-                } // Lock released here so timeout handler can acquire it
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-        });
-
-        match rx.recv_timeout(PROCESS_TIMEOUT) {
-            Ok(result) => {
-                result.with_context(|| format!("Failed to execute command: {}", cmd_name))
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // Kill via Child handle -- child is still in the mutex
-                if let Ok(mut guard) = child_for_timeout.lock() {
-                    let _ = guard.kill();
-                    let _ = guard.wait(); // Reap zombie process
                 }
+            })
+        }
+
+        let stdout_pipe = child
+            .stdout
+            .take()
+            .context("Failed to capture command stdout")?;
+        let stderr_pipe = child
+            .stderr
+            .take()
+            .context("Failed to capture command stderr")?;
+
+        let (tx, rx) = std::sync::mpsc::channel::<ProcessEvent>();
+        let stdout_thread = spawn_reader(stdout_pipe, ProcessStream::Stdout, tx.clone());
+        let stderr_thread = spawn_reader(stderr_pipe, ProcessStream::Stderr, tx);
+
+        let start = std::time::Instant::now();
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut stdout_partial = String::new();
+        let mut stderr_partial = String::new();
+        let mut exit_status = None;
+
+        fn handle_chunk(
+            full_output: &mut String,
+            partial: &mut String,
+            chunk: &str,
+            stream: ProcessStream,
+            observer: &dyn ProcessObserver,
+        ) {
+            full_output.push_str(chunk);
+            partial.push_str(chunk);
+
+            while let Some(pos) = partial.find('\n') {
+                let line = partial[..pos].trim_end_matches('\r').to_string();
+                observer.on_line(stream, &line);
+                partial.drain(..=pos);
+            }
+        }
+
+        loop {
+            if start.elapsed() > PROCESS_TIMEOUT {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_thread.join();
+                let _ = stderr_thread.join();
                 anyhow::bail!(
                     "Command '{}' timed out after {} seconds (process killed)",
                     cmd_name,
                     PROCESS_TIMEOUT.as_secs()
                 )
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                // Kill orphan child process before returning
-                if let Ok(mut guard) = child_for_timeout.lock() {
-                    let _ = guard.kill();
-                    let _ = guard.wait();
+
+            match rx.recv_timeout(std::time::Duration::from_millis(50)) {
+                Ok(ProcessEvent::Chunk(ProcessStream::Stdout, chunk)) => {
+                    handle_chunk(
+                        &mut stdout,
+                        &mut stdout_partial,
+                        &chunk,
+                        ProcessStream::Stdout,
+                        observer,
+                    );
                 }
-                anyhow::bail!(
-                    "Command '{}' execution thread terminated unexpectedly",
-                    cmd_name
-                )
+                Ok(ProcessEvent::Chunk(ProcessStream::Stderr, chunk)) => {
+                    handle_chunk(
+                        &mut stderr,
+                        &mut stderr_partial,
+                        &chunk,
+                        ProcessStream::Stderr,
+                        observer,
+                    );
+                }
+                Ok(ProcessEvent::ReaderFailed(stream, error)) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_thread.join();
+                    let _ = stderr_thread.join();
+                    anyhow::bail!("Failed to read {:?} from '{}': {}", stream, cmd_name, error);
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    if exit_status.is_none() {
+                        exit_status =
+                            Some(child.wait().with_context(|| {
+                                format!("Failed to execute command: {}", cmd_name)
+                            })?);
+                    }
+                    break;
+                }
+            }
+
+            if exit_status.is_none() {
+                if let Some(status) = child
+                    .try_wait()
+                    .with_context(|| format!("Failed to execute command: {}", cmd_name))?
+                {
+                    exit_status = Some(status);
+                }
             }
         }
+
+        let _ = stdout_thread.join();
+        let _ = stderr_thread.join();
+
+        if !stdout_partial.is_empty() {
+            observer.on_line(ProcessStream::Stdout, stdout_partial.trim_end_matches('\r'));
+        }
+        if !stderr_partial.is_empty() {
+            observer.on_line(ProcessStream::Stderr, stderr_partial.trim_end_matches('\r'));
+        }
+
+        let status = match exit_status {
+            Some(status) => status,
+            None => child
+                .wait()
+                .with_context(|| format!("Failed to execute command: {}", cmd_name))?,
+        };
+
+        Ok(ProcessOutput {
+            stdout,
+            stderr,
+            success: status.success(),
+        })
     }
 
     fn find_program(&self, program: &str) -> Option<String> {

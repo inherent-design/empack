@@ -469,6 +469,7 @@ pub struct MockNetworkProvider {
     pub resolver_calls: Arc<Mutex<Vec<ResolverCall>>>,
     pub mock_resolver: Arc<MockProjectResolver>,
     fail_http_client: bool,
+    rate_budgets: crate::networking::rate_budget::HostBudgetRegistry,
 }
 
 impl MockNetworkProvider {
@@ -478,6 +479,7 @@ impl MockNetworkProvider {
             resolver_calls: Arc::new(Mutex::new(Vec::new())),
             mock_resolver: Arc::new(MockProjectResolver::new()),
             fail_http_client: false,
+            rate_budgets: crate::networking::rate_budget::HostBudgetRegistry::empty(),
         }
     }
 
@@ -522,13 +524,14 @@ impl NetworkProvider for MockNetworkProvider {
         if self.fail_http_client {
             return Err(anyhow::anyhow!("Mock HTTP client unavailable (test mode)"));
         }
-        // 1ms timeout + unreachable proxy: any real HTTP request fails instantly
-        // instead of blocking for 30s on real network. The Client object itself is
-        // valid and can be passed to project_resolver() (which is mocked separately).
         Client::builder()
             .timeout(std::time::Duration::from_millis(1))
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))
+    }
+
+    fn rate_budgets(&self) -> &crate::networking::rate_budget::HostBudgetRegistry {
+        &self.rate_budgets
     }
 
     fn project_resolver(
@@ -721,7 +724,10 @@ impl MockProcessProvider {
             .to_string();
 
         let mut programs = HashMap::new();
-        programs.insert(crate::empack::packwiz::PACKWIZ_BIN.to_string(), Some(packwiz_path.clone()));
+        programs.insert(
+            crate::empack::packwiz::PACKWIZ_BIN.to_string(),
+            Some(packwiz_path.clone()),
+        );
 
         let mut provider = Self {
             calls: Arc::new(Mutex::new(Vec::new())),
@@ -734,7 +740,10 @@ impl MockProcessProvider {
             directories: None,
         };
         provider.results.insert(
-            ("which".to_string(), vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()]),
+            (
+                "which".to_string(),
+                vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()],
+            ),
             Ok(ProcessOutput {
                 stdout: format!("{}\n", packwiz_path),
                 stderr: String::new(),
@@ -745,9 +754,13 @@ impl MockProcessProvider {
     }
 
     pub fn with_packwiz_unavailable(mut self) -> Self {
-        self.programs.insert(crate::empack::packwiz::PACKWIZ_BIN.to_string(), None);
+        self.programs
+            .insert(crate::empack::packwiz::PACKWIZ_BIN.to_string(), None);
         self.results.insert(
-            ("which".to_string(), vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()]),
+            (
+                "which".to_string(),
+                vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()],
+            ),
             Ok(ProcessOutput {
                 stdout: String::new(),
                 stderr: "packwiz not found".to_string(),
@@ -765,10 +778,15 @@ impl MockProcessProvider {
             .to_string();
 
         // Ensure packwiz is available via find_program
-        self.programs
-            .insert(crate::empack::packwiz::PACKWIZ_BIN.to_string(), Some(packwiz_path.clone()));
+        self.programs.insert(
+            crate::empack::packwiz::PACKWIZ_BIN.to_string(),
+            Some(packwiz_path.clone()),
+        );
         self.results.insert(
-            ("which".to_string(), vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()]),
+            (
+                "which".to_string(),
+                vec![crate::empack::packwiz::PACKWIZ_BIN.to_string()],
+            ),
             Ok(ProcessOutput {
                 stdout: format!("{}\n", packwiz_path),
                 stderr: String::new(),
@@ -812,7 +830,10 @@ impl MockProcessProvider {
         args: Vec<String>,
         result: std::result::Result<ProcessOutput, String>,
     ) -> Self {
-        self.results.insert((crate::empack::packwiz::PACKWIZ_BIN.to_string(), args), result);
+        self.results.insert(
+            (crate::empack::packwiz::PACKWIZ_BIN.to_string(), args),
+            result,
+        );
         self
     }
 
@@ -844,7 +865,10 @@ impl MockProcessProvider {
         args: &[&str],
         output: &ProcessOutput,
     ) {
-        if command != crate::empack::packwiz::PACKWIZ_BIN || !self.materialize_mrpack_exports || !output.success {
+        if command != crate::empack::packwiz::PACKWIZ_BIN
+            || !self.materialize_mrpack_exports
+            || !output.success
+        {
             return;
         }
 
@@ -883,7 +907,10 @@ impl MockProcessProvider {
         working_dir: &std::path::Path,
         output: &ProcessOutput,
     ) {
-        if command != crate::empack::packwiz::PACKWIZ_BIN || self.packwiz_add_slugs.is_empty() || !output.success {
+        if command != crate::empack::packwiz::PACKWIZ_BIN
+            || self.packwiz_add_slugs.is_empty()
+            || !output.success
+        {
             return;
         }
 
@@ -1618,7 +1645,11 @@ mod tests {
         assert!(result.unwrap().success);
 
         // Test command with specific result
-        let result = provider.execute(crate::empack::packwiz::PACKWIZ_BIN, &["add", "test-mod"], &working_dir);
+        let result = provider.execute(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["add", "test-mod"],
+            &working_dir,
+        );
         assert!(result.is_err());
 
         // Test spy pattern - verify packwiz calls were recorded
@@ -1630,8 +1661,16 @@ mod tests {
 
         // Test verification helper
         assert!(provider.verify_call(crate::empack::packwiz::PACKWIZ_BIN, &["list"], &working_dir));
-        assert!(provider.verify_call(crate::empack::packwiz::PACKWIZ_BIN, &["add", "test-mod"], &working_dir));
-        assert!(!provider.verify_call(crate::empack::packwiz::PACKWIZ_BIN, &["remove", "test-mod"], &working_dir));
+        assert!(provider.verify_call(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["add", "test-mod"],
+            &working_dir
+        ));
+        assert!(!provider.verify_call(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["remove", "test-mod"],
+            &working_dir
+        ));
     }
 
     #[test]

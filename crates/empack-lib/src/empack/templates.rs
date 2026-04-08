@@ -334,7 +334,8 @@ impl<'a> TemplateInstaller<'a> {
             self.filesystem.create_dir_all(&base.join(dir))?;
         }
 
-        self.filesystem.create_dir_all(&base.join(".github/workflows"))?;
+        self.filesystem
+            .create_dir_all(&base.join(".github/workflows"))?;
         self.filesystem.create_dir_all(&base.join("pack"))?;
 
         Ok(())

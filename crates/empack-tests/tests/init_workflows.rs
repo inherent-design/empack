@@ -235,7 +235,9 @@ async fn test_init_existing_project_error() -> Result<()> {
         "Original author should be preserved"
     );
 
-    let packwiz_calls = session.process_provider.get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
+    let packwiz_calls = session
+        .process_provider
+        .get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
         packwiz_calls.is_empty(),
         "Existing project detection should refuse early instead of invoking packwiz"

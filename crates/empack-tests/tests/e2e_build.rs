@@ -18,12 +18,7 @@ fn e2e_build_mrpack() {
     let has_mrpack = std::fs::read_dir(&dist)
         .expect("failed to read dist/")
         .filter_map(Result::ok)
-        .any(|entry| {
-            entry
-                .path()
-                .extension()
-                .is_some_and(|ext| ext == "mrpack")
-        });
+        .any(|entry| entry.path().extension().is_some_and(|ext| ext == "mrpack"));
     assert!(has_mrpack, "no .mrpack file found in dist/");
 }
 

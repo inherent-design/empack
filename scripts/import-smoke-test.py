@@ -56,6 +56,7 @@ import argparse
 import json
 import os
 import re
+import select
 import shutil
 import socket
 import string
@@ -70,6 +71,11 @@ from typing import Optional
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+
+try:
+    import pty
+except ImportError:  # pragma: no cover - Windows fallback
+    pty = None
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -546,30 +552,27 @@ class ImportResult:
     warnings: list = field(default_factory=list)
 
 
-def run_import_test(pack_path: Path, project_name: str, empack_bin: Path) -> ImportResult:
-    project_dir = PROJECTS_DIR / project_name
-    if project_dir.exists():
-        shutil.rmtree(project_dir)
+def should_echo_live_line(clean: str) -> bool:
+    if not clean:
+        return False
+    if clean.startswith("Error:") or clean.startswith("Caused by:"):
+        return True
+    if clean.startswith("✗") or clean.startswith("! "):
+        return True
+    if "failed" in clean.lower():
+        return True
+    if "warning" in clean.lower():
+        return True
+    return False
 
-    env = os.environ.copy()
-    env["EMPACK_KEY_CURSEFORGE"] = CURSEFORGE_API_KEY
 
-    try:
-        proc = subprocess.run(
-            [str(empack_bin), "init", "--from", str(pack_path), "--yes", str(project_dir)],
-            capture_output=True, text=True, timeout=600, env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return ImportResult(stderr="TIMEOUT after 600s")
-
+def parse_import_output(stdout: str, stderr: str) -> ImportResult:
     r = ImportResult(
-        success=proc.returncode == 0,
-        exit_code=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
+        stdout=stdout,
+        stderr=stderr,
     )
 
-    combined = proc.stdout + proc.stderr
+    combined = stdout + stderr
     for line in combined.splitlines():
         clean = re.sub(r'\x1b\[[0-9;]*m', '', line.strip())
         if not clean:
@@ -594,6 +597,117 @@ def run_import_test(pack_path: Path, project_name: str, empack_bin: Path) -> Imp
         elif clean.startswith("Error:") or clean.startswith("Caused by:"):
             r.warnings.append(clean)
 
+    return r
+
+
+def run_import_test_posix_live(
+    pack_path: Path,
+    project_dir: Path,
+    empack_bin: Path,
+    env: dict[str, str],
+    timeout: int,
+    label: str,
+) -> ImportResult:
+    cmd = [str(empack_bin), "init", "--from", str(pack_path), "--yes", str(project_dir)]
+    master_fd, slave_fd = pty.openpty()
+    start = time.time()
+    echoed_lines: set[str] = set()
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=env,
+            text=False,
+        )
+    finally:
+        os.close(slave_fd)
+
+    chunks: list[str] = []
+    line_buffer = ""
+
+    try:
+        while True:
+            if proc.poll() is not None and not select.select([master_fd], [], [], 0)[0]:
+                break
+
+            if time.time() - start > timeout:
+                proc.kill()
+                proc.wait()
+                return ImportResult(stderr=f"TIMEOUT after {timeout}s")
+
+            ready, _, _ = select.select([master_fd], [], [], 0.2)
+            if not ready:
+                continue
+
+            try:
+                data = os.read(master_fd, 4096)
+            except OSError:
+                break
+
+            if not data:
+                continue
+
+            text = data.decode("utf-8", errors="replace")
+            chunks.append(text)
+            line_buffer += text
+
+            while "\n" in line_buffer:
+                raw_line, line_buffer = line_buffer.split("\n", 1)
+                clean = re.sub(r'\x1b\[[0-9;]*m', '', raw_line.strip())
+                if should_echo_live_line(clean) and clean not in echoed_lines:
+                    echoed_lines.add(clean)
+                    print(f"      {label}: {clean}")
+
+        proc.wait()
+    finally:
+        os.close(master_fd)
+
+    if line_buffer:
+        chunks.append(line_buffer)
+        clean = re.sub(r'\x1b\[[0-9;]*m', '', line_buffer.strip())
+        if should_echo_live_line(clean) and clean not in echoed_lines:
+            print(f"      {label}: {clean}")
+
+    combined = "".join(chunks)
+    result = parse_import_output(combined, "")
+    result.success = proc.returncode == 0
+    result.exit_code = proc.returncode
+    return result
+
+
+def run_import_test(pack_path: Path, project_name: str, empack_bin: Path) -> ImportResult:
+    project_dir = PROJECTS_DIR / project_name
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
+
+    env = os.environ.copy()
+    env["EMPACK_KEY_CURSEFORGE"] = CURSEFORGE_API_KEY
+    timeout = 600
+
+    if os.name == "posix" and pty is not None:
+        return run_import_test_posix_live(
+            pack_path=pack_path,
+            project_dir=project_dir,
+            empack_bin=empack_bin,
+            env=env,
+            timeout=timeout,
+            label=project_name,
+        )
+
+    try:
+        proc = subprocess.run(
+            [str(empack_bin), "init", "--from", str(pack_path), "--yes", str(project_dir)],
+            capture_output=True, text=True, timeout=timeout, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return ImportResult(stderr=f"TIMEOUT after {timeout}s")
+
+    r = parse_import_output(proc.stdout, proc.stderr)
+    r.success = proc.returncode == 0
+    r.exit_code = proc.returncode
     return r
 
 

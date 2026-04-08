@@ -198,6 +198,7 @@ pub struct MockNetworkProvider {
     search_results: HashMap<String, ProjectInfo>,
     /// Whether tests may construct a reqwest client without performing live IO.
     allow_http_client: bool,
+    rate_budgets: empack_lib::networking::rate_budget::HostBudgetRegistry,
 }
 
 impl MockNetworkProvider {
@@ -206,6 +207,7 @@ impl MockNetworkProvider {
         Self {
             search_results: HashMap::new(),
             allow_http_client: false,
+            rate_budgets: empack_lib::networking::rate_budget::HostBudgetRegistry::empty(),
         }
     }
 
@@ -262,6 +264,10 @@ impl NetworkProvider for MockNetworkProvider {
         Box::new(MockProjectResolver {
             search_results: self.search_results.clone(),
         })
+    }
+
+    fn rate_budgets(&self) -> &empack_lib::networking::rate_budget::HostBudgetRegistry {
+        &self.rate_budgets
     }
 }
 
