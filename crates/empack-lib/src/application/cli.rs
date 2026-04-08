@@ -338,31 +338,6 @@ mod tests {
     use crate::primitives::ProjectType;
     use std::str::FromStr;
 
-    fn clear_cli_env() {
-        unsafe {
-            std::env::remove_var("EMPACK_WORKDIR");
-            std::env::remove_var("EMPACK_CPU_JOBS");
-            std::env::remove_var("EMPACK_NET_TIMEOUT");
-            std::env::remove_var("EMPACK_ID_MODRINTH");
-            std::env::remove_var("EMPACK_KEY_MODRINTH");
-            std::env::remove_var("EMPACK_KEY_CURSEFORGE");
-            std::env::remove_var("EMPACK_LOG_LEVEL");
-            std::env::remove_var("EMPACK_LOG_FORMAT");
-            std::env::remove_var("EMPACK_LOG_OUTPUT");
-            std::env::remove_var("EMPACK_COLOR");
-            std::env::remove_var("EMPACK_YES");
-            std::env::remove_var("EMPACK_DRY_RUN");
-            std::env::remove_var("EMPACK_MODLOADER");
-            std::env::remove_var("EMPACK_MC_VERSION");
-            std::env::remove_var("EMPACK_AUTHOR");
-            std::env::remove_var("EMPACK_NAME");
-            std::env::remove_var("EMPACK_LOADER_VERSION");
-            std::env::remove_var("EMPACK_PACK_VERSION");
-            std::env::remove_var("EMPACK_DATAPACK_FOLDER");
-            std::env::remove_var("EMPACK_GAME_VERSIONS");
-        }
-    }
-
     #[test]
     fn cli_archive_format_to_archive_format_maps_variants() {
         assert_eq!(
@@ -460,7 +435,7 @@ mod tests {
     fn cli_config_load_from_parses_arguments_and_config() {
         let _guard = crate::test_support::env_lock().lock().unwrap();
         crate::display::test_utils::clean_test_env();
-        clear_cli_env();
+        crate::test_support::clear_cli_env();
 
         let config = CliConfig::load_from([
             "empack",

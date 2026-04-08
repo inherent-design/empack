@@ -6,19 +6,29 @@ use super::{cli::CliConfig, config::AppConfig, env::EnvironmentConfig};
 
 static GLOBAL_CONFIG: OnceLock<AppConfig> = OnceLock::new();
 
-impl AppConfig {
-    /// Load config: defaults -> .env -> env vars -> CLI
-    pub fn load() -> Result<Self, ConfigError> {
-        use dotenvy::from_filename;
+fn load_dotenv_files() -> Result<(), ConfigError> {
+    use dotenvy::from_filename;
 
+    for env_file in [".env.local", ".env"] {
+        if !std::path::Path::new(env_file).exists() {
+            continue;
+        }
+
+        from_filename(env_file).map_err(|source| ConfigError::EnvFileError {
+            file: env_file.to_string(),
+            source,
+        })?;
+    }
+
+    Ok(())
+}
+
+impl AppConfig {
+    /// Load config: defaults -> .env.local -> .env -> env vars -> CLI
+    pub fn load() -> Result<Self, ConfigError> {
         let mut config = Self::default();
 
-        if std::path::Path::new(".env").exists() {
-            from_filename(".env").map_err(|e| ConfigError::EnvFileError {
-                file: ".env".to_string(),
-                source: e,
-            })?;
-        }
+        load_dotenv_files()?;
 
         let env_config = EnvironmentConfig::load()?;
         config.color = env_config.apply_color_config(config.color);
@@ -36,23 +46,9 @@ impl AppConfig {
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
     {
-        use dotenvy::from_filename;
-
         let mut config = Self::default();
 
-        let env_files = [".env.local", ".env"];
-        for env_file in &env_files {
-            if !std::path::Path::new(env_file).exists() {
-                continue;
-            }
-
-            if let Err(e) = from_filename(env_file) {
-                return Err(ConfigError::EnvFileError {
-                    file: env_file.to_string(),
-                    source: e,
-                });
-            }
-        }
+        load_dotenv_files()?;
 
         let env_config = EnvironmentConfig::load()?;
         config.color = env_config.apply_color_config(config.color);

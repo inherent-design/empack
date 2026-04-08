@@ -2,31 +2,6 @@ use super::*;
 use crate::primitives::TerminalCapsDetectIntent;
 use std::path::{Path, PathBuf};
 
-fn clear_cli_env() {
-    unsafe {
-        std::env::remove_var("EMPACK_WORKDIR");
-        std::env::remove_var("EMPACK_CPU_JOBS");
-        std::env::remove_var("EMPACK_NET_TIMEOUT");
-        std::env::remove_var("EMPACK_ID_MODRINTH");
-        std::env::remove_var("EMPACK_KEY_MODRINTH");
-        std::env::remove_var("EMPACK_KEY_CURSEFORGE");
-        std::env::remove_var("EMPACK_LOG_LEVEL");
-        std::env::remove_var("EMPACK_LOG_FORMAT");
-        std::env::remove_var("EMPACK_LOG_OUTPUT");
-        std::env::remove_var("EMPACK_COLOR");
-        std::env::remove_var("EMPACK_YES");
-        std::env::remove_var("EMPACK_DRY_RUN");
-        std::env::remove_var("EMPACK_MODLOADER");
-        std::env::remove_var("EMPACK_MC_VERSION");
-        std::env::remove_var("EMPACK_AUTHOR");
-        std::env::remove_var("EMPACK_NAME");
-        std::env::remove_var("EMPACK_LOADER_VERSION");
-        std::env::remove_var("EMPACK_PACK_VERSION");
-        std::env::remove_var("EMPACK_DATAPACK_FOLDER");
-        std::env::remove_var("EMPACK_GAME_VERSIONS");
-    }
-}
-
 struct CurrentDirGuard {
     previous: PathBuf,
 }
@@ -130,7 +105,7 @@ fn test_to_logger_config_uses_app_settings() {
 fn test_load_from_parses_cli_and_fills_workdir() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     crate::display::test_utils::clean_test_env();
-    clear_cli_env();
+    crate::test_support::clear_cli_env();
 
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let _cwd = CurrentDirGuard::set(temp_dir.path());
@@ -163,7 +138,7 @@ fn test_load_from_parses_cli_and_fills_workdir() {
 fn test_load_from_reads_env_local_and_applies_cli_overrides() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     crate::display::test_utils::clean_test_env();
-    clear_cli_env();
+    crate::test_support::clear_cli_env();
 
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let env_workdir = temp_dir.path().join("env-workdir");
@@ -218,7 +193,7 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
 fn test_load_from_reports_invalid_env_file() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     crate::display::test_utils::clean_test_env();
-    clear_cli_env();
+    crate::test_support::clear_cli_env();
 
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let env_file = temp_dir.path().join(".env");
