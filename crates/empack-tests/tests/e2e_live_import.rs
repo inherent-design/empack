@@ -2,6 +2,8 @@ use std::time::Instant;
 
 use empack_tests::e2e::{TestProject, count_pw_toml_files, empack_cmd};
 
+const LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS: &str = "600";
+
 /// Live CurseForge URL import: Cobblemon Updated (~30 mods).
 ///
 /// Requires packwiz in PATH and network access. Self-skips otherwise.
@@ -118,6 +120,10 @@ fn e2e_import_and_build_fabulously_optimized() {
     );
 
     let build = empack_cmd(&project.dir().join("fabopt"))
+        .env(
+            "EMPACK_PROCESS_TIMEOUT_SECS",
+            LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS,
+        )
         .args(["build", "mrpack"])
         .output()
         .expect("spawn failed");

@@ -5,9 +5,15 @@ fail-fast = false
 leak-timeout = "500ms"
 
 [[profile.default.overrides]]
-# Live import tests hit real APIs and run packwiz; allow 5 minutes
-filter = "test(e2e_init_from_cobblemon_updated) | test(e2e_init_from_fabulously_optimized) | test(e2e_import_and_build_fabulously_optimized)"
+# Live import smoke tests hit real APIs and run packwiz; allow 5 minutes
+filter = "test(e2e_init_from_cobblemon_updated) | test(e2e_init_from_fabulously_optimized)"
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+[[profile.default.overrides]]
+# Live import+build tests currently depend on third-party pack size and Linux
+# runner performance; give them extra headroom before nextest kills the test.
+filter = "test(e2e_import_modrinth_and_build_mrpack) | test(e2e_import_and_build_fabulously_optimized)"
+slow-timeout = { period = "60s", terminate-after = 10 }
 
 [profile.ci]
 # Don't fail fast in CI either to see all failures
