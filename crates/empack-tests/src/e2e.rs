@@ -211,3 +211,49 @@ pub fn count_pw_toml_files(pack_root: &Path) -> usize {
         })
         .unwrap_or(0)
 }
+
+/// Create a minimal Modrinth mrpack archive for local import tests.
+pub fn write_local_mrpack(
+    archive_path: &Path,
+    pack_name: &str,
+    version_id: &str,
+    minecraft_version: &str,
+    loader_id: &str,
+    loader_version: &str,
+) -> anyhow::Result<()> {
+    use empack_lib::empack::archive::{ArchiveFormat, create_archive};
+
+    let source_dir = tempfile::TempDir::new()?;
+    let mut dependencies = serde_json::Map::new();
+    dependencies.insert(
+        "minecraft".to_string(),
+        serde_json::Value::String(minecraft_version.to_string()),
+    );
+    dependencies.insert(
+        loader_id.to_string(),
+        serde_json::Value::String(loader_version.to_string()),
+    );
+
+    let manifest = serde_json::json!({
+        "formatVersion": 1,
+        "game": "minecraft",
+        "name": pack_name,
+        "versionId": version_id,
+        "summary": "Local test fixture",
+        "files": [],
+        "dependencies": dependencies,
+    });
+
+    std::fs::write(
+        source_dir.path().join("modrinth.index.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
+
+    if let Some(parent) = archive_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    create_archive(source_dir.path(), archive_path, ArchiveFormat::Zip)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    Ok(())
+}

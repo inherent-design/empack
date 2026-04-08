@@ -556,6 +556,29 @@ unknown_loader = "1.0.0"
 }
 
 #[test]
+fn test_infer_loader_from_metadata_unknown_returns_error() {
+    let workdir = mock_root().join("config");
+    let provider = create_mock_config_provider(workdir.clone());
+    let config_manager = provider.config_manager(workdir);
+
+    let metadata = PackMetadata {
+        name: "Test Pack".to_string(),
+        author: None,
+        version: None,
+        versions: PackVersions {
+            minecraft: "1.21".to_string(),
+            loader_versions: HashMap::new(),
+        },
+    };
+
+    let result = config_manager.infer_loader_from_metadata(&metadata);
+    assert!(matches!(
+        result.unwrap_err(),
+        ConfigError::ValidationError { reason } if reason.contains("Cannot infer mod loader")
+    ));
+}
+
+#[test]
 fn test_build_project_spec_from_record() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
@@ -714,6 +737,44 @@ empack:
 }
 
 #[test]
+fn test_create_project_plan_missing_loader_version_defaults_empty() {
+    let workdir = mock_root().join("config");
+    let empack_content = r#"
+empack:
+  dependencies:
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+  minecraft_version: "1.21"
+  loader: fabric
+"#;
+    let pack_content = r#"
+name = "Test Pack"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_empack_yml(provider, &workdir, empack_content);
+    let provider = with_pack_toml(provider, &workdir, pack_content);
+    let config_manager = provider.config_manager(workdir);
+    let plan = config_manager.create_project_plan().unwrap();
+
+    assert_eq!(plan.loader, Some(ModLoader::Fabric));
+    assert_eq!(plan.loader_version, "");
+}
+
+#[test]
 fn test_search_entries_excluded_from_project_plan() {
     let workdir = mock_root().join("config");
     let empack_content = r#"
@@ -791,6 +852,38 @@ fn test_generate_default_empack_yml_no_pack() {
     // Should not contain specific versions when no pack.toml
     assert!(!yml_content.contains("minecraft_version"));
     assert!(!yml_content.contains("loader"));
+}
+
+#[test]
+fn test_generate_default_empack_yml_unknown_loader_falls_back_to_fabric() {
+    let workdir = mock_root().join("config");
+    let pack_content = r#"
+name = "Test Pack"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21"
+unknown_loader = "0.0.1"
+"#;
+
+    let provider = create_mock_config_provider(workdir.clone());
+    let provider = with_pack_toml(provider, &workdir, pack_content);
+    let config_manager = provider.config_manager(workdir);
+    let result = config_manager.generate_default_empack_yml();
+
+    assert!(result.is_ok());
+    let yml_content = result.unwrap();
+    assert!(yml_content.contains("sodium"));
+    assert!(yml_content.contains("lithium"));
+    assert!(yml_content.contains("fabric_api") || yml_content.contains("fabric-api"));
+    assert!(yml_content.contains("loader: fabric") || yml_content.contains("loader: Fabric"));
 }
 
 #[test]
@@ -943,6 +1036,25 @@ empack:
     assert!(result.is_ok());
     let issues = result.unwrap();
     assert!(issues.is_empty()); // No issues when no pack.toml
+}
+
+#[test]
+fn test_format_empack_yml_omits_invalid_loader_and_empty_version() {
+    let yml = format_empack_yml(
+        "Test Pack",
+        "Test Author",
+        "1.0.0",
+        "1.21.1",
+        "not-a-loader",
+        "",
+        None,
+        None,
+    );
+
+    assert!(yml.contains("name: Test Pack"));
+    assert!(yml.contains("minecraft_version: 1.21.1"));
+    assert!(!yml.contains("loader:"));
+    assert!(!yml.contains("loader_version"));
 }
 
 #[test]

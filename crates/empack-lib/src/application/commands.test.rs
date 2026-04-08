@@ -1,6 +1,10 @@
 use super::*;
-use crate::application::session::ProcessOutput;
+use crate::application::session::{
+    ArchiveProvider, ConfigProvider, FileSystemProvider, InteractiveProvider, NetworkProvider,
+    ProcessOutput, ProcessProvider, Session,
+};
 use crate::application::session_mocks::*;
+use crate::display::DisplayProvider;
 use crate::empack::search::ProjectInfo;
 use crate::primitives::{BuildTarget, ProjectPlatform};
 use std::collections::HashSet;
@@ -23,6 +27,65 @@ fn configured_session(workdir: &Path) -> MockCommandSession {
             .with_current_dir(workdir.to_path_buf())
             .with_configured_project(workdir.to_path_buf()),
     )
+}
+
+struct PackwizPathSession {
+    inner: MockCommandSession,
+    packwiz_bin: String,
+}
+
+impl PackwizPathSession {
+    fn new(inner: MockCommandSession, packwiz_bin: String) -> Self {
+        Self { inner, packwiz_bin }
+    }
+}
+
+impl Session for PackwizPathSession {
+    fn display(&self) -> &dyn DisplayProvider {
+        self.inner.display()
+    }
+
+    fn filesystem(&self) -> &dyn FileSystemProvider {
+        self.inner.filesystem()
+    }
+
+    fn network(&self) -> &dyn NetworkProvider {
+        self.inner.network()
+    }
+
+    fn process(&self) -> &dyn ProcessProvider {
+        self.inner.process()
+    }
+
+    fn config(&self) -> &dyn ConfigProvider {
+        self.inner.config()
+    }
+
+    fn interactive(&self) -> &dyn InteractiveProvider {
+        self.inner.interactive()
+    }
+
+    fn terminal(&self) -> &crate::terminal::TerminalCapabilities {
+        self.inner.terminal()
+    }
+
+    fn archive(&self) -> &dyn ArchiveProvider {
+        self.inner.archive()
+    }
+
+    fn packwiz(&self) -> Box<dyn crate::empack::packwiz::PackwizOps + '_> {
+        self.inner.packwiz()
+    }
+
+    fn state(
+        &self,
+    ) -> crate::Result<crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_>> {
+        self.inner.state()
+    }
+
+    fn packwiz_bin(&self) -> &str {
+        &self.packwiz_bin
+    }
 }
 
 // ===== HANDLE_VERSION TESTS =====
@@ -77,6 +140,21 @@ mod handle_requirements_tests {
             check_packwiz_available(session.process(), Path::new(".")).unwrap(),
             (false, "not found".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn it_reports_packwiz_available_when_executable_exists() {
+        let current_exe = std::env::current_exe().expect("current test binary");
+        let mut inner = MockCommandSession::new();
+        inner
+            .process_provider
+            .programs
+            .insert("java".to_string(), Some("/usr/bin/java".to_string()));
+        let session = PackwizPathSession::new(inner, current_exe.to_string_lossy().to_string());
+
+        let result = execute_command_with_session(Commands::Requirements, &session).await;
+
+        assert!(result.is_ok());
     }
 }
 
@@ -801,6 +879,63 @@ mod handle_init_tests {
             empack_yml.contains("name: My Cool Pack"),
             "empack.yml should contain the display name from --name flag: {}",
             empack_yml
+        );
+    }
+}
+
+mod handle_init_from_source_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn it_rejects_missing_local_source() {
+        let workdir = mock_root().join("init-from-source-local");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(workdir),
+        );
+
+        let result = execute_command_with_session(
+            Commands::Init(InitArgs {
+                from_source: Some(
+                    mock_root()
+                        .join("missing-source.mrpack")
+                        .to_string_lossy()
+                        .to_string(),
+                ),
+                ..Default::default()
+            }),
+            &session,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("cannot detect source type") || err_msg.contains("Unrecognized"),
+            "unexpected error for missing local source: {err_msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn it_rejects_unrecognized_remote_source() {
+        let workdir = mock_root().join("init-from-source-remote");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(workdir),
+        );
+
+        let result = execute_command_with_session(
+            Commands::Init(InitArgs {
+                from_source: Some("https://example.com/not-an-empack-source".to_string()),
+                ..Default::default()
+            }),
+            &session,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("cannot detect source type") || err_msg.contains("Unrecognized"),
+            "unexpected error for remote source: {err_msg}"
         );
     }
 }
@@ -4403,4 +4538,3 @@ mod plan_helpers_tests {
         assert!(plan_loader(Some(&plan)).is_none());
     }
 }
-

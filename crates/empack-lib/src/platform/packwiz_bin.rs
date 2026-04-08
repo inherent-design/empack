@@ -439,10 +439,7 @@ mod tests {
     #[test]
     fn resolve_packwiz_binary_errors_for_missing_env_override() {
         let _guard = crate::test_support::env_lock().lock().unwrap();
-        let missing = TempDir::new()
-            .expect("temp dir")
-            .path()
-            .join(binary_name());
+        let missing = TempDir::new().expect("temp dir").path().join(binary_name());
         let _env = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", &missing) };
 
         let error = resolve_packwiz_binary().expect_err("missing override should fail");
@@ -512,7 +509,11 @@ mod tests {
         let missing = temp.path().join(binary_name());
 
         let error = probe_binary_runnable(&missing).expect_err("missing binary should fail");
-        assert!(error.to_string().contains("failed to execute managed packwiz-tx"));
+        assert!(
+            error
+                .to_string()
+                .contains("failed to execute managed packwiz-tx")
+        );
         assert!(error.to_string().contains(&missing.display().to_string()));
     }
 
@@ -542,5 +543,46 @@ mod tests {
         let error = extract_tarball(&archive, temp.path()).expect_err("missing binary should fail");
         assert!(error.to_string().contains("binary"));
         assert!(error.to_string().contains("not found in tarball"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_packwiz_binary_downloads_and_extracts_cached_binary() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let binary = binary_name();
+        let binary_contents = b"#!/bin/sh\necho downloaded\n";
+        let archive = make_tarball(&[(binary.as_str(), binary_contents)]);
+        let payload = temp.path().join("packwiz-tx.tar.gz");
+        std::fs::write(&payload, archive).expect("write payload");
+
+        let curl = temp.path().join("curl");
+        std::fs::write(
+            &curl,
+            "#!/bin/sh\nout=\"\"\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = \"-o\" ]; then\n    shift\n    out=\"$1\"\n  fi\n  shift\ndone\n/bin/cp \"$FAKE_CURL_PAYLOAD\" \"$out\"\n",
+        )
+        .expect("write curl script");
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&curl).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&curl, perms).expect("set executable");
+
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+        let _cache = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", temp.path()) };
+        let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
+        let _payload = unsafe { EnvVarGuard::set("FAKE_CURL_PAYLOAD", &payload) };
+
+        let resolved = resolve_packwiz_binary().expect("download packwiz binary");
+        let expected = temp
+            .path()
+            .join("bin")
+            .join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION))
+            .join(&binary);
+
+        assert_eq!(resolved, expected);
+        assert_eq!(
+            std::fs::read(&resolved).expect("read extracted binary"),
+            binary_contents
+        );
     }
 }

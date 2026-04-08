@@ -5,7 +5,11 @@ use tempfile::NamedTempFile;
 
 use super::*;
 #[cfg(feature = "test-utils")]
+use crate::application::session_mocks::mock_root;
+#[cfg(feature = "test-utils")]
 use crate::application::session::NetworkProvider;
+#[cfg(feature = "test-utils")]
+use crate::application::session::FileSystemProvider;
 use crate::empack::content::{OverrideCategory, OverrideSide, SideEnv, SideRequirement};
 use crate::empack::parsing::ModLoader;
 #[cfg(feature = "test-utils")]
@@ -165,6 +169,32 @@ fn manifest_with_content(content: Vec<ContentEntry>) -> ModpackManifest {
         source_platform: ProjectPlatform::Modrinth,
         archive_path: std::path::PathBuf::from("/tmp/test.mrpack"),
     }
+}
+
+#[cfg(feature = "test-utils")]
+fn offline_modrinth_pref(destination_path: &str) -> PlatformRef {
+    let mut pref = modrinth_pref("AANobbMI");
+    pref.destination_path = destination_path.to_string();
+    pref.file_id = Some("version-123".to_string());
+    pref.download_urls = vec!["https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar".to_string()];
+    pref.hashes
+        .insert("sha512".to_string(), "deadbeef".to_string());
+    pref.resolved_name = Some("Sodium".to_string());
+    pref.resolved_slug = Some("sodium".to_string());
+    pref.resolved_type = Some(crate::primitives::ProjectType::Mod);
+    pref
+}
+
+#[cfg(feature = "test-utils")]
+fn offline_curseforge_datapack_pref(destination_path: &str) -> PlatformRef {
+    let mut pref = curseforge_pref("12345", Some("67890"));
+    pref.destination_path = destination_path.to_string();
+    pref.hashes
+        .insert("sha1".to_string(), "cafebabe".to_string());
+    pref.resolved_name = Some("Paxi Datapack".to_string());
+    pref.resolved_slug = Some("paxi-datapack".to_string());
+    pref.cf_class_id = Some(6945);
+    pref
 }
 
 // ---------------------------------------------------------------------------
@@ -1525,4 +1555,420 @@ async fn test_resolve_manifest_concurrent_modrinth_requests_share_budget_without
     for project_mock in project_mocks {
         project_mock.assert_async().await;
     }
+}
+
+#[test]
+fn test_extract_modrinth_and_forgecdn_helper_edges() {
+    assert_eq!(
+        extract_modrinth_project_id(
+            "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar",
+        ),
+        Some("AANobbMI".to_string())
+    );
+    assert_eq!(
+        extract_modrinth_project_id("https://cdn.modrinth.com/data//versions/version-123/sodium.jar"),
+        None
+    );
+
+    assert_eq!(
+        extract_forgecdn_file_id("https://edge.forgecdn.net/files/3193/541/sodium.jar"),
+        Some("3193541".to_string())
+    );
+    assert_eq!(
+        extract_forgecdn_file_id("https://edge.forgecdn.net/files/31a3/541/sodium.jar"),
+        None
+    );
+    assert_eq!(
+        extract_forgecdn_file_id("https://example.com/files/3193/541/sodium.jar"),
+        None
+    );
+}
+
+#[test]
+fn test_parse_modrinth_mrpack_defaults_and_side_override_dirs() {
+    let manifest_json = r#"{
+      "dependencies": {
+        "minecraft": "1.20.1",
+        "fabric-loader": "0.14.0"
+      },
+      "files": []
+    }"#;
+
+    let tmp = NamedTempFile::new().unwrap();
+    let mut zip = zip::ZipWriter::new(tmp.reopen().unwrap());
+    let options = zip::write::FileOptions::default();
+
+    zip.start_file::<&str, ()>("modrinth.index.json", options)
+        .unwrap();
+    zip.write_all(manifest_json.as_bytes()).unwrap();
+    zip.start_file::<&str, ()>("overrides/config/shared.toml", options)
+        .unwrap();
+    zip.write_all(b"shared = true").unwrap();
+    zip.start_file::<&str, ()>("client-overrides/options.txt", options)
+        .unwrap();
+    zip.write_all(b"client").unwrap();
+    zip.start_file::<&str, ()>("server-overrides/server.properties", options)
+        .unwrap();
+    zip.write_all(b"server").unwrap();
+    zip.finish().unwrap();
+
+    let manifest = parse_modrinth_mrpack(tmp.path()).unwrap();
+
+    let expected_name = tmp
+        .path()
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap()
+        .to_string();
+
+    assert_eq!(manifest.identity.name, expected_name);
+    assert_eq!(manifest.identity.version, "1.0.0");
+    assert_eq!(manifest.overrides.len(), 3);
+    assert!(manifest.overrides.iter().any(|entry| {
+        entry.destination_path == "config/shared.toml"
+            && entry.side == OverrideSide::Both
+            && entry.category == OverrideCategory::Config
+    }));
+    assert!(manifest.overrides.iter().any(|entry| {
+        entry.destination_path == "options.txt"
+            && entry.side == OverrideSide::ClientOnly
+            && entry.category == OverrideCategory::ClientConfig
+    }));
+    assert!(manifest.overrides.iter().any(|entry| {
+        entry.destination_path == "server.properties"
+            && entry.side == OverrideSide::ServerOnly
+            && entry.category == OverrideCategory::ServerConfig
+    }));
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_curseforge_file_ids_missing_api_key_returns_empty_map() {
+    let provider = TestNetworkProvider::new();
+    let api_bases = test_api_bases("http://example.com", "http://example.com");
+    let mut warnings = Vec::new();
+
+    let result = resolve_curseforge_file_ids(&[67890], &provider, None, &mut warnings, &api_bases, None).await;
+
+    assert!(result.is_empty());
+    assert!(warnings
+        .iter()
+        .any(|warning| warning.contains("missing; cannot resolve file IDs")));
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_curseforge_file_ids_batch_failure_warns() {
+    let mut server = mockito::Server::new_async().await;
+    let batch_mock = server
+        .mock("POST", "/v1/mods/files")
+        .match_header("x-api-key", "test-api-key")
+        .with_status(500)
+        .with_body("server error")
+        .create_async()
+        .await;
+
+    let provider = TestNetworkProvider::new();
+    let api_bases = test_api_bases(&server.url(), &server.url());
+    let mut warnings = Vec::new();
+
+    let result = resolve_curseforge_file_ids(
+        &[67890, 98760],
+        &provider,
+        Some("test-api-key"),
+        &mut warnings,
+        &api_bases,
+        None,
+    )
+    .await;
+
+    assert!(result.is_empty());
+    assert!(warnings
+        .iter()
+        .any(|warning| warning.contains("returned 500")));
+    batch_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_curseforge_project_missing_api_key_warns() {
+    let mut pref = curseforge_pref("12345", Some("67890"));
+    let client = reqwest::Client::new();
+    let api_bases = test_api_bases("http://example.com", "http://example.com");
+    let mut warnings = Vec::new();
+
+    resolve_curseforge_project_with_client(&mut pref, &client, &api_bases, None, &mut warnings, None).await;
+
+    assert!(warnings
+        .iter()
+        .any(|warning| warning.contains("CurseForge API key missing")));
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_manifest_recovers_from_panics_and_passthrough_warnings() {
+    let skip = {
+        let mut pref = modrinth_pref("skip");
+        pref.destination_path = "mods/skip.jar".to_string();
+        pref.project_id.clear();
+        pref
+    };
+
+    let panic_ref = {
+        let mut pref = modrinth_pref("__panic__");
+        pref.destination_path = "mods/panic.jar".to_string();
+        pref
+    };
+
+    let embedded = ContentEntry::EmbeddedJar(EmbeddedJar {
+        source_path: "lib/example.jar".to_string(),
+        destination_path: "lib/example.jar".to_string(),
+        hashes: HashMap::new(),
+        file_size: 123,
+        env: SideEnv {
+            client: SideRequirement::Unknown,
+            server: SideRequirement::Unknown,
+        },
+    });
+
+    let manifest = manifest_with_content(vec![
+        ContentEntry::PlatformReferenced(skip),
+        embedded.clone(),
+        ContentEntry::PlatformReferenced(panic_ref),
+    ]);
+
+    let provider = TestNetworkProvider::new();
+    let display = crate::display::LiveDisplayProvider::new();
+    let registry = HostBudgetRegistry::empty();
+    let api_bases = test_api_bases("http://example.com", "http://example.com");
+
+    let resolved = resolve_manifest_with_api_bases(
+        manifest,
+        &provider,
+        &provider,
+        None,
+        &display,
+        &registry,
+        api_bases,
+    )
+    .await
+    .unwrap();
+
+    assert!(resolved
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("no project ID and no download URL")));
+    assert!(resolved
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("embedded JAR 'lib/example.jar'")));
+    assert!(resolved
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("resolve task panicked")));
+
+    assert_eq!(resolved.manifest.content.len(), 3);
+    assert!(matches!(
+        &resolved.manifest.content[0],
+        ContentEntry::PlatformReferenced(pref) if pref.project_id.is_empty()
+    ));
+    assert!(matches!(
+        &resolved.manifest.content[1],
+        ContentEntry::EmbeddedJar(entry) if entry.source_path == "lib/example.jar"
+    ));
+    assert!(matches!(
+        &resolved.manifest.content[2],
+        ContentEntry::PlatformReferenced(pref) if pref.project_id == "__panic__"
+    ));
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_add_platform_ref_modrinth_offline_args() {
+    let session = crate::application::session_mocks::MockCommandSession::new();
+    let pack_dir = mock_root().join("packwiz-add-offline");
+    session
+        .filesystem_provider
+        .create_dir_all(&pack_dir)
+        .unwrap();
+
+    let pref = offline_modrinth_pref("mods/sodium.jar");
+    let result = add_platform_ref_with_retry(&pref, &pack_dir, &session, None, true)
+        .await
+        .unwrap();
+
+    assert!(matches!(result, AddRefResult::Added));
+
+    let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].args,
+        vec![
+            "--no-refresh",
+            "--offline",
+            "modrinth",
+            "add",
+            "--project-id",
+            "AANobbMI",
+            "--version-id",
+            "version-123",
+            "--name",
+            "Sodium",
+            "--filename",
+            "sodium.jar",
+            "--url",
+            "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar",
+            "--hash",
+            "deadbeef",
+            "--hash-format",
+            "sha512",
+            "--side",
+            "both",
+            "--slug",
+            "sodium",
+            "--project-type",
+            "mod",
+            "-y",
+        ]
+    );
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_add_platform_ref_modrinth_direct_url_add() {
+    let session = crate::application::session_mocks::MockCommandSession::new();
+    let pack_dir = mock_root().join("packwiz-direct-url");
+    session
+        .filesystem_provider
+        .create_dir_all(&pack_dir)
+        .unwrap();
+
+    let mut pref = modrinth_pref("AANobbMI");
+    pref.destination_path = "mods/sodium.jar".to_string();
+    pref.project_id.clear();
+    pref.file_id = None;
+    pref.download_urls = vec!["https://example.com/downloads/sodium.jar".to_string()];
+
+    let result = add_platform_ref_with_retry(&pref, &pack_dir, &session, None, false)
+        .await
+        .unwrap();
+
+    assert!(matches!(result, AddRefResult::Added));
+    let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].args,
+        vec!["url", "add", "sodium", "https://example.com/downloads/sodium.jar", "-y"]
+    );
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_add_platform_ref_curseforge_datapack_meta_folder() {
+    let session = crate::application::session_mocks::MockCommandSession::new();
+    let pack_dir = mock_root().join("packwiz-cf-datapack");
+    session
+        .filesystem_provider
+        .create_dir_all(&pack_dir)
+        .unwrap();
+
+    let pref = offline_curseforge_datapack_pref("mods/paxi.zip");
+    let result = add_platform_ref_with_retry(
+        &pref,
+        &pack_dir,
+        &session,
+        Some("config/paxi/datapacks"),
+        true,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(result, AddRefResult::Added));
+    let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].args,
+        vec![
+            "--no-refresh",
+            "--offline",
+            "curseforge",
+            "add",
+            "--addon-id",
+            "12345",
+            "--file-id",
+            "67890",
+            "--name",
+            "Paxi Datapack",
+            "--filename",
+            "paxi.zip",
+            "--hash",
+            "cafebabe",
+            "--hash-format",
+            "sha1",
+            "--slug",
+            "paxi-datapack",
+            "--class-id",
+            "6945",
+            "--meta-folder",
+            "config/paxi/datapacks",
+            "-y",
+        ]
+    );
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_add_platform_ref_retry_exhaustion() {
+    let pref = offline_modrinth_pref("mods/sodium.jar");
+    let expected_args = vec![
+        "--no-refresh".to_string(),
+        "--offline".to_string(),
+        "modrinth".to_string(),
+        "add".to_string(),
+        "--project-id".to_string(),
+        "AANobbMI".to_string(),
+        "--version-id".to_string(),
+        "version-123".to_string(),
+        "--name".to_string(),
+        "Sodium".to_string(),
+        "--filename".to_string(),
+        "sodium.jar".to_string(),
+        "--url".to_string(),
+        "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar".to_string(),
+        "--hash".to_string(),
+        "deadbeef".to_string(),
+        "--hash-format".to_string(),
+        "sha512".to_string(),
+        "--side".to_string(),
+        "both".to_string(),
+        "--slug".to_string(),
+        "sodium".to_string(),
+        "--project-type".to_string(),
+        "mod".to_string(),
+        "-y".to_string(),
+    ];
+
+    let process = crate::application::session_mocks::MockProcessProvider::new().with_packwiz_result(
+        expected_args.clone(),
+        Ok(crate::application::session::ProcessOutput {
+            stdout: String::new(),
+            stderr: "429 too many requests".to_string(),
+            success: false,
+        }),
+    );
+    let session = crate::application::session_mocks::MockCommandSession::new().with_process(process);
+    let pack_dir = mock_root().join("packwiz-retry");
+    session
+        .filesystem_provider
+        .create_dir_all(&pack_dir)
+        .unwrap();
+
+    let result = add_platform_ref_with_retry(&pref, &pack_dir, &session, None, true)
+        .await
+        .unwrap();
+    assert!(matches!(result, AddRefResult::Failed(detail) if detail.contains("429 too many requests")));
+
+    let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
+    assert_eq!(calls.len(), 6);
+    assert!(calls.iter().all(|call| call.args == expected_args));
 }

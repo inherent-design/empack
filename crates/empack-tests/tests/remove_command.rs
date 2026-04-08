@@ -184,3 +184,129 @@ async fn e2e_remove_empty_mods_is_noop() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn e2e_remove_dependencies_removes_orphans() -> Result<()> {
+    let workdir = mock_root().join("workdir");
+    let mods_dir = workdir.join("pack").join("mods");
+    let session = MockSessionBuilder::new()
+        .with_empack_project("remove-deps", "1.21.1", "fabric")
+        .with_yes_flag()
+        .with_interactive(
+            empack_lib::application::session_mocks::MockInteractiveProvider::new()
+                .queue_confirm(true),
+        )
+        .with_file(
+            workdir.join("empack.yml"),
+            remove_project_config().to_string(),
+        )
+        .with_file(
+            mods_dir.join("leaf-a.pw.toml"),
+            r#"
+name = "Leaf A"
+filename = "leaf-a.jar"
+
+[update]
+[update.modrinth]
+mod-id = "leaf-a"
+version = "v1.0.0"
+
+[deps]
+sodium = "*"
+"#
+            .to_string(),
+        )
+        .with_file(
+            mods_dir.join("leaf-b.pw.toml"),
+            r#"
+name = "Leaf B"
+filename = "leaf-b.jar"
+
+[update]
+[update.modrinth]
+mod-id = "leaf-b"
+version = "v1.0.0"
+
+[deps]
+sodium = "*"
+"#
+            .to_string(),
+        )
+        .with_packwiz_result(
+            vec!["remove".to_string(), "-y".to_string(), "sodium".to_string()],
+            Ok(empack_lib::application::session::ProcessOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+            }),
+        )
+        .with_packwiz_result(
+            vec!["remove".to_string(), "-y".to_string(), "leaf-a".to_string()],
+            Ok(empack_lib::application::session::ProcessOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+            }),
+        )
+        .with_packwiz_result(
+            vec!["remove".to_string(), "-y".to_string(), "leaf-b".to_string()],
+            Ok(empack_lib::application::session::ProcessOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                success: true,
+            }),
+        )
+        .build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let result = execute_command_with_session(
+        Commands::Remove {
+            mods: vec!["sodium".to_string()],
+            deps: true,
+        },
+        &session,
+    )
+    .await;
+
+    assert!(result.is_ok(), "remove --deps failed: {result:?}");
+
+    let packwiz_calls = session
+        .process_provider
+        .get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
+    assert!(
+        packwiz_calls.iter().any(
+            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "sodium"]
+        ),
+        "remove should invoke packwiz remove for sodium: {packwiz_calls:?}"
+    );
+    assert!(
+        packwiz_calls.iter().any(
+            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "leaf-a"]
+        ),
+        "remove --deps should remove leaf-a as an orphan: {packwiz_calls:?}"
+    );
+    assert!(
+        packwiz_calls.iter().any(
+            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
+                == ["remove", "-y", "leaf-b"]
+        ),
+        "remove --deps should remove leaf-b as an orphan: {packwiz_calls:?}"
+    );
+
+    let config_content = session
+        .filesystem()
+        .read_to_string(&workdir.join("empack.yml"))?;
+    assert!(
+        !config_content.contains("sodium"),
+        "sodium should be removed from empack.yml"
+    );
+    assert!(
+        config_content.contains("fabric_api"),
+        "fabric_api should remain in empack.yml"
+    );
+
+    Ok(())
+}

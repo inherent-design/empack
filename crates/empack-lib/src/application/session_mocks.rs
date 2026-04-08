@@ -1792,6 +1792,275 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_mock_resolver_and_network_defaults_cover_convenience_builders() {
+        let expected = ProjectInfo {
+            platform: ProjectPlatform::CurseForge,
+            project_id: "12345".to_string(),
+            title: "Test Project".to_string(),
+            downloads: 42,
+            confidence: 88,
+            project_type: "mod".to_string(),
+        };
+
+        let resolver = MockProjectResolver::default()
+            .with_response("with-response".to_string(), Ok(expected.clone()))
+            .with_project_response("with-project-response".to_string(), expected.clone())
+            .with_error_response(
+                "with-error-response".to_string(),
+                "resolver failed".to_string(),
+            );
+
+        let with_response = resolver
+            .resolve_project("with-response", None, None, None, None)
+            .await
+            .expect("with_response should resolve");
+        let with_project_response = resolver
+            .resolve_project("with-project-response", None, None, None, None)
+            .await
+            .expect("with_project_response should resolve");
+        let with_error_response = resolver
+            .resolve_project("with-error-response", None, None, None, None)
+            .await
+            .expect_err("with_error_response should fail");
+
+        assert_eq!(with_response.project_id, expected.project_id);
+        assert_eq!(with_project_response.title, expected.title);
+        assert!(matches!(
+            with_error_response,
+            SearchError::NoResults { query } if query == "resolver failed"
+        ));
+
+        let provider = MockNetworkProvider::default().enable_http_client();
+        assert!(provider.http_client().is_ok());
+    }
+
+    #[test]
+    fn test_mock_filesystem_defaults_and_artifact_detection() {
+        let workdir = mock_root().join("project");
+        let text_path = workdir.join("notes.txt");
+        let artifact_dir = workdir.join("dist");
+        let artifact_path = artifact_dir.join("bundle.jar");
+        let ignored_binary_path = artifact_dir.join("bundle.txt");
+
+        let mut initial_files = HashMap::new();
+        initial_files.insert(text_path.clone(), "hello".to_string());
+
+        let fs = MockFileSystemProvider::default()
+            .with_current_dir(workdir.clone())
+            .with_files(initial_files)
+            .with_deferred_file(
+                artifact_dir.clone(),
+                "deferred.jar".to_string(),
+                "artifact".to_string(),
+            );
+
+        assert_eq!(fs.read_to_string(&text_path).unwrap(), "hello");
+        assert_eq!(fs.read_bytes(&text_path).unwrap(), b"hello");
+        assert!(
+            fs.read_bytes(&workdir.join("missing.bin"))
+                .unwrap_err()
+                .to_string()
+                .contains("File not found")
+        );
+
+        fs.create_dir_all(&artifact_dir).unwrap();
+        assert!(fs.exists(&artifact_dir.join("deferred.jar")));
+
+        let ignored_only = MockFileSystemProvider::default().with_current_dir(workdir.clone());
+        ignored_only
+            .write_bytes(&ignored_binary_path, b"ignored")
+            .unwrap();
+        assert!(!ignored_only.has_build_artifacts(&artifact_dir).unwrap());
+
+        fs.write_bytes(&artifact_path, b"jar-bytes").unwrap();
+        assert!(fs.has_build_artifacts(&artifact_dir).unwrap());
+    }
+
+    #[test]
+    fn test_mock_process_and_archive_helpers_cover_side_effect_edges() {
+        use crate::application::session::ArchiveProvider;
+        use crate::empack::archive::ArchiveFormat;
+
+        let fs = MockFileSystemProvider::default().with_current_dir(mock_root().join("workdir"));
+        let success = ProcessOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            success: true,
+        };
+
+        let archive = MockArchiveProvider::default();
+        archive
+            .create_archive(
+                &mock_root().join("source"),
+                &mock_root().join("dist").join("pack.mrpack"),
+                ArchiveFormat::Zip,
+            )
+            .expect("create_archive without connected filesystem should still succeed");
+
+        let export_output = mock_root().join("dist").join("export.mrpack");
+        let export_output_str = export_output.to_string_lossy().to_string();
+        let provider = MockProcessProvider::default().with_mrpack_export_side_effects();
+        provider.maybe_materialize_mrpack_export(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["mr", "export"],
+            &success,
+        );
+        provider.maybe_materialize_mrpack_export(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["mr", "export", "-o"],
+            &success,
+        );
+        provider.maybe_materialize_mrpack_export(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["mr", "export", "-o", &export_output_str],
+            &success,
+        );
+        assert!(!fs.exists(&export_output));
+
+        let mut connected_export_provider =
+            MockProcessProvider::new().with_mrpack_export_side_effects();
+        connected_export_provider.connect_filesystem(&fs);
+        connected_export_provider.maybe_materialize_mrpack_export(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["mr", "export", "-o", &export_output_str],
+            &success,
+        );
+        assert!(fs.exists(&export_output));
+
+        let pack_workdir = fs.current_dir.join("pack");
+        let pw_toml_path = pack_workdir.join("mods").join("mapped-slug.pw.toml");
+        let pw_provider = MockProcessProvider::new()
+            .with_packwiz_add_slug("123".to_string(), "mapped-slug".to_string());
+        pw_provider.maybe_materialize_pw_toml(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["modrinth", "add"],
+            &pack_workdir,
+            &success,
+        );
+        pw_provider.maybe_materialize_pw_toml(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["modrinth", "add", "--project-id", "999"],
+            &pack_workdir,
+            &success,
+        );
+        pw_provider.maybe_materialize_pw_toml(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["modrinth", "add", "--project-id", "123"],
+            &pack_workdir,
+            &success,
+        );
+        assert!(!fs.exists(&pw_toml_path));
+
+        let mut connected_pw_provider = MockProcessProvider::new()
+            .with_packwiz_add_slug("123".to_string(), "mapped-slug".to_string());
+        connected_pw_provider.connect_filesystem(&fs);
+        connected_pw_provider.maybe_materialize_pw_toml(
+            crate::empack::packwiz::PACKWIZ_BIN,
+            &["modrinth", "add", "--project-id", "123"],
+            &pack_workdir,
+            &success,
+        );
+        assert!(fs.exists(&pw_toml_path));
+
+        let quilt_dir = mock_root().join("dist").join("quilt-server");
+        let quilt_arg = format!("--install-dir={}", quilt_dir.display());
+        let mut java_provider = MockProcessProvider::new().with_java_installer_side_effects();
+        java_provider.connect_filesystem(&fs);
+        java_provider.maybe_materialize_java_installer(
+            "java",
+            &[
+                "-jar",
+                "quilt-installer-1.0.0.jar",
+                "install",
+                "server",
+                &quilt_arg,
+            ],
+            &pack_workdir,
+            &success,
+        );
+
+        let quilt_files = fs.files.lock().unwrap();
+        assert!(quilt_files.contains_key(&quilt_dir.join("quilt-server-launch.jar")));
+        assert!(quilt_files.contains_key(&quilt_dir.join("server.jar")));
+    }
+
+    #[test]
+    fn test_mock_interactive_fuzzy_queue_and_accessor_helpers() {
+        let provider = MockInteractiveProvider::default().queue_fuzzy_select(None);
+        assert_eq!(
+            provider
+                .fuzzy_select("Find one:", &["a".to_string(), "b".to_string()])
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            provider.get_fuzzy_select_calls(),
+            vec!["Find one:".to_string()]
+        );
+
+        let yes_mode = MockInteractiveProvider::default().with_yes_mode(true);
+        assert_eq!(yes_mode.select("Pick:", &["a", "b"]).unwrap(), 0);
+        assert_eq!(
+            yes_mode
+                .fuzzy_select("Filter:", &["a".to_string(), "b".to_string()])
+                .unwrap(),
+            Some(0)
+        );
+        assert_eq!(yes_mode.get_select_calls(), vec!["Pick:".to_string()]);
+        assert_eq!(
+            yes_mode.get_fuzzy_select_calls(),
+            vec!["Filter:".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_mock_command_session_builder_accessors_and_trait_views() {
+        let caps = crate::terminal::TerminalCapabilities {
+            color: crate::primitives::TerminalColorCaps::Ansi256,
+            unicode: crate::primitives::TerminalUnicodeCaps::BasicUnicode,
+            is_tty: true,
+            cols: 120,
+        };
+        let custom_packwiz =
+            MockPackwizOps::new().with_current_dir(mock_root().join("custom-pack"));
+
+        let session = MockCommandSession::default()
+            .with_network(MockNetworkProvider::default())
+            .with_interactive(MockInteractiveProvider::default().with_confirm(false))
+            .with_packwiz(custom_packwiz)
+            .with_terminal_capabilities(caps.clone());
+
+        assert!(session.network().http_client().is_ok());
+        assert!(!session.interactive().confirm("Continue?", true).unwrap());
+        assert_eq!(session.terminal().cols, caps.cols);
+        assert_eq!(
+            session.packwiz_provider.current_dir,
+            mock_root().join("custom-pack")
+        );
+        session
+            .archive()
+            .extract_zip(&mock_root().join("from.zip"), &mock_root().join("dest"))
+            .unwrap();
+        assert_eq!(
+            session.archive_provider.extract_calls.lock().unwrap().len(),
+            1
+        );
+
+        let trait_view: &dyn Session = &session;
+        assert!(trait_view.network().http_client().is_ok());
+        assert!(!trait_view.interactive().confirm("Again?", true).unwrap());
+        assert_eq!(trait_view.terminal().cols, caps.cols);
+        trait_view
+            .archive()
+            .create_archive(
+                &mock_root().join("source"),
+                &mock_root().join("dest").join("pack.zip"),
+                crate::empack::archive::ArchiveFormat::Zip,
+            )
+            .unwrap();
+    }
+
     #[test]
     fn test_mock_java_fabric_installer_side_effects() {
         let fs = MockFileSystemProvider::new();

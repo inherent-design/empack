@@ -128,6 +128,88 @@ datapack-folder = "config/openloader/data"
 }
 
 #[test]
+fn test_pack_toml_parsing_with_quilt_loader_data() {
+    let mut engine = TemplateEngine::new();
+    let fs = LiveFileSystemProvider;
+
+    let sample_pack_toml = r#"
+name = "quilt-pack"
+author = "quilt-author"
+version = "1.2.3"
+pack-format = "packwiz:1.1.0"
+
+[versions]
+quilt = "0.21.0"
+minecraft = "1.21.1"
+    "#;
+
+    let temp_dir = TempDir::new().unwrap();
+    let pack_path = temp_dir.path().join("pack.toml");
+    std::fs::write(&pack_path, sample_pack_toml).unwrap();
+
+    engine.load_from_pack_toml(&pack_path, &fs).unwrap();
+
+    let variables = engine.variables();
+    assert_eq!(variables.get("NAME").map(String::as_str), Some("quilt-pack"));
+    assert_eq!(variables.get("MODLOADER_NAME").map(String::as_str), Some("quilt"));
+    assert_eq!(variables.get("MODLOADER_VERSION").map(String::as_str), Some("0.21.0"));
+}
+
+#[test]
+fn test_pack_toml_parsing_with_forge_loader_data() {
+    let mut engine = TemplateEngine::new();
+    let fs = LiveFileSystemProvider;
+
+    let sample_pack_toml = r#"
+name = "forge-pack"
+author = "forge-author"
+version = "4.5.6"
+pack-format = "packwiz:1.1.0"
+
+[versions]
+forge = "47.1.0"
+minecraft = "1.20.1"
+    "#;
+
+    let temp_dir = TempDir::new().unwrap();
+    let pack_path = temp_dir.path().join("pack.toml");
+    std::fs::write(&pack_path, sample_pack_toml).unwrap();
+
+    engine.load_from_pack_toml(&pack_path, &fs).unwrap();
+
+    let variables = engine.variables();
+    assert_eq!(variables.get("NAME").map(String::as_str), Some("forge-pack"));
+    assert_eq!(variables.get("MODLOADER_NAME").map(String::as_str), Some("forge"));
+    assert_eq!(variables.get("MODLOADER_VERSION").map(String::as_str), Some("47.1.0"));
+}
+
+#[test]
+fn test_pack_toml_parsing_without_loader_data() {
+    let mut engine = TemplateEngine::new();
+    let fs = LiveFileSystemProvider;
+
+    let sample_pack_toml = r#"
+name = "vanilla-pack"
+version = "0.1.0"
+
+[versions]
+minecraft = "1.21.1"
+    "#;
+
+    let temp_dir = TempDir::new().unwrap();
+    let pack_path = temp_dir.path().join("pack.toml");
+    std::fs::write(&pack_path, sample_pack_toml).unwrap();
+
+    engine.load_from_pack_toml(&pack_path, &fs).unwrap();
+
+    let variables = engine.variables();
+    assert_eq!(variables.get("NAME").map(String::as_str), Some("vanilla-pack"));
+    assert_eq!(variables.get("MC_VERSION").map(String::as_str), Some("1.21.1"));
+    assert!(!variables.contains_key("MODLOADER_NAME"));
+    assert!(!variables.contains_key("MODLOADER_VERSION"));
+}
+
+#[test]
 fn test_build_time_template_rendering() {
     let temp_dir = TempDir::new().unwrap();
     let fs = LiveFileSystemProvider;

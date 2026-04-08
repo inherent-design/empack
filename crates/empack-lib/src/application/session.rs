@@ -478,7 +478,17 @@ impl NetworkProvider for LiveNetworkProvider {
 
 /// Default timeout for child process execution (5 minutes).
 /// Prevents indefinite hangs from packwiz or java processes.
-const PROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+const DEFAULT_PROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+fn process_timeout() -> std::time::Duration {
+    if let Ok(value) = std::env::var("EMPACK_PROCESS_TIMEOUT_SECS")
+        && let Ok(secs) = value.parse::<u64>()
+    {
+        return std::time::Duration::from_secs(secs);
+    }
+
+    DEFAULT_PROCESS_TIMEOUT
+}
 
 pub struct LiveProcessProvider {
     custom_path: Option<String>,
@@ -598,6 +608,7 @@ impl ProcessProvider for LiveProcessProvider {
         let stderr_thread = spawn_reader(stderr_pipe, ProcessStream::Stderr, tx);
 
         let start = std::time::Instant::now();
+        let process_timeout = process_timeout();
         let mut stdout = String::new();
         let mut stderr = String::new();
         let mut stdout_partial = String::new();
@@ -622,7 +633,7 @@ impl ProcessProvider for LiveProcessProvider {
         }
 
         loop {
-            if start.elapsed() > PROCESS_TIMEOUT {
+            if start.elapsed() > process_timeout {
                 let _ = child.kill();
                 let _ = child.wait();
                 let _ = stdout_thread.join();
@@ -630,7 +641,7 @@ impl ProcessProvider for LiveProcessProvider {
                 anyhow::bail!(
                     "Command '{}' timed out after {} seconds (process killed)",
                     cmd_name,
-                    PROCESS_TIMEOUT.as_secs()
+                    process_timeout.as_secs()
                 )
             }
 
@@ -1086,7 +1097,276 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::IssueStreamObserver;
+    use super::*;
+    use crate::display::{
+        DisplayProvider, MultiProgressProvider, ProgressProvider, ProgressTracker, StatusProvider,
+        StructuredProvider,
+    };
+    use std::ffi::OsString;
+    use std::path::Path;
+    use std::sync::{Arc, Mutex};
+    use tempfile::TempDir;
+
+    #[derive(Clone, Default)]
+    struct RecordingDisplay {
+        events: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RecordingDisplay {
+        fn events(&self) -> Vec<String> {
+            self.events.lock().expect("events").clone()
+        }
+    }
+
+    struct RecordingStatus {
+        events: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RecordingStatus {
+        fn push(&self, kind: &str, message: String) {
+            self.events
+                .lock()
+                .expect("events")
+                .push(format!("{kind}:{message}"));
+        }
+    }
+
+    impl StatusProvider for RecordingStatus {
+        fn checking(&self, task: &str) {
+            self.push("checking", task.to_string());
+        }
+
+        fn success(&self, item: &str, details: &str) {
+            self.push("success", format!("{item}:{details}"));
+        }
+
+        fn error(&self, item: &str, details: &str) {
+            self.push("error", format!("{item}:{details}"));
+        }
+
+        fn warning(&self, message: &str) {
+            self.push("warning", message.to_string());
+        }
+
+        fn info(&self, message: &str) {
+            self.push("info", message.to_string());
+        }
+
+        fn message(&self, text: &str) {
+            self.push("message", text.to_string());
+        }
+
+        fn emphasis(&self, text: &str) {
+            self.push("emphasis", text.to_string());
+        }
+
+        fn subtle(&self, text: &str) {
+            self.push("subtle", text.to_string());
+        }
+
+        fn list(&self, items: &[&str]) {
+            self.push("list", items.join(","));
+        }
+
+        fn complete(&self, task: &str) {
+            self.push("complete", task.to_string());
+        }
+
+        fn tool_check(&self, tool: &str, available: bool, version: &str) {
+            self.push("tool_check", format!("{tool}:{available}:{version}"));
+        }
+
+        fn section(&self, title: &str) {
+            self.push("section", title.to_string());
+        }
+
+        fn step(&self, current: usize, total: usize, description: &str) {
+            self.push("step", format!("{current}/{total}:{description}"));
+        }
+    }
+
+    struct NoopProgressTracker;
+
+    impl ProgressTracker for NoopProgressTracker {
+        fn set_position(&self, _pos: u64) {}
+
+        fn inc(&self) {}
+
+        fn inc_by(&self, _n: u64) {}
+
+        fn set_message(&self, _message: &str) {}
+
+        fn tick(&self, _item: &str) {}
+
+        fn finish(&self, _message: &str) {}
+
+        fn abandon(&self, _message: &str) {}
+
+        fn finish_clear(&self) {}
+    }
+
+    struct NoopMultiProgress;
+
+    impl MultiProgressProvider for NoopMultiProgress {
+        fn add_bar(&self, _total: u64, _message: &str) -> Box<dyn ProgressTracker> {
+            Box::new(NoopProgressTracker)
+        }
+
+        fn add_spinner(&self, _message: &str) -> Box<dyn ProgressTracker> {
+            Box::new(NoopProgressTracker)
+        }
+
+        fn clear(&self) {}
+    }
+
+    struct NoopProgress;
+
+    impl ProgressProvider for NoopProgress {
+        fn bar(&self, _total: u64) -> Box<dyn ProgressTracker> {
+            Box::new(NoopProgressTracker)
+        }
+
+        fn spinner(&self, _message: &str) -> Box<dyn ProgressTracker> {
+            Box::new(NoopProgressTracker)
+        }
+
+        fn multi(&self) -> Box<dyn MultiProgressProvider> {
+            Box::new(NoopMultiProgress)
+        }
+    }
+
+    struct NoopStructured;
+
+    impl StructuredProvider for NoopStructured {
+        fn table(&self, _headers: &[&str], _rows: &[Vec<&str>]) {}
+
+        fn list(&self, _items: &[&str]) {}
+
+        fn properties(&self, _pairs: &[(&str, &str)]) {}
+    }
+
+    impl DisplayProvider for RecordingDisplay {
+        fn status(&self) -> Box<dyn StatusProvider> {
+            Box::new(RecordingStatus {
+                events: self.events.clone(),
+            })
+        }
+
+        fn progress(&self) -> Box<dyn ProgressProvider> {
+            Box::new(NoopProgress)
+        }
+
+        fn table(&self) -> Box<dyn StructuredProvider> {
+            Box::new(NoopStructured)
+        }
+    }
+
+    struct TestSession {
+        display: RecordingDisplay,
+        process: LiveProcessProvider,
+        filesystem: LiveFileSystemProvider,
+        network: LiveNetworkProvider,
+        config: LiveConfigProvider,
+        interactive: LiveInteractiveProvider,
+        terminal: TerminalCapabilities,
+    }
+
+    impl TestSession {
+        fn new(display: RecordingDisplay, process: LiveProcessProvider) -> Self {
+            Self {
+                display,
+                process,
+                filesystem: LiveFileSystemProvider,
+                network: LiveNetworkProvider::with_timeout(1),
+                config: LiveConfigProvider::new(crate::application::config::AppConfig::default()),
+                interactive: LiveInteractiveProvider::new(true, None),
+                terminal: TerminalCapabilities::minimal(),
+            }
+        }
+    }
+
+    impl Session for TestSession {
+        fn display(&self) -> &dyn DisplayProvider {
+            &self.display
+        }
+
+        fn filesystem(&self) -> &dyn FileSystemProvider {
+            &self.filesystem
+        }
+
+        fn network(&self) -> &dyn NetworkProvider {
+            &self.network
+        }
+
+        fn process(&self) -> &dyn ProcessProvider {
+            &self.process
+        }
+
+        fn config(&self) -> &dyn ConfigProvider {
+            &self.config
+        }
+
+        fn interactive(&self) -> &dyn InteractiveProvider {
+            &self.interactive
+        }
+
+        fn terminal(&self) -> &TerminalCapabilities {
+            &self.terminal
+        }
+
+        fn archive(&self) -> &dyn ArchiveProvider {
+            unimplemented!()
+        }
+
+        fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
+            unimplemented!()
+        }
+
+        fn state(&self) -> Result<PackStateManager<'_, dyn FileSystemProvider + '_>> {
+            unimplemented!()
+        }
+
+        fn packwiz_bin(&self) -> &str {
+            crate::empack::packwiz::PACKWIZ_BIN
+        }
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        unsafe fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match self.previous.as_ref() {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    fn write_script(path: &Path, contents: &str) {
+        std::fs::write(path, contents).expect("write script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(path).expect("metadata").permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(path, perms).expect("set executable");
+        }
+    }
 
     #[test]
     fn issue_stream_observer_matches_issue_prefixes_only() {
@@ -1129,5 +1409,133 @@ mod tests {
             "at com.example.Main.main(Main.java:42)"
         ));
         assert!(!IssueStreamObserver::should_echo_stderr("... 12 more"));
+    }
+
+    #[test]
+    fn process_output_error_output_prefers_stderr_and_falls_back_to_stdout() {
+        let stderr_preferred = ProcessOutput {
+            stdout: "stdout failure".to_string(),
+            stderr: "   stderr failure   ".to_string(),
+            success: false,
+        };
+        assert_eq!(stderr_preferred.error_output(), "stderr failure");
+
+        let stdout_fallback = ProcessOutput {
+            stdout: "  stdout failure  ".to_string(),
+            stderr: "   ".to_string(),
+            success: false,
+        };
+        assert_eq!(stdout_fallback.error_output(), "stdout failure");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_process_with_live_issues_flushes_partial_output_and_issue_lines() {
+        let temp = TempDir::new().expect("temp dir");
+        let command = temp.path().join("packwiz-tx");
+        write_script(
+            &command,
+            "#!/bin/sh\nprintf 'error: partial stdout'\nprintf 'Caused by: boom\\n' >&2\nprintf 'at com.example.Frame\\n' >&2\n",
+        );
+
+        let display = RecordingDisplay::default();
+        let session = TestSession::new(display.clone(), LiveProcessProvider::new());
+
+        let output = execute_process_with_live_issues(
+            &session,
+            command.to_str().expect("command path"),
+            &[],
+            temp.path(),
+        )
+        .expect("execute command");
+
+        assert_eq!(output.stdout, "error: partial stdout");
+        assert!(output.stderr.contains("Caused by: boom"));
+
+        let events = display.events();
+        assert!(
+            events
+                .iter()
+                .any(|event| event == "message:packwiz-tx: error: partial stdout")
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event == "warning:packwiz-tx: Caused by: boom")
+        );
+        assert!(
+            events
+                .iter()
+                .all(|event| !event.contains("com.example.Frame"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_process_provider_times_out_with_override() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let command = temp.path().join("sleepy");
+        write_script(&command, "#!/bin/sh\nsleep 2\n");
+
+        let _timeout = unsafe { EnvVarGuard::set("EMPACK_PROCESS_TIMEOUT_SECS", "1") };
+        let provider = LiveProcessProvider::new();
+
+        let error = provider
+            .execute(command.to_str().expect("command path"), &[], temp.path())
+            .expect_err("command should time out");
+
+        assert!(error.to_string().contains("timed out after 1 seconds"));
+        assert!(error.to_string().contains("sleepy"));
+    }
+
+    #[test]
+    fn live_interactive_provider_uses_defaults_in_non_interactive_mode() {
+        let provider = LiveInteractiveProvider::new(true, None);
+
+        assert_eq!(
+            provider
+                .text_input("prompt", "fallback".to_string())
+                .expect("text input"),
+            "fallback"
+        );
+        assert!(!provider.confirm("prompt", false).expect("confirm"));
+        assert_eq!(
+            provider.select("prompt", &["one", "two"]).expect("select"),
+            0
+        );
+        assert_eq!(
+            provider
+                .fuzzy_select("prompt", &[String::from("one"), String::from("two")])
+                .expect("fuzzy select"),
+            Some(0)
+        );
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[test]
+    fn command_session_new_with_providers_wires_packwiz_and_interactive_defaults() {
+        let session = CommandSession::new_with_providers(
+            LiveFileSystemProvider,
+            LiveNetworkProvider::with_timeout(1),
+            LiveProcessProvider::new(),
+            LiveConfigProvider::new(crate::application::config::AppConfig::default()),
+            LiveInteractiveProvider::new(true, None),
+        );
+
+        assert_eq!(session.packwiz_bin(), crate::empack::packwiz::PACKWIZ_BIN);
+        assert_eq!(
+            session.terminal().unicode,
+            crate::primitives::TerminalUnicodeCaps::Ascii
+        );
+        assert!(!session.terminal().is_tty);
+        assert_eq!(
+            session
+                .interactive()
+                .text_input("prompt", "fallback".to_string())
+                .expect("text input"),
+            "fallback"
+        );
+        assert!(!session.config().app_config().yes);
     }
 }
