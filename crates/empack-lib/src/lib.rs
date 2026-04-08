@@ -94,35 +94,61 @@ where
 
 #[cfg(test)]
 pub(crate) mod test_support {
+    use std::ffi::OsString;
     use std::sync::{Mutex, OnceLock};
+
+    const CLI_ENV_VARS: [&str; 20] = [
+        "EMPACK_WORKDIR",
+        "EMPACK_CPU_JOBS",
+        "EMPACK_NET_TIMEOUT",
+        "EMPACK_ID_MODRINTH",
+        "EMPACK_KEY_MODRINTH",
+        "EMPACK_KEY_CURSEFORGE",
+        "EMPACK_LOG_LEVEL",
+        "EMPACK_LOG_FORMAT",
+        "EMPACK_LOG_OUTPUT",
+        "EMPACK_COLOR",
+        "EMPACK_YES",
+        "EMPACK_DRY_RUN",
+        "EMPACK_MODLOADER",
+        "EMPACK_MC_VERSION",
+        "EMPACK_AUTHOR",
+        "EMPACK_NAME",
+        "EMPACK_LOADER_VERSION",
+        "EMPACK_PACK_VERSION",
+        "EMPACK_DATAPACK_FOLDER",
+        "EMPACK_GAME_VERSIONS",
+    ];
+
+    pub struct CliEnvGuard {
+        saved: [(&'static str, Option<OsString>); CLI_ENV_VARS.len()],
+    }
 
     pub fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
-    pub fn clear_cli_env() {
+    pub fn isolate_cli_env() -> CliEnvGuard {
+        let saved = CLI_ENV_VARS.map(|key| (key, std::env::var_os(key)));
         unsafe {
-            std::env::remove_var("EMPACK_WORKDIR");
-            std::env::remove_var("EMPACK_CPU_JOBS");
-            std::env::remove_var("EMPACK_NET_TIMEOUT");
-            std::env::remove_var("EMPACK_ID_MODRINTH");
-            std::env::remove_var("EMPACK_KEY_MODRINTH");
-            std::env::remove_var("EMPACK_KEY_CURSEFORGE");
-            std::env::remove_var("EMPACK_LOG_LEVEL");
-            std::env::remove_var("EMPACK_LOG_FORMAT");
-            std::env::remove_var("EMPACK_LOG_OUTPUT");
-            std::env::remove_var("EMPACK_COLOR");
-            std::env::remove_var("EMPACK_YES");
-            std::env::remove_var("EMPACK_DRY_RUN");
-            std::env::remove_var("EMPACK_MODLOADER");
-            std::env::remove_var("EMPACK_MC_VERSION");
-            std::env::remove_var("EMPACK_AUTHOR");
-            std::env::remove_var("EMPACK_NAME");
-            std::env::remove_var("EMPACK_LOADER_VERSION");
-            std::env::remove_var("EMPACK_PACK_VERSION");
-            std::env::remove_var("EMPACK_DATAPACK_FOLDER");
-            std::env::remove_var("EMPACK_GAME_VERSIONS");
+            for key in CLI_ENV_VARS {
+                std::env::remove_var(key);
+            }
+        }
+        CliEnvGuard { saved }
+    }
+
+    impl Drop for CliEnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                for (key, value) in &self.saved {
+                    match value {
+                        Some(value) => std::env::set_var(key, value),
+                        None => std::env::remove_var(key),
+                    }
+                }
+            }
         }
     }
 }
