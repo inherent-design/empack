@@ -129,13 +129,11 @@ impl<'a> IssueStreamObserver<'a> {
     }
 
     fn should_echo_stdout(line: &str) -> bool {
-        let lower = line.to_ascii_lowercase();
-        line.starts_with("Error:")
-            || line.starts_with("Caused by:")
-            || line.starts_with("Warning:")
-            || lower.contains("failed")
-            || lower.contains("warning")
-            || lower.contains("error")
+        let lower = line.trim_start().to_ascii_lowercase();
+        lower.starts_with("error:")
+            || lower.starts_with("caused by:")
+            || lower.starts_with("warning:")
+            || lower.starts_with("failed to ")
     }
 }
 
@@ -1076,5 +1074,39 @@ where
         let _ = self.multi_progress.clear();
         // 2. Restore cursor visibility (defense-in-depth, complements panic hook + signal handler)
         crate::terminal::cursor::force_show_cursor();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IssueStreamObserver;
+
+    #[test]
+    fn issue_stream_observer_matches_issue_prefixes_only() {
+        assert!(IssueStreamObserver::should_echo_stdout(
+            "Error: failed to resolve dependency"
+        ));
+        assert!(IssueStreamObserver::should_echo_stdout(
+            "  Caused by: network timeout"
+        ));
+        assert!(IssueStreamObserver::should_echo_stdout(
+            "Warning: using fallback loader"
+        ));
+        assert!(IssueStreamObserver::should_echo_stdout(
+            "failed to download manifest"
+        ));
+    }
+
+    #[test]
+    fn issue_stream_observer_ignores_false_positive_substrings() {
+        assert!(!IssueStreamObserver::should_echo_stdout(
+            "Downloading error-handling-lib.jar: 100%"
+        ));
+        assert!(!IssueStreamObserver::should_echo_stdout(
+            "3 warnings suppressed"
+        ));
+        assert!(!IssueStreamObserver::should_echo_stdout(
+            "resolved without errors"
+        ));
     }
 }
