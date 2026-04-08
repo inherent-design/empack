@@ -435,7 +435,7 @@ mod tests {
     fn cli_config_load_from_parses_arguments_and_config() {
         let _guard = crate::test_support::env_lock().lock().unwrap();
         crate::display::test_utils::clean_test_env();
-        crate::test_support::clear_cli_env();
+        let _cli_env = crate::test_support::isolate_cli_env();
 
         let config = CliConfig::load_from([
             "empack",
