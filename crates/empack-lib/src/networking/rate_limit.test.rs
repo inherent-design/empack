@@ -1,6 +1,59 @@
 use super::*;
+use crate::networking::rate_budget::{HostBudgetRegistry, RateBudget};
 use mockito::Server;
+use reqwest::header::HeaderMap;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+#[derive(Default)]
+struct RecordingBudget {
+    delay: Duration,
+    acquire_calls: AtomicU32,
+    record_calls: AtomicU32,
+    last_status: Mutex<Option<StatusCode>>,
+    last_remaining: Mutex<Option<u32>>,
+}
+
+impl RecordingBudget {
+    fn with_delay(delay: Duration) -> Self {
+        Self {
+            delay,
+            ..Self::default()
+        }
+    }
+}
+
+impl RateBudget for RecordingBudget {
+    fn record_response(&self, headers: &HeaderMap, status: StatusCode) {
+        self.record_calls.fetch_add(1, Ordering::Relaxed);
+        *self.last_status.lock().unwrap() = Some(status);
+        *self.last_remaining.lock().unwrap() = headers
+            .get("x-ratelimit-remaining")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u32>().ok());
+    }
+
+    fn acquire(&self) -> Duration {
+        self.acquire_calls.fetch_add(1, Ordering::Relaxed);
+        self.delay
+    }
+
+    fn is_exhausted(&self) -> bool {
+        false
+    }
+}
+
+fn registry_with_budgets(
+    modrinth_budget: Arc<dyn RateBudget>,
+    curseforge_budget: Arc<dyn RateBudget>,
+) -> HostBudgetRegistry {
+    HostBudgetRegistry::with_budgets(HashMap::from([
+        ("api.modrinth.com".to_string(), modrinth_budget),
+        ("api.curseforge.com".to_string(), curseforge_budget),
+    ]))
+}
 
 #[test]
 fn test_platform_rate_limits() {
@@ -69,6 +122,59 @@ async fn test_successful_request() {
 
     let body = response.text().await.unwrap();
     assert_eq!(body, "success");
+
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_rate_limited_client_records_budget_headers_and_status() {
+    let budget = Arc::new(RecordingBudget::default());
+    let rate_limited =
+        RateLimitedClient::new(Client::new(), Platform::Modrinth).with_budget(budget.clone());
+
+    let mut server = Server::new_async().await;
+    let mock = server
+        .mock("GET", "/budget")
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "17")
+        .with_body("ok")
+        .create_async()
+        .await;
+
+    let url = format!("{}/budget", server.url());
+    let response = rate_limited.get(&url).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(budget.acquire_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(budget.record_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(*budget.last_status.lock().unwrap(), Some(StatusCode::OK));
+    assert_eq!(*budget.last_remaining.lock().unwrap(), Some(17));
+
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_rate_limited_client_respects_budget_delay_before_request() {
+    let budget = Arc::new(RecordingBudget::with_delay(Duration::from_millis(50)));
+    let rate_limited =
+        RateLimitedClient::new(Client::new(), Platform::Modrinth).with_budget(budget.clone());
+
+    let mut server = Server::new_async().await;
+    let mock = server
+        .mock("GET", "/delayed")
+        .with_status(200)
+        .with_body("ok")
+        .create_async()
+        .await;
+
+    let start = Instant::now();
+    let url = format!("{}/delayed", server.url());
+    let response = rate_limited.get(&url).await.unwrap();
+    let elapsed = start.elapsed();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(elapsed >= Duration::from_millis(45));
+    assert_eq!(budget.acquire_calls.load(Ordering::Relaxed), 1);
 
     mock.assert_async().await;
 }
@@ -254,6 +360,52 @@ async fn test_rate_limiter_manager_creation() {
 
     assert_eq!(manager.modrinth().platform(), Platform::Modrinth);
     assert_eq!(manager.curseforge().platform(), Platform::CurseForge);
+}
+
+#[tokio::test]
+async fn test_rate_limiter_manager_with_budgets_attaches_platform_budgets() {
+    let modrinth_budget = Arc::new(RecordingBudget::default());
+    let curseforge_budget = Arc::new(RecordingBudget::default());
+    let registry =
+        registry_with_budgets(modrinth_budget.clone(), curseforge_budget.clone());
+    let manager = RateLimiterManager::new_with_budgets(Client::new(), &registry);
+
+    let mut mr_server = Server::new_async().await;
+    let mut cf_server = Server::new_async().await;
+
+    let mr_mock = mr_server
+        .mock("GET", "/modrinth")
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "29")
+        .with_body("ok")
+        .create_async()
+        .await;
+    let cf_mock = cf_server
+        .mock("GET", "/curseforge")
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "11")
+        .with_body("ok")
+        .create_async()
+        .await;
+
+    manager
+        .modrinth()
+        .get(&format!("{}/modrinth", mr_server.url()))
+        .await
+        .unwrap();
+    manager
+        .curseforge()
+        .get(&format!("{}/curseforge", cf_server.url()))
+        .await
+        .unwrap();
+
+    assert_eq!(modrinth_budget.acquire_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(curseforge_budget.acquire_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(*modrinth_budget.last_remaining.lock().unwrap(), Some(29));
+    assert_eq!(*curseforge_budget.last_remaining.lock().unwrap(), Some(11));
+
+    mr_mock.assert_async().await;
+    cf_mock.assert_async().await;
 }
 
 #[tokio::test]

@@ -1,5 +1,59 @@
 use super::*;
 
+#[cfg(feature = "test-utils")]
+use crate::networking::cache::HttpCache;
+#[cfg(feature = "test-utils")]
+use crate::networking::rate_budget::{HeaderDrivenBudget, HostBudgetRegistry, RateBudget};
+#[cfg(feature = "test-utils")]
+use crate::networking::rate_limit::RateLimiterManager;
+#[cfg(feature = "test-utils")]
+use reqwest::StatusCode;
+#[cfg(feature = "test-utils")]
+use reqwest::header::HeaderMap;
+#[cfg(feature = "test-utils")]
+use std::collections::HashMap;
+#[cfg(feature = "test-utils")]
+use std::sync::atomic::{AtomicU32, Ordering};
+#[cfg(feature = "test-utils")]
+use std::sync::{Arc, Mutex};
+#[cfg(feature = "test-utils")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "test-utils")]
+#[derive(Default)]
+struct RecordingBudget {
+    acquire_calls: AtomicU32,
+    record_calls: AtomicU32,
+    last_status: Mutex<Option<StatusCode>>,
+    last_remaining: Mutex<Option<u32>>,
+}
+
+#[cfg(feature = "test-utils")]
+impl RateBudget for RecordingBudget {
+    fn record_response(&self, headers: &HeaderMap, status: StatusCode) {
+        self.record_calls.fetch_add(1, Ordering::Relaxed);
+        *self.last_status.lock().unwrap() = Some(status);
+        *self.last_remaining.lock().unwrap() = headers
+            .get("x-ratelimit-remaining")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u32>().ok());
+    }
+
+    fn acquire(&self) -> Duration {
+        self.acquire_calls.fetch_add(1, Ordering::Relaxed);
+        Duration::ZERO
+    }
+
+    fn is_exhausted(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "test-utils")]
+fn registry_with_budget(host: &str, budget: Arc<dyn RateBudget>) -> HostBudgetRegistry {
+    HostBudgetRegistry::with_budgets(HashMap::from([(host.to_string(), budget)]))
+}
+
 #[test]
 fn test_normalize_project_type() {
     let resolver = ProjectResolver::new(Client::new(), None);
@@ -1325,4 +1379,103 @@ fn test_extract_loaders_empty_on_no_loaders() {
     ];
     let loaders = extract_loaders(&categories);
     assert!(loaders.is_empty());
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_search_rate_limiter_records_headers_into_shared_budget() {
+    let mut mr_server = mockito::Server::new_async().await;
+    let mr_mock = mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "42")
+        .with_body(modrinth_hit_json("AANobbMI", "Sodium", 50_000))
+        .create_async()
+        .await;
+
+    let budget = Arc::new(RecordingBudget::default());
+    let registry = registry_with_budget("api.modrinth.com", budget.clone());
+    let cache_dir = tempfile::tempdir().unwrap();
+    let cache = Arc::new(HttpCache::new(cache_dir.path().to_path_buf()));
+    let rate_limiter = Arc::new(RateLimiterManager::new_with_budgets(Client::new(), &registry));
+
+    let resolver = ProjectResolver::new_with_base_urls_and_networking(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+        cache.clone(),
+        rate_limiter,
+    );
+
+    let result = resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(result.project_id, "AANobbMI");
+    assert_eq!(budget.acquire_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(budget.record_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(*budget.last_status.lock().unwrap(), Some(StatusCode::OK));
+    assert_eq!(*budget.last_remaining.lock().unwrap(), Some(42));
+    assert_eq!(cache.len().await, 1);
+
+    mr_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_search_shared_budget_applies_low_remaining_delay_to_next_request() {
+    let mut mr_server = mockito::Server::new_async().await;
+    let first_mock = mr_server
+        .mock("GET", mockito::Matcher::Regex(r"query=Sodium".to_string()))
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "5")
+        .with_header("x-ratelimit-limit", "300")
+        .with_header("x-ratelimit-reset", "1")
+        .with_body(modrinth_hit_json("AANobbMI", "Sodium", 50_000))
+        .create_async()
+        .await;
+    let second_mock = mr_server
+        .mock("GET", mockito::Matcher::Regex(r"query=Lithium".to_string()))
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "5")
+        .with_header("x-ratelimit-limit", "300")
+        .with_header("x-ratelimit-reset", "1")
+        .with_body(modrinth_hit_json("N8DItNT1", "Lithium", 25_000))
+        .create_async()
+        .await;
+
+    let budget: Arc<dyn RateBudget> = Arc::new(HeaderDrivenBudget::new(300));
+    let registry = registry_with_budget("api.modrinth.com", budget);
+    let cache_dir = tempfile::tempdir().unwrap();
+    let cache = Arc::new(HttpCache::new(cache_dir.path().to_path_buf()));
+    let rate_limiter = Arc::new(RateLimiterManager::new_with_budgets(Client::new(), &registry));
+
+    let resolver = ProjectResolver::new_with_base_urls_and_networking(
+        Client::new(),
+        None,
+        Some(mr_server.url()),
+        Some("http://unused-cf:1".to_string()),
+        cache,
+        rate_limiter,
+    );
+
+    resolver
+        .resolve_project("Sodium", Some("mod"), None, None, None)
+        .await
+        .unwrap();
+
+    let start = Instant::now();
+    let result = resolver
+        .resolve_project("Lithium", Some("mod"), None, None, None)
+        .await
+        .unwrap();
+    let elapsed = start.elapsed();
+
+    assert_eq!(result.project_id, "N8DItNT1");
+    assert!(elapsed >= Duration::from_millis(450));
+
+    first_mock.assert_async().await;
+    second_mock.assert_async().await;
 }
