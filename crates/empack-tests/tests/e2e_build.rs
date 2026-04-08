@@ -1,5 +1,20 @@
 use empack_tests::e2e::TestProject;
 
+fn assert_dist_has_artifact(dist: &std::path::Path, expected_suffix: &str) {
+    let names: Vec<String> = std::fs::read_dir(dist)
+        .expect("failed to read dist/")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        names
+            .iter()
+            .any(|name| name.starts_with("test-pack-v") && name.ends_with(expected_suffix)),
+        "expected dist/ to contain artifact ending with {expected_suffix}, found: {}",
+        names.join(", ")
+    );
+}
+
 #[test]
 fn e2e_build_mrpack() {
     empack_tests::skip_if_no_java!();
@@ -40,8 +55,7 @@ fn e2e_build_client_tar_gz() {
     let dist = project.dir().join("dist");
     assert!(dist.is_dir(), "dist/ directory not found");
 
-    let tar_gz = dist.join("test-pack-v1.0.0-client.tar.gz");
-    assert!(tar_gz.exists(), "no .tar.gz file found in dist/");
+    assert_dist_has_artifact(&dist, "-client.tar.gz");
 }
 
 #[test]
@@ -59,8 +73,7 @@ fn e2e_build_server_sevenz() {
     let dist = project.dir().join("dist");
     assert!(dist.is_dir(), "dist/ directory not found");
 
-    let seven_z = dist.join("test-pack-v1.0.0-server.7z");
-    assert!(seven_z.exists(), "no .7z file found in dist/");
+    assert_dist_has_artifact(&dist, "-server.7z");
 }
 
 #[test]

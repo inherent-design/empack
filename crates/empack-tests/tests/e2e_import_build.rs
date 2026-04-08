@@ -44,9 +44,14 @@ fn download_featured_modrinth_mrpack(project_id: &str, dest: &std::path::Path) {
     let versions: serde_json::Value = resp
         .json()
         .expect("failed to parse Modrinth versions response");
-    let download_url = versions
+    let versions = versions
         .as_array()
-        .and_then(|versions| versions.first())
+        .filter(|versions| !versions.is_empty())
+        .unwrap_or_else(|| {
+            panic!("Modrinth returned no featured versions for project {project_id}")
+        });
+    let download_url = versions
+        .first()
         .and_then(|version| version.get("files"))
         .and_then(|files| files.as_array())
         .and_then(|files| {
@@ -67,7 +72,9 @@ fn download_featured_modrinth_mrpack(project_id: &str, dest: &std::path::Path) {
         })
         .and_then(|file| file.get("url"))
         .and_then(|url| url.as_str())
-        .expect("no downloadable mrpack URL in Modrinth versions response");
+        .unwrap_or_else(|| {
+            panic!("no downloadable mrpack URL in Modrinth versions response for {project_id}")
+        });
 
     download_file(download_url, dest);
 }
