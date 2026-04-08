@@ -667,13 +667,12 @@ impl ProcessProvider for LiveProcessProvider {
                 }
             }
 
-            if exit_status.is_none() {
-                if let Some(status) = child
+            if exit_status.is_none()
+                && let Some(status) = child
                     .try_wait()
                     .with_context(|| format!("Failed to execute command: {}", cmd_name))?
-                {
-                    exit_status = Some(status);
-                }
+            {
+                exit_status = Some(status);
             }
         }
 
