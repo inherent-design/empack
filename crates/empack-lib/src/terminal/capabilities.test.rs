@@ -1,6 +1,30 @@
 use super::*;
 use crate::display::test_utils::clean_test_env;
 use std::env;
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+fn clear_locale_env() {
+    unsafe {
+        env::remove_var("LC_ALL");
+        env::remove_var("LC_CTYPE");
+        env::remove_var("LANG");
+    }
+}
+
+#[cfg(unix)]
+fn install_locale_script(body: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("locale");
+    fs::write(&path, format!("#!/bin/sh\n{}\n", body)).unwrap();
+
+    let mut perms = fs::metadata(&path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&path, perms).unwrap();
+
+    dir
+}
 
 #[test]
 fn test_truecolor_detection_via_colorterm() {
@@ -217,5 +241,89 @@ fn test_full_integration_legacy_terminal() {
     let caps = result.unwrap();
     assert_eq!(caps.unicode, TerminalUnicodeCaps::Ascii);
 
+    clean_test_env();
+}
+
+#[test]
+#[cfg(unix)]
+fn test_detect_unicode_via_locale_charmap_fallback() {
+    clean_test_env();
+    clear_locale_env();
+
+    let original_path = env::var_os("PATH");
+    let fake_locale = install_locale_script("printf 'UTF-8'");
+    unsafe {
+        env::set_var("PATH", fake_locale.path());
+    }
+
+    let result = detect_unicode(true).unwrap();
+    assert_eq!(result, TerminalUnicodeCaps::BasicUnicode);
+
+    if let Some(path) = original_path {
+        unsafe {
+            env::set_var("PATH", path);
+        }
+    } else {
+        unsafe {
+            env::remove_var("PATH");
+        }
+    }
+    clear_locale_env();
+    clean_test_env();
+}
+
+#[test]
+#[cfg(unix)]
+fn test_detect_unicode_invalid_locale_output() {
+    clean_test_env();
+    clear_locale_env();
+
+    let original_path = env::var_os("PATH");
+    let fake_locale = install_locale_script("printf '\\377'");
+    unsafe {
+        env::set_var("PATH", fake_locale.path());
+    }
+
+    let result = get_unix_charset();
+    assert!(matches!(result, Err(TerminalError::InvalidUtf8Response { .. })));
+
+    if let Some(path) = original_path {
+        unsafe {
+            env::set_var("PATH", path);
+        }
+    } else {
+        unsafe {
+            env::remove_var("PATH");
+        }
+    }
+    clear_locale_env();
+    clean_test_env();
+}
+
+#[test]
+#[cfg(unix)]
+fn test_get_unix_charset_command_failed_without_locale_binary() {
+    clean_test_env();
+    clear_locale_env();
+
+    let original_path = env::var_os("PATH");
+    let empty_path = tempfile::tempdir().unwrap();
+    unsafe {
+        env::set_var("PATH", empty_path.path());
+    }
+
+    let result = get_unix_charset();
+    assert!(matches!(result, Err(TerminalError::CommandFailed { .. })));
+
+    if let Some(path) = original_path {
+        unsafe {
+            env::set_var("PATH", path);
+        }
+    } else {
+        unsafe {
+            env::remove_var("PATH");
+        }
+    }
+    clear_locale_env();
     clean_test_env();
 }

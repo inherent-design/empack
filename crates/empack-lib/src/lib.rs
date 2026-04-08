@@ -48,20 +48,30 @@ pub use terminal::TerminalCapabilities;
 pub type Result<T> = anyhow::Result<T>;
 
 use application::CliConfig;
+use std::future::Future;
 
 pub async fn main() -> Result<()> {
+    let config = CliConfig::load()?;
+    run_with_config(config).await
+}
+
+pub async fn run_with_config(config: CliConfig) -> Result<()> {
+    let workdir = config.app_config.workdir.clone();
+    run_main_loop(workdir, execute_command(config)).await
+}
+
+pub async fn run_main_loop<F>(workdir: Option<std::path::PathBuf>, command: F) -> Result<()>
+where
+    F: Future<Output = Result<()>>,
+{
     // Recover cursor from prior crashed runs
     terminal::cursor::force_show_cursor();
     terminal::cursor::install_panic_hook();
 
-    // Load CLI configuration
-    let config = CliConfig::load()?;
-    let workdir = config.app_config.workdir.clone();
-
     // Run command with signal handling
     tokio::select! {
         biased;
-        result = execute_command(config) => {
+        result = command => {
             terminal::cursor::force_show_cursor();
             logger::global_shutdown();
             result
@@ -79,5 +89,44 @@ pub async fn main() -> Result<()> {
 
             std::process::exit(130)
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::{Mutex, OnceLock};
+
+    pub fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn run_main_loop_completes_with_ready_command() {
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        run_main_loop(
+            Some(temp_dir.path().to_path_buf()),
+            std::future::ready(Ok::<(), anyhow::Error>(())),
+        )
+        .await
+        .expect("run main loop");
+    }
+
+    #[tokio::test]
+    async fn run_main_loop_propagates_command_error() {
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let error = run_main_loop(
+            Some(temp_dir.path().to_path_buf()),
+            std::future::ready(Err::<(), anyhow::Error>(anyhow::anyhow!("boom"))),
+        )
+        .await
+        .expect_err("run main loop should propagate command errors");
+
+        assert!(error.to_string().contains("boom"));
     }
 }

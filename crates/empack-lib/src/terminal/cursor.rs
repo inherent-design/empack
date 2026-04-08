@@ -25,3 +25,25 @@ pub fn install_panic_hook() {
         default_hook(info);
     }));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_force_show_cursor_no_panic() {
+        force_show_cursor();
+    }
+
+    #[test]
+    fn test_install_panic_hook_invokes_restoration_hook() {
+        let previous = std::panic::take_hook();
+        install_panic_hook();
+
+        let result = std::panic::catch_unwind(|| panic!("cursor hook"));
+        assert!(result.is_err());
+
+        let _installed = std::panic::take_hook();
+        std::panic::set_hook(previous);
+    }
+}

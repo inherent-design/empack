@@ -593,6 +593,43 @@ async fn test_build_forge_server() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_build_forge_server_sevenz_archive() -> Result<()> {
+    let project_name = "matrix-forge-server-7z";
+    let workdir = mock_root().join("workdir");
+    let session = setup_server_session(project_name, "forge").build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let result = execute_command_with_session(
+        Commands::Build(BuildArgs {
+            targets: vec!["server".to_string()],
+            format: empack_lib::application::cli::CliArchiveFormat::SevenZ,
+            ..Default::default()
+        }),
+        &session,
+    )
+    .await;
+
+    assert!(result.is_ok(), "Forge server 7z build failed: {result:?}");
+
+    let archive_path = workdir
+        .join("dist")
+        .join(format!("{project_name}-v1.0.0-server.7z"));
+    assert!(
+        session.filesystem().exists(&archive_path),
+        "7z archive should be created in dist/"
+    );
+
+    let create_calls = session.archive_provider.create_calls.lock().unwrap();
+    assert!(
+        create_calls.iter().any(|(_, dest)| dest == &archive_path),
+        "7z archive should be created through the archive provider: {create_calls:?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_build_forge_server_full() -> Result<()> {
     let project_name = "matrix-forge-server-full";
     let workdir = mock_root().join("workdir");
@@ -716,6 +753,46 @@ async fn test_build_fabric_client() -> Result<()> {
             .iter()
             .any(|call| call.args.iter().any(|a| a == "refresh")),
         "build should refresh pack metadata before client build: {packwiz_calls:?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_build_fabric_client_tar_gz_archive() -> Result<()> {
+    let project_name = "matrix-fabric-client-tar-gz";
+    let workdir = mock_root().join("workdir");
+    let session = setup_client_session(project_name, "fabric").build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let result = execute_command_with_session(
+        Commands::Build(BuildArgs {
+            targets: vec!["client".to_string()],
+            format: empack_lib::application::cli::CliArchiveFormat::TarGz,
+            ..Default::default()
+        }),
+        &session,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "Fabric client tar.gz build failed: {result:?}"
+    );
+
+    let archive_path = workdir
+        .join("dist")
+        .join(format!("{project_name}-v1.0.0-client.tar.gz"));
+    assert!(
+        session.filesystem().exists(&archive_path),
+        "tar.gz archive should be created in dist/"
+    );
+
+    let create_calls = session.archive_provider.create_calls.lock().unwrap();
+    assert!(
+        create_calls.iter().any(|(_, dest)| dest == &archive_path),
+        "tar.gz archive should be created through the archive provider: {create_calls:?}"
     );
 
     Ok(())
