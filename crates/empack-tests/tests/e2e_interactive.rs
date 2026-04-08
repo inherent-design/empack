@@ -1,6 +1,5 @@
-use empack_tests::e2e::{TestProject, empack_bin};
+use empack_tests::e2e::{TestProject, empack_cmd};
 use expectrl::{Expect, Regex, Session};
-use std::process::Command;
 use std::time::Duration;
 
 // Reference only: kept as a manual verification aid, not run in CI.
@@ -16,12 +15,8 @@ fn e2e_init_interactive_prompts() {
     empack_tests::skip_if_no_packwiz!();
 
     let project = TestProject::new();
-    let bin = empack_bin();
-
-    let mut cmd = Command::new(bin);
+    let mut cmd = empack_cmd(project.dir());
     cmd.args(["init", "test-pack"]);
-    cmd.current_dir(project.dir());
-    cmd.env("NO_COLOR", "1");
 
     let mut session = Session::spawn(cmd).expect("failed to spawn empack init");
     session.set_expect_timeout(Some(Duration::from_secs(30)));
@@ -102,9 +97,7 @@ fn e2e_init_interactive_responds_to_prompts() {
     empack_tests::skip_if_no_packwiz!();
 
     let project = TestProject::new();
-    let bin = empack_bin();
-
-    let mut cmd = Command::new(bin);
+    let mut cmd = empack_cmd(project.dir());
     cmd.args([
         "init",
         "--modloader",
@@ -115,8 +108,6 @@ fn e2e_init_interactive_responds_to_prompts() {
         "0.18.6",
         "interactive-test",
     ]);
-    cmd.current_dir(project.dir());
-    cmd.env("NO_COLOR", "1");
 
     let mut session = Session::spawn(cmd).expect("failed to spawn empack init");
     session.set_expect_timeout(Some(Duration::from_secs(30)));

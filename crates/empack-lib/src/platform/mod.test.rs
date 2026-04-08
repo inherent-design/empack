@@ -173,6 +173,10 @@ fn test_config_and_data_dirs_follow_home_directory() {
     let home_fixture = tempfile::TempDir::new().expect("home dir");
     let _home = unsafe { EnvVarGuard::set("HOME", home_fixture.path()) };
     let _userprofile = unsafe { EnvVarGuard::remove("USERPROFILE") };
+    #[cfg(target_os = "linux")]
+    let _xdg_config_home = unsafe { EnvVarGuard::remove("XDG_CONFIG_HOME") };
+    #[cfg(target_os = "linux")]
+    let _xdg_data_home = unsafe { EnvVarGuard::remove("XDG_DATA_HOME") };
 
     let config = config_dir();
     let data = data_dir();
@@ -189,4 +193,6 @@ fn test_config_and_data_dirs_follow_home_directory() {
     }
 
     let _ = (&_home, &_userprofile);
+    #[cfg(target_os = "linux")]
+    let _ = (&_xdg_config_home, &_xdg_data_home);
 }
