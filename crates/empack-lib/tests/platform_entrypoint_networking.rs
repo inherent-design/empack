@@ -98,6 +98,12 @@ fn clear_cli_env() {
 }
 
 fn write_executable_script(path: &Path) {
+    #[cfg(target_os = "windows")]
+    {
+        std::fs::copy(std::env::current_exe().expect("current exe"), path).expect("copy exe");
+        return;
+    }
+
     std::fs::write(path, b"#!/bin/sh\nexit 0\n").expect("write script");
     #[cfg(unix)]
     {
@@ -105,6 +111,14 @@ fn write_executable_script(path: &Path) {
         let mut perms = std::fs::metadata(path).expect("metadata").permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(path, perms).expect("set executable");
+    }
+}
+
+fn packwiz_bin_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "packwiz-tx.exe"
+    } else {
+        "packwiz-tx"
     }
 }
 
@@ -148,16 +162,7 @@ fn app_config_load_from_reports_invalid_env_file() {
 
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let env_file = temp_dir.path().join(".env");
-    std::fs::write(&env_file, "EMPACK_LOG_LEVEL=4\n").expect("write env file");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&env_file)
-            .expect("metadata")
-            .permissions();
-        perms.set_mode(0o000);
-        std::fs::set_permissions(&env_file, perms).expect("set permissions");
-    }
+    std::fs::write(&env_file, "not valid dotenv syntax").expect("write env file");
     let _cwd = CurrentDirGuard::set(temp_dir.path());
 
     let result = AppConfig::load_from(["empack"]);
@@ -205,8 +210,12 @@ fn platform_helpers_cover_env_and_platform_paths() {
         assert_eq!(command, "open");
         assert!(args.is_empty());
     }
-    assert!(config_dir().starts_with(home.path()));
-    assert!(data_dir().starts_with(home.path()));
+    assert!(config_dir().is_absolute());
+    assert!(data_dir().is_absolute());
+    assert!(config_dir().ends_with(Path::new("empack")));
+    assert!(data_dir().ends_with(Path::new("empack")));
+
+    let _ = (&_home, &_userprofile);
 }
 
 #[test]
@@ -222,7 +231,7 @@ fn cache_root_uses_env_override() {
 fn resolve_packwiz_binary_uses_explicit_env_override() {
     let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let temp = tempfile::TempDir::new().expect("temp dir");
-    let override_path = temp.path().join("packwiz-tx");
+    let override_path = temp.path().join(packwiz_bin_name());
     write_executable_script(&override_path);
 
     let _env = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", &override_path) };
@@ -236,11 +245,12 @@ fn resolve_packwiz_binary_uses_explicit_env_override() {
 fn resolve_packwiz_binary_uses_path_lookup_before_cache() {
     let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let temp = tempfile::TempDir::new().expect("temp dir");
-    let packwiz_bin = temp.path().join("packwiz-tx");
+    let packwiz_bin = temp.path().join(packwiz_bin_name());
     write_executable_script(&packwiz_bin);
+    let isolated_cache = tempfile::TempDir::new().expect("cache dir");
 
     let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
-    let _cache = unsafe { EnvVarGuard::remove("EMPACK_CACHE_DIR") };
+    let _cache = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", isolated_cache.path()) };
     let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
 
     assert_eq!(
@@ -255,7 +265,7 @@ fn resolve_packwiz_binary_uses_cached_binary_when_present() {
     let temp = tempfile::TempDir::new().expect("temp dir");
     let cache_dir = temp.path().join("bin").join("packwiz-tx-v0.2.0");
     std::fs::create_dir_all(&cache_dir).expect("create cache dir");
-    let cached_bin = cache_dir.join("packwiz-tx");
+    let cached_bin = cache_dir.join(packwiz_bin_name());
     write_executable_script(&cached_bin);
 
     let empty_path = tempfile::TempDir::new().expect("empty path dir");

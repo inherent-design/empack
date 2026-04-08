@@ -1,6 +1,6 @@
 use super::*;
 use crate::primitives::TerminalCapsDetectIntent;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn clear_cli_env() {
     unsafe {
@@ -43,6 +43,13 @@ impl Drop for CurrentDirGuard {
     fn drop(&mut self) {
         std::env::set_current_dir(&self.previous).expect("restore current dir");
     }
+}
+
+fn assert_same_existing_path(actual: Option<PathBuf>, expected: &Path) {
+    let actual = actual.expect("path should be present");
+    let actual = std::fs::canonicalize(actual).expect("canonical actual path");
+    let expected = std::fs::canonicalize(expected).expect("canonical expected path");
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -149,10 +156,7 @@ fn test_load_from_parses_cli_and_fills_workdir() {
     assert_eq!(config.cpu_jobs, 8);
     assert!(config.yes);
     assert!(config.dry_run);
-    assert_eq!(
-        config.workdir,
-        Some(std::fs::canonicalize(temp_dir.path()).expect("canonical temp dir"))
-    );
+    assert_same_existing_path(config.workdir, temp_dir.path());
 }
 
 #[test]
@@ -163,12 +167,13 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
 
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let env_workdir = temp_dir.path().join("env-workdir");
+    std::fs::create_dir_all(&env_workdir).expect("create env workdir");
     let env_local = temp_dir.path().join(".env.local");
     std::fs::write(
         &env_local,
         format!(
             "EMPACK_WORKDIR={}\nEMPACK_CPU_JOBS=12\nEMPACK_NET_TIMEOUT=37\nEMPACK_ID_MODRINTH=modrinth-id\nEMPACK_KEY_MODRINTH=modrinth-key\nEMPACK_KEY_CURSEFORGE=curseforge-key\nEMPACK_LOG_LEVEL=2\nEMPACK_LOG_FORMAT=json\nEMPACK_LOG_OUTPUT=stderr\nEMPACK_COLOR=never\nEMPACK_YES=true\nEMPACK_DRY_RUN=true\n",
-            env_workdir.display(),
+            env_workdir.display().to_string().replace('\\', "/"),
         ),
     )
     .expect("write env local");
@@ -192,7 +197,7 @@ fn test_load_from_reads_env_local_and_applies_cli_overrides() {
     ])
     .expect("load config from env local");
 
-    assert_eq!(config.workdir, Some(env_workdir));
+    assert_same_existing_path(config.workdir, &env_workdir);
     assert_eq!(config.cpu_jobs, 8);
     assert_eq!(config.net_timeout, 45);
     assert_eq!(config.modrinth_api_client_id, Some("modrinth-id".to_string()));

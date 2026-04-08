@@ -337,6 +337,12 @@ mod tests {
     }
 
     fn write_executable_script(path: &std::path::Path) {
+        #[cfg(target_os = "windows")]
+        {
+            std::fs::copy(std::env::current_exe().expect("current exe"), path).expect("copy exe");
+            return;
+        }
+
         std::fs::write(path, b"#!/bin/sh\nexit 0\n").expect("write script");
         #[cfg(unix)]
         {
@@ -451,11 +457,12 @@ mod tests {
     fn resolve_packwiz_binary_uses_path_lookup_before_cache() {
         let _guard = crate::test_support::env_lock().lock().unwrap();
         let temp = TempDir::new().expect("temp dir");
-        let packwiz_bin = temp.path().join(crate::empack::packwiz::PACKWIZ_BIN);
+        let packwiz_bin = temp.path().join(binary_name());
         write_executable_script(&packwiz_bin);
+        let isolated_cache = TempDir::new().expect("cache dir");
 
         let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
-        let _cache = unsafe { EnvVarGuard::remove("EMPACK_CACHE_DIR") };
+        let _cache = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", isolated_cache.path()) };
         let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
 
         let resolved = resolve_packwiz_binary().expect("resolve from path");
