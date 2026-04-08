@@ -1,5 +1,7 @@
 use empack_tests::e2e::{TestProject, empack_cmd, write_local_mrpack};
 
+const LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS: &str = "600";
+
 /// Download a file via HTTP to a local path using reqwest blocking.
 fn download_file(url: &str, dest: &std::path::Path) {
     let client = reqwest::blocking::Client::builder()
@@ -111,6 +113,10 @@ fn e2e_import_modrinth_and_build_mrpack() {
     );
 
     let build_output = empack_cmd(&pack_dir)
+        .env(
+            "EMPACK_PROCESS_TIMEOUT_SECS",
+            LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS,
+        )
         .args(["build", "mrpack"])
         .output()
         .expect("failed to spawn empack build mrpack");
