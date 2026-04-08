@@ -557,6 +557,36 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
 /// pacing; the semaphore now only caps task and connection pressure.
 const RESOLVE_CONCURRENCY: usize = 10;
 
+#[derive(Clone, Debug)]
+struct ResolveApiBases {
+    modrinth: String,
+    curseforge: String,
+}
+
+impl ResolveApiBases {
+    fn production() -> Self {
+        Self {
+            modrinth: "https://api.modrinth.com".to_string(),
+            curseforge: "https://api.curseforge.com".to_string(),
+        }
+    }
+
+    fn modrinth_url(&self, path: &str) -> String {
+        format!("{}/{}", self.modrinth.trim_end_matches('/'), path)
+    }
+
+    fn curseforge_url(&self, path: &str) -> String {
+        format!("{}/{}", self.curseforge.trim_end_matches('/'), path)
+    }
+}
+
+#[derive(Clone)]
+struct ResolveRateContext {
+    api_bases: ResolveApiBases,
+    modrinth_budget: Option<Arc<dyn RateBudget>>,
+    curseforge_budget: Option<Arc<dyn RateBudget>>,
+}
+
 /// Enrich a raw manifest via platform APIs to resolve names, types, and
 /// identify embedded JARs.
 ///
@@ -571,6 +601,27 @@ pub async fn resolve_manifest(
     curseforge_api_key: Option<&str>,
     display: &dyn crate::display::providers::DisplayProvider,
     rate_budgets: &crate::networking::rate_budget::HostBudgetRegistry,
+) -> Result<ResolvedManifest> {
+    resolve_manifest_with_api_bases(
+        manifest,
+        modrinth_api,
+        curseforge_api,
+        curseforge_api_key,
+        display,
+        rate_budgets,
+        ResolveApiBases::production(),
+    )
+    .await
+}
+
+async fn resolve_manifest_with_api_bases(
+    manifest: ModpackManifest,
+    modrinth_api: &dyn crate::application::session::NetworkProvider,
+    curseforge_api: &dyn crate::application::session::NetworkProvider,
+    curseforge_api_key: Option<&str>,
+    display: &dyn crate::display::providers::DisplayProvider,
+    rate_budgets: &crate::networking::rate_budget::HostBudgetRegistry,
+    api_bases: ResolveApiBases,
 ) -> Result<ResolvedManifest> {
     let resolve_start = std::time::Instant::now();
     let mut warnings = Vec::new();
@@ -595,8 +646,11 @@ pub async fn resolve_manifest(
         })
         .collect();
 
-    let cf_budget = rate_budgets.for_host("api.curseforge.com");
-    let mr_budget = rate_budgets.for_host("api.modrinth.com");
+    let rate_context = ResolveRateContext {
+        api_bases: api_bases.clone(),
+        modrinth_budget: rate_budgets.for_host("api.modrinth.com"),
+        curseforge_budget: rate_budgets.for_host("api.curseforge.com"),
+    };
 
     let cf_file_to_mod = if !cf_file_ids.is_empty() {
         resolve_curseforge_file_ids(
@@ -604,7 +658,8 @@ pub async fn resolve_manifest(
             curseforge_api,
             curseforge_api_key,
             &mut warnings,
-            cf_budget.as_ref(),
+            &rate_context.api_bases,
+            rate_context.curseforge_budget.as_ref(),
         )
         .await
     } else {
@@ -636,8 +691,7 @@ pub async fn resolve_manifest(
                 let cf = cf_client.clone();
                 let key = cf_key.clone();
                 let sem = semaphore.clone();
-                let task_mr_budget = mr_budget.clone();
-                let task_cf_budget = cf_budget.clone();
+                let task_context = rate_context.clone();
 
                 handles.push((
                     i,
@@ -661,10 +715,9 @@ pub async fn resolve_manifest(
                                 &mut pref,
                                 &mr,
                                 &cf,
+                                &task_context,
                                 key.as_deref(),
                                 &mut task_warnings,
-                                task_mr_budget,
-                                task_cf_budget,
                             )
                             .await;
                         }
@@ -762,10 +815,9 @@ async fn resolve_platform_ref_with_client(
     pref: &mut PlatformRef,
     modrinth_client: &reqwest::Client,
     curseforge_client: &reqwest::Client,
+    rate_context: &ResolveRateContext,
     curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
-    modrinth_budget: Option<Arc<dyn RateBudget>>,
-    curseforge_budget: Option<Arc<dyn RateBudget>>,
 ) {
     if pref.resolved_name.is_some() {
         return;
@@ -779,8 +831,9 @@ async fn resolve_platform_ref_with_client(
             resolve_modrinth_project_with_client(
                 pref,
                 modrinth_client,
+                &rate_context.api_bases,
                 warnings,
-                modrinth_budget.as_ref(),
+                rate_context.modrinth_budget.as_ref(),
             )
             .await;
         }
@@ -791,9 +844,10 @@ async fn resolve_platform_ref_with_client(
             resolve_curseforge_project_with_client(
                 pref,
                 curseforge_client,
+                &rate_context.api_bases,
                 curseforge_api_key,
                 warnings,
-                curseforge_budget.as_ref(),
+                rate_context.curseforge_budget.as_ref(),
             )
             .await;
         }
@@ -834,16 +888,14 @@ struct MrVersionFileResponse {
 async fn resolve_modrinth_project_with_client(
     pref: &mut PlatformRef,
     client: &reqwest::Client,
+    api_bases: &ResolveApiBases,
     warnings: &mut Vec<String>,
     budget: Option<&Arc<dyn RateBudget>>,
 ) {
     if pref.file_id.is_none()
         && let Some(sha1) = pref.hashes.get("sha1")
     {
-        let url = format!(
-            "https://api.modrinth.com/v2/version_file/{}?algorithm=sha1",
-            sha1
-        );
+        let url = api_bases.modrinth_url(&format!("v2/version_file/{}?algorithm=sha1", sha1));
         apply_rate_budget(budget).await;
         if let Ok(resp) = client.get(&url).send().await {
             record_rate_budget(budget, &resp);
@@ -855,7 +907,7 @@ async fn resolve_modrinth_project_with_client(
         }
     }
 
-    let url = format!("https://api.modrinth.com/v2/project/{}", pref.project_id);
+    let url = api_bases.modrinth_url(&format!("v2/project/{}", pref.project_id));
 
     apply_rate_budget(budget).await;
     let response = match client.get(&url).send().await {
@@ -916,6 +968,7 @@ struct CfModResponse {
 async fn resolve_curseforge_project_with_client(
     pref: &mut PlatformRef,
     client: &reqwest::Client,
+    api_bases: &ResolveApiBases,
     curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
     budget: Option<&Arc<dyn RateBudget>>,
@@ -931,7 +984,7 @@ async fn resolve_curseforge_project_with_client(
         }
     };
 
-    let url = format!("https://api.curseforge.com/v1/mods/{}", pref.project_id);
+    let url = api_bases.curseforge_url(&format!("v1/mods/{}", pref.project_id));
 
     apply_rate_budget(budget).await;
     let response = match client.get(&url).header("x-api-key", api_key).send().await {
@@ -997,6 +1050,7 @@ async fn resolve_curseforge_file_ids(
     api: &dyn crate::application::session::NetworkProvider,
     api_key: Option<&str>,
     warnings: &mut Vec<String>,
+    api_bases: &ResolveApiBases,
     budget: Option<&Arc<dyn RateBudget>>,
 ) -> std::collections::HashMap<u64, u64> {
     let mut result = std::collections::HashMap::new();
@@ -1021,7 +1075,7 @@ async fn resolve_curseforge_file_ids(
         let body = serde_json::json!({ "fileIds": chunk });
         apply_rate_budget(budget).await;
         let response = match client
-            .post("https://api.curseforge.com/v1/mods/files")
+            .post(api_bases.curseforge_url("v1/mods/files"))
             .header("x-api-key", api_key)
             .json(&body)
             .send()

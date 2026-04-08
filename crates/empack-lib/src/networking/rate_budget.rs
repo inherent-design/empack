@@ -275,6 +275,11 @@ impl HostBudgetRegistry {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_budgets(budgets: HashMap<String, Arc<dyn RateBudget>>) -> Self {
+        Self { budgets }
+    }
+
     /// Look up the rate budget for a URL by extracting its host.
     pub fn for_url(&self, url: &str) -> Option<Arc<dyn RateBudget>> {
         let host = extract_host(url)?;
@@ -452,6 +457,33 @@ mod tests {
         assert_eq!(budget.remaining.load(Ordering::Relaxed), 0);
     }
 
+    #[test]
+    fn header_budget_acquire_waits_until_reset_when_exhausted() {
+        let budget = HeaderDrivenBudget::new(300);
+        budget.remaining.store(0, Ordering::Relaxed);
+        budget
+            .reset_at
+            .store(HeaderDrivenBudget::now_secs() + 2, Ordering::Relaxed);
+
+        let delay = budget.acquire();
+        assert!(delay >= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn header_budget_acquire_refills_after_reset_passes() {
+        let budget = HeaderDrivenBudget::new(300);
+        budget.remaining.store(0, Ordering::Relaxed);
+        budget.limit.store(42, Ordering::Relaxed);
+        budget.reset_at.store(
+            HeaderDrivenBudget::now_secs().saturating_sub(1),
+            Ordering::Relaxed,
+        );
+
+        let delay = budget.acquire();
+        assert_eq!(delay, Duration::ZERO);
+        assert_eq!(budget.remaining.load(Ordering::Relaxed), 42);
+    }
+
     // -- FixedWindowBudget --------------------------------------------------
 
     #[test]
@@ -496,6 +528,27 @@ mod tests {
         budget.requests_this_window.store(121, Ordering::Relaxed);
         let delay = budget.acquire();
         assert_eq!(delay, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn fixed_budget_acquire_waits_when_window_exhausted() {
+        let budget = FixedWindowBudget::new(150, Duration::from_secs(2));
+        budget.requests_this_window.store(150, Ordering::Relaxed);
+        budget
+            .window_start
+            .store(FixedWindowBudget::now_secs(), Ordering::Relaxed);
+
+        let delay = budget.acquire();
+        assert!(delay >= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn fixed_budget_403_exhaustion_delays_until_window_end() {
+        let budget = FixedWindowBudget::new(10, Duration::from_secs(2));
+        budget.record_response(&HeaderMap::new(), StatusCode::FORBIDDEN);
+
+        let delay = budget.acquire();
+        assert!(delay >= Duration::from_secs(1));
     }
 
     // -- NoOpBudget ---------------------------------------------------------
