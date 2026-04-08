@@ -213,8 +213,7 @@ fn test_init_global_and_global_round_trip() {
     match AppConfig::init_global(config.clone()) {
         Ok(()) => assert_eq!(AppConfig::global().log_level, config.log_level),
         Err(crate::primitives::ConfigError::AlreadyInitialized) => {
-            let global = AppConfig::global();
-            assert_eq!(global.log_level, AppConfig::global().log_level);
+            let _ = AppConfig::global();
         }
         Err(other) => panic!("unexpected init_global error: {other}"),
     }
