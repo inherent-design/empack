@@ -110,6 +110,28 @@ fn test_create_archive_nonexistent_source_returns_error() {
 }
 
 #[test]
+fn test_create_archive_nonexistent_source_tar_gz_returns_error() {
+    let tmp = tempdir().unwrap();
+    let result = create_archive(
+        &tmp.path().join("nonexistent"),
+        &tmp.path().join("out.tar.gz"),
+        ArchiveFormat::TarGz,
+    );
+    assert!(matches!(result, Err(ArchiveError::SourceNotFound(_))));
+}
+
+#[test]
+fn test_create_archive_nonexistent_source_7z_returns_error() {
+    let tmp = tempdir().unwrap();
+    let result = create_archive(
+        &tmp.path().join("nonexistent"),
+        &tmp.path().join("out.7z"),
+        ArchiveFormat::SevenZ,
+    );
+    assert!(matches!(result, Err(ArchiveError::SourceNotFound(_))));
+}
+
+#[test]
 fn test_extract_zip_nonexistent_archive_returns_error() {
     let tmp = tempdir().unwrap();
     let result = extract_zip(&tmp.path().join("nonexistent.zip"), &tmp.path().join("out"));

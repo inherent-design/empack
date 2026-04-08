@@ -154,6 +154,20 @@ fn successful_process_output() -> ProcessOutput {
     }
 }
 
+fn restricted_mods_process_output(mod_name: &str, url: &str, dest_path: &str) -> ProcessOutput {
+    ProcessOutput {
+        stdout: format!(
+            "Failed to download modpack, the following errors were encountered:\n{}:",
+            mod_name
+        ),
+        stderr: format!(
+            "java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.\nPlease go to {} and save this file to {}\n\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)",
+            url, dest_path
+        ),
+        success: false,
+    }
+}
+
 #[test]
 fn test_build_registry() {
     let registry = BuildOrchestrator::create_build_registry();
@@ -462,6 +476,307 @@ fn test_clean_target_removes_all_archive_formats() {
     assert!(!filesystem.exists(&workdir.join("dist").join("TestPack-v1.0.0-client.zip")));
     assert!(!filesystem.exists(&workdir.join("dist").join("TestPack-v1.0.0-client.tar.gz")));
     assert!(!filesystem.exists(&workdir.join("dist").join("TestPack-v1.0.0-client.7z")));
+}
+
+#[test]
+fn test_download_server_jar_skips_when_srv_exists() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let dist_dir = mock.workdir().join("dist").join("server");
+    mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
+    mock.session
+        .filesystem()
+        .write_bytes(&dist_dir.join("srv.jar"), b"preexisting server jar")
+        .unwrap();
+
+    let pack_info = PackInfo {
+        author: "A".to_string(),
+        name: "P".to_string(),
+        version: "1.0.0".to_string(),
+        mc_version: "1.21.1".to_string(),
+        loader_version: "21.4.157".to_string(),
+        loader_type: "unsupported".to_string(),
+    };
+
+    let result = orchestrator.download_server_jar(&dist_dir, &pack_info);
+    assert!(result.is_ok());
+    assert!(mock.session.filesystem().exists(&dist_dir.join("srv.jar")));
+    assert!(mock.session.process_provider.get_calls_for_command("java").is_empty());
+}
+
+#[test]
+fn test_install_neoforge_server_reports_installer_execution_failure() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "NeoForgeTestPack"
+author = "Test Author"
+version = "1.0.0"
+
+[versions]
+minecraft = "1.21.1"
+neoforge = "21.4.157"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        );
+
+    let installer_path = dist_dir.join("neoforge-21.4.157-installer.jar");
+    let mock_process = MockProcessProvider::new().with_result(
+        "java".to_string(),
+        vec![
+            "-jar".to_string(),
+            installer_path.to_string_lossy().to_string(),
+            "--install-server".to_string(),
+            dist_dir.to_string_lossy().to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: String::new(),
+            stderr: "NeoForge installer exited with code 1".to_string(),
+            success: false,
+        }),
+    );
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(mock_process);
+    session.filesystem().create_dir_all(&dist_dir).unwrap();
+    session
+        .filesystem()
+        .write_bytes(&installer_path, b"installer bytes")
+        .unwrap();
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let pack_info = orchestrator.load_pack_info().unwrap().clone();
+    let result = orchestrator.install_neoforge_server(&dist_dir, &pack_info);
+
+    match result {
+        Err(BuildError::CommandFailed { command }) => {
+            assert!(command.contains("neoforge installer failed"));
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_install_forge_server_reports_installer_execution_failure() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "ForgeTestPack"
+author = "Test Author"
+version = "1.0.0"
+
+[versions]
+minecraft = "1.21.1"
+forge = "49.2.0"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        );
+
+    let installer_path = dist_dir.join("forge-1.21.1-49.2.0-installer.jar");
+    let mock_process = MockProcessProvider::new().with_result(
+        "java".to_string(),
+        vec![
+            "-jar".to_string(),
+            installer_path.to_string_lossy().to_string(),
+            "--installServer".to_string(),
+            dist_dir.to_string_lossy().to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: String::new(),
+            stderr: "Forge installer exited with code 1".to_string(),
+            success: false,
+        }),
+    );
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(mock_process);
+    session.filesystem().create_dir_all(&dist_dir).unwrap();
+    session
+        .filesystem()
+        .write_bytes(&installer_path, b"installer bytes")
+        .unwrap();
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let pack_info = orchestrator.load_pack_info().unwrap().clone();
+    let result = orchestrator.install_forge_server(&dist_dir, &pack_info);
+
+    match result {
+        Err(BuildError::CommandFailed { command }) => {
+            assert!(command.contains("forge installer failed"));
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_build_client_full_returns_restricted_mods_without_archiving() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("client-full");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "RestrictedPack"
+author = "Test Author"
+version = "1.0.0"
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        );
+
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+    let pack_toml_path = dist_dir.join("pack").join("pack.toml");
+    let mock_process = MockProcessProvider::new().with_result(
+        "java".to_string(),
+        vec![
+            "-jar".to_string(),
+            bootstrap_jar_path.to_string_lossy().to_string(),
+            "--bootstrap-main-jar".to_string(),
+            installer_jar_path.to_string_lossy().to_string(),
+            "-g".to_string(),
+            "-s".to_string(),
+            "both".to_string(),
+            pack_toml_path.to_string_lossy().to_string(),
+        ],
+        Ok(restricted_mods_process_output(
+            "OptiFine.jar",
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/download/999",
+            "/tmp/pack/.minecraft/mods/OptiFine.jar",
+        )),
+    );
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(mock_process);
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let result = orchestrator
+        .build_client_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap();
+
+    assert!(!result.success);
+    assert_eq!(result.target, BuildTarget::ClientFull);
+    assert_eq!(result.restricted_mods.len(), 1);
+    assert_eq!(result.restricted_mods[0].name, "OptiFine.jar");
+    assert!(result.output_path.is_none());
+    assert!(session
+        .filesystem()
+        .exists(&dist_dir.join("pack").join("pack.toml")));
+    assert!(!session
+        .filesystem()
+        .exists(&workdir.join("dist").join("RestrictedPack-v1.0.0-client-full.zip")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_build_server_full_returns_restricted_mods_without_archiving() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server-full");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "RestrictedServerPack"
+author = "Test Author"
+version = "1.0.0"
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_deferred_file(
+            dist_dir.clone(),
+            "srv.jar".to_string(),
+            "preexisting server jar".to_string(),
+        );
+
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+    let pack_toml_path = dist_dir.join("pack").join("pack.toml");
+    let mock_process = MockProcessProvider::new().with_result(
+        "java".to_string(),
+        vec![
+            "-jar".to_string(),
+            bootstrap_jar_path.to_string_lossy().to_string(),
+            "--bootstrap-main-jar".to_string(),
+            installer_jar_path.to_string_lossy().to_string(),
+            "-g".to_string(),
+            "-s".to_string(),
+            "server".to_string(),
+            pack_toml_path.to_string_lossy().to_string(),
+        ],
+        Ok(restricted_mods_process_output(
+            "ServerCore.jar",
+            "https://www.curseforge.com/minecraft/mc-mods/servercore/download/111",
+            "/tmp/pack/.minecraft/mods/ServerCore.jar",
+        )),
+    );
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(mock_process);
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let result = orchestrator
+        .build_server_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap();
+
+    assert!(!result.success);
+    assert_eq!(result.target, BuildTarget::ServerFull);
+    assert_eq!(result.restricted_mods.len(), 1);
+    assert_eq!(result.restricted_mods[0].name, "ServerCore.jar");
+    assert!(result.output_path.is_none());
+    assert!(session.filesystem().exists(&dist_dir.join("srv.jar")));
+    assert!(!session
+        .filesystem()
+        .exists(&workdir.join("dist").join("RestrictedServerPack-v1.0.0-server-full.zip")));
 }
 
 #[tokio::test(flavor = "current_thread")]

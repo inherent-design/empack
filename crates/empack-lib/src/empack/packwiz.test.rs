@@ -457,6 +457,58 @@ fn test_packwiz_unavailable() {
     }
 }
 
+#[test]
+fn test_packwiz_env_override_existing_path_is_used() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let override_path = temp_dir.path().join("custom-packwiz-tx");
+    std::fs::write(&override_path, b"stub").unwrap();
+
+    let _guard = TestEnvGuard::set("EMPACK_PACKWIZ_BIN", override_path.to_str().unwrap());
+
+    let workdir = mock_root().join("workdir");
+    let expected_pack_file = workdir.join("pack").join("pack.toml");
+    let expected_pack_file_str = expected_pack_file.to_string_lossy().to_string();
+    let mock_process = MockProcessProvider::new().with_result(
+        override_path.to_string_lossy().to_string(),
+        vec![
+            "--pack-file".to_string(),
+            expected_pack_file_str.clone(),
+            "modrinth".to_string(),
+            "add".to_string(),
+            "--project-id".to_string(),
+            "AANobbMI".to_string(),
+            "-y".to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: "Added Sodium".to_string(),
+            stderr: String::new(),
+            success: true,
+        }),
+    );
+
+    let session = MockCommandSession::new()
+        .with_process(mock_process)
+        .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir.clone()));
+
+    let mut metadata = PackwizMetadata::new(&session).unwrap();
+    let result = metadata.add_mod("AANobbMI", ProjectPlatform::Modrinth);
+
+    assert!(result.is_ok());
+    assert!(session.process_provider.verify_call(
+        override_path.to_str().unwrap(),
+        &[
+            "--pack-file",
+            expected_pack_file_str.as_str(),
+            "modrinth",
+            "add",
+            "--project-id",
+            "AANobbMI",
+            "-y"
+        ],
+        &workdir.join("pack")
+    ));
+}
+
 /// RAII guard that sets an environment variable for the duration of a test
 /// and restores the previous value on drop.
 struct TestEnvGuard {
@@ -778,6 +830,32 @@ fn test_get_packwiz_version_returns_none_without_mod_line() {
 }
 
 #[test]
+fn test_get_packwiz_version_returns_none_on_command_failure() {
+    let workdir = mock_root().join("workdir");
+    let packwiz_path = mock_root()
+        .join("bin")
+        .join(PACKWIZ_BIN)
+        .to_string_lossy()
+        .to_string();
+
+    let process = MockProcessProvider::new().with_result(
+        "go".to_string(),
+        vec![
+            "version".to_string(),
+            "-m".to_string(),
+            packwiz_path.clone(),
+        ],
+        Ok(ProcessOutput {
+            stdout: String::new(),
+            stderr: "go: failed to inspect binary".to_string(),
+            success: false,
+        }),
+    );
+
+    assert_eq!(get_packwiz_version(&process, &packwiz_path, &workdir), None);
+}
+
+#[test]
 fn test_cached_packwiz_check() {
     let mock_process = MockProcessProvider::new()
         .with_packwiz_result(
@@ -842,6 +920,45 @@ fn test_cached_packwiz_check() {
     // Both calls should succeed - the important behavior is that the second
     // call doesn't fail due to check_packwiz being called again
     assert!(result1.is_ok() && result2.is_ok());
+}
+
+#[test]
+fn test_refresh_index_reports_generic_failure() {
+    let mock_process = MockProcessProvider::new().with_packwiz_result(
+        vec![
+            "--pack-file".to_string(),
+            mock_root()
+                .join("workdir")
+                .join("pack")
+                .join("pack.toml")
+                .to_string_lossy()
+                .to_string(),
+            "refresh".to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: String::new(),
+            stderr: "permission denied".to_string(),
+            success: false,
+        }),
+    );
+
+    let session = MockCommandSession::new()
+        .with_process(mock_process)
+        .with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
+        );
+
+    let mut metadata = PackwizMetadata::new(&session).unwrap();
+    let result = metadata.refresh_index();
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        PackwizError::CommandFailed { command, stderr } => {
+            assert_eq!(command, "packwiz refresh");
+            assert_eq!(stderr, "permission denied");
+        }
+        other => panic!("Expected CommandFailed error, got: {:?}", other),
+    }
 }
 
 /// Test: Packwiz parser robustness - malformed pack.toml handling

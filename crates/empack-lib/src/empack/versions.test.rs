@@ -587,6 +587,13 @@ fn test_sort_versions_desc_two_component() {
     assert_eq!(versions, vec!["1.21", "1.20", "1.19"]);
 }
 
+#[test]
+fn test_sort_versions_desc_parseable_before_unparseable() {
+    let mut versions = vec!["1.0.0".to_string(), "invalid".to_string()];
+    sort_versions_desc(&mut versions);
+    assert_eq!(versions, vec!["1.0.0", "invalid"]);
+}
+
 // ---------------------------------------------------------------------------
 // ModLoader conversion
 // ---------------------------------------------------------------------------
@@ -664,6 +671,52 @@ fn test_fallback_loader_versions_quilt() {
 fn test_fallback_loader_versions_unknown_loader() {
     let versions = VersionFetcher::get_fallback_loader_versions("unknown", "1.20.1");
     assert_eq!(versions, vec!["latest"], "unknown loader should fall back to [\"latest\"]");
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_version_fetcher_uses_fallbacks_when_http_client_is_unavailable() {
+    let network = MockNetworkProvider::new().with_failing_http_client();
+    let filesystem = MockFileSystemProvider::new();
+    let fetcher = VersionFetcher::new(&network, &filesystem).unwrap();
+
+    assert_eq!(
+        fetcher.fetch_minecraft_versions().await.unwrap(),
+        VersionFetcher::get_fallback_minecraft_versions()
+    );
+    assert_eq!(
+        fetcher.fetch_fabric_loader_versions("1.21.1").await.unwrap(),
+        VersionFetcher::get_fallback_loader_versions("fabric", "1.21.1")
+    );
+    assert_eq!(
+        fetcher.fetch_neoforge_loader_versions("1.21.1").await.unwrap(),
+        VersionFetcher::get_fallback_loader_versions("neoforge", "1.21.1")
+    );
+    assert_eq!(
+        fetcher.fetch_neoforge_loader_versions("1.20.1").await.unwrap(),
+        VersionFetcher::get_fallback_loader_versions("neoforge", "1.20.1")
+    );
+    assert_eq!(
+        fetcher.fetch_forge_loader_versions("1.21").await.unwrap(),
+        VersionFetcher::get_fallback_loader_versions("forge", "1.21")
+    );
+    assert_eq!(
+        fetcher.fetch_forge_loader_versions("1.20.5").await.unwrap(),
+        VersionFetcher::get_fallback_loader_versions("forge", "1.20.5")
+    );
+    assert_eq!(
+        fetcher.fetch_quilt_loader_versions("1.21.1").await.unwrap(),
+        VersionFetcher::get_fallback_loader_versions("quilt", "1.21.1")
+    );
+    assert_eq!(
+        fetcher.fetch_compatible_loaders("1.21.1").await.unwrap(),
+        vec![
+            ModLoader::NeoForge,
+            ModLoader::Fabric,
+            ModLoader::Forge,
+            ModLoader::Quilt
+        ]
+    );
 }
 
 // ---------------------------------------------------------------------------

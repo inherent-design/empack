@@ -1258,3 +1258,72 @@ fn test_interrupted_clean_rejects_refresh_index() {
         "RefreshIndex should NOT be allowed from Interrupted {{ was: Cleaning }}"
     );
 }
+
+#[test]
+fn test_discover_state_rejects_invalid_marker_content() {
+    let workdir = mock_root().join("invalid-marker");
+    let provider = MockStateProvider::new();
+    provider.add_directory(workdir.clone());
+    provider.add_file_with_content(
+        workdir.join(".empack-state"),
+        "totally-invalid".to_string(),
+    );
+
+    let err = discover_state(&provider, &workdir).unwrap_err();
+    match err {
+        StateError::IoError { source } => {
+            assert!(source.to_string().contains("Unknown state marker content"));
+        }
+        other => panic!("expected IoError for invalid marker content, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_validate_state_layout_accepts_nested_interrupted_states() {
+    let workdir = mock_root().join("nested-interrupted");
+    let provider = MockStateProvider::new();
+    provider.add_directory(workdir.clone());
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_directory(workdir.join("pack"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_file(workdir.join("pack").join("index.toml"));
+    provider.add_directory(artifact_root(&workdir));
+    provider.add_build_artifact(artifact_root(&workdir).join("test.mrpack"));
+
+    let nested = PackState::Interrupted {
+        was: Box::new(PackState::Interrupted {
+            was: Box::new(PackState::Built),
+        }),
+    };
+
+    assert!(validate_state_layout(&provider, &workdir, &nested));
+}
+
+#[tokio::test]
+async fn test_clean_recovers_built_state_from_interrupted_marker() {
+    let workdir = mock_root().join("clean-interrupted-built");
+    let provider = MockStateProvider::new();
+    let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
+    provider.add_directory(workdir.clone());
+    provider.add_file(workdir.join("empack.yml"));
+    provider.add_directory(workdir.join("pack"));
+    provider.add_file(workdir.join("pack").join("pack.toml"));
+    provider.add_file(workdir.join("pack").join("index.toml"));
+    provider.add_directory(artifact_root(&workdir));
+    provider.add_build_artifact(artifact_root(&workdir).join("test.mrpack"));
+    provider.add_file_with_content(workdir.join(".empack-state"), "building".to_string());
+
+    let result = execute_transition(
+        &provider,
+        &process,
+        &packwiz,
+        &workdir,
+        StateTransition::Clean,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.state, PackState::Configured);
+    assert!(!provider.exists(&workdir.join(".empack-state")));
+}

@@ -726,4 +726,112 @@ fn detect_memory_info_windows() -> Result<(u64, u64), PlatformError> {
 #[cfg(test)]
 mod tests {
     include!("mod.test.rs");
+
+    #[cfg(target_os = "macos")]
+    fn write_script(path: &std::path::Path, contents: &str) {
+        std::fs::write(path, contents).expect("write script");
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(path, perms).expect("set executable");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_system_resources_uses_memory_pressure_percentage() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let memory_pressure = temp.path().join("memory_pressure");
+        write_script(
+            &memory_pressure,
+            "#!/bin/sh\nprintf 'System-wide memory free percentage: 50.0%%\\n'\n",
+        );
+
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+        let resources = SystemResources::detect().expect("detect resources");
+        let expected = (resources.total_memory as f64 * 0.5) as u64;
+
+        assert_eq!(resources.available_memory, expected);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_system_resources_uses_memory_pressure_status_fallback() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let memory_pressure = temp.path().join("memory_pressure");
+        write_script(&memory_pressure, "#!/bin/sh\nprintf 'normal\\n'\n");
+
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+        let resources = SystemResources::detect().expect("detect resources");
+        let expected = (resources.total_memory as f64 * 0.8) as u64;
+
+        assert_eq!(resources.available_memory, expected);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_system_resources_uses_memory_pressure_warn_status_fallback() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let memory_pressure = temp.path().join("memory_pressure");
+        write_script(&memory_pressure, "#!/bin/sh\nprintf 'warn\\n'\n");
+
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+        let resources = SystemResources::detect().expect("detect resources");
+        let expected = (resources.total_memory as f64 * 0.3) as u64;
+
+        assert_eq!(resources.available_memory, expected);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_system_resources_uses_memory_pressure_urgent_status_fallback() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let memory_pressure = temp.path().join("memory_pressure");
+        write_script(&memory_pressure, "#!/bin/sh\nprintf 'urgent\\n'\n");
+
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+        let resources = SystemResources::detect().expect("detect resources");
+        let expected = (resources.total_memory as f64 * 0.1) as u64;
+
+        assert_eq!(resources.available_memory, expected);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_system_resources_uses_vm_stat_fallback() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let memory_pressure = temp.path().join("memory_pressure");
+        write_script(&memory_pressure, "#!/bin/sh\nprintf 'unrelated\\n'\n");
+
+        let vm_stat = temp.path().join("vm_stat");
+        write_script(
+            &vm_stat,
+            "#!/bin/sh\nprintf 'Pages active: 10.\\nPages free: 50.\\nPages inactive: 150.\\nPages wired down: 5.\\n'\n",
+        );
+
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+        let resources = SystemResources::detect().expect("detect resources");
+        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        assert!(page_size > 0);
+        let expected_available = ((50 + (150 / 2)) as u64) * page_size as u64;
+
+        assert_eq!(resources.available_memory, expected_available);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_system_resources_uses_mach_fallback_when_commands_are_missing() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+
+        let resources = SystemResources::detect().expect("detect resources");
+
+        assert!(resources.total_memory > 0);
+        assert!(resources.available_memory <= resources.total_memory);
+    }
 }

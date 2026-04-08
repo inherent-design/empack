@@ -1,4 +1,4 @@
-use empack_tests::e2e::{TestProject, empack_cmd};
+use empack_tests::e2e::{TestProject, empack_cmd, write_local_mrpack};
 
 /// Download a file via HTTP to a local path using reqwest blocking.
 fn download_file(url: &str, dest: &std::path::Path) {
@@ -78,6 +78,80 @@ fn e2e_import_modrinth_and_build_mrpack() {
         .filter_map(Result::ok)
         .any(|entry| entry.path().extension().is_some_and(|ext| ext == "mrpack"));
     assert!(has_mrpack, "no .mrpack file found in dist/");
+}
+
+#[test]
+fn e2e_import_local_mrpack_and_build_mrpack() {
+    empack_tests::skip_if_no_packwiz!();
+    empack_tests::skip_if_no_java!();
+
+    let project = TestProject::new();
+    let mrpack_path = project.dir().join("local-fixture.mrpack");
+
+    write_local_mrpack(
+        &mrpack_path,
+        "local-fixture-pack",
+        "2.1.0",
+        "1.21.1",
+        "fabric-loader",
+        "0.15.11",
+    )
+    .expect("failed to create local mrpack fixture");
+
+    let output = empack_cmd(project.dir())
+        .args([
+            "init",
+            "--from",
+            mrpack_path.to_str().unwrap(),
+            "--yes",
+            "imported-pack",
+        ])
+        .output()
+        .expect("failed to spawn empack init --from");
+
+    assert!(
+        output.status.success(),
+        "empack init --from failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let pack_dir = project.dir().join("imported-pack");
+    let config =
+        std::fs::read_to_string(pack_dir.join("empack.yml")).expect("failed to read empack.yml");
+    assert!(
+        config.contains("name: local-fixture-pack"),
+        "empack.yml should import the mrpack pack name\n{config}"
+    );
+    assert!(
+        config.contains("loader: fabric"),
+        "empack.yml should import the mrpack loader\n{config}"
+    );
+    assert!(
+        pack_dir.join("pack").join("pack.toml").exists(),
+        "pack/pack.toml not found after local import"
+    );
+
+    let build_output = empack_cmd(&pack_dir)
+        .args(["build", "mrpack"])
+        .output()
+        .expect("failed to spawn empack build mrpack");
+
+    assert!(
+        build_output.status.success(),
+        "empack build mrpack failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&build_output.stdout),
+        String::from_utf8_lossy(&build_output.stderr),
+    );
+
+    let dist = pack_dir.join("dist");
+    assert!(dist.is_dir(), "dist/ directory not found after build");
+
+    let imported_mrpack = dist.join("local-fixture-pack-v2.1.0.mrpack");
+    assert!(
+        imported_mrpack.exists(),
+        "no imported .mrpack file found in dist/"
+    );
 }
 
 #[test]
