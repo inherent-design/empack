@@ -381,6 +381,52 @@ mod handle_init_tests {
     }
 
     #[tokio::test]
+    async fn it_applies_interactive_text_inputs_to_generated_config() {
+        let workdir = mock_root().join("interactive-project");
+        let target_dir = workdir.join("interactive-test");
+        let interactive = MockInteractiveProvider::new()
+            .queue_text("my-test-pack")
+            .queue_text("Test Author")
+            .queue_text("1.0.0")
+            .queue_text("")
+            .queue_confirm(true);
+        let session = MockCommandSession::new()
+            .with_filesystem(MockFileSystemProvider::new().with_current_dir(workdir))
+            .with_interactive(interactive);
+
+        let result = handle_init(
+            &session,
+            &InitArgs {
+                dir: Some("interactive-test".to_string()),
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                loader_version: Some("0.15.0".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok(), "interactive init should succeed: {result:?}");
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("empack.yml"))
+            .unwrap();
+        assert!(empack_yml.contains("name: my-test-pack"));
+        assert!(empack_yml.contains("author: Test Author"));
+
+        let pack_toml = session
+            .filesystem()
+            .read_to_string(&target_dir.join("pack").join("pack.toml"))
+            .unwrap();
+        assert!(pack_toml.contains("name = \"my-test-pack\""));
+        assert!(pack_toml.contains("author = \"Test Author\""));
+        assert!(pack_toml.contains("version = \"1.0.0\""));
+        assert!(pack_toml.contains("minecraft = \"1.21.1\""));
+        assert!(pack_toml.contains("fabric = \"0.15.0\""));
+    }
+
+    #[tokio::test]
     async fn it_refuses_to_overwrite_existing_without_force() {
         let workdir = mock_root().join("existing-project");
         let session = configured_session(&workdir);
