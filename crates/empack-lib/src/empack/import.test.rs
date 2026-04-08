@@ -4,9 +4,168 @@ use std::io::Write;
 use tempfile::NamedTempFile;
 
 use super::*;
+#[cfg(feature = "test-utils")]
+use crate::application::session::NetworkProvider;
 use crate::empack::content::{OverrideCategory, OverrideSide, SideEnv, SideRequirement};
 use crate::empack::parsing::ModLoader;
+#[cfg(feature = "test-utils")]
+use crate::empack::search::ProjectResolverTrait;
+#[cfg(feature = "test-utils")]
+use crate::networking::rate_budget::{
+    FixedWindowBudget, HeaderDrivenBudget, HostBudgetRegistry, RateBudget,
+};
 use crate::primitives::ProjectPlatform;
+#[cfg(feature = "test-utils")]
+use reqwest::StatusCode;
+#[cfg(feature = "test-utils")]
+use reqwest::header::HeaderMap;
+#[cfg(feature = "test-utils")]
+use std::sync::atomic::{AtomicU32, Ordering};
+#[cfg(feature = "test-utils")]
+use std::sync::{Arc, Mutex};
+#[cfg(feature = "test-utils")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "test-utils")]
+#[derive(Default)]
+struct RecordingBudget {
+    acquire_calls: AtomicU32,
+    record_calls: AtomicU32,
+    last_status: Mutex<Option<StatusCode>>,
+    last_remaining: Mutex<Option<u32>>,
+}
+
+#[cfg(feature = "test-utils")]
+impl RateBudget for RecordingBudget {
+    fn record_response(&self, headers: &HeaderMap, status: StatusCode) {
+        self.record_calls.fetch_add(1, Ordering::Relaxed);
+        *self.last_status.lock().unwrap() = Some(status);
+        *self.last_remaining.lock().unwrap() = headers
+            .get("x-ratelimit-remaining")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u32>().ok());
+    }
+
+    fn acquire(&self) -> Duration {
+        self.acquire_calls.fetch_add(1, Ordering::Relaxed);
+        Duration::ZERO
+    }
+
+    fn is_exhausted(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "test-utils")]
+struct TestNetworkProvider {
+    client: reqwest::Client,
+    budgets: HostBudgetRegistry,
+}
+
+#[cfg(feature = "test-utils")]
+impl TestNetworkProvider {
+    fn new() -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            budgets: HostBudgetRegistry::empty(),
+        }
+    }
+}
+
+#[cfg(feature = "test-utils")]
+impl NetworkProvider for TestNetworkProvider {
+    fn http_client(&self) -> Result<reqwest::Client> {
+        Ok(self.client.clone())
+    }
+
+    fn project_resolver(
+        &self,
+        _client: reqwest::Client,
+        _curseforge_api_key: Option<String>,
+    ) -> Box<dyn ProjectResolverTrait + Send + Sync> {
+        panic!("project_resolver is not used in import rate-budget tests")
+    }
+
+    fn rate_budgets(&self) -> &HostBudgetRegistry {
+        &self.budgets
+    }
+}
+
+#[cfg(feature = "test-utils")]
+fn registry_with_budget(host: &str, budget: Arc<dyn RateBudget>) -> HostBudgetRegistry {
+    HostBudgetRegistry::with_budgets(HashMap::from([(host.to_string(), budget)]))
+}
+
+#[cfg(feature = "test-utils")]
+fn test_api_bases(modrinth: &str, curseforge: &str) -> ResolveApiBases {
+    ResolveApiBases {
+        modrinth: modrinth.to_string(),
+        curseforge: curseforge.to_string(),
+    }
+}
+
+#[cfg(feature = "test-utils")]
+fn modrinth_pref(project_id: &str) -> PlatformRef {
+    PlatformRef {
+        destination_path: format!("mods/{project_id}.jar"),
+        platform: ProjectPlatform::Modrinth,
+        project_id: project_id.to_string(),
+        file_id: None,
+        hashes: HashMap::new(),
+        download_urls: Vec::new(),
+        env: SideEnv {
+            client: SideRequirement::Required,
+            server: SideRequirement::Required,
+        },
+        required: true,
+        resolved_name: None,
+        resolved_slug: None,
+        resolved_type: None,
+        cf_class_id: None,
+    }
+}
+
+#[cfg(feature = "test-utils")]
+fn curseforge_pref(project_id: &str, file_id: Option<&str>) -> PlatformRef {
+    PlatformRef {
+        destination_path: format!("mods/{project_id}.jar"),
+        platform: ProjectPlatform::CurseForge,
+        project_id: project_id.to_string(),
+        file_id: file_id.map(str::to_string),
+        hashes: HashMap::new(),
+        download_urls: Vec::new(),
+        env: SideEnv {
+            client: SideRequirement::Required,
+            server: SideRequirement::Required,
+        },
+        required: true,
+        resolved_name: None,
+        resolved_slug: None,
+        resolved_type: None,
+        cf_class_id: None,
+    }
+}
+
+#[cfg(feature = "test-utils")]
+fn manifest_with_content(content: Vec<ContentEntry>) -> ModpackManifest {
+    ModpackManifest {
+        identity: PackIdentity {
+            name: "Test Pack".to_string(),
+            version: "1.0.0".to_string(),
+            author: None,
+            summary: None,
+        },
+        target: RuntimeTarget {
+            minecraft_version: "1.20.1".to_string(),
+            loader: ModLoader::Fabric,
+            loader_version: "0.16.0".to_string(),
+        },
+        content,
+        overrides: Vec::new(),
+        source_platform: ProjectPlatform::Modrinth,
+        archive_path: std::path::PathBuf::from("/tmp/test.mrpack"),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // CurseForge manifest parsing
@@ -1109,4 +1268,261 @@ fn test_classify_override_options_variants() {
     assert_eq!(classify_override("optionsof.txt"), OverrideCategory::ClientConfig);
     // optionsshaders.txt does not match the optionsof.txt pattern
     assert_eq!(classify_override("optionsshaders.txt"), OverrideCategory::Other);
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_modrinth_project_records_headers_and_metadata() {
+    let mut server = mockito::Server::new_async().await;
+    let version_mock = server
+        .mock("GET", "/v2/version_file/deadbeef")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "algorithm".to_string(),
+            "sha1".to_string(),
+        ))
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "5")
+        .with_header("x-ratelimit-limit", "300")
+        .with_header("x-ratelimit-reset", "1")
+        .with_body(r#"{"id":"version-123"}"#)
+        .create_async()
+        .await;
+    let project_mock = server
+        .mock("GET", "/v2/project/AANobbMI")
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "4")
+        .with_header("x-ratelimit-limit", "300")
+        .with_header("x-ratelimit-reset", "1")
+        .with_body(r#"{"title":"Sodium","slug":"sodium","project_type":"mod"}"#)
+        .create_async()
+        .await;
+
+    let mut pref = modrinth_pref("AANobbMI");
+    pref.hashes
+        .insert("sha1".to_string(), "deadbeef".to_string());
+
+    let budget = Arc::new(RecordingBudget::default());
+    let budget_trait: Arc<dyn RateBudget> = budget.clone();
+    let api_bases = test_api_bases(&server.url(), &server.url());
+    let client = reqwest::Client::new();
+    let mut warnings = Vec::new();
+
+    resolve_modrinth_project_with_client(
+        &mut pref,
+        &client,
+        &api_bases,
+        &mut warnings,
+        Some(&budget_trait),
+    )
+    .await;
+
+    assert_eq!(pref.file_id.as_deref(), Some("version-123"));
+    assert_eq!(pref.resolved_name.as_deref(), Some("Sodium"));
+    assert_eq!(pref.resolved_slug.as_deref(), Some("sodium"));
+    assert_eq!(pref.resolved_type, Some(crate::primitives::ProjectType::Mod));
+    assert!(warnings.is_empty());
+    assert_eq!(budget.acquire_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(budget.record_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(*budget.last_status.lock().unwrap(), Some(StatusCode::OK));
+    assert_eq!(*budget.last_remaining.lock().unwrap(), Some(4));
+
+    version_mock.assert_async().await;
+    project_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_curseforge_file_ids_records_budget_and_maps_results() {
+    let mut server = mockito::Server::new_async().await;
+    let batch_mock = server
+        .mock("POST", "/v1/mods/files")
+        .match_header("x-api-key", "test-api-key")
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "9")
+        .with_body(r#"{"data":[{"id":67890,"modId":12345},{"id":98760,"modId":54321}]}"#)
+        .create_async()
+        .await;
+
+    let provider = TestNetworkProvider::new();
+    let budget = Arc::new(RecordingBudget::default());
+    let budget_trait: Arc<dyn RateBudget> = budget.clone();
+    let api_bases = test_api_bases(&server.url(), &server.url());
+    let mut warnings = Vec::new();
+
+    let result = resolve_curseforge_file_ids(
+        &[67890, 98760],
+        &provider,
+        Some("test-api-key"),
+        &mut warnings,
+        &api_bases,
+        Some(&budget_trait),
+    )
+    .await;
+
+    assert_eq!(result.get(&67890), Some(&12345));
+    assert_eq!(result.get(&98760), Some(&54321));
+    assert!(warnings.is_empty());
+    assert_eq!(budget.acquire_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(budget.record_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(*budget.last_status.lock().unwrap(), Some(StatusCode::OK));
+    assert_eq!(*budget.last_remaining.lock().unwrap(), Some(9));
+
+    batch_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_manifest_shares_curseforge_budget_across_file_lookup_and_project_lookup() {
+    let mut server = mockito::Server::new_async().await;
+    let batch_mock = server
+        .mock("POST", "/v1/mods/files")
+        .match_header("x-api-key", "test-api-key")
+        .with_status(200)
+        .with_body(r#"{"data":[{"id":67890,"modId":12345}]}"#)
+        .create_async()
+        .await;
+    let project_mock = server
+        .mock("GET", "/v1/mods/12345")
+        .match_header("x-api-key", "test-api-key")
+        .with_status(200)
+        .with_body(r#"{"data":{"name":"Sodium","slug":"sodium","classId":6}}"#)
+        .create_async()
+        .await;
+
+    let provider = TestNetworkProvider::new();
+    let display = crate::display::LiveDisplayProvider::new();
+    let budget: Arc<dyn RateBudget> = Arc::new(FixedWindowBudget::new(1, Duration::from_secs(2)));
+    let registry = registry_with_budget("api.curseforge.com", budget);
+    let api_bases = test_api_bases(&server.url(), &server.url());
+    let manifest = manifest_with_content(vec![ContentEntry::PlatformReferenced(curseforge_pref(
+        "",
+        Some("67890"),
+    ))]);
+
+    let start = Instant::now();
+    let resolved = resolve_manifest_with_api_bases(
+        manifest,
+        &provider,
+        &provider,
+        Some("test-api-key"),
+        &display,
+        &registry,
+        api_bases,
+    )
+    .await
+    .unwrap();
+    let elapsed = start.elapsed();
+
+    assert!(elapsed >= Duration::from_millis(900));
+    assert!(resolved.warnings.is_empty());
+
+    match &resolved.manifest.content[0] {
+        ContentEntry::PlatformReferenced(pref) => {
+            assert_eq!(pref.project_id, "12345");
+            assert_eq!(pref.resolved_name.as_deref(), Some("Sodium"));
+            assert_eq!(pref.resolved_slug.as_deref(), Some("sodium"));
+            assert_eq!(pref.resolved_type, Some(crate::primitives::ProjectType::Mod));
+        }
+        _ => panic!("expected platform reference"),
+    }
+
+    batch_mock.assert_async().await;
+    project_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_resolve_manifest_concurrent_modrinth_requests_share_budget_without_429s() {
+    let mut server = mockito::Server::new_async().await;
+
+    let version_mock = server
+        .mock("GET", "/v2/version_file/deadbeef")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "algorithm".to_string(),
+            "sha1".to_string(),
+        ))
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "5")
+        .with_header("x-ratelimit-limit", "300")
+        .with_header("x-ratelimit-reset", "1")
+        .with_body(r#"{"id":"version-1"}"#)
+        .create_async()
+        .await;
+
+    let mut project_mocks = Vec::new();
+    let mut content = Vec::new();
+    for index in 0..12 {
+        let project_id = format!("project-{index:02}");
+        project_mocks.push(
+            server
+                .mock("GET", format!("/v2/project/{project_id}").as_str())
+                .with_status(200)
+                .with_header("x-ratelimit-remaining", "5")
+                .with_header("x-ratelimit-limit", "300")
+                .with_header("x-ratelimit-reset", "1")
+                .with_body(
+                    serde_json::json!({
+                        "title": format!("Project {index:02}"),
+                        "slug": format!("project-{index:02}"),
+                        "project_type": "mod"
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await,
+        );
+
+        let mut pref = modrinth_pref(&project_id);
+        if index == 0 {
+            pref.hashes
+                .insert("sha1".to_string(), "deadbeef".to_string());
+        }
+        content.push(ContentEntry::PlatformReferenced(pref));
+    }
+
+    let provider = TestNetworkProvider::new();
+    let display = crate::display::LiveDisplayProvider::new();
+    let budget: Arc<dyn RateBudget> = Arc::new(HeaderDrivenBudget::new(300));
+    let registry = registry_with_budget("api.modrinth.com", budget);
+    let api_bases = test_api_bases(&server.url(), &server.url());
+    let manifest = manifest_with_content(content);
+
+    let start = Instant::now();
+    let resolved = resolve_manifest_with_api_bases(
+        manifest,
+        &provider,
+        &provider,
+        None,
+        &display,
+        &registry,
+        api_bases,
+    )
+    .await
+    .unwrap();
+    let elapsed = start.elapsed();
+
+    assert!(elapsed >= Duration::from_millis(450));
+    assert!(resolved.warnings.is_empty());
+    assert_eq!(resolved.manifest.content.len(), 12);
+
+    for (index, entry) in resolved.manifest.content.iter().enumerate() {
+        match entry {
+            ContentEntry::PlatformReferenced(pref) => {
+                let expected_name = format!("Project {index:02}");
+                let expected_slug = format!("project-{index:02}");
+                assert_eq!(pref.resolved_name.as_deref(), Some(expected_name.as_str()));
+                assert_eq!(pref.resolved_slug.as_deref(), Some(expected_slug.as_str()));
+                assert_eq!(pref.resolved_type, Some(crate::primitives::ProjectType::Mod));
+                if index == 0 {
+                    assert_eq!(pref.file_id.as_deref(), Some("version-1"));
+                }
+            }
+            _ => panic!("expected platform reference"),
+        }
+    }
+
+    version_mock.assert_async().await;
+    for project_mock in project_mocks {
+        project_mock.assert_async().await;
+    }
 }
