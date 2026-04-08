@@ -48,6 +48,42 @@ pub fn has_cf_key() -> bool {
     std::env::var("EMPACK_KEY_CURSEFORGE").is_ok()
 }
 
+#[cfg(windows)]
+fn set_windows_env_if_missing(cmd: &mut Command, key: &str, fallback: &Path) {
+    if let Some(value) = std::env::var_os(key) {
+        cmd.env(key, value);
+    } else {
+        cmd.env(key, fallback);
+    }
+}
+
+fn configure_command_env(cmd: &mut Command, workdir: &Path) {
+    cmd.env("NO_COLOR", "1");
+
+    #[cfg(windows)]
+    {
+        let local_app_data = workdir.join(".windows-localappdata");
+        let roaming_app_data = workdir.join(".windows-appdata");
+        let user_profile = workdir.join(".windows-userprofile");
+        let temp_dir = workdir.join(".windows-temp");
+
+        std::fs::create_dir_all(&local_app_data).expect("create LOCALAPPDATA fallback");
+        std::fs::create_dir_all(&roaming_app_data).expect("create APPDATA fallback");
+        std::fs::create_dir_all(&user_profile).expect("create USERPROFILE fallback");
+        std::fs::create_dir_all(&temp_dir).expect("create TEMP fallback");
+
+        set_windows_env_if_missing(cmd, "LOCALAPPDATA", &local_app_data);
+        set_windows_env_if_missing(cmd, "LocalAppData", &local_app_data);
+        set_windows_env_if_missing(cmd, "APPDATA", &roaming_app_data);
+        set_windows_env_if_missing(cmd, "USERPROFILE", &user_profile);
+        set_windows_env_if_missing(cmd, "TEMP", &temp_dir);
+        set_windows_env_if_missing(cmd, "TMP", &temp_dir);
+    }
+
+    #[cfg(not(windows))]
+    let _ = workdir;
+}
+
 /// Return early from a test when packwiz is not in PATH.
 #[macro_export]
 macro_rules! skip_if_no_packwiz {
@@ -127,7 +163,7 @@ impl TestProject {
     pub fn cmd(&self) -> Command {
         let mut cmd = Command::new(empack_bin());
         cmd.current_dir(&self.root);
-        cmd.env("NO_COLOR", "1");
+        configure_command_env(&mut cmd, &self.root);
         cmd
     }
 
@@ -149,6 +185,50 @@ impl TestProject {
 pub fn empack_assert_cmd() -> assert_cmd::Command {
     let mut cmd = assert_cmd::Command::new(empack_bin());
     cmd.env("NO_COLOR", "1");
+    #[cfg(windows)]
+    {
+        let workdir = std::env::current_dir().expect("current dir");
+        let local_app_data = workdir.join(".windows-localappdata");
+        let roaming_app_data = workdir.join(".windows-appdata");
+        let user_profile = workdir.join(".windows-userprofile");
+        let temp_dir = workdir.join(".windows-temp");
+
+        std::fs::create_dir_all(&local_app_data).expect("create LOCALAPPDATA fallback");
+        std::fs::create_dir_all(&roaming_app_data).expect("create APPDATA fallback");
+        std::fs::create_dir_all(&user_profile).expect("create USERPROFILE fallback");
+        std::fs::create_dir_all(&temp_dir).expect("create TEMP fallback");
+
+        if let Some(value) = std::env::var_os("LOCALAPPDATA") {
+            cmd.env("LOCALAPPDATA", value);
+        } else {
+            cmd.env("LOCALAPPDATA", &local_app_data);
+        }
+        if let Some(value) = std::env::var_os("LocalAppData") {
+            cmd.env("LocalAppData", value);
+        } else {
+            cmd.env("LocalAppData", &local_app_data);
+        }
+        if let Some(value) = std::env::var_os("APPDATA") {
+            cmd.env("APPDATA", value);
+        } else {
+            cmd.env("APPDATA", &roaming_app_data);
+        }
+        if let Some(value) = std::env::var_os("USERPROFILE") {
+            cmd.env("USERPROFILE", value);
+        } else {
+            cmd.env("USERPROFILE", &user_profile);
+        }
+        if let Some(value) = std::env::var_os("TEMP") {
+            cmd.env("TEMP", value);
+        } else {
+            cmd.env("TEMP", &temp_dir);
+        }
+        if let Some(value) = std::env::var_os("TMP") {
+            cmd.env("TMP", value);
+        } else {
+            cmd.env("TMP", &temp_dir);
+        }
+    }
     cmd
 }
 
@@ -156,7 +236,7 @@ pub fn empack_assert_cmd() -> assert_cmd::Command {
 pub fn empack_cmd(workdir: &Path) -> Command {
     let mut cmd = Command::new(empack_bin());
     cmd.current_dir(workdir);
-    cmd.env("NO_COLOR", "1");
+    configure_command_env(&mut cmd, workdir);
     cmd
 }
 
