@@ -209,7 +209,10 @@ impl RateBudget for FixedWindowBudget {
             let mut state = self.state.lock().expect("fixed window budget poisoned");
             Self::maybe_reset_window(&mut state, now, self.window_duration_secs);
             if state.window_start > now {
-                state.window_start = now;
+                // Future-window reservations already encode current-window
+                // exhaustion. Rewinding would invalidate callers that already
+                // reserved those future slots and are sleeping until that window.
+                return;
             }
             state.reserved_in_window = self.max_per_window;
         }
@@ -615,6 +618,27 @@ mod tests {
 
         let delay = budget.acquire();
         assert!(delay >= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn fixed_budget_403_preserves_future_window_reservations() {
+        let budget = FixedWindowBudget::new(10, Duration::from_secs(60));
+        let now = FixedWindowBudget::now_secs();
+        *budget.state.lock().unwrap() = FixedWindowState {
+            window_start: now + 60,
+            reserved_in_window: 3,
+        };
+
+        budget.record_response(&HeaderMap::new(), StatusCode::FORBIDDEN);
+
+        let state = *budget.state.lock().unwrap();
+        assert_eq!(
+            state,
+            FixedWindowState {
+                window_start: now + 60,
+                reserved_in_window: 3,
+            }
+        );
     }
 
     #[test]
