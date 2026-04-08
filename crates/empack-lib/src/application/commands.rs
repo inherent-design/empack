@@ -5,7 +5,9 @@
 
 use crate::Result;
 use crate::application::cli::{BuildArgs, CliProjectType, InitArgs, SearchPlatform};
-use crate::application::session::{CommandSession, FileSystemProvider, Session};
+use crate::application::session::{
+    CommandSession, FileSystemProvider, Session, execute_process_with_live_issues,
+};
 use crate::application::sync::{
     AddContractError, AddResolution, SyncExecutionAction, SyncPlanAction, build_sync_plan,
     loader_arg, project_type_arg, resolve_add_contract, resolve_sync_action,
@@ -64,7 +66,18 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             project_type,
             version_id,
             file_id,
-        } => handle_add(session, mods, force, platform, project_type, version_id, file_id).await,
+        } => {
+            handle_add(
+                session,
+                mods,
+                force,
+                platform,
+                project_type,
+                version_id,
+                file_id,
+            )
+            .await
+        }
         Commands::Remove { mods, deps } => handle_remove(session, mods, deps).await,
         Commands::Build(args) => handle_build(session, &args).await,
         Commands::Clean { targets } => handle_clean(session, targets).await,
@@ -833,13 +846,12 @@ async fn handle_init_from_source(
         .section("Importing modpack from source");
 
     // _tmp_dir must be held alive until execute_import finishes reading the archive
-    let (manifest, _tmp_dir, _archive_path) = if source.starts_with("http://")
-        || source.starts_with("https://")
-    {
-        import_from_remote(session, source).await?
-    } else {
-        import_from_local(session, source)?
-    };
+    let (manifest, _tmp_dir, _archive_path) =
+        if source.starts_with("http://") || source.starts_with("https://") {
+            import_from_remote(session, source).await?
+        } else {
+            import_from_local(session, source)?
+        };
 
     // Phase A: Resolve target_dir
     let base_dir = session.config().app_config().workdir.clone().unwrap_or(
@@ -853,18 +865,13 @@ async fn handle_init_from_source(
         base_dir.join(dir_arg)
     } else {
         // Sanitize manifest name to prevent path traversal from untrusted modpack metadata
-        let safe_name = manifest
-            .identity
-            .name
-            .replace(['/', '\\', '.'], "_");
+        let safe_name = manifest.identity.name.replace(['/', '\\', '.'], "_");
         base_dir.join(&safe_name)
     };
 
     if session.filesystem().exists(&target_dir) {
-        let manager = crate::empack::state::PackStateManager::new(
-            target_dir.clone(),
-            session.filesystem(),
-        );
+        let manager =
+            crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
         let current_state = manager.discover_state()?;
         if current_state != PackState::Uninitialized && !force {
             session
@@ -911,6 +918,7 @@ async fn handle_init_from_source(
         curseforge_api,
         cf_api_key.as_deref(),
         session.display(),
+        session.network().rate_budgets(),
     )
     .await?;
 
@@ -922,10 +930,10 @@ async fn handle_init_from_source(
         let content_count = resolved.manifest.content.len();
         let override_count = resolved.manifest.overrides.len();
         session.display().status().section("Dry Run Summary");
-        session
-            .display()
-            .status()
-            .info(&format!("Would import {} platform references", content_count));
+        session.display().status().info(&format!(
+            "Would import {} platform references",
+            content_count
+        ));
         session
             .display()
             .status()
@@ -962,7 +970,8 @@ async fn handle_init_from_source(
     }
     if result.stats.platform_skipped > 0 {
         session.display().status().subtle(&format!(
-            "  Skipped (no identifier): {}", result.stats.platform_skipped
+            "  Skipped (no identifier): {}",
+            result.stats.platform_skipped
         ));
     }
     session.display().status().info(&format!(
@@ -1048,9 +1057,8 @@ async fn import_from_remote(
     session: &dyn Session,
     source: &str,
 ) -> Result<(ModpackManifest, Option<tempfile::TempDir>, PathBuf)> {
-    let url_kind = crate::empack::content::classify_url(source).map_err(|e| {
-        crate::empack::import::ImportError::UnrecognizedSource(e.to_string())
-    })?;
+    let url_kind = crate::empack::content::classify_url(source)
+        .map_err(|e| crate::empack::import::ImportError::UnrecognizedSource(e.to_string()))?;
 
     match url_kind {
         UrlKind::ModrinthModpack { slug, version } => {
@@ -1059,14 +1067,10 @@ async fn import_from_remote(
             Ok((manifest, Some(tmp_dir), path))
         }
         UrlKind::CurseForgeModpack { slug } => {
-            let (manifest, tmp_dir, path) =
-                download_curseforge_modpack(session, &slug).await?;
+            let (manifest, tmp_dir, path) = download_curseforge_modpack(session, &slug).await?;
             Ok((manifest, Some(tmp_dir), path))
         }
-        _ => Err(crate::empack::import::ImportError::UnrecognizedSource(
-            source.to_string(),
-        )
-        .into()),
+        _ => Err(crate::empack::import::ImportError::UnrecognizedSource(source.to_string()).into()),
     }
 }
 
@@ -1082,10 +1086,7 @@ async fn download_modrinth_modpack(
 
     let client = session.network().http_client()?;
 
-    let version_url = format!(
-        "https://api.modrinth.com/v2/project/{}/version",
-        slug
-    );
+    let version_url = format!("https://api.modrinth.com/v2/project/{}/version", slug);
 
     let response = client
         .get(&version_url)
@@ -1131,10 +1132,7 @@ async fn download_modrinth_modpack(
         .iter()
         .find(|f| {
             let primary = f.get("primary").and_then(|p| p.as_bool()).unwrap_or(false);
-            let name = f
-                .get("filename")
-                .and_then(|n| n.as_str())
-                .unwrap_or("");
+            let name = f.get("filename").and_then(|n| n.as_str()).unwrap_or("");
             primary || name.ends_with(".mrpack")
         })
         .or_else(|| files.first())
@@ -1185,7 +1183,9 @@ async fn download_curseforge_modpack(
         .app_config()
         .curseforge_api_client_key
         .clone()
-        .ok_or_else(|| anyhow::anyhow!("CurseForge API key required for remote modpack download"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("CurseForge API key required for remote modpack download")
+        })?;
 
     // Resolve slug to project ID via search
     let search_url = format!(
@@ -1217,7 +1217,10 @@ async fn download_curseforge_modpack(
         name: String,
     }
 
-    let search_data: SearchData = search_resp.json().await.context("failed to parse CurseForge search response")?;
+    let search_data: SearchData = search_resp
+        .json()
+        .await
+        .context("failed to parse CurseForge search response")?;
     let project = search_data
         .data
         .first()
@@ -1257,7 +1260,10 @@ async fn download_curseforge_modpack(
         download_url: Option<String>,
     }
 
-    let files_data: FilesData = files_resp.json().await.context("failed to parse CurseForge files response")?;
+    let files_data: FilesData = files_resp
+        .json()
+        .await
+        .context("failed to parse CurseForge files response")?;
     let file = files_data
         .data
         .first()
@@ -1284,7 +1290,8 @@ async fn download_curseforge_modpack(
                 "CurseForge modpack '{}' has restricted downloads. \
                  Download the .zip manually from https://www.curseforge.com/minecraft/modpacks/{} \
                  and pass the local path to --from.",
-                project.name, slug
+                project.name,
+                slug
             );
         }
 
@@ -1292,13 +1299,17 @@ async fn download_curseforge_modpack(
         struct DlData {
             data: String,
         }
-        let dl_data: DlData = dl_resp.json().await.context("failed to parse download URL response")?;
+        let dl_data: DlData = dl_resp
+            .json()
+            .await
+            .context("failed to parse download URL response")?;
         if dl_data.data.is_empty() {
             anyhow::bail!(
                 "CurseForge modpack '{}' has restricted downloads. \
                  Download the .zip manually from https://www.curseforge.com/minecraft/modpacks/{} \
                  and pass the local path to --from.",
-                project.name, slug
+                project.name,
+                slug
             );
         }
         dl_data.data
@@ -1448,8 +1459,7 @@ async fn handle_add(
 
         match resolution_intent.kind.clone() {
             AddIntentKind::Search => {
-                let minecraft_version =
-                    project_plan.as_ref().map(|p| p.minecraft_version.as_str());
+                let minecraft_version = project_plan.as_ref().map(|p| p.minecraft_version.as_str());
                 let mod_loader = project_plan.as_ref().and_then(|p| p.loader);
 
                 let direct_project_id =
@@ -1458,11 +1468,8 @@ async fn handle_add(
                     .direct_platform
                     .unwrap_or(ProjectPlatform::Modrinth);
 
-                let version_pin = derive_version_pin(
-                    &version_id,
-                    &file_id,
-                    resolution_intent.direct_platform,
-                );
+                let version_pin =
+                    derive_version_pin(&version_id, &file_id, resolution_intent.direct_platform);
 
                 let search_project_type = project_type.as_ref().map(|pt| pt.to_project_type());
                 match resolve_add_contract(
@@ -1479,18 +1486,14 @@ async fn handle_add(
                 .await
                 {
                     Ok(resolution) => {
-                        let status_label =
-                            if resolution_intent.direct_project_id.is_some() {
-                                "Using direct project ID"
-                            } else {
-                                "Found"
-                            };
+                        let status_label = if resolution_intent.direct_project_id.is_some() {
+                            "Using direct project ID"
+                        } else {
+                            "Found"
+                        };
                         session.display().status().success(
                             status_label,
-                            &format!(
-                                "{} on {}",
-                                resolution.title, resolution.resolved_platform
-                            ),
+                            &format!("{} on {}", resolution.title, resolution.resolved_platform),
                         );
                         if let Some(confidence) = resolution.confidence {
                             session
@@ -1507,10 +1510,7 @@ async fn handle_add(
                             continue;
                         }
 
-                        if !force
-                            && batch_project_ids
-                                .contains(&resolution.resolved_project_id)
-                        {
+                        if !force && batch_project_ids.contains(&resolution.resolved_project_id) {
                             session.display().status().warning(&format!(
                                 "Duplicate in batch: {} (already queued for addition)",
                                 resolution.title
@@ -1518,8 +1518,7 @@ async fn handle_add(
                             continue;
                         }
 
-                        batch_project_ids
-                            .insert(resolution.resolved_project_id.clone());
+                        batch_project_ids.insert(resolution.resolved_project_id.clone());
                         let dep_key = mod_query.to_lowercase().replace(' ', "-");
                         resolved_mods.push(ResolvedMod {
                             query: mod_query,
@@ -1554,10 +1553,7 @@ async fn handle_add(
                     Ok(resolution) => {
                         session.display().status().success(
                             "Found",
-                            &format!(
-                                "{} on {}",
-                                resolution.title, resolution.resolved_platform
-                            ),
+                            &format!("{} on {}", resolution.title, resolution.resolved_platform),
                         );
 
                         if !force && dep_graph.contains(&resolution.resolved_project_id) {
@@ -1568,10 +1564,7 @@ async fn handle_add(
                             continue;
                         }
 
-                        if !force
-                            && batch_project_ids
-                                .contains(&resolution.resolved_project_id)
-                        {
+                        if !force && batch_project_ids.contains(&resolution.resolved_project_id) {
                             session.display().status().warning(&format!(
                                 "Duplicate in batch: {} (already queued for addition)",
                                 resolution.title
@@ -1579,8 +1572,7 @@ async fn handle_add(
                             continue;
                         }
 
-                        batch_project_ids
-                            .insert(resolution.resolved_project_id.clone());
+                        batch_project_ids.insert(resolution.resolved_project_id.clone());
                         let dep_key = slug.to_lowercase();
                         resolved_mods.push(ResolvedMod {
                             query: mod_query,
@@ -1597,13 +1589,19 @@ async fn handle_add(
                     }
                 }
             }
-            AddIntentKind::DirectDownload { ref url, ref extension } => {
+            AddIntentKind::DirectDownload {
+                ref url,
+                ref extension,
+            } => {
                 if extension != "jar" {
                     let msg = format!(
                         "Adding non-JAR files via URL is not yet supported (got .{extension}). \
                          For .jar files, the file will be identified and added automatically."
                     );
-                    session.display().status().error("Unsupported file type", &msg);
+                    session
+                        .display()
+                        .status()
+                        .error("Unsupported file type", &msg);
                     failed_mods.push((mod_query, msg));
                     continue;
                 }
@@ -1617,28 +1615,26 @@ async fn handle_add(
                     s
                 };
 
-                match handle_direct_download_jar(
-                    session,
-                    url,
-                    resolver.as_ref(),
-                )
-                .await
-                {
+                match handle_direct_download_jar(session, url, resolver.as_ref()).await {
                     Ok(resolution) => {
-                        session.display().status().success(
-                            "Added",
-                            &resolution.title,
-                        );
-                        if !resolution.local && let Some(ref pid) = resolution.project_id {
+                        session
+                            .display()
+                            .status()
+                            .success("Added", &resolution.title);
+                        if !resolution.local
+                            && let Some(ref pid) = resolution.project_id
+                        {
                             let after_dd_slugs = {
                                 let mut s = std::collections::HashSet::new();
-                                for folder in &["mods", "resourcepacks", "shaderpacks", "datapacks"] {
+                                for folder in &["mods", "resourcepacks", "shaderpacks", "datapacks"]
+                                {
                                     let dir = workdir.join("pack").join(folder);
                                     s.extend(scan_pw_toml_slugs(session.filesystem(), &dir));
                                 }
                                 s
                             };
-                            let new_dd: Vec<_> = after_dd_slugs.difference(&before_dd_slugs).collect();
+                            let new_dd: Vec<_> =
+                                after_dd_slugs.difference(&before_dd_slugs).collect();
                             let dep_key = if new_dd.len() == 1 {
                                 new_dd[0].clone()
                             } else {
@@ -1653,13 +1649,11 @@ async fn handle_add(
                                 project_type: resolution.project_type,
                                 version: None,
                             };
-                            if let Err(e) =
-                                config_manager.add_dependency(&dep_key, record)
-                            {
-                                session.display().status().warning(&format!(
-                                    "Failed to update empack.yml: {}",
-                                    e
-                                ));
+                            if let Err(e) = config_manager.add_dependency(&dep_key, record) {
+                                session
+                                    .display()
+                                    .status()
+                                    .warning(&format!("Failed to update empack.yml: {}", e));
                             }
                         }
                         added_mods.push(mod_query);
@@ -1715,9 +1709,11 @@ async fn handle_add(
         let mut packwiz_result: std::result::Result<(), ()> = Ok(());
         let mut last_error = None;
         for command in &resolved.resolution.commands {
-            match session.process().execute(
+            let args = command.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+            match execute_process_with_live_issues(
+                session,
                 session.packwiz_bin(),
-                &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                &args,
                 &workdir.join("pack"),
             ) {
                 Ok(output) if output.success => {
@@ -1727,7 +1723,10 @@ async fn handle_add(
                 }
                 Ok(output) => {
                     packwiz_result = Err(());
-                    last_error = Some(anyhow::anyhow!("Packwiz command failed: {}", output.error_output()));
+                    last_error = Some(anyhow::anyhow!(
+                        "Packwiz command failed: {}",
+                        output.error_output()
+                    ));
                 }
                 Err(error) => {
                     packwiz_result = Err(());
@@ -2002,10 +2001,9 @@ impl AddResolutionIntent {
                 Some(mod_query.to_string()),
                 Some(ProjectPlatform::CurseForge),
             ),
-            Some(ProjectPlatform::Modrinth) => (
-                Some(mod_query.to_string()),
-                Some(ProjectPlatform::Modrinth),
-            ),
+            Some(ProjectPlatform::Modrinth) => {
+                (Some(mod_query.to_string()), Some(ProjectPlatform::Modrinth))
+            }
             None => (None, None),
         };
 
@@ -2093,7 +2091,6 @@ struct ResolvedMod {
     dep_key: String,
 }
 
-
 fn derive_version_pin<'a>(
     version_id: &'a Option<String>,
     file_id: &'a Option<String>,
@@ -2138,9 +2135,7 @@ async fn resolve_curseforge_slug(
     let api_key = curseforge_api_key
         .ok_or_else(|| anyhow::anyhow!("CurseForge API key required for slug resolution"))?;
 
-    let search_url = format!(
-        "https://api.curseforge.com/v1/mods/search?gameId=432&slug={slug}"
-    );
+    let search_url = format!("https://api.curseforge.com/v1/mods/search?gameId=432&slug={slug}");
 
     let response = client
         .get(&search_url)
@@ -2167,9 +2162,11 @@ async fn resolve_curseforge_slug(
     }
 
     let body: CfSearchResponse = response.json().await?;
-    let entry = body.data.into_iter().next().ok_or_else(|| {
-        anyhow::anyhow!("CurseForge project not found for slug '{}'", slug)
-    })?;
+    let entry = body
+        .data
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("CurseForge project not found for slug '{}'", slug))?;
 
     let project_id = entry.id.to_string();
     let version_pin = file_id_override.or(version_pin_override);
@@ -2194,7 +2191,10 @@ async fn handle_direct_download_jar(
     url: &str,
     _resolver: &dyn crate::empack::search::ProjectResolverTrait,
 ) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
-    session.display().status().info(&format!("Downloading JAR from {}", url));
+    session
+        .display()
+        .status()
+        .info(&format!("Downloading JAR from {}", url));
 
     let client = session.network().http_client()?;
     let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
@@ -2208,10 +2208,7 @@ async fn handle_direct_download_jar(
         compute_sha1_hex_for_bytes(&bytes)
     };
 
-    session
-        .display()
-        .status()
-        .info(&format!("SHA-1: {}", sha1));
+    session.display().status().info(&format!("SHA-1: {}", sha1));
 
     let cf_key = session
         .config()
@@ -2240,10 +2237,10 @@ async fn handle_direct_download_jar(
             version_id,
             title,
         } => {
-            session.display().status().success(
-                "Identified",
-                &format!("{} on Modrinth", title),
-            );
+            session
+                .display()
+                .status()
+                .success("Identified", &format!("{} on Modrinth", title));
 
             let commands = crate::application::sync::build_packwiz_add_commands(
                 &project_id,
@@ -2252,9 +2249,11 @@ async fn handle_direct_download_jar(
             )?;
 
             let command = &commands[0];
-            let result = session.process().execute(
+            let args = command.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+            let result = execute_process_with_live_issues(
+                session,
                 session.packwiz_bin(),
-                &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                &args,
                 &workdir.join("pack"),
             );
             if let Ok(output) = result {
@@ -2278,10 +2277,10 @@ async fn handle_direct_download_jar(
             file_id,
             title,
         } => {
-            session.display().status().success(
-                "Identified",
-                &format!("{} on CurseForge", title),
-            );
+            session
+                .display()
+                .status()
+                .success("Identified", &format!("{} on CurseForge", title));
 
             let pid_str = project_id.to_string();
             let fid_str = file_id.to_string();
@@ -2292,9 +2291,11 @@ async fn handle_direct_download_jar(
             )?;
 
             let command = &commands[0];
-            let result = session.process().execute(
+            let args = command.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+            let result = execute_process_with_live_issues(
+                session,
                 session.packwiz_bin(),
-                &command.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                &args,
                 &workdir.join("pack"),
             );
             if let Ok(output) = result {
@@ -2478,7 +2479,10 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                 if output.success {
                     Ok(())
                 } else {
-                    Err(anyhow::anyhow!("Packwiz command failed: {}", output.error_output()))
+                    Err(anyhow::anyhow!(
+                        "Packwiz command failed: {}",
+                        output.error_output()
+                    ))
                 }
             });
 
@@ -2576,7 +2580,11 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                     for orphan in orphans {
                         let result = session
                             .process()
-                            .execute(session.packwiz_bin(), &["remove", "-y", &orphan], &workdir.join("pack"))
+                            .execute(
+                                session.packwiz_bin(),
+                                &["remove", "-y", &orphan],
+                                &workdir.join("pack"),
+                            )
                             .and_then(|output| {
                                 if output.success {
                                     Ok(())
@@ -2820,16 +2828,16 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     };
 
     if !all_restricted.is_empty() {
-        session
-            .display()
-            .status()
-            .section(&format!(
-                "Build incomplete: {} mod(s) require manual download",
-                all_restricted.len()
-            ));
+        session.display().status().section(&format!(
+            "Build incomplete: {} mod(s) require manual download",
+            all_restricted.len()
+        ));
 
         for rm in &all_restricted {
-            session.display().status().warning(&format!("  {}", rm.name));
+            session
+                .display()
+                .status()
+                .warning(&format!("  {}", rm.name));
             session
                 .display()
                 .status()
@@ -2849,10 +2857,10 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| crate::platform::home_dir().join("Downloads"));
 
-        session
-            .display()
-            .status()
-            .info(&format!("Scanning {} for downloaded files...", dl_dir.display()));
+        session.display().status().info(&format!(
+            "Scanning {} for downloaded files...",
+            dl_dir.display()
+        ));
 
         let mut remaining: Vec<&crate::empack::packwiz::RestrictedModInfo> = Vec::new();
         for rm in &all_restricted {
@@ -2866,20 +2874,23 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
                 if let Some(parent) = dest.parent() {
                     let _ = session.filesystem().create_dir_all(parent);
                 }
-                match session.filesystem().read_bytes(&candidate)
+                match session
+                    .filesystem()
+                    .read_bytes(&candidate)
                     .and_then(|bytes| session.filesystem().write_bytes(dest, &bytes))
                 {
                     Ok(_) => {
-                        session
-                            .display()
-                            .status()
-                            .success("Placed", &format!("{} → {}", candidate.display(), rm.dest_path));
+                        session.display().status().success(
+                            "Placed",
+                            &format!("{} → {}", candidate.display(), rm.dest_path),
+                        );
                     }
                     Err(e) => {
-                        session
-                            .display()
-                            .status()
-                            .warning(&format!("Failed to copy {}: {}", candidate.display(), e));
+                        session.display().status().warning(&format!(
+                            "Failed to copy {}: {}",
+                            candidate.display(),
+                            e
+                        ));
                         remaining.push(rm);
                     }
                 }
@@ -2935,18 +2946,17 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
                 for rm in &remaining {
                     let mut args: Vec<&str> = prefix_args.clone();
                     args.push(&rm.url);
-                    let _ = session.process().execute(cmd, &args, std::path::Path::new("."));
+                    let _ = session
+                        .process()
+                        .execute(cmd, &args, std::path::Path::new("."));
                 }
             }
         }
 
-        session
-            .display()
-            .status()
-            .info(&format!(
-                "Download files and place in: {} (or use --downloads-dir)",
-                dl_dir.display()
-            ));
+        session.display().status().info(&format!(
+            "Download files and place in: {} (or use --downloads-dir)",
+            dl_dir.display()
+        ));
         session
             .display()
             .status()
@@ -3419,7 +3429,10 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let mut success_count = 0;
     let mut failure_count = 0;
     let use_no_refresh = planned_actions.len() > 1;
-    let sync_progress = session.display().progress().bar(planned_actions.len() as u64);
+    let sync_progress = session
+        .display()
+        .progress()
+        .bar(planned_actions.len() as u64);
     if !planned_actions.is_empty() {
         sync_progress.set_message("Syncing");
     }
@@ -3445,9 +3458,11 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         args.push("--no-refresh".to_string());
                     }
                     args.extend(command.iter().cloned());
-                    match session.process().execute(
+                    let arg_refs = args.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+                    match execute_process_with_live_issues(
+                        session,
                         session.packwiz_bin(),
-                        &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                        &arg_refs,
                         &workdir.join("pack"),
                     ) {
                         Ok(output) if output.success => {
@@ -3457,8 +3472,10 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         }
                         Ok(output) => {
                             result = Err(());
-                            last_error =
-                                Some(anyhow::anyhow!("Packwiz command failed: {}", output.error_output()));
+                            last_error = Some(anyhow::anyhow!(
+                                "Packwiz command failed: {}",
+                                output.error_output()
+                            ));
                         }
                         Err(error) => {
                             result = Err(());
@@ -3496,7 +3513,10 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         if output.success {
                             Ok(())
                         } else {
-                            Err(anyhow::anyhow!("Packwiz command failed: {}", output.error_output()))
+                            Err(anyhow::anyhow!(
+                                "Packwiz command failed: {}",
+                                output.error_output()
+                            ))
                         }
                     });
                 match result {
@@ -3516,16 +3536,18 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         }
         sync_progress.inc();
     }
-    sync_progress.finish(&format!("{} actions completed", success_count + failure_count));
+    sync_progress.finish(&format!(
+        "{} actions completed",
+        success_count + failure_count
+    ));
 
     if use_no_refresh {
-        let refresh_output = session
-            .process()
-            .execute(
-                session.packwiz_bin(),
-                &["refresh"],
-                &workdir.join("pack"),
-            )?;
+        let refresh_output = execute_process_with_live_issues(
+            session,
+            session.packwiz_bin(),
+            &["refresh"],
+            &workdir.join("pack"),
+        )?;
         if !refresh_output.success {
             anyhow::bail!("packwiz refresh failed: {}", refresh_output.error_output());
         }

@@ -1,4 +1,4 @@
-use empack_tests::e2e::{empack_assert_cmd, TestProject};
+use empack_tests::e2e::{TestProject, empack_assert_cmd};
 use predicates::prelude::*;
 
 macro_rules! e2e_init_modloader {
@@ -11,9 +11,12 @@ macro_rules! e2e_init_modloader {
             let output = project
                 .cmd()
                 .args([
-                    "init", "--yes",
-                    "--modloader", $loader,
-                    "--mc-version", "1.21.1",
+                    "init",
+                    "--yes",
+                    "--modloader",
+                    $loader,
+                    "--mc-version",
+                    "1.21.1",
                     concat!("test-", $loader),
                 ])
                 .output()

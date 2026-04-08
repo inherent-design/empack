@@ -1,4 +1,4 @@
-use empack_tests::e2e::{empack_assert_cmd, empack_bin, empack_cmd, TestProject};
+use empack_tests::e2e::{TestProject, empack_assert_cmd, empack_bin, empack_cmd};
 use predicates::prelude::*;
 
 #[test]
@@ -12,10 +12,7 @@ fn e2e_version_output() {
 
 #[test]
 fn e2e_help_exits_zero() {
-    empack_assert_cmd()
-        .arg("--help")
-        .assert()
-        .success();
+    empack_assert_cmd().arg("--help").assert().success();
 }
 
 #[test]
@@ -51,12 +48,11 @@ fn e2e_telemetry_chrome_trace() {
     );
     let has_trace = std::fs::read_dir(project.dir())
         .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .any(|e| {
-                    e.file_name()
-                        .to_str()
-                        .is_some_and(|n| n.starts_with("trace-") && n.ends_with(".json"))
-                })
+            rd.filter_map(|e| e.ok()).any(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| n.starts_with("trace-") && n.ends_with(".json"))
+            })
         })
         .unwrap_or(false);
     if !has_trace {

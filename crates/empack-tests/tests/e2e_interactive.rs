@@ -1,4 +1,4 @@
-use empack_tests::e2e::{empack_bin, TestProject};
+use empack_tests::e2e::{TestProject, empack_bin};
 use expectrl::{Expect, Regex, Session};
 use std::process::Command;
 use std::time::Duration;
@@ -30,7 +30,9 @@ fn e2e_init_interactive_prompts() {
     let _ = session
         .expect(Regex("(?i)modpack.*name|name"))
         .expect("expected modpack name prompt");
-    session.send_line("").expect("failed to accept default name");
+    session
+        .send_line("")
+        .expect("failed to accept default name");
 
     // Prompt 2: Author (dialoguer Input, default: git user.name)
     let _ = session
@@ -141,12 +143,16 @@ fn e2e_init_interactive_responds_to_prompts() {
     let _ = session
         .expect(Regex("(?i)version"))
         .expect("expected version prompt");
-    session.send_line("").expect("failed to accept default version");
+    session
+        .send_line("")
+        .expect("failed to accept default version");
 
     // Prompt 4: Datapack folder (text_input, skip by sending empty)
     match session.expect(Regex("(?i)datapack|folder")) {
         Ok(_) => {
-            session.send_line("").expect("failed to skip datapack folder");
+            session
+                .send_line("")
+                .expect("failed to skip datapack folder");
         }
         Err(_) => {
             // May jump straight to confirm if loader version fetch is fast.

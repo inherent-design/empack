@@ -8,15 +8,21 @@ fn e2e_init_yes_fabric() {
     let status = project
         .cmd()
         .args([
-            "init", "--yes", "--modloader", "fabric", "--mc-version", "1.21.1", "test-pack",
+            "init",
+            "--yes",
+            "--modloader",
+            "fabric",
+            "--mc-version",
+            "1.21.1",
+            "test-pack",
         ])
         .status()
         .expect("failed to spawn");
     assert!(status.success());
 
     let pack_dir = project.dir().join("test-pack");
-    let config = std::fs::read_to_string(pack_dir.join("empack.yml"))
-        .expect("failed to read empack.yml");
+    let config =
+        std::fs::read_to_string(pack_dir.join("empack.yml")).expect("failed to read empack.yml");
     assert!(
         config.contains("loader: fabric"),
         "empack.yml missing 'loader: fabric'\n{config}"
@@ -39,15 +45,21 @@ fn e2e_init_yes_neoforge() {
     let status = project
         .cmd()
         .args([
-            "init", "--yes", "--modloader", "neoforge", "--mc-version", "1.21.1", "test-pack",
+            "init",
+            "--yes",
+            "--modloader",
+            "neoforge",
+            "--mc-version",
+            "1.21.1",
+            "test-pack",
         ])
         .status()
         .expect("failed to spawn");
     assert!(status.success());
 
     let pack_dir = project.dir().join("test-pack");
-    let config = std::fs::read_to_string(pack_dir.join("empack.yml"))
-        .expect("failed to read empack.yml");
+    let config =
+        std::fs::read_to_string(pack_dir.join("empack.yml")).expect("failed to read empack.yml");
     assert!(
         config.contains("loader: neoforge"),
         "empack.yml missing 'loader: neoforge'\n{config}"
@@ -87,7 +99,13 @@ fn e2e_init_existing_project() {
     let status = project
         .cmd()
         .args([
-            "init", "--yes", "--modloader", "fabric", "--mc-version", "1.21.1", "test-pack",
+            "init",
+            "--yes",
+            "--modloader",
+            "fabric",
+            "--mc-version",
+            "1.21.1",
+            "test-pack",
         ])
         .status()
         .expect("failed to spawn");
@@ -96,7 +114,13 @@ fn e2e_init_existing_project() {
     let output = project
         .cmd()
         .args([
-            "init", "--yes", "--modloader", "fabric", "--mc-version", "1.21.1", "test-pack",
+            "init",
+            "--yes",
+            "--modloader",
+            "fabric",
+            "--mc-version",
+            "1.21.1",
+            "test-pack",
         ])
         .output()
         .expect("failed to spawn");
@@ -117,7 +141,13 @@ fn e2e_init_force_overwrites() {
     let status = project
         .cmd()
         .args([
-            "init", "--yes", "--modloader", "fabric", "--mc-version", "1.21.1", "test-pack",
+            "init",
+            "--yes",
+            "--modloader",
+            "fabric",
+            "--mc-version",
+            "1.21.1",
+            "test-pack",
         ])
         .status()
         .expect("failed to spawn");
@@ -126,7 +156,13 @@ fn e2e_init_force_overwrites() {
     let status = project
         .cmd()
         .args([
-            "init", "--yes", "--force", "--modloader", "fabric", "--mc-version", "1.21.1",
+            "init",
+            "--yes",
+            "--force",
+            "--modloader",
+            "fabric",
+            "--mc-version",
+            "1.21.1",
             "test-pack",
         ])
         .status()
@@ -142,7 +178,13 @@ fn e2e_init_scaffolds_templates() {
     let status = project
         .cmd()
         .args([
-            "init", "--yes", "--modloader", "fabric", "--mc-version", "1.21.1", "test-pack",
+            "init",
+            "--yes",
+            "--modloader",
+            "fabric",
+            "--mc-version",
+            "1.21.1",
+            "test-pack",
         ])
         .status()
         .expect("failed to spawn");
@@ -172,8 +214,15 @@ fn e2e_init_datapack_folder() {
     let status = project
         .cmd()
         .args([
-            "init", "--yes", "--modloader", "fabric", "--mc-version", "1.20.1",
-            "--datapack-folder", "datapacks", "test-pack",
+            "init",
+            "--yes",
+            "--modloader",
+            "fabric",
+            "--mc-version",
+            "1.20.1",
+            "--datapack-folder",
+            "datapacks",
+            "test-pack",
         ])
         .status()
         .expect("failed to spawn");
@@ -192,8 +241,8 @@ fn e2e_init_datapack_folder() {
         "pack.toml missing 'datapacks' value\n{pack_toml}"
     );
 
-    let config = std::fs::read_to_string(pack_dir.join("empack.yml"))
-        .expect("failed to read empack.yml");
+    let config =
+        std::fs::read_to_string(pack_dir.join("empack.yml")).expect("failed to read empack.yml");
     assert!(
         config.contains("datapack_folder"),
         "empack.yml missing 'datapack_folder'\n{config}"
@@ -212,7 +261,13 @@ fn e2e_init_dry_run_exits_zero() {
     let output = project
         .cmd()
         .args([
-            "init", "--dry-run", "--yes", "--modloader", "fabric", "--mc-version", "1.20.1",
+            "init",
+            "--dry-run",
+            "--yes",
+            "--modloader",
+            "fabric",
+            "--mc-version",
+            "1.20.1",
             "test-dry-run",
         ])
         .output()

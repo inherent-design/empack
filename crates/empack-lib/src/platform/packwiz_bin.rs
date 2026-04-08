@@ -80,11 +80,14 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
     let output_file = target_dir.join(&asset);
     let status = std::process::Command::new("curl")
         .args([
-            "--proto", "=https",
+            "--proto",
+            "=https",
             "--tlsv1.2",
             "-fsSL",
-            "--retry", "3",
-            "-o", &output_file.to_string_lossy(),
+            "--retry",
+            "3",
+            "-o",
+            &output_file.to_string_lossy(),
             &url,
         ])
         .status()
@@ -131,14 +134,14 @@ fn extract_tarball(data: &[u8], target_dir: &Path) -> Result<()> {
 
     let bin_name = binary_name();
 
-    for entry in archive.entries().context("failed to read tarball entries")? {
+    for entry in archive
+        .entries()
+        .context("failed to read tarball entries")?
+    {
         let mut entry = entry.context("failed to read tarball entry")?;
         let path = entry.path().context("failed to read entry path")?;
 
-        let file_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         if file_name == bin_name {
             let dest = target_dir.join(&bin_name);

@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 use tracing::{trace, warn};
 
 use super::NetworkingError;
+use super::rate_budget::RateBudget;
 
 pub use crate::primitives::ProjectPlatform as Platform;
 
@@ -32,6 +33,7 @@ pub struct RateLimitedClient {
     platform: Platform,
     backoff_config: BackoffConfig,
     current_backoff: Arc<RwLock<Duration>>,
+    budget: Option<Arc<dyn RateBudget>>,
 }
 
 impl RateLimitedClient {
@@ -42,6 +44,7 @@ impl RateLimitedClient {
             platform,
             backoff_config: BackoffConfig::default(),
             current_backoff: Arc::new(RwLock::new(BackoffConfig::default().initial)),
+            budget: None,
         }
     }
 
@@ -53,7 +56,19 @@ impl RateLimitedClient {
             platform,
             backoff_config,
             current_backoff: Arc::new(RwLock::new(initial_backoff)),
+            budget: None,
         }
+    }
+
+    /// Attach an adaptive rate budget to this client.
+    pub fn with_budget(mut self, budget: Arc<dyn RateBudget>) -> Self {
+        self.budget = Some(budget);
+        self
+    }
+
+    /// Set the adaptive rate budget on an existing client.
+    pub fn set_budget(&mut self, budget: Arc<dyn RateBudget>) {
+        self.budget = Some(budget);
     }
 
     /// Get the platform for this client
@@ -67,6 +82,13 @@ impl RateLimitedClient {
         const MAX_RETRIES: u32 = 5;
 
         loop {
+            if let Some(budget) = &self.budget {
+                let delay = budget.acquire();
+                if !delay.is_zero() {
+                    tokio::time::sleep(delay).await;
+                }
+            }
+
             // Execute the request
             let response =
                 self.client
@@ -76,6 +98,10 @@ impl RateLimitedClient {
                         }
                     })?)
                     .await?;
+
+            if let Some(budget) = &self.budget {
+                budget.record_response(response.headers(), response.status());
+            }
 
             // Check for rate limiting (429 Too Many Requests)
             if response.status() == StatusCode::TOO_MANY_REQUESTS {
@@ -155,6 +181,27 @@ impl RateLimiterManager {
         Self {
             modrinth: RateLimitedClient::new(client.clone(), Platform::Modrinth),
             curseforge: RateLimitedClient::new(client, Platform::CurseForge),
+        }
+    }
+
+    /// Create a new rate limiter manager with adaptive rate budgets.
+    pub fn new_with_budgets(
+        client: Client,
+        registry: &super::rate_budget::HostBudgetRegistry,
+    ) -> Self {
+        let mut modrinth = RateLimitedClient::new(client.clone(), Platform::Modrinth);
+        let mut curseforge = RateLimitedClient::new(client, Platform::CurseForge);
+
+        if let Some(budget) = registry.for_host("api.modrinth.com") {
+            modrinth.set_budget(budget);
+        }
+        if let Some(budget) = registry.for_host("api.curseforge.com") {
+            curseforge.set_budget(budget);
+        }
+
+        Self {
+            modrinth,
+            curseforge,
         }
     }
 

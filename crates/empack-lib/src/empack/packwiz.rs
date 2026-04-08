@@ -167,7 +167,10 @@ impl PackwizOps for LivePackwizOps<'_> {
 
         if !output.success {
             return Err(StateError::CommandFailed {
-                command: format!("packwiz refresh returned non-zero: {}", output.error_output()),
+                command: format!(
+                    "packwiz refresh returned non-zero: {}",
+                    output.error_output()
+                ),
             });
         }
 
@@ -425,15 +428,14 @@ pub fn write_pack_toml_options(
         return Ok(());
     }
 
-    let content = fs.read_to_string(pack_toml_path).map_err(|e| {
-        PackwizError::ProcessFailed {
+    let content = fs
+        .read_to_string(pack_toml_path)
+        .map_err(|e| PackwizError::ProcessFailed {
             source: std::io::Error::other(e),
-        }
-    })?;
+        })?;
 
-    let mut table: toml::Table = toml::from_str(&content).map_err(|e| {
-        PackwizError::PackFormatError(format!("failed to parse pack.toml: {e}"))
-    })?;
+    let mut table: toml::Table = toml::from_str(&content)
+        .map_err(|e| PackwizError::PackFormatError(format!("failed to parse pack.toml: {e}")))?;
 
     let options = table
         .entry("options")
@@ -869,7 +871,11 @@ impl<'a> PackwizInstaller<'a> {
     /// Downloads: Mod JARs from URLs in .pw.toml files
     /// Verifies: SHA-512 hashes
     /// Side: "both" (client+server), "client" (client-only), "server" (server-only)
-    pub fn install_mods(&self, side: &str, working_dir: &Path) -> Result<InstallResult, PackwizError> {
+    pub fn install_mods(
+        &self,
+        side: &str,
+        working_dir: &Path,
+    ) -> Result<InstallResult, PackwizError> {
         if !["both", "client", "server"].contains(&side) {
             return Err(PackwizError::CommandFailed {
                 command: format!("install_mods({})", side),

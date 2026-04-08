@@ -166,9 +166,12 @@ pub fn empack_cmd(workdir: &Path) -> Command {
 pub fn init_project(parent: &Path, name: &str, loader: &str, mc_version: &str) -> PathBuf {
     let status = empack_cmd(parent)
         .args([
-            "init", "--yes",
-            "--modloader", loader,
-            "--mc-version", mc_version,
+            "init",
+            "--yes",
+            "--modloader",
+            loader,
+            "--mc-version",
+            mc_version,
             name,
         ])
         .status()

@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use empack_tests::e2e::{count_pw_toml_files, empack_cmd, TestProject};
+use empack_tests::e2e::{TestProject, count_pw_toml_files, empack_cmd};
 
 /// Live CurseForge URL import: Cobblemon Updated (~30 mods).
 ///
