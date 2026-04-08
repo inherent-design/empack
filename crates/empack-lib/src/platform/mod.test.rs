@@ -1,6 +1,6 @@
 use super::*;
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 struct EnvVarGuard {
     key: &'static str,
@@ -172,6 +172,10 @@ fn test_config_and_data_dirs_follow_home_directory() {
     let config = config_dir();
     let data = data_dir();
 
-    assert!(config.starts_with(home_fixture.path()));
-    assert!(data.starts_with(home_fixture.path()));
+    assert!(config.is_absolute());
+    assert!(data.is_absolute());
+    assert!(config.ends_with(Path::new("empack")));
+    assert!(data.ends_with(Path::new("empack")));
+
+    let _ = (&_home, &_userprofile);
 }

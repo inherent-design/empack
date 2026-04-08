@@ -110,21 +110,26 @@ fn detect_unicode(is_tty: bool) -> Result<TerminalUnicodeCaps, TerminalError> {
         use windows_sys::Win32::Globalization::{GetACP, GetOEMCP};
         use windows_sys::Win32::System::Console::{GetConsoleCP, GetConsoleOutputCP};
 
-        unsafe {
+        let unicode = unsafe {
             let acp = GetACP();
             let oemp = GetOEMCP();
             let console_cp = GetConsoleCP();
             let console_output_cp = GetConsoleOutputCP();
 
-            if acp == 65001 || oemp == 65001 || console_cp == 65001 || console_output_cp == 65001 {
-                return Ok(TerminalUnicodeCaps::BasicUnicode);
-            }
-        }
+            acp == 65001 || oemp == 65001 || console_cp == 65001 || console_output_cp == 65001
+        };
 
-        return Ok(TerminalUnicodeCaps::Ascii);
+        return Ok(if unicode {
+            TerminalUnicodeCaps::BasicUnicode
+        } else {
+            TerminalUnicodeCaps::Ascii
+        });
     }
 
-    Ok(TerminalUnicodeCaps::Ascii)
+    #[cfg(not(windows))]
+    {
+        Ok(TerminalUnicodeCaps::Ascii)
+    }
 }
 
 #[cfg(unix)]
