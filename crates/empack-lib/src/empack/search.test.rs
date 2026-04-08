@@ -218,6 +218,50 @@ async fn test_platform_priority_preferred_curseforge_first() {
 
 #[cfg(feature = "test-utils")]
 #[tokio::test]
+async fn test_platform_priority_preferred_curseforge_falls_back_to_modrinth() {
+    let mut mr_server = mockito::Server::new_async().await;
+    let mut cf_server = mockito::Server::new_async().await;
+
+    let cf_mock = cf_server
+        .mock("GET", mockito::Matcher::Regex(r"/v1/mods/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(curseforge_empty_json())
+        .create_async()
+        .await;
+
+    let mr_mock = mr_server
+        .mock("GET", mockito::Matcher::Regex(r"/v2/search\?.*".to_string()))
+        .with_status(200)
+        .with_body(modrinth_hit_json("AANobbMI", "Sodium", 50_000))
+        .create_async()
+        .await;
+
+    let resolver = ProjectResolver::new_with_base_urls(
+        Client::new(),
+        Some("test-api-key".to_string()),
+        Some(mr_server.url()),
+        Some(cf_server.url()),
+    );
+
+    let result = resolver
+        .resolve_project(
+            "Sodium",
+            Some("mod"),
+            None,
+            None,
+            Some(ProjectPlatform::CurseForge),
+        )
+        .await
+        .expect("should fall back to Modrinth");
+
+    assert_eq!(result.platform, ProjectPlatform::Modrinth);
+    assert_eq!(result.project_id, "AANobbMI");
+    mr_mock.assert_async().await;
+    cf_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
 async fn test_platform_priority_first_fails_second_succeeds() {
     // Default order: Modrinth first → returns NoResults → falls back to CurseForge
     let mut mr_server = mockito::Server::new_async().await;

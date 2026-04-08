@@ -145,6 +145,13 @@ fn classify_unrecognized_extension() {
 }
 
 #[test]
+fn classify_url_with_trailing_dot_extension() {
+    let url = "https://example.com/file.";
+    let err = classify_url(url).unwrap_err();
+    assert!(err.to_string().contains(url));
+}
+
+#[test]
 fn classify_modrinth_modpack_with_query_string() {
     let url = "https://modrinth.com/modpack/create-above-and-beyond?query=test";
     let kind = classify_url(url).unwrap();

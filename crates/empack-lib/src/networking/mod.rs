@@ -192,4 +192,19 @@ impl NetworkingManager {
 #[cfg(test)]
 mod tests {
     include!("mod.test.rs");
+
+    #[tokio::test]
+    async fn test_networking_manager_rejects_zero_job_limit() {
+        let config = NetworkingConfig {
+            max_jobs: Some(0),
+            ..Default::default()
+        };
+
+        let result = NetworkingManager::new(config).await;
+
+        assert!(matches!(
+            result,
+            Err(NetworkingError::InvalidJobCount { count: 0 })
+        ));
+    }
 }

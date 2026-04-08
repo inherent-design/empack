@@ -221,3 +221,8 @@ impl ProgressTracker for SimpleProgressTracker {
         self.bar.finish_and_clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    include!("live.test.rs");
+}

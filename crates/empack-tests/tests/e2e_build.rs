@@ -23,6 +23,47 @@ fn e2e_build_mrpack() {
 }
 
 #[test]
+fn e2e_build_client_tar_gz() {
+    empack_tests::skip_if_no_java!();
+
+    let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
+    let status = project
+        .cmd()
+        .args(["build", "--format", "tar.gz", "client"])
+        .status()
+        .expect("failed to spawn");
+    assert!(
+        status.success(),
+        "empack build client --format tar.gz failed"
+    );
+
+    let dist = project.dir().join("dist");
+    assert!(dist.is_dir(), "dist/ directory not found");
+
+    let tar_gz = dist.join("test-pack-v1.0.0-client.tar.gz");
+    assert!(tar_gz.exists(), "no .tar.gz file found in dist/");
+}
+
+#[test]
+fn e2e_build_server_sevenz() {
+    empack_tests::skip_if_no_java!();
+
+    let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
+    let status = project
+        .cmd()
+        .args(["build", "--format", "7z", "server"])
+        .status()
+        .expect("failed to spawn");
+    assert!(status.success(), "empack build server --format 7z failed");
+
+    let dist = project.dir().join("dist");
+    assert!(dist.is_dir(), "dist/ directory not found");
+
+    let seven_z = dist.join("test-pack-v1.0.0-server.7z");
+    assert!(seven_z.exists(), "no .7z file found in dist/");
+}
+
+#[test]
 fn e2e_clean_removes_artifacts() {
     empack_tests::skip_if_no_java!();
 

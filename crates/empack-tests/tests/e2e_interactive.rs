@@ -93,15 +93,11 @@ fn e2e_init_interactive_prompts() {
 
 /// Interactive init with CLI flags that pre-fill the hard prompts.
 ///
-/// Uses `--modloader` and `--mc-version` flags to bypass FuzzySelect/Select
-/// widgets, which are unreliable under PTY. Only text_input prompts and the
-/// confirm prompt remain; these render as simple line-oriented I/O.
+/// Uses `--modloader`, `--mc-version`, and `--loader-version` flags to bypass
+/// FuzzySelect/Select widgets, which are unreliable under PTY. Only
+/// line-oriented text prompts and the confirm prompt remain.
 ///
-/// Kept as `#[ignore]` because dialoguer text_input still uses terminal raw
-/// mode and cursor control that varies by platform. Run manually with:
-/// `cargo nextest run -p empack-tests e2e_init_interactive_responds_to_prompts -- --ignored`
 #[test]
-#[ignore]
 fn e2e_init_interactive_responds_to_prompts() {
     empack_tests::skip_if_no_packwiz!();
 
@@ -115,6 +111,8 @@ fn e2e_init_interactive_responds_to_prompts() {
         "fabric",
         "--mc-version",
         "1.21.1",
+        "--loader-version",
+        "0.18.6",
         "interactive-test",
     ]);
     cmd.current_dir(project.dir());

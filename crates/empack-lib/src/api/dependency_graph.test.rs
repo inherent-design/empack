@@ -159,6 +159,24 @@ fn test_add_dependency_to_nonexistent_node() {
     ));
 }
 
+#[test]
+fn test_add_dependency_from_nonexistent_node() {
+    let mut graph = DependencyGraph::new();
+    let node = DependencyNode::new(
+        "mod-b".to_string(),
+        "Mod B".to_string(),
+        "modrinth".to_string(),
+        None,
+    );
+    graph.add_node(node);
+
+    let result = graph.add_dependency("missing", "mod-b", DependencyType::Required);
+    assert!(matches!(
+        result.unwrap_err(),
+        DependencyGraphError::NodeNotFound { mod_id } if mod_id == "missing"
+    ));
+}
+
 // ============================================================================
 // Linear Dependency Chain (A → B → C)
 // ============================================================================
@@ -231,6 +249,30 @@ fn test_linear_chain_transitive_dependencies() {
 
     let transitive = graph.get_transitive_dependencies("a").unwrap();
     assert_eq!(transitive.len(), 2); // b and c
+}
+
+#[test]
+fn test_get_dependents() {
+    let mut graph = DependencyGraph::new();
+
+    let node_a = DependencyNode::new("a".to_string(), "A".to_string(), "m".to_string(), None);
+    let node_b = DependencyNode::new("b".to_string(), "B".to_string(), "m".to_string(), None);
+    let node_c = DependencyNode::new("c".to_string(), "C".to_string(), "m".to_string(), None);
+
+    graph.add_node(node_a);
+    graph.add_node(node_b);
+    graph.add_node(node_c);
+
+    graph.add_dependency("a", "b", DependencyType::Required).unwrap();
+    graph.add_dependency("b", "c", DependencyType::Required).unwrap();
+
+    let dependents = graph.get_dependents("c").unwrap();
+    assert_eq!(dependents.len(), 1);
+    assert_eq!(dependents[0].mod_id, "b");
+
+    let dependents = graph.get_dependents("b").unwrap();
+    assert_eq!(dependents.len(), 1);
+    assert_eq!(dependents[0].mod_id, "a");
 }
 
 // ============================================================================
@@ -439,6 +481,10 @@ fn test_parse_simple_packwiz_file() {
     let node = graph.get_node("P7dR8mSH").unwrap();
     assert_eq!(node.name, "fabric-api");
     assert_eq!(node.platform, "modrinth");
+    assert_eq!(
+        node.source_path,
+        Some(temp_dir.path().join("fabric-api.pw.toml"))
+    );
 }
 
 #[test]
@@ -485,6 +531,74 @@ fn test_parse_packwiz_with_optional_dependency() {
     let deps = graph.get_dependencies(&node.mod_id).unwrap();
     assert_eq!(deps.len(), 1);
     assert_eq!(deps[0].1, DependencyType::Optional);
+}
+
+#[test]
+fn test_parse_packwiz_missing_file_returns_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
+    let missing = temp_dir.path().join("missing.pw.toml");
+
+    let result = graph.parse_packwiz_file_with(&missing, &fs);
+    assert!(matches!(
+        result.unwrap_err(),
+        DependencyGraphError::FileReadError { path, .. } if path == missing
+    ));
+}
+
+#[test]
+fn test_parse_packwiz_invalid_toml_returns_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
+
+    create_test_toml(
+        temp_dir.path(),
+        "broken.pw.toml",
+        r#"
+name = "Broken"
+[update
+"#,
+    );
+
+    let result = graph.parse_packwiz_file_with(&temp_dir.path().join("broken.pw.toml"), &fs);
+    assert!(matches!(
+        result.unwrap_err(),
+        DependencyGraphError::TomlParseError { .. }
+    ));
+}
+
+#[test]
+fn test_parse_packwiz_unknown_update_falls_back_to_name() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut graph = DependencyGraph::new();
+    let fs = LiveFileSystemProvider;
+
+    create_test_toml(
+        temp_dir.path(),
+        "mystery.pw.toml",
+        r#"
+name = "Mystery Mod"
+filename = "mystery.jar"
+
+[update]
+[update.github]
+repo = "example/mystery"
+"#,
+    );
+
+    let node = graph
+        .parse_packwiz_file_with(&temp_dir.path().join("mystery.pw.toml"), &fs)
+        .unwrap();
+
+    assert_eq!(node.mod_id, "Mystery Mod");
+    assert_eq!(node.platform, "unknown");
+    assert_eq!(node.version, None);
+    assert_eq!(
+        node.source_path,
+        Some(temp_dir.path().join("mystery.pw.toml"))
+    );
 }
 
 // ============================================================================

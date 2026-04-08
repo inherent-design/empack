@@ -134,6 +134,7 @@ fn test_browser_open_command_matches_platform() {
 
 #[test]
 fn test_home_dir_prefers_home_and_supports_fallbacks() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
     let home_fixture = tempfile::TempDir::new().expect("home dir");
     let userprofile_fixture = tempfile::TempDir::new().expect("userprofile dir");
     let home_path = home_fixture.path().to_path_buf();
@@ -163,6 +164,7 @@ fn test_home_dir_prefers_home_and_supports_fallbacks() {
 
 #[test]
 fn test_config_and_data_dirs_follow_home_directory() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
     let home_fixture = tempfile::TempDir::new().expect("home dir");
     let _home = unsafe { EnvVarGuard::set("HOME", home_fixture.path()) };
     let _userprofile = unsafe { EnvVarGuard::remove("USERPROFILE") };

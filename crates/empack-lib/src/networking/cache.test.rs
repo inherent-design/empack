@@ -236,6 +236,26 @@ async fn test_disk_persistence_filters_expired() {
 }
 
 #[tokio::test]
+async fn test_load_from_disk_missing_cache_file_is_ok() {
+    let temp_dir = TempDir::new().unwrap();
+    let cache = HttpCache::new(temp_dir.path().to_path_buf());
+
+    cache.load_from_disk().await.unwrap();
+    assert_eq!(cache.len().await, 0);
+}
+
+#[tokio::test]
+async fn test_load_from_disk_invalid_json_returns_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let cache_dir = temp_dir.path().to_path_buf();
+    std::fs::write(cache_dir.join("http_cache.json"), "{ not valid json").unwrap();
+
+    let cache = HttpCache::new(cache_dir);
+    let err = cache.load_from_disk().await.unwrap_err();
+    assert!(matches!(err, NetworkingError::CacheError { message } if message.contains("Failed to parse cache file")));
+}
+
+#[tokio::test]
 async fn test_http_cache_miss_with_mock_server() {
     let temp_dir = TempDir::new().unwrap();
     let cache = HttpCache::new(temp_dir.path().to_path_buf());
@@ -412,6 +432,43 @@ async fn test_non_success_response_not_cached() {
 
     // Should not be cached
     assert_eq!(cache.len().await, 0);
+}
+
+#[tokio::test]
+async fn test_get_with_etag_expired_without_etag_refetches() {
+    let temp_dir = TempDir::new().unwrap();
+    let cache = HttpCache::with_ttl(temp_dir.path().to_path_buf(), Duration::from_millis(10));
+    let client = Client::new();
+
+    let mut server = Server::new_async().await;
+    let first = server
+        .mock("GET", "/no-etag")
+        .with_status(200)
+        .with_body("original data")
+        .expect(1)
+        .create_async()
+        .await;
+
+    let url = format!("{}/no-etag", server.url());
+    let result1 = cache.get_with_etag(&client, &url).await.unwrap();
+    assert_eq!(result1.data, b"original data");
+    assert_eq!(result1.etag, None);
+    first.assert_async().await;
+
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let second = server
+        .mock("GET", "/no-etag")
+        .with_status(200)
+        .with_body("refetched data")
+        .expect(1)
+        .create_async()
+        .await;
+
+    let result2 = cache.get_with_etag(&client, &url).await.unwrap();
+    assert_eq!(result2.data, b"refetched data");
+    assert_eq!(result2.etag, None);
+    second.assert_async().await;
 }
 
 // ============================================================================
