@@ -2,8 +2,14 @@ use empack_tests::e2e::{TestProject, empack_cmd, write_local_mrpack};
 
 /// Download a file via HTTP to a local path using reqwest blocking.
 fn download_file(url: &str, dest: &std::path::Path) {
-    let resp =
-        reqwest::blocking::get(url).unwrap_or_else(|e| panic!("failed to download {}: {}", url, e));
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .expect("build reqwest client");
+    let resp = client
+        .get(url)
+        .send()
+        .unwrap_or_else(|e| panic!("failed to download {}: {}", url, e));
     assert!(
         resp.status().is_success(),
         "HTTP {} for {}",
@@ -17,7 +23,7 @@ fn download_file(url: &str, dest: &std::path::Path) {
 
 #[test]
 fn e2e_import_modrinth_and_build_mrpack() {
-    empack_tests::skip_if_no_packwiz!();
+    empack_tests::skip_if_no_java!();
 
     let project = TestProject::new();
     let mrpack_path = project.dir().join("fabulously-optimized.mrpack");
