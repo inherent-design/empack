@@ -564,8 +564,9 @@ impl ProcessProvider for LiveProcessProvider {
         ) -> std::thread::JoinHandle<()> {
             std::thread::spawn(move || {
                 let mut reader = BufReader::new(pipe);
+                let mut buf = Vec::new();
                 loop {
-                    let mut buf = Vec::new();
+                    buf.clear();
                     match reader.read_until(b'\n', &mut buf) {
                         Ok(0) => break,
                         Ok(_) => {
