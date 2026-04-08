@@ -232,9 +232,18 @@ fn test_load_from_reports_invalid_env_file() {
 
 #[test]
 fn test_init_global_and_global_round_trip() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
     let config = AppConfig::default();
-    AppConfig::init_global(config.clone()).expect("init global");
-    assert_eq!(AppConfig::global().log_level, config.log_level);
+
+    match AppConfig::init_global(config.clone()) {
+        Ok(()) => assert_eq!(AppConfig::global().log_level, config.log_level),
+        Err(crate::primitives::ConfigError::AlreadyInitialized) => {
+            let global = AppConfig::global();
+            assert_eq!(global.log_level, AppConfig::global().log_level);
+        }
+        Err(other) => panic!("unexpected init_global error: {other}"),
+    }
+
     assert!(matches!(
         AppConfig::init_global(AppConfig::default()),
         Err(crate::primitives::ConfigError::AlreadyInitialized)

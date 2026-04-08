@@ -37,6 +37,7 @@ mod tests {
 
     #[test]
     fn test_install_panic_hook_invokes_restoration_hook() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
         let previous = std::panic::take_hook();
         install_panic_hook();
 
