@@ -247,6 +247,7 @@ fn test_full_integration_legacy_terminal() {
 #[test]
 #[cfg(unix)]
 fn test_detect_unicode_via_locale_charmap_fallback() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
     clean_test_env();
     clear_locale_env();
 
@@ -275,6 +276,7 @@ fn test_detect_unicode_via_locale_charmap_fallback() {
 #[test]
 #[cfg(unix)]
 fn test_detect_unicode_invalid_locale_output() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
     clean_test_env();
     clear_locale_env();
 
@@ -303,6 +305,7 @@ fn test_detect_unicode_invalid_locale_output() {
 #[test]
 #[cfg(unix)]
 fn test_get_unix_charset_command_failed_without_locale_binary() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
     clean_test_env();
     clear_locale_env();
 
