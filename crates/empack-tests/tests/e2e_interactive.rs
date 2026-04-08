@@ -1,4 +1,4 @@
-use empack_tests::e2e::{TestProject, empack_cmd};
+use empack_tests::e2e::{TestProject, configure_fake_packwiz, empack_cmd};
 use expectrl::{Expect, Regex, Session};
 use std::time::Duration;
 
@@ -94,10 +94,9 @@ fn e2e_init_interactive_prompts() {
 ///
 #[test]
 fn e2e_init_interactive_responds_to_prompts() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let mut cmd = empack_cmd(project.dir());
+    configure_fake_packwiz(&mut cmd, project.dir());
     cmd.args([
         "init",
         "--modloader",
@@ -112,51 +111,22 @@ fn e2e_init_interactive_responds_to_prompts() {
     let mut session = Session::spawn(cmd).expect("failed to spawn empack init");
     session.set_expect_timeout(Some(Duration::from_secs(30)));
 
-    // Prompt 1: Modpack name (default: "interactive-test")
-    let _ = session
-        .expect(Regex("(?i)modpack.*name|name"))
-        .expect("expected modpack name prompt");
+    // Dialoguer prompt rendering varies across PTY implementations,
+    // especially on Windows CI. Send the expected responses in order
+    // and verify the resulting files instead of matching prompt text.
     session
         .send_line("my-test-pack")
         .expect("failed to send pack name");
-
-    // Prompt 2: Author
-    let _ = session
-        .expect(Regex("(?i)author"))
-        .expect("expected author prompt");
     session
         .send_line("Test Author")
         .expect("failed to send author");
-
-    // Prompt 3: Version
-    let _ = session
-        .expect(Regex("(?i)version"))
-        .expect("expected version prompt");
     session
         .send_line("")
         .expect("failed to accept default version");
-
-    // Prompt 4: Datapack folder (text_input, skip by sending empty)
-    match session.expect(Regex("(?i)datapack|folder")) {
-        Ok(_) => {
-            session
-                .send_line("")
-                .expect("failed to skip datapack folder");
-        }
-        Err(_) => {
-            // May jump straight to confirm if loader version fetch is fast.
-        }
-    }
-
-    // Prompt 5: Confirm creation
-    match session.expect(Regex("(?i)create.*modpack|settings")) {
-        Ok(_) => {
-            session.send_line("y").expect("failed to confirm");
-        }
-        Err(_) => {
-            // Process may have already completed.
-        }
-    }
+    session
+        .send_line("")
+        .expect("failed to skip datapack folder");
+    session.send_line("y").expect("failed to confirm");
 
     // Wait for completion
     let _ = session.expect(Regex("(?i)initialized|created|successfully"));
@@ -172,5 +142,20 @@ fn e2e_init_interactive_responds_to_prompts() {
     assert!(
         config.contains("loader: fabric"),
         "empack.yml should contain 'loader: fabric'\n{config}"
+    );
+
+    let pack_toml =
+        std::fs::read_to_string(pack_dir.join("pack/pack.toml")).expect("failed to read pack.toml");
+    assert!(
+        pack_toml.contains("name = \"my-test-pack\""),
+        "pack.toml should contain the interactive name\n{pack_toml}"
+    );
+    assert!(
+        pack_toml.contains("author = \"Test Author\""),
+        "pack.toml should contain the interactive author\n{pack_toml}"
+    );
+    assert!(
+        pack_toml.contains("version = \"1.0.0\""),
+        "pack.toml should contain the default version\n{pack_toml}"
     );
 }

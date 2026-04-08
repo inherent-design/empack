@@ -84,6 +84,189 @@ fn configure_command_env(cmd: &mut Command, workdir: &Path) {
     let _ = workdir;
 }
 
+pub fn configure_fake_packwiz(cmd: &mut Command, workdir: &Path) {
+    let path = write_fake_packwiz_binary(workdir);
+    cmd.env("EMPACK_PACKWIZ_BIN", path);
+}
+
+fn write_fake_packwiz_binary(workdir: &Path) -> PathBuf {
+    #[cfg(windows)]
+    let path = workdir.join("fake-packwiz.cmd");
+    #[cfg(not(windows))]
+    let path = workdir.join("fake-packwiz");
+
+    #[cfg(windows)]
+    let script = r#"@echo off
+setlocal EnableExtensions EnableDelayedExpansion
+set "NAME="
+set "AUTHOR="
+set "VERSION="
+set "MC="
+set "LOADER="
+set "LOADER_VERSION="
+
+:loop
+if "%~1"=="" goto done
+if "%~1"=="--name" (
+  set "NAME=%~2"
+  shift
+  shift
+  goto loop
+)
+if "%~1"=="--author" (
+  set "AUTHOR=%~2"
+  shift
+  shift
+  goto loop
+)
+if "%~1"=="--version" (
+  set "VERSION=%~2"
+  shift
+  shift
+  goto loop
+)
+if "%~1"=="--mc-version" (
+  set "MC=%~2"
+  shift
+  shift
+  goto loop
+)
+if "%~1"=="--modloader" (
+  set "LOADER=%~2"
+  shift
+  shift
+  goto loop
+)
+if "%~1"=="--fabric-version" (
+  set "LOADER_VERSION=%~2"
+  shift
+  shift
+  goto loop
+)
+if "%~1"=="--forge-version" (
+  set "LOADER_VERSION=%~2"
+  shift
+  shift
+  goto loop
+)
+if "%~1"=="--neoforge-version" (
+  set "LOADER_VERSION=%~2"
+  shift
+  shift
+  goto loop
+)
+if "%~1"=="--quilt-version" (
+  set "LOADER_VERSION=%~2"
+  shift
+  shift
+  goto loop
+)
+shift
+goto loop
+
+:done
+> pack.toml (
+  echo name = "!NAME!"
+  echo author = "!AUTHOR!"
+  echo version = "!VERSION!"
+  echo pack-format = "packwiz:1.1.0"
+  echo.
+  echo [index]
+  echo file = "index.toml"
+  echo hash-format = "sha256"
+  echo hash = ""
+  echo.
+  echo [versions]
+  echo minecraft = "!MC!"
+)
+if not "!LOADER!"=="" if not "!LOADER!"=="none" if not "!LOADER_VERSION!"=="" (
+  >> pack.toml echo !LOADER! = "!LOADER_VERSION!"
+)
+type nul > index.toml
+exit /b 0
+"#;
+
+    #[cfg(not(windows))]
+    let script = r#"#!/bin/sh
+set -eu
+NAME=""
+AUTHOR=""
+VERSION=""
+MC=""
+LOADER=""
+LOADER_VERSION=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --name)
+      NAME="$2"
+      shift 2
+      ;;
+    --author)
+      AUTHOR="$2"
+      shift 2
+      ;;
+    --version)
+      VERSION="$2"
+      shift 2
+      ;;
+    --mc-version)
+      MC="$2"
+      shift 2
+      ;;
+    --modloader)
+      LOADER="$2"
+      shift 2
+      ;;
+    --fabric-version|--forge-version|--neoforge-version|--quilt-version)
+      LOADER_VERSION="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+cat > pack.toml <<EOF
+name = "$NAME"
+author = "$AUTHOR"
+version = "$VERSION"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "$MC"
+EOF
+
+if [ -n "$LOADER" ] && [ "$LOADER" != "none" ] && [ -n "$LOADER_VERSION" ]; then
+  printf '%s = "%s"\n' "$LOADER" "$LOADER_VERSION" >> pack.toml
+fi
+
+: > index.toml
+"#;
+
+    std::fs::write(&path, script).unwrap_or_else(|e| {
+        panic!("failed to write fake packwiz at {}: {}", path.display(), e)
+    });
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path)
+            .expect("fake packwiz metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).expect("set fake packwiz executable");
+    }
+
+    path
+}
+
 /// Return early from a test when packwiz is not in PATH.
 #[macro_export]
 macro_rules! skip_if_no_packwiz {
