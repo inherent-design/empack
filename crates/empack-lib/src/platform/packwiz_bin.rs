@@ -10,6 +10,7 @@ pub const PACKWIZ_TX_VERSION: &str = "v0.2.0";
 
 /// GitHub repository for packwiz-tx releases.
 const PACKWIZ_TX_REPO: &str = "mannie-exe/packwiz-tx";
+const INSTALL_LOCK_NAME: &str = ".install.lock";
 
 /// Resolve the packwiz-tx binary path.
 ///
@@ -34,15 +35,16 @@ pub fn resolve_packwiz_binary() -> Result<PathBuf> {
     }
 
     // Tier 2: PATH lookup (user-installed or mise-managed)
-    if std::process::Command::new(crate::empack::packwiz::PACKWIZ_BIN)
+    let path_bin = binary_name();
+    if std::process::Command::new(&path_bin)
         .arg("--help")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok()
     {
-        tracing::debug!("found {} in PATH", crate::empack::packwiz::PACKWIZ_BIN);
-        return Ok(PathBuf::from(crate::empack::packwiz::PACKWIZ_BIN));
+        tracing::debug!(binary = %path_bin, "found packwiz-tx in PATH");
+        return Ok(PathBuf::from(path_bin));
     }
 
     // Tier 3: cached/downloaded managed binary
@@ -58,7 +60,13 @@ pub fn resolve_packwiz_binary() -> Result<PathBuf> {
         return prepare_managed_binary(&cached_bin);
     }
 
-    let downloaded = download_release(PACKWIZ_TX_VERSION, &cache_dir)?;
+    let downloaded = with_install_lock(&cache_dir, || {
+        if cached_bin.exists() && is_executable(&cached_bin) {
+            return Ok(cached_bin.clone());
+        }
+
+        download_release(PACKWIZ_TX_VERSION, &cache_dir)
+    })?;
     prepare_managed_binary(&downloaded)
 }
 
@@ -78,7 +86,13 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(target_dir)
         .with_context(|| format!("failed to create cache directory: {}", target_dir.display()))?;
 
-    let output_file = target_dir.join(&asset);
+    let scratch_dir = tempfile::tempdir_in(target_dir).with_context(|| {
+        format!(
+            "failed to create temporary download directory inside {}",
+            target_dir.display()
+        )
+    })?;
+    let output_file = scratch_dir.path().join(&asset);
     let status = std::process::Command::new("curl")
         .args([
             "--proto",
@@ -100,14 +114,13 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
 
     let bytes = std::fs::read(&output_file)
         .with_context(|| format!("failed to read downloaded file: {}", output_file.display()))?;
-    let _ = std::fs::remove_file(&output_file);
 
-    extract_tarball(&bytes, target_dir)?;
+    extract_tarball(&bytes, scratch_dir.path())?;
 
     let bin_name = binary_name();
-    let bin_path = target_dir.join(&bin_name);
+    let extracted_bin = scratch_dir.path().join(&bin_name);
 
-    if !bin_path.exists() {
+    if !extracted_bin.exists() {
         anyhow::bail!(
             "binary '{}' not found in tarball after extraction",
             bin_name
@@ -115,11 +128,84 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
     }
 
     #[cfg(unix)]
-    set_executable(&bin_path)?;
+    set_executable(&extracted_bin)?;
+
+    let bin_path = target_dir.join(&bin_name);
+    install_binary(&extracted_bin, &bin_path)?;
 
     tracing::info!(path = %bin_path.display(), "packwiz-tx cached");
 
     Ok(bin_path)
+}
+
+fn with_install_lock<T, F>(target_dir: &Path, action: F) -> Result<T>
+where
+    F: FnOnce() -> Result<T>,
+{
+    use std::io::ErrorKind;
+    use std::time::{Duration, Instant};
+
+    struct LockGuard {
+        path: PathBuf,
+    }
+
+    impl Drop for LockGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir(&self.path);
+        }
+    }
+
+    std::fs::create_dir_all(target_dir)
+        .with_context(|| format!("failed to create cache directory: {}", target_dir.display()))?;
+
+    let lock_path = target_dir.join(INSTALL_LOCK_NAME);
+    let start = Instant::now();
+    loop {
+        match std::fs::create_dir(&lock_path) {
+            Ok(()) => {
+                let _guard = LockGuard {
+                    path: lock_path.clone(),
+                };
+                return action();
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                if start.elapsed() >= Duration::from_secs(30) {
+                    anyhow::bail!(
+                        "timed out waiting for packwiz-tx install lock at {}",
+                        lock_path.display()
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to acquire packwiz-tx install lock at {}",
+                        lock_path.display()
+                    )
+                });
+            }
+        }
+    }
+}
+
+fn install_binary(source: &Path, target: &Path) -> Result<()> {
+    match std::fs::rename(source, target) {
+        Ok(()) => Ok(()),
+        Err(rename_error) => {
+            std::fs::copy(source, target).with_context(|| {
+                format!(
+                    "failed to install packwiz-tx from '{}' to '{}' after rename failed: {}",
+                    source.display(),
+                    target.display(),
+                    rename_error
+                )
+            })?;
+            #[cfg(unix)]
+            set_executable(target)?;
+            Ok(())
+        }
+    }
 }
 
 /// Verify that the managed binary is directly runnable from its cache location.
@@ -466,7 +552,7 @@ mod tests {
         let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
 
         let resolved = resolve_packwiz_binary().expect("resolve from path");
-        assert_eq!(resolved, PathBuf::from(crate::empack::packwiz::PACKWIZ_BIN));
+        assert_eq!(resolved, PathBuf::from(binary_name()));
     }
 
     #[test]

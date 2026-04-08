@@ -527,11 +527,16 @@ impl<'a> PackwizMetadata<'a> {
         };
 
         let pack_dir = workdir.join("pack");
+        let packwiz_path = if session.packwiz_bin() == PACKWIZ_BIN {
+            None
+        } else {
+            Some(PathBuf::from(session.packwiz_bin()))
+        };
 
         Ok(Self {
             process_provider: session.process(),
             pack_dir,
-            packwiz_path: None,
+            packwiz_path,
         })
     }
 

@@ -42,14 +42,15 @@ impl AppConfig {
 
         let env_files = [".env.local", ".env"];
         for env_file in &env_files {
+            if !std::path::Path::new(env_file).exists() {
+                continue;
+            }
+
             if let Err(e) = from_filename(env_file) {
-                // Only warn if file exists but can't be read (not if file doesn't exist)
-                if !e.to_string().contains("not found") && !e.to_string().contains("No such file") {
-                    return Err(ConfigError::EnvFileError {
-                        file: env_file.to_string(),
-                        source: e,
-                    });
-                }
+                return Err(ConfigError::EnvFileError {
+                    file: env_file.to_string(),
+                    source: e,
+                });
             }
         }
 

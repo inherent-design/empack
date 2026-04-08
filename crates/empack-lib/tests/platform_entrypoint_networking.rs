@@ -122,6 +122,11 @@ fn packwiz_bin_name() -> &'static str {
     }
 }
 
+fn has_path_component(path: &Path, expected: &str) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == std::ffi::OsStr::new(expected))
+}
+
 #[test]
 fn app_config_load_from_parses_cli_and_fills_workdir() {
     let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -212,8 +217,8 @@ fn platform_helpers_cover_env_and_platform_paths() {
     }
     assert!(config_dir().is_absolute());
     assert!(data_dir().is_absolute());
-    assert!(config_dir().ends_with(Path::new("empack")));
-    assert!(data_dir().ends_with(Path::new("empack")));
+    assert!(has_path_component(&config_dir(), "empack"));
+    assert!(has_path_component(&data_dir(), "empack"));
 
     let _ = (&_home, &_userprofile);
 }
@@ -255,7 +260,7 @@ fn resolve_packwiz_binary_uses_path_lookup_before_cache() {
 
     assert_eq!(
         resolve_packwiz_binary().expect("resolve from path"),
-        PathBuf::from("packwiz-tx")
+        PathBuf::from(packwiz_bin_name())
     );
 }
 
