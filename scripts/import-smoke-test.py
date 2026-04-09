@@ -648,7 +648,7 @@ def run_import_test_posix_live(
                 break
 
             if not data:
-                continue
+                break
 
             text = data.decode("utf-8", errors="replace")
             chunks.append(text)
