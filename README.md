@@ -16,6 +16,12 @@ empack add sodium
 empack build all
 ```
 
+If a `client-full` or `server-full` build stops on restricted CurseForge files, place the downloaded files in the reported cache directory and resume with:
+
+```bash
+empack build --continue
+```
+
 Import an existing modpack from a local archive or a remote modpack URL:
 
 ```bash
@@ -45,6 +51,8 @@ Each empack project consists of three parts:
 - `empack.yml`: project configuration; mod list, loader version, Minecraft version, and build settings.
 - `pack/`: managed packwiz workspace. empack reads and writes this directory.
 - `dist/`: build artifact output. Contains mrpack archives and client/server distribution folders after a build.
+
+Full-distribution builds may also create internal continuation state when restricted CurseForge files block redistribution. The public recovery command is `empack build --continue`.
 
 ## Documentation
 

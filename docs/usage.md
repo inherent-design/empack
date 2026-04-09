@@ -151,6 +151,7 @@ Produce build artifacts under `dist/`.
 empack build mrpack
 empack build all --clean
 empack build client-full --downloads-dir ~/Downloads
+empack build --continue
 empack build server --format tar.gz
 ```
 
@@ -167,11 +168,24 @@ Build options:
 
 | Flag | Description |
 | --- | --- |
+| `--continue` | Resume a previously blocked restricted-mod full build |
 | `--clean` | Remove previous build outputs before building |
 | `--format` | Output archive format: `zip`, `tar.gz`, `7z` |
 | `--downloads-dir` | Directory scanned for manually downloaded restricted CurseForge files |
 
-If restricted CurseForge files are missing, empack prints download URLs and can retry the build automatically after files are placed.
+`--continue` resumes the original full-build targets and archive format from persisted state. It must be used without positional targets and without `--clean`.
+
+If restricted CurseForge files are missing during `client-full` or `server-full`:
+
+- empack records pending continuation state internally
+- empack scans the managed restricted-build cache first
+- empack then scans `--downloads-dir` if provided
+- empack finally scans `~/Downloads`
+- any matching files found outside the cache are imported into the managed cache
+- if all required files are cached, empack reuses the same continuation path as `empack build --continue`
+- if files are still missing, empack prints download URLs, the managed cache location, and the `empack build --continue` instruction
+
+When the terminal is interactive and `--yes` is not set, empack can optionally open the download URLs in the default browser. That browser-open step is an aid, not a required part of the recovery flow.
 
 ### empack remove
 
@@ -208,7 +222,7 @@ If no target is provided, empack cleans `builds`.
 
 ### Configuration precedence
 
-CLI flags > environment variables > `.env` file > defaults.
+CLI flags > environment variables > `.env.local` > `.env` > defaults.
 
 ### Color control
 

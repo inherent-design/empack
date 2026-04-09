@@ -2,7 +2,7 @@
 spec: cli-surface
 status: draft
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-09
 depends: [overview, types]
 ---
 
@@ -39,7 +39,7 @@ These options come from `AppConfig`.
 | `-y`, `--yes` | `EMPACK_YES` | `false` | Non-interactive defaults |
 | `--dry-run` | `EMPACK_DRY_RUN` | `false` | Preview mode for supported commands |
 
-Configuration precedence is defaults, `.env`, environment variables, then CLI arguments.
+Configuration precedence is defaults, `.env.local`, `.env`, environment variables, then CLI arguments.
 
 ## Command List
 
@@ -102,10 +102,12 @@ Form:
 
 ```text
 empack build <TARGET>... [OPTIONS]
+empack build --continue [OPTIONS]
 ```
 
 | Flag | Short | Env var | Default | Meaning |
 | --- | --- | --- | --- | --- |
+| `--continue` | *none* | *none* | `false` | Resume a previously blocked restricted-mod full build |
 | `--clean` | `-c` | *none* | `false` | Remove previous build artifacts before building |
 | `--format <FMT>` | *none* | *none* | `zip` | Archive format for distribution packages |
 | `--downloads-dir <PATH>` | *none* | `EMPACK_DOWNLOADS_DIR` | `~/Downloads` fallback | Directory scanned for restricted CurseForge downloads |
@@ -128,6 +130,14 @@ empack build <TARGET>... [OPTIONS]
 | `zip` | Zip archive |
 | `tar.gz` | Gzip-compressed tar archive |
 | `7z` | 7z archive |
+
+### Build command rules
+
+- `build --continue` resumes the original full-build targets and archive format from persisted state.
+- `build --continue` is incompatible with positional targets.
+- `build --continue` is incompatible with `--clean`.
+- `--downloads-dir` is used in both fresh and continuation flows as an auxiliary search path for manually downloaded restricted files.
+- Fresh full builds search for restricted files in the managed cache first, then `--downloads-dir`, then `~/Downloads`.
 
 ## Add Command
 

@@ -60,6 +60,64 @@ async fn test_init_neoforge() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_init_neoforge_legacy_1_20_1() -> Result<()> {
+    let session = MockSessionBuilder::new().with_yes_flag().build();
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let workdir = session.filesystem().current_dir()?;
+
+    let result = execute_command_with_session(
+        Commands::Init(InitArgs {
+            dir: Some("neoforge-legacy-pack".to_string()),
+            modloader: Some("neoforge".to_string()),
+            mc_version: Some("1.20.1".to_string()),
+            ..Default::default()
+        }),
+        &session,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "Init with legacy NeoForge 1.20.1 failed: {:?}",
+        result
+    );
+
+    let project_dir = workdir.join("neoforge-legacy-pack");
+    assert!(
+        session.filesystem().exists(&project_dir),
+        "neoforge-legacy-pack directory should exist"
+    );
+
+    let empack_yml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("empack.yml"))?;
+    assert!(
+        empack_yml.contains("loader: neoforge"),
+        "empack.yml should have loader: neoforge, got: {}",
+        empack_yml
+    );
+    assert!(
+        empack_yml.contains("minecraft_version: 1.20.1")
+            || empack_yml.contains("minecraft_version: \"1.20.1\""),
+        "empack.yml should have minecraft_version 1.20.1, got: {}",
+        empack_yml
+    );
+
+    let pack_toml = session
+        .filesystem()
+        .read_to_string(&project_dir.join("pack").join("pack.toml"))?;
+    assert!(
+        pack_toml.contains("neoforge = \"47.1."),
+        "pack.toml [versions] should contain a legacy 47.1.x neoforge entry, got: {}",
+        pack_toml
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_init_quilt() -> Result<()> {
     let session = MockSessionBuilder::new().with_yes_flag().build();
 

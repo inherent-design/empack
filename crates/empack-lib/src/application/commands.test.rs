@@ -21,6 +21,13 @@ fn modrinth_project(project_id: &str, title: &str) -> ProjectInfo {
     }
 }
 
+fn test_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .expect("http client")
+}
+
 fn configured_session(workdir: &Path) -> MockCommandSession {
     MockCommandSession::new().with_filesystem(
         MockFileSystemProvider::new()
@@ -85,6 +92,20 @@ impl Session for PackwizPathSession {
 
     fn packwiz_bin(&self) -> &str {
         &self.packwiz_bin
+    }
+}
+
+#[derive(Clone)]
+struct StubJarResolver {
+    identity: crate::empack::content::JarIdentity,
+}
+
+impl crate::empack::content::JarResolver for StubJarResolver {
+    async fn identify(
+        &self,
+        _request: crate::empack::content::JarIdentifyRequest,
+    ) -> crate::Result<crate::empack::content::JarIdentity> {
+        Ok(self.identity.clone())
     }
 }
 
@@ -1022,6 +1043,750 @@ mod handle_init_from_source_tests {
             "unexpected error for remote source: {err_msg}"
         );
     }
+
+    const CF_MANIFEST_JSON: &str = r#"{
+  "minecraft": {
+    "version": "1.20.1",
+    "modLoaders": [
+      { "id": "fabric-0.16.0", "primary": true }
+    ]
+  },
+  "files": [
+    { "projectID": 12345, "fileID": 67890, "required": true }
+  ],
+  "manifestType": "minecraftModpack",
+  "overrides": "overrides",
+  "name": "TestPack",
+  "version": "2.0.0",
+  "author": "TestAuthor"
+}"#;
+
+    const MR_MANIFEST_JSON: &str = r#"{
+  "dependencies": {
+    "minecraft": "1.20.1",
+    "fabric-loader": "0.14.0"
+  },
+  "files": [],
+  "overrides": "overrides",
+  "name": "ModrinthPack",
+  "versionId": "2.5.0",
+  "summary": "A test modpack"
+}"#;
+
+    fn create_cf_zip(manifest_json: &str) -> tempfile::NamedTempFile {
+        use std::io::Write;
+
+        let tmp = tempfile::NamedTempFile::with_suffix(".zip").unwrap();
+        let mut zip = zip::ZipWriter::new(tmp.reopen().unwrap());
+        zip.start_file::<&str, ()>("manifest.json", zip::write::FileOptions::default())
+            .unwrap();
+        zip.write_all(manifest_json.as_bytes()).unwrap();
+        zip.finish().unwrap();
+        tmp
+    }
+
+    fn create_mrpack(manifest_json: &str) -> tempfile::NamedTempFile {
+        use std::io::Write;
+
+        let tmp = tempfile::NamedTempFile::with_suffix(".mrpack").unwrap();
+        let mut zip = zip::ZipWriter::new(tmp.reopen().unwrap());
+        zip.start_file::<&str, ()>("modrinth.index.json", zip::write::FileOptions::default())
+            .unwrap();
+        zip.write_all(manifest_json.as_bytes()).unwrap();
+        zip.finish().unwrap();
+        tmp
+    }
+
+    #[test]
+    fn import_from_local_parses_curseforge_zip() {
+        let session = MockCommandSession::new();
+        let archive = create_cf_zip(CF_MANIFEST_JSON);
+
+        let (manifest, tmp_dir, source_path) =
+            import_from_local(&session, &archive.path().to_string_lossy()).expect("local cf import");
+
+        assert!(tmp_dir.is_none(), "local import should not allocate a temp dir");
+        assert_eq!(source_path, archive.path());
+        assert_eq!(manifest.identity.name, "TestPack");
+        assert_eq!(manifest.target.minecraft_version, "1.20.1");
+        assert_eq!(manifest.source_platform, ProjectPlatform::CurseForge);
+    }
+
+    #[test]
+    fn import_from_local_parses_modrinth_mrpack() {
+        let session = MockCommandSession::new();
+        let archive = create_mrpack(MR_MANIFEST_JSON);
+
+        let (manifest, tmp_dir, source_path) = import_from_local(
+            &session,
+            &archive.path().to_string_lossy(),
+        )
+        .expect("local mrpack import");
+
+        assert!(tmp_dir.is_none(), "local import should not allocate a temp dir");
+        assert_eq!(source_path, archive.path());
+        assert_eq!(manifest.identity.name, "ModrinthPack");
+        assert_eq!(manifest.target.loader, crate::empack::parsing::ModLoader::Fabric);
+        assert_eq!(manifest.source_platform, ProjectPlatform::Modrinth);
+    }
+
+    #[test]
+    fn import_from_local_rejects_packwiz_directory() {
+        let root = tempfile::TempDir::new().expect("temp dir");
+        std::fs::write(root.path().join("pack.toml"), "name = \"pack\"").expect("pack.toml");
+        std::fs::write(root.path().join("index.toml"), "").expect("index.toml");
+
+        let session = MockCommandSession::new();
+        let err = import_from_local(&session, &root.path().to_string_lossy())
+            .expect_err("packwiz directory should be rejected");
+
+        assert!(err.to_string().contains("packwiz directory import is not yet implemented"));
+    }
+
+    #[tokio::test]
+    async fn import_from_remote_rejects_direct_download_url() {
+        let session = MockCommandSession::new();
+
+        let err = import_from_remote(&session, "https://example.com/modpack.zip")
+            .await
+            .expect_err("direct downloads are not supported as remote modpack sources");
+
+        assert!(err.to_string().contains("cannot detect source type"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_file_writes_response_body() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/artifact.bin")
+            .with_status(200)
+            .with_body("payload")
+            .create_async()
+            .await;
+
+        let dest_dir = tempfile::TempDir::new().expect("temp dir");
+        let dest = dest_dir.path().join("artifact.bin");
+        download_file(&test_http_client(), &format!("{}/artifact.bin", server.url()), &dest)
+            .await
+            .expect("download success");
+
+        assert_eq!(std::fs::read(&dest).expect("downloaded file"), b"payload");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_file_reports_http_error() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/missing.bin")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let dest_dir = tempfile::TempDir::new().expect("temp dir");
+        let dest = dest_dir.path().join("missing.bin");
+        let err = download_file(&test_http_client(), &format!("{}/missing.bin", server.url()), &dest)
+            .await
+            .expect_err("404 should error");
+
+        assert!(err.to_string().contains("HTTP 404"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_modrinth_modpack_with_client_downloads_selected_version() {
+        let mut server = mockito::Server::new_async().await;
+        let archive = create_mrpack(MR_MANIFEST_JSON);
+        let archive_bytes = std::fs::read(archive.path()).expect("mrpack bytes");
+
+        let _versions = server
+            .mock("GET", "/v2/project/test-pack/version")
+            .with_status(200)
+            .with_body(
+                serde_json::json!([
+                    {
+                        "id": "version-id",
+                        "version_number": "2.5.0",
+                        "files": [{
+                            "filename": "modrinth-pack.mrpack",
+                            "primary": true,
+                            "url": format!("{}/downloads/modrinth-pack.mrpack", server.url())
+                        }]
+                    }
+                ])
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let _artifact = server
+            .mock("GET", "/downloads/modrinth-pack.mrpack")
+            .with_status(200)
+            .with_body(archive_bytes)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new();
+        let (manifest, _tmp_dir, dest_path) = download_modrinth_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "test-pack",
+            Some("2.5.0"),
+            &format!("{}/v2", server.url()),
+        )
+        .await
+        .expect("modrinth download");
+
+        assert_eq!(manifest.identity.name, "ModrinthPack");
+        assert_eq!(dest_path.file_name().and_then(|name| name.to_str()), Some("modrinth-pack.mrpack"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_modrinth_modpack_with_client_errors_when_version_missing() {
+        let mut server = mockito::Server::new_async().await;
+        let _versions = server
+            .mock("GET", "/v2/project/test-pack/version")
+            .with_status(200)
+            .with_body(
+                serde_json::json!([
+                    {
+                        "id": "different-id",
+                        "version_number": "1.0.0",
+                        "files": []
+                    }
+                ])
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new();
+        let err = download_modrinth_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "test-pack",
+            Some("2.5.0"),
+            &format!("{}/v2", server.url()),
+        )
+        .await
+        .expect_err("missing version should error");
+
+        assert!(err.to_string().contains("version '2.5.0' not found"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_modrinth_modpack_wrapper_reports_http_client_error() {
+        let session = MockCommandSession::new()
+            .with_network(MockNetworkProvider::new().with_failing_http_client());
+
+        let err = download_modrinth_modpack(&session, "test-pack", None)
+            .await
+            .expect_err("missing HTTP client should fail wrapper");
+
+        assert!(err.to_string().contains("Mock HTTP client unavailable"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_modrinth_modpack_with_client_errors_when_api_status_fails() {
+        let mut server = mockito::Server::new_async().await;
+        let _versions = server
+            .mock("GET", "/v2/project/test-pack/version")
+            .with_status(503)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new();
+        let err = download_modrinth_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "test-pack",
+            None,
+            &format!("{}/v2", server.url()),
+        )
+        .await
+        .expect_err("non-success status should error");
+
+        assert!(err.to_string().contains("Modrinth API returned 503"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_modrinth_modpack_with_client_errors_when_no_versions_exist() {
+        let mut server = mockito::Server::new_async().await;
+        let _versions = server
+            .mock("GET", "/v2/project/test-pack/version")
+            .with_status(200)
+            .with_body("[]")
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new();
+        let err = download_modrinth_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "test-pack",
+            None,
+            &format!("{}/v2", server.url()),
+        )
+        .await
+        .expect_err("empty version list should error");
+
+        assert!(err.to_string().contains("no versions found"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_modrinth_modpack_with_client_sanitizes_filename() {
+        let mut server = mockito::Server::new_async().await;
+        let archive = create_mrpack(MR_MANIFEST_JSON);
+        let archive_bytes = std::fs::read(archive.path()).expect("mrpack bytes");
+
+        let _versions = server
+            .mock("GET", "/v2/project/test-pack/version")
+            .with_status(200)
+            .with_body(
+                serde_json::json!([
+                    {
+                        "id": "version-id",
+                        "version_number": "2.5.0",
+                        "files": [{
+                            "filename": "nested/path/modrinth-pack.mrpack",
+                            "primary": true,
+                            "url": format!("{}/downloads/modrinth-pack.mrpack", server.url())
+                        }]
+                    }
+                ])
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let _artifact = server
+            .mock("GET", "/downloads/modrinth-pack.mrpack")
+            .with_status(200)
+            .with_body(archive_bytes)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new();
+        let (_manifest, _tmp_dir, dest_path) = download_modrinth_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "test-pack",
+            None,
+            &format!("{}/v2", server.url()),
+        )
+        .await
+        .expect("modrinth download");
+
+        assert_eq!(
+            dest_path.file_name().and_then(|name| name.to_str()),
+            Some("modrinth-pack.mrpack")
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_modrinth_modpack_with_client_errors_when_file_url_is_missing() {
+        let mut server = mockito::Server::new_async().await;
+        let _versions = server
+            .mock("GET", "/v2/project/test-pack/version")
+            .with_status(200)
+            .with_body(
+                serde_json::json!([
+                    {
+                        "id": "version-id",
+                        "version_number": "2.5.0",
+                        "files": [{
+                            "filename": "modrinth-pack.mrpack",
+                            "primary": true
+                        }]
+                    }
+                ])
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new();
+        let err = download_modrinth_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "test-pack",
+            None,
+            &format!("{}/v2", server.url()),
+        )
+        .await
+        .expect_err("missing file URL should error");
+
+        assert!(err.to_string().contains("missing url field"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_with_client_uses_direct_download_url() {
+        use crate::application::config::AppConfig;
+
+        let mut server = mockito::Server::new_async().await;
+        let archive = create_cf_zip(CF_MANIFEST_JSON);
+        let archive_bytes = std::fs::read(archive.path()).expect("cf zip bytes");
+
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("classId".into(), "4471".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "test-pack".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":42,"name":"Test Pack"}]}"#)
+            .create_async()
+            .await;
+        let _files = server
+            .mock("GET", "/v1/mods/42/files")
+            .match_query(mockito::Matcher::UrlEncoded("pageSize".into(), "1".into()))
+            .with_status(200)
+            .with_body(
+                serde_json::json!({
+                    "data": [{
+                        "id": 7,
+                        "fileName": "test-pack.zip",
+                        "downloadUrl": format!("{}/downloads/test-pack.zip", server.url())
+                    }]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let _artifact = server
+            .mock("GET", "/downloads/test-pack.zip")
+            .with_status(200)
+            .with_body(archive_bytes)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(AppConfig {
+            curseforge_api_client_key: Some("test-key".to_string()),
+            ..Default::default()
+        }));
+
+        let (manifest, _tmp_dir, dest_path) = download_curseforge_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "test-pack",
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect("curseforge direct download");
+
+        assert_eq!(manifest.identity.name, "TestPack");
+        assert_eq!(dest_path.file_name().and_then(|name| name.to_str()), Some("test-pack.zip"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_with_client_uses_download_url_fallback() {
+        use crate::application::config::AppConfig;
+
+        let mut server = mockito::Server::new_async().await;
+        let archive = create_cf_zip(CF_MANIFEST_JSON);
+        let archive_bytes = std::fs::read(archive.path()).expect("cf zip bytes");
+
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("classId".into(), "4471".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "fallback-pack".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":77,"name":"Fallback Pack"}]}"#)
+            .create_async()
+            .await;
+        let _files = server
+            .mock("GET", "/v1/mods/77/files")
+            .match_query(mockito::Matcher::UrlEncoded("pageSize".into(), "1".into()))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":9,"fileName":"fallback-pack.zip","downloadUrl":null}]}"#)
+            .create_async()
+            .await;
+        let _download_url = server
+            .mock("GET", "/v1/mods/77/files/9/download-url")
+            .with_status(200)
+            .with_body(
+                serde_json::json!({
+                    "data": format!("{}/downloads/fallback-pack.zip", server.url())
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let _artifact = server
+            .mock("GET", "/downloads/fallback-pack.zip")
+            .with_status(200)
+            .with_body(archive_bytes)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(AppConfig {
+            curseforge_api_client_key: Some("test-key".to_string()),
+            ..Default::default()
+        }));
+
+        let (manifest, _tmp_dir, dest_path) = download_curseforge_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "fallback-pack",
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect("curseforge fallback download");
+
+        assert_eq!(manifest.identity.name, "TestPack");
+        assert_eq!(dest_path.file_name().and_then(|name| name.to_str()), Some("fallback-pack.zip"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_with_client_reports_restricted_downloads() {
+        use crate::application::config::AppConfig;
+
+        let mut server = mockito::Server::new_async().await;
+
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("classId".into(), "4471".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "restricted-pack".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":88,"name":"Restricted Pack"}]}"#)
+            .create_async()
+            .await;
+        let _files = server
+            .mock("GET", "/v1/mods/88/files")
+            .match_query(mockito::Matcher::UrlEncoded("pageSize".into(), "1".into()))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":10,"fileName":"restricted-pack.zip","downloadUrl":null}]}"#)
+            .create_async()
+            .await;
+        let _download_url = server
+            .mock("GET", "/v1/mods/88/files/10/download-url")
+            .with_status(403)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(AppConfig {
+            curseforge_api_client_key: Some("test-key".to_string()),
+            ..Default::default()
+        }));
+
+        let err = download_curseforge_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "restricted-pack",
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect_err("restricted downloads should require manual download");
+
+        assert!(err.to_string().contains("restricted downloads"));
+        assert!(err.to_string().contains("restricted-pack"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_wrapper_requires_api_key() {
+        let session = MockCommandSession::new();
+
+        let err = download_curseforge_modpack(&session, "test-pack")
+            .await
+            .expect_err("missing api key should error");
+
+        assert!(err.to_string().contains("CurseForge API key required"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_with_client_errors_when_search_fails() {
+        use crate::application::config::AppConfig;
+
+        let mut server = mockito::Server::new_async().await;
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .with_status(500)
+            .with_body("bad gateway")
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(AppConfig {
+            curseforge_api_client_key: Some("test-key".to_string()),
+            ..Default::default()
+        }));
+
+        let err = download_curseforge_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "broken-pack",
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect_err("search failure should error");
+
+        assert!(err.to_string().contains("CurseForge search returned"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_with_client_errors_when_search_is_empty() {
+        use crate::application::config::AppConfig;
+
+        let mut server = mockito::Server::new_async().await;
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("classId".into(), "4471".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "missing-pack".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[]}"#)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(AppConfig {
+            curseforge_api_client_key: Some("test-key".to_string()),
+            ..Default::default()
+        }));
+
+        let err = download_curseforge_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "missing-pack",
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect_err("empty search result should error");
+
+        assert!(err.to_string().contains("no CurseForge modpack found"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_with_client_errors_when_files_endpoint_fails() {
+        use crate::application::config::AppConfig;
+
+        let mut server = mockito::Server::new_async().await;
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("classId".into(), "4471".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "broken-files-pack".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":42,"name":"Broken Files Pack"}]}"#)
+            .create_async()
+            .await;
+        let _files = server
+            .mock("GET", "/v1/mods/42/files")
+            .match_query(mockito::Matcher::UrlEncoded("pageSize".into(), "1".into()))
+            .with_status(502)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(AppConfig {
+            curseforge_api_client_key: Some("test-key".to_string()),
+            ..Default::default()
+        }));
+
+        let err = download_curseforge_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "broken-files-pack",
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect_err("files endpoint failure should error");
+
+        assert!(err.to_string().contains("CurseForge files endpoint returned 502"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_with_client_errors_when_no_files_exist() {
+        use crate::application::config::AppConfig;
+
+        let mut server = mockito::Server::new_async().await;
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("classId".into(), "4471".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "empty-files-pack".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":42,"name":"Empty Files Pack"}]}"#)
+            .create_async()
+            .await;
+        let _files = server
+            .mock("GET", "/v1/mods/42/files")
+            .match_query(mockito::Matcher::UrlEncoded("pageSize".into(), "1".into()))
+            .with_status(200)
+            .with_body(r#"{"data":[]}"#)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(AppConfig {
+            curseforge_api_client_key: Some("test-key".to_string()),
+            ..Default::default()
+        }));
+
+        let err = download_curseforge_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "empty-files-pack",
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect_err("empty file list should error");
+
+        assert!(err.to_string().contains("no files found"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn download_curseforge_modpack_with_client_reports_empty_download_url_as_restricted() {
+        use crate::application::config::AppConfig;
+
+        let mut server = mockito::Server::new_async().await;
+
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("classId".into(), "4471".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "restricted-pack".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":88,"name":"Restricted Pack"}]}"#)
+            .create_async()
+            .await;
+        let _files = server
+            .mock("GET", "/v1/mods/88/files")
+            .match_query(mockito::Matcher::UrlEncoded("pageSize".into(), "1".into()))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":10,"fileName":"restricted-pack.zip","downloadUrl":null}]}"#)
+            .create_async()
+            .await;
+        let _download_url = server
+            .mock("GET", "/v1/mods/88/files/10/download-url")
+            .with_status(200)
+            .with_body(r#"{"data":""}"#)
+            .create_async()
+            .await;
+
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(AppConfig {
+            curseforge_api_client_key: Some("test-key".to_string()),
+            ..Default::default()
+        }));
+
+        let err = download_curseforge_modpack_with_client(
+            &session,
+            &test_http_client(),
+            "restricted-pack",
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect_err("empty fallback download url should be treated as restricted");
+
+        assert!(err.to_string().contains("restricted downloads"));
+    }
 }
 
 // ===== VALIDATE_INIT_INPUTS UNIT TESTS =====
@@ -1084,6 +1849,418 @@ mod validate_init_inputs_tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("required"), "Expected required version error, got: {}", msg);
+    }
+}
+
+mod resolve_curseforge_slug_tests {
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn wrapper_requires_api_key_before_network_access() {
+        let resolver = MockProjectResolver::new();
+        let err = resolve_curseforge_slug(
+            "sodium",
+            &test_http_client(),
+            None,
+            Some("1.20.1"),
+            Some(ModLoader::Fabric),
+            None,
+            None,
+            Some(ProjectType::Mod),
+            &resolver,
+        )
+        .await
+        .expect_err("missing api key should error");
+
+        assert!(err.to_string().contains("CurseForge API key required"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_requires_api_key() {
+        let resolver = MockProjectResolver::new();
+        let err = resolve_curseforge_slug_with_api_base(
+            "sodium",
+            &test_http_client(),
+            None,
+            Some("1.20.1"),
+            Some(ModLoader::Fabric),
+            None,
+            None,
+            Some(ProjectType::Mod),
+            &resolver,
+            "https://example.invalid/v1",
+        )
+        .await
+        .expect_err("missing api key should error");
+
+        assert!(err.to_string().contains("CurseForge API key required"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_reports_search_status_errors() {
+        let mut server = mockito::Server::new_async().await;
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "sodium".into()),
+            ]))
+            .with_status(503)
+            .create_async()
+            .await;
+
+        let resolver = MockProjectResolver::new();
+        let err = resolve_curseforge_slug_with_api_base(
+            "sodium",
+            &test_http_client(),
+            Some("test-key"),
+            Some("1.20.1"),
+            Some(ModLoader::Fabric),
+            None,
+            None,
+            Some(ProjectType::Mod),
+            &resolver,
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect_err("search failure should error");
+
+        assert!(err.to_string().contains("CurseForge API returned 503"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_reports_missing_slug_results() {
+        let mut server = mockito::Server::new_async().await;
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "missing-mod".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[]}"#)
+            .create_async()
+            .await;
+
+        let resolver = MockProjectResolver::new();
+        let err = resolve_curseforge_slug_with_api_base(
+            "missing-mod",
+            &test_http_client(),
+            Some("test-key"),
+            Some("1.20.1"),
+            Some(ModLoader::Fabric),
+            None,
+            None,
+            Some(ProjectType::Mod),
+            &resolver,
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect_err("empty search should error");
+
+        assert!(err.to_string().contains("project not found"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_resolves_first_search_match_into_add_contract() {
+        let mut server = mockito::Server::new_async().await;
+        let _search = server
+            .mock("GET", "/v1/mods/search")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("gameId".into(), "432".into()),
+                mockito::Matcher::UrlEncoded("slug".into(), "sodium".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"data":[{"id":394468,"name":"Sodium"}]}"#)
+            .create_async()
+            .await;
+
+        let resolver = MockProjectResolver::new();
+        let resolution = resolve_curseforge_slug_with_api_base(
+            "sodium",
+            &test_http_client(),
+            Some("test-key"),
+            Some("1.20.1"),
+            Some(ModLoader::Fabric),
+            Some("12345"),
+            None,
+            Some(ProjectType::Mod),
+            &resolver,
+            &format!("{}/v1", server.url()),
+        )
+        .await
+        .expect("curseforge slug resolution");
+
+        assert_eq!(resolution.title, "Sodium");
+        assert_eq!(resolution.resolved_project_id, "394468");
+        assert_eq!(resolution.resolved_platform, ProjectPlatform::CurseForge);
+        assert_eq!(resolution.commands.len(), 1);
+        assert!(
+            resolution.commands[0].iter().any(|arg| arg == "curseforge"),
+            "expected curseforge packwiz add command, got {:?}",
+            resolution.commands[0]
+        );
+        assert!(
+            resolution.commands[0].iter().any(|arg| arg == "12345"),
+            "expected file id override to flow into add contract, got {:?}",
+            resolution.commands[0]
+        );
+    }
+}
+
+mod handle_direct_download_jar_tests {
+    use super::*;
+
+    fn configured_direct_download_session(workdir: &Path) -> MockCommandSession {
+        MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.to_path_buf())
+                .with_configured_project(workdir.to_path_buf()),
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn wrapper_propagates_download_failures() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/missing.jar")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-wrapper-failure");
+        let session = configured_direct_download_session(&workdir)
+            .with_network(MockNetworkProvider::new().enable_http_client());
+        let resolver = MockProjectResolver::new();
+
+        let err = handle_direct_download_jar(
+            &session,
+            &format!("{}/downloads/missing.jar", server.url()),
+            &resolver,
+        )
+        .await
+        .err()
+        .expect("download failure should propagate through wrapper");
+
+        assert!(err.to_string().contains("HTTP 404"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_adds_identified_modrinth_jar_via_packwiz() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/sodium.jar")
+            .with_status(200)
+            .with_body("jar-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-modrinth");
+        let commands = crate::application::sync::build_packwiz_add_commands(
+            "AANobbMI",
+            ProjectPlatform::Modrinth,
+            Some("version-123"),
+        )
+        .expect("packwiz add commands");
+        let session = configured_direct_download_session(&workdir).with_process(
+            MockProcessProvider::new()
+                .with_packwiz_result(commands[0].clone(), Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                })),
+        );
+        let resolver = StubJarResolver {
+            identity: crate::empack::content::JarIdentity::Modrinth {
+                project_id: "AANobbMI".to_string(),
+                version_id: "version-123".to_string(),
+                title: "Sodium".to_string(),
+            },
+        };
+
+        let result = handle_direct_download_jar_with_client_and_resolver(
+            &session,
+            &format!("{}/downloads/sodium.jar", server.url()),
+            &test_http_client(),
+            &resolver,
+        )
+        .await
+        .expect("identified modrinth jar should succeed");
+
+        assert_eq!(result.title, "Sodium");
+        assert_eq!(result.platform, ProjectPlatform::Modrinth);
+        assert_eq!(result.project_id.as_deref(), Some("AANobbMI"));
+        assert!(!result.local);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_reports_modrinth_packwiz_failures() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/sodium.jar")
+            .with_status(200)
+            .with_body("jar-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-modrinth-packwiz-fail");
+        let commands = crate::application::sync::build_packwiz_add_commands(
+            "AANobbMI",
+            ProjectPlatform::Modrinth,
+            Some("version-123"),
+        )
+        .expect("packwiz add commands");
+        let session = configured_direct_download_session(&workdir).with_process(
+            MockProcessProvider::new()
+                .with_packwiz_result(commands[0].clone(), Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: "bad add".to_string(),
+                    success: false,
+                })),
+        );
+        let resolver = StubJarResolver {
+            identity: crate::empack::content::JarIdentity::Modrinth {
+                project_id: "AANobbMI".to_string(),
+                version_id: "version-123".to_string(),
+                title: "Sodium".to_string(),
+            },
+        };
+
+        let err = handle_direct_download_jar_with_client_and_resolver(
+            &session,
+            &format!("{}/downloads/sodium.jar", server.url()),
+            &test_http_client(),
+            &resolver,
+        )
+        .await
+        .err()
+        .expect("packwiz add failure should propagate");
+
+        assert!(err.to_string().contains("packwiz add failed: bad add"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_adds_identified_curseforge_jar_via_packwiz() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/jei.jar")
+            .with_status(200)
+            .with_body("jar-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-curseforge");
+        let commands = crate::application::sync::build_packwiz_add_commands(
+            "238222",
+            ProjectPlatform::CurseForge,
+            Some("5500000"),
+        )
+        .expect("packwiz add commands");
+        let session = configured_direct_download_session(&workdir).with_process(
+            MockProcessProvider::new()
+                .with_packwiz_result(commands[0].clone(), Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                })),
+        );
+        let resolver = StubJarResolver {
+            identity: crate::empack::content::JarIdentity::CurseForge {
+                project_id: 238222,
+                file_id: 5500000,
+                title: "JEI".to_string(),
+            },
+        };
+
+        let result = handle_direct_download_jar_with_client_and_resolver(
+            &session,
+            &format!("{}/downloads/jei.jar", server.url()),
+            &test_http_client(),
+            &resolver,
+        )
+        .await
+        .expect("identified curseforge jar should succeed");
+
+        assert_eq!(result.title, "JEI");
+        assert_eq!(result.platform, ProjectPlatform::CurseForge);
+        assert_eq!(result.project_id.as_deref(), Some("238222"));
+        assert!(!result.local);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_reports_curseforge_packwiz_process_errors() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/jei.jar")
+            .with_status(200)
+            .with_body("jar-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-curseforge-process-fail");
+        let commands = crate::application::sync::build_packwiz_add_commands(
+            "238222",
+            ProjectPlatform::CurseForge,
+            Some("5500000"),
+        )
+        .expect("packwiz add commands");
+        let session = configured_direct_download_session(&workdir).with_process(
+            MockProcessProvider::new().with_packwiz_result(
+                commands[0].clone(),
+                Err("process exploded".to_string()),
+            ),
+        );
+        let resolver = StubJarResolver {
+            identity: crate::empack::content::JarIdentity::CurseForge {
+                project_id: 238222,
+                file_id: 5500000,
+                title: "JEI".to_string(),
+            },
+        };
+
+        let err = handle_direct_download_jar_with_client_and_resolver(
+            &session,
+            &format!("{}/downloads/jei.jar", server.url()),
+            &test_http_client(),
+            &resolver,
+        )
+        .await
+        .err()
+        .expect("process execution error should propagate");
+
+        assert!(err.to_string().contains("packwiz add failed: process exploded"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_copies_unidentified_jar_as_local_dependency() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/unknown.jar")
+            .with_status(200)
+            .with_body("jar-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-local");
+        let session = configured_direct_download_session(&workdir);
+        let resolver = StubJarResolver {
+            identity: crate::empack::content::JarIdentity::Unidentified,
+        };
+
+        let result = handle_direct_download_jar_with_client_and_resolver(
+            &session,
+            &format!("{}/downloads/unknown.jar", server.url()),
+            &test_http_client(),
+            &resolver,
+        )
+        .await
+        .expect("unidentified jar should be copied locally");
+
+        assert_eq!(result.title, "unknown.jar");
+        assert!(result.local);
+        assert!(session
+            .filesystem()
+            .exists(&workdir.join("pack").join("mods").join("unknown.jar")));
     }
 }
 
@@ -2492,6 +3669,911 @@ mod handle_build_tests {
         assert!(
             session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")),
             "Dry-run mode should not modify dist/ artifacts"
+        );
+    }
+}
+
+mod handle_build_continue_tests {
+    #![allow(clippy::await_holding_lock)]
+
+    use super::*;
+    use std::ffi::OsString;
+    use tempfile::TempDir;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        unsafe fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.previous {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    fn cached_full_build_filesystem(workdir: PathBuf) -> MockFileSystemProvider {
+        MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_empack_project(workdir.clone(), "Restricted Pack", "1.21.1", "fabric")
+            .with_file(
+                workdir.join("cache").join("packwiz-installer-bootstrap.jar"),
+                "bootstrap".to_string(),
+            )
+            .with_file(
+                workdir.join("cache").join("packwiz-installer.jar"),
+                "installer".to_string(),
+            )
+    }
+
+    fn tty_capabilities() -> crate::terminal::TerminalCapabilities {
+        crate::terminal::TerminalCapabilities {
+            color: crate::primitives::TerminalColorCaps::None,
+            unicode: crate::primitives::TerminalUnicodeCaps::Ascii,
+            is_tty: true,
+            cols: 80,
+        }
+    }
+
+    fn restricted_install_output(workdir: &std::path::Path) -> crate::application::session::ProcessOutput {
+        crate::application::session::ProcessOutput {
+            stdout: "Failed to download modpack, the following errors were encountered:\nOptiFine.jar:".to_string(),
+            stderr: format!(
+                "java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.\nPlease go to https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891 and save this file to {}\n\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)",
+                workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+            ),
+            success: false,
+        }
+    }
+
+    fn client_full_installer_args(workdir: &Path) -> Vec<String> {
+        vec![
+            "-jar".to_string(),
+            workdir
+                .join("cache")
+                .join("packwiz-installer-bootstrap.jar")
+                .to_string_lossy()
+                .to_string(),
+            "--bootstrap-main-jar".to_string(),
+            workdir
+                .join("cache")
+                .join("packwiz-installer.jar")
+                .to_string_lossy()
+                .to_string(),
+            "-g".to_string(),
+            "-s".to_string(),
+            "both".to_string(),
+            workdir
+                .join("dist")
+                .join("client-full")
+                .join("pack")
+                .join("pack.toml")
+                .to_string_lossy()
+                .to_string(),
+        ]
+    }
+
+    #[tokio::test]
+    async fn build_continue_rejects_targets() {
+        let workdir = mock_root().join("continue-reject-targets");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir));
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["client-full".to_string()],
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("continue build should reject positional targets");
+
+        assert!(err.to_string().contains("does not accept positional targets"));
+    }
+
+    #[tokio::test]
+    async fn build_continue_rejects_clean() {
+        let workdir = mock_root().join("continue-reject-clean");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir));
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                clean: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("continue build should reject clean");
+
+        assert!(err.to_string().contains("cannot be combined with --clean"));
+    }
+
+    #[tokio::test]
+    async fn build_continue_errors_without_pending_state() {
+        let workdir = mock_root().join("continue-no-pending");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir));
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("continue build should require pending state");
+
+        assert_eq!(err.to_string(), "No pending restricted build to continue");
+    }
+
+    #[tokio::test]
+    async fn fresh_restricted_build_writes_pending_state() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-record-state");
+        let pack_toml_path = workdir.join("dist").join("client-full").join("pack").join("pack.toml");
+        let process = MockProcessProvider::new().with_result(
+            "java".to_string(),
+            vec![
+                "-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer-bootstrap.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "--bootstrap-main-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "-g".to_string(),
+                "-s".to_string(),
+                "both".to_string(),
+                pack_toml_path.to_string_lossy().to_string(),
+            ],
+            Ok(restricted_install_output(&workdir)),
+        );
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(process);
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["client-full".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("restricted build should stop for manual download");
+
+        assert!(err.to_string().contains("empack build --continue"));
+        let pending = crate::empack::restricted_build::load_pending_build(
+            session.filesystem(),
+            &workdir,
+        )
+        .expect("load pending build")
+        .expect("pending build exists");
+        assert_eq!(pending.targets, vec!["client-full"]);
+        assert_eq!(pending.entries.len(), 1);
+        assert_eq!(pending.entries[0].filename, "OptiFine.jar");
+    }
+
+    #[tokio::test]
+    async fn fresh_restricted_build_imports_downloads_dir_into_cache() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-import-downloads-dir");
+        let downloads_dir = workdir.join("manual-downloads");
+        let pack_toml_path = workdir.join("dist").join("client-full").join("pack").join("pack.toml");
+        let process = MockProcessProvider::new().with_result(
+            "java".to_string(),
+            vec![
+                "-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer-bootstrap.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "--bootstrap-main-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "-g".to_string(),
+                "-s".to_string(),
+                "both".to_string(),
+                pack_toml_path.to_string_lossy().to_string(),
+            ],
+            Ok(restricted_install_output(&workdir)),
+        );
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                cached_full_build_filesystem(workdir.clone()).with_file(
+                    downloads_dir.join("OptiFine.jar"),
+                    "manual bytes".to_string(),
+                ),
+            )
+            .with_process(process);
+
+        let _ = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["client-full".to_string()],
+                downloads_dir: Some(downloads_dir.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let pending = crate::empack::restricted_build::load_pending_build(
+            session.filesystem(),
+            &workdir,
+        )
+        .expect("load pending build")
+        .expect("pending build exists");
+        assert!(
+            session
+                .filesystem()
+                .exists(&pending.restricted_cache_path().join("OptiFine.jar")),
+            "downloads-dir file should be imported into the managed restricted cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_restricted_build_prompts_before_opening_browser_urls() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-browser-confirm-no");
+        let pack_toml_path = workdir
+            .join("dist")
+            .join("client-full")
+            .join("pack")
+            .join("pack.toml");
+        let process = MockProcessProvider::new().with_result(
+            "java".to_string(),
+            vec![
+                "-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer-bootstrap.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "--bootstrap-main-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "-g".to_string(),
+                "-s".to_string(),
+                "both".to_string(),
+                pack_toml_path.to_string_lossy().to_string(),
+            ],
+            Ok(restricted_install_output(&workdir)),
+        );
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(process)
+            .with_interactive(MockInteractiveProvider::new().with_confirm(false))
+            .with_terminal_capabilities(tty_capabilities());
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["client-full".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("restricted build should still require manual download");
+
+        assert!(err.to_string().contains("empack build --continue"));
+        assert_eq!(
+            session.interactive_provider.get_confirm_calls(),
+            vec![("Open download URLs in browser?".to_string(), false)]
+        );
+        let (browser_cmd, _) = crate::platform::browser_open_command();
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(browser_cmd)
+                .is_empty(),
+            "declining the browser confirm should not launch a browser command"
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_restricted_build_opens_browser_urls_when_confirmed() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-browser-confirm-yes");
+        let pack_toml_path = workdir
+            .join("dist")
+            .join("client-full")
+            .join("pack")
+            .join("pack.toml");
+        let process = MockProcessProvider::new().with_result(
+            "java".to_string(),
+            vec![
+                "-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer-bootstrap.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "--bootstrap-main-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "-g".to_string(),
+                "-s".to_string(),
+                "both".to_string(),
+                pack_toml_path.to_string_lossy().to_string(),
+            ],
+            Ok(restricted_install_output(&workdir)),
+        );
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(process)
+            .with_interactive(MockInteractiveProvider::new().with_confirm(true))
+            .with_terminal_capabilities(tty_capabilities());
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["client-full".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("restricted build should still require manual download");
+
+        assert!(err.to_string().contains("empack build --continue"));
+        let (browser_cmd, browser_prefix) = crate::platform::browser_open_command();
+        let browser_calls = session.process_provider.get_calls_for_command(browser_cmd);
+        assert_eq!(browser_calls.len(), 1, "expected one browser-open call");
+        let mut expected_args: Vec<String> = browser_prefix
+            .iter()
+            .map(|arg| (*arg).to_string())
+            .collect();
+        expected_args.push(
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891".to_string(),
+        );
+        assert_eq!(browser_calls[0].args, expected_args);
+    }
+
+    #[tokio::test]
+    async fn build_continue_restores_cached_files_and_clears_pending_state() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-success");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+        session
+            .filesystem()
+            .write_bytes(&pending.restricted_cache_path().join("OptiFine.jar"), b"cached bytes")
+            .expect("write cached restricted file");
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok(), "continue build should succeed: {result:?}");
+        assert!(
+            session.filesystem().exists(
+                &workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+            ),
+            "cached restricted file should be restored into the distribution tree"
+        );
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_none(),
+            "pending state should be cleared after a successful continue build"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_continue_clears_stale_pending_state() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-stale");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .write_file(&workdir.join("empack.yml"), "empack:\n  name: changed\n")
+            .expect("rewrite empack.yml");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+        session
+            .filesystem()
+            .write_bytes(&pending.restricted_cache_path().join("OptiFine.jar"), b"cached bytes")
+            .expect("write cached restricted file");
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("stale pending state should fail");
+
+        assert!(err.to_string().contains("Pending restricted build is stale"));
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_none(),
+            "stale pending state should be cleared"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_continue_dry_run_keeps_pending_state() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-dry-run");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()));
+        session.config_provider.app_config.dry_run = true;
+
+        crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+
+        let result = continue_pending_restricted_build(
+            &session,
+            &workdir,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+            std::time::Instant::now(),
+        )
+        .await;
+
+        assert!(result.is_ok(), "dry-run continue should succeed: {result:?}");
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_some(),
+            "dry-run should preserve pending state"
+        );
+        assert!(
+            session.process_provider.get_calls().is_empty(),
+            "dry-run continue should not launch subprocesses"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_continue_errors_when_cached_downloads_are_still_missing() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-cache-missing");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()));
+
+        crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+
+        let err = continue_pending_restricted_build(
+            &session,
+            &workdir,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+            std::time::Instant::now(),
+        )
+        .await
+        .expect_err("missing restricted cache should fail");
+
+        assert!(err
+            .to_string()
+            .contains("still required before the build can continue"));
+    }
+
+    #[tokio::test]
+    async fn build_continue_errors_when_restricted_downloads_recur() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-restricted-again");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_result(
+                "java".to_string(),
+                client_full_installer_args(&workdir),
+                Ok(restricted_install_output(&workdir)),
+            ));
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+        session
+            .filesystem()
+            .write_bytes(&pending.restricted_cache_path().join("OptiFine.jar"), b"cached bytes")
+            .expect("write cached restricted file");
+
+        let err = continue_pending_restricted_build(
+            &session,
+            &workdir,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+            std::time::Instant::now(),
+        )
+        .await
+        .expect_err("repeated restricted installer output should fail");
+
+        assert!(err
+            .to_string()
+            .contains("restricted download(s) are still required after continue"));
+    }
+
+    #[tokio::test]
+    async fn build_continue_reports_failed_targets_after_restore() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-build-failed");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_result(
+                "java".to_string(),
+                client_full_installer_args(&workdir),
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: "installer exploded".to_string(),
+                    success: false,
+                }),
+            ));
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+        session
+            .filesystem()
+            .write_bytes(&pending.restricted_cache_path().join("OptiFine.jar"), b"cached bytes")
+            .expect("write cached restricted file");
+
+        let err = continue_pending_restricted_build(
+            &session,
+            &workdir,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+            std::time::Instant::now(),
+        )
+        .await
+        .expect_err("failed target should propagate");
+
+        assert!(err.to_string().contains("Failed to execute build pipeline"));
+    }
+
+    #[tokio::test]
+    async fn build_continue_restores_multiple_destinations_for_one_cached_file() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-multiple-dests");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[
+                crate::empack::RestrictedModInfo {
+                    name: "OptiFine.jar".to_string(),
+                    url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                        .to_string(),
+                    dest_path: workdir
+                        .join("dist")
+                        .join("client-full")
+                        .join("mods")
+                        .join("OptiFine.jar")
+                        .to_string_lossy()
+                        .to_string(),
+                },
+                crate::empack::RestrictedModInfo {
+                    name: "OptiFine.jar".to_string(),
+                    url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                        .to_string(),
+                    dest_path: workdir
+                        .join("dist")
+                        .join("client-full")
+                        .join("backup")
+                        .join("OptiFine.jar")
+                        .to_string_lossy()
+                        .to_string(),
+                },
+            ],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+        session
+            .filesystem()
+            .write_bytes(&pending.restricted_cache_path().join("OptiFine.jar"), b"cached bytes")
+            .expect("write cached restricted file");
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "continue build should restore every destination and succeed: {result:?}"
+        );
+        assert!(
+            session.filesystem().exists(
+                &workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+            )
+        );
+        assert!(
+            session.filesystem().exists(
+                &workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("backup")
+                    .join("OptiFine.jar")
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn clean_build_clears_pending_restricted_state_before_rebuilding() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("clean-clears-pending-state");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+
+        crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["mrpack".to_string()],
+                clean: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok(), "clean rebuild should succeed: {result:?}");
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_none(),
+            "clean build should clear stale pending restricted state before rebuilding"
         );
     }
 }

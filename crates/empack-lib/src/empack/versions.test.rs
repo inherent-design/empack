@@ -166,6 +166,53 @@ fn test_filter_neoforge_versions() {
 }
 
 #[test]
+fn test_filter_neoforge_versions_supports_post_1x_year_style_scheme() {
+    let all_versions = vec![
+        "26.1.0.0-alpha.10+snapshot-6".to_string(),
+        "26.1.0.0-alpha.9+snapshot-6".to_string(),
+        "26.1.0.0-alpha.11+snapshot-7".to_string(),
+        "26.2.0.0-alpha.1+snapshot-1".to_string(),
+    ];
+
+    let filtered =
+        filter_neoforge_versions_by_minecraft(&all_versions, "26.1-snapshot-6").unwrap();
+
+    assert_eq!(
+        filtered,
+        vec![
+            "26.1.0.0-alpha.10+snapshot-6".to_string(),
+            "26.1.0.0-alpha.9+snapshot-6".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn test_uses_forge_style_neoforge_coordinate_only_for_1_20_1() {
+    assert!(uses_forge_style_neoforge_coordinate("1.20.1"));
+    assert!(!uses_forge_style_neoforge_coordinate("1.20.2"));
+    assert!(!uses_forge_style_neoforge_coordinate("1.21.1"));
+    assert!(!uses_forge_style_neoforge_coordinate("26.1-snapshot-6"));
+}
+
+#[test]
+fn test_fabric_support_floor_matches_official_api_boundary() {
+    assert!(!supports_fabric_loader("1.13.2"));
+    assert!(!supports_fabric_loader("1.12.2"));
+    assert!(supports_fabric_loader("1.14"));
+    assert!(supports_fabric_loader("1.14.4"));
+    assert!(supports_fabric_loader("24w45a"));
+}
+
+#[test]
+fn test_quilt_support_floor_matches_official_api_boundary() {
+    assert!(!supports_quilt_loader("1.14.3"));
+    assert!(!supports_quilt_loader("1.14"));
+    assert!(supports_quilt_loader("1.14.4"));
+    assert!(supports_quilt_loader("1.20.1"));
+    assert!(supports_quilt_loader("24w45a"));
+}
+
+#[test]
 fn test_filter_forge_versions() {
     // Sample maven-metadata.xml versions (realistic subset from actual API)
     let all_versions = vec![
@@ -704,13 +751,85 @@ fn test_fallback_loader_versions_forge() {
 #[test]
 fn test_fallback_loader_versions_neoforge() {
     let versions = VersionFetcher::get_fallback_loader_versions("neoforge", "1.21.1");
-    assert!(!versions.is_empty());
+    assert_eq!(
+        versions,
+        vec![
+            "21.1.224".to_string(),
+            "21.1.223".to_string(),
+            "21.1.222".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn test_fallback_loader_versions_neoforge_1_20_1_uses_legacy_family() {
+    let versions = VersionFetcher::get_fallback_loader_versions("neoforge", "1.20.1");
+    assert_eq!(
+        versions,
+        vec![
+            "47.1.106".to_string(),
+            "47.1.105".to_string(),
+            "47.1.104".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn test_fallback_loader_versions_neoforge_tracks_exact_old_style_boundaries() {
+    assert_eq!(
+        VersionFetcher::get_fallback_loader_versions("neoforge", "1.21"),
+        vec![
+            "21.0.167".to_string(),
+            "21.0.166".to_string(),
+            "21.0.165".to_string(),
+        ]
+    );
+    assert_eq!(
+        VersionFetcher::get_fallback_loader_versions("neoforge", "1.21.10"),
+        vec![
+            "21.10.64".to_string(),
+            "21.10.63".to_string(),
+            "21.10.62-beta".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn test_fallback_loader_versions_neoforge_rejects_unknown_or_unsupported_families() {
+    assert!(
+        VersionFetcher::get_fallback_loader_versions("neoforge", "1.19.4").is_empty(),
+        "NeoForge fallback must not invent versions for unsupported Minecraft releases"
+    );
+    assert!(
+        VersionFetcher::get_fallback_loader_versions("neoforge", "1.21.11").is_empty(),
+        "NeoForge fallback should prefer no answer over the wrong family when the exact family is unknown"
+    );
 }
 
 #[test]
 fn test_fallback_loader_versions_quilt() {
     let versions = VersionFetcher::get_fallback_loader_versions("quilt", "1.20.1");
     assert!(!versions.is_empty());
+}
+
+#[test]
+fn test_fallback_loader_versions_respect_fabric_and_quilt_support_floors() {
+    assert!(
+        VersionFetcher::get_fallback_loader_versions("fabric", "1.13.2").is_empty(),
+        "Fabric fallback must not invent support below 1.14"
+    );
+    assert!(
+        !VersionFetcher::get_fallback_loader_versions("fabric", "1.14").is_empty(),
+        "Fabric fallback should still serve supported stable releases"
+    );
+    assert!(
+        VersionFetcher::get_fallback_loader_versions("quilt", "1.14.3").is_empty(),
+        "Quilt fallback must not invent support below 1.14.4"
+    );
+    assert!(
+        !VersionFetcher::get_fallback_loader_versions("quilt", "1.14.4").is_empty(),
+        "Quilt fallback should serve the first supported stable release"
+    );
 }
 
 #[test]
@@ -743,6 +862,10 @@ async fn test_version_fetcher_uses_fallbacks_when_http_client_is_unavailable() {
         VersionFetcher::get_fallback_loader_versions("neoforge", "1.20.1")
     );
     assert_eq!(
+        fetcher.fetch_neoforge_loader_versions("1.19.4").await.unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(
         fetcher.fetch_forge_loader_versions("1.21").await.unwrap(),
         VersionFetcher::get_fallback_loader_versions("forge", "1.21")
     );
@@ -755,6 +878,14 @@ async fn test_version_fetcher_uses_fallbacks_when_http_client_is_unavailable() {
         VersionFetcher::get_fallback_loader_versions("quilt", "1.21.1")
     );
     assert_eq!(
+        fetcher.fetch_fabric_loader_versions("1.13.2").await.unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        fetcher.fetch_quilt_loader_versions("1.14.3").await.unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(
         fetcher.fetch_compatible_loaders("1.21.1").await.unwrap(),
         vec![
             ModLoader::NeoForge,
@@ -763,6 +894,53 @@ async fn test_version_fetcher_uses_fallbacks_when_http_client_is_unavailable() {
             ModLoader::Quilt
         ]
     );
+    assert_eq!(
+        fetcher.fetch_compatible_loaders("1.20.1").await.unwrap(),
+        vec![
+            ModLoader::NeoForge,
+            ModLoader::Fabric,
+            ModLoader::Forge,
+            ModLoader::Quilt
+        ]
+    );
+    assert_eq!(
+        fetcher.fetch_compatible_loaders("1.13.2").await.unwrap(),
+        vec![ModLoader::Forge]
+    );
+    assert_eq!(
+        fetcher.fetch_compatible_loaders("1.14.3").await.unwrap(),
+        vec![ModLoader::Fabric, ModLoader::Forge]
+    );
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_neoforge_loader_versions_repair_incompatible_cached_family() {
+    let network = MockNetworkProvider::new().with_failing_http_client();
+    let cache_dir = crate::platform::cache::cache_root()
+        .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache"));
+    let cache_path = cache_dir.join("neoforge_loader_1.21.1.json");
+    let stale_cache = serde_json::to_string(&CachedVersions::new(vec![
+        "21.4.147".to_string(),
+        "20.4.147".to_string(),
+        "20.4.109".to_string(),
+    ]))
+    .expect("serialize stale NeoForge cache");
+
+    let filesystem = MockFileSystemProvider::new().with_file(cache_path.clone(), stale_cache);
+    let fetcher = VersionFetcher::new(&network, &filesystem).unwrap();
+
+    let repaired = fetcher.fetch_neoforge_loader_versions("1.21.1").await.unwrap();
+    let expected = VersionFetcher::get_fallback_loader_versions("neoforge", "1.21.1");
+    assert_eq!(repaired, expected);
+
+    let repaired_cache = filesystem.files.lock().unwrap();
+    let persisted = repaired_cache
+        .get(&cache_path)
+        .expect("NeoForge cache should be rewritten with repaired data");
+    let parsed: CachedVersions =
+        serde_json::from_str(persisted).expect("repaired cache should remain valid JSON");
+    assert_eq!(parsed.versions, expected);
 }
 
 // ---------------------------------------------------------------------------

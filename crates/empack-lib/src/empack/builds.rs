@@ -5,7 +5,8 @@ use crate::application::session::execute_process_with_live_issues;
 use crate::empack::PackwizInstaller;
 use crate::empack::templates::TemplateEngine;
 use crate::empack::versions::{
-    canonicalize_forge_loader_version, parse_version, uses_legacy_forge_coordinate,
+    canonicalize_forge_loader_version, parse_version, uses_forge_style_neoforge_coordinate,
+    uses_legacy_forge_coordinate,
 };
 use crate::primitives::*;
 #[cfg(test)]
@@ -108,6 +109,7 @@ pub struct BuildOrchestrator<'a> {
     pack_info: Option<PackInfo>,
 
     archive_format: crate::empack::archive::ArchiveFormat,
+    continue_full_builds: bool,
 
     template_engine: Option<TemplateEngine>,
 
@@ -123,6 +125,7 @@ impl<'a> std::fmt::Debug for BuildOrchestrator<'a> {
             .field("mrpack_extracted", &self.mrpack_extracted)
             .field("pack_info", &self.pack_info)
             .field("archive_format", &self.archive_format)
+            .field("continue_full_builds", &self.continue_full_builds)
             .field(
                 "template_engine",
                 &self.template_engine.as_ref().map(|_| "<TemplateEngine>"),
@@ -146,7 +149,33 @@ fn forge_installer_coordinate(mc_version: &str, loader_version: &str) -> String 
 
 fn supports_neoforge_minecraft(mc_version: &str) -> bool {
     parse_version(mc_version)
-        .is_some_and(|version| version >= parse_version("1.20.2").expect("hardcoded version"))
+        .is_some_and(|version| version >= parse_version("1.20.1").expect("hardcoded version"))
+}
+
+fn neoforge_installer_artifact(
+    mc_version: &str,
+    loader_version: &str,
+) -> Result<(String, String), BuildError> {
+    if !supports_neoforge_minecraft(mc_version) {
+        return Err(BuildError::ValidationError {
+            reason: format!("NeoForge only supports Minecraft 1.20.1 and newer; got {mc_version}"),
+        });
+    }
+
+    if uses_forge_style_neoforge_coordinate(mc_version) {
+        let coordinate = format!("{mc_version}-{loader_version}");
+        let filename = format!("forge-{coordinate}-installer.jar");
+        let url = format!(
+            "https://maven.neoforged.net/releases/net/neoforged/forge/{coordinate}/{filename}"
+        );
+        Ok((url, filename))
+    } else {
+        let filename = format!("neoforge-{loader_version}-installer.jar");
+        let url = format!(
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/{loader_version}/{filename}"
+        );
+        Ok((url, filename))
+    }
 }
 
 /// Pack metadata from pack.toml for template processing
@@ -217,9 +246,15 @@ impl<'a> BuildOrchestrator<'a> {
             mrpack_extracted: false,
             pack_info: None,
             archive_format,
+            continue_full_builds: false,
             template_engine: None,
             session,
         })
+    }
+
+    pub fn continue_full_builds(mut self) -> Self {
+        self.continue_full_builds = true;
+        self
     }
 
     /// Load pack info from pack.toml
@@ -595,17 +630,7 @@ impl<'a> BuildOrchestrator<'a> {
         let version = &pack_info.loader_version;
         let mc = &pack_info.mc_version;
 
-        if !supports_neoforge_minecraft(mc) {
-            return Err(BuildError::ValidationError {
-                reason: format!("NeoForge only supports Minecraft 1.20.2 and newer; got {mc}"),
-            });
-        }
-
-        let url = format!(
-            "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
-            v = version
-        );
-        let installer_filename = format!("neoforge-{}-installer.jar", version);
+        let (url, installer_filename) = neoforge_installer_artifact(mc, version)?;
 
         let installer_path = dist_dir.join(&installer_filename);
         self.download_file(&url, &installer_path)?;
@@ -1258,7 +1283,9 @@ impl<'a> BuildOrchestrator<'a> {
         bootstrap_jar_path: &Path,
         installer_jar_path: &Path,
     ) -> Result<BuildResult, BuildError> {
-        self.clean_target(BuildTarget::ClientFull)?;
+        if !self.continue_full_builds {
+            self.clean_target(BuildTarget::ClientFull)?;
+        }
         self.refresh_pack()?;
         self.load_pack_info()?;
 
@@ -1278,10 +1305,7 @@ impl<'a> BuildOrchestrator<'a> {
             self.session,
             bootstrap_jar_path.to_owned(),
             installer_jar_path.to_owned(),
-        )
-        .map_err(|e| BuildError::CommandFailed {
-            command: format!("PackwizInstaller initialization: {}", e),
-        })?;
+        );
 
         match installer
             .install_mods("both", &dist_dir)
@@ -1320,7 +1344,9 @@ impl<'a> BuildOrchestrator<'a> {
         bootstrap_jar_path: &Path,
         installer_jar_path: &Path,
     ) -> Result<BuildResult, BuildError> {
-        self.clean_target(BuildTarget::ServerFull)?;
+        if !self.continue_full_builds {
+            self.clean_target(BuildTarget::ServerFull)?;
+        }
         self.refresh_pack()?;
 
         let dist_dir = self.dist_dir.join("server-full");
@@ -1353,10 +1379,7 @@ impl<'a> BuildOrchestrator<'a> {
             self.session,
             bootstrap_jar_path.to_owned(),
             installer_jar_path.to_owned(),
-        )
-        .map_err(|e| BuildError::CommandFailed {
-            command: format!("PackwizInstaller initialization: {}", e),
-        })?;
+        );
 
         match installer.install_mods("server", &dist_dir).map_err(|e| {
             BuildError::CommandFailed {
