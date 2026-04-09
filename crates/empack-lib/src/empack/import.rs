@@ -779,6 +779,19 @@ async fn resolve_manifest_with_api_bases(
     }
     progress.finish("Platform references resolved");
 
+    let missing_results = results.iter().filter(|entry| entry.is_none()).count();
+    debug_assert_eq!(
+        missing_results, 0,
+        "resolve manifest should preserve one result slot per input content entry"
+    );
+    if missing_results > 0 {
+        anyhow::bail!(
+            "resolve manifest lost {} content entr{} during task join",
+            missing_results,
+            if missing_results == 1 { "y" } else { "ies" }
+        );
+    }
+
     let mut resolved_content = Vec::with_capacity(total);
     for (entry, w) in results.into_iter().flatten() {
         warnings.extend(w);
