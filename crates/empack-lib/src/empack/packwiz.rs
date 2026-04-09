@@ -12,6 +12,7 @@
 
 use crate::application::session::{FileSystemProvider, ProcessProvider, Session};
 use crate::empack::state::StateError;
+use crate::empack::versions::{canonicalize_forge_loader_version, uses_legacy_forge_coordinate};
 use crate::primitives::ProjectPlatform;
 
 /// Binary name for packwiz CLI operations.
@@ -94,6 +95,17 @@ impl PackwizOps for LivePackwizOps<'_> {
             return Err(StateError::MissingFile {
                 file: pack_dir.to_path_buf(),
             });
+        }
+
+        if uses_legacy_forge_init_workaround(modloader, mc_version, loader_version) {
+            return self.run_legacy_forge_init(
+                workdir,
+                name,
+                author,
+                version,
+                mc_version,
+                loader_version,
+            );
         }
 
         let mut args = vec![
@@ -210,6 +222,73 @@ impl PackwizOps for LivePackwizOps<'_> {
         let cache_dir = crate::platform::cache::cache_root()?.join("jars");
         Ok(cache_dir.join("packwiz-installer.jar"))
     }
+}
+
+impl LivePackwizOps<'_> {
+    fn run_legacy_forge_init(
+        &self,
+        workdir: &Path,
+        name: &str,
+        author: &str,
+        version: &str,
+        mc_version: &str,
+        loader_version: &str,
+    ) -> Result<(), StateError> {
+        let pack_dir = workdir.join("pack");
+        let args = vec![
+            "init",
+            "--name",
+            name,
+            "--author",
+            author,
+            "--version",
+            version,
+            "--mc-version",
+            mc_version,
+            "--modloader",
+            "none",
+            "-y",
+        ];
+
+        let output = self
+            .process
+            .execute(self.packwiz_bin, &args, &pack_dir)
+            .map_err(|e| StateError::CommandFailed {
+                command: format!("packwiz init failed: {}", e),
+            })?;
+
+        if !output.success {
+            return Err(StateError::CommandFailed {
+                command: format!("packwiz init returned non-zero: {}", output.error_output()),
+            });
+        }
+
+        let pack_toml_path = pack_dir.join("pack.toml");
+        let normalized_loader_version =
+            canonicalize_forge_loader_version(mc_version, loader_version);
+        write_pack_toml_versions(
+            &pack_toml_path,
+            &[("forge", &normalized_loader_version)],
+            self.filesystem,
+        )
+        .map_err(|e| StateError::IoError {
+            source: anyhow::anyhow!("failed to patch legacy Forge pack.toml: {}", e),
+        })?;
+
+        self.run_packwiz_refresh(workdir)
+    }
+}
+
+fn uses_legacy_forge_init_workaround(
+    modloader: &str,
+    mc_version: &str,
+    loader_version: &str,
+) -> bool {
+    // packwiz-tx cannot currently initialize Forge 1.7.10 packs because the
+    // Maven metadata switches at 10.13.2.1300 to `...-1.7.10` suffixed
+    // versions while modpack manifests and packwiz init expect the raw
+    // Forge loader version.
+    modloader == "forge" && uses_legacy_forge_coordinate(mc_version, loader_version)
 }
 
 /// Check if packwiz is available in PATH and return version info.
@@ -460,6 +539,51 @@ pub fn write_pack_toml_options(
         options_table.insert(
             "acceptable-game-versions".to_string(),
             toml::Value::Array(arr),
+        );
+    }
+
+    let output = toml::to_string(&table).map_err(|e| {
+        PackwizError::PackFormatError(format!("failed to serialize pack.toml: {e}"))
+    })?;
+
+    fs.write_file(pack_toml_path, &output)
+        .map_err(|e| PackwizError::ProcessFailed {
+            source: std::io::Error::other(e),
+        })?;
+
+    Ok(())
+}
+
+fn write_pack_toml_versions(
+    pack_toml_path: &Path,
+    version_entries: &[(&str, &str)],
+    fs: &dyn FileSystemProvider,
+) -> Result<(), PackwizError> {
+    if version_entries.is_empty() {
+        return Ok(());
+    }
+
+    let content = fs
+        .read_to_string(pack_toml_path)
+        .map_err(|e| PackwizError::ProcessFailed {
+            source: std::io::Error::other(e),
+        })?;
+
+    let mut table: toml::Table = toml::from_str(&content)
+        .map_err(|e| PackwizError::PackFormatError(format!("failed to parse pack.toml: {e}")))?;
+
+    let versions = table
+        .entry("versions")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+
+    let versions_table = versions
+        .as_table_mut()
+        .ok_or_else(|| PackwizError::PackFormatError("[versions] is not a table".into()))?;
+
+    for (key, value) in version_entries {
+        versions_table.insert(
+            (*key).to_string(),
+            toml::Value::String((*value).to_string()),
         );
     }
 

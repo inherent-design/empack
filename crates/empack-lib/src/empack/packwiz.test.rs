@@ -770,6 +770,170 @@ fn test_mock_packwiz_ops_failing_init_returns_io_error() {
 }
 
 #[test]
+fn test_live_packwiz_ops_legacy_forge_init_uses_none_then_patches_versions() {
+    let workdir = mock_root().join("workdir");
+    let pack_dir = workdir.join("pack");
+    let pack_toml_path = pack_dir.join("pack.toml");
+    let pack_toml = r#"name = "Legacy Forge Pack"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.7.10"
+"#;
+
+    let process = MockProcessProvider::new()
+        .with_packwiz_result(
+            vec![
+                "init".to_string(),
+                "--name".to_string(),
+                "Legacy Forge Pack".to_string(),
+                "--author".to_string(),
+                "Test Author".to_string(),
+                "--version".to_string(),
+                "1.0.0".to_string(),
+                "--mc-version".to_string(),
+                "1.7.10".to_string(),
+                "--modloader".to_string(),
+                "none".to_string(),
+                "-y".to_string(),
+            ],
+            Ok(ProcessOutput {
+                stdout: "pack.toml created".to_string(),
+                stderr: String::new(),
+                success: true,
+            }),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_toml_path.to_string_lossy().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(ProcessOutput {
+                stdout: "Refreshed index".to_string(),
+                stderr: String::new(),
+                success: true,
+            }),
+        );
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(pack_toml_path.clone(), pack_toml.to_string());
+
+    let ops = LivePackwizOps::new(&process, &filesystem, PACKWIZ_BIN);
+    ops.run_packwiz_init(
+        &workdir,
+        "Legacy Forge Pack",
+        "Test Author",
+        "1.0.0",
+        "forge",
+        "1.7.10",
+        "10.13.4.1614",
+    )
+    .expect("legacy forge init should succeed via workaround");
+
+    let updated = filesystem.read_to_string(&pack_toml_path).unwrap();
+    assert!(updated.contains("minecraft = \"1.7.10\""));
+    assert!(updated.contains("forge = \"10.13.4.1614\""));
+    assert!(process.verify_call(
+        PACKWIZ_BIN,
+        &[
+            "init",
+            "--name",
+            "Legacy Forge Pack",
+            "--author",
+            "Test Author",
+            "--version",
+            "1.0.0",
+            "--mc-version",
+            "1.7.10",
+            "--modloader",
+            "none",
+            "-y"
+        ],
+        &pack_dir
+    ));
+    assert!(process.verify_call(
+        PACKWIZ_BIN,
+        &["--pack-file", &pack_toml_path.to_string_lossy(), "refresh"],
+        &workdir
+    ));
+}
+
+#[test]
+fn test_live_packwiz_ops_pre_boundary_1710_forge_init_uses_direct_forge_version() {
+    let workdir = mock_root().join("workdir");
+    let pack_dir = workdir.join("pack");
+    let process = MockProcessProvider::new().with_packwiz_result(
+        vec![
+            "init".to_string(),
+            "--name".to_string(),
+            "Early Legacy Forge Pack".to_string(),
+            "--author".to_string(),
+            "Test Author".to_string(),
+            "--version".to_string(),
+            "1.0.0".to_string(),
+            "--mc-version".to_string(),
+            "1.7.10".to_string(),
+            "--modloader".to_string(),
+            "forge".to_string(),
+            "-y".to_string(),
+            "--forge-version".to_string(),
+            "10.13.2.1291".to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: "pack.toml created".to_string(),
+            stderr: String::new(),
+            success: true,
+        }),
+    );
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(pack_dir.join(".placeholder"), String::new());
+
+    let ops = LivePackwizOps::new(&process, &filesystem, PACKWIZ_BIN);
+    ops.run_packwiz_init(
+        &workdir,
+        "Early Legacy Forge Pack",
+        "Test Author",
+        "1.0.0",
+        "forge",
+        "1.7.10",
+        "10.13.2.1291",
+    )
+    .expect("pre-boundary 1.7.10 forge init should use the direct packwiz path");
+
+    assert!(process.verify_call(
+        PACKWIZ_BIN,
+        &[
+            "init",
+            "--name",
+            "Early Legacy Forge Pack",
+            "--author",
+            "Test Author",
+            "--version",
+            "1.0.0",
+            "--mc-version",
+            "1.7.10",
+            "--modloader",
+            "forge",
+            "-y",
+            "--forge-version",
+            "10.13.2.1291"
+        ],
+        &pack_dir
+    ));
+}
+
+#[test]
 fn test_packwiz_version_helpers_report_available_and_unavailable() {
     let workdir = mock_root().join("workdir");
     let packwiz_path = mock_root()
@@ -801,6 +965,30 @@ fn test_packwiz_version_helpers_report_available_and_unavailable() {
     let (available, version) = check_packwiz_available(&unavailable, &workdir).unwrap();
     assert!(!available);
     assert_eq!(version, "not found");
+}
+
+#[test]
+fn test_uses_legacy_forge_init_workaround_switches_at_exact_boundary() {
+    assert!(!uses_legacy_forge_init_workaround(
+        "forge",
+        "1.7.10",
+        "10.13.2.1291"
+    ));
+    assert!(uses_legacy_forge_init_workaround(
+        "forge",
+        "1.7.10",
+        "10.13.2.1300"
+    ));
+    assert!(uses_legacy_forge_init_workaround(
+        "forge",
+        "1.7.10",
+        "10.13.4.1614-1.7.10"
+    ));
+    assert!(!uses_legacy_forge_init_workaround(
+        "fabric",
+        "1.7.10",
+        "0.14.0"
+    ));
 }
 
 #[test]
@@ -1499,5 +1687,45 @@ minecraft = "1.20.1"
     assert_eq!(
         updated, existing,
         "file should be unchanged when both params are None",
+    );
+}
+
+#[test]
+fn test_pack_toml_versions_merge() {
+    let workdir = mock_root().join("workdir");
+    let pack_toml_path = workdir.join("pack").join("pack.toml");
+
+    let existing = r#"name = "Legacy Forge Pack"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.7.10"
+"#;
+
+    let fs = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(pack_toml_path.clone(), existing.to_string());
+
+    write_pack_toml_versions(&pack_toml_path, &[("forge", "10.13.4.1614")], &fs)
+        .expect("should merge forge version into pack.toml");
+
+    let updated = fs.read_to_string(&pack_toml_path).unwrap();
+    let doc: toml::Table = toml::from_str(&updated).unwrap();
+    let versions = doc
+        .get("versions")
+        .and_then(|value| value.as_table())
+        .expect("[versions] should exist");
+    assert_eq!(
+        versions.get("minecraft").and_then(|value| value.as_str()),
+        Some("1.7.10")
+    );
+    assert_eq!(
+        versions.get("forge").and_then(|value| value.as_str()),
+        Some("10.13.4.1614")
     );
 }

@@ -795,7 +795,7 @@ async fn test_fetch_url_bytes_rejects_current_thread_runtime() {
 }
 
 #[test]
-fn test_install_neoforge_server_mc_1_20_1_uses_forge_namespace() {
+fn test_install_neoforge_server_mc_1_20_1_fails_fast() {
     let workdir = TempDir::new().unwrap();
     let workdir = workdir.path().to_path_buf();
     let pack_dir = workdir.join("pack");
@@ -831,42 +831,27 @@ neoforge = "47.3.0"
         .with_process(MockProcessProvider::new().with_java_installer_side_effects());
 
     session.filesystem().create_dir_all(&dist_dir).unwrap();
-    session
-        .filesystem()
-        .write_bytes(
-            &dist_dir.join("forge-1.20.1-47.3.0-installer.jar"),
-            b"installer",
-        )
-        .unwrap();
-    session
-        .filesystem()
-        .write_bytes(&dist_dir.join("srv.jar"), b"server starter jar")
-        .unwrap();
 
     let mut orchestrator =
         BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let pack_info = orchestrator.load_pack_info().unwrap().clone();
     let result = orchestrator.install_neoforge_server(&dist_dir, &pack_info);
 
-    assert!(result.is_ok(), "{result:?}");
-    assert!(session.filesystem().exists(&dist_dir.join("run.sh")));
-    assert!(session.filesystem().exists(&dist_dir.join("run.bat")));
-    assert!(session.filesystem().exists(&dist_dir.join("srv.jar")));
+    assert!(matches!(result, Err(BuildError::ValidationError { .. })), "{result:?}");
     assert!(
-        !session
-            .filesystem()
-            .exists(&dist_dir.join("forge-1.20.1-47.3.0-installer.jar")),
-        "installer jar should be cleaned up after a successful run"
+        !session.filesystem().exists(&dist_dir.join("run.sh")),
+        "unsupported NeoForge versions should fail before running the installer"
+    );
+    assert!(
+        !session.filesystem().exists(&dist_dir.join("run.bat")),
+        "unsupported NeoForge versions should fail before running the installer"
     );
 
     let java_calls = session.process_provider.get_calls_for_command("java");
-    assert!(java_calls.iter().any(|call| {
-        call.args.iter().any(|a| a == "--install-server")
-            && call
-                .args
-                .iter()
-                .any(|a| a.contains("forge-1.20.1-47.3.0-installer.jar"))
-    }));
+    assert!(
+        java_calls.is_empty(),
+        "unsupported NeoForge versions should not invoke java"
+    );
 }
 
 #[test]
@@ -1428,44 +1413,43 @@ async fn test_download_server_jar_neoforge_downloads_and_runs_installer() {
     );
 }
 
-#[tokio::test]
-async fn test_download_server_jar_neoforge_mc_1_20_1_uses_forge_namespace() {
-    let mock = MockBuildOrchestrator::new();
-    mock.setup_basic_pack_structure().unwrap();
+#[test]
+fn test_supports_neoforge_minecraft_switches_at_1_20_2() {
+    assert!(!supports_neoforge_minecraft("1.20.1"));
+    assert!(supports_neoforge_minecraft("1.20.2"));
+    assert!(supports_neoforge_minecraft("1.21.1"));
+}
 
-    let pack_info = PackInfo {
-        author: "A".to_string(),
-        name: "P".to_string(),
-        version: "1.0.0".to_string(),
-        mc_version: "1.20.1".to_string(),
-        loader_version: "47.3.0".to_string(),
-        loader_type: "neoforge".to_string(),
-    };
-
-    // Verify the URL construction logic for MC 1.20.1
-    let (url, filename) = if pack_info.mc_version == "1.20.1" {
-        (
-            format!(
-                "https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-{v}/forge-1.20.1-{v}-installer.jar",
-                v = pack_info.loader_version
-            ),
-            format!("forge-1.20.1-{}-installer.jar", pack_info.loader_version),
-        )
-    } else {
-        (
-            format!(
-                "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
-                v = pack_info.loader_version
-            ),
-            format!("neoforge-{}-installer.jar", pack_info.loader_version),
-        )
-    };
-
+#[test]
+fn test_forge_installer_coordinate_standard() {
     assert_eq!(
-        url,
-        "https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar"
+        forge_installer_coordinate("1.20.1", "47.3.0"),
+        "1.20.1-47.3.0"
     );
-    assert_eq!(filename, "forge-1.20.1-47.3.0-installer.jar");
+}
+
+#[test]
+fn test_forge_installer_coordinate_pre_boundary_1710_stays_modern() {
+    assert_eq!(
+        forge_installer_coordinate("1.7.10", "10.13.2.1291"),
+        "1.7.10-10.13.2.1291"
+    );
+}
+
+#[test]
+fn test_forge_installer_coordinate_legacy_1710_boundary() {
+    assert_eq!(
+        forge_installer_coordinate("1.7.10", "10.13.2.1300"),
+        "1.7.10-10.13.2.1300-1.7.10"
+    );
+}
+
+#[test]
+fn test_forge_installer_coordinate_legacy_1710_normalizes_suffixed_input() {
+    assert_eq!(
+        forge_installer_coordinate("1.7.10", "10.13.4.1614-1.7.10"),
+        "1.7.10-10.13.4.1614-1.7.10"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -1506,6 +1490,19 @@ async fn test_download_server_jar_forge_downloads_and_runs_installer() {
     assert_eq!(
         expected_url,
         "https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar"
+    );
+}
+
+#[test]
+fn test_download_server_jar_forge_legacy_1710_uses_legacy_url() {
+    let composite = forge_installer_coordinate("1.7.10", "10.13.4.1614");
+    let expected_url = format!(
+        "https://maven.minecraftforge.net/net/minecraftforge/forge/{c}/forge-{c}-installer.jar",
+        c = composite
+    );
+    assert_eq!(
+        expected_url,
+        "https://maven.minecraftforge.net/net/minecraftforge/forge/1.7.10-10.13.4.1614-1.7.10/forge-1.7.10-10.13.4.1614-1.7.10-installer.jar"
     );
 }
 
@@ -1805,7 +1802,6 @@ neoforge = "{loader_version}"
     #[test]
     fn test_neoforge_server_installer_url() {
         let version = "21.4.157";
-        let mc_version = "1.21.4";
 
         let expected_url = format!(
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
@@ -1813,23 +1809,11 @@ neoforge = "{loader_version}"
         );
 
         // Reproduce the exact URL construction from install_neoforge_server
-        let (actual_url, actual_filename) = if mc_version == "1.20.1" {
-            (
-                format!(
-                    "https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-{v}/forge-1.20.1-{v}-installer.jar",
-                    v = version
-                ),
-                format!("forge-1.20.1-{}-installer.jar", version),
-            )
-        } else {
-            (
-                format!(
-                    "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
-                    v = version
-                ),
-                format!("neoforge-{}-installer.jar", version),
-            )
-        };
+        let actual_url = format!(
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
+            v = version
+        );
+        let actual_filename = format!("neoforge-{}-installer.jar", version);
 
         assert_eq!(actual_url, expected_url);
         assert_eq!(
@@ -1949,9 +1933,10 @@ neoforge = "{loader_version}"
         );
     }
 
-    /// Verify the 1.20.1 special case still produces the forge namespace URL
+    /// Verify unsupported NeoForge Minecraft versions fail fast instead of
+    /// attempting a dead installer URL.
     #[test]
-    fn test_neoforge_1_20_1_uses_forge_namespace_url() {
+    fn test_neoforge_1_20_1_is_rejected_before_download() {
         let pack_info = PackInfo {
             author: "A".to_string(),
             name: "P".to_string(),
@@ -1961,28 +1946,23 @@ neoforge = "{loader_version}"
             loader_type: "neoforge".to_string(),
         };
 
-        let (url, filename) = if pack_info.mc_version == "1.20.1" {
-            (
-                format!(
-                    "https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-{v}/forge-1.20.1-{v}-installer.jar",
-                    v = pack_info.loader_version
-                ),
-                format!("forge-1.20.1-{}-installer.jar", pack_info.loader_version),
-            )
-        } else {
-            (
-                format!(
-                    "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
-                    v = pack_info.loader_version
-                ),
-                format!("neoforge-{}-installer.jar", pack_info.loader_version),
-            )
-        };
+        let mock = MockBuildOrchestrator::new();
+        mock.setup_basic_pack_structure().unwrap();
+        let orchestrator = mock.orchestrator();
+        let dist_dir = mock.workdir().join("dist").join("server");
+        mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
-        assert_eq!(
-            url,
-            "https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-installer.jar"
+        let error = orchestrator
+            .install_neoforge_server(&dist_dir, &pack_info)
+            .expect_err("NeoForge 1.20.1 should be rejected");
+
+        assert!(
+            matches!(error, BuildError::ValidationError { .. }),
+            "expected validation error, got: {error:?}"
         );
-        assert_eq!(filename, "forge-1.20.1-47.3.0-installer.jar");
+        assert!(
+            error.to_string().contains("1.20.2 and newer"),
+            "error should explain the version floor: {error}"
+        );
     }
 }
