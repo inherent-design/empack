@@ -71,6 +71,33 @@ pub(crate) fn sort_versions_desc(versions: &mut [String]) {
 }
 
 const LEGACY_FORGE_1710_SUFFIX_START: &str = "10.13.2.1300";
+const FABRIC_SUPPORT_FLOOR: &str = "1.14";
+const QUILT_SUPPORT_FLOOR: &str = "1.14.4";
+
+fn supports_loader_from_floor(mc_version: &str, floor: &str) -> bool {
+    if !mc_version.starts_with("1.") {
+        return true;
+    }
+
+    parse_version(mc_version).is_none_or(|version| {
+        version >= parse_version(floor).expect("hardcoded support floor must parse")
+    })
+}
+
+pub(crate) fn supports_fabric_loader(mc_version: &str) -> bool {
+    supports_loader_from_floor(mc_version, FABRIC_SUPPORT_FLOOR)
+}
+
+pub(crate) fn supports_quilt_loader(mc_version: &str) -> bool {
+    supports_loader_from_floor(mc_version, QUILT_SUPPORT_FLOOR)
+}
+
+/// NeoForge 1.20.1 was published under the legacy `net/neoforged/forge`
+/// artifact family before NeoForged switched to the dedicated
+/// `net/neoforged/neoforge` coordinates for 1.20.2+.
+pub(crate) fn uses_forge_style_neoforge_coordinate(mc_version: &str) -> bool {
+    mc_version == "1.20.1"
+}
 
 /// Canonicalize Forge loader versions for legacy 1.7.10 metadata.
 ///
@@ -214,18 +241,19 @@ struct ForgeMavenVersionsList {
 
 /// Filter NeoForge versions by Minecraft version compatibility
 ///
-/// NeoForge versions follow a semantic pattern: MAJOR.MINOR.PATCH[-beta]
-/// where MAJOR.MINOR maps to the Minecraft version:
-/// - 20.2.x → MC 1.20.2
-/// - 20.4.x → MC 1.20.4
-/// - 21.0.x → MC 1.21.0
-/// - 21.1.x → MC 1.21.1
-/// - 21.10.x → MC 1.21.10
+/// NeoForge has three compatibility eras:
 ///
-/// Algorithm from neoforged.net/js/neoforge.js:
-/// - MC version "1.X.Y" → NeoForge prefix "X.Y."
-/// - Example: MC "1.20.2" → NeoForge "20.2." prefix
-/// - Example: MC "1.21.10" → NeoForge "21.10." prefix
+/// - MC `1.20.1` uses the old Forge-style coordinate family and is handled
+///   by `fetch_neoforge_loader_versions()` before this filter is reached.
+/// - MC `1.X.Y` versions at `1.20.2+` map to NeoForge `X.Y.` prefixes.
+/// - Future non-`1.*` Minecraft versions use NeoForge's newer
+///   `year.major.minor.x...(+prerelease)` family, which is matched by
+///   `year.major.minor` prefix and prerelease suffix.
+///
+/// Primary-source basis:
+/// - `packwiz-tx/core/versionutil.go` `fetchForNeoForge`
+/// - `packwiz-tx/core/versionutil.go` `fetchOldNeoForgeStyle`
+/// - `packwiz-tx/core/versionutil.go` `fetchNeoForgeStyle`
 ///
 /// This function extracts compatible versions and filters out beta versions
 /// unless no stable versions exist for that MC version.
@@ -233,40 +261,71 @@ fn filter_neoforge_versions_by_minecraft(
     all_versions: &[String],
     mc_version: &str,
 ) -> Result<Vec<String>> {
-    // Parse MC version to determine expected NeoForge major.minor prefix
-    // Use dynamic algorithm from neoforged.net instead of hardcoded matches
+    let matching_versions: Vec<String> = if mc_version.starts_with("1.") {
+        // NeoForge only supports MC 1.20.2+ in the 1.x era.
+        if parse_version(mc_version)
+            .is_none_or(|v| v < parse_version("1.20.2").expect("hardcoded version must parse"))
+        {
+            return Ok(vec![]);
+        }
 
-    // NeoForge only supports MC 1.20.2+
-    if parse_version(mc_version)
-        .is_none_or(|v| v < parse_version("1.20.2").expect("hardcoded version must parse"))
-    {
-        return Ok(vec![]);
-    }
+        // Extract X.Y from "1.X.Y" to create "X.Y." prefix
+        // MC "1.20.2" → remove "1." → "20.2" → add "." → "20.2."
+        // MC "1.21.10" → remove "1." → "21.10" → add "." → "21.10."
+        // MC "1.21" → normalize to "1.21.0" → remove "1." → "21.0" → add "." → "21.0."
+        let normalized_version = if mc_version.matches('.').count() == 1 {
+            format!("{}.0", mc_version)
+        } else {
+            mc_version.to_string()
+        };
 
-    // Extract X.Y from "1.X.Y" to create "X.Y." prefix
-    // MC "1.20.2" → remove "1." → "20.2" → add "." → "20.2."
-    // MC "1.21.10" → remove "1." → "21.10" → add "." → "21.10."
-    // MC "1.21" → normalize to "1.21.0" → remove "1." → "21.0" → add "." → "21.0."
-    let normalized_version = if mc_version.matches('.').count() == 1 {
-        // MC "1.21" → "1.21.0"
-        format!("{}.0", mc_version)
+        let expected_prefix = if let Some(suffix) = normalized_version.strip_prefix("1.") {
+            format!("{}.", suffix)
+        } else {
+            return Ok(vec![]);
+        };
+
+        all_versions
+            .iter()
+            .filter(|v| v.starts_with(&expected_prefix))
+            .cloned()
+            .collect()
     } else {
-        mc_version.to_string()
-    };
+        // Future non-1.* Minecraft versions switch to NeoForge's newer
+        // year.major.minor.x(+prerelease) scheme. Match the year.major.minor
+        // prefix and, when present, the Minecraft prerelease suffix.
+        let mc_split: Vec<_> = mc_version.splitn(3, '.').collect();
+        if mc_split.len() < 2 {
+            return Ok(vec![]);
+        }
 
-    let expected_prefix = if let Some(suffix) = normalized_version.strip_prefix("1.") {
-        format!("{}.", suffix)
-    } else {
-        // Invalid MC version format
-        return Ok(vec![]);
-    };
+        let year = mc_split[0];
+        let mut major = mc_split[1];
+        let mut minor = "0";
+        let mut prerelease = "";
 
-    // Filter versions matching the expected prefix
-    let matching_versions: Vec<String> = all_versions
-        .iter()
-        .filter(|v| v.starts_with(&expected_prefix))
-        .cloned()
-        .collect();
+        if let Some(third) = mc_split.get(2) {
+            if let Some((value, suffix)) = third.split_once('-') {
+                minor = value;
+                prerelease = suffix;
+            } else {
+                minor = third;
+            }
+        } else if let Some((value, suffix)) = major.split_once('-') {
+            major = value;
+            prerelease = suffix;
+        }
+
+        let required_prefix = format!("{year}.{major}.{minor}");
+
+        all_versions
+            .iter()
+            .filter(|version| {
+                version.starts_with(&required_prefix) && version.ends_with(prerelease)
+            })
+            .cloned()
+            .collect()
+    };
 
     // Separate stable and beta versions
     let stable_versions: Vec<String> = matching_versions
@@ -285,6 +344,20 @@ fn filter_neoforge_versions_by_minecraft(
     let mut result = result;
     sort_versions_desc(&mut result);
     Ok(result)
+}
+
+fn sanitize_neoforge_loader_versions(versions: &[String], mc_version: &str) -> Result<Vec<String>> {
+    if uses_forge_style_neoforge_coordinate(mc_version) {
+        let mut filtered: Vec<String> = versions
+            .iter()
+            .filter(|v| v.starts_with("47.1."))
+            .cloned()
+            .collect();
+        sort_versions_desc(&mut filtered);
+        return Ok(filtered);
+    }
+
+    filter_neoforge_versions_by_minecraft(versions, mc_version)
 }
 
 /// Parse Forge maven-metadata.xml and extract version strings
@@ -462,6 +535,7 @@ impl<'a> VersionFetcher<'a> {
                             // For stable releases, assume Fabric works on API failure
                             // For snapshots/bleeding edge, be conservative
                             is_stable_minecraft_version(mc_version)
+                                && supports_fabric_loader(mc_version)
                         }
                     }
                 }
@@ -482,6 +556,7 @@ impl<'a> VersionFetcher<'a> {
                         Err(_) => {
                             // Conservative approach for Quilt
                             is_stable_minecraft_version(mc_version)
+                                && supports_quilt_loader(mc_version)
                         }
                     }
                 }
@@ -543,6 +618,10 @@ impl<'a> VersionFetcher<'a> {
 
     /// Fetch available Fabric loader versions for a specific Minecraft version
     pub async fn fetch_fabric_loader_versions(&self, mc_version: &str) -> Result<Vec<String>> {
+        if !supports_fabric_loader(mc_version) {
+            return Ok(vec![]);
+        }
+
         let cache_key = format!("fabric_loader_{}.json", mc_version);
 
         self.fetch_cached_or_network(
@@ -606,36 +685,54 @@ impl<'a> VersionFetcher<'a> {
     /// Fetch available NeoForge versions for a specific Minecraft version
     pub async fn fetch_neoforge_loader_versions(&self, mc_version: &str) -> Result<Vec<String>> {
         let cache_key = format!("neoforge_loader_{}.json", mc_version);
-
-        self.fetch_cached_or_network(
+        let versions = self.fetch_cached_or_network(
             &cache_key,
             6, // 6 hour cache
             || async {
                 let client = self.network.http_client()?;
 
-                // Try NeoForge API first
-                let url = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge";
+                if uses_forge_style_neoforge_coordinate(mc_version) {
+                    let legacy_url =
+                        "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/forge";
 
-                let response = client
-                    .get(url)
-                    .send()
-                    .await;
+                    let response = client.get(legacy_url).send().await;
+
+                    match response {
+                        Ok(resp) if resp.status().is_success() => {
+                            if let Ok(version_data) = resp.json::<NeoForgeVersionResponse>().await {
+                                let filtered_versions = filter_forge_versions_by_minecraft(
+                                    &version_data.versions,
+                                    mc_version,
+                                )?;
+
+                                if !filtered_versions.is_empty() {
+                                    return Ok(filtered_versions);
+                                }
+                            }
+                        }
+                        _ => {
+                            // API failed, use fallback
+                        }
+                    }
+
+                    return Ok(Self::get_fallback_loader_versions("neoforge", mc_version));
+                }
+
+                // Try NeoForge API first for 1.20.2+ and year-style releases.
+                let url =
+                    "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge";
+
+                let response = client.get(url).send().await;
 
                 match response {
                     Ok(resp) if resp.status().is_success() => {
                         if let Ok(version_data) = resp.json::<NeoForgeVersionResponse>().await {
-                            // NeoForge API returns all versions (1403+), filter by MC version compatibility
-                            // NeoForge versions follow pattern: MAJOR.MINOR.PATCH[-beta]
-                            // where MAJOR.MINOR maps to MC version (e.g., 21.0.x → MC 1.21, 20.4.x → MC 1.20.4)
                             let filtered_versions = filter_neoforge_versions_by_minecraft(
                                 &version_data.versions,
                                 mc_version,
                             )?;
 
-                            // Return filtered list sorted descending
-                            if filtered_versions.is_empty() {
-                                // No compatible versions found - fall through to fallback
-                            } else {
+                            if !filtered_versions.is_empty() {
                                 return Ok(filtered_versions);
                             }
                         }
@@ -645,41 +742,36 @@ impl<'a> VersionFetcher<'a> {
                     }
                 }
 
-                // NeoForge only supports MC 1.20.2+
-                if parse_version(mc_version)
-                    .is_none_or(|v| v < parse_version("1.20.2").expect("hardcoded version must parse"))
-                {
-                    // NeoForge definitively does NOT support MC versions before 1.20.2
-                    // Return empty vector to indicate incompatibility (matches v1 behavior)
-                    return Ok(vec![]);
-                }
-
-                // For MC 1.20.2+, provide known working versions
-                let fallback_versions = match mc_version {
-                    "1.21.4" | "1.21.3" | "1.21.1" => vec![
-                        "21.1.69".to_string(),
-                        "21.1.68".to_string(),
-                        "21.1.67".to_string(),
-                    ],
-                    "1.20.6" | "1.20.4" => vec![
-                        "20.6.119".to_string(),
-                        "20.6.118".to_string(),
-                        "20.6.117".to_string(),
-                    ],
-                    "1.20.2" => vec![
-                        "20.2.88".to_string(),
-                        "20.2.87".to_string(),
-                        "20.2.86".to_string(),
-                    ],
-                    _ => {
-                        // For newer unknown versions, provide latest
-                        vec!["21.1.69".to_string()]
-                    }
-                };
-
-                Ok(fallback_versions)
+                Ok(Self::get_fallback_loader_versions("neoforge", mc_version))
             }
-        ).await
+        ).await?;
+
+        let sanitized = sanitize_neoforge_loader_versions(&versions, mc_version)?;
+        if sanitized != versions {
+            warn!(
+                "Discarding incompatible cached NeoForge loader versions for {}",
+                mc_version
+            );
+
+            if !sanitized.is_empty() {
+                let cache_path = self.cache_dir.join(&cache_key);
+                if let Err(e) = self.save_to_cache(&cache_path, &sanitized) {
+                    warn!("Failed to repair NeoForge loader cache: {}", e);
+                }
+                return Ok(sanitized);
+            }
+
+            let fallback = Self::get_fallback_loader_versions("neoforge", mc_version);
+            if !fallback.is_empty() {
+                let cache_path = self.cache_dir.join(&cache_key);
+                if let Err(e) = self.save_to_cache(&cache_path, &fallback) {
+                    warn!("Failed to repair NeoForge loader cache: {}", e);
+                }
+            }
+            return Ok(fallback);
+        }
+
+        Ok(sanitized)
     }
 
     /// Fetch Forge versions with proper MC version compatibility
@@ -750,6 +842,10 @@ impl<'a> VersionFetcher<'a> {
     /// Uses MC-version-specific endpoint: /v3/versions/loader/{mc_version}
     /// Returns HTTP 404 for unsupported MC versions (returns empty vec, not error)
     pub async fn fetch_quilt_loader_versions(&self, mc_version: &str) -> Result<Vec<String>> {
+        if !supports_quilt_loader(mc_version) {
+            return Ok(vec![]);
+        }
+
         let cache_key = format!("quilt_loader_{}.json", mc_version);
 
         self.fetch_cached_or_network(
@@ -783,7 +879,7 @@ impl<'a> VersionFetcher<'a> {
                     }
                     _ => {
                         // Network error or other HTTP error - return fallback
-                        Ok(vec!["0.25.7".to_string()])
+                        Ok(Self::get_fallback_loader_versions("quilt", mc_version))
                     }
                 }
             },
@@ -875,16 +971,26 @@ impl<'a> VersionFetcher<'a> {
 
     /// Get fallback versions when both network and cache fail
     fn get_fallback_versions_for_cache_key(cache_filename: &str) -> Vec<String> {
+        let loader_cache_mc_version = |prefix: &str| {
+            cache_filename
+                .strip_prefix(prefix)
+                .and_then(|name| name.strip_suffix(".json"))
+                .unwrap_or("")
+        };
+
         if cache_filename == "minecraft_versions.json" {
             Self::get_fallback_minecraft_versions()
         } else if cache_filename.starts_with("fabric_loader_") {
-            Self::get_fallback_loader_versions("fabric", "")
+            Self::get_fallback_loader_versions("fabric", loader_cache_mc_version("fabric_loader_"))
         } else if cache_filename.starts_with("neoforge_loader_") {
-            Self::get_fallback_loader_versions("neoforge", "")
+            Self::get_fallback_loader_versions(
+                "neoforge",
+                loader_cache_mc_version("neoforge_loader_"),
+            )
         } else if cache_filename.starts_with("quilt_loader_") {
-            Self::get_fallback_loader_versions("quilt", "")
+            Self::get_fallback_loader_versions("quilt", loader_cache_mc_version("quilt_loader_"))
         } else if cache_filename.starts_with("forge_loader_") {
-            Self::get_fallback_loader_versions("forge", "")
+            Self::get_fallback_loader_versions("forge", loader_cache_mc_version("forge_loader_"))
         } else {
             vec!["latest".to_string()]
         }
@@ -902,29 +1008,116 @@ impl<'a> VersionFetcher<'a> {
     }
 
     /// Get fallback loader versions for a specific modloader and MC version
-    pub fn get_fallback_loader_versions(modloader: &str, _mc_version: &str) -> Vec<String> {
+    pub fn get_fallback_loader_versions(modloader: &str, mc_version: &str) -> Vec<String> {
         match modloader {
-            "fabric" => vec![
-                "0.15.0".to_string(),
-                "0.14.21".to_string(),
-                "0.14.20".to_string(),
-            ],
-            "neoforge" => vec![
-                "21.4.147".to_string(),
-                "20.4.147".to_string(),
-                "20.4.109".to_string(),
-            ],
-            "forge" => vec![
+            "fabric"
+                if is_stable_minecraft_version(mc_version)
+                    && supports_fabric_loader(mc_version) =>
+            {
+                vec![
+                    "0.15.0".to_string(),
+                    "0.14.21".to_string(),
+                    "0.14.20".to_string(),
+                ]
+            }
+            "neoforge" => Self::get_neoforge_fallback_loader_versions(mc_version),
+            "forge" if is_stable_minecraft_version(mc_version) => vec![
                 "47.3.0".to_string(),
                 "47.2.20".to_string(),
                 "47.2.0".to_string(),
             ],
-            "quilt" => vec![
-                "0.20.0".to_string(),
-                "0.19.2".to_string(),
-                "0.19.1".to_string(),
-            ],
+            "quilt"
+                if is_stable_minecraft_version(mc_version) && supports_quilt_loader(mc_version) =>
+            {
+                vec![
+                    "0.20.0".to_string(),
+                    "0.19.2".to_string(),
+                    "0.19.1".to_string(),
+                ]
+            }
+            "fabric" | "forge" | "quilt" => vec![],
             _ => vec!["latest".to_string()],
+        }
+    }
+
+    fn get_neoforge_fallback_loader_versions(mc_version: &str) -> Vec<String> {
+        match mc_version {
+            // Snapshot of the official NeoForged Maven families as of 2026-04-09.
+            "1.20.1" => vec![
+                "47.1.106".to_string(),
+                "47.1.105".to_string(),
+                "47.1.104".to_string(),
+            ],
+            "1.20.2" => vec![
+                "20.2.93".to_string(),
+                "20.2.92".to_string(),
+                "20.2.91".to_string(),
+            ],
+            "1.20.3" | "1.20.4" => vec![
+                "20.4.251".to_string(),
+                "20.4.250".to_string(),
+                "20.4.249".to_string(),
+            ],
+            "1.20.5" | "1.20.6" => vec![
+                "20.6.139".to_string(),
+                "20.6.138".to_string(),
+                "20.6.137".to_string(),
+            ],
+            "1.21" => vec![
+                "21.0.167".to_string(),
+                "21.0.166".to_string(),
+                "21.0.165".to_string(),
+            ],
+            "1.21.1" => vec![
+                "21.1.224".to_string(),
+                "21.1.223".to_string(),
+                "21.1.222".to_string(),
+            ],
+            "1.21.2" | "1.21.3" => vec![
+                "21.3.96".to_string(),
+                "21.3.95".to_string(),
+                "21.3.94".to_string(),
+            ],
+            "1.21.4" => vec![
+                "21.4.157".to_string(),
+                "21.4.156".to_string(),
+                "21.4.155".to_string(),
+            ],
+            "1.21.5" => vec![
+                "21.5.97".to_string(),
+                "21.5.96".to_string(),
+                "21.5.95".to_string(),
+            ],
+            "1.21.6" => vec![
+                "21.6.20-beta".to_string(),
+                "21.6.19-beta".to_string(),
+                "21.6.18-beta".to_string(),
+            ],
+            "1.21.7" => vec![
+                "21.7.25-beta".to_string(),
+                "21.7.24-beta".to_string(),
+                "21.7.23-beta".to_string(),
+            ],
+            "1.21.8" => vec![
+                "21.8.53".to_string(),
+                "21.8.52".to_string(),
+                "21.8.51".to_string(),
+            ],
+            "1.21.9" => vec![
+                "21.9.16-beta".to_string(),
+                "21.9.15-beta".to_string(),
+                "21.9.14-beta".to_string(),
+            ],
+            "1.21.10" => vec![
+                "21.10.64".to_string(),
+                "21.10.63".to_string(),
+                "21.10.62-beta".to_string(),
+            ],
+            "26.1-snapshot-6" => vec![
+                "26.1.0.0-alpha.10+snapshot-6".to_string(),
+                "26.1.0.0-alpha.9+snapshot-6".to_string(),
+            ],
+            _ => vec![],
         }
     }
 }

@@ -570,8 +570,7 @@ fn test_installer_success() {
             MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
-    let installer =
-        PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
+    let installer = PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path);
     let result = installer.install_mods("both", &mock_root().join("workdir"));
 
     assert!(result.is_ok());
@@ -604,8 +603,7 @@ fn test_installer_invalid_side() {
 
     let session = MockCommandSession::new();
 
-    let installer =
-        PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
+    let installer = PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path);
     let result = installer.install_mods("invalid", &mock_root().join("workdir"));
 
     assert!(result.is_err());
@@ -651,8 +649,7 @@ fn test_installer_download_failure() {
             MockFileSystemProvider::new().with_current_dir(mock_root().join("workdir")),
         );
 
-    let installer =
-        PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
+    let installer = PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path);
     let result = installer.install_mods("client", &mock_root().join("workdir"));
 
     assert!(result.is_err());
@@ -675,8 +672,7 @@ fn test_check_installer_available_uses_filesystem_provider() {
             .with_file(bootstrap_jar_path.clone(), "jar".to_string()),
     );
 
-    let installer =
-        PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path).unwrap();
+    let installer = PackwizInstaller::new(&session, bootstrap_jar_path, installer_jar_path);
 
     assert!(installer.check_installer_available().unwrap());
 }
@@ -1428,7 +1424,7 @@ Please go to https://www.curseforge.com/minecraft/mc-mods/mycustommod/download/5
 }
 
 #[test]
-fn test_parse_excluded_on_first_line_falls_back_to_unknown() {
+fn test_parse_excluded_on_first_line_falls_back_to_destination_filename() {
     let output = "\
 java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
 Please go to https://www.curseforge.com/minecraft/mc-mods/unknown/download/1 and save this file to /mods/unknown.jar";
@@ -1437,12 +1433,37 @@ Please go to https://www.curseforge.com/minecraft/mc-mods/unknown/download/1 and
 
     assert_eq!(results.len(), 1);
     assert_eq!(
-        results[0].name, "Unknown",
-        "should fall back to 'Unknown' when excluded line is the first line"
+        results[0].name, "unknown.jar",
+        "should fall back to the destination filename when no name line is present"
     );
     assert_eq!(
         results[0].url,
         "https://www.curseforge.com/minecraft/mc-mods/unknown/download/1"
+    );
+}
+
+#[test]
+fn test_parse_dedupes_duplicate_restricted_entries_and_ignores_stack_frame_names() {
+    let output = "\
+Failed to download modpack, the following errors were encountered:
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+Please go to https://www.curseforge.com/minecraft/mc-mods/entityculling/files/4763646 and save this file to /mods/entityculling-fabric-1.6.2-mc1.20.1.jar
+\tat link.infra.packwiz.installer.bootstrap.Main.main(Main.java:46)
+java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.
+Please go to https://www.curseforge.com/minecraft/mc-mods/entityculling/files/4763646 and save this file to /mods/entityculling-fabric-1.6.2-mc1.20.1.jar
+\tat link.infra.packwiz.installer.bootstrap.Main.main(Main.java:46)";
+
+    let results = parse_installer_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "entityculling-fabric-1.6.2-mc1.20.1.jar");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/entityculling/files/4763646"
+    );
+    assert_eq!(
+        results[0].dest_path,
+        "/mods/entityculling-fabric-1.6.2-mc1.20.1.jar"
     );
 }
 
@@ -1497,6 +1518,44 @@ Please go to https://www.curseforge.com/minecraft/mc-mods/toofar/download/42 and
 fn test_parse_empty_output() {
     let results = parse_installer_restricted_output("");
     assert!(results.is_empty());
+}
+
+#[test]
+fn test_restricted_destination_filename_extracts_basename() {
+    assert_eq!(
+        restricted_destination_filename("/tmp/pack/.minecraft/mods/OptiFine.jar"),
+        Some("OptiFine.jar".to_string())
+    );
+}
+
+#[test]
+fn test_restricted_curseforge_file_id_supports_files_and_download_urls() {
+    assert_eq!(
+        restricted_curseforge_file_id(
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+        ),
+        Some(4_912_891)
+    );
+    assert_eq!(
+        restricted_curseforge_file_id(
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+        ),
+        Some(4_912_891)
+    );
+}
+
+#[test]
+fn test_restricted_curseforge_file_id_rejects_malformed_urls() {
+    assert_eq!(
+        restricted_curseforge_file_id("https://www.curseforge.com/minecraft/mc-mods/optifine"),
+        None
+    );
+    assert_eq!(
+        restricted_curseforge_file_id(
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/files/not-a-number"
+        ),
+        None
+    );
 }
 
 // ── get_installed_mods .pw.toml filter tests ───────────────────────────

@@ -1403,6 +1403,45 @@ mod tests {
     }
 
     #[test]
+    fn recording_display_status_records_all_event_kinds() {
+        let display = RecordingDisplay::default();
+        let status = display.status();
+
+        status.checking("dependencies");
+        status.success("init", "done");
+        status.error("build", "failed");
+        status.warning("warning message");
+        status.info("info message");
+        status.message("plain message");
+        status.emphasis("important");
+        status.subtle("quiet");
+        status.list(&["one", "two"]);
+        status.complete("cleanup");
+        status.tool_check("java", true, "21");
+        status.section("Section");
+        status.step(2, 5, "continue");
+
+        assert_eq!(
+            display.events(),
+            vec![
+                "checking:dependencies",
+                "success:init:done",
+                "error:build:failed",
+                "warning:warning message",
+                "info:info message",
+                "message:plain message",
+                "emphasis:important",
+                "subtle:quiet",
+                "list:one,two",
+                "complete:cleanup",
+                "tool_check:java:true:21",
+                "section:Section",
+                "step:2/5:continue",
+            ]
+        );
+    }
+
+    #[test]
     fn issue_stream_observer_matches_issue_prefixes_only() {
         assert!(IssueStreamObserver::should_echo_stdout(
             "Error: failed to resolve dependency"
@@ -1459,6 +1498,27 @@ mod tests {
     }
 
     #[test]
+    fn issue_stream_observer_suppresses_native_method_and_unknown_source_frames() {
+        assert!(!IssueStreamObserver::should_echo_stderr(
+            "at com.example.Main.main(Native Method)"
+        ));
+        assert!(!IssueStreamObserver::should_echo_stderr(
+            "at com.example.Main.main(Unknown Source)"
+        ));
+    }
+
+    #[test]
+    fn issue_stream_observer_ignores_empty_and_non_issue_lines() {
+        let display = RecordingDisplay::default();
+        let observer = IssueStreamObserver::new(&display, "packwiz-tx");
+
+        observer.on_line(ProcessStream::Stderr, "   ");
+        observer.on_line(ProcessStream::Stdout, "Downloaded manifest successfully");
+
+        assert!(display.events().is_empty());
+    }
+
+    #[test]
     fn process_output_error_output_prefers_stderr_and_falls_back_to_stdout() {
         let stderr_preferred = ProcessOutput {
             stdout: "stdout failure".to_string(),
@@ -1473,6 +1533,237 @@ mod tests {
             success: false,
         };
         assert_eq!(stdout_fallback.error_output(), "stdout failure");
+    }
+
+    #[test]
+    fn live_archive_provider_creates_and_extracts_zip() {
+        let temp = TempDir::new().expect("temp dir");
+        let source_dir = temp.path().join("source");
+        let archive_path = temp.path().join("bundle.zip");
+        let extract_dir = temp.path().join("extract");
+        std::fs::create_dir_all(source_dir.join("nested")).expect("create source tree");
+        std::fs::write(source_dir.join("nested").join("hello.txt"), "world")
+            .expect("write source file");
+
+        let provider = LiveArchiveProvider;
+        provider
+            .create_archive(
+                &source_dir,
+                &archive_path,
+                crate::empack::archive::ArchiveFormat::Zip,
+            )
+            .expect("create archive");
+        provider
+            .extract_zip(&archive_path, &extract_dir)
+            .expect("extract archive");
+
+        assert_eq!(
+            std::fs::read_to_string(extract_dir.join("nested").join("hello.txt"))
+                .expect("read extracted file"),
+            "world"
+        );
+    }
+
+    #[test]
+    fn live_archive_provider_wraps_errors_with_context() {
+        let temp = TempDir::new().expect("temp dir");
+        let provider = LiveArchiveProvider;
+
+        let extract_err = provider
+            .extract_zip(
+                &temp.path().join("missing.zip"),
+                &temp.path().join("extract"),
+            )
+            .expect_err("missing zip should fail");
+        assert!(extract_err.to_string().contains("Failed to extract zip:"));
+
+        let create_err = provider
+            .create_archive(
+                &temp.path().join("missing-source"),
+                &temp.path().join("output.zip"),
+                crate::empack::archive::ArchiveFormat::Zip,
+            )
+            .expect_err("missing source should fail");
+        assert!(create_err.to_string().contains("Failed to create archive:"));
+    }
+
+    #[test]
+    fn live_filesystem_provider_round_trips_files_and_directory_ops() {
+        let provider = LiveFileSystemProvider;
+        let temp = TempDir::new().expect("temp dir");
+        let nested = temp.path().join("nested");
+        let text_file = nested.join("hello.txt");
+        let bytes_file = nested.join("payload.bin");
+        let removable_dir = temp.path().join("remove-me");
+
+        assert_eq!(
+            provider.current_dir().expect("current dir"),
+            std::env::current_dir().unwrap()
+        );
+        provider.create_dir_all(&nested).expect("create nested dir");
+        assert!(provider.metadata_exists(&nested));
+        assert!(provider.is_directory(&nested));
+
+        provider
+            .write_file(&text_file, "hello")
+            .expect("write text file");
+        provider
+            .write_bytes(&bytes_file, b"payload")
+            .expect("write bytes file");
+
+        assert_eq!(
+            provider.read_to_string(&text_file).expect("read text file"),
+            "hello"
+        );
+        assert_eq!(
+            provider.read_bytes(&bytes_file).expect("read bytes file"),
+            b"payload"
+        );
+
+        let files = provider.get_file_list(&nested).expect("list nested files");
+        assert!(files.contains(&text_file));
+        assert!(files.contains(&bytes_file));
+
+        let _manager = provider.config_manager(temp.path().to_path_buf());
+
+        provider.remove_file(&text_file).expect("remove text file");
+        assert!(!provider.exists(&text_file));
+
+        provider
+            .create_dir_all(&removable_dir)
+            .expect("create removable dir");
+        provider
+            .remove_dir_all(&removable_dir)
+            .expect("remove removable dir");
+        assert!(!provider.exists(&removable_dir));
+    }
+
+    #[test]
+    fn live_filesystem_provider_detects_artifacts_and_ignores_noise() {
+        let provider = LiveFileSystemProvider;
+        let temp = TempDir::new().expect("temp dir");
+        let missing = temp.path().join("missing");
+        let noisy_dist = temp.path().join("dist-noisy");
+        let file_dist = temp.path().join("dist-file");
+        let dir_dist = temp.path().join("dist-dir");
+
+        assert!(
+            !provider
+                .has_build_artifacts(&missing)
+                .expect("missing dist should be false")
+        );
+
+        provider
+            .create_dir_all(&noisy_dist)
+            .expect("create noisy dist");
+        provider
+            .write_file(&noisy_dist.join("notes.txt"), "noise")
+            .expect("write noise file");
+        provider
+            .create_dir_all(&noisy_dist.join("scratch"))
+            .expect("create noise dir");
+        assert!(
+            !provider
+                .has_build_artifacts(&noisy_dist)
+                .expect("noise should not count as artifacts")
+        );
+
+        provider
+            .create_dir_all(&file_dist)
+            .expect("create file dist");
+        provider
+            .write_file(&file_dist.join("pack.mrpack"), "artifact")
+            .expect("write artifact file");
+        assert!(
+            provider
+                .has_build_artifacts(&file_dist)
+                .expect("mrpack should count as artifact")
+        );
+
+        provider.create_dir_all(&dir_dist).expect("create dir dist");
+        provider
+            .create_dir_all(&dir_dist.join("client-full"))
+            .expect("create artifact dir");
+        assert!(
+            provider
+                .has_build_artifacts(&dir_dist)
+                .expect("client-full dir should count as artifact")
+        );
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[test]
+    fn live_network_provider_exposes_client_budget_and_resolver() {
+        let default_provider = LiveNetworkProvider::default();
+        assert!(default_provider.http_client().is_ok());
+        assert!(
+            default_provider
+                .rate_budgets()
+                .for_host("api.modrinth.com")
+                .is_some()
+        );
+
+        let provider = LiveNetworkProvider::new_for_test(
+            Some("https://modrinth.example".to_string()),
+            Some("https://curseforge.example".to_string()),
+        );
+        let client = provider.http_client().expect("http client");
+        let _resolver = provider.project_resolver(client, Some("cf-key".to_string()));
+        assert!(
+            provider
+                .rate_budgets()
+                .for_host("api.curseforge.com")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn live_process_provider_execute_and_find_program_work() {
+        let provider = LiveProcessProvider::default();
+
+        let output = provider
+            .execute("rustc", &["--version"], Path::new("."))
+            .expect("execute rustc");
+        assert!(output.success);
+        assert!(output.stdout.contains("rustc"));
+        assert!(provider.find_program("rustc").is_some());
+        assert!(
+            LiveProcessProvider::new_for_test(None)
+                .find_program("definitely-not-a-real-program-empack")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn live_process_provider_reports_spawn_failure_for_missing_command() {
+        let provider = LiveProcessProvider::new();
+        let error = provider
+            .execute("definitely-not-a-real-program-empack", &[], Path::new("."))
+            .expect_err("missing command should fail");
+
+        assert!(error.to_string().contains("Failed to spawn command"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_process_provider_uses_custom_path_for_execution_and_lookup() {
+        let temp = TempDir::new().expect("temp dir");
+        let command = temp.path().join("hello-tool");
+        write_script(&command, "#!/bin/sh\nprintf 'custom path works'\n");
+
+        let provider =
+            LiveProcessProvider::new_for_test(Some(temp.path().to_string_lossy().into_owned()));
+        let output = provider
+            .execute("hello-tool", &[], temp.path())
+            .expect("execute custom tool");
+
+        assert_eq!(output.stdout, "custom path works");
+        assert_eq!(
+            provider
+                .find_program("hello-tool")
+                .expect("lookup hello-tool"),
+            command.to_string_lossy()
+        );
     }
 
     #[cfg(unix)]
@@ -1519,6 +1810,34 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn execute_process_with_live_issues_flushes_partial_stderr_without_newline() {
+        let temp = TempDir::new().expect("temp dir");
+        let command = temp.path().join("packwiz-tx");
+        write_script(
+            &command,
+            "#!/bin/sh\nprintf 'warning: partial stderr' >&2\n",
+        );
+
+        let display = RecordingDisplay::default();
+        let session = TestSession::new(display.clone(), LiveProcessProvider::new());
+        let output = execute_process_with_live_issues(
+            &session,
+            command.to_str().expect("command path"),
+            &[],
+            temp.path(),
+        )
+        .expect("execute command");
+
+        assert_eq!(output.stderr, "warning: partial stderr");
+        assert!(
+            display
+                .events()
+                .contains(&"warning:packwiz-tx: warning: partial stderr".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn live_process_provider_times_out_with_override() {
         let _guard = crate::test_support::env_lock().lock().unwrap();
         let temp = TempDir::new().expect("temp dir");
@@ -1559,6 +1878,50 @@ mod tests {
         );
     }
 
+    #[test]
+    fn command_session_resolve_packwiz_bin_path_falls_back_on_invalid_override() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let missing = temp.path().join("missing-packwiz");
+        let _override = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", missing.as_os_str()) };
+
+        let resolved = CommandSession::<
+            LiveFileSystemProvider,
+            LiveNetworkProvider,
+            LiveProcessProvider,
+            LiveConfigProvider,
+            LiveInteractiveProvider,
+        >::resolve_packwiz_bin_path();
+
+        assert_eq!(resolved, crate::empack::packwiz::PACKWIZ_BIN);
+    }
+
+    #[test]
+    fn command_session_new_uses_packwiz_env_override() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let command = temp.path().join("packwiz-tx");
+        write_script(&command, "#!/bin/sh\nprintf 'packwiz stub'\n");
+        let _override = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", command.as_os_str()) };
+
+        let session = CommandSession::new(crate::application::config::AppConfig::default());
+        assert_eq!(session.packwiz_bin(), command.to_string_lossy());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[allow(clippy::await_holding_lock)]
+    async fn command_session_new_async_uses_packwiz_env_override() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let command = temp.path().join("packwiz-tx");
+        write_script(&command, "#!/bin/sh\nprintf 'packwiz stub'\n");
+        let _override = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", command.as_os_str()) };
+
+        let session =
+            CommandSession::new_async(crate::application::config::AppConfig::default()).await;
+        assert_eq!(session.packwiz_bin(), command.to_string_lossy());
+    }
+
     #[cfg(feature = "test-utils")]
     #[test]
     fn command_session_new_with_providers_wires_packwiz_and_interactive_defaults() {
@@ -1584,5 +1947,74 @@ mod tests {
             "fallback"
         );
         assert!(!session.config().app_config().yes);
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[test]
+    fn command_session_accessors_and_state_are_structured() {
+        let temp = TempDir::new().expect("temp dir");
+        let source_dir = temp.path().join("source");
+        let archive_path = temp.path().join("source.zip");
+        std::fs::create_dir_all(&source_dir).expect("create source dir");
+        std::fs::write(source_dir.join("file.txt"), "hello").expect("write source file");
+
+        let app_config = crate::application::config::AppConfig {
+            workdir: Some(temp.path().to_path_buf()),
+            ..crate::application::config::AppConfig::default()
+        };
+        let session = CommandSession::new_with_providers(
+            LiveFileSystemProvider,
+            LiveNetworkProvider::new(),
+            LiveProcessProvider::new(),
+            LiveConfigProvider::new(app_config),
+            LiveInteractiveProvider::new(true, None),
+        );
+
+        session.display().status().message("hello");
+        assert!(session.network().http_client().is_ok());
+        assert_eq!(
+            session.terminal().unicode,
+            crate::primitives::TerminalUnicodeCaps::Ascii
+        );
+        assert!(
+            !session
+                .interactive()
+                .confirm("prompt", false)
+                .expect("confirm")
+        );
+
+        let session_ref: &dyn Session = &session;
+        assert!(session_ref.filesystem().current_dir().is_ok());
+        assert!(
+            session_ref
+                .network()
+                .rate_budgets()
+                .for_host("api.modrinth.com")
+                .is_some()
+        );
+        assert!(session_ref.process().find_program("rustc").is_some());
+        assert_eq!(
+            session_ref.config().app_config().workdir.as_deref(),
+            Some(temp.path())
+        );
+        assert!(
+            !session_ref
+                .interactive()
+                .confirm("prompt", false)
+                .expect("confirm")
+        );
+
+        session_ref
+            .archive()
+            .create_archive(
+                &source_dir,
+                &archive_path,
+                crate::empack::archive::ArchiveFormat::Zip,
+            )
+            .expect("create archive");
+        assert!(archive_path.exists());
+        let _packwiz = session_ref.packwiz();
+        let state = session_ref.state().expect("state manager");
+        assert_eq!(state.workdir, temp.path());
     }
 }
