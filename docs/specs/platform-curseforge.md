@@ -2,8 +2,8 @@
 spec: platform-curseforge
 status: draft
 created: 2026-04-04
-updated: 2026-04-04
-depends: [overview]
+updated: 2026-04-08
+depends: [overview, types, search-and-resolution, import-pipeline]
 ---
 
 # CurseForge Platform Contracts
@@ -14,10 +14,10 @@ All response field names are camelCase. All endpoints require `x-api-key` header
 
 ## Class Taxonomy (Minecraft, gameId 432)
 
-Verified from `GET /v1/categories?gameId=432&classesOnly=true` on 2026-04-04.
+Relevant live class IDs used by empack:
 
 | classId | Name | URL slug |
-|---------|------|----------|
+| --- | --- | --- |
 | 5 | Bukkit Plugins | bukkit-plugins |
 | 6 | Mods | mc-mods |
 | 12 | Resource Packs | texture-packs |
@@ -31,37 +31,51 @@ Verified from `GET /v1/categories?gameId=432&classesOnly=true` on 2026-04-04.
 empack ProjectType mapping:
 
 | classId | ProjectType | Notes |
-|---------|-------------|-------|
+| --- | --- | --- |
 | 6 | Mod | |
 | 5 | Mod | Bukkit Plugins; no Plugin variant |
 | 12 | ResourcePack | |
-| 17 | Datapack | Worlds; no World variant, closest match |
-| 6552 | Shader | |
-| 6945 | Datapack | |
+| 17 | Datapack | Helper fallback for worlds and some datapack-like content |
+| 6552 | Shader | Observed during live metadata resolution |
+| 6945 | Datapack | Data pack class used by import classification |
 
-Known issue: `curseforge_class_id()` in primitives maps `Datapack => 17` (Worlds), not 6945 (Data Packs). This affects search accuracy for datapacks on CurseForge.
+Current helper caveats:
+
+- `ProjectType::Datapack` still maps back to class ID `17`.
+- `ProjectType::Shader` still maps back to class ID `6`.
+- import resolution can still recover `6945` and `6552` from live API responses.
 
 ## Endpoints Used
 
 ### GET /v1/mods/{modId}
 
-Get mod metadata. Used by `resolve_curseforge_project` during import.
+Used by import manifest resolution.
 
 Response: `{"data": {mod object}}`.
 
-Key fields: `id`, `name`, `slug`, `classId` (integer), `categories[]`.
+Relevant fields:
+
+- `id`
+- `name`
+- `slug`
+- `classId`
 
 ### GET /v1/mods/search
 
-Search for mods. Used by `resolve_curseforge_slug` for CurseForgeDirect add.
+Used by search and direct slug resolution.
 
 Required parameter: `gameId` (integer, 432 for Minecraft).
 
 Optional: `classId`, `searchFilter`, `slug`, `pageSize` (max 50), `modLoaderType` (0=Any, 1=Forge, 4=Fabric, 5=Quilt, 6=NeoForge).
 
-Response: `{"data": [{mod objects}], "pagination": {...}}`.
+Current empack usage:
 
-Property: `slug` combined with `classId` yields a unique result.
+- direct slug lookup for CurseForge project URLs
+- search with type and loader hints
+
+### POST /v1/mods/files
+
+Used by import resolution to map CurseForge CDN file IDs back to project IDs in batches.
 
 ### POST /v1/fingerprints
 
@@ -85,7 +99,7 @@ Properties:
 `manifest.json` at the archive root.
 
 | Field | Type | Description |
-|-------|------|-------------|
+| --- | --- | --- |
 | `minecraft.version` | string | Minecraft version |
 | `minecraft.modLoaders[]` | array | `{id: "forge-47.2.0", primary: true}` |
 | `manifestType` | string | Always "minecraftModpack" |
@@ -100,3 +114,14 @@ Properties:
 - `overrides` is a real manifest field (unlike Modrinth where it is an archive convention).
 - Loader ID format is `{type}-{version}` (e.g., `fabric-0.16.0`). Split on first `-` to extract type and version.
 - `files[].projectID` and `files[].fileID` use uppercase `ID` suffix (unlike the API which uses camelCase `modId`, `id`).
+
+## Restricted Download Implications
+
+CurseForge restricted download handling is build-time behavior, not import-time manifest behavior.
+
+Current build path:
+
+- packwiz-installer reports restricted files in stderr
+- empack parses that output into `RestrictedModInfo`
+- the user downloads files manually
+- empack can scan `--downloads-dir` or `~/Downloads` and retry the build

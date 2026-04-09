@@ -2,87 +2,144 @@
 spec: types
 status: draft
 created: 2026-04-04
-updated: 2026-04-04
+updated: 2026-04-08
 depends: [overview]
 ---
 
 # Shared Type Definitions
 
-Types live in `primitives/empack.rs`. Domain types live in their respective `empack/` modules. No parallel type hierarchies; extend existing enums rather than creating new ones.
+Shared runtime types live in `primitives/empack.rs` and `primitives/project_platform.rs`. Domain-specific types stay in their owning modules under `empack/`.
 
-## ProjectType
+## Project Platform
 
-4 variants. Covers all content types that have distinct behavior in empack's sync/build pipeline.
+`ProjectPlatform` identifies the remote host used for search, resolution, and packwiz add commands.
 
-| Variant | Modrinth project_type | CurseForge classId(s) |
-|---------|----------------------|----------------------|
-| Mod | "mod" | 6, 5 (Bukkit Plugins) |
-| Datapack | *none* | 17 (Worlds), 6945 (Data Packs) |
-| ResourcePack | "resourcepack" | 12 |
-| Shader | "shader" | 6552 |
+| Variant | Display value | API key required |
+| --- | --- | --- |
+| `Modrinth` | `modrinth` | No |
+| `CurseForge` | `curseforge` | Yes |
 
-Properties:
-- Adding variants requires updating 10+ exhaustive match sites.
-- Content types outside these 4 (Customization, Addons) map to `Mod` as the default.
-- CurseForge classId 17 is Worlds, not Data Packs. This is a known approximation.
+The helper methods on `ProjectPlatform` expose API base URLs and conservative platform defaults. Runtime pacing is documented in [networking-and-rate-budgets.md](networking-and-rate-budgets.md).
 
-## ProjectPlatform
+## Project Type
 
-2 variants: `Modrinth`, `CurseForge`.
+`ProjectType` drives search facets, destination folders, and packwiz add routing.
 
-Properties:
-- CurseForge requires an API key; Modrinth does not (for read-only).
-- CurseForge rate limits are undocumented and aggressive on the free tier.
+| Variant | Modrinth facet | `uses_loader_facet()` | `curseforge_class_id()` |
+| --- | --- | --- | --- |
+| `Mod` | `mod` | `true` | `6` |
+| `Datapack` | `datapack` | `false` | `17` |
+| `ResourcePack` | `resourcepack` | `false` | `12` |
+| `Shader` | `shader` | `false` | `6` |
 
-## BuildTarget
+`curseforge_class_id()` is a current helper, not a full taxonomy. Import resolution can still classify live CurseForge responses as `6945` for datapacks or `6552` for shaders when those class IDs are returned by the API.
 
-5 variants: `Mrpack`, `Client`, `Server`, `ClientFull`, `ServerFull`.
+## Build Target
 
-## PackState
+`BuildTarget` models concrete output targets.
 
-4 states: `Uninitialized`, `Initialized`, `Configured`, `Built`.
+| Variant | Display value | Purpose |
+| --- | --- | --- |
+| `Mrpack` | `mrpack` | Modrinth-compatible pack archive |
+| `Client` | `client` | Bootstrapped client distribution |
+| `Server` | `server` | Bootstrapped server distribution |
+| `ClientFull` | `client-full` | Non-redistributable client package with embedded content |
+| `ServerFull` | `server-full` | Non-redistributable server package with embedded content |
 
-Transitions defined in `state.rs`. Only forward transitions are allowed except `Built` can transition back on clean.
+User-facing `all` expansion happens in `application/commands.rs` and resolves to all five targets. `BuildTarget::expand_all()` remains a narrower helper that returns only `mrpack`, `client`, and `server`.
 
-## ModLoader
+## Pack State
 
-4 variants in `parsing.rs`: `Fabric`, `Forge`, `NeoForge`, `Quilt`.
+`PackState` describes filesystem-observed lifecycle state.
 
-Also exists in `versions.rs` (with `From<parsing::ModLoader>` conversion). The two enums should eventually unify.
+| Variant | Meaning |
+| --- | --- |
+| `Uninitialized` | No usable empack project state exists |
+| `Configured` | `empack.yml` and packwiz metadata exist, or discovery sees a partial configured layout |
+| `Built` | Canonical artifacts exist under `dist/` |
+| `Building` | Internal in-progress marker state |
+| `Cleaning` | Internal in-progress marker state |
+| `Interrupted { was }` | A previous building or cleaning operation left a marker behind |
 
-Platform-specific ID parsing:
-- CurseForge loader IDs: `{type}-{version}` (e.g., `fabric-0.16.0`)
-- Modrinth dependency keys: `fabric-loader`, `quilt-loader`, `forge`, `neoforge`
+Transition identity types live beside `PackState`:
 
-## DependencySource (sync.rs)
+- `TransitionKind`: `Initialize`, `RefreshIndex`, `Build`, `Clean`
+- `MarkerKind`: `Building`, `Cleaning`
+- `InitializationConfig`: `name`, `author`, `version`, `modloader`, `mc_version`, `loader_version`
 
-Tagged union for dependency origin:
+See [state-machine.md](state-machine.md) for transition legality and discovery rules.
 
-| Variant | Fields | Behavior in sync |
-|---------|--------|-----------------|
-| Platform | project_id, project_platform, version_pin | Resolved via packwiz add |
-| Local | path, hash | Skipped; already on disk |
+## Mod Loader
 
-## Content Types (content.rs)
+`ModLoader` lives in `empack/parsing.rs`.
 
-### UrlKind
+| Variant | Serialized value |
+| --- | --- |
+| `NeoForge` | `neoforge` |
+| `Fabric` | `fabric` |
+| `Quilt` | `quilt` |
+| `Forge` | `forge` |
 
-Classification of user-supplied URLs. See [platform-modrinth.md](platform-modrinth.md) and [platform-curseforge.md](platform-curseforge.md) for URL patterns.
+`ModLoader::parse_from_platform_id()` accepts both pack-style and platform-style identifiers such as `fabric-loader`, `quilt-loader`, and `fabric-0.16.0`.
+
+## Dependency Entry Union
+
+`empack.yml` dependencies are an untagged union keyed by slug.
+
+### Resolved entry
+
+`DependencyRecord` fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `status` | `DependencyStatus` | Always `resolved` today |
+| `title` | `String` | Human-readable title |
+| `platform` | `ProjectPlatform` | Canonical source platform |
+| `project_id` | `String` | Canonical project identifier |
+| `type` | `ProjectType` | Content type, default `mod` |
+| `version` | `Option<String>` | Optional pinned Modrinth version ID or CurseForge file ID |
+
+### Search entry
+
+`DependencySearch` fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `title` | `String` | Search query to resolve on sync |
+| `type` | `Option<ProjectType>` | Optional type filter |
+| `platform` | `Option<ProjectPlatform>` | Optional preferred platform |
+
+`ConfigManager::create_project_plan()` includes only resolved entries in the operational `ProjectPlan`.
+
+## Content and Import Types
+
+### URL classification
+
+`UrlKind` classifies user input before add or import handling.
 
 | Variant | Fields |
-|---------|--------|
-| ModrinthModpack | slug, version (optional) |
-| ModrinthProject | slug |
-| CurseForgeModpack | slug |
-| CurseForgeProject | slug |
-| DirectDownload | url, extension |
+| --- | --- |
+| `ModrinthModpack` | `slug`, optional `version` |
+| `ModrinthProject` | `slug` |
+| `CurseForgeModpack` | `slug` |
+| `CurseForgeProject` | `slug` |
+| `DirectDownload` | `url`, `extension` |
 
-### JarIdentity
+### JAR identity
 
-Result of JAR identification via hash lookup.
+`JarIdentity` is the result of hash-based lookup for a downloaded JAR.
 
-| Variant | Fields | Source |
-|---------|--------|--------|
-| Modrinth | project_id, version_id, title | GET /v2/version_file/{sha1} |
-| CurseForge | project_id (u64), file_id (u64), title | POST /v1/fingerprints |
-| Unidentified | *none* | Both lookups failed |
+| Variant | Fields |
+| --- | --- |
+| `Modrinth` | `project_id`, `version_id`, `title` |
+| `CurseForge` | `project_id`, `file_id`, `title` |
+| `Unidentified` | *none* |
+
+### Side and override metadata
+
+Import flow types in `empack/content.rs` and `empack/import.rs` carry side and override metadata:
+
+- `SideRequirement`: required, optional, unsupported
+- `SideEnv`: client and server side requirements
+- `OverrideSide`: both, client only, server only
+- `OverrideCategory`: config, script, resource pack, shader pack, data pack, world, server config, client config, mod data, other

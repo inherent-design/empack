@@ -2,7 +2,7 @@
 
 empack uses deterministic in-process tests as the primary proof layer, then live E2E to confirm real CLI, filesystem, subprocess, and provider behavior.
 
-## Current Commands
+## Test Commands
 
 Use the `mise` tasks in [`../mise.toml`](../mise.toml):
 
@@ -37,6 +37,7 @@ The E2E suite runs the compiled `empack` binary against real tools and, where re
 - Harness utilities live in `crates/empack-tests/src/e2e.rs`
 - Interactive paths use `expectrl`
 - Non-interactive paths use `assert_cmd`
+- `packwiz-tx` is auto-managed, but live E2E can still be pointed at an override binary with `EMPACK_PACKWIZ_BIN`
 
 E2E is confirmation, not the only proof. If behavior depends on rare server headers, throttling, timing, or concurrency, add a deterministic in-process test instead of waiting for a live environment to reproduce it.
 
@@ -54,7 +55,7 @@ Use PTY-backed tests or smoke scripts when the UX itself matters:
 
 Live E2E coverage requires:
 
-- `packwiz`
+- `packwiz-tx` or the managed download path
 - Java 21+
 - `mise`
 - network access
@@ -79,21 +80,11 @@ These fixtures should carry API-shape assertions that do not need live network t
 
 ## Current State
 
-- `mise run test` is implemented and intentionally excludes E2E.
-- `mise run e2e` is implemented and runs the live `e2e_` suite.
-- `mise run e2e:filter` is implemented for targeted live reruns.
-- `mise run coverage` is the path for combined instrumented coverage.
-- Containerized E2E is still deferred; there is no `mise run e2e:container` task today.
+As of 2026-04-08:
 
-## Target End State
-
-The 100% coverage plan should not turn E2E into the only source of truth.
-
-Final expectation:
-
-- `mise run test` remains the primary fast gate and owns most line coverage through deterministic unit and mock-backed integration tests.
-- Edge-heavy features such as adaptive rate budgets get focused in-process integration tests that prove pacing and shared-state behavior without depending on live API throttling.
-- `mise run e2e` stays green as live confirmation for real subprocess, PTY, filesystem, and provider behavior.
-- `mise run coverage` combines the instrumented binary, deterministic tests, and E2E coverage to close the remaining gaps.
-
-That split keeps coverage high without making correctness depend on flaky live conditions.
+- `mise run test` runs 1007 tests.
+- `mise run e2e` runs 72 non-ignored E2E tests.
+- coverage on `feat/test-coverage` is 86.86% on the primary non-`.test.rs` metric.
+- `TOTAL` coverage on `feat/test-coverage` is 93.34%.
+- `mise run coverage` is the combined instrumented path for unit and E2E coverage.
+- there is no `mise run e2e:container` task in the current repo.

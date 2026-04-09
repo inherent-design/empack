@@ -2,65 +2,93 @@
 spec: platform-modrinth
 status: draft
 created: 2026-04-04
-updated: 2026-04-04
-depends: [overview]
+updated: 2026-04-08
+depends: [overview, types, search-and-resolution, import-pipeline]
 ---
 
 # Modrinth Platform Contracts
 
 API base: `https://api.modrinth.com/v2`
 
-All field names are snake_case. Authentication is optional for read-only endpoints. A `User-Agent` header is effectively required.
+All response field names used by empack are snake_case.
 
 ## Endpoints Used
 
 ### GET /v2/search
 
-Search for projects. Used by `empack add <query>`.
+Used by project search and add resolution.
 
-Query parameters: `query` (string), `facets` (JSON-encoded 2D array), `index` (sort), `offset`, `limit` (1 to 100, default 10).
+Current query features used by empack:
 
-Facets format: `[["project_type:mod"],["versions:1.20.1"]]`. Outer array is AND; inner arrays are OR.
+- `query`
+- `facets`
+- version and loader filtering through facets
+- bounded pagination
 
-Response fields on each hit: `project_id` (not `id`), `slug`, `title`, `project_type`, `downloads`, `author` (string, not `author_id`).
+Relevant hit fields:
+
+| Field | Meaning |
+| --- | --- |
+| `project_id` | canonical project ID |
+| `slug` | stable slug |
+| `title` | display title |
+| `project_type` | `mod`, `resourcepack`, `shader`, `datapack` |
+| `downloads` | popularity signal used in resolution |
+| `categories` | loader and ecosystem metadata |
+| `versions` | supported Minecraft versions |
 
 ### GET /v2/project/{id|slug}
 
-Get project metadata. Used by `resolve_modrinth_project` during import.
+Used by import manifest resolution.
 
-Key response fields: `id` (project ID), `title`, `project_type` ("mod", "modpack", "resourcepack", "shader").
+Relevant response fields:
+
+- `id`
+- `slug`
+- `title`
+- `project_type`
 
 ### GET /v2/project/{id|slug}/version
 
-List versions. Used by `download_modrinth_modpack` for init --from.
+Used by remote modpack download for `init --from`.
 
-Query parameters: `loaders` (JSON array), `game_versions` (JSON array), `featured` (boolean).
+Relevant file fields include:
 
-Returns an array of Version objects. Each version has: `id` (the version's own ID), `project_id`, `name`, `version_number`, `files[]`.
+- `id`
+- `project_id`
+- `name`
+- `version_number`
+- `files[]`
 
-Each file has: `hashes` (object with `sha1`, `sha512` keys), `url`, `filename`, `primary` (boolean), `size`.
+empack uses version filtering to select the requested or best-match mrpack file.
 
 ### GET /v2/version_file/{hash}
 
-Look up a version by file hash. Used by `ApiJarResolver::query_modrinth`.
+Used in two places:
 
-Query parameter: `algorithm` (default `sha1`; accepts `sha1`, `sha512`).
+- `ApiJarResolver::query_modrinth()` for downloaded JAR identification
+- import resolution when a Modrinth file ID must be backfilled from SHA1
 
-Response is a Version object. The version's own ID is the `id` field at top level. The field name `version_id` only appears inside `dependencies[]` objects.
+Current request form:
 
-Properties:
-- Omitting `?algorithm=sha1` when sending a 40-char hex SHA-1 may work (backend infers from length) but the parameter should be explicit.
-- SHA-256 is not supported.
-- Non-matching hashes return 404.
+```text
+GET /v2/version_file/{sha1}?algorithm=sha1
+```
+
+Relevant response fields:
+
+- `project_id`
+- top-level `id` as the version ID
+- `name`
 
 ## mrpack Format
 
-The `.mrpack` file is a zip archive. The manifest is `modrinth.index.json` at the archive root.
+A `.mrpack` file is a zip archive with `modrinth.index.json` at the root.
 
 ### modrinth.index.json fields
 
 | Field | Type | Description |
-|-------|------|-------------|
+| --- | --- | --- |
 | `formatVersion` | integer | Always 1 |
 | `game` | string | Always "minecraft" |
 | `name` | string | Modpack display name |
@@ -72,7 +100,7 @@ The `.mrpack` file is a zip archive. The manifest is `modrinth.index.json` at th
 ### files[] entry fields
 
 | Field | Type | Description |
-|-------|------|-------------|
+| --- | --- | --- |
 | `path` | string | Destination relative to .minecraft |
 | `hashes` | object | Must contain `sha1` and `sha512` |
 | `downloads` | array of strings | HTTPS CDN URLs |
@@ -85,7 +113,7 @@ The `.mrpack` file is a zip archive. The manifest is `modrinth.index.json` at th
 Override directory names are hardcoded archive conventions, not JSON fields:
 
 | Directory | Side | Applied |
-|-----------|------|---------|
+| --- | --- | --- |
 | `overrides/` | Both | First |
 | `client-overrides/` | Client only | After overrides/, overwrites |
 | `server-overrides/` | Server only | After overrides/, overwrites |
@@ -95,7 +123,7 @@ The JSON index does not reference these directories. Parsers must use the conven
 ## URL Patterns
 
 | URL pattern | Classification |
-|-------------|---------------|
+| --- | --- |
 | `modrinth.com/modpack/{slug}` | ModrinthModpack |
 | `modrinth.com/modpack/{slug}/version/{version}` | ModrinthModpack with version |
 | `modrinth.com/mod/{slug}` | ModrinthProject |
@@ -103,3 +131,10 @@ The JSON index does not reference these directories. Parsers must use the conven
 | `modrinth.com/resourcepack/{slug}` | ModrinthProject |
 | `modrinth.com/datapack/{slug}` | ModrinthProject |
 | `modrinth.com/shader/{slug}` | ModrinthProject |
+
+## Current empack Implications
+
+- Modrinth is the default first platform for search when no preference is provided.
+- `ProjectType::modrinth_facet_name()` includes `datapack` as a first-class facet.
+- Import can resolve project IDs, slugs, names, types, and version IDs from live Modrinth metadata.
+- JAR identification depends on SHA1 lookup, not URL pattern guessing.

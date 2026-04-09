@@ -2,82 +2,102 @@
 spec: state-machine
 status: draft
 created: 2026-04-04
-updated: 2026-04-04
+updated: 2026-04-08
 depends: [overview, types]
 ---
 
 # Pack State Machine
 
-The pack state machine governs project lifecycle transitions. State is discovered from filesystem presence, not stored explicitly.
+empack discovers project state from the working directory. The state machine does not persist a canonical state value beyond the interruption marker file used for build and clean recovery.
 
-## States
+## Discovery Rules
 
-| State | Discovery criteria |
-|-------|-------------------|
-| Uninitialized | No empack.yml or pack/ directory |
-| Configured | empack.yml exists; pack/ may be initialized |
-| Built | Build artifacts exist in dist/ |
-| Building | Transient; active build in progress |
-| Cleaning | Transient; active clean in progress |
-| Interrupted { was } | A Building or Cleaning operation was interrupted |
+Discovery order matters:
 
-## Transitions
+| Order | Condition | Result |
+| --- | --- | --- |
+| 1 | `.empack-state` exists and contains `building` or `cleaning` | `Interrupted { was: Building | Cleaning }` |
+| 2 | `dist/` contains canonical build artifacts | `Built` |
+| 3 | `empack.yml` exists or `pack/pack.toml` exists | `Configured` |
+| 4 | none of the above | `Uninitialized` |
+
+`validate_state()` is stricter than `discover_state()`. It checks the expected layout for the requested state, not just a minimal presence signal.
+
+## Layout Rules
+
+| State | Required layout when validated |
+| --- | --- |
+| `Uninitialized` | No validation beyond the transition rule |
+| `Configured` | `empack.yml` plus `pack/pack.toml` |
+| `Built` | Configured layout plus build artifacts under `dist/` |
+| `Building` | Same layout as `Configured` |
+| `Cleaning` | `dist/` directory exists |
+| `Interrupted { was }` | Underlying `was` state validates after unwrapping nested interruptions |
+
+## Orchestrated Transitions
 
 ```
-Uninitialized -> Configured    (Initialize)
-Configured -> Configured       (RefreshIndex)
-Configured -> Built            (Build)
-Built -> Configured            (Clean)
+Uninitialized -> Configured     Initialize
+Configured -> Configured        RefreshIndex
+Configured -> Built             Build
+Built -> Built                  Build
+Built -> Configured             Clean
+Configured -> Uninitialized     Clean
+Interrupted(Building) -> Built  Build
+Interrupted(Building) -> Configured  RefreshIndex or Clean
+Interrupted(Cleaning) -> Configured or Uninitialized  Clean recovery
 ```
+
+`Initialize` from `Configured` is allowed only for progressive re-initialization. That path requires `empack.yml` without full pack metadata or build artifacts.
+
+## Marker Transitions
+
+Marker transitions are internal and always validate disk layout before entry.
+
+| Marker | Allowed from | Meaning |
+| --- | --- | --- |
+| `Building` | `Configured`, `Built`, `Interrupted(Building)` | Build pipeline is in progress |
+| `Cleaning` | `Built` | Build artifact cleanup is in progress |
+
+If a marker remains on disk, the next discovery returns `Interrupted { was }`.
+
+## Operation Semantics
 
 ### Initialize
 
-Input: `InitializationConfig` (name, author, version, modloader, mc_version, loader_version).
+`Initialize` creates the base directory structure, writes `empack.yml` when it does not already exist, and runs `packwiz init`.
 
-Effects:
-1. Create empack.yml
-2. Create pack/ directory
-3. Run `packwiz init` with parameters
-4. Scaffold template files (.gitignore, .packwizignore, templates/, dist/, .github/workflows/)
+Current behavior:
 
-Properties:
-- Fails if directory already contains empack.yml (unless `--force`).
-- On packwiz failure, empack.yml is cleaned up (error recovery).
-- Template scaffolding runs after state transition to avoid `discover_state` seeing dist/ as Built.
+- `create_initial_structure()` creates `pack/`, `templates/`, and `dist/`.
+- `execute_initialize()` writes a generated `empack.yml` only if the file is missing.
+- `run_packwiz_init()` populates `pack/pack.toml` and related packwiz files.
+- Failure during initialization cleans partial configuration where possible.
+- Template scaffolding is not part of the pure state transition. Command handlers install templates after the transition succeeds.
+
+### Refresh Index
+
+`RefreshIndex` validates manifest consistency, emits warnings for mismatches, and then runs `packwiz refresh`.
+
+The resulting state stays `Configured`.
 
 ### Build
 
-Input: `BuildOrchestrator`, `Vec<BuildTarget>`.
+`Build` delegates the actual work to `BuildOrchestrator::execute_build_pipeline()`. Marker writing and cleanup happen inside the build pipeline, not in the outer transition switch.
 
-Effects per target:
-- Mrpack: `packwiz refresh` then `packwiz mr export`
-- Server: template rendering, Java server installer invocation
-- Client: packwiz-installer for client directory layout
-- Full variants: combine server/client with archive packaging
+Successful build returns `Built`.
 
 ### Clean
 
-Effects: remove dist/ contents. Transition from Built back to Configured.
+`Clean` has two current behaviors:
 
-## empack.yml Schema
+| Starting state | Behavior | Result |
+| --- | --- | --- |
+| `Built` | Remove build artifacts from `dist/` | `Configured` |
+| `Configured` | Remove `empack.yml` and `pack/` | `Uninitialized` |
 
-```yaml
-empack:
-  name: "Pack Name"
-  author: "Author"
-  version: "1.0.0"
-  minecraft_version: "1.21.1"
-  loader: fabric
-  dependencies:
-    - sodium:
-        status: resolved
-        title: Sodium
-        platform: modrinth
-        project_id: AANobbMI
-        project_type: mod
-```
+Additional clean rules:
 
-Properties:
-- `dependencies` is an array of single-key maps. The key is a kebab-case identifier.
-- Each dependency carries `status`, `title`, `platform`, `project_id`, `project_type`, and optionally `version`.
-- `empack sync` reconciles this list against packwiz's installed .pw.toml files.
+- `Clean` from `Uninitialized` is idempotent.
+- `Clean` from `Interrupted { .. }` removes the marker first, then re-discovers the underlying filesystem state and cleans accordingly.
+- `clean --cache` is a command-layer operation. It is not part of the `PackState` transition model.
