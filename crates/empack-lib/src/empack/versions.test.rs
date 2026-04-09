@@ -267,6 +267,25 @@ fn test_filter_forge_versions() {
 }
 
 #[test]
+fn test_filter_forge_versions_normalizes_late_1710_suffix_boundary() {
+    let all_versions = vec![
+        "1.7.10-10.13.2.1291".to_string(),
+        "1.7.10-10.13.2.1300-1.7.10".to_string(),
+        "1.7.10-10.13.4.1614-1.7.10".to_string(),
+    ];
+
+    let filtered = filter_forge_versions_by_minecraft(&all_versions, "1.7.10").unwrap();
+    assert_eq!(
+        filtered,
+        vec![
+            "10.13.4.1614".to_string(),
+            "10.13.2.1300".to_string(),
+            "10.13.2.1291".to_string()
+        ]
+    );
+}
+
+#[test]
 fn test_parse_forge_maven_metadata() {
     // Sample XML structure (minimal, realistic subset)
     let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -514,6 +533,33 @@ fn test_parse_version_four_component_forge_legacy() {
     assert_eq!(v.major, 11);
     assert_eq!(v.minor, 14);
     assert_eq!(v.patch, 4);
+}
+
+#[test]
+fn test_canonicalize_forge_loader_version_strips_late_1710_suffix() {
+    assert_eq!(
+        canonicalize_forge_loader_version("1.7.10", "10.13.4.1614-1.7.10"),
+        "10.13.4.1614"
+    );
+    assert_eq!(
+        canonicalize_forge_loader_version("1.7.10", "10.13.2.1291"),
+        "10.13.2.1291"
+    );
+    assert_eq!(
+        canonicalize_forge_loader_version("1.20.1", "47.3.0"),
+        "47.3.0"
+    );
+}
+
+#[test]
+fn test_uses_legacy_forge_coordinate_switches_at_1710_boundary() {
+    assert!(!uses_legacy_forge_coordinate("1.7.10", "10.13.2.1291"));
+    assert!(uses_legacy_forge_coordinate("1.7.10", "10.13.2.1300"));
+    assert!(uses_legacy_forge_coordinate(
+        "1.7.10",
+        "10.13.4.1614-1.7.10"
+    ));
+    assert!(!uses_legacy_forge_coordinate("1.20.1", "47.3.0"));
 }
 
 #[test]

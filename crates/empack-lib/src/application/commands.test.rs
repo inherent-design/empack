@@ -671,6 +671,44 @@ mod handle_init_tests {
         );
     }
 
+    #[test]
+    fn it_normalizes_late_1710_forge_loader_versions_for_init() {
+        assert_eq!(
+            normalize_selected_loader_version("forge", "1.7.10", "10.13.2.1300-1.7.10"),
+            "10.13.2.1300"
+        );
+        assert_eq!(
+            normalize_selected_loader_version("forge", "1.7.10", "10.13.2.1291"),
+            "10.13.2.1291"
+        );
+        assert_eq!(
+            normalize_selected_loader_version("fabric", "1.21.1", "0.16.0"),
+            "0.16.0"
+        );
+    }
+
+    #[test]
+    fn it_matches_raw_and_suffixed_late_1710_forge_loader_versions() {
+        assert!(loader_version_matches_available(
+            "forge",
+            "1.7.10",
+            "10.13.4.1614",
+            "10.13.4.1614-1.7.10"
+        ));
+        assert!(loader_version_matches_available(
+            "forge",
+            "1.7.10",
+            "10.13.4.1614-1.7.10",
+            "10.13.4.1614"
+        ));
+        assert!(!loader_version_matches_available(
+            "forge",
+            "1.7.10",
+            "10.13.2.1291",
+            "10.13.2.1300-1.7.10"
+        ));
+    }
+
     #[tokio::test]
     async fn it_accepts_compatible_loader_fallback_for_mc_version() {
         let workdir = mock_root().join("compatible-loader-fallback");

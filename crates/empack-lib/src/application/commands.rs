@@ -517,11 +517,15 @@ async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
                     minecraft_version
                 ));
             } else if let Some(ref lv) = args.loader_version {
-                session
-                    .display()
-                    .status()
-                    .info(&format!("Using {} version: {}", loader_str, lv));
-                if !loader_versions.iter().any(|v| v == lv) {
+                let normalized_loader_version =
+                    normalize_selected_loader_version(&loader_str, &minecraft_version, lv);
+                session.display().status().info(&format!(
+                    "Using {} version: {}",
+                    loader_str, normalized_loader_version
+                ));
+                if !loader_versions.iter().any(|available| {
+                    loader_version_matches_available(&loader_str, &minecraft_version, available, lv)
+                }) {
                     anyhow::bail!(
                         "Loader version '{}' not found for {} on Minecraft {}. Available versions include: {}",
                         lv,
@@ -535,13 +539,17 @@ async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
                             .join(", ")
                     );
                 }
-                lv.clone()
+                normalized_loader_version
             } else {
                 let loader_version_index = session
                     .interactive()
                     .fuzzy_select(&format!("{} version", loader_str), &loader_versions)?
                     .ok_or_else(|| anyhow::anyhow!("Loader version selection cancelled"))?;
-                loader_versions[loader_version_index].clone()
+                normalize_selected_loader_version(
+                    &loader_str,
+                    &minecraft_version,
+                    &loader_versions[loader_version_index],
+                )
             };
 
             (loader_str, loader_version)
@@ -826,6 +834,35 @@ fn validate_init_inputs(
     }
 
     Ok(())
+}
+
+fn normalize_selected_loader_version(
+    loader_str: &str,
+    mc_version: &str,
+    loader_version: &str,
+) -> String {
+    if loader_str == "forge" {
+        crate::empack::versions::canonicalize_forge_loader_version(mc_version, loader_version)
+    } else {
+        loader_version.to_string()
+    }
+}
+
+fn loader_version_matches_available(
+    loader_str: &str,
+    mc_version: &str,
+    available_version: &str,
+    requested_version: &str,
+) -> bool {
+    if loader_str == "forge" {
+        crate::empack::versions::canonicalize_forge_loader_version(mc_version, available_version)
+            == crate::empack::versions::canonicalize_forge_loader_version(
+                mc_version,
+                requested_version,
+            )
+    } else {
+        available_version == requested_version
+    }
 }
 
 #[instrument(skip_all, fields(source))]

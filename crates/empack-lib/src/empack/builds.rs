@@ -4,6 +4,9 @@
 use crate::application::session::execute_process_with_live_issues;
 use crate::empack::PackwizInstaller;
 use crate::empack::templates::TemplateEngine;
+use crate::empack::versions::{
+    canonicalize_forge_loader_version, parse_version, uses_legacy_forge_coordinate,
+};
 use crate::primitives::*;
 #[cfg(test)]
 use std::collections::HashMap;
@@ -127,6 +130,23 @@ impl<'a> std::fmt::Debug for BuildOrchestrator<'a> {
             .field("session", &"<dyn Session>")
             .finish()
     }
+}
+
+fn forge_installer_coordinate(mc_version: &str, loader_version: &str) -> String {
+    let normalized_loader_version = canonicalize_forge_loader_version(mc_version, loader_version);
+
+    // Late Forge 1.7.10 publishes installers under a repeated-MC coordinate:
+    // `forge-{mc}-{loader}-{mc}-installer.jar`.
+    if uses_legacy_forge_coordinate(mc_version, loader_version) {
+        format!("{mc_version}-{normalized_loader_version}-{mc_version}")
+    } else {
+        format!("{mc_version}-{normalized_loader_version}")
+    }
+}
+
+fn supports_neoforge_minecraft(mc_version: &str) -> bool {
+    parse_version(mc_version)
+        .is_some_and(|version| version >= parse_version("1.20.2").expect("hardcoded version"))
 }
 
 /// Pack metadata from pack.toml for template processing
@@ -567,8 +587,6 @@ impl<'a> BuildOrchestrator<'a> {
     }
 
     /// Download and run the NeoForge server installer.
-    ///
-    /// MC 1.20.1 uses the `forge` namespace on the NeoForged Maven as a special case.
     fn install_neoforge_server(
         &self,
         dist_dir: &Path,
@@ -577,23 +595,17 @@ impl<'a> BuildOrchestrator<'a> {
         let version = &pack_info.loader_version;
         let mc = &pack_info.mc_version;
 
-        let (url, installer_filename) = if mc == "1.20.1" {
-            (
-                format!(
-                    "https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-{v}/forge-1.20.1-{v}-installer.jar",
-                    v = version
-                ),
-                format!("forge-1.20.1-{}-installer.jar", version),
-            )
-        } else {
-            (
-                format!(
-                    "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
-                    v = version
-                ),
-                format!("neoforge-{}-installer.jar", version),
-            )
-        };
+        if !supports_neoforge_minecraft(mc) {
+            return Err(BuildError::ValidationError {
+                reason: format!("NeoForge only supports Minecraft 1.20.2 and newer; got {mc}"),
+            });
+        }
+
+        let url = format!(
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/{v}/neoforge-{v}-installer.jar",
+            v = version
+        );
+        let installer_filename = format!("neoforge-{}-installer.jar", version);
 
         let installer_path = dist_dir.join(&installer_filename);
         self.download_file(&url, &installer_path)?;
@@ -646,7 +658,7 @@ impl<'a> BuildOrchestrator<'a> {
     ) -> Result<(), BuildError> {
         let mc = &pack_info.mc_version;
         let version = &pack_info.loader_version;
-        let composite = format!("{}-{}", mc, version);
+        let composite = forge_installer_coordinate(mc, version);
 
         let url = format!(
             "https://maven.minecraftforge.net/net/minecraftforge/forge/{c}/forge-{c}-installer.jar",

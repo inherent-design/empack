@@ -70,6 +70,44 @@ pub(crate) fn sort_versions_desc(versions: &mut [String]) {
     });
 }
 
+const LEGACY_FORGE_1710_SUFFIX_START: &str = "10.13.2.1300";
+
+/// Canonicalize Forge loader versions for legacy 1.7.10 metadata.
+///
+/// Forge maven metadata switches from raw versions like `10.13.2.1291`
+/// to suffixed versions like `10.13.2.1300-1.7.10`. Empack stores the raw
+/// Forge loader version internally, so late legacy values are normalized
+/// back to that form here.
+pub(crate) fn canonicalize_forge_loader_version(mc_version: &str, loader_version: &str) -> String {
+    if mc_version == "1.7.10" {
+        loader_version
+            .strip_suffix("-1.7.10")
+            .unwrap_or(loader_version)
+            .to_string()
+    } else {
+        loader_version.to_string()
+    }
+}
+
+/// Returns true when a Forge 1.7.10 loader version requires the repeated-MC
+/// legacy coordinate form introduced at 10.13.2.1300.
+pub(crate) fn uses_legacy_forge_coordinate(mc_version: &str, loader_version: &str) -> bool {
+    if mc_version != "1.7.10" {
+        return false;
+    }
+
+    let Some(version) = parse_version(&canonicalize_forge_loader_version(
+        mc_version,
+        loader_version,
+    )) else {
+        return false;
+    };
+
+    let threshold =
+        parse_version(LEGACY_FORGE_1710_SUFFIX_START).expect("legacy Forge boundary should parse");
+    version >= threshold
+}
+
 /// Cached version data with timestamp
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedVersions {
@@ -281,15 +319,14 @@ fn parse_forge_maven_metadata(xml_content: &str) -> Result<Vec<String>> {
 /// - Return sorted newest first (semantic versioning on forge version component)
 ///
 /// Artifact URL construction (legacy vs modern):
-/// - DEFERRED: Not implemented here (will be relevant for `empack build`, not `add`)
-/// - Legacy (MC < 1.13): forge-{mc}-{forge}-{mc}-installer.jar (version repeats)
-/// - Modern (MC >= 1.13): forge-{mc}-{forge}-installer.jar (standard pattern)
-/// - Detection heuristic: Forge major version < 20 indicates legacy
+/// - Late MC 1.7.10 Forge (starting at 10.13.2.1300): `forge-{mc}-{forge}-{mc}-installer.jar`
+/// - Earlier MC 1.7.10 Forge and newer MC versions: `forge-{mc}-{forge}-installer.jar`
 ///
 /// Examples:
 /// - MC "1.20.1" → All versions starting with "1.20.1-" (e.g., "47.4.13", "47.4.10", ...)
 /// - MC "1.16.4" → All versions starting with "1.16.4-" (e.g., "35.1.37", "35.1.36", ..., "35.0.0")
-/// - MC "1.7.10" → All versions starting with "1.7.10-" (legacy artifact naming applies)
+/// - MC "1.7.10" → Raw versions until `10.13.2.1291`, then suffixed metadata entries
+///   starting at `10.13.2.1300-1.7.10` which are normalized back to raw versions here
 fn filter_forge_versions_by_minecraft(
     all_versions: &[String],
     mc_version: &str,
@@ -316,18 +353,21 @@ fn filter_forge_versions_by_minecraft(
 
     for version in all_versions {
         // Try normalized prefix (e.g., "1.21.0-")
-        if let Some(forge_ver) = extract_forge_version(version, &normalized_prefix)
-            && !matching_versions.contains(&forge_ver)
-        {
-            matching_versions.push(forge_ver);
+        if let Some(forge_ver) = extract_forge_version(version, &normalized_prefix) {
+            let forge_ver = canonicalize_forge_loader_version(mc_version, &forge_ver);
+            if !matching_versions.contains(&forge_ver) {
+                matching_versions.push(forge_ver);
+            }
         }
 
         // Also try original prefix if different (e.g., "1.21-")
         if mc_version != normalized_version
             && let Some(forge_ver) = extract_forge_version(version, &original_prefix)
-            && !matching_versions.contains(&forge_ver)
         {
-            matching_versions.push(forge_ver);
+            let forge_ver = canonicalize_forge_loader_version(mc_version, &forge_ver);
+            if !matching_versions.contains(&forge_ver) {
+                matching_versions.push(forge_ver);
+            }
         }
     }
 
