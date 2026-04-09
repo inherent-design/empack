@@ -563,12 +563,12 @@ impl LiveProcessProvider {
 
         let candidate_paths = if command_path.is_absolute() || command_has_parent {
             vec![command_path.to_path_buf()]
-        } else {
-            self.effective_path()
-                .into_iter()
-                .flat_map(|path| std::env::split_paths(&path))
+        } else if let Some(path) = self.effective_path() {
+            std::env::split_paths(&path)
                 .map(|dir| dir.join(command))
                 .collect::<Vec<_>>()
+        } else {
+            Vec::new()
         };
 
         let pathexts = self
@@ -820,15 +820,15 @@ impl ProcessProvider for LiveProcessProvider {
         }
 
         #[cfg(not(windows))]
-        let locate_cmd = "which";
-
-        let cwd = std::env::current_dir().ok()?;
-        let output = self.execute(locate_cmd, &[program], &cwd).ok()?;
-        if output.success {
-            let path = output.stdout.trim().lines().next()?.to_string();
-            if path.is_empty() { None } else { Some(path) }
-        } else {
-            None
+        {
+            let cwd = std::env::current_dir().ok()?;
+            let output = self.execute("which", &[program], &cwd).ok()?;
+            if output.success {
+                let path = output.stdout.trim().lines().next()?.to_string();
+                if path.is_empty() { None } else { Some(path) }
+            } else {
+                None
+            }
         }
     }
 }
