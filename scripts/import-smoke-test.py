@@ -1113,7 +1113,7 @@ def parse_curseforge_file_id(url: str) -> Optional[int]:
 
 
 def restricted_cache_dir_for_project(cache_dir: Path, project_dir: Path) -> Path:
-    project_hash = hashlib.sha256(str(project_dir.resolve()).encode("utf-8")).hexdigest()[:16]
+    project_hash = hashlib.sha256(str(project_dir.resolve()).encode("utf-8")).hexdigest()
     return cache_dir / "restricted-builds" / project_hash
 
 

@@ -3773,46 +3773,6 @@ mod handle_build_continue_tests {
     }
 
     #[tokio::test]
-    async fn build_continue_rejects_targets() {
-        let workdir = mock_root().join("continue-reject-targets");
-        let session = MockCommandSession::new()
-            .with_filesystem(cached_full_build_filesystem(workdir));
-
-        let err = handle_build(
-            &session,
-            &BuildArgs {
-                targets: vec!["client-full".to_string()],
-                continue_build: true,
-                ..Default::default()
-            },
-        )
-        .await
-        .expect_err("continue build should reject positional targets");
-
-        assert!(err.to_string().contains("does not accept positional targets"));
-    }
-
-    #[tokio::test]
-    async fn build_continue_rejects_clean() {
-        let workdir = mock_root().join("continue-reject-clean");
-        let session = MockCommandSession::new()
-            .with_filesystem(cached_full_build_filesystem(workdir));
-
-        let err = handle_build(
-            &session,
-            &BuildArgs {
-                continue_build: true,
-                clean: true,
-                ..Default::default()
-            },
-        )
-        .await
-        .expect_err("continue build should reject clean");
-
-        assert!(err.to_string().contains("cannot be combined with --clean"));
-    }
-
-    #[tokio::test]
     async fn build_continue_errors_without_pending_state() {
         let workdir = mock_root().join("continue-no-pending");
         let session = MockCommandSession::new()

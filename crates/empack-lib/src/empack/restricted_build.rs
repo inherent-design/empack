@@ -72,9 +72,7 @@ pub fn pending_state_path(workdir: &Path) -> PathBuf {
 pub fn restricted_cache_dir(workdir: &Path) -> Result<PathBuf> {
     let cache_root = crate::platform::cache::cache_root()?;
     let project_hash = hex_sha256(workdir.to_string_lossy().as_bytes());
-    Ok(cache_root
-        .join("restricted-builds")
-        .join(&project_hash[..16.min(project_hash.len())]))
+    Ok(cache_root.join("restricted-builds").join(project_hash))
 }
 
 pub fn compute_project_fingerprint(

@@ -943,6 +943,34 @@ async fn test_neoforge_loader_versions_repair_incompatible_cached_family() {
     assert_eq!(parsed.versions, expected);
 }
 
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_neoforge_loader_versions_repair_empty_result_is_persisted() {
+    let network = MockNetworkProvider::new().with_failing_http_client();
+    let cache_dir = crate::platform::cache::cache_root()
+        .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache"));
+    let cache_path = cache_dir.join("neoforge_loader_1.19.4.json");
+    let stale_cache = serde_json::to_string(&CachedVersions::new(vec![
+        "21.4.147".to_string(),
+        "20.4.109".to_string(),
+    ]))
+    .expect("serialize stale NeoForge cache");
+
+    let filesystem = MockFileSystemProvider::new().with_file(cache_path.clone(), stale_cache);
+    let fetcher = VersionFetcher::new(&network, &filesystem).unwrap();
+
+    let repaired = fetcher.fetch_neoforge_loader_versions("1.19.4").await.unwrap();
+    assert!(repaired.is_empty());
+
+    let repaired_cache = filesystem.files.lock().unwrap();
+    let persisted = repaired_cache
+        .get(&cache_path)
+        .expect("NeoForge cache should be rewritten even when repaired data is empty");
+    let parsed: CachedVersions =
+        serde_json::from_str(persisted).expect("repaired cache should remain valid JSON");
+    assert!(parsed.versions.is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // NeoForge filter: MC version format edge cases
 // ---------------------------------------------------------------------------
