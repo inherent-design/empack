@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -59,6 +57,10 @@ jobs:
     needs: lint
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable

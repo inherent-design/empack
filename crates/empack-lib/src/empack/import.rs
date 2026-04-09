@@ -1340,10 +1340,14 @@ pub async fn execute_import(
     content_progress.finish(&format!("{} platform references processed", content_total));
 
     if use_no_refresh {
+        let pack_toml = pack_dir.join("pack.toml");
+        let pack_toml_str = pack_toml
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in pack.toml path"))?;
         let refresh_output = execute_process_with_live_issues(
             session,
             session.packwiz_bin(),
-            &["refresh"],
+            &["--pack-file", pack_toml_str, "refresh"],
             &pack_dir,
         )?;
         if !refresh_output.success {
