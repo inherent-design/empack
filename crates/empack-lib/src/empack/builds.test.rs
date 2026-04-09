@@ -1,7 +1,9 @@
 use super::*;
 use crate::application::session::ProcessOutput;
+use crate::application::session::Session;
 use crate::application::session_mocks::{
-    MockCommandSession, MockFileSystemProvider, MockProcessProvider, mock_root,
+    MockCommandSession, MockFileSystemProvider, MockNetworkProvider, MockProcessProvider,
+    mock_root,
 };
 use std::path::Path;
 use tempfile::TempDir;
@@ -221,6 +223,31 @@ fn test_prepare_build_environment() {
 }
 
 #[test]
+fn test_download_server_jar_rejects_unsupported_loader_type() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+    let dist_dir = mock.temp_dir.path().join("dist").join("server");
+    let pack_info = PackInfo {
+        author: "Test Author".to_string(),
+        name: "Unsupported".to_string(),
+        version: "1.0.0".to_string(),
+        mc_version: "1.21.1".to_string(),
+        loader_version: "1.0.0".to_string(),
+        loader_type: "mystery".to_string(),
+    };
+
+    let error = orchestrator.download_server_jar(&dist_dir, &pack_info).unwrap_err();
+    match error {
+        BuildError::ConfigError { reason } => {
+            assert!(reason.contains("unsupported loader type"));
+            assert!(reason.contains("mystery"));
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_load_pack_info() {
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -234,6 +261,33 @@ fn test_load_pack_info() {
     assert_eq!(pack_info.mc_version, "1.21");
     assert_eq!(pack_info.loader_version, "0.15.11");
     assert_eq!(pack_info.loader_type, "fabric");
+}
+
+#[test]
+fn test_load_pack_info_defaults_missing_fields_to_vanilla_unknowns() {
+    let mock = MockBuildOrchestrator::new();
+    let workdir = mock.temp_dir.path().to_path_buf();
+    mock.session
+        .filesystem()
+        .create_dir_all(&workdir.join("pack"))
+        .unwrap();
+    mock.session
+        .filesystem()
+        .write_file(
+            &workdir.join("pack").join("pack.toml"),
+            "name = \"BarePack\"\nauthor = \"Test Author\"\n",
+        )
+        .unwrap();
+
+    let mut orchestrator = mock.orchestrator();
+    let pack_info = orchestrator.load_pack_info().unwrap();
+
+    assert_eq!(pack_info.name, "BarePack");
+    assert_eq!(pack_info.author, "Test Author");
+    assert_eq!(pack_info.version, "Unknown");
+    assert_eq!(pack_info.mc_version, "Unknown");
+    assert_eq!(pack_info.loader_type, "vanilla");
+    assert!(pack_info.loader_version.is_empty());
 }
 
 #[test]
@@ -300,6 +354,35 @@ fn test_load_pack_info_caching() {
 }
 
 #[test]
+fn test_load_pack_info_defaults_to_vanilla_without_loader_versions() {
+    let mock = MockBuildOrchestrator::new();
+    let pack_dir = mock.workdir().join("pack");
+    let filesystem = mock.session.filesystem();
+    filesystem.create_dir_all(&pack_dir).unwrap();
+    filesystem
+        .write_file(
+            &pack_dir.join("pack.toml"),
+            r#"
+name = "Vanilla Pack"
+version = "2.0.0"
+
+[versions]
+minecraft = "1.21.1"
+"#,
+        )
+        .unwrap();
+
+    let mut orchestrator = mock.orchestrator();
+    let pack_info = orchestrator.load_pack_info().unwrap();
+    assert_eq!(pack_info.author, "Unknown");
+    assert_eq!(pack_info.name, "Vanilla Pack");
+    assert_eq!(pack_info.version, "2.0.0");
+    assert_eq!(pack_info.mc_version, "1.21.1");
+    assert_eq!(pack_info.loader_type, "vanilla");
+    assert!(pack_info.loader_version.is_empty());
+}
+
+#[test]
 fn test_process_build_templates() {
     let mock = MockBuildOrchestrator::new();
     mock.setup_basic_pack_structure().unwrap();
@@ -327,6 +410,40 @@ fn test_process_build_templates() {
     assert!(content.contains("\"author\": \"TestAuthor\""));
     assert!(content.contains("\"mcVersion\": \"1.21\""));
     assert!(content.contains("\"loaderVersion\": \"0.15.11\""));
+}
+
+#[test]
+fn test_process_build_templates_reports_template_engine_load_failure() {
+    let mock = MockBuildOrchestrator::new();
+    let workdir = mock.workdir().to_path_buf();
+    let filesystem = mock.session.filesystem();
+    let pack_dir = workdir.join("pack");
+    filesystem.create_dir_all(&pack_dir).unwrap();
+    filesystem
+        .write_file(&pack_dir.join("pack.toml"), "invalid toml [")
+        .unwrap();
+
+    let template_dir = workdir.join("templates").join("client");
+    filesystem.create_dir_all(&template_dir).unwrap();
+    filesystem
+        .write_file(
+            &template_dir.join("launcher.json.template"),
+            "{ \"name\": \"{{NAME}}\" }",
+        )
+        .unwrap();
+
+    let target_dir = workdir.join("test-target");
+    filesystem.create_dir_all(&target_dir).unwrap();
+
+    let mut orchestrator = mock.orchestrator();
+    let result = orchestrator.process_build_templates("templates/client", &target_dir);
+
+    match result {
+        Err(BuildError::ConfigError { reason }) => {
+            assert!(reason.contains("Failed to load template variables from pack.toml"));
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
 }
 
 #[test]
@@ -401,6 +518,40 @@ fn test_create_artifact() {
     assert_eq!(artifact.name, "test.txt");
     assert_eq!(artifact.path, test_file);
     assert_eq!(artifact.size, content.len() as u64);
+}
+
+#[test]
+fn test_create_artifact_missing_file_returns_validation_error() {
+    let mock = MockBuildOrchestrator::new();
+    let orchestrator = mock.orchestrator();
+    let missing = mock.workdir().join("missing.zip");
+
+    let result = orchestrator.create_artifact(&missing);
+
+    match result {
+        Err(BuildError::ValidationError { reason }) => {
+            assert!(reason.contains("without creating expected artifact"));
+            assert!(reason.contains(&missing.display().to_string()));
+        }
+        other => panic!("expected ValidationError, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_create_artifact_binary_file_falls_back_to_zero_size() {
+    let mock = MockBuildOrchestrator::new();
+    let filesystem = mock.session.filesystem();
+    let artifact_path = mock.workdir().join("binary-artifact.zip");
+    filesystem
+        .write_bytes(&artifact_path, &[0, 159, 146, 150])
+        .unwrap();
+
+    let orchestrator = mock.orchestrator();
+    let artifact = orchestrator.create_artifact(&artifact_path).unwrap();
+
+    assert_eq!(artifact.name, "binary-artifact.zip");
+    assert_eq!(artifact.path, artifact_path);
+    assert_eq!(artifact.size, 0);
 }
 
 #[test]
@@ -504,6 +655,91 @@ fn test_download_server_jar_skips_when_srv_exists() {
     assert!(result.is_ok());
     assert!(mock.session.filesystem().exists(&dist_dir.join("srv.jar")));
     assert!(mock.session.process_provider.get_calls_for_command("java").is_empty());
+}
+
+#[test]
+fn test_refresh_pack_missing_pack_file_errors() {
+    let (_temp_dir, session) = create_test_orchestrator();
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    let result = orchestrator.refresh_pack();
+
+    match result {
+        Err(BuildError::ConfigError { reason }) => {
+            assert!(reason.contains("Pack file not found"));
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_refresh_pack_command_failure_surfaces_process_error() {
+    let workdir = mock_root().join("refresh-project-failed");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let process = MockProcessProvider::new().with_packwiz_result(
+        vec![
+            "--pack-file".to_string(),
+            pack_file.display().to_string(),
+            "refresh".to_string(),
+        ],
+        Ok(ProcessOutput {
+            stdout: String::new(),
+            stderr: "refresh blew up".to_string(),
+            success: false,
+        }),
+    );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(pack_file.clone(), "name = \"Refresh Pack\"\n".to_string()),
+        )
+        .with_process(process);
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let result = orchestrator.refresh_pack();
+
+    match result {
+        Err(BuildError::CommandFailed { command }) => {
+            assert!(command.contains("packwiz refresh"));
+            assert!(command.contains("refresh blew up"));
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_refresh_pack_is_cached_after_first_success() {
+    let workdir = mock_root().join("refresh-project-cached");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let process = MockProcessProvider::new().with_packwiz_result(
+        vec![
+            "--pack-file".to_string(),
+            pack_file.display().to_string(),
+            "refresh".to_string(),
+        ],
+        Ok(successful_process_output()),
+    );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(pack_file.clone(), "name = \"Refresh Pack\"\n".to_string()),
+        )
+        .with_process(process);
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    orchestrator.refresh_pack().unwrap();
+    orchestrator.refresh_pack().unwrap();
+
+    let refresh_calls = session
+        .process_provider
+        .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
+    assert_eq!(refresh_calls.len(), 1);
 }
 
 #[test]
@@ -779,6 +1015,332 @@ fabric = "0.15.11"
         .exists(&workdir.join("dist").join("RestrictedServerPack-v1.0.0-server-full.zip")));
 }
 
+#[test]
+fn test_build_client_full_wraps_installer_process_errors() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("client-full");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+    let pack_toml_path = dist_dir.join("pack").join("pack.toml");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "ClientFullFailurePack"
+author = "Test Author"
+version = "1.0.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        );
+    let process = MockProcessProvider::new().with_result(
+        "java".to_string(),
+        vec![
+            "-jar".to_string(),
+            bootstrap_jar_path.to_string_lossy().to_string(),
+            "--bootstrap-main-jar".to_string(),
+            installer_jar_path.to_string_lossy().to_string(),
+            "-g".to_string(),
+            "-s".to_string(),
+            "both".to_string(),
+            pack_toml_path.to_string_lossy().to_string(),
+        ],
+        Err("installer process exploded".to_string()),
+    );
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    orchestrator.pack_refreshed = true;
+
+    let error = orchestrator
+        .build_client_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap_err();
+    match error {
+        BuildError::CommandFailed { command } => {
+            assert!(command.contains("packwiz-installer-bootstrap.jar"));
+            assert!(command.contains("installer process exploded"));
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_build_server_full_returns_warning_when_server_jar_download_fails() {
+    let workdir = mock_root().join("server-full-warning");
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server-full");
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "NeoForgeServerFullWarning"
+author = "Test Author"
+version = "1.0.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.19.4"
+neoforge = "47.1.106"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_file(dist_dir.join(".gitkeep"), String::new());
+    let session = MockCommandSession::new().with_filesystem(filesystem);
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    orchestrator.pack_refreshed = true;
+
+    let result = orchestrator
+        .build_server_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap();
+
+    assert!(!result.success);
+    assert!(result.output_path.is_none());
+    assert_eq!(result.target, BuildTarget::ServerFull);
+    assert!(result.restricted_mods.is_empty());
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].contains("failed to download server JAR"));
+    assert!(result.warnings[0].contains("1.20.1 and newer"));
+}
+
+#[test]
+fn test_build_server_full_wraps_installer_process_errors() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server-full");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+    let pack_toml_path = dist_dir.join("pack").join("pack.toml");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "ServerFullFailurePack"
+author = "Test Author"
+version = "1.0.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_deferred_file(
+            dist_dir.clone(),
+            "srv.jar".to_string(),
+            "existing server jar".to_string(),
+        );
+    let process = MockProcessProvider::new().with_result(
+        "java".to_string(),
+        vec![
+            "-jar".to_string(),
+            bootstrap_jar_path.to_string_lossy().to_string(),
+            "--bootstrap-main-jar".to_string(),
+            installer_jar_path.to_string_lossy().to_string(),
+            "-g".to_string(),
+            "-s".to_string(),
+            "server".to_string(),
+            pack_toml_path.to_string_lossy().to_string(),
+        ],
+        Err("server installer process exploded".to_string()),
+    );
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    orchestrator.pack_refreshed = true;
+
+    let error = orchestrator
+        .build_server_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap_err();
+    match error {
+        BuildError::CommandFailed { command } => {
+            assert!(command.contains("packwiz-installer-bootstrap.jar"));
+            assert!(command.contains("server installer process exploded"));
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_continue_client_full_preserves_existing_files_and_archives_successfully() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("client-full");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "ContinueClientPack"
+author = "Test Author"
+version = "1.0.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_file(bootstrap_jar_path.clone(), "bootstrap".to_string())
+        .with_file(installer_jar_path.clone(), "installer".to_string())
+        .with_file(dist_dir.join("preserve.txt"), "keep me".to_string());
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip)
+            .unwrap()
+            .continue_full_builds();
+    let result = orchestrator
+        .build_client_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap();
+
+    assert!(result.success);
+    assert!(session.filesystem().exists(&dist_dir.join("preserve.txt")));
+    assert!(
+        session
+            .filesystem()
+            .exists(&dist_dir.join("mods").join("both-installed.txt"))
+    );
+    assert!(session.process_provider.get_calls_for_command("java").iter().any(
+        |call| call.args.iter().any(|arg| arg == "both")
+    ));
+    assert!(session
+        .process_provider
+        .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+        .iter()
+        .any(|call| call.args.iter().any(|arg| arg == "refresh")));
+    assert!(session.filesystem().exists(
+        &workdir.join("dist").join("ContinueClientPack-v1.0.0-client-full.zip")
+    ));
+}
+
+#[test]
+fn test_continue_server_full_preserves_existing_files_and_archives_successfully() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server-full");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "ContinueServerPack"
+author = "Test Author"
+version = "1.0.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_file(bootstrap_jar_path.clone(), "bootstrap".to_string())
+        .with_file(installer_jar_path.clone(), "installer".to_string())
+        .with_file(dist_dir.join("preserve.txt"), "keep me".to_string())
+        .with_file(dist_dir.join("srv.jar"), "server jar".to_string());
+
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip)
+            .unwrap()
+            .continue_full_builds();
+    let result = orchestrator
+        .build_server_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap();
+
+    assert!(result.success);
+    assert!(session.filesystem().exists(&dist_dir.join("preserve.txt")));
+    assert!(session.filesystem().exists(&dist_dir.join("srv.jar")));
+    assert!(
+        session
+            .filesystem()
+            .exists(&dist_dir.join("mods").join("server-installed.txt"))
+    );
+    assert!(session.process_provider.get_calls_for_command("java").iter().any(
+        |call| call.args.iter().any(|arg| arg == "server")
+    ));
+    assert!(session
+        .process_provider
+        .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+        .iter()
+        .any(|call| call.args.iter().any(|arg| arg == "refresh")));
+    assert!(session.filesystem().exists(
+        &workdir.join("dist").join("ContinueServerPack-v1.0.0-server-full.zip")
+    ));
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn test_fetch_url_bytes_rejects_current_thread_runtime() {
     let mock = MockBuildOrchestrator::new();
@@ -794,8 +1356,53 @@ async fn test_fetch_url_bytes_rejects_current_thread_runtime() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_fetch_url_text_rejects_invalid_utf8() {
+    let mut server = mockito::Server::new_async().await;
+    let _m = server
+        .mock("GET", "/binary")
+        .with_body(vec![0xff, 0xfe, 0xfd])
+        .create_async()
+        .await;
+
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let result = orchestrator.fetch_url_text(&format!("{}/binary", server.url()));
+    match result {
+        Err(BuildError::ConfigError { reason }) => {
+            assert!(reason.contains("not valid UTF-8"));
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_fetch_url_bytes_reports_http_client_unavailable() {
+    let workdir = mock_root().join("http-client-unavailable");
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(workdir.join("pack").join("pack.toml"), "name = \"Pack\"\n".to_string()),
+        )
+        .with_network(MockNetworkProvider::new().with_failing_http_client());
+
+    let orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let result = orchestrator.fetch_url_bytes("https://example.com/file.bin");
+
+    match result {
+        Err(BuildError::ConfigError { reason }) => {
+            assert!(reason.contains("HTTP client unavailable"));
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
+}
+
 #[test]
-fn test_install_neoforge_server_mc_1_20_1_fails_fast() {
+fn test_install_neoforge_server_mc_1_20_1_uses_legacy_forge_artifact() {
     let workdir = TempDir::new().unwrap();
     let workdir = workdir.path().to_path_buf();
     let pack_dir = workdir.join("pack");
@@ -831,26 +1438,47 @@ neoforge = "47.3.0"
         .with_process(MockProcessProvider::new().with_java_installer_side_effects());
 
     session.filesystem().create_dir_all(&dist_dir).unwrap();
+    session
+        .filesystem()
+        .write_bytes(
+            &dist_dir.join("forge-1.20.1-47.3.0-installer.jar"),
+            b"installer",
+        )
+        .unwrap();
+    session
+        .filesystem()
+        .write_bytes(&dist_dir.join("srv.jar"), b"server starter jar")
+        .unwrap();
 
     let mut orchestrator =
         BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
     let pack_info = orchestrator.load_pack_info().unwrap().clone();
     let result = orchestrator.install_neoforge_server(&dist_dir, &pack_info);
 
-    assert!(matches!(result, Err(BuildError::ValidationError { .. })), "{result:?}");
     assert!(
-        !session.filesystem().exists(&dist_dir.join("run.sh")),
-        "unsupported NeoForge versions should fail before running the installer"
+        result.is_ok(),
+        "legacy NeoForge 1.20.1 should install successfully: {result:?}"
     );
     assert!(
-        !session.filesystem().exists(&dist_dir.join("run.bat")),
-        "unsupported NeoForge versions should fail before running the installer"
+        session.filesystem().exists(&dist_dir.join("run.sh")),
+        "legacy NeoForge installer should create run.sh"
     );
+    assert!(
+        session.filesystem().exists(&dist_dir.join("run.bat")),
+        "legacy NeoForge installer should create run.bat"
+    );
+    assert!(session.filesystem().exists(&dist_dir.join("srv.jar")));
 
     let java_calls = session.process_provider.get_calls_for_command("java");
     assert!(
-        java_calls.is_empty(),
-        "unsupported NeoForge versions should not invoke java"
+        java_calls.iter().any(|call| {
+            call.args.iter().any(|a| a == "--install-server" || a == "--installServer")
+                && call
+                    .args
+                    .iter()
+                    .any(|a| a.contains("forge-1.20.1-47.3.0-installer.jar"))
+        }),
+        "legacy NeoForge install should execute the forge-family installer: {java_calls:?}"
     );
 }
 
@@ -1026,6 +1654,554 @@ async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_e
             assert!(reason.contains(&output_file.display().to_string()));
         }
         other => panic!("expected ValidationError, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_execute_build_pipeline_success_cleans_temp_extract_dir_and_build_marker() {
+    let workdir = mock_root().join("build-pipeline-success");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let temp_extract_dir = workdir.join("dist").join("temp-mrpack-extract");
+    let process = MockProcessProvider::new()
+        .with_mrpack_export_side_effects()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(successful_process_output()),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_file(temp_extract_dir.join("stale.txt"), "stale".to_string()),
+        )
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    let results = orchestrator
+        .execute_build_pipeline(&[BuildTarget::Mrpack])
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert!(results[0].success);
+    assert!(!session.filesystem().exists(&temp_extract_dir));
+
+    let state = session.state().unwrap().discover_state().unwrap();
+    assert!(!matches!(
+        state,
+        crate::primitives::PackState::Interrupted { .. }
+            | crate::primitives::PackState::Building
+    ));
+}
+
+#[tokio::test]
+async fn test_execute_build_pipeline_failure_still_cleans_temp_extract_dir() {
+    let workdir = mock_root().join("build-pipeline-failure-cleanup");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let temp_extract_dir = workdir.join("dist").join("temp-mrpack-extract");
+    let process = MockProcessProvider::new()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(ProcessOutput {
+                stdout: String::new(),
+                stderr: "mr export failed".to_string(),
+                success: false,
+            }),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_file(temp_extract_dir.join("stale.txt"), "stale".to_string()),
+        )
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    let error = orchestrator
+        .execute_build_pipeline(&[BuildTarget::Mrpack])
+        .await
+        .unwrap_err();
+
+    match error {
+        BuildError::CommandFailed { command } => {
+            assert!(command.contains("Build failed for target Mrpack"));
+        }
+        other => panic!("expected CommandFailed, got {other:?}"),
+    }
+    assert!(!session.filesystem().exists(&temp_extract_dir));
+
+    let state = session.state().unwrap().discover_state().unwrap();
+    assert!(matches!(
+        state,
+        crate::primitives::PackState::Interrupted { .. }
+            | crate::primitives::PackState::Building
+    ));
+}
+
+#[tokio::test]
+async fn test_execute_clean_pipeline_removes_target_outputs_and_clean_marker() {
+    let workdir = mock_root().join("clean-pipeline-success");
+    let client_dir = workdir.join("dist").join("client");
+    let archive_path = workdir.join("dist").join("Test Pack-v1.0.0-client.zip");
+    let session = MockCommandSession::new().with_filesystem(
+        MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone())
+            .with_file(client_dir.join("mod.jar"), "mod".to_string())
+            .with_file(client_dir.join(".gitkeep"), String::new())
+            .with_file(archive_path.clone(), "archive".to_string()),
+    );
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    orchestrator
+        .execute_clean_pipeline(&[BuildTarget::Client])
+        .await
+        .unwrap();
+
+    assert!(!session.filesystem().exists(&client_dir.join("mod.jar")));
+    assert!(session.filesystem().exists(&client_dir.join(".gitkeep")));
+    assert!(!session.filesystem().exists(&archive_path));
+
+    let state = session.state().unwrap().discover_state().unwrap();
+    assert!(!matches!(
+        state,
+        crate::primitives::PackState::Interrupted { .. }
+            | crate::primitives::PackState::Cleaning
+    ));
+}
+
+#[test]
+fn test_extract_mrpack_builds_missing_artifact_and_caches_repeated_calls() {
+    let workdir = mock_root().join("extract-mrpack-cached");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let process = MockProcessProvider::new()
+        .with_mrpack_export_side_effects()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(successful_process_output()),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
+        )
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    orchestrator.extract_mrpack().unwrap();
+    orchestrator.extract_mrpack().unwrap();
+
+    assert!(session
+        .filesystem()
+        .exists(&workdir.join("dist").join("temp-mrpack-extract")));
+    assert_eq!(session.archive_provider.extract_calls.lock().unwrap().len(), 1);
+    let export_calls = session
+        .process_provider
+        .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+        .into_iter()
+        .filter(|call| call.args.iter().any(|arg| arg == "export"))
+        .count();
+    assert_eq!(export_calls, 1);
+}
+
+#[test]
+fn test_zip_distribution_requires_loaded_pack_info() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let orchestrator = mock.orchestrator();
+
+    let result = orchestrator.zip_distribution(BuildTarget::Client);
+
+    match result {
+        Err(BuildError::PackInfoError { reason }) => {
+            assert!(reason.contains("Pack info not loaded"));
+        }
+        other => panic!("expected PackInfoError, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_zip_distribution_requires_target_content() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let mut orchestrator = mock.orchestrator();
+    orchestrator.load_pack_info().unwrap();
+    mock.session
+        .filesystem()
+        .create_dir_all(&mock.workdir().join("dist").join("client"))
+        .unwrap();
+
+    let result = orchestrator.zip_distribution(BuildTarget::Client);
+
+    match result {
+        Err(BuildError::ValidationError { reason }) => {
+            assert!(reason.contains("No files to archive"));
+        }
+        other => panic!("expected ValidationError, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_build_mrpack_returns_manual_download_warning_on_export_failure() {
+    let workdir = mock_root().join("mrpack-manual-download");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let process = MockProcessProvider::new()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(ProcessOutput {
+                stdout: "manual download required".to_string(),
+                stderr: "must be manually downloaded".to_string(),
+                success: false,
+            }),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
+        )
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    let result = orchestrator.build_mrpack_impl().unwrap();
+
+    assert!(!result.success);
+    assert!(result.output_path.is_none());
+    assert!(result.artifacts.is_empty());
+    assert_eq!(result.restricted_mods.len(), 0);
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].contains("manual download"));
+}
+
+#[tokio::test]
+async fn test_build_mrpack_replaces_existing_artifact_and_returns_metadata() {
+    let workdir = mock_root().join("mrpack-success");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let process = MockProcessProvider::new()
+        .with_mrpack_export_side_effects()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(successful_process_output()),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_file(output_file.clone(), "stale artifact".to_string()),
+        )
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    let result = orchestrator.build_mrpack_impl().unwrap();
+
+    assert!(result.success);
+    assert_eq!(result.target, BuildTarget::Mrpack);
+    assert_eq!(result.output_path.as_ref(), Some(&output_file));
+    assert_eq!(result.warnings, Vec::<String>::new());
+    assert!(result.restricted_mods.is_empty());
+    assert_eq!(result.artifacts.len(), 1);
+    assert_eq!(result.artifacts[0].name, "Test Pack-v1.0.0.mrpack");
+    assert!(result.artifacts[0].size > 0);
+    let bytes = session.filesystem().read_bytes(&output_file).unwrap();
+    assert_eq!(bytes, b"mock mrpack artifact");
+}
+
+#[test]
+fn test_build_client_copies_templates_pack_and_overrides_into_minecraft_distribution() {
+    let workdir = mock_root().join("client-build-success");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let dist_dir = workdir.join("dist").join("client");
+    let overrides_dir = workdir.join("dist").join("temp-mrpack-extract").join("overrides");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_file(bootstrap_jar_path.clone(), "bootstrap".to_string())
+        .with_file(
+            workdir
+                .join("templates")
+                .join("client")
+                .join("launcher.json.template"),
+            r#"{"name":"{{NAME}}","version":"{{VERSION}}"}"#.to_string(),
+        )
+        .with_file(overrides_dir.join("options.txt"), "fancy=true\n".to_string());
+    let session = MockCommandSession::new().with_filesystem(filesystem);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    orchestrator.pack_refreshed = true;
+    orchestrator.mrpack_extracted = true;
+
+    let result = orchestrator.build_client_impl(&bootstrap_jar_path).unwrap();
+
+    assert!(result.success);
+    assert_eq!(result.target, BuildTarget::Client);
+    assert_eq!(
+        result.output_path.as_ref(),
+        Some(&workdir.join("dist").join("Test Pack-v1.0.0-client.zip"))
+    );
+    assert!(session
+        .filesystem()
+        .exists(&dist_dir.join(".minecraft").join("pack").join("pack.toml")));
+    assert!(session
+        .filesystem()
+        .exists(&dist_dir.join(".minecraft").join("packwiz-installer-bootstrap.jar")));
+    assert!(session
+        .filesystem()
+        .exists(&dist_dir.join(".minecraft").join("options.txt")));
+    let rendered = session
+        .filesystem()
+        .read_to_string(&dist_dir.join("launcher.json"))
+        .unwrap();
+    assert!(rendered.contains("\"name\":\"Test Pack\""));
+    assert!(rendered.contains("\"version\":\"1.0.0\""));
+    let zip_path = workdir.join("dist").join("Test Pack-v1.0.0-client.zip");
+    assert!(session.filesystem().exists(&zip_path));
+}
+
+#[test]
+fn test_build_server_uses_existing_srv_jar_and_archives_with_overrides() {
+    let workdir = mock_root().join("server-build-success");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let dist_dir = workdir.join("dist").join("server");
+    let overrides_dir = workdir.join("dist").join("temp-mrpack-extract").join("overrides");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_file(bootstrap_jar_path.clone(), "bootstrap".to_string())
+        .with_deferred_file(
+            dist_dir.clone(),
+            "srv.jar".to_string(),
+            "existing server jar".to_string(),
+        )
+        .with_file(
+            workdir.join("templates").join("server").join("run.sh.template"),
+            "#!/bin/sh\necho {{NAME}}\n".to_string(),
+        )
+        .with_file(
+            overrides_dir.join("server.properties"),
+            "motd=Empack Test\n".to_string(),
+        );
+    let session = MockCommandSession::new().with_filesystem(filesystem);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    orchestrator.pack_refreshed = true;
+    orchestrator.mrpack_extracted = true;
+
+    let result = orchestrator.build_server_impl(&bootstrap_jar_path).unwrap();
+
+    assert!(result.success);
+    assert_eq!(result.target, BuildTarget::Server);
+    assert_eq!(
+        result.output_path.as_ref(),
+        Some(&workdir.join("dist").join("Test Pack-v1.0.0-server.zip"))
+    );
+    assert!(session.filesystem().exists(&dist_dir.join("srv.jar")));
+    assert!(session
+        .filesystem()
+        .exists(&dist_dir.join("pack").join("pack.toml")));
+    assert!(session
+        .filesystem()
+        .exists(&dist_dir.join("server.properties")));
+    let rendered = session
+        .filesystem()
+        .read_to_string(&dist_dir.join("run.sh"))
+        .unwrap();
+    assert!(rendered.contains("Test Pack"));
+    let zip_path = workdir.join("dist").join("Test Pack-v1.0.0-server.zip");
+    assert!(session.filesystem().exists(&zip_path));
+}
+
+#[test]
+fn test_build_server_returns_warning_when_server_jar_download_fails() {
+    let workdir = mock_root().join("server-warning");
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "NeoForgeServerWarning"
+author = "Test Author"
+version = "1.0.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "1.19.4"
+neoforge = "47.1.106"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_file(bootstrap_jar_path.clone(), "bootstrap".to_string())
+        .with_file(dist_dir.join(".gitkeep"), String::new());
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(MockProcessProvider::new().with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_dir.join("pack.toml").display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        ));
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    let result = orchestrator.build_server_impl(&bootstrap_jar_path).unwrap();
+
+    assert!(!result.success);
+    assert!(result.output_path.is_none());
+    assert_eq!(result.target, BuildTarget::Server);
+    assert_eq!(result.artifacts.len(), 0);
+    assert_eq!(result.restricted_mods.len(), 0);
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].contains("failed to download server JAR"));
+    assert!(result.warnings[0].contains("1.20.1 and newer"));
+}
+
+#[test]
+fn test_build_client_requires_bootstrap_jar_bytes() {
+    let workdir = mock_root().join("client-bootstrap-missing");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let session = MockCommandSession::new().with_filesystem(
+        MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone()),
+    );
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    orchestrator.pack_refreshed = true;
+    orchestrator.mrpack_extracted = true;
+
+    let error = orchestrator.build_client_impl(&bootstrap_jar_path).unwrap_err();
+    match error {
+        BuildError::ConfigError { reason } => {
+            assert!(reason.contains("File not found"));
+            assert!(reason.contains("packwiz-installer-bootstrap.jar"));
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_build_server_requires_bootstrap_jar_bytes() {
+    let workdir = mock_root().join("server-bootstrap-missing");
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let session = MockCommandSession::new().with_filesystem(
+        MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone()),
+    );
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    orchestrator.pack_refreshed = true;
+
+    let error = orchestrator.build_server_impl(&bootstrap_jar_path).unwrap_err();
+    match error {
+        BuildError::ConfigError { reason } => {
+            assert!(reason.contains("File not found"));
+            assert!(reason.contains("packwiz-installer-bootstrap.jar"));
+        }
+        other => panic!("expected ConfigError, got {other:?}"),
     }
 }
 
@@ -1414,10 +2590,31 @@ async fn test_download_server_jar_neoforge_downloads_and_runs_installer() {
 }
 
 #[test]
-fn test_supports_neoforge_minecraft_switches_at_1_20_2() {
-    assert!(!supports_neoforge_minecraft("1.20.1"));
+fn test_supports_neoforge_minecraft_switches_at_1_20_1() {
+    assert!(!supports_neoforge_minecraft("1.19.4"));
+    assert!(supports_neoforge_minecraft("1.20.1"));
     assert!(supports_neoforge_minecraft("1.20.2"));
     assert!(supports_neoforge_minecraft("1.21.1"));
+}
+
+#[test]
+fn test_neoforge_installer_artifact_uses_legacy_forge_family_for_1_20_1() {
+    let (url, filename) = neoforge_installer_artifact("1.20.1", "47.1.106").unwrap();
+    assert_eq!(
+        url,
+        "https://maven.neoforged.net/releases/net/neoforged/forge/1.20.1-47.1.106/forge-1.20.1-47.1.106-installer.jar"
+    );
+    assert_eq!(filename, "forge-1.20.1-47.1.106-installer.jar");
+}
+
+#[test]
+fn test_neoforge_installer_artifact_uses_modern_family_for_1_20_2_plus() {
+    let (url, filename) = neoforge_installer_artifact("1.21.1", "21.1.86").unwrap();
+    assert_eq!(
+        url,
+        "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.86/neoforge-21.1.86-installer.jar"
+    );
+    assert_eq!(filename, "neoforge-21.1.86-installer.jar");
 }
 
 #[test]
@@ -1933,16 +3130,15 @@ neoforge = "{loader_version}"
         );
     }
 
-    /// Verify unsupported NeoForge Minecraft versions fail fast instead of
-    /// attempting a dead installer URL.
+    /// Verify unsupported pre-NeoForge Minecraft versions still fail fast.
     #[test]
-    fn test_neoforge_1_20_1_is_rejected_before_download() {
+    fn test_neoforge_pre_1_20_1_is_rejected_before_download() {
         let pack_info = PackInfo {
             author: "A".to_string(),
             name: "P".to_string(),
             version: "1.0.0".to_string(),
-            mc_version: "1.20.1".to_string(),
-            loader_version: "47.3.0".to_string(),
+            mc_version: "1.19.4".to_string(),
+            loader_version: "47.1.106".to_string(),
             loader_type: "neoforge".to_string(),
         };
 
@@ -1954,14 +3150,14 @@ neoforge = "{loader_version}"
 
         let error = orchestrator
             .install_neoforge_server(&dist_dir, &pack_info)
-            .expect_err("NeoForge 1.20.1 should be rejected");
+            .expect_err("pre-1.20.1 NeoForge should be rejected");
 
         assert!(
             matches!(error, BuildError::ValidationError { .. }),
             "expected validation error, got: {error:?}"
         );
         assert!(
-            error.to_string().contains("1.20.2 and newer"),
+            error.to_string().contains("1.20.1 and newer"),
             "error should explain the version floor: {error}"
         );
     }

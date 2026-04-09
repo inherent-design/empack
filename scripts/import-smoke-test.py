@@ -3,13 +3,22 @@
 Import Smoke Test
 empack - Minecraft Modpack Lifecycle Management
 
-Discovers, downloads, and analyzes the most popular modpacks from
-Modrinth and CurseForge across MC versions. Produces a structured
-report of content routing patterns: datapack loaders, override
-directories, non-mods file placement, and import success rates.
+Runs two modes:
+
+1. Curated golden smoke mode (default bare invocation):
+   - resolves 7 hardcoded real-world packs across CurseForge and Modrinth
+   - runs `empack init --from ... --yes`
+   - runs `empack build client-full`
+   - if a build blocks on restricted CurseForge files, downloads those files
+     into empack's managed restricted-build cache and resumes with
+     `empack build --continue`
+
+2. Discovery survey mode (selected by explicit survey/filter flags):
+   - discovers, downloads, and analyzes popular modpacks across MC versions
+   - optionally runs `empack init --from` on each pack
 
 Designed for re-running against updated empack binaries to track
-import compatibility regressions across real-world modpacks.
+golden-path lifecycle regressions and broader import compatibility.
 
 Prerequisites:
     - Python 3.10+
@@ -18,13 +27,13 @@ Prerequisites:
     - CurseForge API key is hardcoded (same as empack's default)
 
 Usage:
-    # Discover packs across all 8 default MC versions (no download)
-    python3 scripts/import-smoke-test.py --discover-only
-
-    # Full survey: discover, download, analyze structure
+    # Default curated golden smoke across 7 hardcoded packs
     python3 scripts/import-smoke-test.py
 
-    # Full survey with import testing (runs empack init --from on each)
+    # Discovery survey across default MC versions (no download)
+    python3 scripts/import-smoke-test.py --discover-only
+
+    # Full survey with import testing (runs empack init --from on discovered packs)
     python3 scripts/import-smoke-test.py --import-test
 
     # Narrow to specific versions, fewer packs per version
@@ -36,7 +45,16 @@ Usage:
     # Use a specific empack binary
     python3 scripts/import-smoke-test.py --import-test --empack-bin ./target/release/empack
 
-Phases:
+Curated mode phases:
+    1. Resolve the latest compatible artifact for each curated pack
+    2. Download archives to /tmp/empack-survey/packs/ (cached)
+    3. Run `empack init --from ... --yes`
+    4. Run `empack build client-full`
+    5. If needed, download restricted CurseForge files into the managed cache
+       and resume with `empack build --continue`
+    6. Record build results and output artifact paths
+
+Survey mode phases:
     1. Discover: query Modrinth + CurseForge for top modpacks per MC version
     2. Resolve:  find download URLs for each pack
     3. Download: fetch archives to /tmp/empack-survey/packs/ (cached)
@@ -49,10 +67,11 @@ Phases:
 Outputs:
     /tmp/empack-survey/packs/        Downloaded archives (cached between runs)
     /tmp/empack-survey/projects/     empack init --from output (with --import-test)
-    /tmp/empack-survey/report.json   Structured findings (one entry per pack)
+    /tmp/empack-survey/report.json   Curated smoke or survey findings
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -90,6 +109,7 @@ MODRINTH_API = "https://api.modrinth.com/v2"
 CURSEFORGE_API = "https://api.curseforge.com/v1"
 
 SURVEY_DIR = Path("/tmp/empack-survey")
+CURATED_DIR = Path("/tmp/empack-curated-smoke")
 PACKS_DIR = SURVEY_DIR / "packs"
 PROJECTS_DIR = SURVEY_DIR / "projects"
 
@@ -151,6 +171,22 @@ def curseforge_get(path: str, params: dict | None = None) -> dict:
         return json.loads(resp.read())
 
 
+def curseforge_post(path: str, payload: dict, timeout: int = 30) -> dict:
+    url = f"{CURSEFORGE_API}{path}"
+    req = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "x-api-key": CURSEFORGE_API_KEY,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
 def curseforge_download(project_id: int, file_id: int, dest: Path, timeout: int = 120) -> bool:
     try:
         data = curseforge_get(f"/mods/{project_id}/files/{file_id}/download-url")
@@ -201,6 +237,114 @@ class PackCandidate:
     # filled after download
     local_path: str = ""
     format: str = ""  # "mrpack" or "cfzip"
+
+
+@dataclass
+class CuratedPack:
+    name: str
+    source: str
+    mc_version: str
+    loader: str
+    project_id: str
+    slug: str
+    expect_restricted_continue: bool = False
+
+
+@dataclass
+class CommandResult:
+    success: bool = False
+    exit_code: int = -1
+    stdout: str = ""
+    stderr: str = ""
+    warnings: list = field(default_factory=list)
+    elapsed_secs: float = 0.0
+
+
+@dataclass
+class CuratedBuildResult:
+    initial_success: bool = False
+    continue_required: bool = False
+    restricted_mod_count: int = 0
+    restricted_cache_dir: str = ""
+    continue_success: bool = False
+    artifact_path: str = ""
+    elapsed_secs: float = 0.0
+    warnings: list = field(default_factory=list)
+    failed_download_file_ids: list = field(default_factory=list)
+
+
+# Discovery snapshot: 2026-04-08.
+# Selection criteria:
+#   - one proven legacy Forge baseline on CurseForge
+#   - six modern 1.20.1 packs covering CF+Modrinth across Fabric/Quilt/NeoForge
+#   - small enough to remain smoke-testable
+#   - popular enough to represent real user paths
+# Intentionally excluded:
+#   - Modrinth Technical Electrical (too large and resolved as Forge rather than NeoForge)
+#   - CurseForge X-RAY Unlimited Quilt (too many restricted files)
+#   - Heavier NeoForge CF packs like Prominence Classic (too expensive for smoke use)
+#   - CurseForge Vanilla Forge (current 1.20.x NeoForge file advertises 1.20.1
+#     in metadata but downloads a 1.20.6 manifest, so it is not stable enough
+#     for the curated golden path)
+CURATED_GOLDEN_PACKS = [
+    CuratedPack(
+        name="Crash Landing",
+        source="curseforge",
+        mc_version="1.6.4",
+        loader="forge",
+        project_id="229330",
+        slug="crash-landing",
+    ),
+    CuratedPack(
+        name="Fabulously Optimized",
+        source="modrinth",
+        mc_version="1.20.1",
+        loader="fabric",
+        project_id="1KVo5zza",
+        slug="fabulously-optimized",
+    ),
+    CuratedPack(
+        name="Sodium Plus",
+        source="modrinth",
+        mc_version="1.20.1",
+        loader="quilt",
+        project_id="ch7UHY2J",
+        slug="sodiumplus",
+    ),
+    CuratedPack(
+        name="Boosted FPS (Performance Optimized) (QLT)",
+        source="curseforge",
+        mc_version="1.20.1",
+        loader="quilt",
+        project_id="982068",
+        slug="boosted-fps-quilt",
+    ),
+    CuratedPack(
+        name="Wither Storm Enhanced",
+        source="modrinth",
+        mc_version="1.20.1",
+        loader="neoforge",
+        project_id="7kO3Tbz7",
+        slug="wither-storm-enhanced",
+    ),
+    CuratedPack(
+        name="Simple voice chat + Sound Physics Remastered (Modpack)",
+        source="curseforge",
+        mc_version="1.20.1",
+        loader="neoforge",
+        project_id="572641",
+        slug="simple-voice-chat-sound-physics-remastered-modpack",
+    ),
+    CuratedPack(
+        name="Fabulously Optimized",
+        source="curseforge",
+        mc_version="1.20.1",
+        loader="fabric",
+        project_id="396246",
+        slug="fabulously-optimized",
+        expect_restricted_continue=True,
+    ),
+]
 
 
 def discover_modrinth(mc_version: str, limit: int) -> list[PackCandidate]:
@@ -552,6 +696,16 @@ class ImportResult:
     warnings: list = field(default_factory=list)
 
 
+def extract_warning_lines(stdout: str, stderr: str) -> list[str]:
+    warnings = []
+    combined = stdout + ("\n" if stdout and stderr else "") + stderr
+    for line in combined.splitlines():
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", line.strip())
+        if should_echo_live_line(clean):
+            warnings.append(clean)
+    return warnings
+
+
 def should_echo_live_line(clean: str) -> bool:
     if not clean:
         return False
@@ -600,15 +754,13 @@ def parse_import_output(stdout: str, stderr: str) -> ImportResult:
     return r
 
 
-def run_import_test_posix_live(
-    pack_path: Path,
-    project_dir: Path,
-    empack_bin: Path,
+def run_command_posix_live(
+    cmd: list[str],
     env: dict[str, str],
     timeout: int,
     label: str,
-) -> ImportResult:
-    cmd = [str(empack_bin), "init", "--from", str(pack_path), "--yes", str(project_dir)]
+    cwd: Optional[Path] = None,
+) -> CommandResult:
     master_fd, slave_fd = pty.openpty()
     start = time.time()
     echoed_lines: set[str] = set()
@@ -620,6 +772,7 @@ def run_import_test_posix_live(
             stdout=slave_fd,
             stderr=slave_fd,
             env=env,
+            cwd=str(cwd) if cwd is not None else None,
             text=False,
         )
     finally:
@@ -636,7 +789,12 @@ def run_import_test_posix_live(
             if time.time() - start > timeout:
                 proc.kill()
                 proc.wait()
-                return ImportResult(stderr=f"TIMEOUT after {timeout}s")
+                return CommandResult(
+                    success=False,
+                    exit_code=-1,
+                    stderr=f"TIMEOUT after {timeout}s",
+                    elapsed_secs=time.time() - start,
+                )
 
             ready, _, _ = select.select([master_fd], [], [], 0.2)
             if not ready:
@@ -672,10 +830,78 @@ def run_import_test_posix_live(
             print(f"      {label}: {clean}")
 
     combined = "".join(chunks)
-    result = parse_import_output(combined, "")
-    result.success = proc.returncode == 0
-    result.exit_code = proc.returncode
-    return result
+    return CommandResult(
+        success=proc.returncode == 0,
+        exit_code=proc.returncode,
+        stdout=combined,
+        stderr="",
+        warnings=extract_warning_lines(combined, ""),
+        elapsed_secs=time.time() - start,
+    )
+
+
+def run_command(
+    cmd: list[str],
+    env: dict[str, str],
+    timeout: int,
+    label: str,
+    cwd: Optional[Path] = None,
+    prefer_pty: bool = True,
+) -> CommandResult:
+    start = time.time()
+    if prefer_pty and os.name == "posix" and pty is not None:
+        return run_command_posix_live(cmd=cmd, env=env, timeout=timeout, label=label, cwd=cwd)
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            cwd=str(cwd) if cwd is not None else None,
+        )
+    except subprocess.TimeoutExpired:
+        return CommandResult(
+            success=False,
+            exit_code=-1,
+            stderr=f"TIMEOUT after {timeout}s",
+            elapsed_secs=time.time() - start,
+        )
+
+    return CommandResult(
+        success=proc.returncode == 0,
+        exit_code=proc.returncode,
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+        warnings=extract_warning_lines(proc.stdout, proc.stderr),
+        elapsed_secs=time.time() - start,
+    )
+
+
+def ensure_empack_env(env: dict[str, str], cache_dir: Path, timeout_secs: int) -> dict[str, str]:
+    configured = env.copy()
+    configured["EMPACK_KEY_CURSEFORGE"] = CURSEFORGE_API_KEY
+    configured["EMPACK_CACHE_DIR"] = str(cache_dir)
+    configured["EMPACK_PROCESS_TIMEOUT_SECS"] = str(timeout_secs)
+    configured["NO_COLOR"] = "1"
+
+    if os.name == "nt":
+        local_app_data = SURVEY_DIR / ".windows-localappdata"
+        roaming_app_data = SURVEY_DIR / ".windows-appdata"
+        user_profile = SURVEY_DIR / ".windows-userprofile"
+        temp_dir = SURVEY_DIR / ".windows-temp"
+        for path in [local_app_data, roaming_app_data, user_profile, temp_dir]:
+            path.mkdir(parents=True, exist_ok=True)
+
+        configured.setdefault("LOCALAPPDATA", str(local_app_data))
+        configured.setdefault("LocalAppData", str(local_app_data))
+        configured.setdefault("APPDATA", str(roaming_app_data))
+        configured.setdefault("USERPROFILE", str(user_profile))
+        configured.setdefault("TEMP", str(temp_dir))
+        configured.setdefault("TMP", str(temp_dir))
+
+    return configured
 
 
 def run_import_test(pack_path: Path, project_name: str, empack_bin: Path) -> ImportResult:
@@ -683,32 +909,614 @@ def run_import_test(pack_path: Path, project_name: str, empack_bin: Path) -> Imp
     if project_dir.exists():
         shutil.rmtree(project_dir)
 
-    env = os.environ.copy()
-    env["EMPACK_KEY_CURSEFORGE"] = CURSEFORGE_API_KEY
-    timeout = 600
+    command = run_command(
+        [
+            str(empack_bin),
+            "init",
+            "--from",
+            str(pack_path),
+            "--yes",
+            str(project_dir),
+        ],
+        env=ensure_empack_env(os.environ.copy(), SURVEY_DIR / "cache", 600),
+        timeout=600,
+        label=project_name,
+    )
 
-    if os.name == "posix" and pty is not None:
-        return run_import_test_posix_live(
-            pack_path=pack_path,
-            project_dir=project_dir,
-            empack_bin=empack_bin,
+    r = parse_import_output(command.stdout, command.stderr)
+    r.success = command.success
+    r.exit_code = command.exit_code
+    r.stdout = command.stdout
+    r.stderr = command.stderr
+    r.warnings.extend(command.warnings)
+    return r
+
+
+def modrinth_loader_key(loader: str) -> str:
+    return {
+        "fabric": "fabric-loader",
+        "quilt": "quilt-loader",
+        "forge": "forge",
+        "neoforge": "neoforge",
+    }[loader]
+
+
+def curseforge_loader_label(loader: str) -> str:
+    return {
+        "fabric": "Fabric",
+        "quilt": "Quilt",
+        "forge": "Forge",
+        "neoforge": "NeoForge",
+    }[loader]
+
+
+def curated_project_name(pack: CuratedPack) -> str:
+    return f"{pack.slug}_{pack.mc_version}_{pack.source}_{pack.loader}"
+
+
+def resolve_curated_pack(pack: CuratedPack) -> PackCandidate:
+    if pack.source == "modrinth":
+        versions = modrinth_get(f"/project/{pack.project_id}/version")
+        compatible = []
+        for version in versions:
+            if pack.mc_version not in version.get("game_versions", []):
+                continue
+            if pack.loader not in version.get("loaders", []):
+                continue
+            mrpack_files = [
+                f for f in version.get("files", [])
+                if f.get("filename", "").endswith(".mrpack")
+            ]
+            if not mrpack_files:
+                continue
+            chosen_file = next((f for f in mrpack_files if f.get("primary")), mrpack_files[0])
+            compatible.append((version, chosen_file))
+
+        if not compatible:
+            raise RuntimeError(
+                f"no compatible Modrinth mrpack found for {pack.name} "
+                f"({pack.mc_version} {pack.loader})"
+            )
+
+        compatible.sort(
+            key=lambda pair: (
+                bool(pair[0].get("featured")),
+                pair[0].get("date_published", ""),
+            ),
+            reverse=True,
+        )
+        version, chosen_file = compatible[0]
+        return PackCandidate(
+            name=pack.name,
+            mc_version=pack.mc_version,
+            source=pack.source,
+            slug=pack.slug,
+            project_id=pack.project_id,
+            downloads=version.get("downloads", 0),
+            loader=pack.loader,
+            file_url=chosen_file["url"],
+            file_id=version["id"],
+            file_size=chosen_file.get("size"),
+            format="mrpack",
+        )
+
+    files = curseforge_get(
+        f"/mods/{pack.project_id}/files",
+        {"gameVersion": pack.mc_version, "pageSize": "50"},
+    ).get("data", [])
+    loader_label = curseforge_loader_label(pack.loader)
+    compatible = [
+        f for f in files
+        if pack.mc_version in f.get("gameVersions", [])
+        and loader_label in f.get("gameVersions", [])
+    ]
+    if not compatible:
+        raise RuntimeError(
+            f"no compatible CurseForge file found for {pack.name} "
+            f"({pack.mc_version} {pack.loader})"
+        )
+
+    compatible.sort(key=lambda file: file.get("fileDate", ""), reverse=True)
+    chosen = compatible[0]
+    return PackCandidate(
+        name=pack.name,
+        mc_version=pack.mc_version,
+        source=pack.source,
+        slug=pack.slug,
+        project_id=pack.project_id,
+        downloads=chosen.get("downloadCount", 0),
+        loader=pack.loader,
+        file_id=str(chosen["id"]),
+        file_size=chosen.get("fileLength"),
+        format="cfzip",
+    )
+
+
+def verify_curated_download(pack: CuratedPack, archive_path: Path) -> None:
+    with zipfile.ZipFile(archive_path) as zf:
+        if pack.source == "modrinth":
+            manifest = json.loads(zf.read("modrinth.index.json"))
+            dependencies = manifest.get("dependencies", {})
+            found_mc = dependencies.get("minecraft")
+            found_loader = dependencies.get(modrinth_loader_key(pack.loader))
+            if found_mc != pack.mc_version:
+                raise RuntimeError(
+                    f"downloaded mrpack reports minecraft={found_mc!r}, expected {pack.mc_version!r}"
+                )
+            if not found_loader:
+                raise RuntimeError(
+                    f"downloaded mrpack is missing loader dependency {modrinth_loader_key(pack.loader)!r}"
+                )
+            return
+
+        manifest = json.loads(zf.read("manifest.json"))
+        found_mc = manifest.get("minecraft", {}).get("version")
+        if found_mc != pack.mc_version:
+            raise RuntimeError(
+                f"downloaded CurseForge zip reports minecraft={found_mc!r}, expected {pack.mc_version!r}"
+            )
+        modloaders = manifest.get("minecraft", {}).get("modLoaders", [])
+        if not any(
+            loader.get("id", "").lower().startswith(pack.loader)
+            for loader in modloaders
+        ):
+            raise RuntimeError(
+                f"downloaded CurseForge zip reports loaders={modloaders!r}, expected {pack.loader!r}"
+            )
+
+
+def find_client_full_artifact(project_dir: Path) -> Optional[Path]:
+    dist_dir = project_dir / "dist"
+    if not dist_dir.exists():
+        return None
+    candidates = sorted(
+        [
+            path for path in dist_dir.iterdir()
+            if path.is_file() and path.name.endswith("-client-full.zip")
+        ],
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def load_pending_restricted_state(project_dir: Path) -> Optional[dict]:
+    state_path = project_dir / ".empack-build-continue.json"
+    if not state_path.exists():
+        return None
+    return json.loads(state_path.read_text())
+
+
+def wait_for_pending_restricted_state(
+    project_dir: Path,
+    timeout_secs: float = 2.0,
+    poll_interval_secs: float = 0.1,
+) -> Optional[dict]:
+    deadline = time.time() + timeout_secs
+    seen_paths = []
+    while time.time() <= deadline:
+        for candidate_dir in [project_dir, project_dir.resolve()]:
+            if candidate_dir in seen_paths:
+                continue
+            seen_paths.append(candidate_dir)
+        for candidate_dir in seen_paths:
+            pending = load_pending_restricted_state(candidate_dir)
+            if pending is not None:
+                return pending
+        time.sleep(poll_interval_secs)
+    return None
+
+
+def parse_curseforge_file_id(url: str) -> Optional[int]:
+    match = re.search(r"/(?:files|download)/(\d+)(?:/|$)", url)
+    return int(match.group(1)) if match else None
+
+
+def restricted_cache_dir_for_project(cache_dir: Path, project_dir: Path) -> Path:
+    project_hash = hashlib.sha256(str(project_dir.resolve()).encode("utf-8")).hexdigest()[:16]
+    return cache_dir / "restricted-builds" / project_hash
+
+
+def clear_restricted_cache_for_project(cache_dir: Path, project_dir: Path):
+    restricted_dir = restricted_cache_dir_for_project(cache_dir, project_dir)
+    if restricted_dir.exists():
+        shutil.rmtree(restricted_dir)
+
+
+def download_restricted_files(pending_state: dict, timeout: int) -> list[int]:
+    entries = pending_state.get("entries", [])
+    file_ids = sorted({
+        parse_curseforge_file_id(entry.get("url", ""))
+        for entry in entries
+        if parse_curseforge_file_id(entry.get("url", "")) is not None
+    })
+    if not file_ids:
+        return []
+
+    response = curseforge_post("/mods/files", {"fileIds": file_ids}, timeout=timeout)
+    file_map = {item["id"]: item["modId"] for item in response.get("data", [])}
+    cache_dir = Path(pending_state["restricted_cache_dir"])
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    failed = []
+    for entry in entries:
+        file_id = parse_curseforge_file_id(entry.get("url", ""))
+        if file_id is None:
+            failed.append(-1)
+            continue
+        mod_id = file_map.get(file_id)
+        if mod_id is None:
+            failed.append(file_id)
+            continue
+
+        dest = cache_dir / entry["filename"]
+        try:
+            req = Request(
+                f"https://www.curseforge.com/api/v1/mods/{mod_id}/files/{file_id}/download",
+                headers={"User-Agent": "empack-survey/1.0"},
+            )
+            with urlopen(req, timeout=timeout) as resp:
+                dest.write_bytes(resp.read())
+        except (HTTPError, URLError, socket.timeout):
+            failed.append(file_id)
+
+    return sorted(set(failed))
+
+
+def run_curated_build(
+    pack: CuratedPack,
+    project_dir: Path,
+    empack_bin: Path,
+    env: dict[str, str],
+    timeout: int,
+) -> CuratedBuildResult:
+    label = curated_project_name(pack)
+    result = CuratedBuildResult()
+    initial_attempts = 4
+    pending_state = None
+
+    for attempt in range(initial_attempts):
+        initial = run_command(
+            [str(empack_bin), "build", "client-full"],
             env=env,
             timeout=timeout,
-            label=project_name,
+            label=f"{label}:build",
+            cwd=project_dir,
+            prefer_pty=False,
         )
+        result.initial_success = initial.success
+        result.elapsed_secs += initial.elapsed_secs
+        result.warnings.extend(initial.warnings)
 
+        if initial.success:
+            artifact = find_client_full_artifact(project_dir)
+            if artifact:
+                result.artifact_path = str(artifact)
+            return result
+
+        pending_state = wait_for_pending_restricted_state(project_dir)
+        if pending_state:
+            break
+
+        if attempt + 1 < initial_attempts:
+            result.warnings.append(
+                "initial client-full build failed before pending restricted state was written; retrying"
+            )
+            time.sleep(1)
+
+    if not pending_state:
+        return result
+
+    result.continue_required = True
+    result.restricted_mod_count = len(pending_state.get("entries", []))
+    result.restricted_cache_dir = pending_state.get("restricted_cache_dir", "")
+
+    failed_ids = download_restricted_files(pending_state, timeout)
+    result.failed_download_file_ids = failed_ids
+    if failed_ids:
+        result.warnings.append(f"failed restricted downloads: {failed_ids}")
+        return result
+
+    continued = run_command(
+        [str(empack_bin), "build", "--continue"],
+        env=env,
+        timeout=timeout,
+        label=f"{label}:continue",
+        cwd=project_dir,
+        prefer_pty=False,
+    )
+    result.continue_success = continued.success
+    result.elapsed_secs += continued.elapsed_secs
+    result.warnings.extend(continued.warnings)
+    artifact = find_client_full_artifact(project_dir)
+    if artifact:
+        result.artifact_path = str(artifact)
+    return result
+
+
+def run_curated_build_raw_fallback(
+    pack: CuratedPack,
+    project_dir: Path,
+    empack_bin: Path,
+    env: dict[str, str],
+    timeout: int,
+) -> CuratedBuildResult:
+    start = time.time()
     try:
         proc = subprocess.run(
-            [str(empack_bin), "init", "--from", str(pack_path), "--yes", str(project_dir)],
-            capture_output=True, text=True, timeout=timeout, env=env,
+            [str(empack_bin), "build", "client-full"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            cwd=str(project_dir),
         )
     except subprocess.TimeoutExpired:
-        return ImportResult(stderr=f"TIMEOUT after {timeout}s")
+        return CuratedBuildResult(
+            initial_success=False,
+            elapsed_secs=time.time() - start,
+            warnings=[f"TIMEOUT after {timeout}s"],
+        )
+    result = CuratedBuildResult(
+        initial_success=proc.returncode == 0,
+        elapsed_secs=time.time() - start,
+        warnings=extract_warning_lines(proc.stdout, proc.stderr),
+    )
+    if result.initial_success:
+        artifact = find_client_full_artifact(project_dir)
+        if artifact:
+            result.artifact_path = str(artifact)
+        return result
 
-    r = parse_import_output(proc.stdout, proc.stderr)
-    r.success = proc.returncode == 0
-    r.exit_code = proc.returncode
-    return r
+    pending_state = wait_for_pending_restricted_state(project_dir)
+    if not pending_state:
+        return result
+
+    result.continue_required = True
+    result.restricted_mod_count = len(pending_state.get("entries", []))
+    result.restricted_cache_dir = pending_state.get("restricted_cache_dir", "")
+
+    failed_ids = download_restricted_files(pending_state, timeout)
+    result.failed_download_file_ids = failed_ids
+    if failed_ids:
+        result.warnings.append(f"failed restricted downloads: {failed_ids}")
+        return result
+
+    continue_start = time.time()
+    try:
+        continue_proc = subprocess.run(
+            [str(empack_bin), "build", "--continue"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            cwd=str(project_dir),
+        )
+    except subprocess.TimeoutExpired:
+        result.warnings.append(f"TIMEOUT after {timeout}s")
+        result.elapsed_secs += time.time() - continue_start
+        return result
+    result.continue_success = continue_proc.returncode == 0
+    result.elapsed_secs += time.time() - continue_start
+    result.warnings.extend(extract_warning_lines(continue_proc.stdout, continue_proc.stderr))
+    artifact = find_client_full_artifact(project_dir)
+    if artifact:
+        result.artifact_path = str(artifact)
+    return result
+
+
+def save_curated_report(entries: list[dict]):
+    report_path = SURVEY_DIR / "report.json"
+    report_path.write_text(json.dumps(entries, indent=2))
+    print(f"\nReport saved to {report_path}")
+
+
+def run_single_curated_pack(
+    pack: CuratedPack,
+    empack_bin: Path,
+    download_timeout: int,
+    index: Optional[int] = None,
+    total: Optional[int] = None,
+    announce: bool = True,
+) -> tuple[dict, Optional[str], bool]:
+    cache_dir = SURVEY_DIR / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    label = curated_project_name(pack)
+    project_dir = PROJECTS_DIR / label
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
+    if pack.expect_restricted_continue:
+        clear_restricted_cache_for_project(cache_dir, project_dir)
+
+    entry = {
+        "pack": asdict(pack),
+        "resolved": {},
+        "import_result": {},
+        "build_result": {},
+    }
+
+    try:
+        candidate = resolve_curated_pack(pack)
+        entry["resolved"] = asdict(candidate)
+        if announce:
+            prefix = (
+                f"  [{index}/{total}] "
+                if index is not None and total is not None
+                else "  "
+            )
+            print(
+                f"{prefix}{pack.name} [{pack.source} {pack.loader} {pack.mc_version}]"
+            )
+        if not download_pack(candidate, timeout=download_timeout):
+            raise RuntimeError("download failed")
+        verify_curated_download(pack, Path(candidate.local_path))
+
+        env = ensure_empack_env(os.environ.copy(), cache_dir, 600)
+        init_result = run_command(
+            [
+                str(empack_bin),
+                "init",
+                "--from",
+                candidate.local_path,
+                "--yes",
+                str(project_dir),
+            ],
+            env=env,
+            timeout=600,
+            label=f"{label}:init",
+            prefer_pty=announce,
+        )
+        entry["import_result"] = {
+            "success": init_result.success,
+            "exit_code": init_result.exit_code,
+            "elapsed_secs": init_result.elapsed_secs,
+            "warnings": init_result.warnings[:20],
+        }
+        if not init_result.success:
+            return entry, "init failed", False
+
+        build_result = run_curated_build(pack, project_dir, empack_bin, env, 600)
+        if (
+            pack.expect_restricted_continue
+            and not build_result.continue_required
+            and not (build_result.initial_success or build_result.continue_success)
+        ):
+            fallback_result = run_curated_build_raw_fallback(
+                pack, project_dir, empack_bin, env, 600
+            )
+            fallback_result.elapsed_secs += build_result.elapsed_secs
+            fallback_result.warnings = build_result.warnings + fallback_result.warnings
+            build_result = fallback_result
+        entry["build_result"] = asdict(build_result)
+
+        did_continue = build_result.continue_required
+        if not (build_result.initial_success or build_result.continue_success):
+            return entry, "build failed", did_continue
+        if not build_result.artifact_path:
+            return entry, "artifact missing", did_continue
+        return entry, None, did_continue
+    except Exception as exc:
+        entry["import_result"] = {
+            "success": False,
+            "exit_code": -1,
+            "elapsed_secs": 0.0,
+            "warnings": [str(exc)],
+        }
+        return entry, str(exc), False
+
+
+def run_single_curated_pack_subprocess(
+    pack: CuratedPack,
+    empack_bin: Path,
+    download_timeout: int,
+) -> tuple[dict, Optional[str], bool]:
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--internal-curated-pack",
+            curated_project_name(pack),
+            "--empack-bin",
+            str(empack_bin),
+            "--download-timeout",
+            str(download_timeout),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+        env=os.environ.copy(),
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"internal curated pack runner failed for {curated_project_name(pack)}: "
+            f"{proc.stderr.strip() or proc.stdout.strip() or proc.returncode}"
+        )
+    payload = json.loads(proc.stdout)
+    return payload["entry"], payload["failure_reason"], payload["did_continue"]
+
+
+def run_curated_smoke(empack_bin: Path, args) -> int:
+    global SURVEY_DIR, PACKS_DIR, PROJECTS_DIR
+    SURVEY_DIR = CURATED_DIR
+    PACKS_DIR = SURVEY_DIR / "packs"
+    PROJECTS_DIR = SURVEY_DIR / "projects"
+
+    PACKS_DIR.mkdir(parents=True, exist_ok=True)
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    cache_dir = SURVEY_DIR / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    results = []
+    failures = []
+    actual_continue = []
+    expected_continue = {
+        curated_project_name(pack)
+        for pack in CURATED_GOLDEN_PACKS
+        if pack.expect_restricted_continue
+    }
+
+    print("Curated mode: running 7 golden import/build flows")
+    for index, pack in enumerate(CURATED_GOLDEN_PACKS, start=1):
+        label = curated_project_name(pack)
+        try:
+            if pack.expect_restricted_continue:
+                print(
+                    f"  [{index}/{len(CURATED_GOLDEN_PACKS)}] "
+                    f"{pack.name} [{pack.source} {pack.loader} {pack.mc_version}]"
+                )
+                entry, failure_reason, did_continue = run_single_curated_pack_subprocess(
+                    pack, empack_bin, args.download_timeout
+                )
+            else:
+                entry, failure_reason, did_continue = run_single_curated_pack(
+                    pack,
+                    empack_bin,
+                    args.download_timeout,
+                    index=index,
+                    total=len(CURATED_GOLDEN_PACKS),
+                    announce=True,
+                )
+        except Exception as exc:
+            entry = {
+                "pack": asdict(pack),
+                "resolved": {},
+                "import_result": {
+                    "success": False,
+                    "exit_code": -1,
+                    "elapsed_secs": 0.0,
+                    "warnings": [str(exc)],
+                },
+                "build_result": {},
+            }
+            failure_reason = str(exc)
+            did_continue = False
+
+        if did_continue:
+            actual_continue.append(label)
+        if failure_reason:
+            failures.append((label, failure_reason))
+        results.append(entry)
+
+    save_curated_report(results)
+
+    actual_continue = set(actual_continue)
+    if actual_continue != expected_continue:
+        print(
+            "\nCurated continuation mismatch:",
+            f"expected {sorted(expected_continue)} but observed {sorted(actual_continue)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if failures:
+        print("\nCurated smoke failures:", file=sys.stderr)
+        for label, reason in failures:
+            print(f"  {label}: {reason}", file=sys.stderr)
+        return 1
+
+    print("\nCurated smoke completed successfully.")
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -829,17 +1637,33 @@ def save_report(analyses: list[tuple[PackCandidate, PackAnalysis, ImportResult |
 def find_empack_bin() -> Path:
     script_dir = Path(__file__).resolve().parent
     project_root = script_dir.parent
-    release = project_root / "target" / "release" / "empack"
-    debug = project_root / "target" / "debug" / "empack"
-    if release.exists():
-        return release
+    exe_name = "empack.exe" if os.name == "nt" else "empack"
+    debug = project_root / "target" / "debug" / exe_name
+    release = project_root / "target" / "release" / exe_name
+
+    # Prefer the workspace debug build. This script is a development smoke runner
+    # and should validate the binary we just built, not a potentially stale release
+    # artifact left behind in target/release.
     if debug.exists():
         return debug
+    if release.exists():
+        return release
     # fall back to PATH
     which = shutil.which("empack")
     if which:
         return Path(which)
-    return release  # will fail at runtime with a clear path
+    return debug  # will fail at runtime with a clear path
+
+
+def use_curated_mode(args) -> bool:
+    return (
+        not args.discover_only
+        and not args.skip_download
+        and not args.import_test
+        and args.mc_versions is None
+        and not args.all_versions
+        and args.limit == 5
+    )
 
 
 def main():
@@ -864,7 +1688,45 @@ def main():
                         help="Per-pack download timeout in seconds (default: 60)")
     parser.add_argument("--max-file-size", type=int, default=100,
                         help="Max file size in MB; skip packs exceeding this (default: 100)")
+    parser.add_argument("--internal-curated-pack", type=str, default=None,
+                        help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.internal_curated_pack:
+        global SURVEY_DIR, PACKS_DIR, PROJECTS_DIR
+        SURVEY_DIR = CURATED_DIR
+        PACKS_DIR = SURVEY_DIR / "packs"
+        PROJECTS_DIR = SURVEY_DIR / "projects"
+        PACKS_DIR.mkdir(parents=True, exist_ok=True)
+        PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        empack_bin = Path(args.empack_bin) if args.empack_bin else find_empack_bin()
+        pack = next(
+            (
+                candidate
+                for candidate in CURATED_GOLDEN_PACKS
+                if curated_project_name(candidate) == args.internal_curated_pack
+            ),
+            None,
+        )
+        if pack is None:
+            raise SystemExit(2)
+        entry, failure_reason, did_continue = run_single_curated_pack(
+            pack,
+            empack_bin,
+            args.download_timeout,
+            announce=False,
+        )
+        print(
+            json.dumps(
+                {
+                    "entry": entry,
+                    "failure_reason": failure_reason,
+                    "did_continue": did_continue,
+                }
+            )
+        )
+        return
 
     max_file_size_bytes = args.max_file_size * 1024 * 1024
 
@@ -888,6 +1750,10 @@ def main():
 
     PACKS_DIR.mkdir(parents=True, exist_ok=True)
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    empack_bin = Path(args.empack_bin) if args.empack_bin else find_empack_bin()
+    if use_curated_mode(args):
+        raise SystemExit(run_curated_smoke(empack_bin, args))
 
     # Phase 1: Discover (fetch limit * 2 for backfill buffer)
     fetch_limit = args.limit * 2
@@ -1085,7 +1951,6 @@ def main():
 
     # Phase 4: Analyze
     print("\nPhase 4: Analyzing archives...")
-    empack_bin = Path(args.empack_bin) if args.empack_bin else find_empack_bin()
 
     analyses = []
     for c in downloaded:

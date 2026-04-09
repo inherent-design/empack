@@ -6,6 +6,7 @@ pub mod fuzzy;
 pub mod import;
 pub mod packwiz;
 pub mod parsing;
+pub mod restricted_build;
 pub mod search;
 pub mod state;
 pub mod templates;
@@ -32,6 +33,9 @@ pub use packwiz::MockPackwizOps;
 pub use packwiz::{
     InstallResult, PackwizError, PackwizInstaller, PackwizMetadata, PackwizOps, RestrictedModInfo,
     write_pack_toml_options,
+};
+pub use restricted_build::{
+    PendingRestrictedBuild, PendingRestrictedBuildEntry, PendingRestrictedBuildFingerprint,
 };
 pub use state::{PackStateManager, StateTransitionResult};
 

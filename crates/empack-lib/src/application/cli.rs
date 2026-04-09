@@ -132,8 +132,19 @@ pub struct InitArgs {
 #[derive(Args, Debug, Clone)]
 pub struct BuildArgs {
     /// Build targets to execute
-    #[arg(help = "Build targets: mrpack, client, server, client-full, server-full, all")]
+    #[arg(
+        help = "Build targets: mrpack, client, server, client-full, server-full, all",
+        conflicts_with = "continue_build"
+    )]
     pub targets: Vec<String>,
+
+    /// Continue a previously blocked restricted-mod build
+    #[arg(
+        long = "continue",
+        help = "Continue a pending restricted-mod build",
+        conflicts_with = "clean"
+    )]
+    pub continue_build: bool,
 
     /// Clean before building
     #[arg(short, long, help = "Clean build directories before building")]
@@ -152,6 +163,7 @@ impl Default for BuildArgs {
     fn default() -> Self {
         Self {
             targets: Vec::new(),
+            continue_build: false,
             clean: false,
             format: CliArchiveFormat::Zip,
             downloads_dir: None,
@@ -336,6 +348,7 @@ mod tests {
     use super::*;
     use crate::empack::archive::ArchiveFormat;
     use crate::primitives::ProjectType;
+    use clap::CommandFactory;
     use std::str::FromStr;
 
     #[test]
@@ -426,6 +439,7 @@ mod tests {
     fn build_args_default_matches_expected_defaults() {
         let args = BuildArgs::default();
         assert!(args.targets.is_empty());
+        assert!(!args.continue_build);
         assert!(!args.clean);
         assert_eq!(args.format, CliArchiveFormat::Zip);
         assert_eq!(args.downloads_dir, None);
@@ -464,5 +478,129 @@ mod tests {
         assert!(config.app_config.yes);
         assert!(config.app_config.dry_run);
         assert!(matches!(config.command, Some(Commands::Init(_))));
+    }
+
+    #[test]
+    fn cli_command_graph_is_structurally_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn cli_command_graph_exposes_build_continue_contract() {
+        let command = Cli::command();
+        let build = command
+            .get_subcommands()
+            .find(|subcommand| subcommand.get_name() == "build")
+            .expect("build subcommand");
+
+        let continue_arg = build
+            .get_arguments()
+            .find(|arg| arg.get_id().as_str() == "continue_build")
+            .expect("build --continue arg");
+        assert_eq!(continue_arg.get_long(), Some("continue"));
+
+        let downloads_arg = build
+            .get_arguments()
+            .find(|arg| arg.get_id().as_str() == "downloads_dir")
+            .expect("build --downloads-dir arg");
+        assert_eq!(downloads_arg.get_long(), Some("downloads-dir"));
+        assert_eq!(
+            downloads_arg
+                .get_env()
+                .map(|value| value.to_string_lossy().to_string())
+                .as_deref(),
+            Some("EMPACK_DOWNLOADS_DIR")
+        );
+    }
+
+    #[test]
+    fn cli_command_graph_exposes_remove_alias() {
+        let command = Cli::command();
+        let remove = command
+            .get_subcommands()
+            .find(|subcommand| subcommand.get_name() == "remove")
+            .expect("remove subcommand");
+
+        assert!(
+            remove.get_all_aliases().any(|alias| alias == "rm"),
+            "remove command should expose rm alias"
+        );
+    }
+
+    #[test]
+    fn cli_config_load_from_rejects_build_continue_with_targets() {
+        let result = CliConfig::load_from(["empack", "build", "--continue", "client-full"]);
+
+        let err = match result {
+            Ok(_) => panic!("continue build with targets should fail at parse time"),
+            Err(err) => err,
+        };
+        let rendered = err.to_string();
+        assert!(rendered.contains("cannot be used with"));
+        assert!(rendered.contains("--continue"));
+    }
+
+    #[test]
+    fn cli_config_load_from_rejects_build_continue_with_clean() {
+        let result = CliConfig::load_from(["empack", "build", "--continue", "--clean"]);
+
+        let err = match result {
+            Ok(_) => panic!("continue build with clean should fail at parse time"),
+            Err(err) => err,
+        };
+        let rendered = err.to_string();
+        assert!(rendered.contains("cannot be used with"));
+        assert!(rendered.contains("--clean"));
+    }
+
+    #[test]
+    fn cli_config_load_from_parses_build_continue_with_downloads_dir() {
+        let config = CliConfig::load_from([
+            "empack",
+            "build",
+            "--continue",
+            "--downloads-dir",
+            "/tmp/downloads",
+        ])
+        .expect("parse continue build");
+
+        let Some(Commands::Build(args)) = config.command else {
+            panic!("expected build command");
+        };
+
+        assert!(args.continue_build);
+        assert!(args.targets.is_empty());
+        assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/downloads"));
+    }
+
+    #[test]
+    fn cli_config_load_from_supports_remove_alias() {
+        let config = CliConfig::load_from(["empack", "rm", "sodium"]).expect("parse remove alias");
+
+        let Some(Commands::Remove { mods, deps }) = config.command else {
+            panic!("expected remove command");
+        };
+
+        assert_eq!(mods, vec!["sodium"]);
+        assert!(!deps);
+    }
+
+    #[test]
+    fn cli_config_load_from_reads_build_downloads_dir_from_env() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        crate::display::test_utils::clean_test_env();
+        let _cli_env = crate::test_support::isolate_cli_env();
+        unsafe {
+            std::env::set_var("EMPACK_DOWNLOADS_DIR", "/tmp/from-env");
+        }
+
+        let config = CliConfig::load_from(["empack", "build", "client-full"]).expect("parse build");
+
+        let Some(Commands::Build(args)) = config.command else {
+            panic!("expected build command");
+        };
+
+        assert_eq!(args.targets, vec!["client-full"]);
+        assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/from-env"));
     }
 }

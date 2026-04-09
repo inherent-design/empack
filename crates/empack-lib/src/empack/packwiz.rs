@@ -903,6 +903,26 @@ pub struct RestrictedModInfo {
     pub dest_path: String,
 }
 
+pub(crate) fn restricted_destination_filename(dest_path: &str) -> Option<String> {
+    Path::new(dest_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(ToOwned::to_owned)
+}
+
+pub(crate) fn restricted_curseforge_file_id(url: &str) -> Option<u64> {
+    let path = url.split('?').next().unwrap_or(url);
+    let segments: Vec<_> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+
+    segments.windows(2).find_map(|pair| match pair {
+        ["files", file_id] | ["download", file_id] => file_id.parse::<u64>().ok(),
+        _ => None,
+    })
+}
+
 /// Result of running packwiz-installer.
 #[derive(Debug)]
 pub enum InstallResult {
@@ -926,21 +946,13 @@ pub enum InstallResult {
 /// The URL and path are on lines after the "excluded" line (stderr stack trace).
 fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
     let mut results = Vec::new();
+    let mut seen = HashSet::new();
     let lines: Vec<&str> = output.lines().collect();
 
     for (i, line) in lines.iter().enumerate() {
         if !line.contains("excluded from the CurseForge API") {
             continue;
         }
-
-        // The mod name is on the preceding line (from stdout: "ModName.jar: ")
-        // Fall back to parsing from the exception line if no preceding line.
-        let name = if i > 0 {
-            let prev = lines[i - 1].trim();
-            prev.trim_end_matches(':').trim().to_string()
-        } else {
-            "Unknown".to_string()
-        };
 
         // Scan ahead for the URL line in the stack trace output.
         let mut url = String::new();
@@ -955,7 +967,24 @@ fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
             }
         }
 
-        if !url.is_empty() {
+        if !url.is_empty() && seen.insert((url.clone(), dest.clone())) {
+            let name = lines[..i]
+                .iter()
+                .rev()
+                .map(|line| line.trim())
+                .find(|line| {
+                    !line.is_empty()
+                        && !line.starts_with("at ")
+                        && !line.starts_with('\t')
+                        && !line.starts_with("java.lang.")
+                        && !line.starts_with("Please go to ")
+                        && !line.starts_with("Failed to download modpack")
+                })
+                .map(|line| line.trim_end_matches(':').trim().to_string())
+                .filter(|line| !line.is_empty())
+                .or_else(|| restricted_destination_filename(&dest))
+                .unwrap_or_else(|| "Unknown".to_string());
+
             results.push(RestrictedModInfo {
                 name,
                 url,
@@ -985,13 +1014,13 @@ impl<'a> PackwizInstaller<'a> {
         session: &'a dyn Session,
         bootstrap_jar_path: PathBuf,
         installer_jar_path: PathBuf,
-    ) -> Result<Self, PackwizError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             filesystem: session.filesystem(),
             process_provider: session.process(),
             bootstrap_jar_path,
             installer_jar_path,
-        })
+        }
     }
 
     /// Install projects for specified side

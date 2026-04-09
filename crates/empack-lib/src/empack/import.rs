@@ -350,6 +350,7 @@ pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
         OverrideSide::Both,
         &mut override_entries,
     )?;
+    prune_packwiz_override_metadata(&mut archive, &mut override_entries);
 
     let content: Vec<ContentEntry> = cf
         .files
@@ -475,6 +476,7 @@ pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
         OverrideSide::ServerOnly,
         &mut override_entries,
     )?;
+    prune_packwiz_override_metadata(&mut archive, &mut override_entries);
 
     let content: Vec<ContentEntry> = mr
         .files
@@ -1871,6 +1873,46 @@ fn collect_override_entries(
     }
 
     Ok(())
+}
+
+fn prune_packwiz_override_metadata(
+    archive: &mut zip::ZipArchive<std::fs::File>,
+    entries: &mut Vec<OverrideEntry>,
+) {
+    let existing_destinations: std::collections::HashSet<String> = entries
+        .iter()
+        .map(|entry| entry.destination_path.replace('\\', "/"))
+        .collect();
+
+    entries.retain(|entry| {
+        let Some(payload_path) = packwiz_override_payload_destination(archive, entry) else {
+            return true;
+        };
+        !existing_destinations.contains(&payload_path)
+    });
+}
+
+fn packwiz_override_payload_destination(
+    archive: &mut zip::ZipArchive<std::fs::File>,
+    entry: &OverrideEntry,
+) -> Option<String> {
+    let normalized_dest = entry.destination_path.replace('\\', "/");
+    if !normalized_dest.ends_with(".pw.toml") || !normalized_dest.contains("/.index/") {
+        return None;
+    }
+
+    let (folder, _) = normalized_dest.split_once("/.index/")?;
+    let zip_entry = archive.by_name(&entry.source_path).ok()?;
+    let content = read_zip_entry_to_string(zip_entry).ok()?;
+
+    #[derive(Deserialize)]
+    struct OverridePackwizMetadata {
+        filename: Option<String>,
+    }
+
+    let metadata: OverridePackwizMetadata = toml::from_str(&content).ok()?;
+    let filename = metadata.filename?;
+    Some(format!("{folder}/{filename}"))
 }
 
 // ---------------------------------------------------------------------------

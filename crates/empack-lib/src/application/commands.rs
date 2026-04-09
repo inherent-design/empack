@@ -1086,7 +1086,9 @@ fn import_from_local(
                  initialize with empack init then use empack add for each mod"
             );
         }
-        _ => anyhow::bail!("unsupported source kind: {:?}", kind),
+        SourceKind::ModrinthRemote { .. } | SourceKind::CurseForgeRemote { .. } => {
+            unreachable!("remote source kinds should not be returned by detect_local_source")
+        }
     }
 }
 
@@ -1116,14 +1118,30 @@ async fn download_modrinth_modpack(
     slug: &str,
     version_filter: Option<&str>,
 ) -> Result<(ModpackManifest, tempfile::TempDir, PathBuf)> {
+    let client = session.network().http_client()?;
+    download_modrinth_modpack_with_client(
+        session,
+        &client,
+        slug,
+        version_filter,
+        "https://api.modrinth.com/v2",
+    )
+    .await
+}
+
+async fn download_modrinth_modpack_with_client(
+    session: &dyn Session,
+    client: &reqwest::Client,
+    slug: &str,
+    version_filter: Option<&str>,
+    api_base: &str,
+) -> Result<(ModpackManifest, tempfile::TempDir, PathBuf)> {
     session
         .display()
         .status()
         .info(&format!("Fetching Modrinth modpack: {}", slug));
 
-    let client = session.network().http_client()?;
-
-    let version_url = format!("https://api.modrinth.com/v2/project/{}/version", slug);
+    let version_url = format!("{api_base}/project/{slug}/version");
 
     let response = client
         .get(&version_url)
@@ -1199,7 +1217,7 @@ async fn download_modrinth_modpack(
         session.filesystem().create_dir_all(parent)?;
     }
 
-    download_file(&client, download_url, &dest_path).await?;
+    download_file(client, download_url, &dest_path).await?;
 
     let manifest = parse_modrinth_mrpack(&dest_path)?;
     Ok((manifest, tmp_dir, dest_path))
@@ -1209,12 +1227,22 @@ async fn download_curseforge_modpack(
     session: &dyn Session,
     slug: &str,
 ) -> Result<(ModpackManifest, tempfile::TempDir, PathBuf)> {
+    let client = session.network().http_client()?;
+    download_curseforge_modpack_with_client(session, &client, slug, "https://api.curseforge.com/v1")
+        .await
+}
+
+async fn download_curseforge_modpack_with_client(
+    session: &dyn Session,
+    client: &reqwest::Client,
+    slug: &str,
+    api_base: &str,
+) -> Result<(ModpackManifest, tempfile::TempDir, PathBuf)> {
     session
         .display()
         .status()
         .info(&format!("Fetching CurseForge modpack: {}", slug));
 
-    let client = session.network().http_client()?;
     let api_key = session
         .config()
         .app_config()
@@ -1225,10 +1253,7 @@ async fn download_curseforge_modpack(
         })?;
 
     // Resolve slug to project ID via search
-    let search_url = format!(
-        "https://api.curseforge.com/v1/mods/search?gameId=432&classId=4471&slug={}",
-        slug
-    );
+    let search_url = format!("{api_base}/mods/search?gameId=432&classId=4471&slug={slug}",);
     let search_resp = client
         .get(&search_url)
         .header("x-api-key", &api_key)
@@ -1269,10 +1294,7 @@ async fn download_curseforge_modpack(
         .info(&format!("Found: {} (ID: {})", project.name, project.id));
 
     // Get latest file
-    let files_url = format!(
-        "https://api.curseforge.com/v1/mods/{}/files?pageSize=1",
-        project.id
-    );
+    let files_url = format!("{api_base}/mods/{}/files?pageSize=1", project.id);
     let files_resp = client
         .get(&files_url)
         .header("x-api-key", &api_key)
@@ -1312,7 +1334,7 @@ async fn download_curseforge_modpack(
     } else {
         // Try the download-url endpoint as fallback
         let dl_endpoint = format!(
-            "https://api.curseforge.com/v1/mods/{}/files/{}/download-url",
+            "{api_base}/mods/{}/files/{}/download-url",
             project.id, file.id
         );
         let dl_resp = client
@@ -1361,7 +1383,7 @@ async fn download_curseforge_modpack(
     let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
     let dest_path = tmp_dir.path().join(filename);
 
-    download_file(&client, &dl_url, &dest_path).await?;
+    download_file(client, &dl_url, &dest_path).await?;
 
     let manifest = parse_curseforge_zip(&dest_path)?;
     Ok((manifest, tmp_dir, dest_path))
@@ -2169,10 +2191,38 @@ async fn resolve_curseforge_slug(
     project_type: Option<ProjectType>,
     resolver: &dyn crate::empack::search::ProjectResolverTrait,
 ) -> std::result::Result<AddResolution, anyhow::Error> {
+    resolve_curseforge_slug_with_api_base(
+        slug,
+        client,
+        curseforge_api_key,
+        minecraft_version,
+        mod_loader,
+        version_pin_override,
+        file_id_override,
+        project_type,
+        resolver,
+        "https://api.curseforge.com/v1",
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn resolve_curseforge_slug_with_api_base(
+    slug: &str,
+    client: &reqwest::Client,
+    curseforge_api_key: Option<&str>,
+    minecraft_version: Option<&str>,
+    mod_loader: Option<ModLoader>,
+    version_pin_override: Option<&str>,
+    file_id_override: Option<&str>,
+    project_type: Option<ProjectType>,
+    resolver: &dyn crate::empack::search::ProjectResolverTrait,
+    api_base: &str,
+) -> std::result::Result<AddResolution, anyhow::Error> {
     let api_key = curseforge_api_key
         .ok_or_else(|| anyhow::anyhow!("CurseForge API key required for slug resolution"))?;
 
-    let search_url = format!("https://api.curseforge.com/v1/mods/search?gameId=432&slug={slug}");
+    let search_url = format!("{api_base}/mods/search?gameId=432&slug={slug}");
 
     let response = client
         .get(&search_url)
@@ -2228,25 +2278,7 @@ async fn handle_direct_download_jar(
     url: &str,
     _resolver: &dyn crate::empack::search::ProjectResolverTrait,
 ) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
-    session
-        .display()
-        .status()
-        .info(&format!("Downloading JAR from {}", url));
-
     let client = session.network().http_client()?;
-    let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
-    let filename = url.rsplit('/').next().unwrap_or("download.jar");
-    let dest_path = tmp_dir.path().join(filename);
-
-    download_file(&client, url, &dest_path).await?;
-
-    let sha1 = {
-        let bytes = std::fs::read(&dest_path)?;
-        compute_sha1_hex_for_bytes(&bytes)
-    };
-
-    session.display().status().info(&format!("SHA-1: {}", sha1));
-
     let cf_key = session
         .config()
         .app_config()
@@ -2257,6 +2289,33 @@ async fn handle_direct_download_jar(
         curseforge: session.network(),
         curseforge_api_key: cf_key.as_deref(),
     };
+    handle_direct_download_jar_with_client_and_resolver(session, url, &client, &jar_resolver).await
+}
+
+async fn handle_direct_download_jar_with_client_and_resolver<R: JarResolver>(
+    session: &dyn Session,
+    url: &str,
+    client: &reqwest::Client,
+    jar_resolver: &R,
+) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
+    session
+        .display()
+        .status()
+        .info(&format!("Downloading JAR from {}", url));
+
+    let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    let filename = url.rsplit('/').next().unwrap_or("download.jar");
+    let dest_path = tmp_dir.path().join(filename);
+
+    download_file(client, url, &dest_path).await?;
+
+    let sha1 = {
+        let bytes = std::fs::read(&dest_path)?;
+        compute_sha1_hex_for_bytes(&bytes)
+    };
+
+    session.display().status().info(&format!("SHA-1: {}", sha1));
+
     let identify_request = crate::empack::content::JarIdentifyRequest {
         path: dest_path.clone(),
         sha1: Some(sha1),
@@ -2743,6 +2802,21 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
         return Err(anyhow::anyhow!("Project initialization is incomplete"));
     }
 
+    if args.continue_build && !args.targets.is_empty() {
+        return Err(anyhow::anyhow!(
+            "empack build --continue does not accept positional targets"
+        ));
+    }
+    if args.continue_build && args.clean {
+        return Err(anyhow::anyhow!(
+            "empack build --continue cannot be combined with --clean"
+        ));
+    }
+
+    if args.continue_build {
+        return continue_pending_restricted_build(session, &manager.workdir, args, start).await;
+    }
+
     // Parse build targets
     let build_targets = parse_build_targets(args.targets.clone())?;
 
@@ -2776,9 +2850,220 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
             .checking("Cleaning build artifacts");
         crate::empack::state::clean_build_artifacts(session.filesystem(), &manager.workdir)
             .context("Failed to clean build artifacts")?;
+        crate::empack::restricted_build::clear_pending_build(
+            session.filesystem(),
+            &manager.workdir,
+        )
+        .context("Failed to clear pending restricted build state")?;
     }
 
-    // Ensure packwiz-installer-bootstrap.jar is available for builds that need it
+    ensure_build_runtime_assets(session, &build_targets).await?;
+
+    let results = run_build_pipeline(session, &build_targets, archive_format, false).await?;
+    let restricted_entries = collect_restricted_entries(&results);
+
+    if !restricted_entries.is_empty() {
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &manager.workdir,
+            &build_targets,
+            archive_format,
+            &restricted_entries,
+        )
+        .context("Failed to persist restricted build continuation state")?;
+
+        let download_dirs = restricted_download_dirs(args.downloads_dir.as_deref(), &pending);
+        crate::empack::restricted_build::import_matching_downloads_into_cache(
+            session.filesystem(),
+            &pending,
+            &download_dirs,
+        )
+        .context("Failed to import matching restricted downloads into cache")?;
+
+        let remaining =
+            crate::empack::restricted_build::missing_cached_entries(session.filesystem(), &pending);
+        if remaining.is_empty() {
+            session
+                .display()
+                .status()
+                .success("All restricted mods cached", "Continuing build.");
+            return continue_pending_restricted_build(session, &manager.workdir, args, start).await;
+        }
+
+        display_pending_restricted_build(session, &pending, &remaining)?;
+        return Err(anyhow::anyhow!(
+            "{} restricted download(s) are still required. After downloading them, run 'empack build --continue'.",
+            dedup_restricted_entry_urls(&remaining).len()
+        ));
+    }
+
+    let any_failed = results.iter().any(|r| !r.success);
+    if any_failed {
+        let failed: Vec<_> = results.iter().filter(|r| !r.success).collect();
+        for r in &failed {
+            for w in &r.warnings {
+                session.display().status().warning(w);
+            }
+        }
+        return Err(anyhow::anyhow!(
+            "Build failed for {} target(s)",
+            failed.len()
+        ));
+    }
+
+    crate::empack::restricted_build::clear_pending_build(session.filesystem(), &manager.workdir)
+        .context("Failed to clear pending restricted build state")?;
+
+    session
+        .display()
+        .status()
+        .complete("Build completed successfully");
+    session
+        .display()
+        .status()
+        .subtle("   Check dist/ directory for build artifacts");
+
+    tracing::info!(
+        command = "build",
+        duration_ms = start.elapsed().as_millis() as u64,
+        target_count = build_targets.len(),
+        exit_code = 0,
+        "command complete"
+    );
+
+    Ok(())
+}
+
+async fn continue_pending_restricted_build(
+    session: &dyn Session,
+    workdir: &std::path::Path,
+    args: &BuildArgs,
+    start: std::time::Instant,
+) -> Result<()> {
+    let Some(pending) =
+        crate::empack::restricted_build::load_pending_build(session.filesystem(), workdir)?
+    else {
+        return Err(anyhow::anyhow!("No pending restricted build to continue"));
+    };
+
+    if let Some(reason) = crate::empack::restricted_build::validate_pending_build(
+        session.filesystem(),
+        workdir,
+        &pending,
+    )? {
+        crate::empack::restricted_build::clear_pending_build(session.filesystem(), workdir)?;
+        return Err(anyhow::anyhow!(
+            "Pending restricted build is stale: {reason}. Run a fresh build again."
+        ));
+    }
+
+    let build_targets = pending.target_list()?;
+    let archive_format = pending.archive_format_value()?;
+
+    session
+        .display()
+        .status()
+        .section(&format!("Continuing build targets: {:?}", build_targets));
+
+    if session.config().app_config().dry_run {
+        session.display().status().section("Planned Actions");
+        for target in &build_targets {
+            session
+                .display()
+                .status()
+                .info(&format!("Would continue: {}", target));
+        }
+        session
+            .display()
+            .status()
+            .complete("Dry run complete - no changes applied");
+        return Ok(());
+    }
+
+    ensure_build_runtime_assets(session, &build_targets).await?;
+
+    let download_dirs = restricted_download_dirs(args.downloads_dir.as_deref(), &pending);
+    crate::empack::restricted_build::import_matching_downloads_into_cache(
+        session.filesystem(),
+        &pending,
+        &download_dirs,
+    )
+    .context("Failed to import matching restricted downloads into cache")?;
+
+    let remaining =
+        crate::empack::restricted_build::missing_cached_entries(session.filesystem(), &pending);
+    if !remaining.is_empty() {
+        display_pending_restricted_build(session, &pending, &remaining)?;
+        return Err(anyhow::anyhow!(
+            "{} restricted download(s) are still required before the build can continue.",
+            dedup_restricted_entry_urls(&remaining).len()
+        ));
+    }
+
+    let still_missing = crate::empack::restricted_build::stage_cached_entries_to_destinations(
+        session.filesystem(),
+        &pending,
+    )
+    .context("Failed to restore cached restricted files into the build output")?;
+    if !still_missing.is_empty() {
+        display_pending_restricted_build(session, &pending, &still_missing)?;
+        return Err(anyhow::anyhow!(
+            "{} restricted download(s) are still missing from the cache.",
+            dedup_restricted_entry_urls(&still_missing).len()
+        ));
+    }
+
+    let results = run_build_pipeline(session, &build_targets, archive_format, true).await?;
+    let restricted_entries = collect_restricted_entries(&results);
+    if !restricted_entries.is_empty() {
+        return Err(anyhow::anyhow!(
+            "{} restricted download(s) are still required after continue",
+            restricted_entries.len()
+        ));
+    }
+
+    let any_failed = results.iter().any(|r| !r.success);
+    if any_failed {
+        let failed: Vec<_> = results.iter().filter(|r| !r.success).collect();
+        for r in &failed {
+            for warning in &r.warnings {
+                session.display().status().warning(warning);
+            }
+        }
+        return Err(anyhow::anyhow!(
+            "Build failed for {} target(s)",
+            failed.len()
+        ));
+    }
+
+    crate::empack::restricted_build::clear_pending_build(session.filesystem(), workdir)
+        .context("Failed to clear pending restricted build state")?;
+
+    session
+        .display()
+        .status()
+        .complete("Build completed successfully");
+    session
+        .display()
+        .status()
+        .subtle("   Check dist/ directory for build artifacts");
+
+    tracing::info!(
+        command = "build",
+        duration_ms = start.elapsed().as_millis() as u64,
+        target_count = build_targets.len(),
+        exit_code = 0,
+        continued = true,
+        "command complete"
+    );
+
+    Ok(())
+}
+
+async fn ensure_build_runtime_assets(
+    session: &dyn Session,
+    build_targets: &[BuildTarget],
+) -> Result<()> {
     let bootstrap_jar_path = session.packwiz().bootstrap_jar_cache_path()?;
     let needs_bootstrap_jar = build_targets.iter().any(|target| {
         matches!(
@@ -2810,7 +3095,6 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
             .complete("Downloaded packwiz-installer-bootstrap.jar");
     }
 
-    // Ensure packwiz-installer.jar is available for builds that need it
     let installer_jar_path = session.packwiz().installer_jar_cache_path()?;
     let needs_installer_jar = build_targets
         .iter()
@@ -2836,14 +3120,24 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
             .complete("Downloaded packwiz-installer.jar");
     }
 
-    // Create BuildOrchestrator with session
+    Ok(())
+}
+
+async fn run_build_pipeline(
+    session: &dyn Session,
+    build_targets: &[BuildTarget],
+    archive_format: crate::empack::archive::ArchiveFormat,
+    continue_full_builds: bool,
+) -> Result<Vec<crate::empack::builds::BuildResult>> {
     let mut build_orchestrator =
         crate::empack::builds::BuildOrchestrator::new(session, archive_format)
             .context("Failed to create build orchestrator")?;
+    if continue_full_builds {
+        build_orchestrator = build_orchestrator.continue_full_builds();
+    }
 
-    // Execute build pipeline with state management
-    let results = build_orchestrator
-        .execute_build_pipeline(&build_targets)
+    build_orchestrator
+        .execute_build_pipeline(build_targets)
         .await
         .inspect_err(|_| {
             session
@@ -2851,189 +3145,107 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
                 .status()
                 .info("If the build left partial artifacts, run 'empack clean --builds' to reset");
         })
-        .context("Failed to execute build pipeline")?;
+        .context("Failed to execute build pipeline")
+}
 
-    // Check for restricted mods across all build results, deduplicating
-    // by URL (the same mod appears in both client-full and server-full).
-    let all_restricted: Vec<_> = {
-        let mut seen = std::collections::HashSet::new();
-        results
-            .iter()
-            .flat_map(|r| r.restricted_mods.iter())
-            .filter(|rm| seen.insert(rm.url.clone()))
-            .collect()
-    };
+fn collect_restricted_entries(
+    results: &[crate::empack::builds::BuildResult],
+) -> Vec<crate::empack::packwiz::RestrictedModInfo> {
+    results
+        .iter()
+        .flat_map(|result| result.restricted_mods.iter().cloned())
+        .collect()
+}
 
-    if !all_restricted.is_empty() {
-        session.display().status().section(&format!(
-            "Build incomplete: {} mod(s) require manual download",
-            all_restricted.len()
-        ));
+fn restricted_download_dirs(
+    downloads_dir: Option<&str>,
+    pending: &crate::empack::restricted_build::PendingRestrictedBuild,
+) -> Vec<PathBuf> {
+    let mut dirs = vec![pending.restricted_cache_path()];
 
-        for rm in &all_restricted {
-            session
-                .display()
-                .status()
-                .warning(&format!("  {}", rm.name));
-            session
-                .display()
-                .status()
-                .info(&format!("    Download: {}", rm.url));
-            if !rm.dest_path.is_empty() {
-                session
-                    .display()
-                    .status()
-                    .info(&format!("    Save to:  {}", rm.dest_path));
-            }
+    if let Some(downloads_dir) = downloads_dir {
+        dirs.push(PathBuf::from(downloads_dir));
+    }
+
+    dirs.push(crate::platform::home_dir().join("Downloads"));
+
+    let mut deduped = Vec::new();
+    for dir in dirs {
+        if !deduped.contains(&dir) {
+            deduped.push(dir);
         }
+    }
 
-        // Check --downloads-dir (or platform default) for already-downloaded files
-        let dl_dir = args
-            .downloads_dir
-            .as_ref()
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| crate::platform::home_dir().join("Downloads"));
+    deduped
+}
 
+fn dedup_restricted_entry_urls(
+    entries: &[crate::empack::restricted_build::PendingRestrictedBuildEntry],
+) -> Vec<&crate::empack::restricted_build::PendingRestrictedBuildEntry> {
+    let mut seen = std::collections::HashSet::new();
+    entries
+        .iter()
+        .filter(|entry| seen.insert(entry.url.clone()))
+        .collect()
+}
+
+fn display_pending_restricted_build(
+    session: &dyn Session,
+    pending: &crate::empack::restricted_build::PendingRestrictedBuild,
+    remaining: &[crate::empack::restricted_build::PendingRestrictedBuildEntry],
+) -> Result<()> {
+    let unique_remaining = dedup_restricted_entry_urls(remaining);
+    let cache_dir = pending.restricted_cache_path();
+
+    session.display().status().section(&format!(
+        "Build incomplete: {} restricted download(s) still required",
+        unique_remaining.len()
+    ));
+
+    for entry in &unique_remaining {
+        session
+            .display()
+            .status()
+            .warning(&format!("  {}", entry.name));
+        session
+            .display()
+            .status()
+            .info(&format!("    Download: {}", entry.url));
         session.display().status().info(&format!(
-            "Scanning {} for downloaded files...",
-            dl_dir.display()
-        ));
-
-        let mut remaining: Vec<&crate::empack::packwiz::RestrictedModInfo> = Vec::new();
-        for rm in &all_restricted {
-            let filename = std::path::Path::new(&rm.dest_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            let candidate = dl_dir.join(filename);
-            if !filename.is_empty() && session.filesystem().exists(&candidate) {
-                let dest = std::path::Path::new(&rm.dest_path);
-                if let Some(parent) = dest.parent() {
-                    let _ = session.filesystem().create_dir_all(parent);
-                }
-                match session
-                    .filesystem()
-                    .read_bytes(&candidate)
-                    .and_then(|bytes| session.filesystem().write_bytes(dest, &bytes))
-                {
-                    Ok(_) => {
-                        session.display().status().success(
-                            "Placed",
-                            &format!("{} → {}", candidate.display(), rm.dest_path),
-                        );
-                    }
-                    Err(e) => {
-                        session.display().status().warning(&format!(
-                            "Failed to copy {}: {}",
-                            candidate.display(),
-                            e
-                        ));
-                        remaining.push(rm);
-                    }
-                }
-            } else {
-                remaining.push(rm);
-            }
-        }
-
-        if remaining.is_empty() {
-            session
-                .display()
-                .status()
-                .success("All restricted mods placed", "Re-running build.");
-            drop(results);
-            let mut build_orchestrator =
-                crate::empack::builds::BuildOrchestrator::new(session, archive_format)
-                    .context("Failed to create build orchestrator")?;
-            let retry_results = build_orchestrator
-                .execute_build_pipeline(&build_targets)
-                .await
-                .context("Failed to execute build pipeline")?;
-            let still_restricted: Vec<_> = retry_results
-                .iter()
-                .flat_map(|r| r.restricted_mods.iter())
-                .collect();
-            if !still_restricted.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "{} mod(s) still require manual download after retry",
-                    still_restricted.len()
-                ));
-            }
-            if retry_results.iter().any(|r| !r.success) {
-                return Err(anyhow::anyhow!("Build failed after retry"));
-            }
-            session
-                .display()
-                .status()
-                .complete("Build completed successfully");
-            session
-                .display()
-                .status()
-                .subtle("   Check dist/ directory for build artifacts");
-            return Ok(());
-        }
-
-        if session.terminal().is_tty && !session.config().app_config().yes {
-            session.display().status().message("");
-            let open = session
-                .interactive()
-                .confirm("Open download URLs in browser?", false)?;
-            if open {
-                let (cmd, prefix_args) = crate::platform::browser_open_command();
-                for rm in &remaining {
-                    let mut args: Vec<&str> = prefix_args.clone();
-                    args.push(&rm.url);
-                    let _ = session
-                        .process()
-                        .execute(cmd, &args, std::path::Path::new("."));
-                }
-            }
-        }
-
-        session.display().status().info(&format!(
-            "Download files and place in: {} (or use --downloads-dir)",
-            dl_dir.display()
+            "    Cache as: {}",
+            cache_dir.join(&entry.filename).display()
         ));
         session
             .display()
             .status()
-            .info("Then re-run the build command.");
-        return Err(anyhow::anyhow!(
-            "{} mod(s) require manual download from CurseForge. See output above for URLs.",
-            remaining.len()
-        ));
+            .subtle(&format!("    Will restore to: {}", entry.dest_path));
     }
 
-    let any_failed = results.iter().any(|r| !r.success);
-    if any_failed {
-        let failed: Vec<_> = results.iter().filter(|r| !r.success).collect();
-        for r in &failed {
-            for w in &r.warnings {
-                session.display().status().warning(w);
+    if session.terminal().is_tty && !session.config().app_config().yes {
+        session.display().status().message("");
+        let open = session
+            .interactive()
+            .confirm("Open download URLs in browser?", false)?;
+        if open {
+            let (cmd, prefix_args) = crate::platform::browser_open_command();
+            for entry in &unique_remaining {
+                let mut args: Vec<&str> = prefix_args.clone();
+                args.push(&entry.url);
+                let _ = session
+                    .process()
+                    .execute(cmd, &args, std::path::Path::new("."));
             }
         }
-        return Err(anyhow::anyhow!(
-            "Build failed for {} target(s)",
-            failed.len()
-        ));
     }
 
+    session.display().status().info(&format!(
+        "Place the downloaded files in: {}",
+        cache_dir.display()
+    ));
     session
         .display()
         .status()
-        .complete("Build completed successfully");
-    session
-        .display()
-        .status()
-        .subtle("   Check dist/ directory for build artifacts");
-
-    tracing::info!(
-        command = "build",
-        duration_ms = start.elapsed().as_millis() as u64,
-        target_count = build_targets.len(),
-        exit_code = 0,
-        "command complete"
-    );
+        .info("Then run: empack build --continue");
 
     Ok(())
 }

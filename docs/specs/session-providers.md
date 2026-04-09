@@ -2,7 +2,7 @@
 spec: session-providers
 status: draft
 created: 2026-04-04
-updated: 2026-04-08
+updated: 2026-04-09
 depends: [overview]
 ---
 
@@ -112,14 +112,22 @@ If managed binary resolution fails, the session logs a warning and falls back to
 
 ## E2E Boundary
 
-Subprocess E2E tests bypass the session injection layer and execute the compiled `empack` binary through `assert_cmd` and `expectrl`. That path validates CLI parsing, session construction, logger setup, process exit behavior, and live tool integration together.
+Subprocess E2E tests bypass the session injection layer and execute the compiled `empack` binary through `assert_cmd` and targeted `expectrl` PTY coverage. That path validates CLI parsing, session construction, logger setup, process exit behavior, and live tool integration together.
 
 | Component | Purpose |
 | --- | --- |
 | `TestProject` | Isolated TempDir + `cmd()` builder with NO_COLOR |
-| `empack_bin()` | Binary resolution: EMPACK_E2E_BIN, llvm-cov, debug, release, then PATH |
+| `empack_bin()` | Binary resolution: EMPACK_E2E_BIN, debug, release, coverage-only llvm-cov, then PATH |
 | `empack_assert_cmd()` | assert_cmd Command from resolved binary |
 | `skip_if_no_packwiz!()` | Skip macros for missing prerequisites (chained) |
+
+Current PTY scope is intentionally limited:
+
+- one active interactive `init` PTY test validates resulting project state
+- one prompt-sequence PTY test remains manual-only
+- one active restricted-build PTY test validates browser-confirm reachability and persisted pending state
+- one Unix-only PTY test validates browser-opener invocation through a fake platform opener
+- injected session-provider tests still cover browser confirmation semantics without relying on raw PTY prompt matching
 
 ### Abstraction Gaps
 

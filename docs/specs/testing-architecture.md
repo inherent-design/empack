@@ -2,7 +2,7 @@
 spec: testing-architecture
 status: draft
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-09
 depends: [overview, session-providers]
 ---
 
@@ -52,27 +52,29 @@ Typical coverage:
 - subprocess exit codes
 - live filesystem behavior
 - real packwiz-tx resolution
-- PTY and interactive flows
+- targeted PTY and interactive flows
 
 ## Harness Behavior
 
 Current E2E harness behavior includes:
 
-- `empack_bin()` resolution from `EMPACK_E2E_BIN`, llvm-cov output, debug build, release build, then PATH
+- `empack_bin()` resolution from `EMPACK_E2E_BIN`, debug build, release build, coverage-only llvm-cov output, then PATH
 - `NO_COLOR=1` in subprocess helpers
+- isolated `EMPACK_CACHE_DIR` per E2E workdir to avoid host-cache leakage across subprocess tests
 - prerequisite skip macros for missing packwiz-tx or Java
 - support for fake `packwiz-tx` via `EMPACK_PACKWIZ_BIN`
 
 ## PTY Coverage
 
-Interactive tests use `expectrl` and PTY-backed execution when terminal behavior matters.
+Interactive tests use `expectrl` and PTY-backed execution when terminal behavior matters, but PTY scope is intentionally narrow.
 
 Current PTY-relevant paths include:
 
 - interactive init flows
-- interactive search and selection
-- browser-open confirmation during restricted download handling
+- one manual-only prompt-sequence PTY check for dialoguer rendering
 - smoke-style import visibility through PTY-backed scripts
+- CI PTY coverage for restricted-download browser confirmation reachability and persisted pending-state behavior
+- injected interactive and process-provider coverage for browser-opener invocation semantics on every platform
 
 ## VCR Fixtures
 
@@ -105,12 +107,13 @@ The `--no-clean` step is required so E2E subprocess tests can find the instrumen
 
 These counts are a dated snapshot, not a timeless contract.
 
-As of 2026-04-08:
+As of 2026-04-09:
 
-- `mise run test`: 1007 tests
-- `mise run e2e`: 72 non-ignored E2E tests
-- primary non-`.test.rs` coverage metric on `feat/test-coverage`: 86.86%
-- `TOTAL` coverage on `feat/test-coverage`: 93.34%
+- `mise run test`: 1149 passed, 77 skipped, across 23 binaries
+- `mise run e2e`: 76 active E2E tests across 20 binaries, 46 skipped, one slow path (`e2e_build_server_sevenz`)
+- `mise run coverage`: 1225 tests, 1 skipped, across 24 binaries, with two slow paths (`e2e_build_server_sevenz`, `e2e_init_yes_neoforge_legacy_1_20_1`)
+- primary non-`.test.rs` coverage metric on `empack-lib/src/**` and `empack/src/**`: 88.02%
+- `TOTAL` coverage: 94.14%
 
 ## Scope Boundaries
 

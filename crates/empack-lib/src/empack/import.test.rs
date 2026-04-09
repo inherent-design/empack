@@ -412,6 +412,96 @@ fn test_parse_modrinth_mrpack_embedded_jar() {
 }
 
 #[test]
+fn test_parse_modrinth_mrpack_prunes_override_packwiz_metadata_with_payload() {
+    let json = r#"{
+      "dependencies": {
+        "minecraft": "1.20.1",
+        "quilt-loader": "0.25.0"
+      },
+      "files": [],
+      "overrides": "overrides",
+      "name": "OverridePack",
+      "versionId": "1.0.0"
+    }"#;
+
+    let tmp = NamedTempFile::new().unwrap();
+    let mut zip = zip::ZipWriter::new(tmp.reopen().unwrap());
+    let options = zip::write::FileOptions::default();
+    zip.start_file::<&str, ()>("modrinth.index.json", options)
+        .unwrap();
+    zip.write_all(json.as_bytes()).unwrap();
+    zip.start_file::<&str, ()>("overrides/mods/.index/litematica.pw.toml", options)
+        .unwrap();
+    zip.write_all(
+        br#"name = "Litematica"
+filename = "litematica-fabric-1.20.1-0.15.3.jar"
+
+[download]
+mode = "metadata:curseforge"
+url = ""
+hash-format = "sha1"
+hash = "deadbeef"
+"#,
+    )
+    .unwrap();
+    zip.start_file::<&str, ()>("overrides/mods/litematica-fabric-1.20.1-0.15.3.jar", options)
+        .unwrap();
+    zip.write_all(b"jar-bytes").unwrap();
+    zip.finish().unwrap();
+
+    let manifest = parse_modrinth_mrpack(tmp.path()).unwrap();
+
+    assert!(manifest.overrides.iter().any(|entry| {
+        entry.destination_path == "mods/litematica-fabric-1.20.1-0.15.3.jar"
+    }));
+    assert!(!manifest.overrides.iter().any(|entry| {
+        entry.destination_path == "mods/.index/litematica.pw.toml"
+    }));
+}
+
+#[test]
+fn test_parse_modrinth_mrpack_keeps_override_packwiz_metadata_without_payload() {
+    let json = r#"{
+      "dependencies": {
+        "minecraft": "1.20.1",
+        "quilt-loader": "0.25.0"
+      },
+      "files": [],
+      "overrides": "overrides",
+      "name": "OverridePack",
+      "versionId": "1.0.0"
+    }"#;
+
+    let tmp = NamedTempFile::new().unwrap();
+    let mut zip = zip::ZipWriter::new(tmp.reopen().unwrap());
+    let options = zip::write::FileOptions::default();
+    zip.start_file::<&str, ()>("modrinth.index.json", options)
+        .unwrap();
+    zip.write_all(json.as_bytes()).unwrap();
+    zip.start_file::<&str, ()>("overrides/mods/.index/litematica.pw.toml", options)
+        .unwrap();
+    zip.write_all(
+        br#"name = "Litematica"
+filename = "litematica-fabric-1.20.1-0.15.3.jar"
+
+[download]
+mode = "metadata:curseforge"
+url = ""
+hash-format = "sha1"
+hash = "deadbeef"
+"#,
+    )
+    .unwrap();
+    zip.finish().unwrap();
+
+    let manifest = parse_modrinth_mrpack(tmp.path()).unwrap();
+
+    assert!(manifest.overrides.iter().any(|entry| {
+        entry.destination_path == "mods/.index/litematica.pw.toml"
+    }));
+}
+
+#[test]
 fn test_parse_modrinth_mrpack_missing_index() {
     let tmp = NamedTempFile::new().unwrap();
     let mut zip = zip::ZipWriter::new(tmp.reopen().unwrap());

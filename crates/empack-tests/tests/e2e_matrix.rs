@@ -1,4 +1,8 @@
-use empack_tests::e2e::{TestProject, empack_assert_cmd};
+use empack_tests::e2e::{
+    TestProject, assert_pack_minecraft_version, assert_project_initialized, assert_project_loader,
+    assert_project_loader_absent, assert_project_minecraft_version, configure_fake_packwiz,
+    empack_assert_cmd, seed_loader_version_cache,
+};
 use predicates::prelude::*;
 
 macro_rules! e2e_init_modloader {
@@ -29,18 +33,56 @@ macro_rules! e2e_init_modloader {
             );
 
             let pack_dir = project.dir().join(concat!("test-", $loader));
-            assert!(pack_dir.join("empack.yml").exists());
-            assert!(pack_dir.join("pack/pack.toml").exists());
+            assert_project_initialized(&pack_dir);
+            if $loader == "none" {
+                assert_project_loader_absent(&pack_dir);
+            } else {
+                assert_project_loader(&pack_dir, $loader);
+            }
+            assert_project_minecraft_version(&pack_dir, "1.21.1");
+            assert_pack_minecraft_version(&pack_dir, "1.21.1");
         }
     };
 }
 
 e2e_init_modloader!(e2e_matrix_init_fabric, "fabric");
 e2e_init_modloader!(e2e_matrix_init_forge, "forge");
-e2e_init_modloader!(e2e_matrix_init_neoforge, "neoforge");
 // quilt loader not available for MC 1.21.1 in current packwiz
 // e2e_init_modloader!(e2e_matrix_init_quilt, "quilt");
 e2e_init_modloader!(e2e_matrix_init_vanilla, "none");
+
+#[test]
+fn e2e_matrix_init_neoforge() {
+    let project = TestProject::new();
+    seed_loader_version_cache(project.dir(), "neoforge", "1.21.1", &["21.1.224"]);
+    let mut cmd = project.cmd();
+    configure_fake_packwiz(&mut cmd, project.dir());
+    let output = cmd
+        .args([
+            "init",
+            "--yes",
+            "--modloader",
+            "neoforge",
+            "--loader-version",
+            "21.1.224",
+            "--mc-version",
+            "1.21.1",
+            "test-neoforge",
+        ])
+        .output()
+        .expect("failed to spawn");
+    assert!(
+        output.status.success(),
+        "init --modloader neoforge failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let pack_dir = project.dir().join("test-neoforge");
+    assert_project_initialized(&pack_dir);
+    assert_project_loader(&pack_dir, "neoforge");
+    assert_project_minecraft_version(&pack_dir, "1.21.1");
+    assert_pack_minecraft_version(&pack_dir, "1.21.1");
+}
 
 macro_rules! e2e_bad_flag_value {
     ($name:ident, args: [$($arg:expr),+], stderr_contains: $expected:expr) => {

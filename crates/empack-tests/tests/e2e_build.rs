@@ -1,25 +1,10 @@
-use empack_tests::e2e::TestProject;
-
-fn assert_dist_has_artifact(dist: &std::path::Path, expected_suffix: &str) {
-    let names: Vec<String> = std::fs::read_dir(dist)
-        .expect("failed to read dist/")
-        .filter_map(Result::ok)
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect();
-    assert!(
-        names
-            .iter()
-            .any(|name| name.starts_with("test-pack-v") && name.ends_with(expected_suffix)),
-        "expected dist/ to contain artifact ending with {expected_suffix}, found: {}",
-        names.join(", ")
-    );
-}
+use empack_tests::e2e::{TestProject, assert_dist_artifact_suffix};
 
 #[test]
 fn e2e_build_mrpack() {
     empack_tests::skip_if_no_java!();
 
-    let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
+    let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     let status = project
         .cmd()
         .args(["build", "mrpack"])
@@ -27,21 +12,22 @@ fn e2e_build_mrpack() {
         .expect("failed to spawn");
     assert!(status.success(), "empack build mrpack failed");
 
-    let dist = project.dir().join("dist");
-    assert!(dist.is_dir(), "dist/ directory not found");
-
-    let has_mrpack = std::fs::read_dir(&dist)
-        .expect("failed to read dist/")
-        .filter_map(Result::ok)
-        .any(|entry| entry.path().extension().is_some_and(|ext| ext == "mrpack"));
-    assert!(has_mrpack, "no .mrpack file found in dist/");
+    let artifact = assert_dist_artifact_suffix(project.dir(), ".mrpack");
+    assert!(
+        artifact
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("test-pack-v")),
+        "unexpected mrpack artifact path: {}",
+        artifact.display()
+    );
 }
 
 #[test]
 fn e2e_build_client_tar_gz() {
     empack_tests::skip_if_no_java!();
 
-    let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
+    let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     let status = project
         .cmd()
         .args(["build", "--format", "tar.gz", "client"])
@@ -52,17 +38,14 @@ fn e2e_build_client_tar_gz() {
         "empack build client --format tar.gz failed"
     );
 
-    let dist = project.dir().join("dist");
-    assert!(dist.is_dir(), "dist/ directory not found");
-
-    assert_dist_has_artifact(&dist, "-client.tar.gz");
+    assert_dist_artifact_suffix(project.dir(), "-client.tar.gz");
 }
 
 #[test]
 fn e2e_build_server_sevenz() {
     empack_tests::skip_if_no_java!();
 
-    let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
+    let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     let status = project
         .cmd()
         .args(["build", "--format", "7z", "server"])
@@ -70,17 +53,14 @@ fn e2e_build_server_sevenz() {
         .expect("failed to spawn");
     assert!(status.success(), "empack build server --format 7z failed");
 
-    let dist = project.dir().join("dist");
-    assert!(dist.is_dir(), "dist/ directory not found");
-
-    assert_dist_has_artifact(&dist, "-server.7z");
+    assert_dist_artifact_suffix(project.dir(), "-server.7z");
 }
 
 #[test]
 fn e2e_clean_removes_artifacts() {
     empack_tests::skip_if_no_java!();
 
-    let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
+    let project = TestProject::workflow_fixture("test-pack", "fabric", "1.21.1");
     let status = project
         .cmd()
         .args(["build", "mrpack"])
