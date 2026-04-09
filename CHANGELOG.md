@@ -3,6 +3,104 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.1 - 2026-04-09
+
+### Features
+
+- Add telemetry instrumentation with tracing-chrome and OTLP
+- Add wide structured events at command completion
+- Managed packwiz-tx binary auto-download
+- Wire --no-refresh into import and sync pipelines
+- Add adaptive resolve pacing and live output
+
+### Bug Fixes
+
+- Per-layer filtering and Chrome flush in telemetry
+- Dep-key regression, semaphore check, filter dedup
+- Stderr TTY detection and telemetry clippy in CI
+- CF key guard on cobblemon E2E, codecov PR comments, stem mismatch warn
+- Graceful skip for telemetry trace test without feature
+- Relax live import pw.toml count assertions
+- Stop swallowing import failures; add retry with backoff
+- Increase retry backoff for Modrinth 429 rate limits
+- Address P2 review findings in import pipeline
+- Lowercase pw.toml stems in diagnostic check to match derive_dep_key
+- Include custom datapack folder in pw.toml stem scan
+- Wire managed packwiz-tx binary path to all execution callsites
+- Replace reqwest::blocking with curl for packwiz-tx download
+- Use managed resolver for has_packwiz; add PATH lookup tier
+- Only use --offline when pre-resolved metadata is complete
+- Use PACKWIZ_TX_VERSION constant in requirements E2E assertion
+- Verify packwiz-tx binary works instead of comparing path strings
+- Log packwiz-tx resolution errors; silence curl progress
+- Check packwiz refresh exit code after batch operations
+- Satisfy clippy in streaming process loop
+- Tighten live issue filtering and CF pacing
+- Harden rate budget rollover accounting
+- Stage managed packwiz binary for linux
+- Preserve future budget reservations
+- Stabilize cross-platform test and packwiz flows
+- Restore shared dotenv loading
+- Break smoke pty loop on eof
+- Gate legacy loader boundaries
+- Harden runtime edge paths
+- Tighten release hardening cleanup
+
+### Testing
+
+- **(e2e)** Add live modpack import and interactive tests
+- **(e2e)** Add telemetry chrome trace verification
+- **(e2e)** Verify packwiz-tx managed binary in requirements output
+- Expand rate budget coverage
+- Expand runtime coverage across slices
+- Expand runtime coverage
+- Harden platform-specific CI coverage
+- Harden CI platform env coverage
+- Stabilize interactive ci flow
+- Split interactive pty and input coverage
+- Tighten env and import e2e guards
+- Tighten final review coverage fixes
+- Scope cli env cleanup in loader tests
+- Guard cache env overrides
+- Raise headroom for live import builds
+- Tighten final greptile cleanup
+
+### Performance
+
+- Concurrent mod resolution in import pipeline
+- Batch filesystem scans in import content loop
+- Use --offline flag to skip packwiz API calls in batch imports
+
+### Refactoring
+
+- Simplify terminal detection; delegate to console crate
+- Migrate from packwiz to packwiz-tx
+- Rename modpack-survey.py to import-smoke-test.py
+
+### CI/CD
+
+- Add telemetry feature check to lint job
+- Deduplicate PR+push runs and bump test timeout
+- Fix codecov comments, prettier coverage summary
+- Make patch coverage informational, not blocking
+- Enable telemetry feature in coverage pipeline
+- Unify push and pr concurrency keys
+- Restore original concurrency key
+
+### Maintenance
+
+- Update changelog for 0.3.0-alpha.3
+- Remove packwiz-tx from mise; will be managed binary
+- Use mise depends for binary build before test/e2e tasks
+- Gitignore python cache
+
+### Other
+
+- Revert "ci: make patch coverage informational, not blocking"
+
+This reverts commit cbf232a86604d156fd2ed6584aba41cb70b6c531
+- Format fake packwiz helper
+
 ## v0.3.0-alpha.3 - 2026-04-06
 
 ### Features
