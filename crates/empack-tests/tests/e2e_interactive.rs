@@ -1,7 +1,8 @@
 use empack_tests::e2e::{
     TestProject, assert_pack_loader_version, assert_pending_restricted_build,
     assert_project_initialized, assert_project_loader, assert_project_minecraft_version,
-    configure_fake_packwiz, empack_cmd, load_pending_restricted_build, seed_packwiz_installer_jars,
+    configure_fake_packwiz, empack_cmd, load_pending_restricted_build, seed_loader_version_cache,
+    seed_packwiz_installer_jars,
 };
 use expectrl::{Expect, Regex, Session};
 use std::path::{Path, PathBuf};
@@ -30,6 +31,12 @@ fn prepend_path(cmd: &mut Command, dir: &Path) {
     )
     .expect("join PATH");
     cmd.env("PATH", joined);
+}
+
+#[cfg(windows)]
+fn ensure_windows_pathext(cmd: &mut Command) {
+    let current = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    cmd.env("PATHEXT", current);
 }
 
 #[cfg(windows)]
@@ -202,6 +209,12 @@ fn e2e_init_interactive_prompts() {
 #[test]
 fn e2e_init_interactive_responds_to_prompts() {
     let project = TestProject::new();
+    seed_loader_version_cache(
+        project.dir(),
+        "fabric",
+        "1.21.1",
+        &["0.15.0", "0.14.21", "0.14.20"],
+    );
     let mut cmd = empack_cmd(project.dir());
     configure_fake_packwiz(&mut cmd, project.dir());
     cmd.args([
@@ -211,9 +224,11 @@ fn e2e_init_interactive_responds_to_prompts() {
         "--mc-version",
         "1.21.1",
         "--loader-version",
-        "0.18.6",
+        "0.15.0",
         "interactive-test",
     ]);
+    #[cfg(windows)]
+    ensure_windows_pathext(&mut cmd);
 
     let mut session = Session::spawn(cmd).expect("failed to spawn empack init");
     session.set_expect_timeout(Some(Duration::from_secs(30)));
@@ -249,7 +264,7 @@ fn e2e_init_interactive_responds_to_prompts() {
     assert_project_initialized(&pack_dir);
     assert_project_loader(&pack_dir, "fabric");
     assert_project_minecraft_version(&pack_dir, "1.21.1");
-    assert_pack_loader_version(&pack_dir, "fabric", "0.18.6");
+    assert_pack_loader_version(&pack_dir, "fabric", "0.15.0");
 }
 
 #[test]
@@ -266,6 +281,8 @@ fn e2e_build_restricted_browser_confirm_decline_preserves_pending_state() {
     cmd.args(["build", "client-full"]);
     cmd.env("EMPACK_PACKWIZ_BIN", fake_packwiz);
     prepend_path(&mut cmd, &fake_bin_dir);
+    #[cfg(windows)]
+    ensure_windows_pathext(&mut cmd);
 
     let mut session = Session::spawn(cmd).expect("failed to spawn empack build");
     session.set_expect_timeout(Some(Duration::from_secs(30)));
@@ -310,6 +327,8 @@ fn e2e_build_restricted_browser_confirm_accept_launches_browser_opener() {
     cmd.args(["build", "client-full"]);
     cmd.env("EMPACK_PACKWIZ_BIN", fake_packwiz);
     prepend_path(&mut cmd, &fake_bin_dir);
+    #[cfg(windows)]
+    ensure_windows_pathext(&mut cmd);
 
     let mut session = Session::spawn(cmd).expect("failed to spawn empack build");
     session.set_expect_timeout(Some(Duration::from_secs(30)));

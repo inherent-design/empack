@@ -753,22 +753,16 @@ impl<'a> VersionFetcher<'a> {
                 mc_version
             );
 
-            if !sanitized.is_empty() {
-                let cache_path = self.cache_dir.join(&cache_key);
-                if let Err(e) = self.save_to_cache(&cache_path, &sanitized) {
-                    warn!("Failed to repair NeoForge loader cache: {}", e);
-                }
-                return Ok(sanitized);
+            let repaired_versions = if sanitized.is_empty() {
+                Self::get_fallback_loader_versions("neoforge", mc_version)
+            } else {
+                sanitized
+            };
+            let cache_path = self.cache_dir.join(&cache_key);
+            if let Err(e) = self.save_to_cache(&cache_path, &repaired_versions) {
+                warn!("Failed to repair NeoForge loader cache: {}", e);
             }
-
-            let fallback = Self::get_fallback_loader_versions("neoforge", mc_version);
-            if !fallback.is_empty() {
-                let cache_path = self.cache_dir.join(&cache_key);
-                if let Err(e) = self.save_to_cache(&cache_path, &fallback) {
-                    warn!("Failed to repair NeoForge loader cache: {}", e);
-                }
-            }
-            return Ok(fallback);
+            return Ok(repaired_versions);
         }
 
         Ok(sanitized)

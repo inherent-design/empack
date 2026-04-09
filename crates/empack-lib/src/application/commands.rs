@@ -2802,16 +2802,14 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
         return Err(anyhow::anyhow!("Project initialization is incomplete"));
     }
 
-    if args.continue_build && !args.targets.is_empty() {
-        return Err(anyhow::anyhow!(
-            "empack build --continue does not accept positional targets"
-        ));
-    }
-    if args.continue_build && args.clean {
-        return Err(anyhow::anyhow!(
-            "empack build --continue cannot be combined with --clean"
-        ));
-    }
+    debug_assert!(
+        !args.continue_build || args.targets.is_empty(),
+        "clap should reject build --continue with positional targets"
+    );
+    debug_assert!(
+        !args.continue_build || !args.clean,
+        "clap should reject build --continue with --clean"
+    );
 
     if args.continue_build {
         return continue_pending_restricted_build(session, &manager.workdir, args, start).await;

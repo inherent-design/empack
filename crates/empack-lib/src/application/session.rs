@@ -539,6 +539,70 @@ impl LiveProcessProvider {
             None => Self::new(),
         }
     }
+
+    fn effective_path(&self) -> Option<std::ffi::OsString> {
+        self.custom_path
+            .as_ref()
+            .map(std::ffi::OsString::from)
+            .or_else(|| std::env::var_os("PATH"))
+    }
+
+    #[cfg(windows)]
+    fn effective_pathext(&self) -> std::ffi::OsString {
+        std::env::var_os("PATHEXT")
+            .unwrap_or_else(|| std::ffi::OsString::from(".COM;.EXE;.BAT;.CMD"))
+    }
+
+    #[cfg(windows)]
+    fn resolve_command_path(&self, command: &str) -> Option<PathBuf> {
+        let command_path = Path::new(command);
+        let command_has_parent = command_path
+            .parent()
+            .is_some_and(|parent| !parent.as_os_str().is_empty());
+        let has_extension = command_path.extension().is_some();
+
+        let candidate_paths = if command_path.is_absolute() || command_has_parent {
+            vec![command_path.to_path_buf()]
+        } else {
+            self.effective_path()
+                .into_iter()
+                .flat_map(|path| std::env::split_paths(&path))
+                .map(|dir| dir.join(command))
+                .collect::<Vec<_>>()
+        };
+
+        let pathexts = self
+            .effective_pathext()
+            .to_string_lossy()
+            .split(';')
+            .filter(|ext| !ext.is_empty())
+            .map(|ext| {
+                if ext.starts_with('.') {
+                    ext.to_string()
+                } else {
+                    format!(".{ext}")
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for candidate in candidate_paths {
+            if has_extension {
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+                continue;
+            }
+
+            for ext in &pathexts {
+                let with_ext = candidate.with_extension(ext.trim_start_matches('.'));
+                if with_ext.is_file() {
+                    return Some(with_ext);
+                }
+            }
+        }
+
+        None
+    }
 }
 
 impl Default for LiveProcessProvider {
@@ -567,11 +631,23 @@ impl ProcessProvider for LiveProcessProvider {
     ) -> Result<ProcessOutput> {
         use std::process::Command;
 
-        let mut cmd = Command::new(command);
+        #[cfg(windows)]
+        let resolved_command = self
+            .resolve_command_path(command)
+            .unwrap_or_else(|| PathBuf::from(command));
+        #[cfg(not(windows))]
+        let resolved_command = PathBuf::from(command);
+
+        let mut cmd = Command::new(&resolved_command);
         cmd.args(args).current_dir(working_dir);
 
-        if let Some(custom_path) = &self.custom_path {
-            cmd.env("PATH", custom_path);
+        if let Some(path) = self.effective_path() {
+            cmd.env("PATH", path);
+        }
+
+        #[cfg(windows)]
+        {
+            cmd.env("PATHEXT", self.effective_pathext());
         }
 
         let mut child = cmd
@@ -737,7 +813,12 @@ impl ProcessProvider for LiveProcessProvider {
 
     fn find_program(&self, program: &str) -> Option<String> {
         #[cfg(windows)]
-        let locate_cmd = "where";
+        {
+            return self
+                .resolve_command_path(program)
+                .map(|path| path.to_string_lossy().into_owned());
+        }
+
         #[cfg(not(windows))]
         let locate_cmd = "which";
 
@@ -1758,6 +1839,30 @@ mod tests {
             .expect("execute custom tool");
 
         assert_eq!(output.stdout, "custom path works");
+        assert_eq!(
+            provider
+                .find_program("hello-tool")
+                .expect("lookup hello-tool"),
+            command.to_string_lossy()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn live_process_provider_uses_custom_path_for_execution_and_lookup() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let command = temp.path().join("hello-tool.cmd");
+        write_script(&command, "@echo off\r\necho custom path works\r\n");
+        let _pathext = unsafe { EnvVarGuard::set("PATHEXT", ".CMD;.EXE;.BAT;.COM") };
+
+        let provider =
+            LiveProcessProvider::new_for_test(Some(temp.path().to_string_lossy().into_owned()));
+        let output = provider
+            .execute("hello-tool", &[], temp.path())
+            .expect("execute custom tool");
+
+        assert!(output.stdout.contains("custom path works"));
         assert_eq!(
             provider
                 .find_program("hello-tool")
