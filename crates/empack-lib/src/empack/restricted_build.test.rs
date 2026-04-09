@@ -159,12 +159,13 @@ fn restricted_cache_dir_is_stable_per_project_root() {
     assert_eq!(first, first_again);
     assert_ne!(first, second);
     assert!(first.starts_with(cache_root.path()));
-    assert!(
-        !first
-            .file_name()
-            .expect("cache dir should have hashed final component")
-            .is_empty()
-    );
+    let hashed = first
+        .file_name()
+        .expect("cache dir should have hashed final component")
+        .to_string_lossy()
+        .to_string();
+    assert_eq!(hashed.len(), 64);
+    assert_eq!(hashed, hex_sha256(first_workdir.to_string_lossy().as_bytes()));
 }
 
 #[test]
