@@ -46,6 +46,8 @@ pub struct HeaderDrivenBudget {
 }
 
 impl HeaderDrivenBudget {
+    const DEFAULT_429_RETRY_AFTER_SECS: u64 = 60;
+
     /// Create a new header-driven budget with the given initial limit.
     pub fn new(initial_limit: u32) -> Self {
         Self {
@@ -75,10 +77,10 @@ impl RateBudget for HeaderDrivenBudget {
     fn record_response(&self, headers: &HeaderMap, status: StatusCode) {
         if status == StatusCode::TOO_MANY_REQUESTS {
             self.remaining.store(0, Ordering::Relaxed);
-            if let Some(retry_after) = Self::parse_header_u64(headers, "retry-after") {
-                let new_reset = Self::now_secs() + retry_after;
-                self.reset_at.store(new_reset, Ordering::Relaxed);
-            }
+            let retry_after = Self::parse_header_u64(headers, "retry-after")
+                .unwrap_or(Self::DEFAULT_429_RETRY_AFTER_SECS);
+            let new_reset = Self::now_secs() + retry_after;
+            self.reset_at.store(new_reset, Ordering::Relaxed);
             return;
         }
 
@@ -462,8 +464,13 @@ mod tests {
     fn header_budget_429_without_retry_after() {
         let budget = HeaderDrivenBudget::new(300);
         let empty = HeaderMap::new();
+        let before = HeaderDrivenBudget::now_secs();
         budget.record_response(&empty, StatusCode::TOO_MANY_REQUESTS);
         assert!(budget.is_exhausted());
+        assert!(
+            budget.reset_at.load(Ordering::Relaxed) >= before + 60,
+            "429 without retry-after should still set a fallback reset window"
+        );
     }
 
     #[test]

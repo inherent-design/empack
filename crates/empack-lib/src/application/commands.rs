@@ -32,7 +32,7 @@ use tracing::instrument;
 /// Execute CLI commands using the new session-based architecture
 pub async fn execute_command(config: CliConfig) -> Result<()> {
     // Create command session (owns all ephemeral state)
-    let session = CommandSession::new(config.app_config);
+    let session = CommandSession::new_async(config.app_config).await;
 
     let command = match config.command {
         Some(cmd) => cmd,

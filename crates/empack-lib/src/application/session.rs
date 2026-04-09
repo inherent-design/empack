@@ -138,7 +138,26 @@ impl<'a> IssueStreamObserver<'a> {
 
     fn should_echo_stderr(line: &str) -> bool {
         let trimmed = line.trim_start();
-        !trimmed.starts_with("at ") && !trimmed.starts_with("... ")
+        !Self::looks_like_java_stack_frame(trimmed) && !trimmed.starts_with("... ")
+    }
+
+    fn looks_like_java_stack_frame(line: &str) -> bool {
+        let Some(frame) = line.strip_prefix("at ") else {
+            return false;
+        };
+
+        (frame.contains('(')
+            && frame.ends_with(')')
+            && (frame.contains(".java:")
+                || frame.ends_with("(Native Method)")
+                || frame.ends_with("(Unknown Source)")))
+            || {
+                let mut parts = frame.split_whitespace();
+                let symbol = parts.next().unwrap_or_default();
+                parts.next().is_none()
+                    && symbol.contains('.')
+                    && symbol.chars().any(|c| c.is_ascii_uppercase())
+            }
     }
 }
 
@@ -910,7 +929,16 @@ impl
         LiveInteractiveProvider,
     >
 {
-    pub fn new(app_config: AppConfig) -> Self {
+    fn resolve_packwiz_bin_path() -> String {
+        crate::platform::packwiz_bin::resolve_packwiz_binary()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "packwiz-tx binary resolution failed; falling back to PATH lookup");
+                crate::empack::packwiz::PACKWIZ_BIN.to_string()
+            })
+    }
+
+    fn build_live_session(app_config: AppConfig, packwiz_bin_path: String) -> Self {
         // Initialize display and logger systems
         let terminal_capabilities = match TerminalCapabilities::detect_from_config(app_config.color)
         {
@@ -928,15 +956,6 @@ impl
         let multi_progress = Arc::new(MultiProgress::new());
         let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
 
-        // Resolve packwiz-tx binary once at session construction.
-        // This is a blocking call that may download the binary on first use.
-        let packwiz_bin_path = crate::platform::packwiz_bin::resolve_packwiz_binary()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "packwiz-tx binary resolution failed; falling back to PATH lookup");
-                crate::empack::packwiz::PACKWIZ_BIN.to_string()
-            });
-
         Self {
             multi_progress,
             display_provider,
@@ -952,6 +971,21 @@ impl
             archive_provider: LiveArchiveProvider,
             packwiz_bin_path,
         }
+    }
+
+    pub fn new(app_config: AppConfig) -> Self {
+        let packwiz_bin_path = Self::resolve_packwiz_bin_path();
+        Self::build_live_session(app_config, packwiz_bin_path)
+    }
+
+    pub async fn new_async(app_config: AppConfig) -> Self {
+        let packwiz_bin_path = tokio::task::spawn_blocking(Self::resolve_packwiz_bin_path)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "packwiz-tx binary resolution task failed; falling back to PATH lookup");
+                crate::empack::packwiz::PACKWIZ_BIN.to_string()
+            });
+        Self::build_live_session(app_config, packwiz_bin_path)
     }
 }
 
@@ -1408,7 +1442,20 @@ mod tests {
         assert!(!IssueStreamObserver::should_echo_stderr(
             "at com.example.Main.main(Main.java:42)"
         ));
+        assert!(!IssueStreamObserver::should_echo_stderr(
+            "at com.example.Frame"
+        ));
         assert!(!IssueStreamObserver::should_echo_stderr("... 12 more"));
+    }
+
+    #[test]
+    fn issue_stream_observer_keeps_non_stack_at_prefix_stderr() {
+        assert!(IssueStreamObserver::should_echo_stderr(
+            "at line 5 of config.toml"
+        ));
+        assert!(IssueStreamObserver::should_echo_stderr(
+            "at request completion the cache was invalid"
+        ));
     }
 
     #[test]
