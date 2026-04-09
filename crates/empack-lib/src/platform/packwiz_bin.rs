@@ -36,12 +36,13 @@ pub fn resolve_packwiz_binary() -> Result<PathBuf> {
 
     // Tier 2: PATH lookup (user-installed or mise-managed)
     let path_bin = binary_name();
-    if std::process::Command::new(&path_bin)
-        .arg("--help")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok()
+    if path_contains_binary(&path_bin)
+        && std::process::Command::new(&path_bin)
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok()
     {
         tracing::debug!(binary = %path_bin, "found packwiz-tx in PATH");
         return Ok(PathBuf::from(path_bin));
@@ -354,6 +355,17 @@ fn binary_name() -> String {
     }
 }
 
+fn path_contains_binary(binary: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|paths| {
+            std::env::split_paths(&paths).any(|dir| {
+                let candidate = dir.join(binary);
+                candidate.exists() && is_executable(&candidate)
+            })
+        })
+        .unwrap_or(false)
+}
+
 /// Check whether a file has executable permission.
 #[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
@@ -478,6 +490,26 @@ mod tests {
         } else {
             assert_eq!(name, "packwiz-tx");
         }
+    }
+
+    #[test]
+    fn path_contains_binary_finds_binary_in_path() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let binary = temp.path().join(binary_name());
+        write_executable_script(&binary);
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+
+        assert!(path_contains_binary(&binary_name()));
+    }
+
+    #[test]
+    fn path_contains_binary_returns_false_when_missing() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp = TempDir::new().expect("temp dir");
+        let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
+
+        assert!(!path_contains_binary(&binary_name()));
     }
 
     #[test]
