@@ -1,4 +1,5 @@
 use super::*;
+use crate::application::session::FileSystemProvider;
 use crate::application::session::ProcessOutput;
 use crate::application::session::Session;
 use crate::application::session_mocks::{
@@ -130,6 +131,12 @@ hash = "abcd1234"
 }"#;
         filesystem
             .write_file(&template_file, template_content)
+            .map_err(|e: anyhow::Error| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
+
+        filesystem
+            .write_bytes(&templates_dir.join("icon.png"), b"\x89PNG\r\n\x1a\nmock")
             .map_err(|e: anyhow::Error| BuildError::ConfigError {
                 reason: e.to_string(),
             })?;
@@ -410,6 +417,9 @@ fn test_process_build_templates() {
     assert!(content.contains("\"author\": \"TestAuthor\""));
     assert!(content.contains("\"mcVersion\": \"1.21\""));
     assert!(content.contains("\"loaderVersion\": \"0.15.11\""));
+
+    let icon = filesystem.read_bytes(&target_dir.join("icon.png")).unwrap();
+    assert_eq!(icon, b"\x89PNG\r\n\x1a\nmock");
 }
 
 #[test]
@@ -2015,6 +2025,12 @@ fn test_build_client_copies_templates_pack_and_overrides_into_minecraft_distribu
             r#"{"name":"{{NAME}}","version":"{{VERSION}}"}"#.to_string(),
         )
         .with_file(overrides_dir.join("options.txt"), "fancy=true\n".to_string());
+    filesystem
+        .write_bytes(
+            &workdir.join("templates").join("client").join("icon.png"),
+            b"\x89PNG\r\n\x1a\nicon",
+        )
+        .unwrap();
     let session = MockCommandSession::new().with_filesystem(filesystem);
     let mut orchestrator =
         BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
@@ -2044,6 +2060,11 @@ fn test_build_client_copies_templates_pack_and_overrides_into_minecraft_distribu
         .unwrap();
     assert!(rendered.contains("\"name\":\"Test Pack\""));
     assert!(rendered.contains("\"version\":\"1.0.0\""));
+    let icon = session
+        .filesystem()
+        .read_bytes(&dist_dir.join("icon.png"))
+        .unwrap();
+    assert_eq!(icon, b"\x89PNG\r\n\x1a\nicon");
     let zip_path = workdir.join("dist").join("Test Pack-v1.0.0-client.zip");
     assert!(session.filesystem().exists(&zip_path));
 }
