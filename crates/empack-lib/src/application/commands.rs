@@ -3016,7 +3016,7 @@ async fn continue_pending_restricted_build(
     if !restricted_entries.is_empty() {
         return Err(anyhow::anyhow!(
             "{} restricted download(s) are still required after continue",
-            restricted_entries.len()
+            count_unique_restricted_mod_urls(&restricted_entries)
         ));
     }
 
@@ -3153,6 +3153,16 @@ fn collect_restricted_entries(
         .iter()
         .flat_map(|result| result.restricted_mods.iter().cloned())
         .collect()
+}
+
+fn count_unique_restricted_mod_urls(
+    entries: &[crate::empack::packwiz::RestrictedModInfo],
+) -> usize {
+    let mut seen = std::collections::HashSet::new();
+    entries
+        .iter()
+        .filter(|entry| seen.insert(entry.url.clone()))
+        .count()
 }
 
 fn restricted_download_dirs(

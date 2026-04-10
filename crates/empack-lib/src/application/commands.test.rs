@@ -126,6 +126,30 @@ mod handle_version_tests {
     }
 }
 
+mod restricted_count_helpers_tests {
+    use super::*;
+
+    #[test]
+    fn count_unique_restricted_mod_urls_deduplicates_matching_urls() {
+        let entries = vec![
+            crate::empack::RestrictedModInfo {
+                name: "OptiFine-client.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: "/tmp/dist/client-full/mods/OptiFine.jar".to_string(),
+            },
+            crate::empack::RestrictedModInfo {
+                name: "OptiFine-server.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: "/tmp/dist/server-full/mods/OptiFine.jar".to_string(),
+            },
+        ];
+
+        assert_eq!(count_unique_restricted_mod_urls(&entries), 1);
+    }
+}
+
 // ===== HANDLE_REQUIREMENTS TESTS =====
 
 mod handle_requirements_tests {
