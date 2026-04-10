@@ -177,6 +177,8 @@ pub fn validate_pending_build(
 
     for target in pending.target_list()? {
         if matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull) {
+            // Only full-build continuations skip `clean_target`, so only those targets
+            // need the preexisting dist directory to still be present.
             let target_dir = crate::empack::state::artifact_root(workdir).join(target.to_string());
             if !provider.is_directory(&target_dir) {
                 return Ok(Some(format!(
