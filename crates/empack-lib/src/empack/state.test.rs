@@ -233,6 +233,15 @@ fn create_progressive_init_test() -> (MockStateProvider, PathBuf) {
     (mock_provider, workdir)
 }
 
+fn create_pack_metadata_only_test() -> (MockStateProvider, PathBuf) {
+    let (mock_provider, workdir) = create_uninitialized_test();
+
+    mock_provider.add_directory(workdir.join("pack"));
+    mock_provider.add_file(workdir.join("pack").join("pack.toml"));
+
+    (mock_provider, workdir)
+}
+
 fn successful_process_output() -> ProcessOutput {
     ProcessOutput {
         stdout: String::new(),
@@ -339,12 +348,12 @@ async fn test_clean_transitions() {
         .unwrap();
     assert_eq!(result.state, PackState::Configured);
 
-    // Clean back to uninitialized
+    // Cleaning again is idempotent and preserves configuration
     let result = manager
         .execute_transition(&process, &packwiz, StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result.state, PackState::Uninitialized);
+    assert_eq!(result.state, PackState::Configured);
 }
 
 #[tokio::test]
@@ -392,7 +401,7 @@ fn test_state_validation() {
     let manager = PackStateManager::new(workdir, &provider);
     assert!(manager.validate_state(PackState::Built).unwrap());
 
-    // Test progressive init state is not treated as fully configured
+    // Test empack.yml-only state is not treated as fully configured
     let (provider, workdir) = create_progressive_init_test();
     let manager = PackStateManager::new(workdir, &provider);
     assert!(!manager.validate_state(PackState::Configured).unwrap());
@@ -424,6 +433,16 @@ fn test_pure_discover_state_function() {
     let (provider, workdir) = create_configured_test();
     let state = discover_state(&provider, &workdir).unwrap();
     assert_eq!(state, PackState::Configured);
+
+    // Test empack.yml-only partial state
+    let (provider, workdir) = create_progressive_init_test();
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(state, PackState::Uninitialized);
+
+    // Test pack.toml-only partial state
+    let (provider, workdir) = create_pack_metadata_only_test();
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(state, PackState::Uninitialized);
 
     // Test built state
     let (provider, workdir) = create_built_test();
@@ -501,7 +520,8 @@ async fn test_pure_execute_transition_function() {
     .unwrap();
     assert_eq!(result.state, PackState::Configured);
 
-    // Test initialize transition for progressive-init state after empack.yml exists
+    // Pure state discovery treats partial layouts as Uninitialized. Command handlers are
+    // responsible for surfacing them as incomplete projects before reaching this transition.
     let (provider, workdir) = create_progressive_init_test();
     let result = execute_transition(
         &provider,
@@ -517,9 +537,9 @@ async fn test_pure_execute_transition_function() {
             loader_version: "0.14.21",
         }),
     )
-    .await
-    .unwrap();
-    assert_eq!(result.state, PackState::Configured);
+    .await;
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().state, PackState::Configured);
 
     // Test build transition
     let workdir = mock_root().join("configured-project");
@@ -555,7 +575,7 @@ async fn test_pure_execute_transition_function() {
     let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::Clean)
         .await
         .unwrap();
-    assert_eq!(result.state, PackState::Uninitialized);
+    assert_eq!(result.state, PackState::Configured);
 }
 
 #[tokio::test]
@@ -567,6 +587,70 @@ async fn test_refresh_transition_rejects_progressive_init_state() {
     let result = execute_transition(&provider, &process, &packwiz, &workdir, StateTransition::RefreshIndex).await;
 
     assert!(matches!(result, Err(StateError::InvalidTransition { .. })));
+}
+
+#[test]
+fn test_discover_state_requires_both_empack_yml_and_pack_toml_for_configured() {
+    let (provider, workdir) = create_configured_test();
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(state, PackState::Configured);
+}
+
+#[test]
+fn test_discover_state_treats_empack_yml_only_as_uninitialized() {
+    let (provider, workdir) = create_progressive_init_test();
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(state, PackState::Uninitialized);
+}
+
+#[test]
+fn test_discover_state_treats_pack_toml_only_as_uninitialized() {
+    let (provider, workdir) = create_pack_metadata_only_test();
+    let state = discover_state(&provider, &workdir).unwrap();
+    assert_eq!(state, PackState::Uninitialized);
+}
+
+#[tokio::test]
+async fn test_clean_from_configured_preserves_project_configuration() {
+    let (provider, workdir) = create_configured_test();
+    let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
+
+    let result = execute_transition(
+        &provider,
+        &process,
+        &packwiz,
+        &workdir,
+        StateTransition::Clean,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.state, PackState::Configured);
+    assert!(provider.exists(&workdir.join("empack.yml")));
+    assert!(provider.exists(&workdir.join("pack").join("pack.toml")));
+}
+
+#[tokio::test]
+async fn test_clean_from_uninitialized_removes_stray_dist_only() {
+    let (provider, workdir) = create_uninitialized_test();
+    let process = crate::application::session_mocks::MockProcessProvider::new();
+    let packwiz = mock_packwiz_for_test();
+    provider.add_directory(artifact_root(&workdir));
+    provider.add_file(artifact_root(&workdir).join("leftover.txt"));
+
+    let result = execute_transition(
+        &provider,
+        &process,
+        &packwiz,
+        &workdir,
+        StateTransition::Clean,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.state, PackState::Uninitialized);
+    assert!(!provider.directories.borrow().contains(&artifact_root(&workdir)));
 }
 
 #[tokio::test]
@@ -699,9 +783,9 @@ fn test_pure_clean_functions() {
             .contains(&workdir.join("dist"))
     );
 
-    // Test clean_configuration
+    // Test reset_project_configuration_for_init
     let (provider, workdir) = create_configured_test();
-    let result = clean_configuration(&provider, &workdir);
+    let result = reset_project_configuration_for_init(&provider, &workdir);
     assert!(result.is_ok());
     assert!(
         !provider
@@ -973,9 +1057,9 @@ async fn test_clean_removes_marker_on_interrupted_state() {
     .await
     .unwrap();
 
-    // After cleaning an interrupted-building, the underlying state was Configured
-    // so cleaning from Configured -> Uninitialized
-    assert_eq!(result.state, PackState::Uninitialized);
+    assert_eq!(result.state, PackState::Configured);
+    assert!(provider.exists(&workdir.join("empack.yml")));
+    assert!(provider.exists(&workdir.join("pack").join("pack.toml")));
 
     // Marker file should be removed
     assert!(

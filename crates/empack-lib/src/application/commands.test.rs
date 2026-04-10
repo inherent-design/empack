@@ -504,6 +504,26 @@ mod handle_init_tests {
     }
 
     #[tokio::test]
+    async fn it_refuses_partial_existing_project_without_force() {
+        let workdir = mock_root().join("partial-existing-project");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(
+                    workdir.join("empack.yml"),
+                    "empack:\n  name: partial\n".to_string(),
+                ),
+        );
+
+        let result = handle_init(&session, &InitArgs::default()).await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("incomplete empack project metadata"));
+        assert!(session.filesystem().exists(&workdir.join("empack.yml")));
+    }
+
+    #[tokio::test]
     async fn it_overwrites_existing_with_force() {
         let workdir = mock_root().join("force-pack");
         let session = configured_session(&workdir)
@@ -540,6 +560,48 @@ mod handle_init_tests {
     }
 
     #[tokio::test]
+    async fn it_force_reinitializes_partial_projects() {
+        let workdir = mock_root().join("force-partial-pack");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_file(
+                        workdir.join("empack.yml"),
+                        "empack:\n  name: stale\n".to_string(),
+                    )
+                    .with_file(
+                        workdir.join(".empack-build-continue.json"),
+                        "{}".to_string(),
+                    )
+                    .with_file(workdir.join("notes.txt"), "keep me".to_string()),
+            )
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            &InitArgs {
+                force: true,
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Overwrite Author".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(session.filesystem().exists(&workdir.join("empack.yml")));
+        assert!(session.filesystem().exists(&workdir.join("pack").join("pack.toml")));
+        assert!(
+            !session
+                .filesystem()
+                .exists(&workdir.join(".empack-build-continue.json"))
+        );
+        assert!(session.filesystem().exists(&workdir.join("notes.txt")));
+    }
+
+    #[tokio::test]
     async fn it_force_reinitializes_built_projects_from_a_clean_state() {
         let workdir = mock_root().join("force-built-pack");
         let session = MockCommandSession::new()
@@ -565,6 +627,41 @@ mod handle_init_tests {
         assert!(result.is_ok());
         assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
         assert!(session.filesystem().exists(&workdir.join("pack").join("pack.toml")));
+    }
+
+    #[tokio::test]
+    async fn it_force_reinitializes_built_projects_without_deleting_non_project_files() {
+        let workdir = mock_root().join("force-built-pack-preserve");
+        let session = MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new()
+                    .with_current_dir(workdir.clone())
+                    .with_built_project(workdir.clone())
+                    .with_file(workdir.join("templates").join("keep.txt"), "keep".to_string())
+                    .with_file(workdir.join("README.md"), "notes".to_string()),
+            )
+            .with_interactive(MockInteractiveProvider::new().with_yes_mode(true));
+
+        let result = handle_init(
+            &session,
+            &InitArgs {
+                force: true,
+                modloader: Some("fabric".to_string()),
+                mc_version: Some("1.21.1".to_string()),
+                author: Some("Overwrite Author".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(session.filesystem().exists(&workdir.join("empack.yml")));
+        assert!(session.filesystem().exists(&workdir.join("pack").join("pack.toml")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.mrpack")));
+        assert!(!session.filesystem().exists(&workdir.join("dist").join("test-pack.zip")));
+        assert!(session.filesystem().is_directory(&workdir.join("dist")));
+        assert!(session.filesystem().exists(&workdir.join("templates").join("keep.txt")));
+        assert!(session.filesystem().exists(&workdir.join("README.md")));
     }
 
     #[tokio::test]
@@ -1066,6 +1163,37 @@ mod handle_init_from_source_tests {
             err_msg.contains("cannot detect source type") || err_msg.contains("Unrecognized"),
             "unexpected error for remote source: {err_msg}"
         );
+    }
+
+    #[tokio::test]
+    async fn it_refuses_partial_existing_project_without_force() {
+        let base_dir = mock_root().join("init-from-source-partial");
+        let target_dir = base_dir.join("target-pack");
+        let archive = create_mrpack(MR_MANIFEST_JSON);
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(base_dir)
+                .with_file(
+                    target_dir.join("empack.yml"),
+                    "empack:\n  name: partial\n".to_string(),
+                ),
+        );
+
+        let result = handle_init_from_source(
+            &session,
+            &archive.path().to_string_lossy(),
+            Some("target-pack".to_string()),
+            false,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("incomplete empack project metadata"));
+        assert!(session.filesystem().exists(&target_dir.join("empack.yml")));
     }
 
     const CF_MANIFEST_JSON: &str = r#"{
@@ -2422,6 +2550,39 @@ mod handle_add_tests {
     }
 
     #[tokio::test]
+    async fn it_rejects_partial_project_layout() {
+        let workdir = mock_root().join("add-partial-project");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(
+                    workdir.join("empack.yml"),
+                    "empack:\n  name: partial\n".to_string(),
+                ),
+        );
+
+        let result = handle_add(
+            &session,
+            vec!["test-mod".to_string()],
+            false,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Project initialization is incomplete")
+        );
+        assert!(session.process_provider.get_calls().is_empty());
+    }
+
+    #[tokio::test]
     async fn it_treats_modrinth_id_as_search_query_without_platform_flag() {
         // After removing Modrinth ID auto-detection, "AANobbMI" without --platform
         // is treated as a search query, not a direct ID lookup.
@@ -2924,6 +3085,29 @@ mod handle_remove_tests {
     }
 
     #[tokio::test]
+    async fn it_rejects_pack_metadata_only_partial_project_state() {
+        let workdir = mock_root().join("incomplete-pack-only-project");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(
+                    workdir.join("pack").join("pack.toml"),
+                    "name = \"partial\"\n".to_string(),
+                ),
+        );
+
+        let result = handle_remove(&session, vec!["sodium".to_string()], false).await;
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Project initialization is incomplete")
+        );
+    }
+
+    #[tokio::test]
     async fn it_skips_side_effects_in_dry_run() {
         let workdir = mock_root().join("configured-project");
         let mut session = configured_session(&workdir);
@@ -3307,6 +3491,30 @@ fabric = "0.16.0"
     }
 
     #[tokio::test]
+    async fn it_rejects_partial_project_layout() {
+        let workdir = mock_root().join("sync-partial-project");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(
+                    workdir.join("pack").join("pack.toml"),
+                    "name = \"partial\"\n".to_string(),
+                ),
+        );
+
+        let result = handle_sync(&session).await;
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Project initialization is incomplete")
+        );
+        assert!(session.process_provider.get_calls().is_empty());
+    }
+
+    #[tokio::test]
     async fn it_returns_error_when_all_planning_resolutions_fail() {
         // Deps with empty project_id force the resolver path, which returns errors
         let workdir = mock_root().join("all-fail-sync");
@@ -3631,6 +3839,37 @@ mod handle_build_tests {
         let result = handle_build(&session, &BuildArgs { targets: vec!["mrpack".to_string()], ..Default::default() }).await;
 
         assert!(result.is_err(), "handle_build must return Err for incomplete project state");
+        assert!(session.process_provider.get_calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn it_rejects_pack_metadata_only_project_state() {
+        let workdir = mock_root().join("incomplete-pack-metadata-project");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_file(
+                    workdir.join("pack").join("pack.toml"),
+                    "name = \"incomplete\"\n".to_string(),
+                ),
+        );
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["mrpack".to_string()],
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.is_err(), "handle_build must return Err for pack-only project state");
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Project initialization is incomplete")
+        );
         assert!(session.process_provider.get_calls().is_empty());
     }
 
@@ -4700,6 +4939,29 @@ mod handle_clean_tests {
         let result = handle_clean(&session, vec!["builds".to_string()]).await;
 
         assert!(result.is_ok(), "clean should succeed: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn it_is_safe_to_clean_builds_twice() {
+        let workdir = mock_root().join("configured-clean-twice");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_file(
+                    workdir.join("dist").join("leftover.txt"),
+                    "leftover".to_string(),
+                ),
+        );
+
+        let first = handle_clean(&session, vec!["builds".to_string()]).await;
+        let second = handle_clean(&session, vec!["builds".to_string()]).await;
+
+        assert!(first.is_ok(), "first clean should succeed: {first:?}");
+        assert!(second.is_ok(), "second clean should be a no-op success: {second:?}");
+        assert!(session.filesystem().exists(&workdir.join("empack.yml")));
+        assert!(session.filesystem().exists(&workdir.join("pack").join("pack.toml")));
+        assert!(!session.filesystem().is_directory(&workdir.join("dist")));
     }
 }
 

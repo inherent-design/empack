@@ -24,7 +24,7 @@ use crate::empack::search::SearchError;
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::empack::config::format_empack_yml;
 use tracing::instrument;
@@ -83,6 +83,69 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
         Commands::Clean { targets } => handle_clean(session, targets).await,
         Commands::Sync {} => handle_sync(session).await,
     }
+}
+
+fn report_incomplete_project(session: &dyn Session, action: &str) -> Result<()> {
+    session
+        .display()
+        .status()
+        .error("Project initialization is incomplete", "");
+    session.display().status().subtle(&format!(
+        "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before {action}",
+    ));
+    Err(anyhow::anyhow!("Project initialization is incomplete"))
+}
+
+fn ensure_configured_project(
+    session: &dyn Session,
+    workdir: &Path,
+    current_state: PackState,
+    action: &str,
+) -> Result<()> {
+    let layout = crate::empack::state::probe_project_layout(session.filesystem(), workdir);
+
+    if current_state != PackState::Uninitialized && !layout.is_configured() {
+        return report_incomplete_project(session, action);
+    }
+
+    if current_state == PackState::Uninitialized {
+        if layout.is_partial_configuration() {
+            return report_incomplete_project(session, action);
+        }
+
+        session
+            .display()
+            .status()
+            .error("Not in a modpack directory", "");
+        session
+            .display()
+            .status()
+            .subtle("   Run 'empack init' to set up a modpack project");
+        return Err(anyhow::anyhow!("Not in a modpack directory"));
+    }
+
+    Ok(())
+}
+
+fn report_incomplete_existing_project(session: &dyn Session) -> Result<()> {
+    session
+        .display()
+        .status()
+        .error("Directory contains incomplete empack project metadata", "");
+    session.display().status().subtle(
+        "   Use --force to overwrite existing files, or restore the missing empack.yml / pack metadata first",
+    );
+    Err(anyhow::anyhow!(
+        "Directory contains incomplete empack project metadata. Use --force to overwrite existing files, or restore the missing empack.yml / pack metadata first."
+    ))
+}
+
+fn reset_project_for_force_init(session: &dyn Session, workdir: &Path) -> Result<()> {
+    crate::empack::state::reset_project_for_init(session.filesystem(), workdir)
+        .context("Failed to reset existing project before initialization")?;
+    crate::empack::restricted_build::clear_pending_build(session.filesystem(), workdir)
+        .context("Failed to clear pending restricted build state before initialization")?;
+    Ok(())
 }
 
 async fn handle_requirements(session: &dyn Session) -> Result<()> {
@@ -208,41 +271,35 @@ async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
         let manager =
             crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
 
-        let mut current_state = manager.discover_state()?;
-        if current_state != PackState::Uninitialized {
-            if !args.force {
-                session
-                    .display()
-                    .status()
-                    .error("Directory already contains a modpack project", "");
-                session
-                    .display()
-                    .status()
-                    .subtle("   Use --force to overwrite existing files");
-                return Err(anyhow::anyhow!(
-                    "Directory already contains a modpack project. Use --force to overwrite existing files."
-                ));
-            }
+        let current_state = manager.discover_state()?;
+        let layout = crate::empack::state::probe_project_layout(session.filesystem(), &target_dir);
 
+        if layout.is_partial_configuration() && !args.force {
+            return report_incomplete_existing_project(session);
+        }
+
+        if current_state != PackState::Uninitialized && !args.force {
+            session
+                .display()
+                .status()
+                .error("Directory already contains a modpack project", "");
+            session
+                .display()
+                .status()
+                .subtle("   Use --force to overwrite existing files");
+            return Err(anyhow::anyhow!(
+                "Directory already contains a modpack project. Use --force to overwrite existing files."
+            ));
+        }
+
+        if args.force
+            && (current_state != PackState::Uninitialized || layout.is_partial_configuration())
+        {
             session
                 .display()
                 .status()
                 .checking("Resetting existing project state for --force init");
-
-            while current_state != PackState::Uninitialized {
-                let result = manager
-                    .execute_transition(
-                        session.process(),
-                        &*session.packwiz(),
-                        StateTransition::Clean,
-                    )
-                    .await
-                    .context("Failed to reset existing project before initialization")?;
-                for w in &result.warnings {
-                    session.display().status().warning(w);
-                }
-                current_state = result.state;
-            }
+            reset_project_for_force_init(session, &target_dir)?;
         }
     }
 
@@ -910,6 +967,12 @@ async fn handle_init_from_source(
         let manager =
             crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
         let current_state = manager.discover_state()?;
+        let layout = crate::empack::state::probe_project_layout(session.filesystem(), &target_dir);
+
+        if layout.is_partial_configuration() && !force {
+            return report_incomplete_existing_project(session);
+        }
+
         if current_state != PackState::Uninitialized && !force {
             session
                 .display()
@@ -922,6 +985,15 @@ async fn handle_init_from_source(
             return Err(anyhow::anyhow!(
                 "Directory already contains a modpack project. Use --force to overwrite."
             ));
+        }
+
+        if force && (current_state != PackState::Uninitialized || layout.is_partial_configuration())
+        {
+            session
+                .display()
+                .status()
+                .checking("Resetting existing project state for --force init");
+            reset_project_for_force_init(session, &target_dir)?;
         }
     }
 
@@ -1440,27 +1512,12 @@ async fn handle_add(
     let current_state = manager
         .discover_state()
         .map_err(|e| anyhow::anyhow!("State error: {:?}", e))?;
-    if current_state == crate::primitives::PackState::Uninitialized {
-        session
-            .display()
-            .status()
-            .error("Not in a modpack directory", "");
-        session
-            .display()
-            .status()
-            .subtle("   Run 'empack init' to set up a modpack project");
-        return Err(anyhow::anyhow!("Not in a modpack directory"));
-    }
-    if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
-        session
-            .display()
-            .status()
-            .error("Project initialization is incomplete", "");
-        session.display().status().subtle(
-            "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before adding dependencies",
-        );
-        return Err(anyhow::anyhow!("Project initialization is incomplete"));
-    }
+    ensure_configured_project(
+        session,
+        &manager.workdir,
+        current_state,
+        "adding dependencies",
+    )?;
 
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
@@ -2494,27 +2551,12 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     let manager = session.state()?;
 
     let current_state = manager.discover_state()?;
-    if current_state == PackState::Uninitialized {
-        session
-            .display()
-            .status()
-            .error("Not in a modpack directory", "");
-        session
-            .display()
-            .status()
-            .subtle("   Run 'empack init' to set up a modpack project");
-        return Err(anyhow::anyhow!("Not in a modpack directory"));
-    }
-    if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
-        session
-            .display()
-            .status()
-            .error("Project initialization is incomplete", "");
-        session.display().status().subtle(
-            "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before removing dependencies",
-        );
-        return Err(anyhow::anyhow!("Project initialization is incomplete"));
-    }
+    ensure_configured_project(
+        session,
+        &manager.workdir,
+        current_state,
+        "removing dependencies",
+    )?;
 
     session
         .display()
@@ -2780,27 +2822,7 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
 
     // Verify we're in a configured state
     let current_state = manager.discover_state()?;
-    if current_state == PackState::Uninitialized {
-        session
-            .display()
-            .status()
-            .error("Not in a modpack directory", "");
-        session
-            .display()
-            .status()
-            .subtle("   Run 'empack init' to set up a modpack project");
-        return Err(anyhow::anyhow!("Not in a modpack directory"));
-    }
-    if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
-        session
-            .display()
-            .status()
-            .error("Project initialization is incomplete", "");
-        session.display().status().subtle(
-            "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before building",
-        );
-        return Err(anyhow::anyhow!("Project initialization is incomplete"));
-    }
+    ensure_configured_project(session, &manager.workdir, current_state, "building")?;
 
     debug_assert!(
         !args.continue_build || args.targets.is_empty(),
@@ -3345,27 +3367,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     // Verify we're in a configured state
     let current_state = manager.discover_state()?;
-    if current_state == PackState::Uninitialized {
-        session
-            .display()
-            .status()
-            .error("Not in a modpack directory", "");
-        session
-            .display()
-            .status()
-            .subtle("   Run 'empack init' to set up a modpack project");
-        return Err(anyhow::anyhow!("Not in a modpack directory"));
-    }
-    if current_state == PackState::Configured && !manager.validate_state(PackState::Configured)? {
-        session
-            .display()
-            .status()
-            .error("Project initialization is incomplete", "");
-        session.display().status().subtle(
-            "   Re-run 'empack init --force' to restore empack.yml and pack/ metadata before synchronizing",
-        );
-        return Err(anyhow::anyhow!("Project initialization is incomplete"));
-    }
+    ensure_configured_project(session, &manager.workdir, current_state, "synchronizing")?;
 
     let workdir = manager.workdir.clone();
     let config_manager = session.filesystem().config_manager(workdir.clone());
