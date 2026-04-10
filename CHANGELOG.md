@@ -3,6 +3,33 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.2 - 2026-04-10
+
+### Features
+
+- Land smoke continuation and coverage hardening
+
+### Bug Fixes
+
+- Harden windows e2e and cleanup
+- Repair session command resolution build
+- Tighten continue build cli contract
+- Dedupe post-continue restricted counts
+- Copy binary build template assets
+
+### Testing
+
+- Relax windows path casing assertion
+- Stabilize direct download wrapper failures
+
+### Documentation
+
+- Regenerate specs and align runtime docs
+
+### Maintenance
+
+- Update changelog for 0.4.0-alpha.1
+
 ## v0.4.0-alpha.1 - 2026-04-09
 
 ### Features
