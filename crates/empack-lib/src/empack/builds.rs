@@ -1649,35 +1649,72 @@ impl<'a> BuildOrchestrator<'a> {
             if !self.session.filesystem().is_directory(&path) {
                 let raw_name = path.file_name().unwrap();
                 let filename = raw_name.to_string_lossy();
-                let target_file = if let Some(stripped) = filename.strip_suffix(".template") {
-                    target_dir.join(stripped)
-                } else {
-                    target_dir.join(&*filename)
-                };
+                if let Some(stripped) = filename.strip_suffix(".template") {
+                    let target_file = target_dir.join(stripped);
+                    let content = self
+                        .session
+                        .filesystem()
+                        .read_to_string(&path)
+                        .map_err(|e| BuildError::ConfigError {
+                            reason: e.to_string(),
+                        })?;
 
-                let content = self
-                    .session
-                    .filesystem()
-                    .read_to_string(&path)
-                    .map_err(|e| BuildError::ConfigError {
-                        reason: e.to_string(),
-                    })?;
+                    let processed = self
+                        .template_engine
+                        .as_ref()
+                        .unwrap()
+                        .render_string(&content)
+                        .map_err(|e| BuildError::ConfigError {
+                            reason: format!("Template rendering failed for {}: {}", filename, e),
+                        })?;
 
-                let processed = self
-                    .template_engine
-                    .as_ref()
-                    .unwrap()
-                    .render_string(&content)
-                    .map_err(|e| BuildError::ConfigError {
-                        reason: format!("Template rendering failed for {}: {}", filename, e),
-                    })?;
+                    self.session
+                        .filesystem()
+                        .write_file(&target_file, &processed)
+                        .map_err(|e| BuildError::ConfigError {
+                            reason: e.to_string(),
+                        })?;
+                    continue;
+                }
 
-                self.session
-                    .filesystem()
-                    .write_file(&target_file, &processed)
-                    .map_err(|e| BuildError::ConfigError {
-                        reason: e.to_string(),
-                    })?;
+                let target_file = target_dir.join(&*filename);
+                match self.session.filesystem().read_to_string(&path) {
+                    Ok(content) => {
+                        let processed = self
+                            .template_engine
+                            .as_ref()
+                            .unwrap()
+                            .render_string(&content)
+                            .map_err(|e| BuildError::ConfigError {
+                                reason: format!(
+                                    "Template rendering failed for {}: {}",
+                                    filename, e
+                                ),
+                            })?;
+
+                        self.session
+                            .filesystem()
+                            .write_file(&target_file, &processed)
+                            .map_err(|e| BuildError::ConfigError {
+                                reason: e.to_string(),
+                            })?;
+                    }
+                    Err(_) => {
+                        let bytes = self
+                            .session
+                            .filesystem()
+                            .read_bytes(&path)
+                            .map_err(|e| BuildError::ConfigError {
+                                reason: e.to_string(),
+                            })?;
+                        self.session
+                            .filesystem()
+                            .write_bytes(&target_file, &bytes)
+                            .map_err(|e| BuildError::ConfigError {
+                                reason: e.to_string(),
+                            })?;
+                    }
+                }
             }
         }
 
