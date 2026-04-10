@@ -2,7 +2,7 @@
 spec: state-machine
 status: draft
 created: 2026-04-04
-updated: 2026-04-08
+updated: 2026-04-10
 depends: [overview, types]
 ---
 
@@ -18,10 +18,12 @@ Discovery order matters:
 | --- | --- | --- |
 | 1 | `.empack-state` exists and contains `building` or `cleaning` | `Interrupted { was: Building | Cleaning }` |
 | 2 | `dist/` contains canonical build artifacts | `Built` |
-| 3 | `empack.yml` exists or `pack/pack.toml` exists | `Configured` |
+| 3 | `empack.yml` exists and `pack/pack.toml` exists | `Configured` |
 | 4 | none of the above | `Uninitialized` |
 
-`validate_state()` is stricter than `discover_state()`. It checks the expected layout for the requested state, not just a minimal presence signal.
+Directories with only one core metadata artifact are treated as `Uninitialized` for state discovery. Command handlers may still surface those layouts as incomplete initialization rather than as generic non-project directories.
+
+`validate_state()` checks the expected layout for the requested state.
 
 ## Layout Rules
 
@@ -42,13 +44,13 @@ Configured -> Configured        RefreshIndex
 Configured -> Built             Build
 Built -> Built                  Build
 Built -> Configured             Clean
-Configured -> Uninitialized     Clean
+Configured -> Configured        Clean
 Interrupted(Building) -> Built  Build
 Interrupted(Building) -> Configured  RefreshIndex or Clean
 Interrupted(Cleaning) -> Configured or Uninitialized  Clean recovery
 ```
 
-`Initialize` from `Configured` is allowed only for progressive re-initialization. That path requires `empack.yml` without full pack metadata or build artifacts.
+`Initialize` is the pure `Uninitialized -> Configured` transition. `init --force` performs an explicit command-layer reset of project core files before calling the state transition.
 
 ## Marker Transitions
 
@@ -74,6 +76,7 @@ Current behavior:
 - `run_packwiz_init()` populates `pack/pack.toml` and related packwiz files.
 - Failure during initialization cleans partial configuration where possible.
 - Template scaffolding is not part of the pure state transition. Command handlers install templates after the transition succeeds.
+- `init --force` resets `empack.yml`, `pack/`, markers, and `dist/` explicitly before initialization. That reset is not part of the `Clean` state transition.
 
 ### Refresh Index
 
@@ -89,15 +92,18 @@ Successful build returns `Built`.
 
 ### Clean
 
-`Clean` has two current behaviors:
+`Clean` is a non-destructive, idempotent build-artifact cleanup transition.
 
 | Starting state | Behavior | Result |
 | --- | --- | --- |
 | `Built` | Remove build artifacts from `dist/` | `Configured` |
-| `Configured` | Remove `empack.yml` and `pack/` | `Uninitialized` |
+| `Configured` | Remove build artifacts from `dist/` if present | `Configured` |
+| `Uninitialized` | Remove stray build artifacts from `dist/` if present | `Uninitialized` |
 
 Additional clean rules:
 
 - `Clean` from `Uninitialized` is idempotent.
-- `Clean` from `Interrupted { .. }` removes the marker first, then re-discovers the underlying filesystem state and cleans accordingly.
+- `Clean` from `Interrupted { .. }` removes the marker first, removes `dist/` if present, then re-discovers the underlying filesystem state.
+- `Clean` never removes `empack.yml`.
+- `Clean` never removes `pack/`.
 - `clean --cache` is a command-layer operation. It is not part of the `PackState` transition model.

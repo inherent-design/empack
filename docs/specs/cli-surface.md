@@ -192,3 +192,5 @@ empack clean [TARGET]...
 | `all` | Clean both builds and cache |
 
 If no clean target is provided, the command treats the request as `builds`.
+
+`clean` never removes project metadata such as `empack.yml` or `pack/`.

@@ -23,6 +23,23 @@ pub fn artifact_root(workdir: &Path) -> PathBuf {
     workdir.join("dist")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProjectLayoutProbe {
+    pub has_empack_yml: bool,
+    pub has_pack_metadata: bool,
+    pub has_build_artifacts: bool,
+}
+
+impl ProjectLayoutProbe {
+    pub(crate) fn is_configured(self) -> bool {
+        self.has_empack_yml && self.has_pack_metadata
+    }
+
+    pub(crate) fn is_partial_configuration(self) -> bool {
+        self.has_empack_yml ^ self.has_pack_metadata
+    }
+}
+
 fn has_config_file<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
@@ -46,13 +63,15 @@ fn has_canonical_build_artifacts<P: crate::application::session::FileSystemProvi
     provider.is_directory(&dist_dir) && provider.has_build_artifacts(&dist_dir).unwrap_or(false)
 }
 
-fn is_progressive_init_state<P: crate::application::session::FileSystemProvider + ?Sized>(
+pub(crate) fn probe_project_layout<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
-) -> bool {
-    has_config_file(provider, workdir)
-        && !has_pack_metadata(provider, workdir)
-        && !has_canonical_build_artifacts(provider, workdir)
+) -> ProjectLayoutProbe {
+    ProjectLayoutProbe {
+        has_empack_yml: has_config_file(provider, workdir),
+        has_pack_metadata: has_pack_metadata(provider, workdir),
+        has_build_artifacts: has_canonical_build_artifacts(provider, workdir),
+    }
 }
 
 fn validate_state_layout<P: crate::application::session::FileSystemProvider + ?Sized>(
@@ -60,15 +79,11 @@ fn validate_state_layout<P: crate::application::session::FileSystemProvider + ?S
     workdir: &Path,
     expected: &PackState,
 ) -> bool {
+    let layout = probe_project_layout(provider, workdir);
     match expected {
         PackState::Uninitialized => true,
-        PackState::Configured | PackState::Building => {
-            has_config_file(provider, workdir) && has_pack_metadata(provider, workdir)
-        }
-        PackState::Built => {
-            validate_state_layout(provider, workdir, &PackState::Configured)
-                && has_canonical_build_artifacts(provider, workdir)
-        }
+        PackState::Configured | PackState::Building => layout.is_configured(),
+        PackState::Built => layout.is_configured() && layout.has_build_artifacts,
         PackState::Cleaning => provider.is_directory(&artifact_root(workdir)),
         PackState::Interrupted { was } => {
             let mut inner = was.as_ref();
@@ -112,18 +127,15 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
         });
     }
 
-    let empack_yml = workdir.join("empack.yml");
-    let pack_toml = workdir.join("pack").join("pack.toml");
-    let dist_dir = artifact_root(workdir);
+    let layout = probe_project_layout(provider, workdir);
 
     // Check for built state first (most advanced)
-    if provider.is_directory(&dist_dir) && provider.has_build_artifacts(&dist_dir).unwrap_or(false)
-    {
+    if layout.has_build_artifacts {
         return Ok(PackState::Built);
     }
 
-    // Check for configured state via direct exists() calls
-    if provider.exists(&empack_yml) || provider.exists(&pack_toml) {
+    // Configured requires both empack.yml and pack/pack.toml.
+    if layout.is_configured() {
         return Ok(PackState::Configured);
     }
 
@@ -135,9 +147,8 @@ pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Size
 /// Use for tests, UI queries ("can I show a build button?"), and advisory checks.
 pub fn can_transition(from: &PackState, kind: TransitionKind) -> bool {
     match (from, kind) {
-        // Initialize: from Uninitialized always, from Configured needs layout (handled by _with_layout)
+        // Initialize: only from Uninitialized
         (PackState::Uninitialized, TransitionKind::Initialize) => true,
-        (PackState::Configured, TransitionKind::Initialize) => true,
 
         // RefreshIndex: must be Configured, or recovering from interrupted build
         (PackState::Configured, TransitionKind::RefreshIndex) => true,
@@ -180,12 +191,11 @@ pub fn can_transition_with_layout(
     match (from, kind) {
         // Initialize from Uninitialized is always valid (fresh init, no layout to check)
         (PackState::Uninitialized, TransitionKind::Initialize) => true,
-        // Progressive re-init from Configured needs layout validation
-        (_, TransitionKind::Initialize) => layout_ok(from),
         (_, TransitionKind::RefreshIndex) => layout_ok(from),
         (_, TransitionKind::Build) => layout_ok(from),
         // Clean transitions skip layout validation
         (_, TransitionKind::Clean) => true,
+        _ => false,
     }
 }
 
@@ -313,9 +323,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
 
     match transition {
         StateTransition::Initialize(config) => {
-            // Progressive init needs a layout check beyond the whitelist:
-            // only allow re-init when no pack metadata or build artifacts exist yet.
-            let layout_ok = |_state: &PackState| is_progressive_init_state(provider, workdir);
+            let layout_ok = |_state: &PackState| true;
             if !can_transition_with_layout(&current, TransitionKind::Initialize, &layout_ok) {
                 return Err(StateError::InvalidTransition {
                     from: current,
@@ -383,28 +391,21 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                     no_warnings(PackState::Configured)
                 }
                 PackState::Configured => {
-                    clean_configuration(provider, workdir)?;
+                    clean_build_artifacts(provider, workdir)?;
                     remove_state_marker(provider, workdir)?;
+                    no_warnings(PackState::Configured)
+                }
+                PackState::Uninitialized => {
+                    clean_build_artifacts(provider, workdir)?;
                     no_warnings(PackState::Uninitialized)
                 }
-                PackState::Uninitialized => no_warnings(PackState::Uninitialized),
                 PackState::Interrupted { .. } => {
-                    // Recovery: remove the marker and clean from the underlying state
+                    // Clean recovery is intentionally non-destructive. It clears transient
+                    // state and then re-discovers whether the project is still configured.
                     remove_state_marker(provider, workdir)?;
-                    // After removing the marker, re-discover the actual filesystem state
+                    clean_build_artifacts(provider, workdir)?;
                     let recovered = discover_state(provider, workdir)?;
-                    match recovered {
-                        PackState::Built => {
-                            clean_build_artifacts(provider, workdir)?;
-                            no_warnings(PackState::Configured)
-                        }
-                        PackState::Configured => {
-                            clean_configuration(provider, workdir)?;
-                            no_warnings(PackState::Uninitialized)
-                        }
-                        PackState::Uninitialized => no_warnings(PackState::Uninitialized),
-                        _ => no_warnings(recovered),
-                    }
+                    no_warnings(recovered)
                 }
                 PackState::Building | PackState::Cleaning => {
                     unreachable!("can_transition rejects Building/Cleaning for Clean")
@@ -429,7 +430,7 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
 ) -> Result<PackState, StateError> {
     // Create basic directory structure
     create_initial_structure(provider, workdir).inspect_err(|_| {
-        let _ = clean_configuration(provider, workdir);
+        let _ = reset_project_configuration_for_init(provider, workdir);
     })?;
 
     // Generate empack.yml via config.rs using session provider (only if it doesn't exist)
@@ -439,13 +440,13 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
         let default_yml = config_manager
             .generate_default_empack_yml()
             .inspect_err(|_| {
-                let _ = clean_configuration(provider, workdir);
+                let _ = reset_project_configuration_for_init(provider, workdir);
             })?;
 
         provider
             .write_file(&empack_yml, &default_yml)
             .inspect_err(|_| {
-                clean_configuration(provider, workdir).ok(); // Cleanup on failure
+                reset_project_configuration_for_init(provider, workdir).ok(); // Cleanup on failure
             })
             .context("Failed to write empack.yml")?;
     }
@@ -462,7 +463,7 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
             loader_version,
         )
         .inspect_err(|_| {
-            let _ = clean_configuration(provider, workdir);
+            let _ = reset_project_configuration_for_init(provider, workdir);
         })?;
 
     Ok(PackState::Configured)
@@ -537,8 +538,10 @@ pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider 
     Ok(())
 }
 
-/// Clean configuration files (pure function)
-pub fn clean_configuration<P: crate::application::session::FileSystemProvider + ?Sized>(
+/// Reset core project configuration for an init/rollback flow (pure function)
+pub fn reset_project_configuration_for_init<
+    P: crate::application::session::FileSystemProvider + ?Sized,
+>(
     provider: &P,
     workdir: &Path,
 ) -> Result<(), StateError> {
@@ -557,6 +560,23 @@ pub fn clean_configuration<P: crate::application::session::FileSystemProvider + 
     }
 
     Ok(())
+}
+
+pub(crate) fn reset_project_for_init<
+    P: crate::application::session::FileSystemProvider + ?Sized,
+>(
+    provider: &P,
+    workdir: &Path,
+) -> Result<(), StateError> {
+    let marker_path = workdir.join(STATE_MARKER_FILE);
+    if provider.exists(&marker_path) {
+        provider
+            .remove_file(&marker_path)
+            .context("Failed to remove state marker file")?;
+    }
+
+    clean_build_artifacts(provider, workdir)?;
+    reset_project_configuration_for_init(provider, workdir)
 }
 
 /// Filesystem state machine for modpack development

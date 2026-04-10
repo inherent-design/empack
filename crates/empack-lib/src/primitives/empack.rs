@@ -95,9 +95,9 @@ impl std::str::FromStr for BuildTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PackState {
-    /// No empack.yml or pack/ directory exists
+    /// No valid empack modpack layout is present
     Uninitialized,
-    /// empack.yml exists, pack/ may be initialized
+    /// Both empack.yml and pack/pack.toml exist
     Configured,
     /// Built artifacts exist in the project-local dist/ artifact root
     Built,
@@ -132,7 +132,7 @@ pub enum TransitionKind {
     RefreshIndex,
     /// Configured/Built -> Built (full build)
     Build,
-    /// Built -> Configured or Configured -> Uninitialized
+    /// Non-destructive build-artifact cleanup; idempotent when nothing is built
     Clean,
 }
 
