@@ -469,6 +469,7 @@ pub struct MockNetworkProvider {
     pub resolver_calls: Arc<Mutex<Vec<ResolverCall>>>,
     pub mock_resolver: Arc<MockProjectResolver>,
     fail_http_client: bool,
+    http_timeout: std::time::Duration,
     rate_budgets: crate::networking::rate_budget::HostBudgetRegistry,
 }
 
@@ -479,6 +480,7 @@ impl MockNetworkProvider {
             resolver_calls: Arc::new(Mutex::new(Vec::new())),
             mock_resolver: Arc::new(MockProjectResolver::new()),
             fail_http_client: false,
+            http_timeout: std::time::Duration::from_secs(5),
             rate_budgets: crate::networking::rate_budget::HostBudgetRegistry::empty(),
         }
     }
@@ -490,6 +492,11 @@ impl MockNetworkProvider {
 
     pub fn enable_http_client(mut self) -> Self {
         self.fail_http_client = false;
+        self
+    }
+
+    pub fn with_http_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.http_timeout = timeout;
         self
     }
 
@@ -525,7 +532,7 @@ impl NetworkProvider for MockNetworkProvider {
             return Err(anyhow::anyhow!("Mock HTTP client unavailable (test mode)"));
         }
         Client::builder()
-            .timeout(std::time::Duration::from_millis(1))
+            .timeout(self.http_timeout)
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))
     }
@@ -1630,6 +1637,13 @@ mod tests {
                 .to_string()
                 .contains("Mock HTTP client unavailable (test mode)")
         );
+    }
+
+    #[test]
+    fn test_mock_network_provider_http_timeout_builder_creates_client() {
+        let provider =
+            MockNetworkProvider::new().with_http_timeout(std::time::Duration::from_secs(5));
+        assert!(provider.http_client().is_ok());
     }
 
     #[test]

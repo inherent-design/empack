@@ -2030,7 +2030,11 @@ mod handle_direct_download_jar_tests {
 
         let workdir = mock_root().join("direct-download-wrapper-failure");
         let session = configured_direct_download_session(&workdir)
-            .with_network(MockNetworkProvider::new().enable_http_client());
+            .with_network(
+                MockNetworkProvider::new()
+                    .enable_http_client()
+                    .with_http_timeout(std::time::Duration::from_secs(5)),
+            );
         let resolver = MockProjectResolver::new();
 
         let err = handle_direct_download_jar(
@@ -2042,7 +2046,8 @@ mod handle_direct_download_jar_tests {
         .err()
         .expect("download failure should propagate through wrapper");
 
-        assert!(err.to_string().contains("HTTP 404"));
+        assert!(err.chain().any(|cause| cause.to_string().contains("404")));
+        assert!(err.to_string().contains("missing.jar"));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
