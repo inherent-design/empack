@@ -3318,7 +3318,9 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
         let dist_dir = crate::empack::state::artifact_root(&manager.workdir);
         let has_dist = session.filesystem().is_directory(&dist_dir);
 
-        if current_state == PackState::Built {
+        if current_state == PackState::Built
+            || matches!(current_state, PackState::Interrupted { .. })
+        {
             let result = manager
                 .execute_transition(
                     session.process(),
