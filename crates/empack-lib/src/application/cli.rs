@@ -151,7 +151,12 @@ pub struct BuildArgs {
     pub clean: bool,
 
     /// Archive format for distribution packages
-    #[arg(long, value_enum, default_value = "zip")]
+    #[arg(
+        long,
+        value_enum,
+        default_value = "zip",
+        conflicts_with = "continue_build"
+    )]
     pub format: CliArchiveFormat,
 
     /// Directory to scan for manually downloaded restricted mods
@@ -551,6 +556,19 @@ mod tests {
         let rendered = err.to_string();
         assert!(rendered.contains("cannot be used with"));
         assert!(rendered.contains("--clean"));
+    }
+
+    #[test]
+    fn cli_config_load_from_rejects_build_continue_with_format() {
+        let result = CliConfig::load_from(["empack", "build", "--continue", "--format", "tar.gz"]);
+
+        let err = match result {
+            Ok(_) => panic!("continue build with format should fail at parse time"),
+            Err(err) => err,
+        };
+        let rendered = err.to_string();
+        assert!(rendered.contains("cannot be used with"));
+        assert!(rendered.contains("--format"));
     }
 
     #[test]
