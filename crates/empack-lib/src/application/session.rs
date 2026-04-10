@@ -1863,12 +1863,9 @@ mod tests {
             .expect("execute custom tool");
 
         assert!(output.stdout.contains("custom path works"));
-        assert_eq!(
-            provider
-                .find_program("hello-tool")
-                .expect("lookup hello-tool"),
-            command.to_string_lossy()
-        );
+        // Windows command lookup is case-insensitive and may reflect PATHEXT casing.
+        let found = provider.find_program("hello-tool").expect("lookup hello-tool");
+        assert!(found.eq_ignore_ascii_case(&command.to_string_lossy()));
     }
 
     #[cfg(unix)]
