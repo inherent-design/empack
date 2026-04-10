@@ -218,8 +218,8 @@ async fn test_init_existing_project_error() -> Result<()> {
     );
     let err_msg = result.unwrap_err().to_string();
     assert!(
-        err_msg.contains("already contains a modpack project"),
-        "Error should mention existing project: {}",
+        err_msg.contains("incomplete empack project metadata"),
+        "Error should mention incomplete project metadata: {}",
         err_msg
     );
 

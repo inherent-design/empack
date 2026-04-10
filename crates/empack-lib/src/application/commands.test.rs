@@ -4942,6 +4942,30 @@ mod handle_clean_tests {
     }
 
     #[tokio::test]
+    async fn it_recovers_interrupted_state_by_removing_marker() {
+        let workdir = mock_root().join("interrupted-clean-recovery");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_file(
+                    workdir.join(".empack-state"),
+                    "building".to_string(),
+                ),
+        );
+
+        let result = handle_clean(&session, vec!["builds".to_string()]).await;
+
+        assert!(result.is_ok(), "clean should recover interrupted state: {result:?}");
+        assert!(
+            !session.filesystem().exists(&workdir.join(".empack-state")),
+            "clean should remove the interruption marker"
+        );
+        assert!(session.filesystem().exists(&workdir.join("empack.yml")));
+        assert!(session.filesystem().exists(&workdir.join("pack").join("pack.toml")));
+    }
+
+    #[tokio::test]
     async fn it_is_safe_to_clean_builds_twice() {
         let workdir = mock_root().join("configured-clean-twice");
         let session = MockCommandSession::new().with_filesystem(
