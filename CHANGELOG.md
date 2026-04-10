@@ -3,6 +3,17 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.3 - 2026-04-10
+
+### Bug Fixes
+
+- Make clean non-destructive
+- Recover interrupted clean state
+
+### Maintenance
+
+- Update changelog for 0.4.0-alpha.2
+
 ## v0.4.0-alpha.2 - 2026-04-10
 
 ### Features
