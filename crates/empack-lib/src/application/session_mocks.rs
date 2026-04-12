@@ -60,6 +60,8 @@ pub struct MockFileSystemProvider {
     pub directories: Arc<Mutex<HashSet<PathBuf>>>,
     /// Files to auto-create when a matching directory is created via `create_dir_all`.
     pub deferred_files: DeferredFileMap,
+    /// Path-specific write failures injected by tests.
+    pub write_failures: Arc<Mutex<HashMap<PathBuf, String>>>,
 }
 
 impl MockFileSystemProvider {
@@ -73,6 +75,7 @@ impl MockFileSystemProvider {
             binary_files: Arc::new(Mutex::new(HashMap::new())),
             directories: Arc::new(Mutex::new(HashSet::new())),
             deferred_files: Arc::new(Mutex::new(HashMap::new())),
+            write_failures: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -135,6 +138,18 @@ impl MockFileSystemProvider {
             .entry(directory)
             .or_default()
             .push((filename, content));
+    }
+
+    pub fn with_write_failure(self, path: PathBuf, message: impl Into<String>) -> Self {
+        self.add_write_failure(path, message);
+        self
+    }
+
+    pub fn add_write_failure(&self, path: PathBuf, message: impl Into<String>) {
+        self.write_failures
+            .lock()
+            .unwrap()
+            .insert(path, message.into());
     }
 
     pub fn with_empack_project(
@@ -354,6 +369,9 @@ impl FileSystemProvider for MockFileSystemProvider {
     }
 
     fn write_file(&self, path: &std::path::Path, content: &str) -> Result<()> {
+        if let Some(message) = self.write_failures.lock().unwrap().get(path).cloned() {
+            return Err(anyhow::anyhow!(message));
+        }
         if let Some(parent) = path.parent() {
             let mut directories = self.directories.lock().unwrap();
             let mut current = Some(parent);

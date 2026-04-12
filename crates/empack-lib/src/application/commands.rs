@@ -2948,17 +2948,26 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                 ));
             }
 
-            if let Err(e) = config_manager.remove_dependency(&dependency_key) {
-                session
-                    .display()
-                    .status()
-                    .warning(&format!("Failed to update empack.yml: {}", e));
+            match config_manager.remove_dependency(&dependency_key) {
+                Ok(_) => {
+                    session
+                        .display()
+                        .status()
+                        .success("Successfully removed tracked local dependency", "");
+                    removed_mods.push(mod_name);
+                }
+                Err(e) => {
+                    let detail = format!(
+                        "Local file was removed, but empack.yml still contains '{}'. Fix the write error and rerun 'empack remove {}': {}",
+                        dependency_key, dependency_key, e
+                    );
+                    session
+                        .display()
+                        .status()
+                        .error("Failed to update empack.yml", &detail);
+                    failed_mods.push((mod_name, detail));
+                }
             }
-            session
-                .display()
-                .status()
-                .success("Successfully removed tracked local dependency", "");
-            removed_mods.push(mod_name);
             continue;
         }
 

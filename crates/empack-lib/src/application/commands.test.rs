@@ -7180,6 +7180,76 @@ mod tracked_local_dependency_tests {
     }
 
     #[tokio::test]
+    async fn remove_local_dependency_fails_when_config_write_fails_after_file_deletion() {
+        let workdir = mock_root().join("remove-local-dependency-config-write-failure");
+        let relative_path = "pack/resourcepacks/example-pack.zip";
+        let absolute_path = workdir.join(relative_path);
+        let bytes = b"resourcepack-bytes".to_vec();
+        let sha256 = compute_sha256_hex_for_bytes(&bytes);
+
+        let filesystem = MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone())
+            .with_binary_file(absolute_path.clone(), bytes);
+        let session = MockCommandSession::new().with_filesystem(filesystem);
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: relative_path.to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256,
+                }),
+            )
+            .expect("add local dependency");
+
+        session.filesystem_provider.add_write_failure(
+            workdir.join("empack.yml"),
+            "simulated empack.yml write failure",
+        );
+
+        let error = handle_remove(&session, vec!["example-pack".to_string()], false)
+            .await
+            .expect_err("config write failure should fail tracked local removal");
+
+        assert!(
+            !session.filesystem().exists(&absolute_path),
+            "tracked local file should still be deleted before config write failure"
+        );
+        assert!(
+            session
+                .filesystem()
+                .config_manager(workdir.clone())
+                .find_dependency("example-pack")
+                .expect("read config after failed update")
+                .is_some(),
+            "local dependency should remain in empack.yml when the write fails"
+        );
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+                .is_empty(),
+            "tracked local removal should not invoke packwiz"
+        );
+        let error_text = error.to_string();
+        assert!(
+            error_text.contains("Local file was removed, but empack.yml still contains 'example-pack'"),
+            "unexpected error: {error_text}"
+        );
+        assert!(
+            error_text.contains("empack remove example-pack"),
+            "unexpected error: {error_text}"
+        );
+    }
+
+    #[tokio::test]
     async fn sync_fails_when_tracked_local_dependency_is_missing() {
         let workdir = mock_root().join("sync-local-dependency-missing");
         let session = MockCommandSession::new().with_filesystem(

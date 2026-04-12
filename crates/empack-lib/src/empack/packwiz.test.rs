@@ -1678,6 +1678,48 @@ Once you have done so, place these files in /Users/test/Library/Caches/packwiz/c
 }
 
 #[test]
+fn test_parse_export_restricted_output_ignores_ss3_sequences() {
+    let output = "\
+Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
+Bee Fix (BeeFix-1.20-1.0.7.jar)\u{1b}O from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962
+Once you have done so, place these files in /Users/test/Library/Caches/packwiz/cache/import and re-run this command.";
+
+    let results = parse_export_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "Bee Fix");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
+    );
+    assert_eq!(
+        results[0].dest_path,
+        "/Users/test/Library/Caches/packwiz/cache/import/BeeFix-1.20-1.0.7.jar"
+    );
+}
+
+#[test]
+fn test_parse_export_restricted_output_ignores_osc_sequences() {
+    let output = "\
+Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
+Bee Fix (BeeFix-1.20-1.0.7.jar)\u{1b}]0;packwiz\u{0007} from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962
+Once you have done so, place these files in /Users/test/Library/Caches/packwiz/cache/import and re-run this command.";
+
+    let results = parse_export_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "Bee Fix");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
+    );
+    assert_eq!(
+        results[0].dest_path,
+        "/Users/test/Library/Caches/packwiz/cache/import/BeeFix-1.20-1.0.7.jar"
+    );
+}
+
+#[test]
 fn test_parse_export_restricted_output_requires_import_dir_line() {
     let output = "\
 Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
