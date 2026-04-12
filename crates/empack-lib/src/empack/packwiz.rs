@@ -1100,7 +1100,7 @@ pub(crate) fn parse_export_restricted_output(output: &str) -> Vec<RestrictedModI
 
     let mut remaining = items_start.trim();
     while !remaining.is_empty() {
-        let Some(from_idx) = remaining.find(") from http") else {
+        let Some(from_idx) = remaining.find(") from ") else {
             break;
         };
 

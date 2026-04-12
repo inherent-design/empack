@@ -141,7 +141,7 @@ fn classify_message(message: &str) -> EmpackExitCode {
         || normalized.contains("failed to create http client")
         || normalized.contains("error sending request for url")
         || normalized.contains("failed to connect to")
-        || normalized.starts_with("http ")
+        || normalized.contains("http error:")
     {
         return EmpackExitCode::Network;
     }
@@ -216,5 +216,11 @@ mod tests {
     fn classify_error_uses_message_fallback_for_project_state_strings() {
         let error = anyhow::anyhow!("Not in a modpack directory");
         assert_eq!(classify_error(&error), EmpackExitCode::Usage);
+    }
+
+    #[test]
+    fn classify_error_does_not_overclassify_generic_http_prefix_messages() {
+        let error = anyhow::anyhow!("http proxy configuration is invalid");
+        assert_eq!(classify_error(&error), EmpackExitCode::General);
     }
 }

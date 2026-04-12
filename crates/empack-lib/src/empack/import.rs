@@ -1981,6 +1981,8 @@ fn read_zip_entry_to_string<R: std::io::Read>(
 }
 
 fn open_zip_archive(data: Vec<u8>) -> Result<zip::ZipArchive<Cursor<Vec<u8>>>> {
+    // Import tests and live code both enter through filesystem-provided bytes,
+    // so we open archives from an in-memory cursor rather than a second file-backed path.
     zip::ZipArchive::new(Cursor::new(data))
         .map_err(|e| ImportError::ArchiveRead(e.to_string()).into())
 }
