@@ -234,7 +234,10 @@ empack rm sodium
 
 The `--deps` flag offers to clean up orphaned dependencies.
 
-When a dependency is tracked as `status: local`, `empack remove` removes the recorded file if it still exists, updates `empack.yml`, and only warns if the file was already missing.
+When a dependency is tracked as `status: local`, `empack remove` deletes the recorded file if it still exists and then removes the entry from `empack.yml`.
+
+- If the tracked file is already missing, empack warns and still attempts to remove the config entry.
+- If the file is removed but `empack.yml` cannot be updated, the command fails and tells you to fix the write error and rerun `empack remove <name>`.
 
 ### empack clean
 

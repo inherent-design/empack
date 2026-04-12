@@ -76,6 +76,13 @@ In the standard async construction path, the HTTP cache is loaded from disk unde
 
 The live implementation short-circuits to defaults in `--yes` mode or when stdin and stdout are not TTYs. Ctrl+C handling restores the cursor, flushes telemetry, removes the state marker when possible, and exits with status `130`.
 
+Interrupt cleanup is scope-aware:
+
+- top-level interactive cleanup targets the active workdir only
+- subprocess cleanup may walk upward from the subprocess working directory
+- that upward walk stops as soon as the marker is removed or the nearest empack project boundary is reached
+- cleanup never continues into parent projects beyond the current project boundary
+
 ## Session Construction
 
 `CommandSession::new_async()` is the standard live entry point.

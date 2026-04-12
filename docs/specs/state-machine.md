@@ -1,8 +1,8 @@
 ---
 spec: state-machine
-status: stale
+status: partial
 created: 2026-04-04
-updated: 2026-04-11
+updated: 2026-04-12
 depends: [overview, types]
 ---
 
@@ -71,12 +71,12 @@ If a marker remains on disk, the next discovery returns `Interrupted { was }`.
 
 Current behavior:
 
-- `create_initial_structure()` creates `pack/`, `templates/`, and `dist/`.
+- `create_initial_structure()` creates `pack/` and `templates/`.
 - `execute_initialize()` writes a generated `empack.yml` only if the file is missing.
 - `run_packwiz_init()` populates `pack/pack.toml` and related packwiz files.
 - Failure during initialization cleans partial configuration where possible.
 - Template scaffolding is not part of the pure state transition. Command handlers install templates after the transition succeeds.
-- `init --force` resets `empack.yml`, `pack/`, markers, and `dist/` explicitly before initialization. That reset is not part of the `Clean` state transition.
+- `init --force` performs a command-layer reset before initialization. That reset removes `empack.yml`, `pack/`, `.empack-state`, and `dist/` when present. It is not part of the pure `Initialize` transition or the `Clean` state transition.
 
 ### Refresh Index
 
