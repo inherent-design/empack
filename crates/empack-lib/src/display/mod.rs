@@ -6,6 +6,7 @@
 
 use crate::terminal::TerminalCapabilities;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod live;
 pub mod progress;
@@ -24,6 +25,19 @@ pub use providers::{
 };
 
 static GLOBAL_DISPLAY: OnceLock<Display> = OnceLock::new();
+static ERROR_RENDERED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn mark_error_rendered() {
+    ERROR_RENDERED.store(true, Ordering::SeqCst);
+}
+
+pub(crate) fn clear_error_rendered() {
+    ERROR_RENDERED.store(false, Ordering::SeqCst);
+}
+
+pub(crate) fn take_error_rendered() -> bool {
+    ERROR_RENDERED.swap(false, Ordering::SeqCst)
+}
 
 /// Main display manager that coordinates all user-facing communication
 pub struct Display {

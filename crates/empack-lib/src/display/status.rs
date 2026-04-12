@@ -44,6 +44,7 @@ impl<'a> StatusDisplay<'a> {
     /// Example: `Display::status().error("packwiz", "not found")`
     /// Output: `✗ packwiz: not found`
     pub fn error(&self, item: &str, details: &str) {
+        super::mark_error_rendered();
         let message = if details.is_empty() {
             item.to_string()
         } else {

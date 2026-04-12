@@ -71,12 +71,15 @@ pub async fn main() -> Result<()> {
 }
 
 pub async fn process_main() -> std::process::ExitCode {
+    display::clear_error_rendered();
     match CliConfig::load_for_process() {
         Ok(CliLoad::Ready(config)) => match run_with_config(*config).await {
             Ok(()) => EmpackExitCode::Success.as_process_exit_code(),
             Err(error) => {
                 let exit_code = application::classify_error(&error);
-                eprintln!("Error: {error:#}");
+                if let Some(message) = fallback_process_error_message(&error) {
+                    eprintln!("{message}");
+                }
                 exit_code.as_process_exit_code()
             }
         },
@@ -98,6 +101,14 @@ pub async fn process_main() -> std::process::ExitCode {
 pub async fn run_with_config(config: CliConfig) -> Result<()> {
     let workdir = config.app_config.workdir.clone();
     run_main_loop(workdir, execute_command(config)).await
+}
+
+fn fallback_process_error_message(error: &anyhow::Error) -> Option<String> {
+    if display::take_error_rendered() {
+        None
+    } else {
+        Some(format!("Error: {error:#}"))
+    }
 }
 
 pub async fn run_main_loop<F>(workdir: Option<std::path::PathBuf>, command: F) -> Result<()>
@@ -223,6 +234,31 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn error_render_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn fallback_process_error_message_is_suppressed_after_rendered_error() {
+        let _guard = error_render_lock().lock().expect("error render lock");
+        crate::display::clear_error_rendered();
+        crate::display::mark_error_rendered();
+
+        assert!(fallback_process_error_message(&anyhow::anyhow!("boom")).is_none());
+    }
+
+    #[test]
+    fn fallback_process_error_message_formats_when_no_error_was_rendered() {
+        let _guard = error_render_lock().lock().expect("error render lock");
+        crate::display::clear_error_rendered();
+
+        let message =
+            fallback_process_error_message(&anyhow::anyhow!("boom")).expect("fallback message");
+        assert_eq!(message, "Error: boom");
+    }
 
     #[tokio::test]
     async fn run_main_loop_completes_with_ready_command() {
