@@ -400,8 +400,6 @@ def curated_layout() -> RuntimeLayout:
 def current_ci_profile_pack() -> CuratedPack:
     if sys.platform.startswith("win"):
         return CURATED_PACKS_BY_ID["fabulously-optimized_1.20.1_curseforge_fabric"]
-    if sys.platform == "darwin":
-        return CURATED_PACKS_BY_ID["fabulously-optimized_1.20.1_modrinth_fabric"]
     return CURATED_PACKS_BY_ID["fabulously-optimized_1.20.1_modrinth_fabric"]
 
 
@@ -1343,7 +1341,7 @@ def run_curated_build(
         result.artifact_path = str(artifact)
     if (
         pack.expect_restricted_continue
-        and not result.continue_required
+        and result.continue_required
         and not (result.initial_success or result.continue_success)
     ):
         fallback_result = _run_curated_build_raw_fallback(
@@ -2091,8 +2089,8 @@ def main():
                         help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    if args.pack and args.profile == "pr":
-        parser.error("--pack cannot be combined with --profile pr")
+    if args.pack and args.profile is not None:
+        parser.error("--pack cannot be combined with --profile")
     if survey_flags_requested(args) and (args.profile or args.pack):
         parser.error("--profile and --pack are only valid in curated mode")
     if args.clean and (args.profile or args.pack):
