@@ -1658,6 +1658,26 @@ Once you have done so, place these files in C:\\Users\\test\\AppData\\Local\\pac
 }
 
 #[test]
+fn test_parse_export_restricted_output_accepts_non_http_url_schemes() {
+    let output = "\
+Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
+Bee Fix (BeeFix-1.20-1.0.7.jar) from ftp://downloads.example.com/BeeFix-1.20-1.0.7.jar
+Once you have done so, place these files in /Users/test/Library/Caches/packwiz/cache/import and re-run this command.";
+
+    let results = parse_export_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].url,
+        "ftp://downloads.example.com/BeeFix-1.20-1.0.7.jar"
+    );
+    assert_eq!(
+        results[0].dest_path,
+        "/Users/test/Library/Caches/packwiz/cache/import/BeeFix-1.20-1.0.7.jar"
+    );
+}
+
+#[test]
 fn test_parse_export_restricted_output_requires_import_dir_line() {
     let output = "\
 Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:

@@ -3979,18 +3979,12 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let local_dependency_issues =
         validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
     if !local_dependency_issues.is_empty() {
-        if session.config().app_config().dry_run {
-            render_local_dependency_issues(
-                session,
-                &local_dependency_issues,
-                "Tracked local dependency drift",
-            );
-        } else {
-            render_local_dependency_issues(
-                session,
-                &local_dependency_issues,
-                "Tracked local dependency drift",
-            );
+        render_local_dependency_issues(
+            session,
+            &local_dependency_issues,
+            "Tracked local dependency drift",
+        );
+        if !session.config().app_config().dry_run {
             anyhow::bail!(
                 "{} tracked local dependenc{} failed validation",
                 local_dependency_issues.len(),
