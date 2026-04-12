@@ -1678,6 +1678,18 @@ Once you have done so, place these files in /Users/test/Library/Caches/packwiz/c
 }
 
 #[test]
+fn test_parse_export_restricted_output_skips_empty_url_entries() {
+    let output = "\
+Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
+Bee Fix (BeeFix-1.20-1.0.7.jar) from\u{20}
+Once you have done so, place these files in /Users/test/Library/Caches/packwiz/cache/import and re-run this command.";
+
+    let results = parse_export_restricted_output(output);
+
+    assert!(results.is_empty());
+}
+
+#[test]
 fn test_parse_export_restricted_output_ignores_ss3_sequences() {
     let output = "\
 Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
