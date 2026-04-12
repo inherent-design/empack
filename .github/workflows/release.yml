@@ -175,13 +175,12 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: update changelog for ${{ steps.version.outputs.clean }}"
           git push origin main
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           body_path: ${{ steps.changelog.outputs.changelog }}
           prerelease: ${{ steps.channel.outputs.prerelease == 'true' }}
           files: dist/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
         shell: bash
