@@ -263,6 +263,64 @@ fn e2e_missing_tracked_local_dependency_validation_exits_two() {
 }
 
 #[test]
+fn e2e_tracked_local_parent_dir_validation_exits_two() {
+    let project =
+        TestProject::workflow_fixture("exit-local-parent-dir-validation", "fabric", "1.21.1");
+    let outside_path = project
+        .dir()
+        .parent()
+        .expect("fixture project should have a parent directory")
+        .join("outside-pack.zip");
+    std::fs::write(&outside_path, b"outside-bytes").expect("write outside tracked local file");
+
+    std::fs::write(
+        project.dir().join("empack.yml"),
+        r#"empack:
+  dependencies:
+    example-pack:
+      status: local
+      title: Example Pack
+      type: resourcepack
+      path: ../outside-pack.zip
+      source_url: https://example.com/example-pack.zip
+      sha256: deadbeefcafebabe
+  minecraft_version: "1.21.1"
+  loader: fabric
+  name: "exit-local-parent-dir-validation"
+  author: "Workflow Test"
+  version: "1.0.0"
+"#,
+    )
+    .expect("write empack.yml with parent-dir tracked local dependency");
+
+    let output = cargo_empack_cmd(project.dir())
+        .args(["build", "mrpack"])
+        .output()
+        .expect("spawn parent-dir local-validation build command");
+
+    assert_eq!(
+        output.status.code(),
+        Some(EmpackExitCode::Usage.as_i32()),
+        "unexpected output:\n{}",
+        combined_output(&output)
+    );
+
+    let combined = combined_output(&output);
+    assert!(
+        combined.contains("tracked local dependenc") && combined.contains("failed validation"),
+        "expected tracked local dependency validation failure in output:\n{combined}"
+    );
+    assert!(
+        combined.contains("escapes the project directory"),
+        "expected parent-dir confinement error in output:\n{combined}"
+    );
+    assert!(
+        outside_path.exists(),
+        "tracked local validation must not mutate files outside the project"
+    );
+}
+
+#[test]
 fn e2e_packwiz_process_failure_exits_one() {
     let project = TestProject::workflow_fixture("exit-remove-fail", "fabric", "1.21.1");
     let fake_packwiz = write_failing_packwiz_binary(project.dir());

@@ -10,6 +10,7 @@ use crate::application::session_mocks::mock_root;
 use crate::application::session::NetworkProvider;
 #[cfg(feature = "test-utils")]
 use crate::application::session::FileSystemProvider;
+use crate::empack::config::DependencyEntry;
 use crate::empack::content::{OverrideCategory, OverrideSide, SideEnv, SideRequirement};
 use crate::empack::parsing::ModLoader;
 #[cfg(feature = "test-utils")]
@@ -1484,6 +1485,54 @@ async fn test_resolve_modrinth_project_records_headers_and_metadata() {
 
 #[cfg(feature = "test-utils")]
 #[tokio::test]
+async fn test_resolve_modrinth_project_uses_cdn_version_id_without_hash_lookup() {
+    let mut server = mockito::Server::new_async().await;
+    let project_mock = server
+        .mock("GET", "/v2/project/AANobbMI")
+        .with_status(200)
+        .with_header("x-ratelimit-remaining", "4")
+        .with_header("x-ratelimit-limit", "300")
+        .with_header("x-ratelimit-reset", "1")
+        .with_body(r#"{"title":"Sodium","slug":"sodium","project_type":"mod"}"#)
+        .create_async()
+        .await;
+
+    let mut pref = modrinth_pref("AANobbMI");
+    pref.download_urls =
+        vec!["https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar".to_string()];
+    pref.hashes
+        .insert("sha1".to_string(), "deadbeef".to_string());
+
+    let budget = Arc::new(RecordingBudget::default());
+    let budget_trait: Arc<dyn RateBudget> = budget.clone();
+    let api_bases = test_api_bases(&server.url(), &server.url());
+    let client = reqwest::Client::new();
+    let mut warnings = Vec::new();
+
+    resolve_modrinth_project_with_client(
+        &mut pref,
+        &client,
+        &api_bases,
+        &mut warnings,
+        Some(&budget_trait),
+    )
+    .await;
+
+    assert_eq!(pref.file_id.as_deref(), Some("version-123"));
+    assert_eq!(pref.resolved_name.as_deref(), Some("Sodium"));
+    assert_eq!(pref.resolved_slug.as_deref(), Some("sodium"));
+    assert_eq!(pref.resolved_type, Some(crate::primitives::ProjectType::Mod));
+    assert!(warnings.is_empty());
+    assert_eq!(budget.acquire_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(budget.record_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(*budget.last_status.lock().unwrap(), Some(StatusCode::OK));
+    assert_eq!(*budget.last_remaining.lock().unwrap(), Some(4));
+
+    project_mock.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
 async fn test_resolve_curseforge_file_ids_records_budget_and_maps_results() {
     let mut server = mockito::Server::new_async().await;
     let batch_mock = server
@@ -1963,6 +2012,112 @@ async fn test_add_platform_ref_modrinth_offline_args() {
             "-y",
         ]
     );
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_execute_import_uses_url_derived_modrinth_version_id_for_packwiz_add() {
+    let target_dir = mock_root().join("execute-import-modrinth-version-id");
+    let process = crate::application::session_mocks::MockProcessProvider::new()
+        .with_packwiz_add_slug("AANobbMI".to_string(), "sodium".to_string());
+    let session = crate::application::session_mocks::MockCommandSession::new()
+        .with_process(process);
+
+    let resolved = ResolvedManifest {
+        manifest: ModpackManifest {
+            identity: PackIdentity {
+                name: "Resolved Pack".to_string(),
+                version: "1.0.0".to_string(),
+                author: None,
+                summary: None,
+            },
+            target: RuntimeTarget {
+                minecraft_version: "1.21.1".to_string(),
+                loader: ModLoader::Fabric,
+                loader_version: "0.15.11".to_string(),
+            },
+            content: vec![ContentEntry::PlatformReferenced(PlatformRef {
+                destination_path: "mods/sodium.jar".to_string(),
+                platform: ProjectPlatform::Modrinth,
+                project_id: "AANobbMI".to_string(),
+                file_id: Some("version-123".to_string()),
+                hashes: HashMap::from([("sha512".to_string(), "deadbeef".to_string())]),
+                download_urls: vec![
+                    "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar"
+                        .to_string(),
+                ],
+                env: SideEnv {
+                    client: SideRequirement::Required,
+                    server: SideRequirement::Required,
+                },
+                required: true,
+                resolved_name: Some("Sodium".to_string()),
+                resolved_slug: Some("sodium".to_string()),
+                resolved_type: Some(crate::primitives::ProjectType::Mod),
+                cf_class_id: None,
+            })],
+            overrides: Vec::new(),
+            source_platform: ProjectPlatform::Modrinth,
+            archive_path: std::path::PathBuf::from("/tmp/test.mrpack"),
+        },
+        warnings: Vec::new(),
+    };
+
+    let result = execute_import(
+        resolved,
+        ImportConfig {
+            target_dir: target_dir.clone(),
+            pack_name: "Resolved Pack".to_string(),
+            author: "Test Author".to_string(),
+            version: "1.0.0".to_string(),
+            datapack_folder: None,
+            acceptable_game_versions: None,
+        },
+        &session,
+    )
+    .await
+    .expect("execute import should succeed");
+
+    assert_eq!(result.project_dir, target_dir);
+    assert_eq!(result.stats.platform_referenced, 1);
+    assert_eq!(result.stats.platform_failed, 0);
+    assert_eq!(result.stats.platform_skipped, 0);
+
+    let packwiz_calls =
+        session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
+    assert!(
+        packwiz_calls.iter().any(|call| {
+            call.args
+                .windows(2)
+                .any(|pair| pair[0] == "--project-id" && pair[1] == "AANobbMI")
+                && call
+                    .args
+                    .windows(2)
+                    .any(|pair| pair[0] == "--version-id" && pair[1] == "version-123")
+        }),
+        "expected packwiz add call with --project-id and --version-id: {packwiz_calls:?}"
+    );
+    assert!(
+        !packwiz_calls
+            .iter()
+            .any(|call| call.args.len() >= 2 && call.args[0] == "url" && call.args[1] == "add"),
+        "execute_import should not fall back to packwiz url add: {packwiz_calls:?}"
+    );
+
+    let dependency = session
+        .filesystem()
+        .config_manager(target_dir.clone())
+        .find_dependency("sodium")
+        .expect("read updated config")
+        .expect("resolved dependency should exist");
+    match dependency.1 {
+        DependencyEntry::Resolved(record) => {
+            assert_eq!(record.project_id, "AANobbMI");
+            assert_eq!(record.version.as_deref(), Some("version-123"));
+            assert_eq!(record.title, "Sodium");
+        }
+        other => panic!("expected resolved dependency entry, got {other:?}"),
+    }
 }
 
 #[cfg(feature = "test-utils")]
