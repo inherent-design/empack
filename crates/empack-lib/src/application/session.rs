@@ -679,6 +679,96 @@ impl Default for LiveProcessProvider {
     }
 }
 
+fn decode_process_output_chunk(bytes: &[u8]) -> String {
+    #[cfg(windows)]
+    {
+        return decode_process_output_chunk_windows(bytes);
+    }
+
+    #[cfg(not(windows))]
+    {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
+#[cfg(windows)]
+fn decode_process_output_chunk_windows(bytes: &[u8]) -> String {
+    decode_process_output_chunk_windows_with_codepages(bytes, &windows_process_output_codepages())
+}
+
+#[cfg(windows)]
+fn decode_process_output_chunk_windows_with_codepages(bytes: &[u8], codepages: &[u32]) -> String {
+    if let Ok(valid_utf8) = std::str::from_utf8(bytes) {
+        return valid_utf8.to_string();
+    }
+
+    for codepage in codepages {
+        if let Some(decoded) = decode_windows_codepage(bytes, *codepage) {
+            return decoded;
+        }
+    }
+
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+#[cfg(windows)]
+fn windows_process_output_codepages() -> Vec<u32> {
+    use windows_sys::Win32::Globalization::{GetACP, GetOEMCP};
+    use windows_sys::Win32::System::Console::GetConsoleOutputCP;
+
+    let mut codepages = Vec::new();
+    for codepage in unsafe { [GetConsoleOutputCP(), GetACP(), GetOEMCP()] } {
+        if codepage != 0 && !codepages.contains(&codepage) {
+            codepages.push(codepage);
+        }
+    }
+    codepages
+}
+
+#[cfg(windows)]
+fn decode_windows_codepage(bytes: &[u8], codepage: u32) -> Option<String> {
+    use windows_sys::Win32::Globalization::MultiByteToWideChar;
+
+    if bytes.is_empty() {
+        return Some(String::new());
+    }
+    if codepage == 0 {
+        return None;
+    }
+
+    let input_len = i32::try_from(bytes.len()).ok()?;
+    let required_len = unsafe {
+        MultiByteToWideChar(
+            codepage,
+            0,
+            bytes.as_ptr(),
+            input_len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if required_len <= 0 {
+        return None;
+    }
+
+    let mut wide = vec![0u16; required_len as usize];
+    let converted_len = unsafe {
+        MultiByteToWideChar(
+            codepage,
+            0,
+            bytes.as_ptr(),
+            input_len,
+            wide.as_mut_ptr(),
+            required_len,
+        )
+    };
+    if converted_len <= 0 {
+        return None;
+    }
+
+    String::from_utf16(&wide[..converted_len as usize]).ok()
+}
+
 impl ProcessProvider for LiveProcessProvider {
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput> {
         struct NoopProcessObserver;
@@ -743,7 +833,7 @@ impl ProcessProvider for LiveProcessProvider {
                     match reader.read_until(b'\n', &mut buf) {
                         Ok(0) => break,
                         Ok(_) => {
-                            let chunk = String::from_utf8_lossy(&buf).into_owned();
+                            let chunk = decode_process_output_chunk(&buf);
                             if tx.send(ProcessEvent::Chunk(stream, chunk)).is_err() {
                                 break;
                             }
@@ -1616,8 +1706,11 @@ mod tests {
     fn write_empack_boundary(root: &Path) {
         std::fs::create_dir_all(root.join("pack")).expect("create pack dir");
         std::fs::write(root.join("empack.yml"), "name: test-pack\n").expect("write empack.yml");
-        std::fs::write(root.join("pack").join("pack.toml"), "name = \"test-pack\"\n")
-            .expect("write pack.toml");
+        std::fs::write(
+            root.join("pack").join("pack.toml"),
+            "name = \"test-pack\"\n",
+        )
+        .expect("write pack.toml");
     }
 
     fn write_state_marker(root: &Path) -> std::path::PathBuf {
@@ -1757,6 +1850,36 @@ mod tests {
             success: false,
         };
         assert_eq!(stdout_fallback.error_output(), "stdout failure");
+    }
+
+    #[test]
+    fn process_output_decoder_prefers_utf8_when_valid() {
+        let decoded = decode_process_output_chunk("§6No Enchant Glint 1.20.1.zip\n".as_bytes());
+        assert_eq!(decoded, "§6No Enchant Glint 1.20.1.zip\n");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_process_output_decoder_preserves_section_sign_from_cp1252() {
+        let decoded = decode_process_output_chunk_windows_with_codepages(
+            &[
+                0xA7, b'6', b'N', b'o', b' ', b'E', b'n', b'c', b'h', b'a', b'n', b't', b' ', b'G',
+                b'l', b'i', b'n', b't', b' ', b'1', b'.', b'2', b'0', b'.', b'1', b'.', b'z', b'i',
+                b'p',
+            ],
+            &[1252],
+        );
+        assert_eq!(decoded, "§6No Enchant Glint 1.20.1.zip");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_process_output_decoder_falls_back_lossily_when_unmappable() {
+        let decoded = decode_process_output_chunk_windows_with_codepages(&[0xFF, 0xFE], &[0]);
+        assert!(
+            !decoded.is_empty(),
+            "lossy fallback should still return replacement text"
+        );
     }
 
     #[test]

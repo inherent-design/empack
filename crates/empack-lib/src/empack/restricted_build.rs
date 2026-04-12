@@ -35,6 +35,14 @@ impl PendingRestrictedBuildEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingRestrictedCandidateSnapshot {
+    pub path: String,
+    pub len: u64,
+    pub modified_unix_ms: Option<u64>,
+    pub created_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingRestrictedBuild {
     pub schema_version: u32,
     pub targets: Vec<String>,
@@ -43,6 +51,8 @@ pub struct PendingRestrictedBuild {
     pub restricted_cache_dir: String,
     #[serde(default)]
     pub recorded_at_unix_ms: Option<u64>,
+    #[serde(default)]
+    pub candidate_baseline: Vec<PendingRestrictedCandidateSnapshot>,
     pub entries: Vec<PendingRestrictedBuildEntry>,
 }
 
@@ -125,13 +135,21 @@ pub fn save_pending_build(
         project_fingerprint: compute_project_fingerprint(provider, workdir)?,
         restricted_cache_dir: restricted_cache_dir.to_string_lossy().to_string(),
         recorded_at_unix_ms: Some(current_unix_ms()),
+        candidate_baseline: Vec::new(),
         entries,
     };
 
-    let serialized = serde_json::to_string_pretty(&pending)?;
-    provider.write_file(&pending_state_path(workdir), &serialized)?;
-
+    persist_pending_build(provider, workdir, &pending)?;
     Ok(pending)
+}
+
+pub fn persist_pending_build(
+    provider: &dyn FileSystemProvider,
+    workdir: &Path,
+    pending: &PendingRestrictedBuild,
+) -> Result<()> {
+    let serialized = serde_json::to_string_pretty(pending)?;
+    provider.write_file(&pending_state_path(workdir), &serialized)
 }
 
 pub fn load_pending_build(
@@ -234,6 +252,27 @@ pub fn import_matching_downloads_into_cache(
             "restricted download exact filename match not found; trying recent-file fallback"
         );
 
+        if !pending.candidate_baseline.is_empty() {
+            tracing::debug!(
+                filename = %filename,
+                baseline_entries = pending.candidate_baseline.len(),
+                "restricted download using baseline-aware fallback"
+            );
+
+            if let Some((hash, candidate)) = find_new_or_changed_candidate(
+                provider,
+                entry,
+                &cache_path,
+                &search_dirs,
+                &pending.candidate_baseline,
+                &used_fallback_hashes,
+            )? {
+                import_candidate_into_cache(provider, &candidate, &cache_path)?;
+                used_fallback_hashes.insert(hash);
+            }
+            continue;
+        }
+
         let Some(recent_cutoff_ms) = recent_cutoff_ms else {
             tracing::debug!(
                 filename = %filename,
@@ -241,6 +280,12 @@ pub fn import_matching_downloads_into_cache(
             );
             continue;
         };
+
+        tracing::debug!(
+            filename = %filename,
+            recent_cutoff_ms,
+            "restricted download using legacy recent-file fallback"
+        );
 
         if let Some((hash, candidate)) = find_recent_candidate(
             provider,
@@ -333,6 +378,69 @@ fn find_exact_candidate(
     None
 }
 
+pub fn capture_candidate_baseline(
+    provider: &dyn FileSystemProvider,
+    search_dirs: &[PathBuf],
+) -> Result<Vec<PendingRestrictedCandidateSnapshot>> {
+    let mut snapshots = Vec::new();
+    let mut seen_paths = HashSet::new();
+
+    for dir in search_dirs {
+        for candidate in provider
+            .get_file_list(dir)
+            .with_context(|| format!("Failed to scan {}", dir.display()))?
+        {
+            let candidate_path = candidate.to_string_lossy().into_owned();
+            if !seen_paths.insert(candidate_path.clone()) {
+                continue;
+            }
+
+            let metadata = match provider.file_metadata(&candidate) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    tracing::debug!(
+                        path = %candidate.display(),
+                        error = %error,
+                        "skipping baseline candidate with unreadable metadata"
+                    );
+                    continue;
+                }
+            };
+            if metadata.is_directory {
+                continue;
+            }
+
+            snapshots.push(PendingRestrictedCandidateSnapshot {
+                path: candidate_path,
+                len: metadata.len,
+                modified_unix_ms: metadata.modified_unix_ms,
+                created_unix_ms: metadata.created_unix_ms,
+            });
+        }
+    }
+
+    snapshots.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(snapshots)
+}
+
+fn snapshot_changed(
+    candidate_path: &Path,
+    metadata: &FileMetadata,
+    baseline: &[PendingRestrictedCandidateSnapshot],
+) -> bool {
+    let candidate_path = candidate_path.to_string_lossy();
+    let Some(snapshot) = baseline
+        .iter()
+        .find(|snapshot| snapshot.path == candidate_path)
+    else {
+        return true;
+    };
+
+    snapshot.len != metadata.len
+        || snapshot.modified_unix_ms != metadata.modified_unix_ms
+        || snapshot.created_unix_ms != metadata.created_unix_ms
+}
+
 fn find_recent_candidate(
     provider: &dyn FileSystemProvider,
     entry: &PendingRestrictedBuildEntry,
@@ -343,6 +451,7 @@ fn find_recent_candidate(
 ) -> Result<Option<(String, PathBuf)>> {
     let expected_extension = lowercase_extension(Path::new(&entry.filename));
     let mut candidates_by_hash = HashMap::new();
+    let mut eligible_candidate_paths = Vec::new();
 
     for dir in search_dirs {
         for candidate in provider
@@ -384,6 +493,7 @@ fn find_recent_candidate(
                 continue;
             }
 
+            eligible_candidate_paths.push(candidate.display().to_string());
             let hash = match candidate_sha256(provider, &candidate) {
                 Ok(hash) => hash,
                 Err(error) => {
@@ -402,10 +512,16 @@ fn find_recent_candidate(
         }
     }
 
+    let distinct_candidate_paths: Vec<String> = candidates_by_hash
+        .values()
+        .map(|candidate| candidate.display().to_string())
+        .collect();
     tracing::debug!(
         filename = %entry.filename,
+        eligible_candidate_count = eligible_candidate_paths.len(),
         candidate_count = candidates_by_hash.len(),
         recent_cutoff_ms,
+        ?distinct_candidate_paths,
         "restricted download recent-file fallback evaluated"
     );
 
@@ -427,7 +543,109 @@ fn find_recent_candidate(
             tracing::debug!(
                 filename = %entry.filename,
                 candidate_count = candidates_by_hash.len(),
+                ?distinct_candidate_paths,
                 "restricted download fallback skipped due to ambiguous recent candidates"
+            );
+            Ok(None)
+        }
+    }
+}
+
+fn find_new_or_changed_candidate(
+    provider: &dyn FileSystemProvider,
+    entry: &PendingRestrictedBuildEntry,
+    cache_path: &Path,
+    search_dirs: &[PathBuf],
+    baseline: &[PendingRestrictedCandidateSnapshot],
+    used_fallback_hashes: &HashSet<String>,
+) -> Result<Option<(String, PathBuf)>> {
+    let expected_extension = lowercase_extension(Path::new(&entry.filename));
+    let mut candidates_by_hash = HashMap::new();
+    let mut eligible_candidate_paths = Vec::new();
+
+    for dir in search_dirs {
+        for candidate in provider
+            .get_file_list(dir)
+            .with_context(|| format!("Failed to scan {}", dir.display()))?
+        {
+            if candidate == cache_path {
+                continue;
+            }
+
+            let metadata = match provider.file_metadata(&candidate) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    tracing::debug!(
+                        path = %candidate.display(),
+                        error = %error,
+                        "skipping restricted download candidate with unreadable metadata"
+                    );
+                    continue;
+                }
+            };
+            if metadata.is_directory {
+                continue;
+            }
+
+            if lowercase_extension(&candidate) != expected_extension {
+                continue;
+            }
+
+            if !snapshot_changed(&candidate, &metadata, baseline) {
+                continue;
+            }
+
+            eligible_candidate_paths.push(candidate.display().to_string());
+            let hash = match candidate_sha256(provider, &candidate) {
+                Ok(hash) => hash,
+                Err(error) => {
+                    tracing::debug!(
+                        path = %candidate.display(),
+                        error = %error,
+                        "skipping restricted download candidate that could not be hashed"
+                    );
+                    continue;
+                }
+            };
+            if used_fallback_hashes.contains(&hash) {
+                continue;
+            }
+            candidates_by_hash.entry(hash).or_insert(candidate);
+        }
+    }
+
+    let distinct_candidate_paths: Vec<String> = candidates_by_hash
+        .values()
+        .map(|candidate| candidate.display().to_string())
+        .collect();
+    tracing::debug!(
+        filename = %entry.filename,
+        eligible_candidate_count = eligible_candidate_paths.len(),
+        candidate_count = candidates_by_hash.len(),
+        ?distinct_candidate_paths,
+        "restricted download baseline-aware fallback evaluated"
+    );
+
+    match candidates_by_hash.len() {
+        0 => Ok(None),
+        1 => {
+            let (hash, candidate) = candidates_by_hash
+                .into_iter()
+                .next()
+                .expect("single candidate");
+            tracing::debug!(
+                filename = %entry.filename,
+                candidate = %candidate.display(),
+                "restricted download baseline-aware fallback selected a unique candidate"
+            );
+            Ok(Some((hash, candidate)))
+        }
+        _ => {
+            tracing::debug!(
+                filename = %entry.filename,
+                candidate_count = candidates_by_hash.len(),
+                ?distinct_candidate_paths,
+                "restricted download baseline-aware fallback skipped due to ambiguous candidates"
             );
             Ok(None)
         }
