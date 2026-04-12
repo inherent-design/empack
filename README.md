@@ -1,4 +1,4 @@
-[![Build Status](https://img.shields.io/github/actions/workflow/status/inherent-design/empack/ci.yml?branch=main&style=flat)](https://github.com/inherent-design/empack/actions/workflows/ci.yml) [![Coverage](https://codecov.io/gh/inherent-design/empack/branch/main/graph/badge.svg)](https://codecov.io/gh/inherent-design/empack) [![License](https://img.shields.io/github/license/inherent-design/empack?style=flat)](LICENSE)
+[![PR CI](https://img.shields.io/github/actions/workflow/status/inherent-design/empack/pr-ci.yml?branch=main&style=flat)](https://github.com/inherent-design/empack/actions/workflows/pr-ci.yml) [![Coverage](https://codecov.io/gh/inherent-design/empack/branch/main/graph/badge.svg)](https://codecov.io/gh/inherent-design/empack) [![License](https://img.shields.io/github/license/inherent-design/empack?style=flat)](LICENSE)
 
 # empack
 
