@@ -3,6 +3,44 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.4 - 2026-04-12
+
+### Features
+
+- Stabilize cli contracts and tracked local deps
+
+### Bug Fixes
+
+- Preserve reported restricted download paths
+- Tighten exit and restricted parser heuristics
+- Align zip type exit handling and build validation
+- Suppress duplicate process error output
+- Classify local dependency validation as usage
+- Harden restricted parsing and local removal
+- Bound subprocess marker cleanup
+- Guard local key collisions and empty urls
+- Guard clean and restricted build edges
+- Harden local dependency validation
+
+### Testing
+
+- Backfill reviewer lint and coverage pass
+- Stabilize interactive browser opener e2e
+- Align init e2e with display error output
+
+### Documentation
+
+- Consolidate specs and drop stale audit
+
+### CI/CD
+
+- Split branch, pr, and post-merge workflows
+
+### Maintenance
+
+- Update changelog for 0.4.0-alpha.3
+- **(deps)** Update rust crate sha2 to 0.11
+
 ## v0.4.0-alpha.3 - 2026-04-10
 
 ### Bug Fixes
