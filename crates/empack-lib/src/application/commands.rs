@@ -2559,8 +2559,13 @@ fn build_tracked_local_dependency(
     project_type: ProjectType,
     bytes: &[u8],
 ) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
+    let datapack_folder = if matches!(project_type, ProjectType::Datapack) {
+        Some(ensure_tracked_local_datapack_folder(session, workdir)?)
+    } else {
+        None
+    };
     let relative_path =
-        tracked_local_dependency_relative_path(session, workdir, project_type, filename)?;
+        tracked_local_dependency_relative_path(project_type, filename, datapack_folder.as_deref());
     let dep_key = tracked_local_dependency_key(filename);
     ensure_tracked_local_dependency_key_available(session, workdir, &dep_key, &relative_path)?;
     let dest_path = workdir.join(PathBuf::from(&relative_path));
@@ -2634,41 +2639,45 @@ fn ensure_tracked_local_dependency_key_available(
     }
 }
 
-fn tracked_local_dependency_relative_path(
+fn ensure_tracked_local_datapack_folder(
     session: &dyn Session,
     workdir: &Path,
+) -> std::result::Result<String, anyhow::Error> {
+    let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
+    match config_manager.datapack_folder() {
+        Some(folder) => Ok(folder),
+        None => {
+            let default_folder = "datapacks";
+            config_manager
+                .set_datapack_folder(default_folder)
+                .context("failed to persist datapack_folder in empack.yml")?;
+            let pack_toml_path = workdir.join("pack").join("pack.toml");
+            crate::empack::packwiz::write_pack_toml_options(
+                &pack_toml_path,
+                Some(default_folder),
+                None,
+                session.filesystem(),
+            )
+            .context("failed to persist datapack-folder in pack.toml")?;
+            Ok(default_folder.to_string())
+        }
+    }
+}
+
+fn tracked_local_dependency_relative_path(
     project_type: ProjectType,
     filename: &str,
-) -> std::result::Result<String, anyhow::Error> {
-    let relative_path = match project_type {
+    datapack_folder: Option<&str>,
+) -> String {
+    match project_type {
         ProjectType::Mod => format!("pack/mods/{filename}"),
         ProjectType::ResourcePack => format!("pack/resourcepacks/{filename}"),
         ProjectType::Shader => format!("pack/shaderpacks/{filename}"),
-        ProjectType::Datapack => {
-            let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
-            let datapack_folder = match config_manager.datapack_folder() {
-                Some(folder) => folder,
-                None => {
-                    let default_folder = "datapacks";
-                    config_manager
-                        .set_datapack_folder(default_folder)
-                        .context("failed to persist datapack_folder in empack.yml")?;
-                    let pack_toml_path = workdir.join("pack").join("pack.toml");
-                    crate::empack::packwiz::write_pack_toml_options(
-                        &pack_toml_path,
-                        Some(default_folder),
-                        None,
-                        session.filesystem(),
-                    )
-                    .context("failed to persist datapack-folder in pack.toml")?;
-                    default_folder.to_string()
-                }
-            };
-            format!("pack/{datapack_folder}/{filename}")
-        }
-    };
-
-    Ok(relative_path)
+        ProjectType::Datapack => format!(
+            "pack/{}/{filename}",
+            datapack_folder.unwrap_or(content_folder_for_type(ProjectType::Datapack))
+        ),
+    }
 }
 
 fn tracked_local_dependency_key(filename: &str) -> String {
@@ -2778,7 +2787,17 @@ fn validate_local_dependencies(
                 return None;
             };
 
-            let absolute_path = workdir.join(PathBuf::from(path));
+            let rel = PathBuf::from(path);
+            if !rel.is_relative() {
+                return Some(LocalDependencyIssue {
+                    key: dependency.key.clone(),
+                    title: dependency.search_query.clone(),
+                    path: path.clone(),
+                    reason: "path must be relative".to_string(),
+                });
+            }
+
+            let absolute_path = workdir.join(&rel);
             if !filesystem.exists(&absolute_path) {
                 return Some(LocalDependencyIssue {
                     key: dependency.key.clone(),
