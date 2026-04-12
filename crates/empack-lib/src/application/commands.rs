@@ -3322,6 +3322,7 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
             restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &pending.entries);
         crate::empack::restricted_build::import_matching_downloads_into_cache(
             session.filesystem(),
+            &manager.workdir,
             &pending,
             &download_dirs,
         )
@@ -3346,6 +3347,7 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
         display_pending_restricted_build(session, &pending, &remaining)?;
         if maybe_open_and_wait_for_restricted_downloads(
             session,
+            &manager.workdir,
             &pending,
             &remaining,
             &restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &remaining),
@@ -3514,6 +3516,7 @@ async fn continue_pending_restricted_build_inner(
         restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &pending.entries);
     crate::empack::restricted_build::import_matching_downloads_into_cache(
         session.filesystem(),
+        workdir,
         &pending,
         &download_dirs,
     )
@@ -3525,6 +3528,7 @@ async fn continue_pending_restricted_build_inner(
         display_pending_restricted_build(session, &pending, &remaining)?;
         if maybe_open_and_wait_for_restricted_downloads(
             session,
+            workdir,
             &pending,
             &remaining,
             &restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &remaining),
@@ -3803,6 +3807,7 @@ fn display_pending_restricted_build(
 
 async fn maybe_open_and_wait_for_restricted_downloads(
     session: &dyn Session,
+    workdir: &Path,
     pending: &crate::empack::restricted_build::PendingRestrictedBuild,
     remaining: &[crate::empack::restricted_build::PendingRestrictedBuildEntry],
     search_dirs: &[PathBuf],
@@ -3836,6 +3841,7 @@ async fn maybe_open_and_wait_for_restricted_downloads(
     for _ in 0..300 {
         crate::empack::restricted_build::import_matching_downloads_into_cache(
             session.filesystem(),
+            workdir,
             pending,
             search_dirs,
         )

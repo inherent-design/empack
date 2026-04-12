@@ -1,7 +1,9 @@
 use anyhow::Result;
-use empack_lib::application::session::ProcessOutput;
+use empack_lib::application::session::{FileMetadata, FileSystemProvider, ProcessOutput};
 use empack_lib::application::{BuildArgs, Commands, execute_command_with_session};
 use empack_lib::display::Display;
+use empack_lib::empack::RestrictedModInfo;
+use empack_lib::empack::archive::ArchiveFormat;
 use empack_lib::terminal::TerminalCapabilities;
 
 use empack_tests::test_env::MockSessionBuilder;
@@ -111,6 +113,93 @@ async fn e2e_build_continue_resumes_restricted_full_build() -> Result<()> {
                 .join(format!("{project_name}-v1.0.0-client-full.zip"))
         ),
         "continued build should produce the client-full archive"
+    );
+    assert!(
+        empack_lib::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)?
+            .is_none(),
+        "pending restricted state should be cleared after continue succeeds"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn e2e_build_continue_imports_recent_unicode_variant_download() -> Result<()> {
+    let project_name = "continue-unicode-variant";
+    let workdir = empack_lib::application::session_mocks::mock_root().join("workdir");
+    let downloads_dir = workdir.join("manual-downloads");
+    let variant_name = "§6No Enchant Glint 1.20.1.zip";
+    let cache_filename = "No_Enchant_Glint.zip";
+    let download_bytes = b"manual resource pack bytes";
+
+    let session = MockSessionBuilder::new()
+        .with_empack_project(project_name, "1.21.1", "fabric")
+        .build();
+
+    let pending = empack_lib::empack::restricted_build::save_pending_build(
+        session.filesystem(),
+        &workdir,
+        &[empack_lib::primitives::BuildTarget::Mrpack],
+        ArchiveFormat::Zip,
+        &[RestrictedModInfo {
+            name: "No Enchant Glint".to_string(),
+            url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+                .to_string(),
+            dest_path: workdir
+                .join("packwiz-cache")
+                .join("import")
+                .join(cache_filename)
+                .to_string_lossy()
+                .to_string(),
+        }],
+    )?;
+
+    session
+        .filesystem_provider
+        .write_bytes(&downloads_dir.join(variant_name), download_bytes)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    session.filesystem_provider.set_file_metadata(
+        downloads_dir.join(variant_name),
+        FileMetadata {
+            is_directory: false,
+            len: download_bytes.len() as u64,
+            modified_unix_ms: Some(now),
+            created_unix_ms: Some(now),
+        },
+    );
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let result = execute_command_with_session(
+        Commands::Build(BuildArgs {
+            continue_build: true,
+            downloads_dir: Some(downloads_dir.to_string_lossy().to_string()),
+            ..Default::default()
+        }),
+        &session,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "continue build should import a recent Unicode variant download: {result:?}"
+    );
+    assert!(
+        session
+            .filesystem()
+            .exists(&pending.restricted_cache_path().join(cache_filename)),
+        "variant download should be copied into the managed restricted cache"
+    );
+    assert!(
+        session.filesystem().exists(
+            &workdir
+                .join("dist")
+                .join(format!("{project_name}-v1.0.0.mrpack"))
+        ),
+        "continued build should produce the mrpack archive"
     );
     assert!(
         empack_lib::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)?

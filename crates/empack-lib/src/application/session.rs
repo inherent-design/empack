@@ -23,6 +23,14 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMetadata {
+    pub is_directory: bool,
+    pub len: u64,
+    pub modified_unix_ms: Option<u64>,
+    pub created_unix_ms: Option<u64>,
+}
+
 pub trait FileSystemProvider {
     fn current_dir(&self) -> Result<PathBuf>;
 
@@ -41,6 +49,8 @@ pub trait FileSystemProvider {
     fn metadata_exists(&self, path: &Path) -> bool;
 
     fn is_directory(&self, path: &Path) -> bool;
+
+    fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
 
     fn create_dir_all(&self, path: &Path) -> Result<()>;
 
@@ -317,6 +327,21 @@ impl FileSystemProvider for LiveFileSystemProvider {
         path.is_dir()
     }
 
+    fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
+        let metadata = std::fs::metadata(path)
+            .with_context(|| format!("Failed to stat {}", path.display()))?;
+        Ok(FileMetadata {
+            is_directory: metadata.is_dir(),
+            len: if metadata.is_file() {
+                metadata.len()
+            } else {
+                0
+            },
+            modified_unix_ms: system_time_to_unix_ms(metadata.modified()),
+            created_unix_ms: system_time_to_unix_ms(metadata.created()),
+        })
+    }
+
     fn create_dir_all(&self, path: &Path) -> Result<()> {
         std::fs::create_dir_all(path)
             .with_context(|| format!("Failed to create directory: {}", path.display()))
@@ -392,6 +417,15 @@ impl FileSystemProvider for LiveFileSystemProvider {
         std::fs::remove_dir_all(path)
             .with_context(|| format!("Failed to remove directory: {}", path.display()))
     }
+}
+
+fn system_time_to_unix_ms(
+    value: std::result::Result<std::time::SystemTime, std::io::Error>,
+) -> Option<u64> {
+    value
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
 }
 
 pub struct LiveNetworkProvider {

@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
@@ -58,6 +58,8 @@ pub struct MockFileSystemProvider {
     pub binary_files: Arc<Mutex<HashMap<PathBuf, Vec<u8>>>>,
     /// Track directories that exist
     pub directories: Arc<Mutex<HashSet<PathBuf>>>,
+    /// File metadata overrides and defaults
+    pub metadata: Arc<Mutex<HashMap<PathBuf, FileMetadata>>>,
     /// Files to auto-create when a matching directory is created via `create_dir_all`.
     pub deferred_files: DeferredFileMap,
     /// Path-specific write failures injected by tests.
@@ -74,14 +76,55 @@ impl MockFileSystemProvider {
             files: Arc::new(Mutex::new(HashMap::new())),
             binary_files: Arc::new(Mutex::new(HashMap::new())),
             directories: Arc::new(Mutex::new(HashSet::new())),
+            metadata: Arc::new(Mutex::new(HashMap::new())),
             deferred_files: Arc::new(Mutex::new(HashMap::new())),
             write_failures: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
+    fn current_unix_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
+    fn default_metadata(is_directory: bool, len: u64) -> FileMetadata {
+        let now = Self::current_unix_ms();
+        FileMetadata {
+            is_directory,
+            len,
+            modified_unix_ms: Some(now),
+            created_unix_ms: Some(now),
+        }
+    }
+
+    fn track_parent_directories(&self, path: &Path) {
+        if let Some(parent) = path.parent() {
+            let mut directories = self.directories.lock().unwrap();
+            let mut metadata = self.metadata.lock().unwrap();
+            let mut current = Some(parent);
+            while let Some(dir) = current {
+                directories.insert(dir.to_path_buf());
+                metadata
+                    .entry(dir.to_path_buf())
+                    .or_insert_with(|| Self::default_metadata(true, 0));
+                current = dir.parent();
+            }
+        }
+    }
+
+    fn set_default_file_metadata(&self, path: &Path, is_directory: bool, len: u64) {
+        self.metadata.lock().unwrap().insert(
+            path.to_path_buf(),
+            Self::default_metadata(is_directory, len),
+        );
+    }
+
     pub fn with_current_dir(mut self, dir: PathBuf) -> Self {
         self.current_dir = dir.clone();
         self.directories.lock().unwrap().insert(dir);
+        self.set_default_file_metadata(&self.current_dir, true, 0);
         self
     }
 
@@ -91,34 +134,55 @@ impl MockFileSystemProvider {
     }
 
     pub fn with_file(self, path: PathBuf, content: String) -> Self {
-        if let Some(parent) = path.parent() {
-            let mut directories = self.directories.lock().unwrap();
-            let mut current = Some(parent);
-            while let Some(dir) = current {
-                directories.insert(dir.to_path_buf());
-                current = dir.parent();
-            }
-        }
+        self.track_parent_directories(&path);
+        self.set_default_file_metadata(&path, false, content.len() as u64);
         self.files.lock().unwrap().insert(path, content);
         self
     }
 
     pub fn with_files(self, files: HashMap<PathBuf, String>) -> Self {
-        *self.files.lock().unwrap() = files;
+        for (path, content) in files {
+            self.track_parent_directories(&path);
+            self.set_default_file_metadata(&path, false, content.len() as u64);
+            self.files.lock().unwrap().insert(path, content);
+        }
         self
     }
 
     pub fn with_binary_file(self, path: PathBuf, content: Vec<u8>) -> Self {
-        if let Some(parent) = path.parent() {
-            let mut directories = self.directories.lock().unwrap();
-            let mut current = Some(parent);
-            while let Some(dir) = current {
-                directories.insert(dir.to_path_buf());
-                current = dir.parent();
-            }
-        }
+        self.track_parent_directories(&path);
+        self.set_default_file_metadata(&path, false, content.len() as u64);
         self.binary_files.lock().unwrap().insert(path, content);
         self
+    }
+
+    pub fn with_file_metadata(self, path: PathBuf, metadata: FileMetadata) -> Self {
+        self.set_file_metadata(path, metadata);
+        self
+    }
+
+    pub fn with_binary_file_and_metadata(
+        self,
+        path: PathBuf,
+        content: Vec<u8>,
+        metadata: FileMetadata,
+    ) -> Self {
+        self.track_parent_directories(&path);
+        self.binary_files
+            .lock()
+            .unwrap()
+            .insert(path.clone(), content);
+        self.set_file_metadata(path, metadata);
+        self
+    }
+
+    pub fn set_file_metadata(&self, path: PathBuf, metadata: FileMetadata) {
+        if metadata.is_directory {
+            self.directories.lock().unwrap().insert(path.clone());
+        } else {
+            self.track_parent_directories(&path);
+        }
+        self.metadata.lock().unwrap().insert(path, metadata);
     }
 
     /// Register a file to be automatically created when `create_dir_all` is
@@ -372,15 +436,9 @@ impl FileSystemProvider for MockFileSystemProvider {
         if let Some(message) = self.write_failures.lock().unwrap().get(path).cloned() {
             return Err(anyhow::anyhow!(message));
         }
-        if let Some(parent) = path.parent() {
-            let mut directories = self.directories.lock().unwrap();
-            let mut current = Some(parent);
-            while let Some(dir) = current {
-                directories.insert(dir.to_path_buf());
-                current = dir.parent();
-            }
-        }
+        self.track_parent_directories(path);
         self.binary_files.lock().unwrap().remove(path);
+        self.set_default_file_metadata(path, false, content.len() as u64);
         self.files
             .lock()
             .unwrap()
@@ -389,15 +447,9 @@ impl FileSystemProvider for MockFileSystemProvider {
     }
 
     fn write_bytes(&self, path: &std::path::Path, content: &[u8]) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            let mut directories = self.directories.lock().unwrap();
-            let mut current = Some(parent);
-            while let Some(dir) = current {
-                directories.insert(dir.to_path_buf());
-                current = dir.parent();
-            }
-        }
+        self.track_parent_directories(path);
         self.files.lock().unwrap().remove(path);
+        self.set_default_file_metadata(path, false, content.len() as u64);
         self.binary_files
             .lock()
             .unwrap()
@@ -433,9 +485,30 @@ impl FileSystemProvider for MockFileSystemProvider {
         false
     }
 
+    fn file_metadata(&self, path: &std::path::Path) -> Result<FileMetadata> {
+        if let Some(metadata) = self.metadata.lock().unwrap().get(path).cloned() {
+            return Ok(metadata);
+        }
+
+        if let Some(bytes) = self.binary_files.lock().unwrap().get(path) {
+            return Ok(Self::default_metadata(false, bytes.len() as u64));
+        }
+
+        if let Some(content) = self.files.lock().unwrap().get(path) {
+            return Ok(Self::default_metadata(false, content.len() as u64));
+        }
+
+        if self.directories.lock().unwrap().contains(path) || path == self.current_dir {
+            return Ok(Self::default_metadata(true, 0));
+        }
+
+        Err(anyhow::anyhow!("File not found: {}", path.display()))
+    }
+
     fn create_dir_all(&self, path: &std::path::Path) -> Result<()> {
         // Track the directory creation in the mock filesystem
         self.directories.lock().unwrap().insert(path.to_path_buf());
+        self.set_default_file_metadata(path, true, 0);
         // Also track all parent directories as existing
         let mut current = path.to_path_buf();
         while let Some(parent) = current.parent() {
@@ -443,16 +516,23 @@ impl FileSystemProvider for MockFileSystemProvider {
                 .lock()
                 .unwrap()
                 .insert(parent.to_path_buf());
+            self.metadata
+                .lock()
+                .unwrap()
+                .entry(parent.to_path_buf())
+                .or_insert_with(|| Self::default_metadata(true, 0));
             current = parent.to_path_buf();
         }
         // Materialize deferred files registered for this directory
         let deferred = self.deferred_files.lock().unwrap();
         if let Some(entries) = deferred.get(path) {
             for (filename, content) in entries {
+                let deferred_path = path.join(filename);
+                self.set_default_file_metadata(&deferred_path, false, content.len() as u64);
                 self.files
                     .lock()
                     .unwrap()
-                    .insert(path.join(filename), content.clone());
+                    .insert(deferred_path, content.clone());
             }
         }
         Ok(())
@@ -519,6 +599,7 @@ impl FileSystemProvider for MockFileSystemProvider {
     fn remove_file(&self, path: &std::path::Path) -> Result<()> {
         self.files.lock().unwrap().remove(path);
         self.binary_files.lock().unwrap().remove(path);
+        self.metadata.lock().unwrap().remove(path);
         Ok(())
     }
 
@@ -526,6 +607,7 @@ impl FileSystemProvider for MockFileSystemProvider {
         let mut files = self.files.lock().unwrap();
         let mut binary_files = self.binary_files.lock().unwrap();
         let mut directories = self.directories.lock().unwrap();
+        let mut metadata = self.metadata.lock().unwrap();
         let paths_to_remove: Vec<PathBuf> = files
             .keys()
             .filter(|p| p.starts_with(path))
@@ -541,6 +623,11 @@ impl FileSystemProvider for MockFileSystemProvider {
             .filter(|p| p.starts_with(path))
             .cloned()
             .collect();
+        let metadata_to_remove: Vec<PathBuf> = metadata
+            .keys()
+            .filter(|p| p.starts_with(path))
+            .cloned()
+            .collect();
 
         for path in paths_to_remove {
             files.remove(&path);
@@ -552,6 +639,10 @@ impl FileSystemProvider for MockFileSystemProvider {
 
         for path in directories_to_remove {
             directories.remove(&path);
+        }
+
+        for path in metadata_to_remove {
+            metadata.remove(&path);
         }
 
         Ok(())

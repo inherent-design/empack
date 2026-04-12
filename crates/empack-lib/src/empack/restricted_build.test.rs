@@ -1,4 +1,5 @@
 use super::*;
+use crate::application::session::FileMetadata;
 use crate::application::session_mocks::{MockFileSystemProvider, mock_root};
 use std::ffi::OsString;
 use std::path::Path;
@@ -55,6 +56,39 @@ fn sample_restricted_mods(workdir: &Path) -> Vec<RestrictedModInfo> {
             dest_path: restricted_dest(workdir, "server-full", "entityculling.jar"),
         },
     ]
+}
+
+fn recent_file_metadata(len: usize, timestamp_ms: u64) -> FileMetadata {
+    FileMetadata {
+        is_directory: false,
+        len: len as u64,
+        modified_unix_ms: Some(timestamp_ms),
+        created_unix_ms: Some(timestamp_ms),
+    }
+}
+
+fn modified_only_file_metadata(len: usize, timestamp_ms: u64) -> FileMetadata {
+    FileMetadata {
+        is_directory: false,
+        len: len as u64,
+        modified_unix_ms: Some(timestamp_ms),
+        created_unix_ms: None,
+    }
+}
+
+fn sample_resourcepack_restricted_mod(workdir: &Path) -> RestrictedModInfo {
+    RestrictedModInfo {
+        name: "No Enchant Glint".to_string(),
+        url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+            .to_string(),
+        dest_path: workdir
+            .join("dist")
+            .join("client-full")
+            .join("resourcepacks")
+            .join("No_Enchant_Glint.zip")
+            .to_string_lossy()
+            .to_string(),
+    }
 }
 
 #[test]
@@ -238,8 +272,13 @@ fn imports_downloads_into_cache_and_restores_to_every_destination() {
         .create_dir_all(&workdir.join("dist").join("server-full"))
         .expect("create server-full");
 
-    import_matching_downloads_into_cache(&provider, &pending, std::slice::from_ref(&downloads_dir))
-        .expect("import downloads into cache");
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("import downloads into cache");
     assert!(
         provider.exists(&pending.restricted_cache_path().join("entityculling.jar")),
         "download should be imported into the managed restricted cache"
@@ -259,5 +298,279 @@ fn imports_downloads_into_cache_and_restores_to_every_destination() {
             .read_bytes(&PathBuf::from(&pending.entries[1].dest_path))
             .expect("read second restored file"),
         b"cached mod bytes"
+    );
+}
+
+#[test]
+fn import_matching_downloads_into_cache_imports_recent_unicode_named_zip_when_exact_filename_is_missing(
+) {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-unicode-recent");
+    let downloads_dir = workdir.join("downloads");
+    let bytes = b"manual resource pack bytes".to_vec();
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(
+            downloads_dir.join("§6No Enchant Glint 1.20.1.zip"),
+            bytes.clone(),
+            recent_file_metadata(bytes.len(), 205_000),
+        );
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.recorded_at_unix_ms = Some(200_000);
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("import recent unicode download");
+
+    assert_eq!(
+        provider
+            .read_bytes(&pending.restricted_cache_path().join("No_Enchant_Glint.zip"))
+            .expect("read cached file"),
+        bytes
+    );
+}
+
+#[test]
+fn import_matching_downloads_into_cache_ignores_old_unicode_zip_candidates() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-unicode-old");
+    let downloads_dir = workdir.join("downloads");
+    let bytes = b"old resource pack bytes".to_vec();
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(
+            downloads_dir.join("§6No Enchant Glint 1.20.1.zip"),
+            bytes,
+            recent_file_metadata(23, 150_000),
+        );
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.recorded_at_unix_ms = Some(200_000);
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("import old unicode candidate");
+
+    assert!(
+        !provider.exists(&pending.restricted_cache_path().join("No_Enchant_Glint.zip")),
+        "old candidate should not be imported"
+    );
+    assert_eq!(missing_cached_entries(&provider, &pending).len(), 1);
+}
+
+#[test]
+fn import_matching_downloads_into_cache_uses_modified_time_when_created_time_is_unavailable() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-modified-fallback");
+    let downloads_dir = workdir.join("downloads");
+    let bytes = b"modified-only bytes".to_vec();
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(
+            downloads_dir.join("§6No Enchant Glint 1.20.1.zip"),
+            bytes.clone(),
+            modified_only_file_metadata(bytes.len(), 205_000),
+        );
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.recorded_at_unix_ms = Some(200_000);
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("import modified-only candidate");
+
+    assert_eq!(
+        provider
+            .read_bytes(&pending.restricted_cache_path().join("No_Enchant_Glint.zip"))
+            .expect("read cached file"),
+        bytes
+    );
+}
+
+#[test]
+fn import_matching_downloads_into_cache_collapses_duplicate_candidates_by_sha256() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-deduped-hash");
+    let downloads_a = workdir.join("downloads-a");
+    let downloads_b = workdir.join("downloads-b");
+    let bytes = b"duplicate candidate bytes".to_vec();
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(
+            downloads_a.join("§6No Enchant Glint 1.20.1.zip"),
+            bytes.clone(),
+            recent_file_metadata(bytes.len(), 205_000),
+        )
+        .with_binary_file_and_metadata(
+            downloads_b.join("No Enchant Glint copy.zip"),
+            bytes.clone(),
+            recent_file_metadata(bytes.len(), 206_000),
+        );
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.recorded_at_unix_ms = Some(200_000);
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        &[downloads_a, downloads_b],
+    )
+    .expect("import duplicate candidates");
+
+    assert!(
+        provider.exists(&pending.restricted_cache_path().join("No_Enchant_Glint.zip")),
+        "duplicate candidates with identical hashes should collapse into one import"
+    );
+}
+
+#[test]
+fn import_matching_downloads_into_cache_does_not_guess_when_multiple_distinct_recent_zip_candidates_exist(
+) {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-ambiguous-recent");
+    let downloads_dir = workdir.join("downloads");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(
+            downloads_dir.join("§6No Enchant Glint 1.20.1.zip"),
+            b"first bytes".to_vec(),
+            recent_file_metadata(11, 205_000),
+        )
+        .with_binary_file_and_metadata(
+            downloads_dir.join("Other recent pack.zip"),
+            b"second bytes".to_vec(),
+            recent_file_metadata(12, 206_000),
+        );
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.recorded_at_unix_ms = Some(200_000);
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("scan ambiguous candidates");
+
+    assert!(
+        !provider.exists(&pending.restricted_cache_path().join("No_Enchant_Glint.zip")),
+        "ambiguous recent candidates should not be guessed"
+    );
+    assert_eq!(missing_cached_entries(&provider, &pending).len(), 1);
+}
+
+#[test]
+fn import_matching_downloads_into_cache_scans_managed_cache_for_recent_variant_names() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-cache-variant");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.recorded_at_unix_ms = Some(200_000);
+
+    let variant_path = pending
+        .restricted_cache_path()
+        .join("§6No Enchant Glint 1.20.1.zip");
+    provider
+        .create_dir_all(&pending.restricted_cache_path())
+        .expect("create cache dir");
+    provider
+        .write_bytes(&variant_path, b"cached variant bytes")
+        .expect("write cache variant");
+    provider.set_file_metadata(
+        variant_path,
+        recent_file_metadata("cached variant bytes".len(), 205_000),
+    );
+
+    import_matching_downloads_into_cache(&provider, &workdir, &pending, &[])
+        .expect("import cache variant");
+
+    assert_eq!(
+        provider
+            .read_bytes(&pending.restricted_cache_path().join("No_Enchant_Glint.zip"))
+            .expect("read normalized cache target"),
+        b"cached variant bytes"
     );
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::application::session::{FileSystemProvider, ProcessOutput};
+use crate::application::session::{FileMetadata, FileSystemProvider, ProcessOutput};
 use crate::application::session_mocks::mock_root;
 use crate::empack::config::ConfigManager;
 use crate::empack::packwiz::MockPackwizOps;
@@ -115,6 +115,33 @@ impl crate::application::session::FileSystemProvider for MockStateProvider {
 
     fn is_directory(&self, path: &Path) -> bool {
         self.directories.borrow().contains(path)
+    }
+
+    fn file_metadata(&self, path: &Path) -> anyhow::Result<FileMetadata> {
+        if self.files.borrow().contains(path) {
+            let len = self
+                .file_contents
+                .borrow()
+                .get(path)
+                .map_or(0, |content| content.len() as u64);
+            return Ok(FileMetadata {
+                is_directory: false,
+                len,
+                modified_unix_ms: None,
+                created_unix_ms: None,
+            });
+        }
+
+        if self.directories.borrow().contains(path) {
+            return Ok(FileMetadata {
+                is_directory: true,
+                len: 0,
+                modified_unix_ms: None,
+                created_unix_ms: None,
+            });
+        }
+
+        Err(anyhow::anyhow!("File not found: {}", path.display()))
     }
 
     fn create_dir_all(&self, path: &Path) -> anyhow::Result<()> {

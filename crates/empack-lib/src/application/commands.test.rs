@@ -4337,6 +4337,19 @@ mod handle_build_continue_tests {
         }
     }
 
+    fn recent_file_metadata(len: usize) -> crate::application::session::FileMetadata {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        crate::application::session::FileMetadata {
+            is_directory: false,
+            len: len as u64,
+            modified_unix_ms: Some(now),
+            created_unix_ms: Some(now),
+        }
+    }
+
     fn restricted_install_output(workdir: &std::path::Path) -> crate::application::session::ProcessOutput {
         crate::application::session::ProcessOutput {
             stdout: "Failed to download modpack, the following errors were encountered:\nOptiFine.jar:".to_string(),
@@ -4785,6 +4798,85 @@ mod handle_build_continue_tests {
                 .filesystem()
                 .exists(&pending.restricted_cache_path().join("OptiFine.jar")),
             "downloads-dir file should be imported into the managed restricted cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_continue_detects_recent_unicode_windows_style_download_with_variant_filename() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-import-unicode-downloads-dir");
+        let downloads_dir = workdir.join("manual-downloads");
+        let download_bytes = b"manual bytes".to_vec();
+        let filesystem = cached_full_build_filesystem(workdir.clone()).with_binary_file_and_metadata(
+            downloads_dir.join("§6No Enchant Glint 1.20.1.zip"),
+            download_bytes.clone(),
+            recent_file_metadata(download_bytes.len()),
+        );
+        let session = MockCommandSession::new()
+            .with_filesystem(filesystem)
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::Mrpack],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "No Enchant Glint".to_string(),
+                url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+                    .to_string(),
+                dest_path: workdir
+                    .join("packwiz-cache")
+                    .join("import")
+                    .join("No_Enchant_Glint.zip")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                downloads_dir: Some(downloads_dir.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "unicode variant download should be detected and continued: {result:?}"
+        );
+        let restricted_cache_dir =
+            crate::empack::restricted_build::restricted_cache_dir(&workdir).expect("cache dir");
+        assert!(
+            session
+                .filesystem()
+                .exists(&restricted_cache_dir.join("No_Enchant_Glint.zip")),
+            "variant filename should be imported into the expected cache filename"
+        );
+        assert!(
+            session
+                .filesystem()
+                .exists(&PathBuf::from(&pending.entries[0].dest_path)),
+            "cached variant should be restored into the packwiz import destination"
+        );
+        assert!(
+            session
+                .filesystem()
+                .exists(&workdir.join("dist").join("Restricted Pack-v1.0.0.mrpack")),
+            "continued build should produce the mrpack artifact"
+        );
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_none(),
+            "pending state should clear after successful continue"
         );
     }
 
