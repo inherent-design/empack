@@ -522,6 +522,27 @@ fn process_timeout() -> std::time::Duration {
     DEFAULT_PROCESS_TIMEOUT
 }
 
+fn is_empack_project_boundary(dir: &Path) -> bool {
+    dir.join("empack.yml").exists() || dir.join("pack").join("pack.toml").exists()
+}
+
+fn cleanup_process_interrupt_marker(working_dir: &Path) {
+    let mut current = Some(working_dir);
+
+    while let Some(dir) = current {
+        let marker = dir.join(crate::empack::state::STATE_MARKER_FILE);
+        if std::fs::remove_file(&marker).is_ok() {
+            return;
+        }
+
+        if is_empack_project_boundary(dir) {
+            return;
+        }
+
+        current = dir.parent();
+    }
+}
+
 pub struct LiveProcessProvider {
     custom_path: Option<String>,
 }
@@ -726,20 +747,7 @@ impl ProcessProvider for LiveProcessProvider {
         fn handle_process_interrupt(working_dir: &Path) -> ! {
             crate::terminal::cursor::force_show_cursor();
             crate::logger::global_shutdown();
-
-            let mut candidates = Vec::new();
-            candidates.push(working_dir.to_path_buf());
-            if let Some(parent) = working_dir.parent() {
-                candidates.push(parent.to_path_buf());
-                if let Some(grandparent) = parent.parent() {
-                    candidates.push(grandparent.to_path_buf());
-                }
-            }
-
-            for dir in candidates {
-                let marker = dir.join(crate::empack::state::STATE_MARKER_FILE);
-                let _ = std::fs::remove_file(marker);
-            }
+            cleanup_process_interrupt_marker(working_dir);
 
             std::process::exit(130)
         }
@@ -1571,6 +1579,19 @@ mod tests {
         }
     }
 
+    fn write_empack_boundary(root: &Path) {
+        std::fs::create_dir_all(root.join("pack")).expect("create pack dir");
+        std::fs::write(root.join("empack.yml"), "name: test-pack\n").expect("write empack.yml");
+        std::fs::write(root.join("pack").join("pack.toml"), "name = \"test-pack\"\n")
+            .expect("write pack.toml");
+    }
+
+    fn write_state_marker(root: &Path) -> std::path::PathBuf {
+        let marker = root.join(crate::empack::state::STATE_MARKER_FILE);
+        std::fs::write(&marker, "active\n").expect("write state marker");
+        marker
+    }
+
     #[test]
     fn recording_display_status_records_all_event_kinds() {
         let display = RecordingDisplay::default();
@@ -1911,6 +1932,53 @@ mod tests {
             .expect_err("missing command should fail");
 
         assert!(error.to_string().contains("Failed to spawn command"));
+    }
+
+    #[test]
+    fn cleanup_process_interrupt_marker_removes_marker_from_pack_parent() {
+        let temp = TempDir::new().expect("temp dir");
+        let root = temp.path();
+        let pack_dir = root.join("pack");
+        write_empack_boundary(root);
+        let marker = write_state_marker(root);
+
+        cleanup_process_interrupt_marker(&pack_dir);
+
+        assert!(!marker.exists(), "root marker should be removed");
+    }
+
+    #[test]
+    fn cleanup_process_interrupt_marker_removes_marker_from_dist_grandparent() {
+        let temp = TempDir::new().expect("temp dir");
+        let root = temp.path();
+        let dist_server_dir = root.join("dist").join("server");
+        write_empack_boundary(root);
+        std::fs::create_dir_all(&dist_server_dir).expect("create dist/server dir");
+        let marker = write_state_marker(root);
+
+        cleanup_process_interrupt_marker(&dist_server_dir);
+
+        assert!(!marker.exists(), "root marker should be removed");
+    }
+
+    #[test]
+    fn cleanup_process_interrupt_marker_does_not_remove_parent_project_marker() {
+        let temp = TempDir::new().expect("temp dir");
+        let outer = temp.path().join("outer");
+        let nested = outer.join("nested");
+        let nested_dist_server = nested.join("dist").join("server");
+
+        write_empack_boundary(&outer);
+        write_empack_boundary(&nested);
+        std::fs::create_dir_all(&nested_dist_server).expect("create nested dist/server dir");
+        let outer_marker = write_state_marker(&outer);
+
+        cleanup_process_interrupt_marker(&nested_dist_server);
+
+        assert!(
+            outer_marker.exists(),
+            "outer project marker should remain in place"
+        );
     }
 
     #[cfg(unix)]
