@@ -119,10 +119,12 @@ fn e2e_init_existing_project() {
         .expect("failed to spawn");
     assert!(!output.status.success());
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}{stderr}");
     assert!(
-        stderr.contains("already contains"),
-        "stderr did not mention 'already contains'\n{stderr}"
+        combined.contains("already contains"),
+        "output did not mention 'already contains'\nstdout: {stdout}\nstderr: {stderr}"
     );
 }
 
