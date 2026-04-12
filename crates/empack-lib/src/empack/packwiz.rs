@@ -1042,6 +1042,34 @@ fn strip_ansi_control_sequences(text: &str) -> String {
     result
 }
 
+fn join_reported_import_path(import_dir: &str, filename: &str) -> String {
+    let import_dir = import_dir.trim();
+    let filename = filename.trim();
+
+    if import_dir.is_empty() {
+        return filename.to_string();
+    }
+
+    if import_dir.ends_with(['/', '\\']) {
+        return format!("{import_dir}{filename}");
+    }
+
+    let separator = match (import_dir.rfind('/'), import_dir.rfind('\\')) {
+        (Some(slash), Some(backslash)) => {
+            if backslash > slash {
+                '\\'
+            } else {
+                '/'
+            }
+        }
+        (Some(_), None) => '/',
+        (None, Some(_)) => '\\',
+        (None, None) => std::path::MAIN_SEPARATOR,
+    };
+
+    format!("{import_dir}{separator}{filename}")
+}
+
 pub(crate) fn parse_export_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
     let mut results = Vec::new();
     let mut seen = HashSet::new();
@@ -1091,8 +1119,7 @@ pub(crate) fn parse_export_restricted_output(output: &str) -> Vec<RestrictedModI
             .unwrap_or(after_from.len());
         let url = normalize_curseforge_manual_download_url(after_from[..url_end].trim());
         let name = name_and_filename[..open_idx].trim().to_string();
-        let dest_path = Path::new(import_dir).join(filename);
-        let dest_path = dest_path.to_string_lossy().to_string();
+        let dest_path = join_reported_import_path(import_dir, filename);
         if seen.insert((url.clone(), dest_path.clone())) {
             results.push(RestrictedModInfo {
                 name,
