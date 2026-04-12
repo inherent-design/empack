@@ -7586,6 +7586,48 @@ mod tracked_local_dependency_tests {
     }
 
     #[tokio::test]
+    async fn validate_local_dependencies_rejects_absolute_paths() {
+        let workdir = mock_root().join("validate-local-dependency-absolute-path");
+        let outside_path = mock_root().join("outside-validate-local-dependency.zip");
+        let outside_bytes = b"resourcepack-bytes".to_vec();
+        let outside_sha256 = compute_sha256_hex_for_bytes(&outside_bytes);
+
+        let filesystem = MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone())
+            .with_binary_file(outside_path.clone(), outside_bytes);
+        let session = MockCommandSession::new().with_filesystem(filesystem);
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: outside_path.to_string_lossy().to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256: outside_sha256,
+                }),
+            )
+            .expect("add local dependency");
+
+        let project_plan = session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .create_project_plan()
+            .expect("create project plan");
+        let issues = validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
+
+        assert_eq!(issues.len(), 1, "absolute path should produce one validation issue");
+        assert_eq!(issues[0].key, "example-pack");
+        assert_eq!(issues[0].path, outside_path.to_string_lossy());
+        assert_eq!(issues[0].reason, "path must be relative");
+    }
+
+    #[tokio::test]
     async fn build_mrpack_rejects_tracked_local_dependencies() {
         let workdir = mock_root().join("build-mrpack-local-dependency");
         let relative_path = "pack/resourcepacks/example-pack.zip";
