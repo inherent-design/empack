@@ -153,6 +153,7 @@ fn classify_message(message: &str) -> EmpackExitCode {
         || normalized.contains("unknown build target")
         || normalized.contains("loader version is required")
         || normalized.contains("direct .zip urls require --type")
+        || normalized.contains("direct .zip urls support only --type")
         || normalized.contains("adding non-.zip direct-download files is not supported")
         || normalized
             .contains("tracked local dependencies are not yet supported for mrpack exports")
@@ -222,5 +223,13 @@ mod tests {
     fn classify_error_does_not_overclassify_generic_http_prefix_messages() {
         let error = anyhow::anyhow!("http proxy configuration is invalid");
         assert_eq!(classify_error(&error), EmpackExitCode::General);
+    }
+
+    #[test]
+    fn classify_error_maps_invalid_direct_zip_type_to_usage() {
+        let error = anyhow::anyhow!(
+            "Direct .zip URLs support only --type resourcepack, shader, or datapack"
+        );
+        assert_eq!(classify_error(&error), EmpackExitCode::Usage);
     }
 }
