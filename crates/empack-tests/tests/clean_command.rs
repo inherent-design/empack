@@ -13,8 +13,17 @@ use empack_lib::application::session::{
 use empack_lib::application::session_mocks::{MockInteractiveProvider, MockProcessProvider};
 use empack_lib::display::Display;
 use empack_lib::terminal::TerminalCapabilities;
+use empack_tests::e2e::empack_cmd;
 use empack_tests::fixtures::{WorkflowArtifact, WorkflowProjectFixture};
 use tempfile::TempDir;
+
+fn combined_output(output: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
 
 #[tokio::test]
 async fn e2e_clean_builds_successfully() -> Result<()> {
@@ -109,41 +118,20 @@ async fn e2e_clean_no_artifacts() -> Result<()> {
     // Initialize: Create a real empack project (no build artifacts)
     let paths = fixture.write_to(&workdir)?;
 
-    // Set working directory for the test
-    std::env::set_current_dir(&workdir)?;
+    let output = empack_cmd(&workdir).args(["clean", "builds"]).output()?;
+    let combined = combined_output(&output);
 
-    // Create session
-    let app_config = AppConfig {
-        workdir: Some(workdir.clone()),
-        ..AppConfig::default()
-    };
-
-    // Initialize display system
-    let terminal_caps = TerminalCapabilities::detect_from_config(app_config.color)?;
-    Display::init_or_get(terminal_caps);
-
-    let session = CommandSession::new_with_providers(
-        LiveFileSystemProvider,
-        LiveNetworkProvider::new(),
-        MockProcessProvider::new(),
-        LiveConfigProvider::new(app_config),
-        MockInteractiveProvider::new(),
-    );
-
-    // Execute the clean command (no artifacts to clean)
-    let result = execute_command_with_session(
-        Commands::Clean {
-            targets: vec!["builds".to_string()],
-        },
-        &session,
-    )
-    .await;
-
-    // Assert: Command should succeed even with no artifacts
     assert!(
-        result.is_ok(),
-        "Clean command should succeed with no artifacts: {:?}",
-        result
+        output.status.success(),
+        "Clean command should succeed with no artifacts.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("No build artifacts to clean"),
+        "combined output did not mention 'No build artifacts to clean'\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
     assert!(
         paths.empack_yml.exists(),
