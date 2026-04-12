@@ -3,6 +3,20 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.6 - 2026-04-12
+
+### Bug Fixes
+
+- Restore curated smoke fallback
+
+### CI/CD
+
+- Add curated import smoke to PR checks
+
+### Maintenance
+
+- Update changelog for 0.4.0-alpha.5
+
 ## v0.4.0-alpha.5 - 2026-04-12
 
 ### Bug Fixes
