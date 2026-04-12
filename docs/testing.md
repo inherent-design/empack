@@ -90,11 +90,13 @@ These fixtures should carry API-shape assertions that do not need live network t
 
 ## Current State
 
-As of 2026-04-10:
+The structural statements above are the maintained contract. Exact counts below are historical snapshots and will drift as the suite changes; use current CI or a fresh local run for authoritative totals.
 
-- `mise run test` completes with 1185 passed and 80 skipped across 24 binaries.
-- `mise run e2e` runs 79 active E2E tests across 21 binaries, with 46 skipped and one slow path (`e2e_build_server_sevenz`).
-- the latest verified coverage snapshot remains from 2026-04-09: `mise run coverage` ran 1225 tests with 1 skipped across 24 binaries, with two slow paths (`e2e_build_server_sevenz`, `e2e_init_yes_neoforge_legacy_1_20_1`).
-- the latest verified coverage snapshot remains 88.02% on non-`.test.rs` files under `crates/empack-lib/src` and `crates/empack/src`, and 94.14% on `TOTAL`.
+Latest documented snapshots:
+
+- 2026-04-10: `mise run test` completed with 1185 passed and 80 skipped across 24 binaries.
+- 2026-04-10: `mise run e2e` ran 79 active E2E tests across 21 binaries, with 46 skipped and one slow path (`e2e_build_server_sevenz`).
+- 2026-04-09: `mise run coverage` ran 1225 tests with 1 skipped across 24 binaries, with two slow paths (`e2e_build_server_sevenz`, `e2e_init_yes_neoforge_legacy_1_20_1`).
+- 2026-04-09: the latest documented coverage snapshot was 88.02% on non-`.test.rs` files under `crates/empack-lib/src` and `crates/empack/src`, and 94.14% on `TOTAL`.
 - `mise run coverage` is the combined instrumented path for unit and E2E coverage.
 - there is no `mise run e2e:container` task in the current repo.
