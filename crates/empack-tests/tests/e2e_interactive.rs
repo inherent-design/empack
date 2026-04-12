@@ -359,17 +359,13 @@ fn e2e_build_restricted_browser_confirm_accept_launches_browser_opener() {
     session
         .send_line("y")
         .expect("failed to accept browser open");
-    let _ = session.expect(Regex("(?i)build --continue"));
+    session
+        .expect(Regex("(?i)waiting up to 5 minutes|restricted downloads"))
+        .expect("expected restricted download wait output");
 
     let pending = wait_for_pending(project.dir());
     assert_eq!(pending.entries.len(), 1);
-
-    for _ in 0..20 {
-        if browser_log.exists() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    wait_for_path(&browser_log);
 
     let opened = std::fs::read_to_string(&browser_log)
         .unwrap_or_else(|_| panic!("failed to read {}", browser_log.display()));
@@ -431,6 +427,7 @@ fn e2e_build_restricted_browser_confirm_accept_waits_and_auto_continues() {
         archive.exists(),
         "auto-continued build should produce a client-full archive"
     );
+    wait_for_path(&browser_log);
     let opened = std::fs::read_to_string(&browser_log)
         .unwrap_or_else(|_| panic!("failed to read {}", browser_log.display()));
     assert!(
