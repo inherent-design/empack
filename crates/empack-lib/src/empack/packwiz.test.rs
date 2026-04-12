@@ -1642,6 +1642,22 @@ Once you have done so, place these files in /Users/test/Library/Caches/packwiz/c
 }
 
 #[test]
+fn test_parse_export_restricted_output_preserves_windows_import_separator_style() {
+    let output = "\
+Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
+Bee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962
+Once you have done so, place these files in C:\\Users\\test\\AppData\\Local\\packwiz\\cache\\import and re-run this command.";
+
+    let results = parse_export_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].dest_path,
+        "C:\\Users\\test\\AppData\\Local\\packwiz\\cache\\import\\BeeFix-1.20-1.0.7.jar"
+    );
+}
+
+#[test]
 fn test_parse_export_restricted_output_requires_import_dir_line() {
     let output = "\
 Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
