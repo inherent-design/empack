@@ -83,12 +83,13 @@ impl MockFileSystemProvider {
     }
 
     pub fn with_file(self, path: PathBuf, content: String) -> Self {
-        // Add parent directory to directories set
         if let Some(parent) = path.parent() {
-            self.directories
-                .lock()
-                .unwrap()
-                .insert(parent.to_path_buf());
+            let mut directories = self.directories.lock().unwrap();
+            let mut current = Some(parent);
+            while let Some(dir) = current {
+                directories.insert(dir.to_path_buf());
+                current = dir.parent();
+            }
         }
         self.files.lock().unwrap().insert(path, content);
         self
@@ -96,6 +97,19 @@ impl MockFileSystemProvider {
 
     pub fn with_files(self, files: HashMap<PathBuf, String>) -> Self {
         *self.files.lock().unwrap() = files;
+        self
+    }
+
+    pub fn with_binary_file(self, path: PathBuf, content: Vec<u8>) -> Self {
+        if let Some(parent) = path.parent() {
+            let mut directories = self.directories.lock().unwrap();
+            let mut current = Some(parent);
+            while let Some(dir) = current {
+                directories.insert(dir.to_path_buf());
+                current = dir.parent();
+            }
+        }
+        self.binary_files.lock().unwrap().insert(path, content);
         self
     }
 
@@ -291,6 +305,14 @@ impl FileSystemProvider for MockFileSystemProvider {
     }
 
     fn write_file(&self, path: &std::path::Path, content: &str) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            let mut directories = self.directories.lock().unwrap();
+            let mut current = Some(parent);
+            while let Some(dir) = current {
+                directories.insert(dir.to_path_buf());
+                current = dir.parent();
+            }
+        }
         self.binary_files.lock().unwrap().remove(path);
         self.files
             .lock()
@@ -300,6 +322,14 @@ impl FileSystemProvider for MockFileSystemProvider {
     }
 
     fn write_bytes(&self, path: &std::path::Path, content: &[u8]) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            let mut directories = self.directories.lock().unwrap();
+            let mut current = Some(parent);
+            while let Some(dir) = current {
+                directories.insert(dir.to_path_buf());
+                current = dir.parent();
+            }
+        }
         self.files.lock().unwrap().remove(path);
         self.binary_files
             .lock()
@@ -713,6 +743,9 @@ pub struct ProcessCall {
 pub struct MockProcessProvider {
     pub calls: Arc<Mutex<Vec<ProcessCall>>>,
     pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
+    pub result_sequences: Arc<
+        Mutex<HashMap<(String, Vec<String>), VecDeque<std::result::Result<ProcessOutput, String>>>>,
+    >,
     pub programs: HashMap<String, Option<String>>,
     materialize_mrpack_exports: bool,
     java_installer_side_effects: bool,
@@ -739,6 +772,7 @@ impl MockProcessProvider {
         let mut provider = Self {
             calls: Arc::new(Mutex::new(Vec::new())),
             results: HashMap::new(),
+            result_sequences: Arc::new(Mutex::new(HashMap::new())),
             programs,
             materialize_mrpack_exports: false,
             java_installer_side_effects: false,
@@ -832,6 +866,19 @@ impl MockProcessProvider {
         self
     }
 
+    pub fn with_result_sequence(
+        self,
+        command: String,
+        args: Vec<String>,
+        results: Vec<std::result::Result<ProcessOutput, String>>,
+    ) -> Self {
+        self.result_sequences
+            .lock()
+            .unwrap()
+            .insert((command, args), results.into());
+        self
+    }
+
     pub fn with_packwiz_result(
         mut self,
         args: Vec<String>,
@@ -842,6 +889,18 @@ impl MockProcessProvider {
             result,
         );
         self
+    }
+
+    pub fn with_packwiz_result_sequence(
+        self,
+        args: Vec<String>,
+        results: Vec<std::result::Result<ProcessOutput, String>>,
+    ) -> Self {
+        self.with_result_sequence(
+            crate::empack::packwiz::PACKWIZ_BIN.to_string(),
+            args,
+            results,
+        )
     }
 
     pub fn with_mrpack_export_side_effects(mut self) -> Self {
@@ -1110,7 +1169,25 @@ impl ProcessProvider for MockProcessProvider {
             command.to_string(),
             args.iter().map(|s| s.to_string()).collect(),
         );
-        let output = if let Some(result) = self.results.get(&key) {
+        let queued_result = {
+            let mut sequences = self.result_sequences.lock().unwrap();
+            let next = sequences
+                .get_mut(&key)
+                .and_then(|results| results.pop_front());
+            if sequences
+                .get(&key)
+                .is_some_and(|results| results.is_empty())
+            {
+                sequences.remove(&key);
+            }
+            next
+        };
+        let output = if let Some(result) = queued_result {
+            match result {
+                Ok(output) => Ok(output),
+                Err(e) => Err(anyhow::anyhow!("{}", e)),
+            }
+        } else if let Some(result) = self.results.get(&key) {
             match result {
                 Ok(output) => Ok(output.clone()),
                 Err(e) => Err(anyhow::anyhow!("{}", e)),

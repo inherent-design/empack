@@ -1,8 +1,8 @@
 ---
 spec: platform-modrinth
-status: draft
+status: partial
 created: 2026-04-04
-updated: 2026-04-08
+updated: 2026-04-11
 depends: [overview, types, search-and-resolution, import-pipeline]
 ---
 

@@ -26,6 +26,11 @@ pub struct CliConfig {
     pub command: Option<Commands>,
 }
 
+pub enum CliLoad {
+    Ready(CliConfig),
+    Display(String),
+}
+
 impl CliConfig {
     /// Load configuration from command line arguments
     pub fn load() -> Result<Self, ConfigError> {
@@ -34,6 +39,35 @@ impl CliConfig {
             app_config: cli.config,
             command: cli.command,
         })
+    }
+
+    /// Load CLI configuration for process entrypoints without letting clap exit
+    /// the process directly.
+    pub fn load_for_process() -> Result<CliLoad, ConfigError> {
+        Self::load_for_process_from(std::env::args_os())
+    }
+
+    /// Load explicit command line arguments for process entrypoints.
+    pub fn load_for_process_from<I, T>(args: I) -> Result<CliLoad, ConfigError>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        match Cli::try_parse_from(args) {
+            Ok(cli) => Ok(CliLoad::Ready(Self {
+                app_config: cli.config,
+                command: cli.command,
+            })),
+            Err(error) => match error.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    Ok(CliLoad::Display(error.to_string()))
+                }
+                _ => Err(ConfigError::ParseError {
+                    value: "command line".to_string(),
+                    reason: error.to_string(),
+                }),
+            },
+        }
     }
 
     /// Load configuration from explicit command line arguments.
@@ -483,6 +517,34 @@ mod tests {
         assert!(config.app_config.yes);
         assert!(config.app_config.dry_run);
         assert!(matches!(config.command, Some(Commands::Init(_))));
+    }
+
+    #[test]
+    fn cli_load_for_process_from_returns_display_for_help() {
+        let result = CliConfig::load_for_process_from(["empack", "--help"])
+            .expect("help should not be treated as a parse failure");
+
+        match result {
+            CliLoad::Display(message) => {
+                assert!(message.contains("Minecraft modpack manager"));
+                assert!(message.contains("Usage:"));
+            }
+            CliLoad::Ready(_) => panic!("help should return a display payload"),
+        }
+    }
+
+    #[test]
+    fn cli_load_for_process_from_returns_parse_error_for_invalid_args() {
+        let result = CliConfig::load_for_process_from(["empack", "--definitely-invalid-flag"]);
+
+        match result {
+            Err(ConfigError::ParseError { reason, .. }) => {
+                assert!(reason.contains("--definitely-invalid-flag"));
+            }
+            Ok(CliLoad::Display(_)) => panic!("invalid args should not be treated as help/version"),
+            Ok(CliLoad::Ready(_)) => panic!("invalid args should not parse successfully"),
+            Err(other) => panic!("unexpected error type: {other}"),
+        }
     }
 
     #[test]

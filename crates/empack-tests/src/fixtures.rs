@@ -99,7 +99,7 @@ impl WorkflowProjectFixture {
             &empack_yml,
             format!(
                 r#"empack:
-  dependencies: []
+  dependencies: {{}}
   minecraft_version: "{}"
   loader: {}
   name: "{}"

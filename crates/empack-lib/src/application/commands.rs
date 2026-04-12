@@ -13,11 +13,13 @@ use crate::application::sync::{
     loader_arg, project_type_arg, resolve_add_contract, resolve_sync_action,
 };
 use crate::application::{CliConfig, Commands};
-use crate::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
+use crate::empack::config::{
+    DependencyEntry, DependencyRecord, DependencySource, DependencyStatus, LocalDependencyRecord,
+};
 use crate::empack::content::{JarResolver, UrlKind};
 use crate::empack::import::{
-    ImportConfig, ModpackManifest, SourceKind, execute_import, parse_curseforge_zip,
-    parse_modrinth_mrpack, resolve_manifest,
+    ImportConfig, ModpackManifest, SourceKind, execute_import,
+    parse_curseforge_zip_with_filesystem, parse_modrinth_mrpack_with_filesystem, resolve_manifest,
 };
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::SearchError;
@@ -155,12 +157,12 @@ async fn handle_requirements(session: &dyn Session) -> Result<()> {
         .section("Checking tool dependencies");
 
     let packwiz_path = session.packwiz_bin();
-    let packwiz_works = std::process::Command::new(packwiz_path)
-        .arg("--help")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok();
+    let cwd = session.filesystem().current_dir()?;
+    let packwiz_works = session
+        .process()
+        .execute(packwiz_path, &["--help"], &cwd)
+        .map(|output| output.success)
+        .unwrap_or(false);
     if packwiz_works {
         session.display().status().success(
             "packwiz-tx",
@@ -1137,7 +1139,7 @@ async fn handle_init_from_source(
 }
 
 fn import_from_local(
-    _session: &dyn Session,
+    session: &dyn Session,
     path: &str,
 ) -> Result<(ModpackManifest, Option<tempfile::TempDir>, PathBuf)> {
     let source_path = PathBuf::from(path);
@@ -1145,11 +1147,13 @@ fn import_from_local(
 
     match kind {
         SourceKind::CurseForgeZip => {
-            let manifest = parse_curseforge_zip(&source_path)?;
+            let manifest =
+                parse_curseforge_zip_with_filesystem(session.filesystem(), &source_path)?;
             Ok((manifest, None, source_path))
         }
         SourceKind::ModrinthMrpack => {
-            let manifest = parse_modrinth_mrpack(&source_path)?;
+            let manifest =
+                parse_modrinth_mrpack_with_filesystem(session.filesystem(), &source_path)?;
             Ok((manifest, None, source_path))
         }
         SourceKind::PackwizDirectory => {
@@ -1285,13 +1289,9 @@ async fn download_modrinth_modpack_with_client(
     let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
     let dest_path = tmp_dir.path().join(filename);
 
-    if let Some(parent) = dest_path.parent() {
-        session.filesystem().create_dir_all(parent)?;
-    }
+    download_file(session.filesystem(), client, download_url, &dest_path).await?;
 
-    download_file(client, download_url, &dest_path).await?;
-
-    let manifest = parse_modrinth_mrpack(&dest_path)?;
+    let manifest = parse_modrinth_mrpack_with_filesystem(session.filesystem(), &dest_path)?;
     Ok((manifest, tmp_dir, dest_path))
 }
 
@@ -1455,13 +1455,18 @@ async fn download_curseforge_modpack_with_client(
     let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
     let dest_path = tmp_dir.path().join(filename);
 
-    download_file(client, &dl_url, &dest_path).await?;
+    download_file(session.filesystem(), client, &dl_url, &dest_path).await?;
 
-    let manifest = parse_curseforge_zip(&dest_path)?;
+    let manifest = parse_curseforge_zip_with_filesystem(session.filesystem(), &dest_path)?;
     Ok((manifest, tmp_dir, dest_path))
 }
 
-async fn download_file(client: &reqwest::Client, url: &str, dest: &std::path::Path) -> Result<()> {
+async fn download_file(
+    filesystem: &dyn FileSystemProvider,
+    client: &reqwest::Client,
+    url: &str,
+    dest: &std::path::Path,
+) -> Result<()> {
     let response = client
         .get(url)
         .send()
@@ -1477,7 +1482,14 @@ async fn download_file(client: &reqwest::Client, url: &str, dest: &std::path::Pa
         .await
         .with_context(|| format!("failed to read response body from {}", url))?;
 
-    std::fs::write(dest, &bytes)
+    if let Some(parent) = dest.parent() {
+        filesystem
+            .create_dir_all(parent)
+            .with_context(|| format!("failed to create parent directory for {}", dest.display()))?;
+    }
+
+    filesystem
+        .write_bytes(dest, &bytes)
         .with_context(|| format!("failed to write to {}", dest.display()))?;
 
     Ok(())
@@ -1709,67 +1721,81 @@ async fn handle_add(
                 ref url,
                 ref extension,
             } => {
-                if extension != "jar" {
-                    let msg = format!(
-                        "Adding non-JAR files via URL is not yet supported (got .{extension}). \
-                         For .jar files, the file will be identified and added automatically."
-                    );
-                    session
-                        .display()
-                        .status()
-                        .error("Unsupported file type", &msg);
-                    failed_mods.push((mod_query, msg));
-                    continue;
-                }
+                let explicit_project_type = project_type.as_ref().map(|pt| pt.to_project_type());
 
-                let before_dd_slugs = {
-                    let mut s = std::collections::HashSet::new();
+                let before_dd_slugs = if extension == "jar" {
+                    let mut slugs = std::collections::HashSet::new();
                     for folder in &["mods", "resourcepacks", "shaderpacks", "datapacks"] {
                         let dir = workdir.join("pack").join(folder);
-                        s.extend(scan_pw_toml_slugs(session.filesystem(), &dir));
+                        slugs.extend(scan_pw_toml_slugs(session.filesystem(), &dir));
                     }
-                    s
+                    Some(slugs)
+                } else {
+                    None
                 };
 
-                match handle_direct_download_jar(session, url, resolver.as_ref()).await {
+                let direct_result = if extension == "jar" {
+                    handle_direct_download_jar(session, url, resolver.as_ref()).await
+                } else {
+                    handle_direct_download_non_jar(session, url, extension, explicit_project_type)
+                        .await
+                };
+
+                match direct_result {
                     Ok(resolution) => {
                         session
                             .display()
                             .status()
                             .success("Added", &resolution.title);
-                        if !resolution.local
-                            && let Some(ref pid) = resolution.project_id
-                        {
-                            let after_dd_slugs = {
-                                let mut s = std::collections::HashSet::new();
-                                for folder in &["mods", "resourcepacks", "shaderpacks", "datapacks"]
-                                {
-                                    let dir = workdir.join("pack").join(folder);
-                                    s.extend(scan_pw_toml_slugs(session.filesystem(), &dir));
-                                }
-                                s
-                            };
-                            let new_dd: Vec<_> =
-                                after_dd_slugs.difference(&before_dd_slugs).collect();
-                            let dep_key = if new_dd.len() == 1 {
-                                new_dd[0].clone()
-                            } else {
-                                resolution.title.to_lowercase().replace(' ', "-")
-                            };
+                        match resolution.kind {
+                            DirectDownloadKind::Resolved {
+                                platform,
+                                project_id,
+                            } => {
+                                let before_dd_slugs =
+                                    before_dd_slugs.as_ref().expect("jar direct download");
+                                let after_dd_slugs = {
+                                    let mut s = std::collections::HashSet::new();
+                                    for folder in
+                                        &["mods", "resourcepacks", "shaderpacks", "datapacks"]
+                                    {
+                                        let dir = workdir.join("pack").join(folder);
+                                        s.extend(scan_pw_toml_slugs(session.filesystem(), &dir));
+                                    }
+                                    s
+                                };
+                                let new_dd: Vec<_> =
+                                    after_dd_slugs.difference(before_dd_slugs).collect();
+                                let dep_key = if new_dd.len() == 1 {
+                                    new_dd[0].clone()
+                                } else {
+                                    resolution.title.to_lowercase().replace(' ', "-")
+                                };
 
-                            let record = DependencyRecord {
-                                status: DependencyStatus::Resolved,
-                                title: resolution.title.clone(),
-                                platform: resolution.platform,
-                                project_id: pid.clone(),
-                                project_type: resolution.project_type,
-                                version: None,
-                            };
-                            if let Err(e) = config_manager.add_dependency(&dep_key, record) {
-                                session
-                                    .display()
-                                    .status()
-                                    .warning(&format!("Failed to update empack.yml: {}", e));
+                                let record = DependencyRecord {
+                                    status: DependencyStatus::Resolved,
+                                    title: resolution.title.clone(),
+                                    platform,
+                                    project_id,
+                                    project_type: resolution.project_type,
+                                    version: None,
+                                };
+                                if let Err(e) = config_manager.add_dependency(&dep_key, record) {
+                                    session
+                                        .display()
+                                        .status()
+                                        .warning(&format!("Failed to update empack.yml: {}", e));
+                                }
+                            }
+                            DirectDownloadKind::Local { dep_key, record } => {
+                                if let Err(e) = config_manager
+                                    .add_dependency_entry(&dep_key, DependencyEntry::Local(record))
+                                {
+                                    session
+                                        .display()
+                                        .status()
+                                        .warning(&format!("Failed to update empack.yml: {}", e));
+                                }
                             }
                         }
                         added_mods.push(mod_query);
@@ -2364,10 +2390,10 @@ async fn handle_direct_download_jar_with_client_and_resolver<R: JarResolver>(
     let filename = url.rsplit('/').next().unwrap_or("download.jar");
     let dest_path = tmp_dir.path().join(filename);
 
-    download_file(client, url, &dest_path).await?;
+    download_file(session.filesystem(), client, url, &dest_path).await?;
 
     let sha1 = {
-        let bytes = std::fs::read(&dest_path)?;
+        let bytes = session.filesystem().read_bytes(&dest_path)?;
         compute_sha1_hex_for_bytes(&bytes)
     };
 
@@ -2382,7 +2408,6 @@ async fn handle_direct_download_jar_with_client_and_resolver<R: JarResolver>(
     let identity = jar_resolver.identify(identify_request).await?;
     let manager = session.state()?;
     let workdir = manager.workdir.clone();
-    let mods_dir = workdir.join("pack").join("mods");
 
     match identity {
         crate::empack::content::JarIdentity::Modrinth {
@@ -2419,10 +2444,11 @@ async fn handle_direct_download_jar_with_client_and_resolver<R: JarResolver>(
 
             Ok(DirectDownloadResult {
                 title: title.clone(),
-                platform: ProjectPlatform::Modrinth,
-                project_id: Some(project_id),
                 project_type: ProjectType::Mod,
-                local: false,
+                kind: DirectDownloadKind::Resolved {
+                    platform: ProjectPlatform::Modrinth,
+                    project_id,
+                },
             })
         }
         crate::empack::content::JarIdentity::CurseForge {
@@ -2461,10 +2487,11 @@ async fn handle_direct_download_jar_with_client_and_resolver<R: JarResolver>(
 
             Ok(DirectDownloadResult {
                 title: title.clone(),
-                platform: ProjectPlatform::CurseForge,
-                project_id: Some(pid_str),
                 project_type: ProjectType::Mod,
-                local: false,
+                kind: DirectDownloadKind::Resolved {
+                    platform: ProjectPlatform::CurseForge,
+                    project_id: pid_str,
+                },
             })
         }
         crate::empack::content::JarIdentity::Unidentified => {
@@ -2475,43 +2502,202 @@ async fn handle_direct_download_jar_with_client_and_resolver<R: JarResolver>(
             session
                 .display()
                 .status()
-                .info("Copying JAR to mods/ as a local-only entry");
-
-            session
-                .filesystem()
-                .create_dir_all(&mods_dir)
-                .context("failed to create mods directory")?;
+                .info("Tracking JAR as a local dependency");
 
             let jar_filename = filename.to_string();
-            let dest = mods_dir.join(&jar_filename);
-            let bytes = std::fs::read(&dest_path)?;
-            session
-                .filesystem()
-                .write_bytes(&dest, &bytes)
-                .context("failed to copy JAR to mods/")?;
-
-            session.display().status().info(&format!(
-                "Copied to {} (manage updates manually)",
-                dest.display()
-            ));
-
-            Ok(DirectDownloadResult {
-                title: jar_filename,
-                platform: ProjectPlatform::Modrinth,
-                project_id: None,
-                project_type: ProjectType::Mod,
-                local: true,
-            })
+            let bytes = session.filesystem().read_bytes(&dest_path)?;
+            build_tracked_local_dependency(
+                session,
+                &workdir,
+                url,
+                &jar_filename,
+                ProjectType::Mod,
+                &bytes,
+            )
         }
     }
 }
 
+async fn handle_direct_download_non_jar(
+    session: &dyn Session,
+    url: &str,
+    extension: &str,
+    explicit_project_type: Option<ProjectType>,
+) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
+    if extension != "zip" {
+        anyhow::bail!("Adding non-.zip direct-download files is not supported (got .{extension}).");
+    }
+
+    let project_type = explicit_project_type.ok_or_else(|| {
+        anyhow::anyhow!("Direct .zip URLs require --type resourcepack, shader, or datapack")
+    })?;
+
+    if !matches!(
+        project_type,
+        ProjectType::ResourcePack | ProjectType::Shader | ProjectType::Datapack
+    ) {
+        anyhow::bail!("Direct .zip URLs support only --type resourcepack, shader, or datapack");
+    }
+
+    let client = session.network().http_client()?;
+    let manager = session.state()?;
+    let workdir = manager.workdir.clone();
+    let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    let filename = download_filename(url, "download.zip");
+    let dest_path = tmp_dir.path().join(&filename);
+    download_file(session.filesystem(), &client, url, &dest_path).await?;
+    let bytes = session.filesystem().read_bytes(&dest_path)?;
+
+    build_tracked_local_dependency(session, &workdir, url, &filename, project_type, &bytes)
+}
+
+fn build_tracked_local_dependency(
+    session: &dyn Session,
+    workdir: &Path,
+    url: &str,
+    filename: &str,
+    project_type: ProjectType,
+    bytes: &[u8],
+) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
+    let relative_path =
+        tracked_local_dependency_relative_path(session, workdir, project_type, filename)?;
+    let dest_path = workdir.join(PathBuf::from(&relative_path));
+    if let Some(parent) = dest_path.parent() {
+        session
+            .filesystem()
+            .create_dir_all(parent)
+            .context("failed to create destination directory for local dependency")?;
+    }
+    session
+        .filesystem()
+        .write_bytes(&dest_path, bytes)
+        .with_context(|| {
+            format!(
+                "failed to write local dependency to {}",
+                dest_path.display()
+            )
+        })?;
+
+    let title = filename.to_string();
+    let dep_key = tracked_local_dependency_key(filename);
+    let record = LocalDependencyRecord {
+        status: DependencyStatus::Local,
+        title: title.clone(),
+        project_type,
+        path: relative_path,
+        source_url: Some(url.to_string()),
+        sha256: compute_sha256_hex_for_bytes(bytes),
+    };
+
+    session.display().status().info(&format!(
+        "Tracked local dependency at {}",
+        dest_path.display()
+    ));
+
+    Ok(DirectDownloadResult {
+        title,
+        project_type,
+        kind: DirectDownloadKind::Local { dep_key, record },
+    })
+}
+
+fn tracked_local_dependency_relative_path(
+    session: &dyn Session,
+    workdir: &Path,
+    project_type: ProjectType,
+    filename: &str,
+) -> std::result::Result<String, anyhow::Error> {
+    let relative_path = match project_type {
+        ProjectType::Mod => format!("pack/mods/{filename}"),
+        ProjectType::ResourcePack => format!("pack/resourcepacks/{filename}"),
+        ProjectType::Shader => format!("pack/shaderpacks/{filename}"),
+        ProjectType::Datapack => {
+            let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
+            let datapack_folder = match config_manager.datapack_folder() {
+                Some(folder) => folder,
+                None => {
+                    let default_folder = "datapacks";
+                    config_manager
+                        .set_datapack_folder(default_folder)
+                        .context("failed to persist datapack_folder in empack.yml")?;
+                    let pack_toml_path = workdir.join("pack").join("pack.toml");
+                    crate::empack::packwiz::write_pack_toml_options(
+                        &pack_toml_path,
+                        Some(default_folder),
+                        None,
+                        session.filesystem(),
+                    )
+                    .context("failed to persist datapack-folder in pack.toml")?;
+                    default_folder.to_string()
+                }
+            };
+            format!("pack/{datapack_folder}/{filename}")
+        }
+    };
+
+    Ok(relative_path)
+}
+
+fn tracked_local_dependency_key(filename: &str) -> String {
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(filename);
+    let mut key = String::with_capacity(stem.len());
+    let mut previous_dash = false;
+    for ch in stem.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() {
+            previous_dash = false;
+            Some(ch.to_ascii_lowercase())
+        } else if previous_dash {
+            None
+        } else {
+            previous_dash = true;
+            Some('-')
+        };
+
+        if let Some(ch) = mapped {
+            key.push(ch);
+        }
+    }
+
+    let trimmed = key.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "local-dependency".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn download_filename(url: &str, fallback: &str) -> String {
+    url.split('?')
+        .next()
+        .unwrap_or(url)
+        .split('#')
+        .next()
+        .unwrap_or(url)
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
 struct DirectDownloadResult {
     title: String,
-    platform: ProjectPlatform,
-    project_id: Option<String>,
     project_type: ProjectType,
-    local: bool,
+    kind: DirectDownloadKind,
+}
+
+enum DirectDownloadKind {
+    Resolved {
+        platform: ProjectPlatform,
+        project_id: String,
+    },
+    Local {
+        dep_key: String,
+        record: LocalDependencyRecord,
+    },
 }
 
 fn compute_sha1_hex_for_bytes(data: &[u8]) -> String {
@@ -2530,6 +2716,96 @@ fn hex_encode_bytes(bytes: &[u8]) -> String {
         out.push(HEX[(b & 0x0f) as usize] as char);
     }
     out
+}
+
+fn compute_sha256_hex_for_bytes(data: &[u8]) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(data);
+    hex_encode_bytes(&digest)
+}
+
+#[derive(Debug, Clone)]
+struct LocalDependencyIssue {
+    key: String,
+    title: String,
+    path: String,
+    reason: String,
+}
+
+fn validate_local_dependencies(
+    filesystem: &dyn FileSystemProvider,
+    workdir: &Path,
+    project_plan: &crate::empack::config::ProjectPlan,
+) -> Vec<LocalDependencyIssue> {
+    project_plan
+        .dependencies
+        .iter()
+        .filter_map(|dependency| {
+            let DependencySource::Local { path, sha256, .. } = &dependency.source else {
+                return None;
+            };
+
+            let absolute_path = workdir.join(PathBuf::from(path));
+            if !filesystem.exists(&absolute_path) {
+                return Some(LocalDependencyIssue {
+                    key: dependency.key.clone(),
+                    title: dependency.search_query.clone(),
+                    path: path.clone(),
+                    reason: "file is missing".to_string(),
+                });
+            }
+
+            match filesystem.read_bytes(&absolute_path) {
+                Ok(bytes) => {
+                    let actual_sha256 = compute_sha256_hex_for_bytes(&bytes);
+                    if &actual_sha256 == sha256 {
+                        None
+                    } else {
+                        Some(LocalDependencyIssue {
+                            key: dependency.key.clone(),
+                            title: dependency.search_query.clone(),
+                            path: path.clone(),
+                            reason: format!(
+                                "sha256 mismatch: expected {}, found {}",
+                                sha256, actual_sha256
+                            ),
+                        })
+                    }
+                }
+                Err(error) => Some(LocalDependencyIssue {
+                    key: dependency.key.clone(),
+                    title: dependency.search_query.clone(),
+                    path: path.clone(),
+                    reason: format!("failed to read file: {error}"),
+                }),
+            }
+        })
+        .collect()
+}
+
+fn project_plan_has_local_dependencies(project_plan: &crate::empack::config::ProjectPlan) -> bool {
+    project_plan
+        .dependencies
+        .iter()
+        .any(|dependency| matches!(dependency.source, DependencySource::Local { .. }))
+}
+
+fn render_local_dependency_issues(
+    session: &dyn Session,
+    issues: &[LocalDependencyIssue],
+    heading: &str,
+) {
+    if issues.is_empty() {
+        return;
+    }
+
+    session.display().status().section(heading);
+    for issue in issues {
+        session.display().status().warning(&format!(
+            "{} ({}) - {} [{}]",
+            issue.title, issue.key, issue.reason, issue.path
+        ));
+    }
 }
 
 #[instrument(skip_all, fields(mod_count = mods.len()))]
@@ -2604,6 +2880,49 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             .display()
             .status()
             .checking(&format!("Removing mod: {}", mod_name));
+
+        let dependency_entry = config_manager
+            .find_dependency(&mod_name)
+            .with_context(|| format!("failed to inspect dependency '{mod_name}'"))?;
+
+        if let Some((dependency_key, DependencyEntry::Local(record))) = dependency_entry {
+            let local_path = workdir.join(PathBuf::from(&record.path));
+            if session.filesystem().exists(&local_path) {
+                if session.filesystem().is_directory(&local_path) {
+                    session
+                        .filesystem()
+                        .remove_dir_all(&local_path)
+                        .with_context(|| {
+                            format!("failed to remove local dependency {}", local_path.display())
+                        })?;
+                } else {
+                    session
+                        .filesystem()
+                        .remove_file(&local_path)
+                        .with_context(|| {
+                            format!("failed to remove local dependency {}", local_path.display())
+                        })?;
+                }
+            } else {
+                session.display().status().warning(&format!(
+                    "Tracked local file was already missing: {}",
+                    local_path.display()
+                ));
+            }
+
+            if let Err(e) = config_manager.remove_dependency(&dependency_key) {
+                session
+                    .display()
+                    .status()
+                    .warning(&format!("Failed to update empack.yml: {}", e));
+            }
+            session
+                .display()
+                .status()
+                .success("Successfully removed tracked local dependency", "");
+            removed_mods.push(mod_name);
+            continue;
+        }
 
         // Execute packwiz remove command
         // Note: packwiz does not support --remove-deps flag
@@ -2840,6 +3159,36 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     // Parse build targets
     let build_targets = parse_build_targets(args.targets.clone())?;
 
+    let config_manager = session.filesystem().config_manager(manager.workdir.clone());
+    let project_plan = config_manager
+        .create_project_plan()
+        .context("Failed to load empack.yml configuration")?;
+    let local_dependency_issues =
+        validate_local_dependencies(session.filesystem(), &manager.workdir, &project_plan);
+    if !local_dependency_issues.is_empty() {
+        render_local_dependency_issues(
+            session,
+            &local_dependency_issues,
+            "Build blocked by tracked local dependency drift",
+        );
+        anyhow::bail!(
+            "{} tracked local dependenc{} failed validation",
+            local_dependency_issues.len(),
+            if local_dependency_issues.len() == 1 {
+                "y"
+            } else {
+                "ies"
+            }
+        );
+    }
+    if build_targets.contains(&BuildTarget::Mrpack)
+        && project_plan_has_local_dependencies(&project_plan)
+    {
+        anyhow::bail!(
+            "Tracked local dependencies are not yet supported for mrpack exports. Remove the mrpack target or replace those entries with resolved platform dependencies."
+        );
+    }
+
     session
         .display()
         .status()
@@ -2892,7 +3241,8 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
         )
         .context("Failed to persist restricted build continuation state")?;
 
-        let download_dirs = restricted_download_dirs(args.downloads_dir.as_deref(), &pending);
+        let download_dirs =
+            restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &pending.entries);
         crate::empack::restricted_build::import_matching_downloads_into_cache(
             session.filesystem(),
             &pending,
@@ -2911,6 +3261,20 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
         }
 
         display_pending_restricted_build(session, &pending, &remaining)?;
+        if maybe_open_and_wait_for_restricted_downloads(
+            session,
+            &pending,
+            &remaining,
+            &restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &remaining),
+        )
+        .await?
+        {
+            session
+                .display()
+                .status()
+                .success("All restricted mods cached", "Continuing build.");
+            return continue_pending_restricted_build(session, &manager.workdir, args, start).await;
+        }
         return Err(anyhow::anyhow!(
             "{} restricted download(s) are still required. After downloading them, run 'empack build --continue'.",
             dedup_restricted_entry_urls(&remaining).len()
@@ -2979,6 +3343,35 @@ async fn continue_pending_restricted_build(
 
     let build_targets = pending.target_list()?;
     let archive_format = pending.archive_format_value()?;
+    let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
+    let project_plan = config_manager
+        .create_project_plan()
+        .context("Failed to load empack.yml configuration")?;
+    let local_dependency_issues =
+        validate_local_dependencies(session.filesystem(), workdir, &project_plan);
+    if !local_dependency_issues.is_empty() {
+        render_local_dependency_issues(
+            session,
+            &local_dependency_issues,
+            "Build blocked by tracked local dependency drift",
+        );
+        anyhow::bail!(
+            "{} tracked local dependenc{} failed validation",
+            local_dependency_issues.len(),
+            if local_dependency_issues.len() == 1 {
+                "y"
+            } else {
+                "ies"
+            }
+        );
+    }
+    if build_targets.contains(&BuildTarget::Mrpack)
+        && project_plan_has_local_dependencies(&project_plan)
+    {
+        anyhow::bail!(
+            "Tracked local dependencies are not yet supported for mrpack exports. Remove the mrpack target or replace those entries with resolved platform dependencies."
+        );
+    }
 
     session
         .display()
@@ -3002,7 +3395,8 @@ async fn continue_pending_restricted_build(
 
     ensure_build_runtime_assets(session, &build_targets).await?;
 
-    let download_dirs = restricted_download_dirs(args.downloads_dir.as_deref(), &pending);
+    let download_dirs =
+        restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &pending.entries);
     crate::empack::restricted_build::import_matching_downloads_into_cache(
         session.filesystem(),
         &pending,
@@ -3014,6 +3408,29 @@ async fn continue_pending_restricted_build(
         crate::empack::restricted_build::missing_cached_entries(session.filesystem(), &pending);
     if !remaining.is_empty() {
         display_pending_restricted_build(session, &pending, &remaining)?;
+        if maybe_open_and_wait_for_restricted_downloads(
+            session,
+            &pending,
+            &remaining,
+            &restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &remaining),
+        )
+        .await?
+        {
+            session
+                .display()
+                .status()
+                .success("All restricted mods cached", "Continuing build.");
+        } else {
+            return Err(anyhow::anyhow!(
+                "{} restricted download(s) are still required before the build can continue.",
+                dedup_restricted_entry_urls(&remaining).len()
+            ));
+        }
+    }
+
+    let remaining =
+        crate::empack::restricted_build::missing_cached_entries(session.filesystem(), &pending);
+    if !remaining.is_empty() {
         return Err(anyhow::anyhow!(
             "{} restricted download(s) are still required before the build can continue.",
             dedup_restricted_entry_urls(&remaining).len()
@@ -3190,6 +3607,7 @@ fn count_unique_restricted_mod_urls(
 fn restricted_download_dirs(
     downloads_dir: Option<&str>,
     pending: &crate::empack::restricted_build::PendingRestrictedBuild,
+    entries: &[crate::empack::restricted_build::PendingRestrictedBuildEntry],
 ) -> Vec<PathBuf> {
     let mut dirs = vec![pending.restricted_cache_path()];
 
@@ -3198,6 +3616,11 @@ fn restricted_download_dirs(
     }
 
     dirs.push(crate::platform::home_dir().join("Downloads"));
+    dirs.extend(
+        entries
+            .iter()
+            .filter_map(|entry| Path::new(&entry.dest_path).parent().map(Path::to_path_buf)),
+    );
 
     let mut deduped = Vec::new();
     for dir in dirs {
@@ -3251,23 +3674,6 @@ fn display_pending_restricted_build(
             .subtle(&format!("    Will restore to: {}", entry.dest_path));
     }
 
-    if session.terminal().is_tty && !session.config().app_config().yes {
-        session.display().status().message("");
-        let open = session
-            .interactive()
-            .confirm("Open download URLs in browser?", false)?;
-        if open {
-            let (cmd, prefix_args) = crate::platform::browser_open_command();
-            for entry in &unique_remaining {
-                let mut args: Vec<&str> = prefix_args.clone();
-                args.push(&entry.url);
-                let _ = session
-                    .process()
-                    .execute(cmd, &args, std::path::Path::new("."));
-            }
-        }
-    }
-
     session.display().status().info(&format!(
         "Place the downloaded files in: {}",
         cache_dir.display()
@@ -3278,6 +3684,58 @@ fn display_pending_restricted_build(
         .info("Then run: empack build --continue");
 
     Ok(())
+}
+
+async fn maybe_open_and_wait_for_restricted_downloads(
+    session: &dyn Session,
+    pending: &crate::empack::restricted_build::PendingRestrictedBuild,
+    remaining: &[crate::empack::restricted_build::PendingRestrictedBuildEntry],
+    search_dirs: &[PathBuf],
+) -> Result<bool> {
+    if !session.terminal().is_tty || session.config().app_config().yes {
+        return Ok(false);
+    }
+
+    session.display().status().message("");
+    let open = session
+        .interactive()
+        .confirm("Open download URLs in browser?", false)?;
+    if !open {
+        return Ok(false);
+    }
+
+    let (cmd, prefix_args) = crate::platform::browser_open_command();
+    for entry in dedup_restricted_entry_urls(remaining) {
+        let mut args: Vec<&str> = prefix_args.clone();
+        args.push(&entry.url);
+        let _ = session
+            .process()
+            .execute(cmd, &args, std::path::Path::new("."));
+    }
+
+    session
+        .display()
+        .status()
+        .info("Waiting up to 5 minutes for restricted downloads to appear...");
+
+    for _ in 0..300 {
+        crate::empack::restricted_build::import_matching_downloads_into_cache(
+            session.filesystem(),
+            pending,
+            search_dirs,
+        )
+        .context("Failed to import matching restricted downloads into cache")?;
+
+        let remaining =
+            crate::empack::restricted_build::missing_cached_entries(session.filesystem(), pending);
+        if remaining.is_empty() {
+            return Ok(true);
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    Ok(false)
 }
 
 #[instrument(skip_all, fields(targets = ?targets))]
@@ -3314,52 +3772,69 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
             .status()
             .checking("Cleaning build artifacts");
 
-        let current_state = manager.discover_state()?;
-        let dist_dir = crate::empack::state::artifact_root(&manager.workdir);
-        let has_dist = session.filesystem().is_directory(&dist_dir);
-
-        if current_state == PackState::Built
-            || matches!(current_state, PackState::Interrupted { .. })
-        {
-            let result = manager
-                .execute_transition(
-                    session.process(),
-                    &*session.packwiz(),
-                    StateTransition::Clean,
-                )
-                .await
-                .context("Failed to clean build artifacts")?;
-            for w in &result.warnings {
-                session.display().status().warning(w);
-            }
-            session
-                .display()
-                .status()
-                .complete("Build artifacts cleaned");
-        } else if has_dist {
-            crate::empack::state::clean_build_artifacts(session.filesystem(), &manager.workdir)
-                .context("Failed to clean build artifacts")?;
-            session
-                .display()
-                .status()
-                .complete("Build artifacts cleaned");
-        } else {
-            session
-                .display()
-                .status()
-                .info("No build artifacts to clean");
+        let result = manager
+            .execute_transition(
+                session.process(),
+                &*session.packwiz(),
+                StateTransition::Clean,
+            )
+            .await
+            .context("Failed to clean build artifacts")?;
+        for w in &result.warnings {
+            session.display().status().warning(w);
         }
+        session
+            .display()
+            .status()
+            .complete("Build artifacts cleaned");
     }
 
     if targets.contains(&"cache".to_string()) || targets.contains(&"all".to_string()) {
         session.display().status().checking("Cleaning cache");
-        session
-            .display()
-            .status()
-            .subtle("(Cache cleaning not yet implemented)");
+        if clean_empack_cache(session.filesystem())? {
+            session.display().status().complete("Cache cleaned");
+        } else {
+            session.display().status().info("No cache data to clean");
+        }
     }
 
     Ok(())
+}
+
+fn clean_empack_cache(filesystem: &dyn FileSystemProvider) -> Result<bool> {
+    fn remove_path_if_present(filesystem: &dyn FileSystemProvider, path: &Path) -> Result<bool> {
+        if filesystem.is_directory(path) {
+            filesystem
+                .remove_dir_all(path)
+                .with_context(|| format!("failed to remove {}", path.display()))?;
+            return Ok(true);
+        }
+
+        if filesystem.exists(path) {
+            filesystem
+                .remove_file(path)
+                .with_context(|| format!("failed to remove {}", path.display()))?;
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    let mut removed_any = false;
+    let cache_root = crate::platform::cache::cache_root()?;
+    removed_any |= remove_path_if_present(filesystem, &cache_root)?;
+
+    let staged_bin_dir = crate::platform::cache::staged_bin_dir();
+    if staged_bin_dir != cache_root {
+        removed_any |= remove_path_if_present(filesystem, &staged_bin_dir)?;
+    }
+
+    let legacy_http_cache_dir = crate::platform::cache::legacy_http_cache_dir();
+    if legacy_http_cache_dir != cache_root {
+        removed_any |= remove_path_if_present(filesystem, &legacy_http_cache_dir)?;
+    }
+
+    Ok(removed_any)
 }
 
 #[instrument(skip_all)]
@@ -3501,6 +3976,33 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         .create_project_plan()
         .context("Failed to load empack.yml configuration")?;
 
+    let local_dependency_issues =
+        validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
+    if !local_dependency_issues.is_empty() {
+        if session.config().app_config().dry_run {
+            render_local_dependency_issues(
+                session,
+                &local_dependency_issues,
+                "Tracked local dependency drift",
+            );
+        } else {
+            render_local_dependency_issues(
+                session,
+                &local_dependency_issues,
+                "Tracked local dependency drift",
+            );
+            anyhow::bail!(
+                "{} tracked local dependenc{} failed validation",
+                local_dependency_issues.len(),
+                if local_dependency_issues.len() == 1 {
+                    "y"
+                } else {
+                    "ies"
+                }
+            );
+        }
+    }
+
     session
         .display()
         .status()
@@ -3623,6 +4125,11 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     "entries"
                 }
             ));
+        } else if !local_dependency_issues.is_empty() {
+            session
+                .display()
+                .status()
+                .complete("Dry run complete - tracked local dependency drift reported");
         } else {
             session
                 .display()

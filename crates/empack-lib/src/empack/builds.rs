@@ -1110,6 +1110,18 @@ impl<'a> BuildOrchestrator<'a> {
 
         if !output.success {
             let combined_output = format!("{}{}", output.stdout, output.stderr);
+            let restricted_mods =
+                crate::empack::packwiz::parse_export_restricted_output(&combined_output);
+            if !restricted_mods.is_empty() {
+                return Ok(BuildResult {
+                    target: BuildTarget::Mrpack,
+                    success: false,
+                    output_path: None,
+                    artifacts: vec![],
+                    warnings: vec![],
+                    restricted_mods,
+                });
+            }
             let warning = if combined_output.contains("manual download")
                 || combined_output.contains("must be manually downloaded")
             {
@@ -1157,6 +1169,7 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
+        self.process_build_templates("templates/common", &dist_dir)?;
         self.process_build_templates("templates/client", &dist_dir)?;
 
         let minecraft_dir = dist_dir.join(".minecraft");
@@ -1221,6 +1234,7 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
+        self.process_build_templates("templates/common", &dist_dir)?;
         self.process_build_templates("templates/server", &dist_dir)?;
 
         let pack_dir = self.workdir.join("pack");
@@ -1297,6 +1311,9 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
+        self.process_build_templates("templates/common", &dist_dir)?;
+        self.process_build_templates("templates/client", &dist_dir)?;
+
         // Copy pack files so the installer can resolve .toml mod entries
         let pack_dir = self.workdir.join("pack");
         self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
@@ -1357,6 +1374,7 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
+        self.process_build_templates("templates/common", &dist_dir)?;
         self.process_build_templates("templates/server", &dist_dir)?;
 
         let pack_info = self.load_pack_info()?.clone();
@@ -1492,7 +1510,12 @@ impl<'a> BuildOrchestrator<'a> {
                 }
             };
 
-            if !result.success && result.restricted_mods.is_empty() {
+            if !result.success && !result.restricted_mods.is_empty() {
+                results.push(result);
+                break;
+            }
+
+            if !result.success {
                 let details = if result.warnings.is_empty() {
                     "no additional details".to_string()
                 } else {
@@ -1700,13 +1723,11 @@ impl<'a> BuildOrchestrator<'a> {
                             })?;
                     }
                     Err(_) => {
-                        let bytes = self
-                            .session
-                            .filesystem()
-                            .read_bytes(&path)
-                            .map_err(|e| BuildError::ConfigError {
+                        let bytes = self.session.filesystem().read_bytes(&path).map_err(|e| {
+                            BuildError::ConfigError {
                                 reason: e.to_string(),
-                            })?;
+                            }
+                        })?;
                         self.session
                             .filesystem()
                             .write_bytes(&target_file, &bytes)

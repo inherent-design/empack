@@ -330,7 +330,7 @@ impl<'a> TemplateInstaller<'a> {
             self.filesystem.write_file(&dir_path.join(".gitkeep"), "")?;
         }
 
-        for dir in &["templates/client", "templates/server"] {
+        for dir in &["templates/common", "templates/client", "templates/server"] {
             self.filesystem.create_dir_all(&base.join(dir))?;
         }
 

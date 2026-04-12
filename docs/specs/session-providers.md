@@ -1,8 +1,8 @@
 ---
 spec: session-providers
-status: draft
+status: partial
 created: 2026-04-04
-updated: 2026-04-09
+updated: 2026-04-11
 depends: [overview]
 ---
 
@@ -45,6 +45,7 @@ Methods cover current directory lookup, text and binary reads and writes, existe
 - `rate_budgets()` exposes the shared `HostBudgetRegistry`
 
 The live provider owns an `HttpCache`, a `RateLimiterManager`, and the shared rate-budget registry used by import and search flows.
+In the standard async construction path, the HTTP cache is loaded from disk under the empack cache root and then persisted on cache mutation.
 
 ### ProcessProvider
 
@@ -84,8 +85,9 @@ Construction steps:
 1. Resolve `packwiz_bin_path` with `platform::packwiz_bin::resolve_packwiz_binary()`.
 2. Detect terminal capabilities from `AppConfig.color`.
 3. Initialize display and logger systems.
-4. Create live filesystem, network, process, config, and interactive providers.
-5. Expose packwiz operations through `LivePackwizOps`, bound to the resolved binary path.
+4. Create live filesystem, network, process, config, archive, and interactive providers.
+5. Load the live HTTP cache from `<cache_root>/http`.
+6. Expose packwiz operations through `LivePackwizOps`, bound to the resolved binary path.
 
 If managed binary resolution fails, the session logs a warning and falls back to the bare `packwiz-tx` program name for PATH lookup.
 
@@ -106,9 +108,11 @@ If managed binary resolution fails, the session logs a warning and falls back to
 | --- | --- |
 | `MockCommandSession` | Fully in-memory default test session |
 | `MockSessionBuilder` | Builder API for mock session composition |
-| `CommandSession::new_with_providers()` | Mixed provider injection for test-utils builds |
+| `CommandSession::new_with_providers()` | Mixed provider injection for test-utils builds, including archive provider replacement |
 
-`new_with_providers()` is useful for mixed live and mock tests, but it still hardcodes `LiveArchiveProvider`.
+`new_with_providers()` is useful for mixed live and mock tests when only some seams need replacement.
+
+Current test scaffolding no longer treats archive, packwiz, or state access as intentionally unimplemented seams. The shared test session path exposes those providers so command tests can exercise the same contract surface as live code.
 
 ## E2E Boundary
 
@@ -127,11 +131,12 @@ Current PTY scope is intentionally limited:
 - one prompt-sequence PTY test remains manual-only
 - one active restricted-build PTY test validates browser-confirm reachability and persisted pending state
 - one Unix-only PTY test validates browser-opener invocation through a fake platform opener
+- one Unix-only PTY test validates successful restricted-build auto-continue after a watched manual download appears
 - injected session-provider tests still cover browser confirmation semantics without relying on raw PTY prompt matching
 
 ### Abstraction Gaps
 
-- `CommandSession` stores `LiveArchiveProvider` directly. Mixed-provider construction cannot replace it today.
 - Display is initialized through `LiveDisplayProvider` and the global display singleton. Unit tests do not capture the same output path as subprocess E2E.
 - Interrupt handling exits the process directly with status `130`.
-- Some import helpers still open local archives with `std::fs::File`, which bypasses `FileSystemProvider`.
+- `LiveFileSystemProvider` is path-transparent. Filesystem safety guarantees come from command/workflow constraints, not from a sandboxed provider boundary.
+- Public compatibility wrappers such as `parse_curseforge_zip(path)` and `parse_modrinth_mrpack(path)` still expose path-based parsing APIs, even though live command paths now read archive bytes through `FileSystemProvider`.

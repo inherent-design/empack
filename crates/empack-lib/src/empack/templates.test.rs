@@ -34,6 +34,7 @@ fn test_template_installer_directory_creation() {
 
     assert!(temp_dir.path().join("dist").join("client").exists());
     assert!(temp_dir.path().join("dist").join("server").exists());
+    assert!(temp_dir.path().join("templates").join("common").exists());
     assert!(temp_dir.path().join("templates").join("client").exists());
     assert!(temp_dir.path().join("templates").join("server").exists());
     assert!(temp_dir.path().join(".github").join("workflows").exists());
@@ -274,6 +275,10 @@ fn test_installer_with_modloader_variables() {
         .join("templates/server/server.properties.template")
         .exists());
     // Verify templates/client/ directory exists with files
+    assert!(temp_dir
+        .path()
+        .join("templates/common")
+        .exists());
     assert!(temp_dir
         .path()
         .join("templates/client/instance.cfg.template")

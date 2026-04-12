@@ -1,8 +1,8 @@
 ---
 spec: search-and-resolution
-status: draft
+status: partial
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-11
 depends: [overview, types]
 ---
 
@@ -59,15 +59,17 @@ This tiered search comes from the current search redesign and is the live behavi
 | `ModrinthProject` | `modrinth.com/mod`, `plugin`, `resourcepack`, `datapack`, `shader` |
 | `CurseForgeModpack` | `curseforge.com/minecraft/modpacks/<slug>` |
 | `CurseForgeProject` | `curseforge.com/minecraft/mc-mods/<slug>` |
-| `DirectDownload` | direct `.jar` or `.zip` URLs |
+| `DirectDownload` | direct URLs with a filename extension |
 
 Current command behavior built on top of `UrlKind`:
 
 - Modrinth project URLs become direct Modrinth project IDs.
 - CurseForge project URLs resolve by slug through the CurseForge API.
 - Direct `.jar` URLs download and attempt JAR identification.
-- Direct non-JAR URLs are not accepted by `add`.
-- Direct `.zip` URLs are meaningful for import, not for add.
+- Identified `.jar` URLs become resolved platform dependencies.
+- Unidentified `.jar` URLs become tracked local mod dependencies.
+- Direct `.zip` URLs are accepted by `add` only when paired with `--type resourcepack`, `shader`, or `datapack`.
+- Direct non-`.zip` non-`.jar` URLs are classified as direct downloads and then rejected explicitly by `add`.
 
 ## Search Contracts
 
@@ -104,6 +106,19 @@ Current fingerprint details:
 - Modrinth lookup uses SHA1 only.
 - CurseForge lookup strips whitespace bytes before hashing.
 - CurseForge lookup needs an API key.
+
+## Local Direct-Download Outcomes
+
+When direct downloads do not resolve to a platform record, the add path writes tracked local content into the project tree:
+
+| Type | Destination |
+| --- | --- |
+| `mod` | `pack/mods/` |
+| `resourcepack` | `pack/resourcepacks/` |
+| `shader` | `pack/shaderpacks/` |
+| `datapack` | `pack/<datapack_folder>/` |
+
+If a datapack direct download is the first datapack content in the project and `datapack_folder` is unset, empack initializes it to `datapacks` in both `empack.yml` and `pack.toml [options]`.
 
 ## Error Shape
 

@@ -214,12 +214,12 @@ impl PackwizOps for LivePackwizOps<'_> {
     }
 
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
-        let cache_dir = crate::platform::cache::cache_root()?.join("jars");
+        let cache_dir = crate::platform::cache::jar_cache_dir()?;
         Ok(cache_dir.join("packwiz-installer-bootstrap.jar"))
     }
 
     fn installer_jar_cache_path(&self) -> crate::Result<PathBuf> {
-        let cache_dir = crate::platform::cache::cache_root()?.join("jars");
+        let cache_dir = crate::platform::cache::jar_cache_dir()?;
         Ok(cache_dir.join("packwiz-installer.jar"))
     }
 }
@@ -897,7 +897,7 @@ impl<'a> PackwizMetadata<'a> {
 pub struct RestrictedModInfo {
     /// Mod display name.
     pub name: String,
-    /// CurseForge download page URL.
+    /// Browser-open URL for the restricted file download.
     pub url: String,
     /// Absolute path where the file should be saved.
     pub dest_path: String,
@@ -921,6 +921,25 @@ pub(crate) fn restricted_curseforge_file_id(url: &str) -> Option<u64> {
         ["files", file_id] | ["download", file_id] => file_id.parse::<u64>().ok(),
         _ => None,
     })
+}
+
+pub(crate) fn normalize_curseforge_manual_download_url(url: &str) -> String {
+    let Some(file_id) = restricted_curseforge_file_id(url) else {
+        return url.to_string();
+    };
+
+    let files_segment = format!("/files/{file_id}");
+    let download_segment = format!("/download/{file_id}");
+
+    if url.contains(&download_segment) {
+        return url.to_string();
+    }
+
+    if url.contains(&files_segment) {
+        return url.replacen(&files_segment, &download_segment, 1);
+    }
+
+    url.to_string()
 }
 
 /// Result of running packwiz-installer.
@@ -967,6 +986,10 @@ fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
             }
         }
 
+        if !url.is_empty() {
+            url = normalize_curseforge_manual_download_url(&url);
+        }
+
         if !url.is_empty() && seen.insert((url.clone(), dest.clone())) {
             let name = lines[..i]
                 .iter()
@@ -991,6 +1014,94 @@ fn parse_installer_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
                 dest_path: dest,
             });
         }
+    }
+
+    results
+}
+
+fn strip_ansi_control_sequences(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            if matches!(chars.peek(), Some('[')) {
+                chars.next();
+                for next in chars.by_ref() {
+                    if ('@'..='~').contains(&next) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        result.push(ch);
+    }
+
+    result
+}
+
+pub(crate) fn parse_export_restricted_output(output: &str) -> Vec<RestrictedModInfo> {
+    let mut results = Vec::new();
+    let mut seen = HashSet::new();
+    let sanitized = strip_ansi_control_sequences(output).replace('\r', "\n");
+
+    let Some((before_import_dir, import_suffix)) = sanitized
+        .split_once("Once you have done so, place these files in ")
+        .or_else(|| sanitized.split_once("place these files in "))
+    else {
+        return Vec::new();
+    };
+
+    let Some((import_dir, _)) = import_suffix.split_once(" and re-run this command") else {
+        return Vec::new();
+    };
+
+    let Some(items_start) = before_import_dir
+        .rsplit_once("must be manually downloaded:")
+        .map(|(_, tail)| tail)
+        .or_else(|| {
+            before_import_dir
+                .rsplit_once("manual downloads:")
+                .map(|(_, tail)| tail)
+        })
+    else {
+        return Vec::new();
+    };
+
+    let mut remaining = items_start.trim();
+    while !remaining.is_empty() {
+        let Some(from_idx) = remaining.find(") from http") else {
+            break;
+        };
+
+        let name_and_filename = remaining[..=from_idx].trim();
+        let Some(open_idx) = name_and_filename.rfind(" (") else {
+            break;
+        };
+        let Some(filename) = name_and_filename[open_idx + 2..].strip_suffix(')') else {
+            break;
+        };
+
+        let url_start = from_idx + ") from ".len();
+        let after_from = &remaining[url_start..];
+        let url_end = after_from
+            .find(char::is_whitespace)
+            .unwrap_or(after_from.len());
+        let url = normalize_curseforge_manual_download_url(after_from[..url_end].trim());
+        let name = name_and_filename[..open_idx].trim().to_string();
+        let dest_path = Path::new(import_dir).join(filename);
+        let dest_path = dest_path.to_string_lossy().to_string();
+        if seen.insert((url.clone(), dest_path.clone())) {
+            results.push(RestrictedModInfo {
+                name,
+                url,
+                dest_path,
+            });
+        }
+
+        remaining = after_from[url_end..].trim_start();
     }
 
     results

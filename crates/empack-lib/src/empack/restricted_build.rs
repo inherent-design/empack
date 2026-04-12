@@ -70,9 +70,9 @@ pub fn pending_state_path(workdir: &Path) -> PathBuf {
 }
 
 pub fn restricted_cache_dir(workdir: &Path) -> Result<PathBuf> {
-    let cache_root = crate::platform::cache::cache_root()?;
+    let cache_root = crate::platform::cache::restricted_builds_cache_dir()?;
     let project_hash = hex_sha256(workdir.to_string_lossy().as_bytes());
-    Ok(cache_root.join("restricted-builds").join(project_hash))
+    Ok(cache_root.join(project_hash))
 }
 
 pub fn compute_project_fingerprint(
@@ -177,10 +177,12 @@ pub fn validate_pending_build(
 
     for target in pending.target_list()? {
         if matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull) {
-            // Only full-build continuations skip `clean_target`, so only those targets
-            // need the preexisting dist directory to still be present.
             let target_dir = crate::empack::state::artifact_root(workdir).join(target.to_string());
-            if !provider.is_directory(&target_dir) {
+            let requires_existing_dir = pending
+                .entries
+                .iter()
+                .any(|entry| Path::new(&entry.dest_path).starts_with(&target_dir));
+            if requires_existing_dir && !provider.is_directory(&target_dir) {
                 return Ok(Some(format!(
                     "required build directory is missing: {}",
                     target_dir.display()

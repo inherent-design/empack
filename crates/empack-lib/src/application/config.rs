@@ -131,7 +131,7 @@ impl Default for AppConfig {
             net_timeout: default_fns::net_timeout(),
             modrinth_api_client_id: None,
             modrinth_api_client_key: None,
-            curseforge_api_client_key: None,
+            curseforge_api_client_key: default_fns::curseforge_api_client_key(),
             log_level: default_fns::log_level(),
             log_format: default_fns::log_format(),
             log_output: default_fns::log_output(),

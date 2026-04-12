@@ -28,6 +28,38 @@ pub fn cache_root() -> Result<PathBuf> {
     }
 }
 
+pub fn bin_cache_dir() -> Result<PathBuf> {
+    Ok(cache_root()?.join("bin"))
+}
+
+pub fn jar_cache_dir() -> Result<PathBuf> {
+    Ok(cache_root()?.join("jars"))
+}
+
+pub fn restricted_builds_cache_dir() -> Result<PathBuf> {
+    Ok(cache_root()?.join("restricted-builds"))
+}
+
+pub fn versions_cache_dir() -> Result<PathBuf> {
+    Ok(cache_root()?.join("versions"))
+}
+
+pub fn legacy_versions_cache_file(filename: &str) -> Result<PathBuf> {
+    Ok(cache_root()?.join(filename))
+}
+
+pub fn http_cache_dir() -> Result<PathBuf> {
+    Ok(cache_root()?.join("http"))
+}
+
+pub fn staged_bin_dir() -> PathBuf {
+    std::env::temp_dir().join("empack-bin")
+}
+
+pub fn legacy_http_cache_dir() -> PathBuf {
+    std::env::temp_dir().join("empack").join("http_cache")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,5 +108,37 @@ mod tests {
 
         let cache_root = cache_root().expect("cache root");
         assert!(!cache_root.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn typed_cache_dirs_are_derived_from_cache_root() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", temp_dir.path()) };
+
+        assert_eq!(
+            bin_cache_dir().expect("bin cache"),
+            temp_dir.path().join("bin")
+        );
+        assert_eq!(
+            jar_cache_dir().expect("jar cache"),
+            temp_dir.path().join("jars")
+        );
+        assert_eq!(
+            restricted_builds_cache_dir().expect("restricted cache"),
+            temp_dir.path().join("restricted-builds")
+        );
+        assert_eq!(
+            versions_cache_dir().expect("versions cache"),
+            temp_dir.path().join("versions")
+        );
+        assert_eq!(
+            http_cache_dir().expect("http cache"),
+            temp_dir.path().join("http")
+        );
+        assert_eq!(
+            legacy_versions_cache_file("minecraft_versions.json").expect("legacy file"),
+            temp_dir.path().join("minecraft_versions.json")
+        );
     }
 }

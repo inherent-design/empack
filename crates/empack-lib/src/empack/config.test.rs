@@ -608,8 +608,14 @@ empack:
     assert_eq!(dep.project_type, ProjectType::Mod);
     assert_eq!(dep.minecraft_version, "1.21");
     assert_eq!(dep.loader, Some(ModLoader::Fabric));
-    assert_eq!(dep.project_id, "P7dR8mSH");
-    assert_eq!(dep.project_platform, ProjectPlatform::Modrinth);
+    assert_eq!(
+        dep.source,
+        DependencySource::Platform {
+            project_id: "P7dR8mSH".to_string(),
+            project_platform: ProjectPlatform::Modrinth,
+            version_pin: None,
+        }
+    );
 }
 
 #[test]
@@ -675,8 +681,14 @@ empack:
     let plan = result.unwrap();
     assert_eq!(plan.dependencies.len(), 1);
     let dep = &plan.dependencies[0];
-    assert_eq!(dep.project_id, "P7dR8mSH");
-    assert_eq!(dep.project_platform, ProjectPlatform::Modrinth);
+    assert_eq!(
+        dep.source,
+        DependencySource::Platform {
+            project_id: "P7dR8mSH".to_string(),
+            project_platform: ProjectPlatform::Modrinth,
+            version_pin: None,
+        }
+    );
 }
 
 #[test]
@@ -703,8 +715,14 @@ empack:
     assert!(result.is_ok());
     let plan = result.unwrap();
     let dep = &plan.dependencies[0];
-    assert_eq!(dep.project_id, "238222");
-    assert_eq!(dep.project_platform, ProjectPlatform::CurseForge);
+    assert_eq!(
+        dep.source,
+        DependencySource::Platform {
+            project_id: "238222".to_string(),
+            project_platform: ProjectPlatform::CurseForge,
+            version_pin: None,
+        }
+    );
 }
 
 #[test]
@@ -733,7 +751,14 @@ empack:
     let plan = result.unwrap();
     assert_eq!(plan.dependencies.len(), 1);
     let dep = &plan.dependencies[0];
-    assert_eq!(dep.version_pin, Some("0.92.0".to_string()));
+    assert_eq!(
+        dep.source,
+        DependencySource::Platform {
+            project_id: "P7dR8mSH".to_string(),
+            project_platform: ProjectPlatform::Modrinth,
+            version_pin: Some("0.92.0".to_string()),
+        }
+    );
 }
 
 #[test]
@@ -1698,6 +1723,9 @@ type: mod
         }
         Ok(DependencyEntry::Resolved(_)) => {
             panic!("Should not parse as Resolved without platform field");
+        }
+        Ok(DependencyEntry::Local(_)) => {
+            panic!("Should not parse as Local without local dependency fields");
         }
         Err(e) => {
             // Also acceptable if serde rejects it entirely

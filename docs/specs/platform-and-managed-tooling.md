@@ -1,8 +1,8 @@
 ---
 spec: platform-and-managed-tooling
-status: draft
+status: partial
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-11
 depends: [overview]
 ---
 
@@ -35,6 +35,15 @@ Current browser commands:
 3. temp directory fallback
 
 Managed jars and managed binaries both live under this cache root.
+
+Current cache layout:
+
+- `<cache_root>/bin/` for managed `packwiz-tx`
+- `<cache_root>/jars/` for managed build jars
+- `<cache_root>/restricted-builds/` for restricted-download continuation cache
+- `<cache_root>/versions/` for persisted loader/version cache JSON
+- `<cache_root>/http/` for persisted HTTP cache
+- `<temp>/empack-bin/` for staged managed binaries used when cache paths are not executable
 
 ## System Resources
 
@@ -91,6 +100,7 @@ Current behavior:
 - use the staged copy if it runs successfully
 
 This staging behavior is part of the supported runtime path, not a test-only fallback.
+`empack clean cache` removes both the cache-root data and the staged temp binary directory.
 
 ## Session Integration
 

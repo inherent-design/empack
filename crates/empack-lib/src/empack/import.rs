@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -297,11 +298,26 @@ fn extract_forgecdn_file_id(url: &str) -> Option<String> {
 
 /// Parse a CurseForge modpack archive (zip containing `manifest.json`).
 pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
-    let file = std::fs::File::open(archive_path)
+    let bytes = std::fs::read(archive_path)
         .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    parse_curseforge_zip_bytes(bytes, archive_path)
+}
 
+pub fn parse_curseforge_zip_with_filesystem(
+    fs: &dyn crate::application::session::FileSystemProvider,
+    archive_path: &Path,
+) -> Result<ModpackManifest> {
+    let bytes = fs
+        .read_bytes(archive_path)
+        .with_context(|| format!("opening archive: {}", archive_path.display()))?;
+    parse_curseforge_zip_bytes(bytes, archive_path)
+}
+
+fn parse_curseforge_zip_bytes(
+    archive_bytes: Vec<u8>,
+    archive_path: &Path,
+) -> Result<ModpackManifest> {
+    let mut archive = open_zip_archive(archive_bytes)?;
     let manifest_entry = archive
         .by_name("manifest.json")
         .map_err(|_| ImportError::CurseForgeManifestMissing)?;
@@ -397,11 +413,26 @@ pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
 
 /// Parse a Modrinth modpack archive (mrpack containing `modrinth.index.json`).
 pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
-    let file = std::fs::File::open(file_path)
+    let bytes = std::fs::read(file_path)
         .with_context(|| format!("opening mrpack: {}", file_path.display()))?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    parse_modrinth_mrpack_bytes(bytes, file_path)
+}
 
+pub fn parse_modrinth_mrpack_with_filesystem(
+    fs: &dyn crate::application::session::FileSystemProvider,
+    file_path: &Path,
+) -> Result<ModpackManifest> {
+    let bytes = fs
+        .read_bytes(file_path)
+        .with_context(|| format!("opening mrpack: {}", file_path.display()))?;
+    parse_modrinth_mrpack_bytes(bytes, file_path)
+}
+
+fn parse_modrinth_mrpack_bytes(
+    archive_bytes: Vec<u8>,
+    file_path: &Path,
+) -> Result<ModpackManifest> {
+    let mut archive = open_zip_archive(archive_bytes)?;
     let manifest_entry = archive
         .by_name("modrinth.index.json")
         .map_err(|_| ImportError::ModrinthManifestMissing)?;
@@ -1776,10 +1807,10 @@ fn extract_embedded_from_archive(
         fs.create_dir_all(parent)?;
     }
 
-    let file = std::fs::File::open(archive_path)
+    let archive_bytes = fs
+        .read_bytes(archive_path)
         .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    let mut archive = open_zip_archive(archive_bytes)?;
 
     let mut entry = archive
         .by_name(source_path)
@@ -1838,8 +1869,8 @@ pub fn classify_override(path: &str) -> OverrideCategory {
     OverrideCategory::Other
 }
 
-fn collect_override_entries(
-    archive: &mut zip::ZipArchive<std::fs::File>,
+fn collect_override_entries<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
     prefix: &str,
     side: OverrideSide,
     entries: &mut Vec<OverrideEntry>,
@@ -1875,8 +1906,8 @@ fn collect_override_entries(
     Ok(())
 }
 
-fn prune_packwiz_override_metadata(
-    archive: &mut zip::ZipArchive<std::fs::File>,
+fn prune_packwiz_override_metadata<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
     entries: &mut Vec<OverrideEntry>,
 ) {
     let existing_destinations: std::collections::HashSet<String> = entries
@@ -1892,8 +1923,8 @@ fn prune_packwiz_override_metadata(
     });
 }
 
-fn packwiz_override_payload_destination(
-    archive: &mut zip::ZipArchive<std::fs::File>,
+fn packwiz_override_payload_destination<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
     entry: &OverrideEntry,
 ) -> Option<String> {
     let normalized_dest = entry.destination_path.replace('\\', "/");
@@ -1947,6 +1978,11 @@ fn read_zip_entry_to_string<R: std::io::Read>(
     std::io::Read::read_to_string(&mut entry, &mut buf)
         .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
     Ok(buf)
+}
+
+fn open_zip_archive(data: Vec<u8>) -> Result<zip::ZipArchive<Cursor<Vec<u8>>>> {
+    zip::ZipArchive::new(Cursor::new(data))
+        .map_err(|e| ImportError::ArchiveRead(e.to_string()).into())
 }
 
 fn mr_side_requirement(value: Option<&str>) -> SideRequirement {

@@ -1170,9 +1170,11 @@ mod handle_init_from_source_tests {
         let base_dir = mock_root().join("init-from-source-partial");
         let target_dir = base_dir.join("target-pack");
         let archive = create_mrpack(MR_MANIFEST_JSON);
+        let archive_bytes = std::fs::read(archive.path()).expect("mrpack bytes");
         let session = MockCommandSession::new().with_filesystem(
             MockFileSystemProvider::new()
                 .with_current_dir(base_dir)
+                .with_binary_file(archive.path().to_path_buf(), archive_bytes)
                 .with_file(
                     target_dir.join("empack.yml"),
                     "empack:\n  name: partial\n".to_string(),
@@ -1251,8 +1253,11 @@ mod handle_init_from_source_tests {
 
     #[test]
     fn import_from_local_parses_curseforge_zip() {
-        let session = MockCommandSession::new();
         let archive = create_cf_zip(CF_MANIFEST_JSON);
+        let archive_bytes = std::fs::read(archive.path()).expect("cf zip bytes");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new().with_binary_file(archive.path().to_path_buf(), archive_bytes),
+        );
 
         let (manifest, tmp_dir, source_path) =
             import_from_local(&session, &archive.path().to_string_lossy()).expect("local cf import");
@@ -1266,8 +1271,11 @@ mod handle_init_from_source_tests {
 
     #[test]
     fn import_from_local_parses_modrinth_mrpack() {
-        let session = MockCommandSession::new();
         let archive = create_mrpack(MR_MANIFEST_JSON);
+        let archive_bytes = std::fs::read(archive.path()).expect("mrpack bytes");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new().with_binary_file(archive.path().to_path_buf(), archive_bytes),
+        );
 
         let (manifest, tmp_dir, source_path) = import_from_local(
             &session,
@@ -1316,13 +1324,18 @@ mod handle_init_from_source_tests {
             .create_async()
             .await;
 
-        let dest_dir = tempfile::TempDir::new().expect("temp dir");
-        let dest = dest_dir.path().join("artifact.bin");
-        download_file(&test_http_client(), &format!("{}/artifact.bin", server.url()), &dest)
+        let filesystem = MockFileSystemProvider::new();
+        let dest = mock_root().join("downloads").join("artifact.bin");
+        download_file(
+            &filesystem,
+            &test_http_client(),
+            &format!("{}/artifact.bin", server.url()),
+            &dest,
+        )
             .await
             .expect("download success");
 
-        assert_eq!(std::fs::read(&dest).expect("downloaded file"), b"payload");
+        assert_eq!(filesystem.read_bytes(&dest).expect("downloaded file"), b"payload");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -1334,11 +1347,16 @@ mod handle_init_from_source_tests {
             .create_async()
             .await;
 
-        let dest_dir = tempfile::TempDir::new().expect("temp dir");
-        let dest = dest_dir.path().join("missing.bin");
-        let err = download_file(&test_http_client(), &format!("{}/missing.bin", server.url()), &dest)
-            .await
-            .expect_err("404 should error");
+        let filesystem = MockFileSystemProvider::new();
+        let dest = mock_root().join("downloads").join("missing.bin");
+        let err = download_file(
+            &filesystem,
+            &test_http_client(),
+            &format!("{}/missing.bin", server.url()),
+            &dest,
+        )
+        .await
+        .expect_err("404 should error");
 
         assert!(err.to_string().contains("HTTP 404"));
     }
@@ -2245,9 +2263,17 @@ mod handle_direct_download_jar_tests {
         .expect("identified modrinth jar should succeed");
 
         assert_eq!(result.title, "Sodium");
-        assert_eq!(result.platform, ProjectPlatform::Modrinth);
-        assert_eq!(result.project_id.as_deref(), Some("AANobbMI"));
-        assert!(!result.local);
+        assert_eq!(result.project_type, ProjectType::Mod);
+        match result.kind {
+            DirectDownloadKind::Resolved {
+                platform,
+                project_id,
+            } => {
+                assert_eq!(platform, ProjectPlatform::Modrinth);
+                assert_eq!(project_id, "AANobbMI");
+            }
+            DirectDownloadKind::Local { .. } => panic!("expected resolved direct download"),
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -2339,9 +2365,17 @@ mod handle_direct_download_jar_tests {
         .expect("identified curseforge jar should succeed");
 
         assert_eq!(result.title, "JEI");
-        assert_eq!(result.platform, ProjectPlatform::CurseForge);
-        assert_eq!(result.project_id.as_deref(), Some("238222"));
-        assert!(!result.local);
+        assert_eq!(result.project_type, ProjectType::Mod);
+        match result.kind {
+            DirectDownloadKind::Resolved {
+                platform,
+                project_id,
+            } => {
+                assert_eq!(platform, ProjectPlatform::CurseForge);
+                assert_eq!(project_id, "238222");
+            }
+            DirectDownloadKind::Local { .. } => panic!("expected resolved direct download"),
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -2389,7 +2423,7 @@ mod handle_direct_download_jar_tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn it_copies_unidentified_jar_as_local_dependency() {
+    async fn it_tracks_unidentified_jar_as_local_dependency() {
         let mut server = mockito::Server::new_async().await;
         let _artifact = server
             .mock("GET", "/downloads/unknown.jar")
@@ -2414,10 +2448,108 @@ mod handle_direct_download_jar_tests {
         .expect("unidentified jar should be copied locally");
 
         assert_eq!(result.title, "unknown.jar");
-        assert!(result.local);
+        let expected_url = format!("{}/downloads/unknown.jar", server.url());
+        match result.kind {
+            DirectDownloadKind::Local { dep_key, record } => {
+                assert_eq!(dep_key, "unknown");
+                assert_eq!(record.project_type, ProjectType::Mod);
+                assert_eq!(record.path, "pack/mods/unknown.jar");
+                assert_eq!(record.source_url.as_deref(), Some(expected_url.as_str()));
+                assert!(!record.sha256.is_empty());
+            }
+            DirectDownloadKind::Resolved { .. } => panic!("expected local direct download"),
+        }
         assert!(session
             .filesystem()
             .exists(&workdir.join("pack").join("mods").join("unknown.jar")));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_tracks_zip_direct_download_as_local_dependency() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/pack.zip")
+            .with_status(200)
+            .with_body("zip-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-zip-local");
+        let session = configured_direct_download_session(&workdir);
+
+        let result = handle_direct_download_non_jar(
+            &session,
+            &format!("{}/downloads/pack.zip", server.url()),
+            "zip",
+            Some(ProjectType::ResourcePack),
+        )
+        .await
+        .expect("zip direct download should be tracked locally");
+
+        assert_eq!(result.title, "pack.zip");
+        assert_eq!(result.project_type, ProjectType::ResourcePack);
+        match result.kind {
+            DirectDownloadKind::Local { dep_key, record } => {
+                assert_eq!(dep_key, "pack");
+                assert_eq!(record.path, "pack/resourcepacks/pack.zip");
+                assert_eq!(record.project_type, ProjectType::ResourcePack);
+            }
+            DirectDownloadKind::Resolved { .. } => panic!("expected local direct download"),
+        }
+        assert!(session
+            .filesystem()
+            .exists(&workdir.join("pack").join("resourcepacks").join("pack.zip")));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn it_initializes_datapack_folder_for_zip_direct_downloads() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/example-datapack.zip")
+            .with_status(200)
+            .with_body("zip-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-zip-datapack");
+        let session = configured_direct_download_session(&workdir);
+
+        let result = handle_direct_download_non_jar(
+            &session,
+            &format!("{}/downloads/example-datapack.zip", server.url()),
+            "zip",
+            Some(ProjectType::Datapack),
+        )
+        .await
+        .expect("zip datapack direct download should be tracked locally");
+
+        match result.kind {
+            DirectDownloadKind::Local { dep_key, record } => {
+                assert_eq!(dep_key, "example-datapack");
+                assert_eq!(record.path, "pack/datapacks/example-datapack.zip");
+                assert_eq!(record.project_type, ProjectType::Datapack);
+            }
+            DirectDownloadKind::Resolved { .. } => panic!("expected local direct download"),
+        }
+
+        let config = session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .load_empack_config()
+            .expect("load updated config");
+        assert_eq!(config.empack.datapack_folder.as_deref(), Some("datapacks"));
+
+        let pack_toml = session
+            .filesystem()
+            .read_to_string(&workdir.join("pack").join("pack.toml"))
+            .expect("read pack.toml");
+        assert!(pack_toml.contains("datapack-folder = \"datapacks\""));
+        assert!(session.filesystem().exists(
+            &workdir
+                .join("pack")
+                .join("datapacks")
+                .join("example-datapack.zip")
+        ));
     }
 }
 
@@ -4013,6 +4145,36 @@ mod handle_build_continue_tests {
         }
     }
 
+    fn mrpack_export_args(workdir: &Path) -> Vec<String> {
+        vec![
+            "--pack-file".to_string(),
+            workdir
+                .join("pack")
+                .join("pack.toml")
+                .to_string_lossy()
+                .to_string(),
+            "mr".to_string(),
+            "export".to_string(),
+            "-o".to_string(),
+            workdir
+                .join("dist")
+                .join("Restricted Pack-v1.0.0.mrpack")
+                .to_string_lossy()
+                .to_string(),
+        ]
+    }
+
+    fn restricted_mrpack_export_output(import_dir: &Path) -> crate::application::session::ProcessOutput {
+        crate::application::session::ProcessOutput {
+            stdout: "Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\nBee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\n".to_string(),
+            stderr: format!(
+                "Once you have done so, place these files in {} and re-run this command.\n",
+                import_dir.to_string_lossy()
+            ),
+            success: false,
+        }
+    }
+
     fn client_full_installer_args(workdir: &Path) -> Vec<String> {
         vec![
             "-jar".to_string(),
@@ -4061,7 +4223,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn fresh_restricted_build_writes_pending_state() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4116,8 +4278,247 @@ mod handle_build_continue_tests {
     }
 
     #[tokio::test]
+    async fn fresh_mrpack_restricted_build_writes_pending_state() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-record-mrpack-state");
+        let import_dir = workdir.join("packwiz-cache").join("import");
+        let process = MockProcessProvider::new()
+            .with_packwiz_result(
+                vec![
+                    "--pack-file".to_string(),
+                    workdir
+                        .join("pack")
+                        .join("pack.toml")
+                        .to_string_lossy()
+                        .to_string(),
+                    "refresh".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            )
+            .with_packwiz_result(
+                mrpack_export_args(&workdir),
+                Ok(restricted_mrpack_export_output(&import_dir)),
+            );
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(process);
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["mrpack".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("restricted mrpack export should stop for manual download");
+
+        assert!(err.to_string().contains("empack build --continue"));
+        let pending = crate::empack::restricted_build::load_pending_build(
+            session.filesystem(),
+            &workdir,
+        )
+        .expect("load pending build")
+        .expect("pending build exists");
+        assert_eq!(pending.targets, vec!["mrpack"]);
+        assert_eq!(pending.entries.len(), 1);
+        assert_eq!(pending.entries[0].name, "Bee Fix");
+        assert_eq!(pending.entries[0].filename, "BeeFix-1.20-1.0.7.jar");
+        assert_eq!(
+            pending.entries[0].url,
+            "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
+        );
+        assert_eq!(
+            pending.entries[0].dest_path,
+            import_dir.join("BeeFix-1.20-1.0.7.jar").to_string_lossy()
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_all_build_blocked_at_mrpack_writes_full_pending_target_set() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-record-all-state");
+        let import_dir = workdir.join("packwiz-cache").join("import");
+        let process = MockProcessProvider::new()
+            .with_packwiz_result(
+                vec![
+                    "--pack-file".to_string(),
+                    workdir
+                        .join("pack")
+                        .join("pack.toml")
+                        .to_string_lossy()
+                        .to_string(),
+                    "refresh".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            )
+            .with_packwiz_result(
+                mrpack_export_args(&workdir),
+                Ok(restricted_mrpack_export_output(&import_dir)),
+            );
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(process);
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["all".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("restricted mrpack export should stop the all target expansion");
+
+        assert!(err.to_string().contains("empack build --continue"));
+        let pending = crate::empack::restricted_build::load_pending_build(
+            session.filesystem(),
+            &workdir,
+        )
+        .expect("load pending build")
+        .expect("pending build exists");
+        assert_eq!(
+            pending.targets,
+            vec!["mrpack", "client", "server", "client-full", "server-full"]
+        );
+        assert_eq!(pending.entries.len(), 1);
+        assert_eq!(
+            pending.entries[0].url,
+            "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
+        );
+        assert_eq!(
+            pending.entries[0].dest_path,
+            import_dir.join("BeeFix-1.20-1.0.7.jar").to_string_lossy()
+        );
+        assert!(
+            !session.filesystem().exists(&workdir.join("dist").join("client")),
+            "client build should not run after mrpack is blocked"
+        );
+        assert!(
+            !session.filesystem().exists(&workdir.join("dist").join("server")),
+            "server build should not run after mrpack is blocked"
+        );
+        assert!(
+            !session
+                .filesystem()
+                .exists(&workdir.join("dist").join("client-full")),
+            "client-full build should not run after mrpack is blocked"
+        );
+        assert!(
+            !session
+                .filesystem()
+                .exists(&workdir.join("dist").join("server-full")),
+            "server-full build should not run after mrpack is blocked"
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_mrpack_restricted_build_imports_from_import_dir_and_auto_continues() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-mrpack-auto-continue");
+        let import_dir = workdir.join("packwiz-cache").join("import");
+        let mrpack_path = workdir.join("dist").join("Restricted Pack-v1.0.0.mrpack");
+        let manual_filename = "BeeFix-1.20-1.0.7.jar";
+        let process = MockProcessProvider::new()
+            .with_mrpack_export_side_effects()
+            .with_packwiz_result(
+                vec![
+                    "--pack-file".to_string(),
+                    workdir
+                        .join("pack")
+                        .join("pack.toml")
+                        .to_string_lossy()
+                        .to_string(),
+                    "refresh".to_string(),
+                ],
+                Ok(ProcessOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    success: true,
+                }),
+            )
+            .with_packwiz_result_sequence(
+                mrpack_export_args(&workdir),
+                vec![
+                    Ok(restricted_mrpack_export_output(&import_dir)),
+                    Ok(ProcessOutput {
+                        stdout: "Exported pack.mrpack".to_string(),
+                        stderr: String::new(),
+                        success: true,
+                    }),
+                ],
+            );
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(process)
+            .with_interactive(MockInteractiveProvider::new().with_confirm(true))
+            .with_terminal_capabilities(tty_capabilities());
+
+        let files = session.filesystem_provider.files.clone();
+        let directories = session.filesystem_provider.directories.clone();
+        let writer = std::thread::spawn({
+            let import_dir = import_dir.clone();
+            move || {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                directories.lock().unwrap().insert(import_dir.clone());
+                files.lock().unwrap().insert(
+                    import_dir.join(manual_filename),
+                    "manual bytes".to_string(),
+                );
+            }
+        });
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["mrpack".to_string()],
+                ..Default::default()
+            },
+        )
+        .await;
+        writer.join().expect("join delayed download writer");
+
+        assert!(result.is_ok(), "mrpack build should auto-continue: {result:?}");
+        assert!(
+            session.filesystem().exists(&mrpack_path),
+            "continued mrpack build should produce the archive"
+        );
+        let restricted_cache_dir =
+            crate::empack::restricted_build::restricted_cache_dir(&workdir).expect("cache dir");
+        assert!(
+            session
+                .filesystem()
+                .exists(&restricted_cache_dir.join(manual_filename)),
+            "import-dir download should be copied into the managed restricted cache"
+        );
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_none(),
+            "pending state should be cleared after the auto-continued mrpack build"
+        );
+    }
+
+    #[tokio::test]
     async fn fresh_restricted_build_imports_downloads_dir_into_cache() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4180,8 +4581,72 @@ mod handle_build_continue_tests {
     }
 
     #[tokio::test]
+    async fn fresh_restricted_build_non_tty_does_not_prompt_or_wait() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-browser-non-tty");
+        let pack_toml_path = workdir
+            .join("dist")
+            .join("client-full")
+            .join("pack")
+            .join("pack.toml");
+        let process = MockProcessProvider::new().with_result(
+            "java".to_string(),
+            vec![
+                "-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer-bootstrap.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "--bootstrap-main-jar".to_string(),
+                workdir
+                    .join("cache")
+                    .join("packwiz-installer.jar")
+                    .to_string_lossy()
+                    .to_string(),
+                "-g".to_string(),
+                "-s".to_string(),
+                "both".to_string(),
+                pack_toml_path.to_string_lossy().to_string(),
+            ],
+            Ok(restricted_install_output(&workdir)),
+        );
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(process)
+            .with_interactive(MockInteractiveProvider::new().with_confirm(true));
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["client-full".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("non-tty restricted build should still stop for manual download");
+
+        assert!(err.to_string().contains("empack build --continue"));
+        assert!(
+            session.interactive_provider.get_confirm_calls().is_empty(),
+            "non-tty builds should not prompt to open browser URLs"
+        );
+        let (browser_cmd, _) = crate::platform::browser_open_command();
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(browser_cmd)
+                .is_empty(),
+            "non-tty builds should not launch a browser command"
+        );
+    }
+
+    #[tokio::test]
     async fn fresh_restricted_build_prompts_before_opening_browser_urls() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4246,7 +4711,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn fresh_restricted_build_opens_browser_urls_when_confirmed() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4284,6 +4749,18 @@ mod handle_build_continue_tests {
             .with_interactive(MockInteractiveProvider::new().with_confirm(true))
             .with_terminal_capabilities(tty_capabilities());
 
+        let staged_download_dir = workdir.join("dist").join("client-full").join("mods");
+        let files = session.filesystem_provider.files.clone();
+        let directories = session.filesystem_provider.directories.clone();
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            directories.lock().unwrap().insert(staged_download_dir.clone());
+            files.lock().unwrap().insert(
+                staged_download_dir.join("OptiFine.jar"),
+                "manual bytes".to_string(),
+            );
+        });
+
         let err = handle_build(
             &session,
             &BuildArgs {
@@ -4292,9 +4769,13 @@ mod handle_build_continue_tests {
             },
         )
         .await
-        .expect_err("restricted build should still require manual download");
+        .expect_err("mock installer still reports restricted output on the continued rerun");
+        writer.join().expect("join delayed download writer");
 
-        assert!(err.to_string().contains("empack build --continue"));
+        assert!(
+            err.to_string().contains("still required after continue"),
+            "fresh build should reach the continuation rerun path: {err:?}"
+        );
         let (browser_cmd, browser_prefix) = crate::platform::browser_open_command();
         let browser_calls = session.process_provider.get_calls_for_command(browser_cmd);
         assert_eq!(browser_calls.len(), 1, "expected one browser-open call");
@@ -4303,14 +4784,172 @@ mod handle_build_continue_tests {
             .map(|arg| (*arg).to_string())
             .collect();
         expected_args.push(
-            "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891".to_string(),
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+                .to_string(),
         );
         assert_eq!(browser_calls[0].args, expected_args);
     }
 
     #[tokio::test]
+    async fn build_continue_waits_for_download_and_auto_continues() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-browser-auto-continue");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_java_installer_side_effects())
+            .with_interactive(MockInteractiveProvider::new().with_confirm(true))
+            .with_terminal_capabilities(tty_capabilities());
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+
+        let staged_download_dir = Path::new(&pending.entries[0].dest_path)
+            .parent()
+            .expect("pending dest parent")
+            .to_path_buf();
+        let files = session.filesystem_provider.files.clone();
+        let directories = session.filesystem_provider.directories.clone();
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            directories.lock().unwrap().insert(staged_download_dir.clone());
+            files.lock().unwrap().insert(
+                staged_download_dir.join("OptiFine.jar"),
+                "manual bytes".to_string(),
+            );
+        });
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        writer.join().expect("join delayed download writer");
+
+        assert!(result.is_ok(), "continue build should auto-complete: {result:?}");
+        assert!(
+            session.filesystem().exists(
+                &workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+            ),
+            "downloaded file should be restored into the distribution tree"
+        );
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_none(),
+            "pending state should be cleared after auto-continue succeeds"
+        );
+        let (browser_cmd, browser_prefix) = crate::platform::browser_open_command();
+        let browser_calls = session.process_provider.get_calls_for_command(browser_cmd);
+        assert_eq!(browser_calls.len(), 1, "expected one browser-open call");
+        let mut expected_args: Vec<String> = browser_prefix
+            .iter()
+            .map(|arg| (*arg).to_string())
+            .collect();
+        expected_args.push(
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+                .to_string(),
+        );
+        assert_eq!(browser_calls[0].args, expected_args);
+    }
+
+    #[tokio::test]
+    async fn build_continue_yes_mode_does_not_prompt_or_wait() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-yes-mode-no-prompt");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_interactive(MockInteractiveProvider::new().with_confirm(true))
+            .with_terminal_capabilities(tty_capabilities());
+        session.config_provider.app_config.yes = true;
+
+        crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("yes-mode continue should fail without prompting when cache is missing");
+
+        assert!(err
+            .to_string()
+            .contains("still required before the build can continue"));
+        assert!(
+            session.interactive_provider.get_confirm_calls().is_empty(),
+            "--yes should suppress browser confirmation prompts during continue"
+        );
+        let (browser_cmd, _) = crate::platform::browser_open_command();
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(browser_cmd)
+                .is_empty(),
+            "--yes continuation should not launch a browser command"
+        );
+    }
+
+    #[tokio::test]
     async fn build_continue_restores_cached_files_and_clears_pending_state() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4377,7 +5016,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn build_continue_clears_stale_pending_state() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4439,7 +5078,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn build_continue_dry_run_keeps_pending_state() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4498,7 +5137,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn build_continue_errors_when_cached_downloads_are_still_missing() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4549,7 +5188,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn build_continue_errors_when_restricted_downloads_recur() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4609,7 +5248,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn build_continue_reports_failed_targets_after_restore() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4671,7 +5310,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn build_continue_restores_multiple_destinations_for_one_cached_file() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4757,7 +5396,7 @@ mod handle_build_continue_tests {
 
     #[tokio::test]
     async fn clean_build_clears_pending_restricted_state_before_rebuilding() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
@@ -4810,6 +5449,33 @@ mod handle_build_continue_tests {
 
 mod handle_clean_tests {
     use super::*;
+    use std::ffi::OsString;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        unsafe fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.previous {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
 
     #[tokio::test]
     async fn it_cleans_build_artifacts() {
@@ -4845,13 +5511,47 @@ mod handle_clean_tests {
 
     #[tokio::test]
     async fn it_cleans_cache_when_requested() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = tempfile::TempDir::new().expect("cache root");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
         let workdir = mock_root().join("configured-project");
-        let session = configured_session(&workdir);
+        let staged_bin = crate::platform::cache::staged_bin_dir()
+            .join(format!(
+                "packwiz-tx-{}",
+                crate::platform::packwiz_bin::PACKWIZ_TX_VERSION
+            ))
+            .join(crate::empack::packwiz::PACKWIZ_BIN);
+        let legacy_http = crate::platform::cache::legacy_http_cache_dir().join("http_cache.json");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_file(
+                    cache_root
+                        .path()
+                        .join("jars")
+                        .join("packwiz-installer.jar"),
+                    "cached jar".to_string(),
+                )
+                .with_file(
+                    cache_root
+                        .path()
+                        .join("http")
+                        .join("http_cache.json"),
+                    "{}".to_string(),
+                )
+                .with_file(staged_bin.clone(), "staged packwiz".to_string())
+                .with_file(legacy_http.clone(), "{}".to_string()),
+        );
 
         let result = handle_clean(&session, vec!["cache".to_string()]).await;
 
-        // Cache cleaning is not yet implemented -- this test verifies the code path does not error
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "cache clean should succeed: {result:?}");
+        assert!(!session.filesystem().is_directory(cache_root.path()));
+        assert!(!session.filesystem().exists(&crate::platform::cache::staged_bin_dir()));
+        assert!(!session.filesystem().exists(&crate::platform::cache::legacy_http_cache_dir()));
+        assert!(session.filesystem().exists(&workdir.join("empack.yml")));
+        assert!(session.filesystem().exists(&workdir.join("pack").join("pack.toml")));
     }
 
     #[tokio::test]
@@ -6023,7 +6723,7 @@ mod init_interactive_tests {
         let text_calls = session.interactive_provider.get_text_input_calls();
         let name_call = text_calls
             .iter()
-            .find(|(prompt, _)| prompt.contains("Modpack name"));
+            .find(|call| call.0.contains("Modpack name"));
         assert!(
             name_call.is_some(),
             "Positional name should be passed as default to interactive prompt; text_input calls: {:?}",
@@ -6059,7 +6759,7 @@ mod init_interactive_tests {
         let text_calls = session.interactive_provider.get_text_input_calls();
         let name_call = text_calls
             .iter()
-            .find(|(prompt, _)| prompt.contains("Modpack name"));
+            .find(|call| call.0.contains("Modpack name"));
         assert!(
             name_call.is_some(),
             "Dot dir should resolve to actual basename for name prompt; text_input calls: {:?}",
@@ -6171,6 +6871,7 @@ mod init_interactive_tests {
 
 mod exit_code_tests {
     use super::*;
+    use crate::application::{EmpackExitCode, classify_error};
 
     // E1: handle_add with packwiz failure must return Err, not Ok.
     #[tokio::test]
@@ -6246,6 +6947,29 @@ mod exit_code_tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_handle_add_network_failure_classifies_as_network_exit() {
+        let workdir = mock_root().join("exit-code-network-classify");
+
+        let session = configured_session(&workdir).with_network(
+            MockNetworkProvider::new().with_failing_http_client(),
+        );
+
+        let error = handle_add(
+            &session,
+            vec!["sodium".to_string()],
+            false,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect_err("network failure should return an error");
+
+        assert_eq!(classify_error(&error), EmpackExitCode::Network);
+    }
+
     // E2: handle_build in an uninitialized directory must return Err, not Ok.
     #[tokio::test]
     async fn test_handle_build_uninitialized_returns_error() {
@@ -6268,6 +6992,27 @@ mod exit_code_tests {
             result.is_err(),
             "handle_build must return Err when not in a modpack directory, got Ok"
         );
+    }
+
+    #[tokio::test]
+    async fn test_handle_build_uninitialized_classifies_as_usage_exit() {
+        let workdir = mock_root().join("exit-code-uninit-build-classify");
+
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(workdir),
+        );
+
+        let error = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["mrpack".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("uninitialized build should fail");
+
+        assert_eq!(classify_error(&error), EmpackExitCode::Usage);
     }
 
     // E5: When packwiz fails with stderr output, the error message returned
@@ -6317,6 +7062,199 @@ mod exit_code_tests {
             err_msg.contains("version not found"),
             "Error must propagate packwiz stderr; got: {}",
             err_msg
+        );
+    }
+}
+
+mod tracked_local_dependency_tests {
+    use super::*;
+    use crate::empack::config::{DependencyEntry, DependencyStatus, LocalDependencyRecord};
+    use crate::primitives::ProjectType;
+
+    #[tokio::test]
+    async fn remove_local_dependency_deletes_file_and_updates_config() {
+        let workdir = mock_root().join("remove-local-dependency");
+        let relative_path = "pack/resourcepacks/example-pack.zip";
+        let absolute_path = workdir.join(relative_path);
+        let bytes = b"resourcepack-bytes".to_vec();
+        let sha256 = compute_sha256_hex_for_bytes(&bytes);
+
+        let filesystem = MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone())
+            .with_binary_file(absolute_path.clone(), bytes);
+        let session = MockCommandSession::new().with_filesystem(filesystem);
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: relative_path.to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256,
+                }),
+            )
+            .expect("add local dependency");
+
+        handle_remove(&session, vec!["example-pack".to_string()], false)
+            .await
+            .expect("remove local dependency");
+
+        assert!(
+            !session.filesystem().exists(&absolute_path),
+            "tracked local file should be deleted"
+        );
+        assert!(
+            session
+                .filesystem()
+                .config_manager(workdir.clone())
+                .find_dependency("example-pack")
+                .expect("read updated config")
+                .is_none(),
+            "local dependency should be removed from empack.yml"
+        );
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+                .is_empty(),
+            "tracked local removal should not invoke packwiz"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_fails_when_tracked_local_dependency_is_missing() {
+        let workdir = mock_root().join("sync-local-dependency-missing");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
+        );
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: "pack/resourcepacks/example-pack.zip".to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256: "deadbeef".to_string(),
+                }),
+            )
+            .expect("add local dependency");
+
+        let error = handle_sync(&session)
+            .await
+            .expect_err("missing local dependency should fail sync");
+
+        assert!(
+            error
+                .to_string()
+                .contains("tracked local dependenc"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_mrpack_rejects_tracked_local_dependencies() {
+        let workdir = mock_root().join("build-mrpack-local-dependency");
+        let relative_path = "pack/resourcepacks/example-pack.zip";
+        let absolute_path = workdir.join(relative_path);
+        let bytes = b"resourcepack-bytes".to_vec();
+        let sha256 = compute_sha256_hex_for_bytes(&bytes);
+
+        let filesystem = MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone())
+            .with_binary_file(absolute_path, bytes);
+        let session = MockCommandSession::new().with_filesystem(filesystem);
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: relative_path.to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256,
+                }),
+            )
+            .expect("add local dependency");
+
+        let error = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["mrpack".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("mrpack should reject tracked local dependencies");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Tracked local dependencies are not yet supported for mrpack exports"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_fails_when_tracked_local_dependency_hash_mismatches() {
+        let workdir = mock_root().join("build-local-dependency-hash-mismatch");
+        let relative_path = "pack/resourcepacks/example-pack.zip";
+        let absolute_path = workdir.join(relative_path);
+
+        let filesystem = MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone())
+            .with_binary_file(absolute_path, b"actual-bytes".to_vec());
+        let session = MockCommandSession::new().with_filesystem(filesystem);
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: relative_path.to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256: compute_sha256_hex_for_bytes(b"different-bytes"),
+                }),
+            )
+            .expect("add local dependency");
+
+        let error = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["client".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("hash-mismatched local dependency should fail build");
+
+        assert!(
+            error
+                .to_string()
+                .contains("tracked local dependenc"),
+            "unexpected error: {error}"
         );
     }
 }
@@ -6732,19 +7670,30 @@ mod handle_init_options_tests {
     }
 }
 
-// ===== HANDLE_ADD NON-JAR URL REJECTION =====
+// ===== HANDLE_ADD DIRECT ZIP URL =====
 
 mod handle_add_non_jar_url_tests {
     use super::*;
 
-    #[tokio::test]
-    async fn rejects_non_jar_direct_download_url() {
-        let workdir = mock_root().join("non-jar-url");
-        let session = configured_session(&workdir);
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn rejects_zip_direct_download_without_type() {
+        let workdir = mock_root().join("non-jar-url-missing-type");
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/pack.zip")
+            .with_status(200)
+            .with_body("zip-bytes")
+            .create_async()
+            .await;
+        let session = configured_session(&workdir).with_network(
+            MockNetworkProvider::new()
+                .enable_http_client()
+                .with_http_timeout(std::time::Duration::from_secs(5)),
+        );
 
         let result = handle_add(
             &session,
-            vec!["https://example.com/pack.zip".to_string()],
+            vec![format!("{}/pack.zip", server.url())],
             false,
             None,
             None,
@@ -6753,12 +7702,72 @@ mod handle_add_non_jar_url_tests {
         )
         .await;
 
-        assert!(result.is_err(), "non-jar URL should fail");
+        assert!(result.is_err(), "zip URL without --type should fail");
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("not yet supported") || err_msg.contains("Unsupported"),
-            "Error should mention unsupported file type: {err_msg}"
+            err_msg.contains("require --type") || err_msg.contains("Direct .zip URLs require"),
+            "Error should mention --type requirement: {err_msg}"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn rejects_unsupported_non_zip_direct_download_url() {
+        let workdir = mock_root().join("non-zip-url");
+        let session = configured_session(&workdir);
+
+        let result = handle_add(
+            &session,
+            vec!["https://example.com/pack.txt".to_string()],
+            false,
+            None,
+            Some(CliProjectType::ResourcePack),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err(), "non-zip URL should fail");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn adds_zip_direct_download_as_local_resourcepack() {
+        let workdir = mock_root().join("zip-direct-download-add");
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/pack.zip")
+            .with_status(200)
+            .with_body("zip-bytes")
+            .create_async()
+            .await;
+        let session = configured_session(&workdir).with_network(
+            MockNetworkProvider::new()
+                .enable_http_client()
+                .with_http_timeout(std::time::Duration::from_secs(5)),
+        );
+
+        let result = handle_add(
+            &session,
+            vec![format!("{}/pack.zip", server.url())],
+            false,
+            None,
+            Some(CliProjectType::ResourcePack),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(result.is_ok(), "zip URL add should succeed: {result:?}");
+        assert!(session
+            .filesystem()
+            .exists(&workdir.join("pack").join("resourcepacks").join("pack.zip")));
+
+        let empack_yml = session
+            .filesystem()
+            .read_to_string(&workdir.join("empack.yml"))
+            .expect("empack.yml");
+        assert!(empack_yml.contains("status: local"));
+        assert!(empack_yml.contains("path: pack/resourcepacks/pack.zip"));
+        assert!(empack_yml.contains("source_url:"));
     }
 }
 

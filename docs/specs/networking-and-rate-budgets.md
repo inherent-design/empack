@@ -1,8 +1,8 @@
 ---
 spec: networking-and-rate-budgets
-status: draft
+status: partial
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-11
 depends: [overview]
 ---
 
@@ -99,6 +99,12 @@ The live network provider wires:
 
 `ProjectResolver` receives those shared objects through `with_networking()`. Import resolution also uses the shared host budgets directly during manifest resolution.
 
+Current live cache behavior:
+
+- the standard async session path loads HTTP cache state from `<cache_root>/http`
+- cache mutations persist best-effort back to that directory
+- the live HTTP cache respects `EMPACK_CACHE_DIR` through `platform::cache::cache_root()`
+
 ## Resource-Aware Networking
 
 `NetworkingManager` exists for batch concurrency and derives `optimal_jobs` from detected system resources.
@@ -109,4 +115,4 @@ Current configuration fields:
 - `timeout_seconds`
 - `trace_requests`
 
-This manager is part of the runtime library, but the live CLI still does not route every command path through it.
+This manager is part of the runtime library, but the live CLI contract is still centered on the `NetworkProvider` shared client/cache/budget seam rather than a single globally wired `NetworkingManager`.

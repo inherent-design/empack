@@ -152,20 +152,29 @@ impl HttpCache {
 
     /// Store a response in the cache
     pub async fn put(&self, url: String, response: CachedResponse) {
-        let mut cache = self.cache.write().await;
-        cache.insert(url, response);
+        {
+            let mut cache = self.cache.write().await;
+            cache.insert(url, response);
+        }
+        self.persist_best_effort("put").await;
     }
 
     /// Remove a cached entry
     pub async fn remove(&self, url: &str) {
-        let mut cache = self.cache.write().await;
-        cache.remove(url);
+        {
+            let mut cache = self.cache.write().await;
+            cache.remove(url);
+        }
+        self.persist_best_effort("remove").await;
     }
 
     /// Clear all cached entries
     pub async fn clear(&self) {
-        let mut cache = self.cache.write().await;
-        cache.clear();
+        {
+            let mut cache = self.cache.write().await;
+            cache.clear();
+        }
+        self.persist_best_effort("clear").await;
     }
 
     /// Get the number of cached entries
@@ -251,6 +260,17 @@ impl HttpCache {
         }
 
         Ok(cached_response)
+    }
+
+    async fn persist_best_effort(&self, action: &str) {
+        if let Err(error) = self.save_to_disk().await {
+            warn!(
+                error = %error,
+                action,
+                cache_dir = %self.cache_dir.display(),
+                "failed to persist HTTP cache update"
+            );
+        }
     }
 }
 

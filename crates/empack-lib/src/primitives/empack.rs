@@ -191,7 +191,9 @@ pub enum StateTransition<'a> {
         Box<crate::empack::builds::BuildOrchestrator<'a>>,
         Vec<BuildTarget>,
     ),
-    /// Clean: Built -> Configured
+    /// Non-destructive build-artifact cleanup. Removes `dist/` and marker
+    /// state when present, but preserves project metadata such as `empack.yml`
+    /// and `pack/`.
     Clean,
 }
 
@@ -240,7 +242,10 @@ impl BuildTarget {
         }
     }
 
-    /// Expand 'all' meta-target to concrete targets
+    /// Expand the narrow internal "core distribution" helper target set.
+    ///
+    /// This is not the user-facing CLI `all` expansion, which resolves to all
+    /// five build targets in `application/commands.rs`.
     pub fn expand_all() -> Vec<BuildTarget> {
         vec![
             BuildTarget::Mrpack,

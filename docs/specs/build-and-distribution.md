@@ -1,8 +1,8 @@
 ---
 spec: build-and-distribution
-status: draft
+status: partial
 created: 2026-04-08
-updated: 2026-04-09
+updated: 2026-04-11
 depends: [overview, types, config-and-manifest]
 ---
 
@@ -28,11 +28,12 @@ The CLI meta-target `all` expands to all five targets.
 
 Current pipeline structure:
 
-1. Prepare the build environment under `dist/`.
-2. Resolve cached paths for `packwiz-installer-bootstrap.jar` and `packwiz-installer.jar`.
-3. Execute targets in the requested order.
-4. Remove the temporary mrpack extraction directory if it exists.
-5. Complete the marker guard on success.
+1. Validate tracked local dependencies from the current `ProjectPlan`.
+2. Prepare the build environment under `dist/`.
+3. Resolve cached paths for `packwiz-installer-bootstrap.jar` and `packwiz-installer.jar`.
+4. Execute targets in the requested order.
+5. Remove the temporary mrpack extraction directory if it exists.
+6. Complete the marker guard on success.
 
 If the build exits early, the marker remains and the next state discovery reports `Interrupted`.
 
@@ -64,6 +65,19 @@ Embedded template names include:
 
 Build-time template processing loads variables from `pack/pack.toml` and then renders user templates from the project template directories into target output trees.
 
+Current template directory layout:
+
+- `templates/common` applies to `client`, `server`, `client-full`, and `server-full`
+- `templates/client` applies to `client` and `client-full`
+- `templates/server` applies to `server` and `server-full`
+- `mrpack` does not consume build templates
+
+Current file behavior:
+
+- files ending in `.template` are rendered through the template engine and written without the `.template` suffix
+- non-`.template` files are rendered in place when they are valid UTF-8 text
+- non-`.template` files that are not valid UTF-8 are copied byte-for-byte
+
 ## Runtime Assets
 
 The command layer ensures required jars exist in cache before build execution:
@@ -75,25 +89,45 @@ The command layer ensures required jars exist in cache before build execution:
 
 These files are cached under the empack cache root.
 
+## Tracked Local Dependencies
+
+Current build behavior for `DependencySource::Local` is explicit:
+
+- every build path validates local file presence and SHA-256 hash before starting
+- validation failure is a project-state/config error, not a silent omission
+- `mrpack` export is currently blocked when any tracked local dependency remains in the project plan
+- non-`mrpack` targets may proceed only after local dependency validation passes
+
 ## Restricted CurseForge Downloads
 
-Restricted download handling is part of the current build pipeline for full distributions. The public recovery command is `empack build --continue`.
+Restricted download handling is part of the current build pipeline for both:
+
+- full-distribution installer flows
+- `mrpack` export failures that report manual CurseForge downloads
+
+The public recovery command is `empack build --continue`.
 
 Current behavior:
 
 - packwiz-installer output is parsed for restricted mod records
+- packwiz `mr export` manual-download output is also parsed into restricted mod records
 - continuation state is persisted internally when a fresh full build is blocked
+- the same continuation state is reused when `mrpack` export is blocked on manual downloads
 - records keep every destination path; user-facing display is deduplicated by download URL
 - the command prints the download URL, managed cache path, and destination path for each unique restricted download
 - fresh builds scan for matching filenames in this order:
   - empack-managed restricted-build cache
   - `--downloads-dir`
   - `~/Downloads`
+  - recorded parent directories of the pending destination paths
 - matching files found outside the cache are imported into the managed cache
 - if every required file is cached, empack reuses the same continuation path as `build --continue`
 - `build --continue` restores cached files into the recorded destination paths and reruns the original targets in continuation mode
 - continuation mode skips the initial clean for `client-full` and `server-full`
-- if files are still missing and the terminal is interactive, empack can offer to open the URLs in a browser
+- `build --continue` is parse-time incompatible with positional targets, `--clean`, and `--format`
+- if files are still missing and the terminal is interactive, empack can offer to open direct CurseForge `/download/{file-id}` URLs in the browser
+- after opening those URLs, empack waits up to 5 minutes for files to appear in the watched directories and continues automatically if they all arrive
+- empack does not directly fetch restricted CurseForge download URLs itself
 
 If restricted files remain missing, the command exits with an error after printing the managed cache location and `empack build --continue`.
 
@@ -105,6 +139,8 @@ Build cleanup has two layers:
 
 - `build --clean` removes prior build artifacts before starting a new build
 - `empack clean builds` removes build artifacts without starting a new build
+- `empack clean cache` removes empack-managed cache data without touching project source files
+- `empack clean all` removes both build artifacts and empack-managed cache data
 
 `build --clean` also clears any pending restricted-build continuation state before rebuilding.
 
