@@ -1549,6 +1549,16 @@ fn test_restricted_destination_filename_extracts_basename() {
 }
 
 #[test]
+fn test_restricted_destination_filename_preserves_section_sign() {
+    assert_eq!(
+        restricted_destination_filename(
+            "/tmp/packwiz/cache/import/\u{00A7}6No Enchant Glint 1.20.1.zip"
+        ),
+        Some("§6No Enchant Glint 1.20.1.zip".to_string())
+    );
+}
+
+#[test]
 fn test_restricted_curseforge_file_id_supports_files_and_download_urls() {
     assert_eq!(
         restricted_curseforge_file_id(
@@ -1654,6 +1664,27 @@ Once you have done so, place these files in C:\\Users\\test\\AppData\\Local\\pac
     assert_eq!(
         results[0].dest_path,
         "C:\\Users\\test\\AppData\\Local\\packwiz\\cache\\import\\BeeFix-1.20-1.0.7.jar"
+    );
+}
+
+#[test]
+fn test_parse_export_restricted_output_preserves_deceasedcraft_section_sign_filename() {
+    let output = "\
+Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
+No Enchant Glint (§6No Enchant Glint 1.20.1.zip) from https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358
+Once you have done so, place these files in C:\\Users\\test\\AppData\\Local\\packwiz\\cache\\import and re-run this command.";
+
+    let results = parse_export_restricted_output(output);
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "No Enchant Glint");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+    );
+    assert_eq!(
+        results[0].dest_path,
+        "C:\\Users\\test\\AppData\\Local\\packwiz\\cache\\import\\§6No Enchant Glint 1.20.1.zip"
     );
 }
 

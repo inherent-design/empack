@@ -4881,6 +4881,173 @@ mod handle_build_continue_tests {
     }
 
     #[tokio::test]
+    async fn build_continue_detects_exact_deceasedcraft_section_sign_filename() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-import-exact-deceasedcraft-filename");
+        let downloads_dir = workdir.join("manual-downloads");
+        let exact_name = "§6No Enchant Glint 1.20.1.zip";
+        let download_bytes = b"manual deceasedcraft bytes".to_vec();
+        let filesystem =
+            cached_full_build_filesystem(workdir.clone()).with_binary_file_and_metadata(
+                downloads_dir.join(exact_name),
+                download_bytes.clone(),
+                recent_file_metadata(download_bytes.len()),
+            );
+        let session = MockCommandSession::new()
+            .with_filesystem(filesystem)
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::Mrpack],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "No Enchant Glint".to_string(),
+                url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+                    .to_string(),
+                dest_path: workdir
+                    .join("packwiz-cache")
+                    .join("import")
+                    .join(exact_name)
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                downloads_dir: Some(downloads_dir.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "exact deceasedcraft filename should be detected and continued: {result:?}"
+        );
+        assert!(
+            session
+                .filesystem()
+                .exists(&pending.restricted_cache_path().join(exact_name)),
+            "exact filename should be imported into the managed restricted cache"
+        );
+        assert!(
+            session
+                .filesystem()
+                .exists(&PathBuf::from(&pending.entries[0].dest_path)),
+            "exact cached file should be restored into the packwiz import destination"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_continue_ignores_preexisting_recent_zip_noise_when_baseline_exists() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-import-baseline-noise");
+        let downloads_dir = workdir.join("manual-downloads");
+        let noise_a = downloads_dir.join("noise-a.zip");
+        let noise_b = downloads_dir.join("noise-b.zip");
+        let noise_c = downloads_dir.join("noise-c.zip");
+        let exact_variant = downloads_dir.join("§6No Enchant Glint 1.20.1.zip");
+        let noise_a_meta = recent_file_metadata("noise-a".len());
+        let noise_b_meta = recent_file_metadata("noise-b".len());
+        let noise_c_meta = recent_file_metadata("noise-c".len());
+        let filesystem = cached_full_build_filesystem(workdir.clone())
+            .with_binary_file_and_metadata(noise_a.clone(), b"noise-a".to_vec(), noise_a_meta.clone())
+            .with_binary_file_and_metadata(noise_b.clone(), b"noise-b".to_vec(), noise_b_meta.clone())
+            .with_binary_file_and_metadata(noise_c.clone(), b"noise-c".to_vec(), noise_c_meta.clone());
+        let session = MockCommandSession::new()
+            .with_filesystem(filesystem)
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+
+        let mut pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::Mrpack],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "No Enchant Glint".to_string(),
+                url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+                    .to_string(),
+                dest_path: workdir
+                    .join("packwiz-cache")
+                    .join("import")
+                    .join("No_Enchant_Glint.zip")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        pending.candidate_baseline = vec![
+            crate::empack::restricted_build::PendingRestrictedCandidateSnapshot {
+                path: noise_a.to_string_lossy().to_string(),
+                len: noise_a_meta.len,
+                modified_unix_ms: noise_a_meta.modified_unix_ms,
+                created_unix_ms: noise_a_meta.created_unix_ms,
+            },
+            crate::empack::restricted_build::PendingRestrictedCandidateSnapshot {
+                path: noise_b.to_string_lossy().to_string(),
+                len: noise_b_meta.len,
+                modified_unix_ms: noise_b_meta.modified_unix_ms,
+                created_unix_ms: noise_b_meta.created_unix_ms,
+            },
+            crate::empack::restricted_build::PendingRestrictedCandidateSnapshot {
+                path: noise_c.to_string_lossy().to_string(),
+                len: noise_c_meta.len,
+                modified_unix_ms: noise_c_meta.modified_unix_ms,
+                created_unix_ms: noise_c_meta.created_unix_ms,
+            },
+        ];
+        crate::empack::restricted_build::persist_pending_build(
+            session.filesystem(),
+            &workdir,
+            &pending,
+        )
+        .expect("persist baseline-aware pending build");
+
+        session
+            .filesystem()
+            .write_bytes(&exact_variant, b"manual bytes")
+            .expect("write exact variant");
+        session
+            .filesystem_provider
+            .set_file_metadata(exact_variant, recent_file_metadata("manual bytes".len()));
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                downloads_dir: Some(downloads_dir.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "baseline-aware continue should ignore preexisting zip noise: {result:?}"
+        );
+        let restricted_cache_dir =
+            crate::empack::restricted_build::restricted_cache_dir(&workdir).expect("cache dir");
+        assert!(
+            session
+                .filesystem()
+                .exists(&restricted_cache_dir.join("No_Enchant_Glint.zip")),
+            "the new variant should still be imported into the expected cache filename"
+        );
+    }
+
+    #[tokio::test]
     async fn fresh_restricted_build_non_tty_does_not_prompt_or_wait() {
         let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
@@ -5181,6 +5348,99 @@ mod handle_build_continue_tests {
                 .to_string(),
         );
         assert_eq!(browser_calls[0].args, expected_args);
+    }
+
+    #[tokio::test]
+    async fn interactive_wait_loop_captures_baseline_for_legacy_pending_before_polling() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-browser-legacy-baseline");
+        let import_dir = workdir.join("packwiz-cache").join("import");
+        let noise_a = import_dir.join("noise-a.zip");
+        let noise_b = import_dir.join("noise-b.zip");
+        let noise_c = import_dir.join("noise-c.zip");
+        let exact_variant = import_dir.join("§6No Enchant Glint 1.20.1.zip");
+        let filesystem = cached_full_build_filesystem(workdir.clone())
+            .with_binary_file_and_metadata(
+                noise_a.clone(),
+                b"noise-a".to_vec(),
+                recent_file_metadata("noise-a".len()),
+            )
+            .with_binary_file_and_metadata(
+                noise_b.clone(),
+                b"noise-b".to_vec(),
+                recent_file_metadata("noise-b".len()),
+            )
+            .with_binary_file_and_metadata(
+                noise_c.clone(),
+                b"noise-c".to_vec(),
+                recent_file_metadata("noise-c".len()),
+            );
+        let session = MockCommandSession::new()
+            .with_filesystem(filesystem)
+            .with_process(MockProcessProvider::new().with_mrpack_export_side_effects())
+            .with_interactive(MockInteractiveProvider::new().with_confirm(true))
+            .with_terminal_capabilities(tty_capabilities());
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::Mrpack],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "No Enchant Glint".to_string(),
+                url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+                    .to_string(),
+                dest_path: import_dir
+                    .join("No_Enchant_Glint.zip")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+
+        let binary_files = session.filesystem_provider.binary_files.clone();
+        let metadata = session.filesystem_provider.metadata.clone();
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            binary_files
+                .lock()
+                .unwrap()
+                .insert(exact_variant.clone(), b"manual exact variant".to_vec());
+            metadata.lock().unwrap().insert(
+                exact_variant,
+                recent_file_metadata("manual exact variant".len()),
+            );
+        });
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        writer.join().expect("join delayed variant writer");
+
+        assert!(
+            result.is_ok(),
+            "interactive wait loop should capture a baseline for legacy pending state: {result:?}"
+        );
+        assert!(
+            session
+                .filesystem()
+                .exists(&pending.restricted_cache_path().join("No_Enchant_Glint.zip")),
+            "new variant should be imported into the managed restricted cache after baseline capture"
+        );
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_none(),
+            "pending state should clear after interactive recovery succeeds"
+        );
     }
 
     #[tokio::test]

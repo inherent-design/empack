@@ -91,6 +91,30 @@ fn sample_resourcepack_restricted_mod(workdir: &Path) -> RestrictedModInfo {
     }
 }
 
+fn sample_deceasedcraft_resourcepack_restricted_mod(workdir: &Path) -> RestrictedModInfo {
+    RestrictedModInfo {
+        name: "No Enchant Glint".to_string(),
+        url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+            .to_string(),
+        dest_path: workdir
+            .join("dist")
+            .join("client-full")
+            .join("resourcepacks")
+            .join("§6No Enchant Glint 1.20.1.zip")
+            .to_string_lossy()
+            .to_string(),
+    }
+}
+
+fn baseline_snapshot(path: PathBuf, metadata: &FileMetadata) -> PendingRestrictedCandidateSnapshot {
+    PendingRestrictedCandidateSnapshot {
+        path: path.to_string_lossy().to_string(),
+        len: metadata.len,
+        modified_unix_ms: metadata.modified_unix_ms,
+        created_unix_ms: metadata.created_unix_ms,
+    }
+}
+
 #[test]
 fn save_and_load_pending_build_round_trips() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
@@ -119,6 +143,87 @@ fn save_and_load_pending_build_round_trips() {
     assert_eq!(loaded.targets, vec!["client-full"]);
     assert_eq!(loaded.entries.len(), 2);
     assert_eq!(loaded.entries[0].filename, "entityculling.jar");
+    assert!(loaded.candidate_baseline.is_empty());
+}
+
+#[test]
+fn persist_pending_build_round_trips_candidate_baseline() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-baseline-roundtrip");
+    let downloads_dir = workdir.join("downloads");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(
+            downloads_dir.join("existing.zip"),
+            b"existing bytes".to_vec(),
+            recent_file_metadata("existing bytes".len(), 123_456),
+        );
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.candidate_baseline =
+        capture_candidate_baseline(&provider, std::slice::from_ref(&downloads_dir))
+            .expect("capture baseline");
+
+    persist_pending_build(&provider, &workdir, &pending).expect("persist pending build");
+    let loaded = load_pending_build(&provider, &workdir)
+        .expect("load pending build")
+        .expect("pending build exists");
+
+    assert_eq!(loaded, pending);
+    assert_eq!(loaded.candidate_baseline.len(), 1);
+}
+
+#[test]
+fn load_pending_build_defaults_missing_candidate_baseline() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-missing-baseline");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+
+    let state_path = pending_state_path(&workdir);
+    let mut json: serde_json::Value =
+        serde_json::from_str(&provider.read_to_string(&state_path).expect("read pending json"))
+            .expect("parse pending json");
+    json.as_object_mut()
+        .expect("pending json object")
+        .remove("candidate_baseline");
+    provider
+        .write_file(
+            &state_path,
+            &serde_json::to_string_pretty(&json).expect("serialize pending json"),
+        )
+        .expect("rewrite pending json");
+
+    let loaded = load_pending_build(&provider, &workdir)
+        .expect("load pending build")
+        .expect("pending build exists");
+
+    assert!(loaded.candidate_baseline.is_empty());
+    assert_eq!(loaded.entries, pending.entries);
 }
 
 #[test]
@@ -347,6 +452,50 @@ fn import_matching_downloads_into_cache_imports_recent_unicode_named_zip_when_ex
 }
 
 #[test]
+fn import_matching_downloads_into_cache_imports_exact_deceasedcraft_filename_when_present() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-exact-deceasedcraft");
+    let downloads_dir = workdir.join("downloads");
+    let exact_name = "§6No Enchant Glint 1.20.1.zip";
+    let bytes = b"exact deceasedcraft bytes".to_vec();
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(
+            downloads_dir.join(exact_name),
+            bytes.clone(),
+            recent_file_metadata(bytes.len(), 205_000),
+        );
+
+    let pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_deceasedcraft_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("import exact deceasedcraft filename");
+
+    assert_eq!(
+        provider
+            .read_bytes(&pending.restricted_cache_path().join(exact_name))
+            .expect("read cached exact file"),
+        bytes
+    );
+}
+
+#[test]
 fn import_matching_downloads_into_cache_ignores_old_unicode_zip_candidates() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
@@ -525,6 +674,130 @@ fn import_matching_downloads_into_cache_does_not_guess_when_multiple_distinct_re
     assert!(
         !provider.exists(&pending.restricted_cache_path().join("No_Enchant_Glint.zip")),
         "ambiguous recent candidates should not be guessed"
+    );
+    assert_eq!(missing_cached_entries(&provider, &pending).len(), 1);
+}
+
+#[test]
+fn import_matching_downloads_into_cache_ignores_preexisting_recent_zip_noise_when_baseline_exists() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-baseline-noise");
+    let downloads_dir = workdir.join("downloads");
+    let noise_a = downloads_dir.join("noise-a.zip");
+    let noise_b = downloads_dir.join("noise-b.zip");
+    let noise_c = downloads_dir.join("noise-c.zip");
+    let target_path = downloads_dir.join("§6No Enchant Glint 1.20.1.zip");
+    let noise_a_meta = recent_file_metadata(7, 205_000);
+    let noise_b_meta = recent_file_metadata(7, 206_000);
+    let noise_c_meta = recent_file_metadata(7, 207_000);
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(noise_a.clone(), b"noise-a".to_vec(), noise_a_meta.clone())
+        .with_binary_file_and_metadata(noise_b.clone(), b"noise-b".to_vec(), noise_b_meta.clone())
+        .with_binary_file_and_metadata(noise_c.clone(), b"noise-c".to_vec(), noise_c_meta.clone());
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_deceasedcraft_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.candidate_baseline = vec![
+        baseline_snapshot(noise_a, &noise_a_meta),
+        baseline_snapshot(noise_b, &noise_b_meta),
+        baseline_snapshot(noise_c, &noise_c_meta),
+    ];
+
+    provider
+        .write_bytes(&target_path, b"manual resource pack bytes")
+        .expect("write target file");
+    provider.set_file_metadata(
+        target_path,
+        recent_file_metadata("manual resource pack bytes".len(), 208_000),
+    );
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("import with baseline noise");
+
+    assert_eq!(
+        provider
+            .read_bytes(
+                &pending
+                    .restricted_cache_path()
+                    .join("§6No Enchant Glint 1.20.1.zip")
+            )
+            .expect("read cached target"),
+        b"manual resource pack bytes"
+    );
+}
+
+#[test]
+fn import_matching_downloads_into_cache_keeps_blocking_when_multiple_new_distinct_zip_candidates_exist_after_baseline(
+) {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-baseline-ambiguous");
+    let downloads_dir = workdir.join("downloads");
+    let baseline_path = downloads_dir.join("preexisting.zip");
+    let baseline_meta = recent_file_metadata("baseline".len(), 200_000);
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(
+            baseline_path.clone(),
+            b"baseline".to_vec(),
+            baseline_meta.clone(),
+        );
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    pending.candidate_baseline = vec![baseline_snapshot(baseline_path, &baseline_meta)];
+
+    let first = downloads_dir.join("§6No Enchant Glint 1.20.1.zip");
+    let second = downloads_dir.join("Another recent resource pack.zip");
+    provider
+        .write_bytes(&first, b"first bytes")
+        .expect("write first candidate");
+    provider.set_file_metadata(first, recent_file_metadata("first bytes".len(), 205_000));
+    provider
+        .write_bytes(&second, b"second bytes")
+        .expect("write second candidate");
+    provider.set_file_metadata(second, recent_file_metadata("second bytes".len(), 206_000));
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("scan ambiguous post-baseline candidates");
+
+    assert!(
+        !provider.exists(
+            &pending
+                .restricted_cache_path()
+                .join("No_Enchant_Glint.zip")
+        ),
+        "multiple new distinct candidates should remain ambiguous"
     );
     assert_eq!(missing_cached_entries(&provider, &pending).len(), 1);
 }

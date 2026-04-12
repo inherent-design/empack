@@ -3327,7 +3327,7 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     let restricted_entries = collect_restricted_entries(&results);
 
     if !restricted_entries.is_empty() {
-        let pending = crate::empack::restricted_build::save_pending_build(
+        let mut pending = crate::empack::restricted_build::save_pending_build(
             session.filesystem(),
             &manager.workdir,
             &build_targets,
@@ -3338,6 +3338,17 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
 
         let download_dirs =
             restricted_download_dirs(args.downloads_dir.as_deref(), &pending, &pending.entries);
+        pending.candidate_baseline = crate::empack::restricted_build::capture_candidate_baseline(
+            session.filesystem(),
+            &download_dirs,
+        )
+        .context("Failed to capture restricted download baseline")?;
+        crate::empack::restricted_build::persist_pending_build(
+            session.filesystem(),
+            &manager.workdir,
+            &pending,
+        )
+        .context("Failed to persist restricted download baseline")?;
         crate::empack::restricted_build::import_matching_downloads_into_cache(
             session.filesystem(),
             &manager.workdir,
@@ -3856,17 +3867,35 @@ async fn maybe_open_and_wait_for_restricted_downloads(
         .status()
         .info("Waiting up to 5 minutes for restricted downloads to appear...");
 
+    let mut pending_for_polling = pending.clone();
+    if pending_for_polling.candidate_baseline.is_empty() {
+        pending_for_polling.candidate_baseline =
+            crate::empack::restricted_build::capture_candidate_baseline(
+                session.filesystem(),
+                search_dirs,
+            )
+            .context("Failed to capture restricted download baseline")?;
+        crate::empack::restricted_build::persist_pending_build(
+            session.filesystem(),
+            workdir,
+            &pending_for_polling,
+        )
+        .context("Failed to persist restricted download baseline")?;
+    }
+
     for _ in 0..300 {
         crate::empack::restricted_build::import_matching_downloads_into_cache(
             session.filesystem(),
             workdir,
-            pending,
+            &pending_for_polling,
             search_dirs,
         )
         .context("Failed to import matching restricted downloads into cache")?;
 
-        let remaining =
-            crate::empack::restricted_build::missing_cached_entries(session.filesystem(), pending);
+        let remaining = crate::empack::restricted_build::missing_cached_entries(
+            session.filesystem(),
+            &pending_for_polling,
+        );
         if remaining.is_empty() {
             return Ok(true);
         }
