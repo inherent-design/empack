@@ -220,6 +220,49 @@ fn e2e_unsupported_direct_extension_exits_two() {
 }
 
 #[test]
+fn e2e_missing_tracked_local_dependency_validation_exits_two() {
+    let project = TestProject::workflow_fixture("exit-local-validation", "fabric", "1.21.1");
+
+    std::fs::write(
+        project.dir().join("empack.yml"),
+        r#"empack:
+  dependencies:
+    example-pack:
+      status: local
+      title: Example Pack
+      type: resourcepack
+      path: pack/resourcepacks/example-pack.zip
+      source_url: https://example.com/example-pack.zip
+      sha256: deadbeefcafebabe
+  minecraft_version: "1.21.1"
+  loader: fabric
+  name: "exit-local-validation"
+  author: "Workflow Test"
+  version: "1.0.0"
+"#,
+    )
+    .expect("write empack.yml with tracked local dependency");
+
+    let output = cargo_empack_cmd(project.dir())
+        .args(["build", "mrpack"])
+        .output()
+        .expect("spawn local-validation build command");
+
+    assert_eq!(
+        output.status.code(),
+        Some(EmpackExitCode::Usage.as_i32()),
+        "unexpected output:\n{}",
+        combined_output(&output)
+    );
+
+    let combined = combined_output(&output);
+    assert!(
+        combined.contains("tracked local dependenc") && combined.contains("failed validation"),
+        "expected tracked local dependency validation failure in output:\n{combined}"
+    );
+}
+
+#[test]
 fn e2e_packwiz_process_failure_exits_one() {
     let project = TestProject::workflow_fixture("exit-remove-fail", "fabric", "1.21.1");
     let fake_packwiz = write_failing_packwiz_binary(project.dir());

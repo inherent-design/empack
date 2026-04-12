@@ -157,7 +157,8 @@ fn classify_message(message: &str) -> EmpackExitCode {
         || normalized.contains("adding non-.zip direct-download files is not supported")
         || normalized
             .contains("tracked local dependencies are not yet supported for mrpack exports")
-        || normalized.contains("tracked local dependency validation failed")
+        || normalized.contains("tracked local dependency failed validation")
+        || normalized.contains("tracked local dependencies failed validation")
         || normalized.contains("no pending restricted build to continue")
     {
         return EmpackExitCode::Usage;
@@ -231,5 +232,14 @@ mod tests {
             "Direct .zip URLs support only --type resourcepack, shader, or datapack"
         );
         assert_eq!(classify_error(&error), EmpackExitCode::Usage);
+    }
+
+    #[test]
+    fn classify_error_maps_tracked_local_dependency_validation_strings_to_usage() {
+        let singular = anyhow::anyhow!("1 tracked local dependency failed validation");
+        assert_eq!(classify_error(&singular), EmpackExitCode::Usage);
+
+        let plural = anyhow::anyhow!("2 tracked local dependencies failed validation");
+        assert_eq!(classify_error(&plural), EmpackExitCode::Usage);
     }
 }
