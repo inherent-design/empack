@@ -1145,7 +1145,7 @@ pub(crate) fn parse_export_restricted_output(output: &str) -> Vec<RestrictedModI
         let url = normalize_curseforge_manual_download_url(after_from[..url_end].trim());
         let name = name_and_filename[..open_idx].trim().to_string();
         let dest_path = join_reported_import_path(import_dir, filename);
-        if seen.insert((url.clone(), dest_path.clone())) {
+        if !url.is_empty() && seen.insert((url.clone(), dest_path.clone())) {
             results.push(RestrictedModInfo {
                 name,
                 url,

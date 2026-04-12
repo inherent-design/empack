@@ -2561,6 +2561,8 @@ fn build_tracked_local_dependency(
 ) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
     let relative_path =
         tracked_local_dependency_relative_path(session, workdir, project_type, filename)?;
+    let dep_key = tracked_local_dependency_key(filename);
+    ensure_tracked_local_dependency_key_available(session, workdir, &dep_key, &relative_path)?;
     let dest_path = workdir.join(PathBuf::from(&relative_path));
     if let Some(parent) = dest_path.parent() {
         session
@@ -2579,7 +2581,6 @@ fn build_tracked_local_dependency(
         })?;
 
     let title = filename.to_string();
-    let dep_key = tracked_local_dependency_key(filename);
     let record = LocalDependencyRecord {
         status: DependencyStatus::Local,
         title: title.clone(),
@@ -2599,6 +2600,38 @@ fn build_tracked_local_dependency(
         project_type,
         kind: DirectDownloadKind::Local { dep_key, record },
     })
+}
+
+fn ensure_tracked_local_dependency_key_available(
+    session: &dyn Session,
+    workdir: &Path,
+    dep_key: &str,
+    relative_path: &str,
+) -> std::result::Result<(), anyhow::Error> {
+    let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
+    let config = config_manager.load_empack_config().with_context(|| {
+        format!("failed to load empack.yml while checking local dependency key '{dep_key}'")
+    })?;
+
+    match config.empack.dependencies.get(dep_key) {
+        None => Ok(()),
+        Some(DependencyEntry::Local(existing)) if existing.path == relative_path => Ok(()),
+        Some(DependencyEntry::Local(existing)) => anyhow::bail!(
+            "Tracked local dependency key '{}' is already used by '{}'. Rename the file or remove the existing dependency first.",
+            dep_key,
+            existing.path
+        ),
+        Some(DependencyEntry::Resolved(existing)) => anyhow::bail!(
+            "Tracked local dependency key '{}' is already used by dependency '{}'. Rename the file or remove the existing dependency first.",
+            dep_key,
+            existing.title
+        ),
+        Some(DependencyEntry::Search(existing)) => anyhow::bail!(
+            "Tracked local dependency key '{}' is already used by dependency '{}'. Rename the file or remove the existing dependency first.",
+            dep_key,
+            existing.title
+        ),
+    }
 }
 
 fn tracked_local_dependency_relative_path(

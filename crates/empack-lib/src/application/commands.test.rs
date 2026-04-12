@@ -2185,6 +2185,9 @@ mod resolve_curseforge_slug_tests {
 
 mod handle_direct_download_jar_tests {
     use super::*;
+    use crate::empack::config::{
+        DependencyEntry, DependencyRecord, DependencyStatus, LocalDependencyRecord,
+    };
 
     fn configured_direct_download_session(workdir: &Path) -> MockCommandSession {
         MockCommandSession::new().with_filesystem(
@@ -2555,6 +2558,206 @@ mod handle_direct_download_jar_tests {
                 .join("datapacks")
                 .join("example-datapack.zip")
         ));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn tracked_local_direct_download_rejects_normalized_key_collision_with_existing_local_entry(
+    ) {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/my_mod.zip")
+            .with_status(200)
+            .with_body("zip-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-local-key-collision");
+        let session = configured_direct_download_session(&workdir);
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "my-mod",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "My Mod".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: "pack/resourcepacks/my-mod.zip".to_string(),
+                    source_url: Some("https://example.com/my-mod.zip".to_string()),
+                    sha256: "deadbeef".to_string(),
+                }),
+            )
+            .expect("add existing local dependency");
+
+        let error = handle_direct_download_non_jar(
+            &session,
+            &format!("{}/downloads/my_mod.zip", server.url()),
+            "zip",
+            Some(ProjectType::ResourcePack),
+        )
+        .await
+        .err()
+        .expect("normalized key collision should fail");
+
+        let error_text = error.to_string();
+        assert!(
+            error_text.contains("Tracked local dependency key 'my-mod'"),
+            "unexpected error: {error_text}"
+        );
+        assert!(
+            error_text.contains("pack/resourcepacks/my-mod.zip"),
+            "unexpected error: {error_text}"
+        );
+        assert!(
+            !session
+                .filesystem()
+                .exists(&workdir.join("pack").join("resourcepacks").join("my_mod.zip")),
+            "colliding file should not be written"
+        );
+        let preserved = session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .find_dependency("my-mod")
+            .expect("read preserved config")
+            .expect("existing local dependency should remain");
+        match preserved.1 {
+            DependencyEntry::Local(existing) => {
+                assert_eq!(existing.path, "pack/resourcepacks/my-mod.zip");
+            }
+            other => panic!("expected preserved local dependency, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn tracked_local_direct_download_rejects_key_collision_with_existing_resolved_dependency()
+    {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/sodium.jar")
+            .with_status(200)
+            .with_body("jar-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-resolved-key-collision");
+        let session = configured_direct_download_session(&workdir);
+        let resolver = StubJarResolver {
+            identity: crate::empack::content::JarIdentity::Unidentified,
+        };
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency(
+                "sodium",
+                DependencyRecord {
+                    status: DependencyStatus::Resolved,
+                    title: "Sodium".to_string(),
+                    platform: ProjectPlatform::Modrinth,
+                    project_id: "AANobbMI".to_string(),
+                    project_type: ProjectType::Mod,
+                    version: None,
+                },
+            )
+            .expect("add existing resolved dependency");
+
+        let error = handle_direct_download_jar_with_client_and_resolver(
+            &session,
+            &format!("{}/downloads/sodium.jar", server.url()),
+            &test_http_client(),
+            &resolver,
+        )
+        .await
+        .err()
+        .expect("resolved key collision should fail");
+
+        let error_text = error.to_string();
+        assert!(
+            error_text.contains("Tracked local dependency key 'sodium'"),
+            "unexpected error: {error_text}"
+        );
+        assert!(
+            error_text.contains("dependency 'Sodium'"),
+            "unexpected error: {error_text}"
+        );
+        assert!(
+            !session
+                .filesystem()
+                .exists(&workdir.join("pack").join("mods").join("sodium.jar")),
+            "colliding file should not be written"
+        );
+        let preserved = session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .find_dependency("sodium")
+            .expect("read preserved config")
+            .expect("existing resolved dependency should remain");
+        match preserved.1 {
+            DependencyEntry::Resolved(existing) => {
+                assert_eq!(existing.title, "Sodium");
+            }
+            other => panic!("expected preserved resolved dependency, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn tracked_local_direct_download_allows_same_key_same_path_readd() {
+        let mut server = mockito::Server::new_async().await;
+        let _artifact = server
+            .mock("GET", "/downloads/pack.zip")
+            .with_status(200)
+            .with_body("zip-bytes")
+            .create_async()
+            .await;
+
+        let workdir = mock_root().join("direct-download-local-key-readd");
+        let session = configured_direct_download_session(&workdir);
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "pack.zip".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: "pack/resourcepacks/pack.zip".to_string(),
+                    source_url: Some("https://example.com/pack.zip".to_string()),
+                    sha256: "deadbeef".to_string(),
+                }),
+            )
+            .expect("add existing local dependency");
+
+        let result = handle_direct_download_non_jar(
+            &session,
+            &format!("{}/downloads/pack.zip", server.url()),
+            "zip",
+            Some(ProjectType::ResourcePack),
+        )
+        .await
+        .expect("same-key same-path re-add should succeed");
+
+        match result.kind {
+            DirectDownloadKind::Local { dep_key, record } => {
+                assert_eq!(dep_key, "pack");
+                assert_eq!(record.path, "pack/resourcepacks/pack.zip");
+            }
+            DirectDownloadKind::Resolved { .. } => panic!("expected local direct download"),
+        }
+        assert!(session
+            .filesystem()
+            .exists(&workdir.join("pack").join("resourcepacks").join("pack.zip")));
+        assert!(
+            session
+                .filesystem()
+                .config_manager(workdir.clone())
+                .find_dependency("pack")
+                .expect("read config after re-add")
+                .is_some(),
+            "existing config entry should remain present"
+        );
     }
 }
 
