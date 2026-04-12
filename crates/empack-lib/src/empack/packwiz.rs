@@ -1025,13 +1025,38 @@ fn strip_ansi_control_sequences(text: &str) -> String {
 
     while let Some(ch) = chars.next() {
         if ch == '\u{1b}' {
-            if matches!(chars.peek(), Some('[')) {
-                chars.next();
-                for next in chars.by_ref() {
-                    if ('@'..='~').contains(&next) {
-                        break;
+            match chars.peek().copied() {
+                Some('[') => {
+                    chars.next();
+                    for next in chars.by_ref() {
+                        if ('@'..='~').contains(&next) {
+                            break;
+                        }
                     }
                 }
+                Some(']') | Some('P') | Some('X') | Some('^') | Some('_') => {
+                    chars.next();
+                    let mut saw_escape = false;
+                    for next in chars.by_ref() {
+                        if saw_escape {
+                            if next == '\\' {
+                                break;
+                            }
+                            saw_escape = next == '\u{1b}';
+                            continue;
+                        }
+
+                        if next == '\u{0007}' {
+                            break;
+                        }
+
+                        saw_escape = next == '\u{1b}';
+                    }
+                }
+                Some(next) if ('@'..='~').contains(&next) => {
+                    chars.next();
+                }
+                _ => {}
             }
             continue;
         }
