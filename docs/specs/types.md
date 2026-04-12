@@ -1,8 +1,8 @@
 ---
 spec: types
-status: draft
+status: ratified
 created: 2026-04-04
-updated: 2026-04-08
+updated: 2026-04-11
 depends: [overview]
 ---
 
@@ -55,7 +55,7 @@ User-facing `all` expansion happens in `application/commands.rs` and resolves to
 | Variant | Meaning |
 | --- | --- |
 | `Uninitialized` | No usable empack project state exists |
-| `Configured` | `empack.yml` and packwiz metadata exist, or discovery sees a partial configured layout |
+| `Configured` | Both `empack.yml` and `pack/pack.toml` exist |
 | `Built` | Canonical artifacts exist under `dist/` |
 | `Building` | Internal in-progress marker state |
 | `Cleaning` | Internal in-progress marker state |
@@ -68,6 +68,12 @@ Transition identity types live beside `PackState`:
 - `InitializationConfig`: `name`, `author`, `version`, `modloader`, `mc_version`, `loader_version`
 
 See [state-machine.md](state-machine.md) for transition legality and discovery rules.
+
+Current cleanup semantics:
+
+- `TransitionKind::Clean` is non-destructive and idempotent.
+- `clean` removes build artifacts and marker state when present.
+- `clean` does not remove `empack.yml` or `pack/`.
 
 ## Mod Loader
 
@@ -109,7 +115,20 @@ See [state-machine.md](state-machine.md) for transition legality and discovery r
 | `type` | `Option<ProjectType>` | Optional type filter |
 | `platform` | `Option<ProjectPlatform>` | Optional preferred platform |
 
-`ConfigManager::create_project_plan()` includes only resolved entries in the operational `ProjectPlan`.
+### Local entry
+
+`LocalDependencyRecord` fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `status` | `DependencyStatus` | Always `local` |
+| `title` | `String` | Human-readable title |
+| `type` | `ProjectType` | Content type |
+| `path` | `String` | Project-relative destination path |
+| `source_url` | `Option<String>` | Optional provenance URL |
+| `sha256` | `String` | Required integrity hash |
+
+`ConfigManager::create_project_plan()` includes resolved and local entries in the operational `ProjectPlan`. Search entries remain declarative intent until sync or add resolves them.
 
 ## Content and Import Types
 

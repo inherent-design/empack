@@ -86,15 +86,10 @@ pub fn classify_url(url: &str) -> std::result::Result<UrlKind, UrlClassifyError>
     }
 
     if let Some(ext) = url_extension(url) {
-        match ext.as_str() {
-            "jar" | "zip" => {
-                return Ok(UrlKind::DirectDownload {
-                    url: url.to_string(),
-                    extension: ext,
-                });
-            }
-            _ => {}
-        }
+        return Ok(UrlKind::DirectDownload {
+            url: url.to_string(),
+            extension: ext,
+        });
     }
 
     Err(UrlClassifyError::Unrecognized(url.to_string()))

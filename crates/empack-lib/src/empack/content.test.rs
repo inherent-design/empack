@@ -652,8 +652,14 @@ fn classify_url_without_extension() {
 #[test]
 fn classify_url_with_unsupported_extension_txt() {
     let url = "https://example.com/readme.txt";
-    let err = classify_url(url).unwrap_err();
-    assert!(err.to_string().contains("unrecognized"));
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::DirectDownload {
+            url: url.to_string(),
+            extension: "txt".to_string(),
+        }
+    );
 }
 
 #[test]

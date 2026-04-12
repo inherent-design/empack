@@ -44,13 +44,13 @@ fn sample_restricted_mods(workdir: &Path) -> Vec<RestrictedModInfo> {
     vec![
         RestrictedModInfo {
             name: "Entity Culling".to_string(),
-            url: "https://www.curseforge.com/minecraft/mc-mods/entityculling/files/4763646"
+            url: "https://www.curseforge.com/minecraft/mc-mods/entityculling/download/4763646"
                 .to_string(),
             dest_path: restricted_dest(workdir, "client-full", "entityculling.jar"),
         },
         RestrictedModInfo {
             name: "Entity Culling".to_string(),
-            url: "https://www.curseforge.com/minecraft/mc-mods/entityculling/files/4763646"
+            url: "https://www.curseforge.com/minecraft/mc-mods/entityculling/download/4763646"
                 .to_string(),
             dest_path: restricted_dest(workdir, "server-full", "entityculling.jar"),
         },
@@ -141,6 +141,44 @@ fn validate_pending_build_detects_missing_target_dir() {
         .expect("validate pending build")
         .expect("stale reason");
     assert!(stale.contains("required build directory is missing"));
+}
+
+#[test]
+fn validate_pending_build_allows_missing_future_full_build_dirs_for_mrpack_restrictions() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-mrpack-only");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::Mrpack, BuildTarget::ClientFull, BuildTarget::ServerFull],
+        ArchiveFormat::Zip,
+        &[RestrictedModInfo {
+            name: "Bee Fix".to_string(),
+            url: "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
+                .to_string(),
+            dest_path: cache_root
+                .path()
+                .join("packwiz")
+                .join("cache")
+                .join("import")
+                .join("BeeFix-1.20-1.0.7.jar")
+                .to_string_lossy()
+                .to_string(),
+        }],
+    )
+    .expect("save pending build");
+
+    assert_eq!(
+        validate_pending_build(&provider, &workdir, &pending).expect("validate pending build"),
+        None
+    );
 }
 
 #[test]

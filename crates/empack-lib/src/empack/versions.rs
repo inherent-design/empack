@@ -494,8 +494,8 @@ impl<'a> VersionFetcher<'a> {
         network: &'a dyn NetworkProvider,
         filesystem: &'a dyn FileSystemProvider,
     ) -> Result<Self> {
-        let cache_dir = crate::platform::cache::cache_root()
-            .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache"));
+        let cache_dir = crate::platform::cache::versions_cache_dir()
+            .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache").join("versions"));
 
         Ok(Self {
             network,
@@ -932,29 +932,56 @@ impl<'a> VersionFetcher<'a> {
 
     /// Load cached data from disk using session filesystem provider
     fn load_from_cache(&self, cache_path: &Path) -> Result<CachedVersions> {
+        if let Ok(cached) = self.load_cached_versions(cache_path) {
+            return Ok(cached);
+        }
+
+        let legacy_path = crate::platform::cache::legacy_versions_cache_file(
+            cache_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| anyhow::anyhow!("Invalid cache filename"))?,
+        )?;
+
+        if legacy_path != cache_path {
+            let cached = self.load_cached_versions(&legacy_path)?;
+            if let Err(error) = self.write_cached_versions(cache_path, &cached) {
+                warn!(
+                    error = %error,
+                    legacy = %legacy_path.display(),
+                    current = %cache_path.display(),
+                    "failed to migrate legacy versions cache file"
+                );
+            }
+            return Ok(cached);
+        }
+
+        self.load_cached_versions(cache_path)
+    }
+
+    /// Save data to cache using session filesystem provider
+    fn save_to_cache(&self, cache_path: &Path, versions: &[String]) -> Result<()> {
+        self.write_cached_versions(cache_path, &CachedVersions::new(versions.to_vec()))
+    }
+
+    fn load_cached_versions(&self, cache_path: &Path) -> Result<CachedVersions> {
         let content = self
             .filesystem
             .read_to_string(cache_path)
             .context("Failed to read cache file")?;
 
-        let cached: CachedVersions =
-            serde_json::from_str(&content).context("Failed to parse cache file")?;
-
-        Ok(cached)
+        serde_json::from_str(&content).context("Failed to parse cache file")
     }
 
-    /// Save data to cache using session filesystem provider
-    fn save_to_cache(&self, cache_path: &Path, versions: &[String]) -> Result<()> {
-        // Ensure cache directory exists
+    fn write_cached_versions(&self, cache_path: &Path, cached: &CachedVersions) -> Result<()> {
         if let Some(parent) = cache_path.parent() {
             self.filesystem
                 .create_dir_all(parent)
                 .context("Failed to create cache directory")?;
         }
 
-        let cached = CachedVersions::new(versions.to_vec());
         let content =
-            serde_json::to_string_pretty(&cached).context("Failed to serialize cache data")?;
+            serde_json::to_string_pretty(cached).context("Failed to serialize cache data")?;
 
         self.filesystem
             .write_file(cache_path, &content)

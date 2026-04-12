@@ -411,7 +411,8 @@ impl LiveNetworkProvider {
     }
 
     pub fn with_timeout(timeout_secs: u64) -> Self {
-        let cache_dir = std::env::temp_dir().join("empack").join("http_cache");
+        let cache_dir = crate::platform::cache::http_cache_dir()
+            .unwrap_or_else(|_| std::env::temp_dir().join("empack").join("http_cache"));
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_secs))
             .build()
@@ -427,6 +428,18 @@ impl LiveNetworkProvider {
             #[cfg(feature = "test-utils")]
             curseforge_base_url: None,
         }
+    }
+
+    pub async fn new_async(timeout_secs: u64) -> Self {
+        let provider = Self::with_timeout(timeout_secs);
+        if let Err(error) = provider.cache.load_from_disk().await {
+            tracing::warn!(
+                error = %error,
+                cache_dir = %provider.cache.cache_dir().display(),
+                "failed to load persisted HTTP cache; continuing with empty cache"
+            );
+        }
+        provider
     }
 
     #[cfg(feature = "test-utils")]
@@ -979,13 +992,14 @@ impl InteractiveProvider for LiveInteractiveProvider {
     }
 }
 
-pub struct CommandSession<F, N, P, C, I>
+pub struct CommandSession<F, N, P, C, I, A = LiveArchiveProvider>
 where
     F: FileSystemProvider,
     N: NetworkProvider,
     P: ProcessProvider,
     C: ConfigProvider,
     I: InteractiveProvider,
+    A: ArchiveProvider,
 {
     multi_progress: Arc<MultiProgress>,
     display_provider: LiveDisplayProvider,
@@ -995,7 +1009,7 @@ where
     process_provider: P,
     config_provider: C,
     interactive_provider: I,
-    archive_provider: LiveArchiveProvider,
+    archive_provider: A,
     /// Resolved packwiz-tx binary path for process execution.
     /// Computed once at session construction via `resolve_packwiz_binary()`.
     packwiz_bin_path: String,
@@ -1008,6 +1022,7 @@ impl
         LiveProcessProvider,
         LiveConfigProvider,
         LiveInteractiveProvider,
+        LiveArchiveProvider,
     >
 {
     fn resolve_packwiz_bin_path() -> String {
@@ -1019,7 +1034,11 @@ impl
             })
     }
 
-    fn build_live_session(app_config: AppConfig, packwiz_bin_path: String) -> Self {
+    fn build_live_session(
+        app_config: AppConfig,
+        packwiz_bin_path: String,
+        network_provider: LiveNetworkProvider,
+    ) -> Self {
         // Initialize display and logger systems
         let terminal_capabilities = match TerminalCapabilities::detect_from_config(app_config.color)
         {
@@ -1042,7 +1061,7 @@ impl
             display_provider,
             terminal_capabilities,
             filesystem_provider: LiveFileSystemProvider,
-            network_provider: LiveNetworkProvider::with_timeout(app_config.net_timeout),
+            network_provider,
             process_provider: LiveProcessProvider::new(),
             config_provider: LiveConfigProvider::new(app_config.clone()),
             interactive_provider: LiveInteractiveProvider::new(
@@ -1056,7 +1075,8 @@ impl
 
     pub fn new(app_config: AppConfig) -> Self {
         let packwiz_bin_path = Self::resolve_packwiz_bin_path();
-        Self::build_live_session(app_config, packwiz_bin_path)
+        let network_provider = LiveNetworkProvider::with_timeout(app_config.net_timeout);
+        Self::build_live_session(app_config, packwiz_bin_path, network_provider)
     }
 
     pub async fn new_async(app_config: AppConfig) -> Self {
@@ -1066,25 +1086,28 @@ impl
                 tracing::warn!(error = %e, "packwiz-tx binary resolution task failed; falling back to PATH lookup");
                 crate::empack::packwiz::PACKWIZ_BIN.to_string()
             });
-        Self::build_live_session(app_config, packwiz_bin_path)
+        let network_provider = LiveNetworkProvider::new_async(app_config.net_timeout).await;
+        Self::build_live_session(app_config, packwiz_bin_path, network_provider)
     }
 }
 
-impl<F, N, P, C, I> CommandSession<F, N, P, C, I>
+impl<F, N, P, C, I, A> CommandSession<F, N, P, C, I, A>
 where
     F: FileSystemProvider,
     N: NetworkProvider,
     P: ProcessProvider,
     C: ConfigProvider,
     I: InteractiveProvider,
+    A: ArchiveProvider,
 {
     #[cfg(feature = "test-utils")]
-    pub fn new_with_providers(
+    pub fn new_with_providers_and_archive(
         filesystem_provider: F,
         network_provider: N,
         process_provider: P,
         config_provider: C,
         interactive_provider: I,
+        archive_provider: A,
     ) -> Self {
         let multi_progress = Arc::new(MultiProgress::new());
         let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
@@ -1098,7 +1121,7 @@ where
             process_provider,
             config_provider,
             interactive_provider,
-            archive_provider: LiveArchiveProvider,
+            archive_provider,
             packwiz_bin_path: crate::empack::packwiz::PACKWIZ_BIN.to_string(),
         }
     }
@@ -1132,13 +1155,41 @@ where
     }
 }
 
-impl<F, N, P, C, I> Session for CommandSession<F, N, P, C, I>
+impl<F, N, P, C, I> CommandSession<F, N, P, C, I, LiveArchiveProvider>
 where
     F: FileSystemProvider,
     N: NetworkProvider,
     P: ProcessProvider,
     C: ConfigProvider,
     I: InteractiveProvider,
+{
+    #[cfg(feature = "test-utils")]
+    pub fn new_with_providers(
+        filesystem_provider: F,
+        network_provider: N,
+        process_provider: P,
+        config_provider: C,
+        interactive_provider: I,
+    ) -> Self {
+        Self::new_with_providers_and_archive(
+            filesystem_provider,
+            network_provider,
+            process_provider,
+            config_provider,
+            interactive_provider,
+            LiveArchiveProvider,
+        )
+    }
+}
+
+impl<F, N, P, C, I, A> Session for CommandSession<F, N, P, C, I, A>
+where
+    F: FileSystemProvider,
+    N: NetworkProvider,
+    P: ProcessProvider,
+    C: ConfigProvider,
+    I: InteractiveProvider,
+    A: ArchiveProvider,
 {
     fn display(&self) -> &dyn DisplayProvider {
         &self.display_provider
@@ -1193,13 +1244,14 @@ where
     }
 }
 
-impl<F, N, P, C, I> Drop for CommandSession<F, N, P, C, I>
+impl<F, N, P, C, I, A> Drop for CommandSession<F, N, P, C, I, A>
 where
     F: FileSystemProvider,
     N: NetworkProvider,
     P: ProcessProvider,
     C: ConfigProvider,
     I: InteractiveProvider,
+    A: ArchiveProvider,
 {
     fn drop(&mut self) {
         // Ordered teardown:
@@ -1384,6 +1436,7 @@ mod tests {
         config: LiveConfigProvider,
         interactive: LiveInteractiveProvider,
         terminal: TerminalCapabilities,
+        archive: LiveArchiveProvider,
     }
 
     impl TestSession {
@@ -1396,6 +1449,7 @@ mod tests {
                 config: LiveConfigProvider::new(crate::application::config::AppConfig::default()),
                 interactive: LiveInteractiveProvider::new(true, None),
                 terminal: TerminalCapabilities::minimal(),
+                archive: LiveArchiveProvider,
             }
         }
     }
@@ -1430,15 +1484,20 @@ mod tests {
         }
 
         fn archive(&self) -> &dyn ArchiveProvider {
-            unimplemented!()
+            &self.archive
         }
 
         fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
-            unimplemented!()
+            Box::new(crate::empack::packwiz::LivePackwizOps::new(
+                self.process(),
+                self.filesystem(),
+                self.packwiz_bin(),
+            ))
         }
 
         fn state(&self) -> Result<PackStateManager<'_, dyn FileSystemProvider + '_>> {
-            unimplemented!()
+            let workdir = self.filesystem.current_dir()?;
+            Ok(PackStateManager::new(workdir, self.filesystem()))
         }
 
         fn packwiz_bin(&self) -> &str {
@@ -1864,7 +1923,9 @@ mod tests {
 
         assert!(output.stdout.contains("custom path works"));
         // Windows command lookup is case-insensitive and may reflect PATHEXT casing.
-        let found = provider.find_program("hello-tool").expect("lookup hello-tool");
+        let found = provider
+            .find_program("hello-tool")
+            .expect("lookup hello-tool");
         assert!(found.eq_ignore_ascii_case(&command.to_string_lossy()));
     }
 
@@ -2011,9 +2072,8 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    #[allow(clippy::await_holding_lock)]
     async fn command_session_new_async_uses_packwiz_env_override() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let temp = TempDir::new().expect("temp dir");
         let command = temp.path().join("packwiz-tx");
         write_script(&command, "#!/bin/sh\nprintf 'packwiz stub'\n");
@@ -2027,12 +2087,13 @@ mod tests {
     #[cfg(feature = "test-utils")]
     #[test]
     fn command_session_new_with_providers_wires_packwiz_and_interactive_defaults() {
-        let session = CommandSession::new_with_providers(
+        let session = CommandSession::new_with_providers_and_archive(
             LiveFileSystemProvider,
             LiveNetworkProvider::with_timeout(1),
             LiveProcessProvider::new(),
             LiveConfigProvider::new(crate::application::config::AppConfig::default()),
             LiveInteractiveProvider::new(true, None),
+            LiveArchiveProvider,
         );
 
         assert_eq!(session.packwiz_bin(), crate::empack::packwiz::PACKWIZ_BIN);
@@ -2064,12 +2125,13 @@ mod tests {
             workdir: Some(temp.path().to_path_buf()),
             ..crate::application::config::AppConfig::default()
         };
-        let session = CommandSession::new_with_providers(
+        let session = CommandSession::new_with_providers_and_archive(
             LiveFileSystemProvider,
             LiveNetworkProvider::new(),
             LiveProcessProvider::new(),
             LiveConfigProvider::new(app_config),
             LiveInteractiveProvider::new(true, None),
+            LiveArchiveProvider,
         );
 
         session.display().status().message("hello");
@@ -2118,5 +2180,39 @@ mod tests {
         let _packwiz = session_ref.packwiz();
         let state = session_ref.state().expect("state manager");
         assert_eq!(state.workdir, temp.path());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn live_network_provider_new_async_uses_http_cache_dir_override_and_loads_cache() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let temp = TempDir::new().expect("temp dir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", temp.path().as_os_str()) };
+
+        let provider = LiveNetworkProvider::new_async(1).await;
+        assert_eq!(
+            provider.cache.cache_dir(),
+            &crate::platform::cache::http_cache_dir().expect("http cache dir")
+        );
+
+        provider
+            .cache
+            .put(
+                "https://example.invalid/cache".to_string(),
+                crate::networking::cache::CachedResponse {
+                    data: b"cached".to_vec(),
+                    etag: None,
+                    expires: std::time::SystemTime::now() + std::time::Duration::from_secs(60),
+                    status: 200,
+                },
+            )
+            .await;
+
+        let reloaded = LiveNetworkProvider::new_async(1).await;
+        let cached = reloaded
+            .cache
+            .get("https://example.invalid/cache")
+            .await
+            .expect("cached response should reload from disk");
+        assert_eq!(cached.data, b"cached");
     }
 }

@@ -1,8 +1,8 @@
 ---
 spec: cli-surface
-status: draft
+status: ratified
 created: 2026-04-08
-updated: 2026-04-09
+updated: 2026-04-11
 depends: [overview, types]
 ---
 
@@ -40,6 +40,19 @@ These options come from `AppConfig`.
 | `--dry-run` | `EMPACK_DRY_RUN` | `false` | Preview mode for supported commands |
 
 Configuration precedence is defaults, `.env.local`, `.env`, environment variables, then CLI arguments.
+
+## Exit Semantics
+
+The current process exit contract is:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | General runtime or subprocess failure |
+| `2` | Usage, config, or project-state failure |
+| `3` | Network, provider, or API failure |
+| `4` | Not found or no results |
+| `130` | Interrupted by Ctrl+C |
 
 ## Command List
 
@@ -107,7 +120,7 @@ empack build --continue [OPTIONS]
 
 | Flag | Short | Env var | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `--continue` | *none* | *none* | `false` | Resume a previously blocked restricted-mod full build |
+| `--continue` | *none* | *none* | `false` | Resume a previously blocked restricted-mod build from persisted state |
 | `--clean` | `-c` | *none* | `false` | Remove previous build artifacts before building |
 | `--format <FMT>` | *none* | *none* | `zip` | Archive format for distribution packages |
 | `--downloads-dir <PATH>` | *none* | `EMPACK_DOWNLOADS_DIR` | `~/Downloads` fallback | Directory scanned for restricted CurseForge downloads |
@@ -133,11 +146,15 @@ empack build --continue [OPTIONS]
 
 ### Build command rules
 
-- `build --continue` resumes the original full-build targets and archive format from persisted state.
+- `build --continue` resumes the original targets and archive format from persisted state.
 - `build --continue` is incompatible with positional targets.
 - `build --continue` is incompatible with `--clean`.
+- `build --continue` is incompatible with `--format`.
 - `--downloads-dir` is used in both fresh and continuation flows as an auxiliary search path for manually downloaded restricted files.
-- Fresh full builds search for restricted files in the managed cache first, then `--downloads-dir`, then `~/Downloads`.
+- all build entry paths validate tracked local dependency paths and SHA-256 hashes before build work starts
+- `mrpack` is rejected when the current `ProjectPlan` still contains tracked local dependencies
+- Fresh and continued restricted builds search for matching files in the managed cache first, then `--downloads-dir`, then `~/Downloads`, then the recorded parent directories of the pending destination paths.
+- If the terminal is interactive and `--yes` is not set, the command can offer to open direct CurseForge `/download/{file-id}` URLs in the browser and wait up to 5 minutes for files to appear before falling back to manual continuation.
 
 ## Add Command
 
@@ -161,7 +178,10 @@ Current command rules:
 - `--platform both` removes the preference and keeps the default search order.
 - Modrinth project URLs become direct Modrinth project IDs.
 - CurseForge project URLs resolve by slug through the CurseForge API.
-- Direct download URLs are supported only for `.jar` files. Non-JAR URLs are rejected.
+- Direct `.jar` URLs are supported for mods.
+- Unidentified direct `.jar` downloads become tracked local mod dependencies.
+- Direct `.zip` URLs are accepted only with `--type resourcepack`, `--type shader`, or `--type datapack`.
+- Direct non-`.zip` non-`.jar` URLs are rejected explicitly.
 - If both `--version-id` and `--file-id` are provided, the chosen pin depends on the resolved direct platform. CurseForge direct paths prefer `file-id`. Other paths prefer `version-id`.
 
 ## Remove Command
@@ -194,3 +214,4 @@ empack clean [TARGET]...
 If no clean target is provided, the command treats the request as `builds`.
 
 `clean` never removes project metadata such as `empack.yml` or `pack/`.
+`clean cache` removes empack-managed cache data under the cache root plus staged managed binaries in the system temp area.

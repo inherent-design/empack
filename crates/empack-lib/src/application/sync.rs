@@ -1,4 +1,4 @@
-use crate::empack::config::{ProjectPlan, ProjectSpec};
+use crate::empack::config::{DependencySource, ProjectPlan, ProjectSpec};
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::{ProjectResolverTrait, SearchError};
 use crate::primitives::{ProjectPlatform, ProjectType};
@@ -15,20 +15,6 @@ pub struct SyncPlan {
 pub enum SyncPlanAction {
     Add(SyncDependencyPlan),
     Remove { key: String, title: String },
-}
-
-/// Source type for a dependency in the sync plan.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DependencySource {
-    Platform {
-        project_id: String,
-        project_platform: ProjectPlatform,
-        version_pin: Option<String>,
-    },
-    Local {
-        path: String,
-        hash: Option<String>,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -299,11 +285,7 @@ impl SyncDependencyPlan {
             project_type: dep_spec.project_type,
             minecraft_version: dep_spec.minecraft_version.clone(),
             loader: dep_spec.loader,
-            source: DependencySource::Platform {
-                project_id: dep_spec.project_id.clone(),
-                project_platform: dep_spec.project_platform,
-                version_pin: dep_spec.version_pin.clone(),
-            },
+            source: dep_spec.source.clone(),
         }
     }
 }

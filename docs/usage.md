@@ -108,7 +108,7 @@ empack init my-pack --force
 
 ### empack add
 
-Add dependencies by name, URL, or direct download JAR.
+Add dependencies by name, URL, or direct download.
 
 ```bash
 empack add sodium
@@ -131,8 +131,23 @@ Current add behavior:
 
 - `--platform both` keeps the default Modrinth-first order.
 - Modrinth and CurseForge project URLs are resolved through platform-specific paths.
-- Direct download URLs are supported only for `.jar` files.
-- Non-JAR direct download URLs are rejected.
+- Direct `.jar` URLs stay supported for mods.
+- Unidentified direct `.jar` downloads are now tracked as local mod dependencies in `empack.yml` instead of being left unmanaged.
+- Direct `.zip` URLs are supported for `resourcepack`, `shader`, and `datapack`, but they require `--type`.
+- Arbitrary non-`.zip` non-`.jar` direct downloads are rejected.
+
+Tracked local dependencies are written into `empack.yml` with `status: local`:
+
+```yaml
+dependencies:
+  example-pack:
+    status: local
+    title: Example Pack
+    type: resourcepack
+    path: pack/resourcepacks/example-pack.zip
+    source_url: https://example.com/example-pack.zip
+    sha256: <hex>
+```
 
 ### empack sync
 
@@ -142,6 +157,13 @@ Reconcile declared dependencies in `empack.yml` with the installed pack state.
 empack sync
 empack sync --dry-run
 ```
+
+Current sync behavior:
+
+- resolved platform dependencies still reconcile through packwiz
+- tracked local dependencies are validated in place and are not passed to packwiz
+- missing local files or hash drift fail normal sync
+- `--dry-run` reports local dependency drift without mutating the project
 
 ### empack build
 
@@ -168,24 +190,37 @@ Build options:
 
 | Flag | Description |
 | --- | --- |
-| `--continue` | Resume a previously blocked restricted-mod full build |
+| `--continue` | Resume a previously blocked restricted-mod build from persisted state |
 | `--clean` | Remove previous build outputs before building |
 | `--format` | Output archive format: `zip`, `tar.gz`, `7z` |
 | `--downloads-dir` | Directory scanned for manually downloaded restricted CurseForge files |
 
-`--continue` resumes the original full-build targets and archive format from persisted state. It must be used without positional targets and without `--clean`.
+`--continue` resumes the original full-build targets and archive format from persisted state. It must be used without positional targets, without `--clean`, and without `--format`.
 
-If restricted CurseForge files are missing during `client-full` or `server-full`:
+If restricted CurseForge files are missing during a build:
 
 - empack records pending continuation state internally
 - empack scans the managed restricted-build cache first
 - empack then scans `--downloads-dir` if provided
 - empack finally scans `~/Downloads`
+- empack also scans the recorded destination parent directories for matching files, including the packwiz import cache path used by `mrpack` export failures
 - any matching files found outside the cache are imported into the managed cache
 - if all required files are cached, empack reuses the same continuation path as `empack build --continue`
 - if files are still missing, empack prints download URLs, the managed cache location, and the `empack build --continue` instruction
 
-When the terminal is interactive and `--yes` is not set, empack can optionally open the download URLs in the default browser. That browser-open step is an aid, not a required part of the recovery flow.
+When the terminal is interactive and `--yes` is not set, empack can optionally:
+
+- open direct CurseForge `/download/{file-id}` URLs in the default browser
+- wait up to 5 minutes for the files to appear in the watched download locations
+- continue automatically once every required file is cached
+
+empack does not fetch restricted CurseForge files directly. The browser-open step is an aid, not a separate download client inside empack.
+
+Tracked local dependency behavior:
+
+- every build validates tracked local dependency paths and SHA-256 hashes before build work starts
+- missing or mismatched local files are treated as project-state/config failures
+- `mrpack` exports currently reject tracked local dependencies instead of omitting them silently
 
 ### empack remove
 
@@ -198,6 +233,8 @@ empack rm sodium
 ```
 
 The `--deps` flag offers to clean up orphaned dependencies.
+
+When a dependency is tracked as `status: local`, `empack remove` removes the recorded file if it still exists, updates `empack.yml`, and only warns if the file was already missing.
 
 ### empack clean
 
@@ -217,6 +254,19 @@ Clean targets:
 - `all`
 
 If no target is provided, empack cleans `builds`.
+
+## Exit Codes
+
+empack uses a stable process exit contract:
+
+- `0`: success
+- `1`: general runtime or subprocess failure
+- `2`: usage, config, or project-state failure
+- `3`: network, provider, or API failure
+- `4`: not found or no results
+- `130`: interrupted by Ctrl+C
+
+`clean` never removes project metadata such as `empack.yml` or `pack/`.
 
 ## Environment variables
 

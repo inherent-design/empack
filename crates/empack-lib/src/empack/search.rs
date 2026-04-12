@@ -67,7 +67,7 @@ pub enum SearchError {
 
 /// Trait for project resolution across project platforms
 pub trait ProjectResolverTrait: Send + Sync {
-    /// Resolve project with platform priority: Modrinth first, then CurseForge, then Forge
+    /// Resolve project with platform priority: Modrinth first, then CurseForge.
     ///
     /// When `preferred_platform` is `Some(CurseForge)`, tries CurseForge first.
     /// Otherwise keeps the default Modrinth-first order.

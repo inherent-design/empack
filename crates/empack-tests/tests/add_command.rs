@@ -10,11 +10,15 @@ use empack_lib::application::config::AppConfig;
 use empack_lib::application::session::{
     CommandSession, LiveConfigProvider, LiveFileSystemProvider, LiveNetworkProvider, ProcessOutput,
 };
-use empack_lib::application::session_mocks::MockInteractiveProvider;
-use empack_lib::application::session_mocks::MockProcessProvider;
+use empack_lib::application::session_mocks::{
+    MockInteractiveProvider, MockNetworkProvider, MockProcessProvider,
+};
 use empack_lib::display::Display;
+use empack_lib::empack::config::DependencyEntry;
+use empack_lib::empack::search::ProjectInfo;
+use empack_lib::primitives::ProjectPlatform;
 use empack_lib::terminal::TerminalCapabilities;
-use empack_tests::fixtures::load_vcr_body_string;
+use empack_tests::e2e::{assert_pack_option_string, read_empack_config};
 use mockito::Server;
 use std::path::Path;
 use tempfile::TempDir;
@@ -41,29 +45,6 @@ async fn e2e_add_mod_successfully() -> Result<()> {
     let terminal_caps = TerminalCapabilities::detect_from_config(app_config.color)?;
     Display::init_or_get(terminal_caps);
 
-    // Set up mockito server for Modrinth API
-    let mut server = Server::new_async().await;
-    let cassette_path = format!(
-        "{}/fixtures/cassettes/modrinth/search_sodium.json",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let sodium_fixture = load_vcr_body_string(&cassette_path)?;
-
-    let mock_modrinth = server
-        .mock("GET", "/v2/search")
-        .match_query(mockito::Matcher::AllOf(vec![
-            mockito::Matcher::UrlEncoded("query".to_string(), "sodium".to_string()),
-            mockito::Matcher::UrlEncoded(
-                "facets".to_string(),
-                "[[\"project_type:mod\"]]".to_string(),
-            ),
-        ]))
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body(sodium_fixture)
-        .create_async()
-        .await;
-
     // Use a mock process provider that simulates packwiz success
     let mock_process_provider = MockProcessProvider::new().with_packwiz_result(
         vec![
@@ -79,10 +60,21 @@ async fn e2e_add_mod_successfully() -> Result<()> {
             success: true,
         }),
     );
+    let mock_network_provider = MockNetworkProvider::new().with_project_response(
+        "sodium".to_string(),
+        ProjectInfo {
+            platform: ProjectPlatform::Modrinth,
+            project_id: "AANobbMI".to_string(),
+            title: "Sodium".to_string(),
+            downloads: 1_000_000,
+            confidence: 95,
+            project_type: "mod".to_string(),
+        },
+    );
 
     let session = CommandSession::new_with_providers(
         LiveFileSystemProvider,
-        LiveNetworkProvider::new_for_test(Some(server.url()), None),
+        mock_network_provider,
         mock_process_provider,
         LiveConfigProvider::new(app_config),
         MockInteractiveProvider::new(),
@@ -104,8 +96,6 @@ async fn e2e_add_mod_successfully() -> Result<()> {
 
     assert!(result.is_ok(), "Add command failed: {:?}", result);
 
-    mock_modrinth.assert_async().await;
-
     // Verify empack.yml still exists and was not corrupted by the add
     let empack_yml = std::fs::read_to_string(workdir.join("empack.yml"))?;
     assert!(
@@ -117,12 +107,92 @@ async fn e2e_add_mod_successfully() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn e2e_add_direct_zip_datapack_tracks_local_dependency_and_sets_folder() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let workdir = temp_dir.path().to_path_buf();
+
+    initialize_empack_project(&workdir).await?;
+
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
+
+    let terminal_caps = TerminalCapabilities::detect_from_config(app_config.color)?;
+    Display::init_or_get(terminal_caps);
+
+    let mut server = Server::new_async().await;
+    let _datapack = server
+        .mock("GET", "/downloads/example-datapack.zip")
+        .with_status(200)
+        .with_header("content-type", "application/zip")
+        .with_body("zip-bytes")
+        .create_async()
+        .await;
+
+    let session = CommandSession::new_with_providers(
+        LiveFileSystemProvider,
+        LiveNetworkProvider::new_for_test(None, None),
+        MockProcessProvider::new(),
+        LiveConfigProvider::new(app_config),
+        MockInteractiveProvider::new(),
+    );
+
+    let result = execute_command_with_session(
+        Commands::Add {
+            mods: vec![format!("{}/downloads/example-datapack.zip", server.url())],
+            force: false,
+            platform: None,
+            project_type: Some(empack_lib::application::cli::CliProjectType::Datapack),
+            version_id: None,
+            file_id: None,
+        },
+        &session,
+    )
+    .await;
+
+    assert!(result.is_ok(), "direct datapack zip add failed: {result:?}");
+
+    let config = read_empack_config(&workdir);
+    assert_eq!(
+        config.empack.datapack_folder.as_deref(),
+        Some("datapacks"),
+        "datapack add should initialize datapack_folder"
+    );
+
+    let dependency = config
+        .empack
+        .dependencies
+        .get("example-datapack")
+        .expect("tracked local datapack dependency");
+
+    match dependency {
+        DependencyEntry::Local(record) => {
+            assert_eq!(record.path, "pack/datapacks/example-datapack.zip");
+            assert_eq!(
+                record.source_url.as_deref(),
+                Some(format!("{}/downloads/example-datapack.zip", server.url()).as_str())
+            );
+            assert!(!record.sha256.is_empty(), "sha256 should be recorded");
+        }
+        other => panic!("expected local dependency entry, got {other:?}"),
+    }
+
+    assert_pack_option_string(&workdir, "datapack-folder", "datapacks");
+    assert!(
+        workdir.join("pack/datapacks/example-datapack.zip").exists(),
+        "downloaded datapack should be written into the datapack folder"
+    );
+
+    Ok(())
+}
+
 async fn initialize_empack_project(workdir: &Path) -> Result<()> {
     std::fs::create_dir_all(workdir.join("pack"))?;
 
     let empack_yml = r#"empack:
-  dependencies:
-    - fabric_api: "Fabric API|mod"
+  dependencies: {}
   minecraft_version: "1.21.1"
   loader: fabric
   name: "Test Pack"

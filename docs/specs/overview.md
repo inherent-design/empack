@@ -1,8 +1,8 @@
 ---
 spec: overview
-status: draft
+status: ratified
 created: 2026-04-04
-updated: 2026-04-08
+updated: 2026-04-11
 depends: []
 ---
 
@@ -48,9 +48,11 @@ empack is a Rust CLI for Minecraft modpack lifecycle management. It wraps a pack
 
 - `crates/empack-lib/src/lib.rs` re-exports `api`, `application`, `display`, `empack`, `logger`, `networking`, `platform`, `primitives`, `terminal`, and `testing`.
 - `application/session.rs` is the runtime seam. Commands operate on `&dyn Session`, not on raw filesystem or process handles.
+- `application/session.rs` constructs the live network provider through an async path that loads the persisted HTTP cache from the empack cache root.
 - `empack/config.rs` and `empack/packwiz.rs` model the split between user intent in `empack.yml` and packwiz state in `pack/pack.toml`.
 - `empack/state.rs` discovers project state from files on disk. Intermediate operations use a marker file for interruption recovery.
 - `platform/packwiz_bin.rs` resolves `packwiz-tx` from an override, PATH, or a managed cached binary.
+- `platform/cache.rs` is the source of truth for cache layout under the empack cache root.
 - `logger/mod.rs` and `terminal/cursor.rs` are part of process lifecycle, not just diagnostics. Startup and shutdown paths restore cursor state and flush telemetry.
 
 ## Source of Truth
@@ -64,11 +66,15 @@ empack is a Rust CLI for Minecraft modpack lifecycle management. It wraps a pack
 - [types.md](types.md)
 - [state-machine.md](state-machine.md)
 - [session-providers.md](session-providers.md)
+- [session-security.md](session-security.md)
 - [cli-surface.md](cli-surface.md)
 - [config-and-manifest.md](config-and-manifest.md)
 - [search-and-resolution.md](search-and-resolution.md)
 - [import-pipeline.md](import-pipeline.md)
 - [build-and-distribution.md](build-and-distribution.md)
+- [display.md](display.md)
+- [terminal.md](terminal.md)
+- [dependency-graph.md](dependency-graph.md)
 - [networking-and-rate-budgets.md](networking-and-rate-budgets.md)
 - [logging-and-telemetry.md](logging-and-telemetry.md)
 - [platform-and-managed-tooling.md](platform-and-managed-tooling.md)

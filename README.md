@@ -16,11 +16,13 @@ empack add sodium
 empack build all
 ```
 
-If a `client-full` or `server-full` build stops on restricted CurseForge files, place the downloaded files in the reported cache directory and resume with:
+If a build stops on restricted CurseForge files, empack records continuation state and can resume with:
 
 ```bash
 empack build --continue
 ```
+
+In interactive terminals, empack can open direct CurseForge download URLs in the browser and wait up to 5 minutes for the files to appear before falling back to the manual `build --continue` flow.
 
 Import an existing modpack from a local archive or a remote modpack URL:
 
@@ -38,7 +40,7 @@ empack init --from https://cdn.modrinth.com/data/.../pack.mrpack my-pack
 | `empack requirements` | Check `packwiz-tx`, Java, and archive support |
 | `empack version` | Print version and build metadata |
 | `empack init` | Create a project or import one with `--from` |
-| `empack add` | Add dependencies by query, URL, or direct JAR download |
+| `empack add` | Add dependencies by query, URL, or direct JAR/typed ZIP download |
 | `empack sync` | Reconcile `empack.yml` with installed packwiz state |
 | `empack build` | Build `mrpack`, `client`, `server`, `client-full`, `server-full`, or `all` |
 | `empack remove` | Remove dependencies from the current project |
@@ -52,7 +54,12 @@ Each empack project consists of three parts:
 - `pack/`: managed packwiz workspace. empack reads and writes this directory.
 - `dist/`: build artifact output. Contains mrpack archives and client/server distribution folders after a build.
 
-Full-distribution builds may also create internal continuation state when restricted CurseForge files block redistribution. The public recovery command is `empack build --continue`.
+Direct-download content that cannot be resolved to a platform project is tracked explicitly in `empack.yml` as a local dependency with a project-relative path and SHA-256 hash. `sync`, `remove`, and `build` all honor those tracked local entries.
+
+Restricted CurseForge build steps may create internal continuation state when redistribution is blocked. The public recovery command is `empack build --continue`.
+`empack clean` is non-destructive: it removes build artifacts and empack-managed cache data, but never removes `empack.yml` or `pack/`.
+
+empack uses stable exit codes: `0` success, `1` general runtime/process failure, `2` usage/config/project-state failure, `3` network/provider/API failure, `4` not found/no results, `130` interrupt.
 
 ## Documentation
 

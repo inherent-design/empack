@@ -7,8 +7,13 @@ use crate::application::session_mocks::{
 };
 use std::path::PathBuf;
 
+fn packwiz_env_lock() -> crate::test_support::EnvLockGuard<'static> {
+    crate::test_support::env_lock().lock().unwrap()
+}
+
 #[test]
 fn test_add_mod_modrinth_success() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -64,6 +69,7 @@ fn test_add_mod_modrinth_success() {
 
 #[test]
 fn test_add_mod_curseforge_success() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -119,6 +125,7 @@ fn test_add_mod_curseforge_success() {
 
 #[test]
 fn test_add_mod_failure() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -161,6 +168,7 @@ fn test_add_mod_failure() {
 
 #[test]
 fn test_remove_mod_success() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -206,6 +214,7 @@ fn test_remove_mod_success() {
 
 #[test]
 fn test_remove_mod_not_found() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -250,6 +259,7 @@ fn test_remove_mod_not_found() {
 
 #[test]
 fn test_refresh_index_success() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -293,6 +303,7 @@ fn test_refresh_index_success() {
 
 #[test]
 fn test_refresh_index_hash_mismatch() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -331,6 +342,7 @@ fn test_refresh_index_hash_mismatch() {
 
 #[test]
 fn test_refresh_index_pack_format_error() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -370,6 +382,7 @@ fn test_refresh_index_pack_format_error() {
 
 #[test]
 fn test_export_mrpack_success() {
+    let _env_lock = packwiz_env_lock();
     let output_path = mock_root().join("workdir").join("dist").join("pack.mrpack");
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
@@ -430,6 +443,7 @@ fn test_export_mrpack_success() {
 
 #[test]
 fn test_packwiz_unavailable() {
+    let _env_lock = packwiz_env_lock();
     // Set EMPACK_PACKWIZ_BIN to a non-existent path so resolve_packwiz_binary()
     // fails early without attempting a network download.
     let _guard = TestEnvGuard::set("EMPACK_PACKWIZ_BIN", "/nonexistent/packwiz-tx");
@@ -459,6 +473,7 @@ fn test_packwiz_unavailable() {
 
 #[test]
 fn test_packwiz_env_override_existing_path_is_used() {
+    let _env_lock = packwiz_env_lock();
     let temp_dir = tempfile::tempdir().unwrap();
     let override_path = temp_dir.path().join("custom-packwiz-tx");
     std::fs::write(&override_path, b"stub").unwrap();
@@ -1041,6 +1056,7 @@ fn test_get_packwiz_version_returns_none_on_command_failure() {
 
 #[test]
 fn test_cached_packwiz_check() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new()
         .with_packwiz_result(
             vec![
@@ -1108,6 +1124,7 @@ fn test_cached_packwiz_check() {
 
 #[test]
 fn test_refresh_index_reports_generic_failure() {
+    let _env_lock = packwiz_env_lock();
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
             "--pack-file".to_string(),
@@ -1151,6 +1168,7 @@ fn test_refresh_index_reports_generic_failure() {
 /// This tests packwiz's error reporting, not direct parsing (empack delegates to packwiz).
 #[test]
 fn test_packwiz_malformed_pack_toml() {
+    let _env_lock = packwiz_env_lock();
     // Simulate packwiz returning error due to malformed pack.toml
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
@@ -1198,6 +1216,7 @@ fn test_packwiz_malformed_pack_toml() {
 /// Test: Packwiz parser robustness - missing required fields in pack.toml
 #[test]
 fn test_packwiz_pack_toml_missing_fields() {
+    let _env_lock = packwiz_env_lock();
     // Simulate packwiz returning error due to missing required pack.toml fields
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
@@ -1249,6 +1268,7 @@ fn test_packwiz_pack_toml_missing_fields() {
 /// Test: Packwiz parser robustness - invalid TOML syntax
 #[test]
 fn test_packwiz_invalid_toml_syntax() {
+    let _env_lock = packwiz_env_lock();
     // Simulate packwiz failing due to completely invalid TOML syntax
     let mock_process = MockProcessProvider::new().with_packwiz_result(
         vec![
@@ -1459,7 +1479,7 @@ Please go to https://www.curseforge.com/minecraft/mc-mods/entityculling/files/47
     assert_eq!(results[0].name, "entityculling-fabric-1.6.2-mc1.20.1.jar");
     assert_eq!(
         results[0].url,
-        "https://www.curseforge.com/minecraft/mc-mods/entityculling/files/4763646"
+        "https://www.curseforge.com/minecraft/mc-mods/entityculling/download/4763646"
     );
     assert_eq!(
         results[0].dest_path,
@@ -1555,6 +1575,97 @@ fn test_restricted_curseforge_file_id_rejects_malformed_urls() {
             "https://www.curseforge.com/minecraft/mc-mods/optifine/files/not-a-number"
         ),
         None
+    );
+}
+
+#[test]
+fn test_normalize_curseforge_manual_download_url_rewrites_files_endpoint() {
+    assert_eq!(
+        normalize_curseforge_manual_download_url(
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+        ),
+        "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+    );
+}
+
+#[test]
+fn test_normalize_curseforge_manual_download_url_preserves_download_endpoint() {
+    assert_eq!(
+        normalize_curseforge_manual_download_url(
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+        ),
+        "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+    );
+}
+
+#[test]
+fn test_normalize_curseforge_manual_download_url_preserves_non_curseforge_url() {
+    assert_eq!(
+        normalize_curseforge_manual_download_url("https://example.com/file.jar"),
+        "https://example.com/file.jar"
+    );
+}
+
+#[test]
+fn test_parse_export_restricted_output_parses_manual_downloads() {
+    let output = "\
+Refreshing index... 100 % [===============================================] done
+Reading external files...
+Retrieving 319 external files...
+Disclaimer: you are responsible for ensuring you comply with ALL the licenses.
+Found 2 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
+No Potion Particles (Itsme64's no potion particles [1.5.1].zip) from https://www.curseforge.com/minecraft/texture-packs/no-potion-particles/files/4607236
+Bee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962
+Once you have done so, place these files in /Users/test/Library/Caches/packwiz/cache/import and re-run this command.";
+
+    let results = parse_export_restricted_output(output);
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].name, "No Potion Particles");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/texture-packs/no-potion-particles/download/4607236"
+    );
+    assert_eq!(
+        results[0].dest_path,
+        "/Users/test/Library/Caches/packwiz/cache/import/Itsme64's no potion particles [1.5.1].zip"
+    );
+    assert_eq!(results[1].name, "Bee Fix");
+    assert_eq!(
+        results[1].url,
+        "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
+    );
+    assert_eq!(
+        results[1].dest_path,
+        "/Users/test/Library/Caches/packwiz/cache/import/BeeFix-1.20-1.0.7.jar"
+    );
+}
+
+#[test]
+fn test_parse_export_restricted_output_requires_import_dir_line() {
+    let output = "\
+Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:
+Bee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962";
+
+    assert!(parse_export_restricted_output(output).is_empty());
+}
+
+#[test]
+fn test_parse_export_restricted_output_handles_packed_progress_output() {
+    let output = "\
+Refreshing index... 52 % [=========================>------------------------] 0s \u{1b}[1A\u{1b}[JRefreshing index... 100 % [===============================================] done Reading external files... Retrieving 319 external files... Found 2 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded: Bee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962 No Potion Particles (Itsme64's no potion particles [1.5.1].zip) from https://www.curseforge.com/minecraft/texture-packs/no-potion-particles/files/4607236 Once you have done so, place these files in /Users/test/Library/Caches/packwiz/cache/import and re-run this command.";
+
+    let results = parse_export_restricted_output(output);
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].name, "Bee Fix");
+    assert_eq!(
+        results[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
+    );
+    assert_eq!(
+        results[1].url,
+        "https://www.curseforge.com/minecraft/texture-packs/no-potion-particles/download/4607236"
     );
 }
 

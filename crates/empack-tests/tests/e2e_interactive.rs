@@ -1,8 +1,8 @@
 use empack_tests::e2e::{
-    TestProject, assert_pack_loader_version, assert_pending_restricted_build,
-    assert_project_initialized, assert_project_loader, assert_project_minecraft_version,
-    configure_fake_packwiz, empack_cmd, load_pending_restricted_build, seed_loader_version_cache,
-    seed_packwiz_installer_jars,
+    TestProject, assert_dist_artifact_suffix, assert_pack_loader_version,
+    assert_pending_restricted_build, assert_project_initialized, assert_project_loader,
+    assert_project_minecraft_version, configure_fake_packwiz, empack_cmd,
+    load_pending_restricted_build, seed_loader_version_cache, seed_packwiz_installer_jars,
 };
 use expectrl::{Expect, Regex, Session};
 use std::path::{Path, PathBuf};
@@ -78,6 +78,13 @@ fn write_fake_browser_binary(bin_dir: &Path, log_path: &Path) {
     write_executable(&path, &script);
 }
 
+#[cfg(not(windows))]
+fn write_recovering_fake_java_binary(bin_dir: &Path) {
+    let path = bin_dir.join("java");
+    let script = "#!/bin/sh\nset -eu\nDEST=\"$PWD/mods/OptiFine.jar\"\nif [ -f \"$DEST\" ]; then\n  mkdir -p \"$PWD/mods\"\n  printf 'installed=both\\n' > \"$PWD/mods/client-installed.txt\"\n  exit 0\nfi\nprintf 'Failed to download modpack, the following errors were encountered:\\n'\nprintf 'OptiFine.jar:\\n'\nprintf 'java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.\\nPlease go to https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891 and save this file to %s\\n\\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)\\n' \"$DEST\" >&2\nexit 1\n";
+    write_executable(&path, script);
+}
+
 fn wait_for_pending(
     project_dir: &Path,
 ) -> empack_lib::empack::restricted_build::PendingRestrictedBuild {
@@ -110,6 +117,23 @@ fn wait_for_path(path: &Path) {
     }
 
     panic!("expected path at {}", path.display());
+}
+
+fn wait_for_pending_cleared(project_dir: &Path) {
+    for _ in 0..50 {
+        if load_pending_restricted_build(project_dir)
+            .expect("load pending restricted build")
+            .is_none()
+        {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    panic!(
+        "pending restricted build was not cleared under {}",
+        project_dir.display()
+    );
 }
 
 // Reference only: kept as a manual verification aid, not run in CI.
@@ -350,7 +374,67 @@ fn e2e_build_restricted_browser_confirm_accept_launches_browser_opener() {
     let opened = std::fs::read_to_string(&browser_log)
         .unwrap_or_else(|_| panic!("failed to read {}", browser_log.display()));
     assert!(
-        opened.contains("https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"),
+        opened.contains("https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"),
+        "browser opener should receive the restricted download URL, got:\n{opened}"
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn e2e_build_restricted_browser_confirm_accept_waits_and_auto_continues() {
+    let project =
+        TestProject::workflow_fixture("browser-confirm-auto-continue", "fabric", "1.21.1");
+    seed_packwiz_installer_jars(project.dir());
+
+    let fake_packwiz = write_fake_build_packwiz_binary(project.dir());
+    let fake_bin_dir = project.dir().join("fake-bin");
+    std::fs::create_dir_all(&fake_bin_dir).expect("create fake bin dir");
+    write_recovering_fake_java_binary(&fake_bin_dir);
+    let browser_log = project.dir().join("browser-open.log");
+    write_fake_browser_binary(&fake_bin_dir, &browser_log);
+
+    let mut cmd = empack_cmd(project.dir());
+    cmd.args(["build", "client-full"]);
+    cmd.env("EMPACK_PACKWIZ_BIN", fake_packwiz);
+    prepend_path(&mut cmd, &fake_bin_dir);
+
+    let mut session = Session::spawn(cmd).expect("failed to spawn empack build");
+    session.set_expect_timeout(Some(Duration::from_secs(30)));
+    session
+        .send_line("y")
+        .expect("failed to accept browser open");
+    session
+        .expect(Regex("(?i)waiting up to 5 minutes|restricted downloads"))
+        .expect("expected restricted download wait output");
+
+    let download_target = project.dir().join("dist").join("client-full").join("mods");
+    let writer = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        std::fs::create_dir_all(&download_target).expect("create download target");
+        std::fs::write(download_target.join("OptiFine.jar"), b"manual bytes")
+            .expect("write manual download");
+    });
+
+    session
+        .expect(Regex(
+            "(?i)build completed successfully|completed successfully",
+        ))
+        .expect("expected successful auto-continue output");
+    session
+        .expect(Regex("(?i)dist/ directory|build artifacts"))
+        .expect("expected build artifacts output");
+    writer.join().expect("join delayed download writer");
+
+    wait_for_pending_cleared(project.dir());
+    let archive = assert_dist_artifact_suffix(project.dir(), "-client-full.zip");
+    assert!(
+        archive.exists(),
+        "auto-continued build should produce a client-full archive"
+    );
+    let opened = std::fs::read_to_string(&browser_log)
+        .unwrap_or_else(|_| panic!("failed to read {}", browser_log.display()));
+    assert!(
+        opened.contains("https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"),
         "browser opener should receive the restricted download URL, got:\n{opened}"
     );
 }

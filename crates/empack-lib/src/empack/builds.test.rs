@@ -1025,6 +1025,210 @@ fabric = "0.15.11"
         .exists(&workdir.join("dist").join("RestrictedServerPack-v1.0.0-server-full.zip")));
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_build_client_full_applies_common_and_client_templates() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("client-full");
+    let common_dir = workdir.join("templates").join("common");
+    let client_dir = workdir.join("templates").join("client");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "Restricted Pack"
+author = "Test Author"
+version = "1.0.0"
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_binary_file(common_dir.join("icon.png"), b"\x89PNGcommon".to_vec())
+        .with_file(
+            client_dir.join("instance.cfg.template"),
+            "name={{NAME}}".to_string(),
+        );
+
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let result = orchestrator
+        .build_client_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap();
+
+    assert!(result.success);
+    assert_eq!(
+        session
+            .filesystem()
+            .read_bytes(&dist_dir.join("icon.png"))
+            .unwrap(),
+        b"\x89PNGcommon"
+    );
+    assert_eq!(
+        session
+            .filesystem()
+            .read_to_string(&dist_dir.join("instance.cfg"))
+            .unwrap(),
+        "name=Restricted Pack"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_build_client_full_copies_client_root_assets() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("client-full");
+    let client_dir = workdir.join("templates").join("client");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "Client Assets Pack"
+author = "Test Author"
+version = "1.0.0"
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_file(
+            client_dir.join("instance.cfg.template"),
+            "name={{NAME}}".to_string(),
+        )
+        .with_file(
+            client_dir.join("mmc-pack.json"),
+            r#"{"name":"Client Assets Pack","formatVersion":1}"#.to_string(),
+        )
+        .with_binary_file(
+            client_dir.join("p4f_icon_sm.png"),
+            b"\x89PNGclient-full-root".to_vec(),
+        );
+
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let result = orchestrator
+        .build_client_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap();
+
+    assert!(result.success);
+    assert_eq!(
+        session
+            .filesystem()
+            .read_to_string(&dist_dir.join("instance.cfg"))
+            .unwrap(),
+        "name=Client Assets Pack"
+    );
+    assert_eq!(
+        session
+            .filesystem()
+            .read_to_string(&dist_dir.join("mmc-pack.json"))
+            .unwrap(),
+        r#"{"name":"Client Assets Pack","formatVersion":1}"#
+    );
+    assert_eq!(
+        session
+            .filesystem()
+            .read_bytes(&dist_dir.join("p4f_icon_sm.png"))
+            .unwrap(),
+        b"\x89PNGclient-full-root"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_build_server_full_applies_common_and_server_templates() {
+    let workdir = TempDir::new().unwrap();
+    let workdir = workdir.path().to_path_buf();
+    let pack_dir = workdir.join("pack");
+    let dist_dir = workdir.join("dist").join("server-full");
+    let common_dir = workdir.join("templates").join("common");
+    let server_dir = workdir.join("templates").join("server");
+
+    let filesystem = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_file(
+            pack_dir.join("pack.toml"),
+            r#"name = "RestrictedServerPack"
+author = "Test Author"
+version = "1.0.0"
+
+[versions]
+minecraft = "1.21.1"
+fabric = "0.15.11"
+"#
+            .to_string(),
+        )
+        .with_file(
+            pack_dir.join("index.toml"),
+            "hash-format = \"sha256\"\n".to_string(),
+        )
+        .with_deferred_file(
+            dist_dir.clone(),
+            "srv.jar".to_string(),
+            "preexisting server jar".to_string(),
+        )
+        .with_binary_file(common_dir.join("icon.png"), b"\x89PNGcommon".to_vec())
+        .with_file(
+            server_dir.join("server.properties.template"),
+            "motd={{NAME}}".to_string(),
+        );
+
+    let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+    let installer_jar_path = workdir.join("cache").join("packwiz-installer.jar");
+    let session = MockCommandSession::new()
+        .with_filesystem(filesystem)
+        .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+    let result = orchestrator
+        .build_server_full_impl(&bootstrap_jar_path, &installer_jar_path)
+        .unwrap();
+
+    assert!(result.success);
+    assert_eq!(
+        session
+            .filesystem()
+            .read_bytes(&dist_dir.join("icon.png"))
+            .unwrap(),
+        b"\x89PNGcommon"
+    );
+    assert_eq!(
+        session
+            .filesystem()
+            .read_to_string(&dist_dir.join("server.properties"))
+            .unwrap(),
+        "motd=RestrictedServerPack"
+    );
+}
+
 #[test]
 fn test_build_client_full_wraps_installer_process_errors() {
     let workdir = TempDir::new().unwrap();
@@ -1620,6 +1824,68 @@ async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
 }
 
 #[tokio::test]
+async fn test_execute_build_pipeline_stops_after_restricted_mrpack_result() {
+    let workdir = mock_root().join("build-project-restricted-stop");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let process = MockProcessProvider::new()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(ProcessOutput {
+                stdout: "Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\nBee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\n".to_string(),
+                stderr: "Once you have done so, place these files in /Users/test/Library/Caches/packwiz/cache/import and re-run this command.\n".to_string(),
+                success: false,
+            }),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_binary_file(
+                    workdir
+                        .join("cache")
+                        .join("packwiz-installer-bootstrap.jar"),
+                    b"bootstrap".to_vec(),
+                ),
+        )
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    let results = orchestrator
+        .execute_build_pipeline(&[BuildTarget::Mrpack, BuildTarget::Client])
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].target, BuildTarget::Mrpack);
+    assert!(!results[0].success);
+    assert_eq!(results[0].restricted_mods.len(), 1);
+    assert!(
+        !session
+            .filesystem()
+            .exists(&workdir.join("dist").join("client")),
+        "later targets should not run once mrpack is blocked on restricted downloads"
+    );
+}
+
+#[tokio::test]
 async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_export() {
     let workdir = mock_root().join("build-project");
     let pack_file = workdir.join("pack").join("pack.toml");
@@ -1907,7 +2173,7 @@ fn test_zip_distribution_requires_target_content() {
 }
 
 #[test]
-fn test_build_mrpack_returns_manual_download_warning_on_export_failure() {
+fn test_build_mrpack_returns_restricted_mods_on_export_failure() {
     let workdir = mock_root().join("mrpack-manual-download");
     let pack_file = workdir.join("pack").join("pack.toml");
     let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
@@ -1930,8 +2196,8 @@ fn test_build_mrpack_returns_manual_download_warning_on_export_failure() {
                 output_file.display().to_string(),
             ],
             Ok(ProcessOutput {
-                stdout: "manual download required".to_string(),
-                stderr: "must be manually downloaded".to_string(),
+                stdout: "Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\nBee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\n".to_string(),
+                stderr: "Once you have done so, place these files in /Users/test/Library/Caches/packwiz/cache/import and re-run this command.\n".to_string(),
                 success: false,
             }),
         );
@@ -1950,9 +2216,17 @@ fn test_build_mrpack_returns_manual_download_warning_on_export_failure() {
     assert!(!result.success);
     assert!(result.output_path.is_none());
     assert!(result.artifacts.is_empty());
-    assert_eq!(result.restricted_mods.len(), 0);
-    assert_eq!(result.warnings.len(), 1);
-    assert!(result.warnings[0].contains("manual download"));
+    assert!(result.warnings.is_empty());
+    assert_eq!(result.restricted_mods.len(), 1);
+    assert_eq!(result.restricted_mods[0].name, "Bee Fix");
+    assert_eq!(
+        result.restricted_mods[0].url,
+        "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
+    );
+    assert_eq!(
+        result.restricted_mods[0].dest_path,
+        "/Users/test/Library/Caches/packwiz/cache/import/BeeFix-1.20-1.0.7.jar"
+    );
 }
 
 #[tokio::test]

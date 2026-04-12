@@ -1,8 +1,8 @@
 ---
 spec: config-and-manifest
-status: draft
+status: partial
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-11
 depends: [overview, types]
 ---
 
@@ -58,9 +58,32 @@ Each dependency key is the canonical slug used by empack and packwiz file naming
 The value is an untagged union:
 
 - `DependencyEntry::Resolved(DependencyRecord)`
+- `DependencyEntry::Local(LocalDependencyRecord)`
 - `DependencyEntry::Search(DependencySearch)`
 
 Resolved entries are current-state declarations. Search entries are deferred intent that sync resolves before building the `ProjectPlan`.
+Local entries are first-class tracked project files that stay outside packwiz metadata.
+
+### LocalDependencyRecord
+
+Tracked local content uses this shape:
+
+```yaml
+example-pack:
+  status: local
+  title: Example Pack
+  type: resourcepack
+  path: pack/resourcepacks/example-pack.zip
+  source_url: https://example.com/example-pack.zip
+  sha256: <hex>
+```
+
+Current field rules:
+
+- `status` is always `local`
+- `path` is always project-relative
+- `sha256` is required for URL-downloaded local content
+- `source_url` is optional metadata for provenance
 
 ## pack.toml Fallback Rules
 
@@ -105,9 +128,12 @@ Fields:
 | --- | --- |
 | `name`, `author`, `version` | Effective metadata after fallback |
 | `minecraft_version`, `loader`, `loader_version` | Effective runtime target |
-| `dependencies` | Resolved `ProjectSpec` records only |
+| `dependencies` | Operational `ProjectSpec` records for resolved and tracked local dependencies |
 
-Each `ProjectSpec` carries the dependency key, search query, type, version target, optional loader, canonical platform and project ID, and optional version pin.
+Each `ProjectSpec` carries the dependency key, search query, type, version target, optional loader, and a `DependencySource`:
+
+- `Platform { project_id, project_platform, version_pin }`
+- `Local { path, source_url, sha256 }`
 
 ## Consistency Checks
 
@@ -127,5 +153,7 @@ Current sync rules depend on the config model:
 - `empack.yml` is the source of dependency intent.
 - `pack.toml` is the source of packwiz pack metadata.
 - Search entries must resolve to canonical platform records before they enter the operational `ProjectPlan`.
+- Local entries enter the operational `ProjectPlan` directly without packwiz resolution.
 - Resolved dependency keys are compared against installed `.pw.toml` filename stems.
-- Removing configuration through the state machine deletes `empack.yml` and the `pack/` directory together.
+- `clean` preserves `empack.yml` and `pack/`.
+- Destructive reset of `empack.yml` and `pack/` is an explicit init rollback / `init --force` path, not a normal state-machine clean transition.

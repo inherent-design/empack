@@ -1,8 +1,8 @@
 ---
 spec: logging-and-telemetry
-status: draft
+status: partial
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-11
 depends: [overview]
 ---
 

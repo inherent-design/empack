@@ -917,8 +917,8 @@ async fn test_version_fetcher_uses_fallbacks_when_http_client_is_unavailable() {
 #[tokio::test]
 async fn test_neoforge_loader_versions_repair_incompatible_cached_family() {
     let network = MockNetworkProvider::new().with_failing_http_client();
-    let cache_dir = crate::platform::cache::cache_root()
-        .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache"));
+    let cache_dir = crate::platform::cache::versions_cache_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache").join("versions"));
     let cache_path = cache_dir.join("neoforge_loader_1.21.1.json");
     let stale_cache = serde_json::to_string(&CachedVersions::new(vec![
         "21.4.147".to_string(),
@@ -947,8 +947,12 @@ async fn test_neoforge_loader_versions_repair_incompatible_cached_family() {
 #[tokio::test]
 async fn test_neoforge_loader_versions_repair_empty_result_is_persisted() {
     let network = MockNetworkProvider::new().with_failing_http_client();
-    let cache_dir = crate::platform::cache::cache_root()
-        .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache"));
+    let legacy_cache_path = crate::platform::cache::legacy_versions_cache_file(
+        "neoforge_loader_1.19.4.json",
+    )
+    .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache").join("neoforge_loader_1.19.4.json"));
+    let cache_dir = crate::platform::cache::versions_cache_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache").join("versions"));
     let cache_path = cache_dir.join("neoforge_loader_1.19.4.json");
     let stale_cache = serde_json::to_string(&CachedVersions::new(vec![
         "21.4.147".to_string(),
@@ -956,7 +960,7 @@ async fn test_neoforge_loader_versions_repair_empty_result_is_persisted() {
     ]))
     .expect("serialize stale NeoForge cache");
 
-    let filesystem = MockFileSystemProvider::new().with_file(cache_path.clone(), stale_cache);
+    let filesystem = MockFileSystemProvider::new().with_file(legacy_cache_path, stale_cache);
     let fetcher = VersionFetcher::new(&network, &filesystem).unwrap();
 
     let repaired = fetcher.fetch_neoforge_loader_versions("1.19.4").await.unwrap();

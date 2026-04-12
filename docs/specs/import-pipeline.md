@@ -1,8 +1,8 @@
 ---
 spec: import-pipeline
-status: draft
+status: partial
 created: 2026-04-08
-updated: 2026-04-08
+updated: 2026-04-11
 depends: [overview, types, config-and-manifest, search-and-resolution]
 ---
 
@@ -31,13 +31,15 @@ Remote source handling accepts:
 - Modrinth modpack URLs
 - CurseForge modpack URLs
 
-Remote import first downloads the archive, then parses it as a local archive.
+Remote import first downloads the archive through the session filesystem, then parses it as a local archive.
 
 ## Parse Phase
 
 ### CurseForge archives
 
 `parse_curseforge_zip()` expects `manifest.json` at the archive root.
+
+Live command paths read archive bytes through `FileSystemProvider` and parse them from an in-memory cursor. The path-based parser remains as a compatibility wrapper.
 
 Parsed data includes:
 
@@ -49,6 +51,8 @@ Parsed data includes:
 ### Modrinth archives
 
 `parse_modrinth_mrpack()` expects `modrinth.index.json` at the archive root.
+
+Live command paths read archive bytes through `FileSystemProvider` and parse them from an in-memory cursor. The path-based parser remains as a compatibility wrapper.
 
 Parsed data includes:
 
@@ -121,6 +125,7 @@ Current side handling supports:
 - server only
 
 Overrides are copied into the project after initialization. They can supersede unresolved platform references by basename.
+Archive extraction and embedded-jar reads in the live command path now run from filesystem-provided bytes rather than opening local archives through raw `std::fs::File`.
 
 ## Failure Semantics
 

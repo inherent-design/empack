@@ -1,8 +1,8 @@
 ---
 spec: state-machine
-status: draft
+status: stale
 created: 2026-04-04
-updated: 2026-04-10
+updated: 2026-04-11
 depends: [overview, types]
 ---
 

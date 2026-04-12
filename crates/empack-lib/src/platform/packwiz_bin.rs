@@ -16,7 +16,8 @@ const INSTALL_LOCK_NAME: &str = ".install.lock";
 ///
 /// Resolution order:
 /// 1. `EMPACK_PACKWIZ_BIN` env var (override for development/testing)
-/// 2. Cached binary at `{cache_root}/bin/packwiz-tx-{version}/packwiz-tx`
+/// 2. `packwiz-tx` on `PATH` (user-installed or externally managed)
+/// 3. Cached binary at `{cache_root}/bin/packwiz-tx-{version}/packwiz-tx`
 ///    (auto-downloaded from GitHub releases if missing)
 ///
 /// Returns the absolute path to the binary. Errors if download fails
@@ -49,9 +50,8 @@ pub fn resolve_packwiz_binary() -> Result<PathBuf> {
     }
 
     // Tier 3: cached/downloaded managed binary
-    let cache_dir = crate::platform::cache::cache_root()?
-        .join("bin")
-        .join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION));
+    let cache_dir =
+        crate::platform::cache::bin_cache_dir()?.join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION));
 
     let bin_name = binary_name();
     let cached_bin = cache_dir.join(&bin_name);
@@ -264,9 +264,8 @@ fn probe_binary_runnable(path: &Path) -> Result<()> {
 }
 
 fn stage_binary_for_execution(path: &Path) -> Result<PathBuf> {
-    let staging_dir = std::env::temp_dir()
-        .join("empack-bin")
-        .join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION));
+    let staging_dir =
+        crate::platform::cache::staged_bin_dir().join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION));
     std::fs::create_dir_all(&staging_dir).with_context(|| {
         format!(
             "failed to create temporary staging directory: {}",

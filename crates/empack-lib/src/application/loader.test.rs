@@ -1,4 +1,5 @@
 use super::*;
+use crate::application::config::defaults;
 use crate::primitives::TerminalCapsDetectIntent;
 use std::path::{Path, PathBuf};
 
@@ -33,6 +34,10 @@ fn test_config_loading_defaults() {
     assert_eq!(config.log_level, 0);
     assert_eq!(config.net_timeout, 30);
     assert_eq!(config.color, TerminalCapsDetectIntent::Auto);
+    assert_eq!(
+        config.curseforge_api_client_key,
+        Some(defaults::CURSEFORGE_API_CLIENT_KEY.to_string())
+    );
 }
 
 #[test]

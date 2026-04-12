@@ -1,4 +1,4 @@
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    empack_lib::main().await
+async fn main() -> std::process::ExitCode {
+    empack_lib::process_main().await
 }

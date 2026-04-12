@@ -59,6 +59,7 @@ pub struct EmpackConfig {
 #[serde(rename_all = "lowercase")]
 pub enum DependencyStatus {
     Resolved,
+    Local,
 }
 
 /// A fully resolved dependency entry in empack.yml
@@ -86,6 +87,30 @@ pub struct DependencyRecord {
     pub version: Option<String>,
 }
 
+/// A tracked local dependency entry in empack.yml
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalDependencyRecord {
+    /// Status discriminator (always "local")
+    pub status: DependencyStatus,
+
+    /// Display name for UI (e.g., "Sodium")
+    pub title: String,
+
+    /// Resource type
+    #[serde(rename = "type")]
+    pub project_type: ProjectType,
+
+    /// Project-relative path to the tracked content
+    pub path: String,
+
+    /// Optional source URL used to obtain the file
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+
+    /// SHA-256 of the tracked content
+    pub sha256: String,
+}
+
 /// Hand-written search stub, resolved to DependencyRecord on sync
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DependencySearch {
@@ -104,6 +129,7 @@ pub struct DependencySearch {
 #[serde(untagged)]
 pub enum DependencyEntry {
     Resolved(DependencyRecord),
+    Local(LocalDependencyRecord),
     Search(DependencySearch),
 }
 
@@ -117,6 +143,7 @@ impl Dependency for DependencyEntry {
     fn title(&self) -> &str {
         match self {
             DependencyEntry::Resolved(r) => &r.title,
+            DependencyEntry::Local(l) => &l.title,
             DependencyEntry::Search(s) => &s.title,
         }
     }
@@ -124,6 +151,7 @@ impl Dependency for DependencyEntry {
     fn project_type(&self) -> Option<ProjectType> {
         match self {
             DependencyEntry::Resolved(r) => Some(r.project_type),
+            DependencyEntry::Local(l) => Some(l.project_type),
             DependencyEntry::Search(s) => s.project_type,
         }
     }
@@ -235,14 +263,23 @@ pub struct ProjectSpec {
     /// Target mod loader (defaults to plan loader; None for vanilla)
     pub loader: Option<ModLoader>,
 
-    /// Required project ID (from DependencyRecord)
-    pub project_id: String,
+    /// Dependency source contract
+    pub source: DependencySource,
+}
 
-    /// Required project platform (from DependencyRecord)
-    pub project_platform: ProjectPlatform,
-
-    /// Optional pinned version
-    pub version_pin: Option<String>,
+/// Shared source model used by config, sync, remove, and build.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencySource {
+    Platform {
+        project_id: String,
+        project_platform: ProjectPlatform,
+        version_pin: Option<String>,
+    },
+    Local {
+        path: String,
+        source_url: Option<String>,
+        sha256: String,
+    },
 }
 
 /// Configuration manager bridging empack.yml and pack.toml
@@ -359,13 +396,30 @@ impl<'a> ConfigManager<'a> {
             })
             .unwrap_or_default();
 
-        // Build project specs from resolved dependency records only
+        // Build project specs from dependency records only. Search entries are
+        // resolved during sync and do not participate in the operational plan.
         let mut dependencies = Vec::new();
         for (slug, entry) in &empack_config.empack.dependencies {
-            if let DependencyEntry::Resolved(record) = entry {
-                let spec =
-                    self.build_project_spec_from_record(slug, record, &minecraft_version, loader);
-                dependencies.push(spec);
+            match entry {
+                DependencyEntry::Resolved(record) => {
+                    let spec = self.build_project_spec_from_record(
+                        slug,
+                        record,
+                        &minecraft_version,
+                        loader,
+                    );
+                    dependencies.push(spec);
+                }
+                DependencyEntry::Local(record) => {
+                    let spec = self.build_project_spec_from_local_record(
+                        slug,
+                        record,
+                        &minecraft_version,
+                        loader,
+                    );
+                    dependencies.push(spec);
+                }
+                DependencyEntry::Search(_) => {}
             }
         }
 
@@ -445,9 +499,32 @@ impl<'a> ConfigManager<'a> {
             project_type: record.project_type,
             minecraft_version: default_minecraft.to_string(),
             loader: default_loader,
-            project_id: record.project_id.clone(),
-            project_platform: record.platform,
-            version_pin: record.version.clone(),
+            source: DependencySource::Platform {
+                project_id: record.project_id.clone(),
+                project_platform: record.platform,
+                version_pin: record.version.clone(),
+            },
+        }
+    }
+
+    fn build_project_spec_from_local_record(
+        &self,
+        slug: &str,
+        record: &LocalDependencyRecord,
+        default_minecraft: &str,
+        default_loader: Option<ModLoader>,
+    ) -> ProjectSpec {
+        ProjectSpec {
+            key: slug.to_string(),
+            search_query: record.title.clone(),
+            project_type: record.project_type,
+            minecraft_version: default_minecraft.to_string(),
+            loader: default_loader,
+            source: DependencySource::Local {
+                path: record.path.clone(),
+                source_url: record.source_url.clone(),
+                sha256: record.sha256.clone(),
+            },
         }
     }
 
@@ -562,6 +639,15 @@ impl<'a> ConfigManager<'a> {
     /// Inserts a DependencyRecord keyed by slug. If the slug already exists,
     /// it is overwritten (upsert).
     pub fn add_dependency(&self, slug: &str, record: DependencyRecord) -> Result<(), ConfigError> {
+        self.add_dependency_entry(slug, DependencyEntry::Resolved(record))
+    }
+
+    /// Add or replace any dependency entry in empack.yml.
+    pub fn add_dependency_entry(
+        &self,
+        slug: &str,
+        entry: DependencyEntry,
+    ) -> Result<(), ConfigError> {
         let empack_path = self.workdir.join("empack.yml");
 
         // Load existing config or create new one
@@ -573,10 +659,7 @@ impl<'a> ConfigManager<'a> {
             Err(e) => return Err(e),
         };
 
-        config
-            .empack
-            .dependencies
-            .insert(slug.to_string(), DependencyEntry::Resolved(record));
+        config.empack.dependencies.insert(slug.to_string(), entry);
 
         // Serialize and write back
         let yaml_content = serde_saphyr::to_string(&config)
@@ -591,19 +674,51 @@ impl<'a> ConfigManager<'a> {
         Ok(())
     }
 
+    /// Find a dependency by slug first, then by case-insensitive title.
+    pub fn find_dependency(
+        &self,
+        slug_or_title: &str,
+    ) -> Result<Option<(String, DependencyEntry)>, ConfigError> {
+        let config = self.load_empack_config()?;
+
+        if let Some(entry) = config.empack.dependencies.get(slug_or_title) {
+            return Ok(Some((slug_or_title.to_string(), entry.clone())));
+        }
+
+        let matches: Vec<(String, DependencyEntry)> = config
+            .empack
+            .dependencies
+            .iter()
+            .filter(|(_, entry)| entry.title().eq_ignore_ascii_case(slug_or_title))
+            .map(|(key, entry)| (key.clone(), entry.clone()))
+            .collect();
+
+        match matches.len() {
+            0 => Ok(None),
+            1 => Ok(matches.into_iter().next()),
+            _ => Err(ConfigError::AmbiguousRemoval {
+                query: slug_or_title.to_string(),
+                matches: matches.into_iter().map(|(key, _)| key).collect(),
+            }),
+        }
+    }
+
     /// Remove a dependency from empack.yml by slug or display title
     ///
     /// Tries direct slug lookup first (O(1)). If that misses, falls back to a
     /// case-insensitive scan over `Dependency::title()`. Returns an error when
     /// multiple titles match (ambiguous).
-    pub fn remove_dependency(&self, slug_or_title: &str) -> Result<(), ConfigError> {
+    pub fn remove_dependency(
+        &self,
+        slug_or_title: &str,
+    ) -> Result<Option<DependencyEntry>, ConfigError> {
         let empack_path = self.workdir.join("empack.yml");
 
         let mut config = self.load_empack_config()?;
 
-        // Try direct slug lookup first
-        if config.empack.dependencies.remove(slug_or_title).is_none() {
-            // Fallback: case-insensitive title scan
+        let removed = if let Some(entry) = config.empack.dependencies.remove(slug_or_title) {
+            Some(entry)
+        } else {
             let matches: Vec<String> = config
                 .empack
                 .dependencies
@@ -613,10 +728,8 @@ impl<'a> ConfigManager<'a> {
                 .collect();
 
             match matches.len() {
-                0 => return Ok(()), // Nothing to remove, same as before
-                1 => {
-                    config.empack.dependencies.remove(&matches[0]);
-                }
+                0 => return Ok(None),
+                1 => config.empack.dependencies.remove(&matches[0]),
                 _ => {
                     return Err(ConfigError::AmbiguousRemoval {
                         query: slug_or_title.to_string(),
@@ -624,7 +737,7 @@ impl<'a> ConfigManager<'a> {
                     });
                 }
             }
-        }
+        };
 
         // Serialize and write back
         let yaml_content = serde_saphyr::to_string(&config)
@@ -636,7 +749,7 @@ impl<'a> ConfigManager<'a> {
                 source: std::io::Error::other(e),
             })?;
 
-        Ok(())
+        Ok(removed)
     }
 
     /// Read the `datapack_folder` value from empack.yml.

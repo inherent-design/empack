@@ -1,6 +1,6 @@
 use super::*;
 use crate::application::session_mocks::MockProjectResolver;
-use crate::empack::config::{ProjectPlan, ProjectSpec};
+use crate::empack::config::{DependencySource, ProjectPlan, ProjectSpec};
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::{ProjectInfo, SearchError};
 use crate::primitives::{ProjectPlatform, ProjectType};
@@ -13,18 +13,22 @@ fn project_spec(key: &str) -> ProjectSpec {
         project_type: ProjectType::Mod,
         minecraft_version: "1.21.1".to_string(),
         loader: Some(ModLoader::Fabric),
-        project_id: format!("test-id-{key}"),
-        project_platform: ProjectPlatform::Modrinth,
-        version_pin: None,
+        source: DependencySource::Platform {
+            project_id: format!("test-id-{key}"),
+            project_platform: ProjectPlatform::Modrinth,
+            version_pin: None,
+        },
     }
 }
 
 #[test]
 fn test_build_sync_plan_preserves_direct_lookup_contracts() {
     let mut direct_dep = project_spec("jei");
-    direct_dep.project_id = "238222".to_string();
-    direct_dep.project_platform = ProjectPlatform::CurseForge;
-    direct_dep.version_pin = Some("5678901".to_string());
+    direct_dep.source = DependencySource::Platform {
+        project_id: "238222".to_string(),
+        project_platform: ProjectPlatform::CurseForge,
+        version_pin: Some("5678901".to_string()),
+    };
 
     let plan = ProjectPlan {
         name: "Test Pack".to_string(),
@@ -475,17 +479,18 @@ fn test_build_sync_plan_from_spec_always_produces_platform_source() {
 
 #[test]
 fn test_build_sync_plan_tracks_local_keys_in_expected_mods() {
-    // Local-only entries (once empack.yml supports them) should be tracked
-    // in expected_mods so they are not removed by sync. The current
-    // from_spec always produces Platform, so this tests the key tracking
-    // for entries that happen to have empty project_id.
     let mut dep = project_spec("local-mod");
-    dep.project_id = String::new();
+    dep.source = DependencySource::Local {
+        path: "pack/mods/local-mod.jar".to_string(),
+        source_url: Some("https://example.com/local-mod.jar".to_string()),
+        sha256: "deadbeef".to_string(),
+    };
 
     let plan = make_plan(vec![dep]);
     let sync = build_sync_plan(&plan, &HashSet::new());
 
     assert!(sync.expected_mods.contains("local-mod"));
+    assert!(sync.actions.is_empty());
 }
 
 // ── build_packwiz_add_commands platform x version matrix ───────────────
