@@ -1,12 +1,17 @@
-name: CI
+name: PR CI
 
 on:
-  push:
-    branches: [main, dev]
-    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, mise.toml, .config/**]
   pull_request:
     branches: [dev, main]
-    paths: [crates/**, Cargo.toml, Cargo.lock, .github/workflows/ci.yml, mise.toml, .config/**]
+    paths:
+      [
+        crates/**,
+        Cargo.toml,
+        Cargo.lock,
+        .github/workflows/**,
+        mise.toml,
+        .config/**,
+      ]
   workflow_dispatch:
 
 permissions:
@@ -100,17 +105,3 @@ jobs:
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  cross-check:
-    if: github.ref == 'refs/heads/main'
-    needs: lint
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@cross
-      - run: cross check --workspace --target aarch64-unknown-linux-gnu
