@@ -723,6 +723,27 @@ impl ProcessProvider for LiveProcessProvider {
         let mut stderr_partial = String::new();
         let mut exit_status = None;
 
+        fn handle_process_interrupt(working_dir: &Path) -> ! {
+            crate::terminal::cursor::force_show_cursor();
+            crate::logger::global_shutdown();
+
+            let mut candidates = Vec::new();
+            candidates.push(working_dir.to_path_buf());
+            if let Some(parent) = working_dir.parent() {
+                candidates.push(parent.to_path_buf());
+                if let Some(grandparent) = parent.parent() {
+                    candidates.push(grandparent.to_path_buf());
+                }
+            }
+
+            for dir in candidates {
+                let marker = dir.join(crate::empack::state::STATE_MARKER_FILE);
+                let _ = std::fs::remove_file(marker);
+            }
+
+            std::process::exit(130)
+        }
+
         fn handle_chunk(
             full_output: &mut String,
             partial: &mut String,
@@ -741,6 +762,14 @@ impl ProcessProvider for LiveProcessProvider {
         }
 
         loop {
+            if crate::interrupt_requested() {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_thread.join();
+                let _ = stderr_thread.join();
+                handle_process_interrupt(working_dir);
+            }
+
             if start.elapsed() > process_timeout {
                 let _ = child.kill();
                 let _ = child.wait();

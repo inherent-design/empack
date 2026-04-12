@@ -188,6 +188,80 @@ async fn e2e_add_direct_zip_datapack_tracks_local_dependency_and_sets_folder() -
     Ok(())
 }
 
+#[tokio::test]
+async fn e2e_add_direct_zip_shader_tracks_local_dependency() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let workdir = temp_dir.path().to_path_buf();
+
+    initialize_empack_project(&workdir).await?;
+
+    let app_config = AppConfig {
+        workdir: Some(workdir.clone()),
+        ..AppConfig::default()
+    };
+
+    let terminal_caps = TerminalCapabilities::detect_from_config(app_config.color)?;
+    Display::init_or_get(terminal_caps);
+
+    let mut server = Server::new_async().await;
+    let _shader = server
+        .mock("GET", "/downloads/example-shader.zip")
+        .with_status(200)
+        .with_header("content-type", "application/zip")
+        .with_body("zip-bytes")
+        .create_async()
+        .await;
+
+    let session = CommandSession::new_with_providers(
+        LiveFileSystemProvider,
+        LiveNetworkProvider::new_for_test(None, None),
+        MockProcessProvider::new(),
+        LiveConfigProvider::new(app_config),
+        MockInteractiveProvider::new(),
+    );
+
+    let result = execute_command_with_session(
+        Commands::Add {
+            mods: vec![format!("{}/downloads/example-shader.zip", server.url())],
+            force: false,
+            platform: None,
+            project_type: Some(empack_lib::application::cli::CliProjectType::Shader),
+            version_id: None,
+            file_id: None,
+        },
+        &session,
+    )
+    .await;
+
+    assert!(result.is_ok(), "direct shader zip add failed: {result:?}");
+
+    let config = read_empack_config(&workdir);
+    let dependency = config
+        .empack
+        .dependencies
+        .get("example-shader")
+        .expect("tracked local shader dependency");
+
+    match dependency {
+        DependencyEntry::Local(record) => {
+            assert_eq!(record.path, "pack/shaderpacks/example-shader.zip");
+            assert_eq!(
+                record.source_url.as_deref(),
+                Some(format!("{}/downloads/example-shader.zip", server.url()).as_str())
+            );
+            assert!(!record.sha256.is_empty(), "sha256 should be recorded");
+        }
+        other => panic!("expected local dependency entry, got {other:?}"),
+    }
+
+    assert!(
+        workdir.join("pack/shaderpacks/example-shader.zip").exists(),
+        "downloaded shader should be written into the shaderpacks folder"
+    );
+
+    Ok(())
+}
+
 async fn initialize_empack_project(workdir: &Path) -> Result<()> {
     std::fs::create_dir_all(workdir.join("pack"))?;
 

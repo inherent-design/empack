@@ -1737,6 +1737,76 @@ type: mod
     }
 }
 
+#[test]
+fn test_local_dependency_entry_round_trips_with_exact_fields() {
+    let entry = DependencyEntry::Local(LocalDependencyRecord {
+        status: DependencyStatus::Local,
+        title: "Example Pack".to_string(),
+        project_type: ProjectType::ResourcePack,
+        path: "pack/resourcepacks/example-pack.zip".to_string(),
+        source_url: Some("https://example.com/example-pack.zip".to_string()),
+        sha256: "deadbeefcafebabe".to_string(),
+    });
+
+    let serialized = serde_saphyr::to_string(&entry).expect("serialize local dependency");
+    assert!(serialized.contains("status: local"));
+    assert!(serialized.contains("title: Example Pack"));
+    assert!(serialized.contains("type: resourcepack"));
+    assert!(serialized.contains("path: pack/resourcepacks/example-pack.zip"));
+    assert!(serialized.contains("source_url: https://example.com/example-pack.zip"));
+    assert!(serialized.contains("sha256: deadbeefcafebabe"));
+
+    let reparsed: DependencyEntry =
+        serde_saphyr::from_str(&serialized).expect("parse serialized local dependency");
+    assert_eq!(reparsed, entry);
+}
+
+#[test]
+fn test_config_manager_find_and_remove_local_dependency_entries() {
+    let workdir = mock_root().join("config-local-dependency-roundtrip");
+    let provider = create_mock_config_provider(workdir.clone());
+    let config_manager = provider.config_manager(workdir.clone());
+
+    let local_entry = DependencyEntry::Local(LocalDependencyRecord {
+        status: DependencyStatus::Local,
+        title: "Example Pack".to_string(),
+        project_type: ProjectType::ResourcePack,
+        path: "pack/resourcepacks/example-pack.zip".to_string(),
+        source_url: Some("https://example.com/example-pack.zip".to_string()),
+        sha256: "deadbeefcafebabe".to_string(),
+    });
+
+    config_manager
+        .add_dependency_entry("example-pack", local_entry.clone())
+        .expect("add local dependency entry");
+
+    let persisted = provider
+        .read_to_string(&workdir.join("empack.yml"))
+        .expect("read persisted config");
+    assert!(persisted.contains("status: local"));
+    assert!(persisted.contains("title: Example Pack"));
+    assert!(persisted.contains("type: resourcepack"));
+    assert!(persisted.contains("path: pack/resourcepacks/example-pack.zip"));
+    assert!(persisted.contains("source_url: https://example.com/example-pack.zip"));
+    assert!(persisted.contains("sha256: deadbeefcafebabe"));
+
+    let found = config_manager
+        .find_dependency("Example Pack")
+        .expect("find local dependency by title");
+    assert_eq!(found, Some(("example-pack".to_string(), local_entry.clone())));
+
+    let removed = config_manager
+        .remove_dependency("example-pack")
+        .expect("remove local dependency");
+    assert_eq!(removed, Some(local_entry));
+    assert_eq!(
+        config_manager
+            .find_dependency("example-pack")
+            .expect("find removed dependency"),
+        None
+    );
+}
+
 // ─── EmpackConfig edge case tests ─────────────────────────────────────────
 
 #[test]
