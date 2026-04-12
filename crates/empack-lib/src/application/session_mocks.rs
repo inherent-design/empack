@@ -141,6 +141,13 @@ impl MockFileSystemProvider {
     }
 
     pub fn with_files(self, files: HashMap<PathBuf, String>) -> Self {
+        let replaced_paths: Vec<PathBuf> = self.files.lock().unwrap().keys().cloned().collect();
+        for path in replaced_paths {
+            self.metadata.lock().unwrap().remove(&path);
+        }
+
+        self.files.lock().unwrap().clear();
+
         for (path, content) in files {
             self.track_parent_directories(&path);
             self.set_default_file_metadata(&path, false, content.len() as u64);
@@ -2118,6 +2125,27 @@ mod tests {
 
         fs.write_bytes(&artifact_path, b"jar-bytes").unwrap();
         assert!(fs.has_build_artifacts(&artifact_dir).unwrap());
+    }
+
+    #[test]
+    fn test_with_files_replaces_existing_text_files() {
+        let workdir = mock_root().join("replace-files-project");
+        let old_path = workdir.join("old.txt");
+        let new_path = workdir.join("new.txt");
+
+        let mut replacement = HashMap::new();
+        replacement.insert(new_path.clone(), "new".to_string());
+
+        let fs = MockFileSystemProvider::default()
+            .with_current_dir(workdir)
+            .with_file(old_path.clone(), "old".to_string())
+            .with_files(replacement);
+
+        assert!(
+            fs.read_to_string(&old_path).is_err(),
+            "with_files should replace existing text files"
+        );
+        assert_eq!(fs.read_to_string(&new_path).unwrap(), "new");
     }
 
     #[test]

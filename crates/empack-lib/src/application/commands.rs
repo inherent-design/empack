@@ -26,7 +26,7 @@ use crate::empack::search::SearchError;
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::empack::config::format_empack_yml;
 use tracing::instrument;
@@ -2774,6 +2774,28 @@ struct LocalDependencyIssue {
     reason: String,
 }
 
+fn validate_tracked_local_dependency_relative_path(
+    path: &str,
+) -> std::result::Result<PathBuf, &'static str> {
+    let rel = PathBuf::from(path);
+    if !rel.is_relative() {
+        return Err("path must be relative");
+    }
+    if rel
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err("path escapes the project directory");
+    }
+    Ok(rel)
+}
+
+fn resolve_tracked_local_dependency_path(workdir: &Path, path: &str) -> Result<PathBuf> {
+    let rel = validate_tracked_local_dependency_relative_path(path)
+        .map_err(|reason| anyhow::anyhow!("Tracked local dependency {}: {}", reason, path))?;
+    Ok(workdir.join(rel))
+}
+
 fn validate_local_dependencies(
     filesystem: &dyn FileSystemProvider,
     workdir: &Path,
@@ -2787,15 +2809,17 @@ fn validate_local_dependencies(
                 return None;
             };
 
-            let rel = PathBuf::from(path);
-            if !rel.is_relative() {
-                return Some(LocalDependencyIssue {
-                    key: dependency.key.clone(),
-                    title: dependency.search_query.clone(),
-                    path: path.clone(),
-                    reason: "path must be relative".to_string(),
-                });
-            }
+            let rel = match validate_tracked_local_dependency_relative_path(path) {
+                Ok(rel) => rel,
+                Err(reason) => {
+                    return Some(LocalDependencyIssue {
+                        key: dependency.key.clone(),
+                        title: dependency.search_query.clone(),
+                        path: path.clone(),
+                        reason: reason.to_string(),
+                    });
+                }
+            };
 
             let absolute_path = workdir.join(&rel);
             if !filesystem.exists(&absolute_path) {
@@ -2976,13 +3000,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             .with_context(|| format!("failed to inspect dependency '{mod_name}'"))?;
 
         if let Some((dependency_key, DependencyEntry::Local(record))) = dependency_entry {
-            let rel = PathBuf::from(&record.path);
-            anyhow::ensure!(
-                rel.is_relative(),
-                "Tracked local dependency path must be relative: {}",
-                record.path
-            );
-            let local_path = workdir.join(&rel);
+            let local_path = resolve_tracked_local_dependency_path(&workdir, &record.path)?;
             if session.filesystem().exists(&local_path) {
                 if session.filesystem().is_directory(&local_path) {
                     session

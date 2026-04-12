@@ -35,9 +35,10 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
     if let Some(search_error) = find_chain_error::<SearchError>(error) {
         return match search_error {
             SearchError::NoResults { .. } => EmpackExitCode::NotFound,
-            SearchError::NetworkError { .. }
-            | SearchError::RequestError { .. }
-            | SearchError::MissingApiKey { .. } => EmpackExitCode::Network,
+            SearchError::NetworkError { .. } | SearchError::RequestError { .. } => {
+                EmpackExitCode::Network
+            }
+            SearchError::MissingApiKey { .. } => EmpackExitCode::Usage,
             SearchError::LowConfidence { .. }
             | SearchError::ExtraWords { .. }
             | SearchError::IncompatibleProject { .. }
@@ -181,11 +182,11 @@ mod tests {
     }
 
     #[test]
-    fn classify_error_maps_missing_api_key_to_network() {
+    fn classify_error_maps_missing_api_key_to_usage() {
         let error = anyhow::Error::new(SearchError::MissingApiKey {
             platform: "curseforge".to_string(),
         });
-        assert_eq!(classify_error(&error), EmpackExitCode::Network);
+        assert_eq!(classify_error(&error), EmpackExitCode::Usage);
     }
 
     #[test]

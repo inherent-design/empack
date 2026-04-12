@@ -7532,6 +7532,63 @@ mod tracked_local_dependency_tests {
     }
 
     #[tokio::test]
+    async fn remove_local_dependency_rejects_parent_dir_tracked_path() {
+        let workdir = mock_root().join("remove-local-dependency-parent-dir-path");
+        let outside_path = mock_root().join("outside-parent-dir-tracked-local.zip");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_binary_file(outside_path.clone(), b"outside-bytes".to_vec()),
+        );
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: "../outside-parent-dir-tracked-local.zip".to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256: "deadbeef".to_string(),
+                }),
+            )
+            .expect("add local dependency");
+
+        let error = handle_remove(&session, vec!["example-pack".to_string()], false)
+            .await
+            .expect_err("parent-dir tracked local paths should be rejected");
+
+        assert!(
+            error.to_string().contains("escapes the project directory"),
+            "expected project-confinement error, got: {error:#}"
+        );
+        assert!(
+            session.filesystem().exists(&outside_path),
+            "parent-dir tracked local path should not be removed"
+        );
+        assert!(
+            session
+                .filesystem()
+                .config_manager(workdir.clone())
+                .find_dependency("example-pack")
+                .expect("read config after rejected removal")
+                .is_some(),
+            "local dependency should remain in empack.yml when the path is rejected"
+        );
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+                .is_empty(),
+            "tracked local removal should not invoke packwiz"
+        );
+    }
+
+    #[tokio::test]
     async fn remove_local_dependency_fails_when_config_write_fails_after_file_deletion() {
         let workdir = mock_root().join("remove-local-dependency-config-write-failure");
         let relative_path = "pack/resourcepacks/example-pack.zip";
@@ -7717,6 +7774,48 @@ mod tracked_local_dependency_tests {
         assert_eq!(issues[0].key, "example-pack");
         assert_eq!(issues[0].path, outside_path.to_string_lossy());
         assert_eq!(issues[0].reason, "path must be relative");
+    }
+
+    #[tokio::test]
+    async fn validate_local_dependencies_rejects_parent_dir_paths() {
+        let workdir = mock_root().join("validate-local-dependency-parent-dir-path");
+        let outside_path = mock_root().join("outside-parent-dir-validate-local-dependency.zip");
+        let outside_bytes = b"resourcepack-bytes".to_vec();
+        let outside_sha256 = compute_sha256_hex_for_bytes(&outside_bytes);
+
+        let filesystem = MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone())
+            .with_binary_file(outside_path, outside_bytes);
+        let session = MockCommandSession::new().with_filesystem(filesystem);
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: "../outside-parent-dir-validate-local-dependency.zip".to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256: outside_sha256,
+                }),
+            )
+            .expect("add local dependency");
+
+        let project_plan = session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .create_project_plan()
+            .expect("create project plan");
+        let issues = validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
+
+        assert_eq!(issues.len(), 1, "parent-dir path should produce one validation issue");
+        assert_eq!(issues[0].key, "example-pack");
+        assert_eq!(issues[0].path, "../outside-parent-dir-validate-local-dependency.zip");
+        assert_eq!(issues[0].reason, "path escapes the project directory");
     }
 
     #[tokio::test]

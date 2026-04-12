@@ -269,6 +269,24 @@ fn extract_modrinth_project_id(url: &str) -> Option<String> {
     Some(pid.to_string())
 }
 
+/// Extract a Modrinth version ID from a CDN download URL.
+///
+/// CDN URLs follow `https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/filename`.
+/// Returns `None` if the URL does not match the expected structure.
+fn extract_modrinth_version_id(url: &str) -> Option<String> {
+    let parts: Vec<&str> = url.split('/').collect();
+    let data_pos = parts.iter().position(|&s| s == "data")?;
+    let versions_pos = parts.iter().position(|&s| s == "versions")?;
+    if versions_pos != data_pos + 2 {
+        return None;
+    }
+    let vid = parts.get(versions_pos + 1)?;
+    if vid.is_empty() {
+        return None;
+    }
+    Some(vid.to_string())
+}
+
 /// Extract a CurseForge file ID from a ForgeCD CDN download URL.
 ///
 /// CDN URLs follow `https://edge.forgecdn.net/files/{part1}/{part2}/filename`.
@@ -534,7 +552,8 @@ fn parse_modrinth_mrpack_bytes(
                             .filter(|s| !s.is_empty())
                             .or_else(|| extract_modrinth_project_id(first_url))
                             .unwrap_or_default();
-                        (ProjectPlatform::Modrinth, pid, None)
+                        let version_id = extract_modrinth_version_id(first_url);
+                        (ProjectPlatform::Modrinth, pid, version_id)
                     };
 
                 ContentEntry::PlatformReferenced(PlatformRef {
@@ -943,6 +962,13 @@ async fn resolve_modrinth_project_with_client(
     warnings: &mut Vec<String>,
     budget: Option<&Arc<dyn RateBudget>>,
 ) {
+    if pref.file_id.is_none() {
+        pref.file_id = pref
+            .download_urls
+            .iter()
+            .find_map(|url| extract_modrinth_version_id(url));
+    }
+
     if pref.file_id.is_none()
         && let Some(sha1) = pref.hashes.get("sha1")
     {

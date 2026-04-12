@@ -376,6 +376,38 @@ fn test_parse_modrinth_mrpack_content_entries() {
 }
 
 #[test]
+fn test_parse_modrinth_mrpack_extracts_ids_from_cdn_data_urls() {
+    let json = r#"{
+      "dependencies": {
+        "minecraft": "1.20.1",
+        "fabric-loader": "0.14.0"
+      },
+      "files": [
+        {
+          "path": "mods/entity_model_features.jar",
+          "downloads": [
+            "https://cdn.modrinth.com/data/4I1XuqiY/versions/N6hTuxkQ/entity_model_features.jar"
+          ],
+          "hashes": { "sha1": "deadbeef" },
+          "env": { "client": "required", "server": "required" }
+        }
+      ]
+    }"#;
+
+    let tmp = create_mr_zip(json);
+    let manifest = parse_modrinth_mrpack(tmp.path()).unwrap();
+
+    match &manifest.content[0] {
+        ContentEntry::PlatformReferenced(pref) => {
+            assert_eq!(pref.platform, ProjectPlatform::Modrinth);
+            assert_eq!(pref.project_id, "4I1XuqiY");
+            assert_eq!(pref.file_id.as_deref(), Some("N6hTuxkQ"));
+        }
+        _ => panic!("expected PlatformReferenced"),
+    }
+}
+
+#[test]
 fn test_parse_modrinth_mrpack_embedded_jar() {
     let json = r#"{
       "dependencies": {
@@ -1657,6 +1689,16 @@ fn test_extract_modrinth_and_forgecdn_helper_edges() {
     );
     assert_eq!(
         extract_modrinth_project_id("https://cdn.modrinth.com/data//versions/version-123/sodium.jar"),
+        None
+    );
+    assert_eq!(
+        extract_modrinth_version_id(
+            "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar",
+        ),
+        Some("version-123".to_string())
+    );
+    assert_eq!(
+        extract_modrinth_version_id("https://cdn.modrinth.com/data/AANobbMI/versions//sodium.jar"),
         None
     );
 
