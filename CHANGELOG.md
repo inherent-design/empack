@@ -3,6 +3,20 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.7 - 2026-04-12
+
+### Bug Fixes
+
+- Harden restricted download continuation
+
+### Documentation
+
+- Point PR CI badge at dev
+
+### Maintenance
+
+- Update changelog for 0.4.0-alpha.6
+
 ## v0.4.0-alpha.6 - 2026-04-12
 
 ### Bug Fixes
