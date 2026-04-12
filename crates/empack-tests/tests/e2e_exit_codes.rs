@@ -170,6 +170,29 @@ fn e2e_direct_zip_without_type_exits_two() {
 }
 
 #[test]
+fn e2e_direct_zip_with_invalid_type_exits_two() {
+    let project = TestProject::workflow_fixture("exit-zip-invalid-type", "fabric", "1.21.1");
+    let output = cargo_empack_cmd(project.dir())
+        .args(["add", "--type", "mod", "https://example.invalid/pack.zip"])
+        .output()
+        .expect("spawn zip-invalid-type command");
+
+    assert_eq!(
+        output.status.code(),
+        Some(EmpackExitCode::Usage.as_i32()),
+        "unexpected output:\n{}",
+        combined_output(&output)
+    );
+
+    let combined = combined_output(&output);
+    assert!(
+        combined.contains("support only --type")
+            || combined.contains("resourcepack, shader, or datapack"),
+        "expected invalid direct zip type rejection in output:\n{combined}"
+    );
+}
+
+#[test]
 fn e2e_unsupported_direct_extension_exits_two() {
     let project = TestProject::workflow_fixture("exit-unsupported-extension", "fabric", "1.21.1");
     let output = cargo_empack_cmd(project.dir())

@@ -2790,6 +2790,44 @@ fn project_plan_has_local_dependencies(project_plan: &crate::empack::config::Pro
         .any(|dependency| matches!(dependency.source, DependencySource::Local { .. }))
 }
 
+fn validate_build_project_plan(
+    session: &dyn Session,
+    workdir: &Path,
+    build_targets: &[BuildTarget],
+) -> Result<()> {
+    let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
+    let project_plan = config_manager
+        .create_project_plan()
+        .context("Failed to load empack.yml configuration")?;
+    let local_dependency_issues =
+        validate_local_dependencies(session.filesystem(), workdir, &project_plan);
+    if !local_dependency_issues.is_empty() {
+        render_local_dependency_issues(
+            session,
+            &local_dependency_issues,
+            "Build blocked by tracked local dependency drift",
+        );
+        anyhow::bail!(
+            "{} tracked local dependenc{} failed validation",
+            local_dependency_issues.len(),
+            if local_dependency_issues.len() == 1 {
+                "y"
+            } else {
+                "ies"
+            }
+        );
+    }
+    if build_targets.contains(&BuildTarget::Mrpack)
+        && project_plan_has_local_dependencies(&project_plan)
+    {
+        anyhow::bail!(
+            "Tracked local dependencies are not yet supported for mrpack exports. Remove the mrpack target or replace those entries with resolved platform dependencies."
+        );
+    }
+
+    Ok(())
+}
+
 fn render_local_dependency_issues(
     session: &dyn Session,
     issues: &[LocalDependencyIssue],
@@ -3159,35 +3197,7 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     // Parse build targets
     let build_targets = parse_build_targets(args.targets.clone())?;
 
-    let config_manager = session.filesystem().config_manager(manager.workdir.clone());
-    let project_plan = config_manager
-        .create_project_plan()
-        .context("Failed to load empack.yml configuration")?;
-    let local_dependency_issues =
-        validate_local_dependencies(session.filesystem(), &manager.workdir, &project_plan);
-    if !local_dependency_issues.is_empty() {
-        render_local_dependency_issues(
-            session,
-            &local_dependency_issues,
-            "Build blocked by tracked local dependency drift",
-        );
-        anyhow::bail!(
-            "{} tracked local dependenc{} failed validation",
-            local_dependency_issues.len(),
-            if local_dependency_issues.len() == 1 {
-                "y"
-            } else {
-                "ies"
-            }
-        );
-    }
-    if build_targets.contains(&BuildTarget::Mrpack)
-        && project_plan_has_local_dependencies(&project_plan)
-    {
-        anyhow::bail!(
-            "Tracked local dependencies are not yet supported for mrpack exports. Remove the mrpack target or replace those entries with resolved platform dependencies."
-        );
-    }
+    validate_build_project_plan(session, &manager.workdir, &build_targets)?;
 
     session
         .display()
@@ -3343,35 +3353,7 @@ async fn continue_pending_restricted_build(
 
     let build_targets = pending.target_list()?;
     let archive_format = pending.archive_format_value()?;
-    let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
-    let project_plan = config_manager
-        .create_project_plan()
-        .context("Failed to load empack.yml configuration")?;
-    let local_dependency_issues =
-        validate_local_dependencies(session.filesystem(), workdir, &project_plan);
-    if !local_dependency_issues.is_empty() {
-        render_local_dependency_issues(
-            session,
-            &local_dependency_issues,
-            "Build blocked by tracked local dependency drift",
-        );
-        anyhow::bail!(
-            "{} tracked local dependenc{} failed validation",
-            local_dependency_issues.len(),
-            if local_dependency_issues.len() == 1 {
-                "y"
-            } else {
-                "ies"
-            }
-        );
-    }
-    if build_targets.contains(&BuildTarget::Mrpack)
-        && project_plan_has_local_dependencies(&project_plan)
-    {
-        anyhow::bail!(
-            "Tracked local dependencies are not yet supported for mrpack exports. Remove the mrpack target or replace those entries with resolved platform dependencies."
-        );
-    }
+    validate_build_project_plan(session, workdir, &build_targets)?;
 
     session
         .display()
