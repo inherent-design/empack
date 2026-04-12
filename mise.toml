@@ -70,6 +70,18 @@ run_windows = """
 cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
 """
 
+[tasks."smoke:import:pr"]
+depends = ["build:bin"]
+description = "Run the platform-selected PR import smoke profile"
+run = "python3 scripts/import-smoke-test.py --profile pr"
+run_windows = "python scripts/import-smoke-test.py --profile pr"
+
+[tasks."smoke:import:curated"]
+depends = ["build:bin"]
+description = "Run the full curated import smoke suite"
+run = "python3 scripts/import-smoke-test.py --profile curated"
+run_windows = "python scripts/import-smoke-test.py --profile curated"
+
 # Coverage
 
 [tasks.coverage]

@@ -3,19 +3,25 @@
 Import Smoke Test
 empack - Minecraft Modpack Lifecycle Management
 
-Runs two modes:
+Runs three top-level modes:
 
-1. Curated golden smoke mode (default bare invocation):
+1. Curated smoke mode (default bare invocation):
    - resolves 7 hardcoded real-world packs across CurseForge and Modrinth
    - runs `empack init --from ... --yes`
    - runs `empack build client-full`
    - if a build blocks on restricted CurseForge files, downloads those files
      into empack's managed restricted-build cache and resumes with
      `empack build --continue`
+   - also supports:
+     - `--profile pr` for one platform-selected CI smoke pack
+     - `--pack <curated-pack-id>` for one explicit curated pack
 
 2. Discovery survey mode (selected by explicit survey/filter flags):
    - discovers, downloads, and analyzes popular modpacks across MC versions
    - optionally runs `empack init --from` on each pack
+
+3. Clean mode:
+   - removes curated/survey smoke artifacts under `/tmp`
 
 Designed for re-running against updated empack binaries to track
 golden-path lifecycle regressions and broader import compatibility.
@@ -29,6 +35,12 @@ Prerequisites:
 Usage:
     # Default curated golden smoke across 7 hardcoded packs
     python3 scripts/import-smoke-test.py
+
+    # Platform-selected PR smoke profile
+    python3 scripts/import-smoke-test.py --profile pr
+
+    # Run one curated pack explicitly
+    python3 scripts/import-smoke-test.py --pack fabulously-optimized_1.20.1_curseforge_fabric
 
     # Discovery survey across default MC versions (no download)
     python3 scripts/import-smoke-test.py --discover-only
@@ -47,7 +59,7 @@ Usage:
 
 Curated mode phases:
     1. Resolve the latest compatible artifact for each curated pack
-    2. Download archives to /tmp/empack-survey/packs/ (cached)
+    2. Download archives to /tmp/empack-curated-smoke/packs/ (cached)
     3. Run `empack init --from ... --yes`
     4. Run `empack build client-full`
     5. If needed, download restricted CurseForge files into the managed cache
@@ -65,9 +77,8 @@ Survey mode phases:
        - (with --import-test) Run empack init --from and record results
 
 Outputs:
-    /tmp/empack-survey/packs/        Downloaded archives (cached between runs)
-    /tmp/empack-survey/projects/     empack init --from output (with --import-test)
-    /tmp/empack-survey/report.json   Curated smoke or survey findings
+    /tmp/empack-curated-smoke/       Curated smoke downloads, projects, report
+    /tmp/empack-survey/              Survey downloads, projects, report
 """
 
 import argparse
@@ -81,7 +92,6 @@ import socket
 import string
 import subprocess
 import sys
-import tempfile
 import time
 import zipfile
 from dataclasses import asdict, dataclass, field
@@ -108,10 +118,8 @@ CURSEFORGE_API_KEY = os.environ.get(
 MODRINTH_API = "https://api.modrinth.com/v2"
 CURSEFORGE_API = "https://api.curseforge.com/v1"
 
-SURVEY_DIR = Path("/tmp/empack-survey")
-CURATED_DIR = Path("/tmp/empack-curated-smoke")
-PACKS_DIR = SURVEY_DIR / "packs"
-PROJECTS_DIR = SURVEY_DIR / "projects"
+SURVEY_ROOT_DIR = Path("/tmp/empack-survey")
+CURATED_ROOT_DIR = Path("/tmp/empack-curated-smoke")
 
 # Top MC versions by modding activity (ordered by ecosystem size).
 # Default set is tuned for reasonable runtime (~30 min with --import-test).
@@ -250,6 +258,21 @@ class CuratedPack:
     expect_restricted_continue: bool = False
 
 
+@dataclass(frozen=True)
+class RuntimeLayout:
+    root_dir: Path
+    packs_dir: Path
+    projects_dir: Path
+    cache_dir: Path
+    report_path: Path
+
+    def ensure_dirs(self) -> None:
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        self.packs_dir.mkdir(parents=True, exist_ok=True)
+        self.projects_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+
 @dataclass
 class CommandResult:
     success: bool = False
@@ -345,6 +368,68 @@ CURATED_GOLDEN_PACKS = [
         expect_restricted_continue=True,
     ),
 ]
+
+CURATED_PACKS_BY_ID = {
+    f"{pack.slug}_{pack.mc_version}_{pack.source}_{pack.loader}": pack
+    for pack in CURATED_GOLDEN_PACKS
+}
+
+
+def curated_pack_id(pack: CuratedPack) -> str:
+    return f"{pack.slug}_{pack.mc_version}_{pack.source}_{pack.loader}"
+
+
+def build_runtime_layout(root_dir: Path) -> RuntimeLayout:
+    return RuntimeLayout(
+        root_dir=root_dir,
+        packs_dir=root_dir / "packs",
+        projects_dir=root_dir / "projects",
+        cache_dir=root_dir / "cache",
+        report_path=root_dir / "report.json",
+    )
+
+
+def survey_layout() -> RuntimeLayout:
+    return build_runtime_layout(SURVEY_ROOT_DIR)
+
+
+def curated_layout() -> RuntimeLayout:
+    return build_runtime_layout(CURATED_ROOT_DIR)
+
+
+def current_ci_profile_pack() -> CuratedPack:
+    if sys.platform.startswith("win"):
+        return CURATED_PACKS_BY_ID["fabulously-optimized_1.20.1_curseforge_fabric"]
+    if sys.platform == "darwin":
+        return CURATED_PACKS_BY_ID["fabulously-optimized_1.20.1_modrinth_fabric"]
+    return CURATED_PACKS_BY_ID["fabulously-optimized_1.20.1_modrinth_fabric"]
+
+
+def survey_flags_requested(args) -> bool:
+    return (
+        args.discover_only
+        or args.skip_download
+        or args.import_test
+        or args.mc_versions is not None
+        or args.all_versions
+        or args.limit != 5
+    )
+
+
+def select_curated_packs(args) -> list[CuratedPack]:
+    if args.pack:
+        return [CURATED_PACKS_BY_ID[args.pack]]
+    if args.profile == "pr":
+        return [current_ci_profile_pack()]
+    return CURATED_GOLDEN_PACKS
+
+
+def determine_mode(args) -> str:
+    if args.clean:
+        return "clean"
+    if survey_flags_requested(args):
+        return "survey"
+    return "curated"
 
 
 def discover_modrinth(mc_version: str, limit: int) -> list[PackCandidate]:
@@ -476,10 +561,10 @@ def resolve_download_url(c: PackCandidate) -> bool:
 # Download
 # ---------------------------------------------------------------------------
 
-def download_pack(c: PackCandidate, timeout: int = 60) -> bool:
+def download_pack(c: PackCandidate, layout: RuntimeLayout, timeout: int = 60) -> bool:
     safe_name = f"{c.slug}_{c.mc_version}_{c.source}"
     ext = ".mrpack" if c.format == "mrpack" else ".zip"
-    dest = PACKS_DIR / f"{safe_name}{ext}"
+    dest = layout.packs_dir / f"{safe_name}{ext}"
 
     if dest.exists() and dest.stat().st_size > 0:
         c.local_path = str(dest)
@@ -879,18 +964,22 @@ def run_command(
     )
 
 
-def ensure_empack_env(env: dict[str, str], cache_dir: Path, timeout_secs: int) -> dict[str, str]:
+def ensure_empack_env(
+    env: dict[str, str],
+    layout: RuntimeLayout,
+    timeout_secs: int,
+) -> dict[str, str]:
     configured = env.copy()
     configured["EMPACK_KEY_CURSEFORGE"] = CURSEFORGE_API_KEY
-    configured["EMPACK_CACHE_DIR"] = str(cache_dir)
+    configured["EMPACK_CACHE_DIR"] = str(layout.cache_dir)
     configured["EMPACK_PROCESS_TIMEOUT_SECS"] = str(timeout_secs)
     configured["NO_COLOR"] = "1"
 
     if os.name == "nt":
-        local_app_data = SURVEY_DIR / ".windows-localappdata"
-        roaming_app_data = SURVEY_DIR / ".windows-appdata"
-        user_profile = SURVEY_DIR / ".windows-userprofile"
-        temp_dir = SURVEY_DIR / ".windows-temp"
+        local_app_data = layout.root_dir / ".windows-localappdata"
+        roaming_app_data = layout.root_dir / ".windows-appdata"
+        user_profile = layout.root_dir / ".windows-userprofile"
+        temp_dir = layout.root_dir / ".windows-temp"
         for path in [local_app_data, roaming_app_data, user_profile, temp_dir]:
             path.mkdir(parents=True, exist_ok=True)
 
@@ -904,21 +993,39 @@ def ensure_empack_env(env: dict[str, str], cache_dir: Path, timeout_secs: int) -
     return configured
 
 
-def run_import_test(pack_path: Path, project_name: str, empack_bin: Path) -> ImportResult:
-    project_dir = PROJECTS_DIR / project_name
+def run_empack_command(
+    empack_bin: Path,
+    args: list[str],
+    layout: RuntimeLayout,
+    timeout: int,
+    label: str,
+    cwd: Optional[Path] = None,
+    prefer_pty: bool = True,
+) -> CommandResult:
+    return run_command(
+        [str(empack_bin), *args],
+        env=ensure_empack_env(os.environ.copy(), layout, timeout),
+        timeout=timeout,
+        label=label,
+        cwd=cwd,
+        prefer_pty=prefer_pty,
+    )
+
+
+def run_import_test(
+    pack_path: Path,
+    project_name: str,
+    empack_bin: Path,
+    layout: RuntimeLayout,
+) -> ImportResult:
+    project_dir = layout.projects_dir / project_name
     if project_dir.exists():
         shutil.rmtree(project_dir)
 
-    command = run_command(
-        [
-            str(empack_bin),
-            "init",
-            "--from",
-            str(pack_path),
-            "--yes",
-            str(project_dir),
-        ],
-        env=ensure_empack_env(os.environ.copy(), SURVEY_DIR / "cache", 600),
+    command = run_empack_command(
+        empack_bin,
+        ["init", "--from", str(pack_path), "--yes", str(project_dir)],
+        layout,
         timeout=600,
         label=project_name,
     )
@@ -951,7 +1058,7 @@ def curseforge_loader_label(loader: str) -> str:
 
 
 def curated_project_name(pack: CuratedPack) -> str:
-    return f"{pack.slug}_{pack.mc_version}_{pack.source}_{pack.loader}"
+    return curated_pack_id(pack)
 
 
 def resolve_curated_pack(pack: CuratedPack) -> PackCandidate:
@@ -1167,8 +1274,9 @@ def run_curated_build(
     pack: CuratedPack,
     project_dir: Path,
     empack_bin: Path,
-    env: dict[str, str],
+    layout: RuntimeLayout,
     timeout: int,
+    announce: bool,
 ) -> CuratedBuildResult:
     label = curated_project_name(pack)
     result = CuratedBuildResult()
@@ -1176,13 +1284,14 @@ def run_curated_build(
     pending_state = None
 
     for attempt in range(initial_attempts):
-        initial = run_command(
-            [str(empack_bin), "build", "client-full"],
-            env=env,
+        initial = run_empack_command(
+            empack_bin,
+            ["build", "client-full"],
+            layout,
             timeout=timeout,
             label=f"{label}:build",
             cwd=project_dir,
-            prefer_pty=False,
+            prefer_pty=announce,
         )
         result.initial_success = initial.success
         result.elapsed_secs += initial.elapsed_secs
@@ -1217,13 +1326,14 @@ def run_curated_build(
         result.warnings.append(f"failed restricted downloads: {failed_ids}")
         return result
 
-    continued = run_command(
-        [str(empack_bin), "build", "--continue"],
-        env=env,
+    continued = run_empack_command(
+        empack_bin,
+        ["build", "--continue"],
+        layout,
         timeout=timeout,
         label=f"{label}:continue",
         cwd=project_dir,
-        prefer_pty=False,
+        prefer_pty=announce,
     )
     result.continue_success = continued.success
     result.elapsed_secs += continued.elapsed_secs
@@ -1231,16 +1341,30 @@ def run_curated_build(
     artifact = find_client_full_artifact(project_dir)
     if artifact:
         result.artifact_path = str(artifact)
+    if (
+        pack.expect_restricted_continue
+        and not result.continue_required
+        and not (result.initial_success or result.continue_success)
+    ):
+        fallback_result = _run_curated_build_raw_fallback(
+            project_dir,
+            empack_bin,
+            layout,
+            timeout,
+        )
+        fallback_result.elapsed_secs += result.elapsed_secs
+        fallback_result.warnings = result.warnings + fallback_result.warnings
+        return fallback_result
     return result
 
 
-def run_curated_build_raw_fallback(
-    pack: CuratedPack,
+def _run_curated_build_raw_fallback(
     project_dir: Path,
     empack_bin: Path,
-    env: dict[str, str],
+    layout: RuntimeLayout,
     timeout: int,
 ) -> CuratedBuildResult:
+    env = ensure_empack_env(os.environ.copy(), layout, timeout)
     start = time.time()
     try:
         proc = subprocess.run(
@@ -1305,29 +1429,28 @@ def run_curated_build_raw_fallback(
     return result
 
 
-def save_curated_report(entries: list[dict]):
-    report_path = SURVEY_DIR / "report.json"
-    report_path.write_text(json.dumps(entries, indent=2))
-    print(f"\nReport saved to {report_path}")
+def save_curated_report(entries: list[dict], layout: RuntimeLayout):
+    layout.report_path.write_text(json.dumps(entries, indent=2))
+    print(f"\nReport saved to {layout.report_path}")
 
 
 def run_single_curated_pack(
     pack: CuratedPack,
     empack_bin: Path,
     download_timeout: int,
+    layout: RuntimeLayout,
     index: Optional[int] = None,
     total: Optional[int] = None,
     announce: bool = True,
 ) -> tuple[dict, Optional[str], bool]:
-    cache_dir = SURVEY_DIR / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    layout.ensure_dirs()
 
     label = curated_project_name(pack)
-    project_dir = PROJECTS_DIR / label
+    project_dir = layout.projects_dir / label
     if project_dir.exists():
         shutil.rmtree(project_dir)
     if pack.expect_restricted_continue:
-        clear_restricted_cache_for_project(cache_dir, project_dir)
+        clear_restricted_cache_for_project(layout.cache_dir, project_dir)
 
     entry = {
         "pack": asdict(pack),
@@ -1348,21 +1471,14 @@ def run_single_curated_pack(
             print(
                 f"{prefix}{pack.name} [{pack.source} {pack.loader} {pack.mc_version}]"
             )
-        if not download_pack(candidate, timeout=download_timeout):
+        if not download_pack(candidate, layout, timeout=download_timeout):
             raise RuntimeError("download failed")
         verify_curated_download(pack, Path(candidate.local_path))
 
-        env = ensure_empack_env(os.environ.copy(), cache_dir, 600)
-        init_result = run_command(
-            [
-                str(empack_bin),
-                "init",
-                "--from",
-                candidate.local_path,
-                "--yes",
-                str(project_dir),
-            ],
-            env=env,
+        init_result = run_empack_command(
+            empack_bin,
+            ["init", "--from", candidate.local_path, "--yes", str(project_dir)],
+            layout,
             timeout=600,
             label=f"{label}:init",
             prefer_pty=announce,
@@ -1376,18 +1492,14 @@ def run_single_curated_pack(
         if not init_result.success:
             return entry, "init failed", False
 
-        build_result = run_curated_build(pack, project_dir, empack_bin, env, 600)
-        if (
-            pack.expect_restricted_continue
-            and not build_result.continue_required
-            and not (build_result.initial_success or build_result.continue_success)
-        ):
-            fallback_result = run_curated_build_raw_fallback(
-                pack, project_dir, empack_bin, env, 600
-            )
-            fallback_result.elapsed_secs += build_result.elapsed_secs
-            fallback_result.warnings = build_result.warnings + fallback_result.warnings
-            build_result = fallback_result
+        build_result = run_curated_build(
+            pack,
+            project_dir,
+            empack_bin,
+            layout,
+            600,
+            announce,
+        )
         entry["build_result"] = asdict(build_result)
 
         did_continue = build_result.continue_required
@@ -1406,77 +1518,38 @@ def run_single_curated_pack(
         return entry, str(exc), False
 
 
-def run_single_curated_pack_subprocess(
-    pack: CuratedPack,
-    empack_bin: Path,
-    download_timeout: int,
-) -> tuple[dict, Optional[str], bool]:
-    proc = subprocess.run(
-        [
-            sys.executable,
-            str(Path(__file__).resolve()),
-            "--internal-curated-pack",
-            curated_project_name(pack),
-            "--empack-bin",
-            str(empack_bin),
-            "--download-timeout",
-            str(download_timeout),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=1800,
-        env=os.environ.copy(),
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"internal curated pack runner failed for {curated_project_name(pack)}: "
-            f"{proc.stderr.strip() or proc.stdout.strip() or proc.returncode}"
-        )
-    payload = json.loads(proc.stdout)
-    return payload["entry"], payload["failure_reason"], payload["did_continue"]
-
-
-def run_curated_smoke(empack_bin: Path, args) -> int:
-    global SURVEY_DIR, PACKS_DIR, PROJECTS_DIR
-    SURVEY_DIR = CURATED_DIR
-    PACKS_DIR = SURVEY_DIR / "packs"
-    PROJECTS_DIR = SURVEY_DIR / "projects"
-
-    PACKS_DIR.mkdir(parents=True, exist_ok=True)
-    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-    cache_dir = SURVEY_DIR / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+def run_curated_mode(empack_bin: Path, args, layout: RuntimeLayout) -> int:
+    layout.ensure_dirs()
+    selected_packs = select_curated_packs(args)
 
     results = []
     failures = []
     actual_continue = []
     expected_continue = {
         curated_project_name(pack)
-        for pack in CURATED_GOLDEN_PACKS
+        for pack in selected_packs
         if pack.expect_restricted_continue
     }
 
-    print("Curated mode: running 7 golden import/build flows")
-    for index, pack in enumerate(CURATED_GOLDEN_PACKS, start=1):
+    if args.pack:
+        print(f"Curated mode: running curated pack '{args.pack}'")
+    elif args.profile == "pr":
+        print("Curated mode: running platform-selected PR smoke profile")
+    else:
+        print(f"Curated mode: running {len(selected_packs)} golden import/build flows")
+
+    for index, pack in enumerate(selected_packs, start=1):
         label = curated_project_name(pack)
         try:
-            if pack.expect_restricted_continue:
-                print(
-                    f"  [{index}/{len(CURATED_GOLDEN_PACKS)}] "
-                    f"{pack.name} [{pack.source} {pack.loader} {pack.mc_version}]"
-                )
-                entry, failure_reason, did_continue = run_single_curated_pack_subprocess(
-                    pack, empack_bin, args.download_timeout
-                )
-            else:
-                entry, failure_reason, did_continue = run_single_curated_pack(
-                    pack,
-                    empack_bin,
-                    args.download_timeout,
-                    index=index,
-                    total=len(CURATED_GOLDEN_PACKS),
-                    announce=True,
-                )
+            entry, failure_reason, did_continue = run_single_curated_pack(
+                pack,
+                empack_bin,
+                args.download_timeout,
+                layout,
+                index=index,
+                total=len(selected_packs),
+                announce=True,
+            )
         except Exception as exc:
             entry = {
                 "pack": asdict(pack),
@@ -1498,7 +1571,7 @@ def run_curated_smoke(empack_bin: Path, args) -> int:
             failures.append((label, failure_reason))
         results.append(entry)
 
-    save_curated_report(results)
+    save_curated_report(results, layout)
 
     actual_continue = set(actual_continue)
     if actual_continue != expected_continue:
@@ -1606,7 +1679,10 @@ def print_analysis_summary(analyses: list[tuple[PackCandidate, PackAnalysis, Imp
                 print(f"    ... and {len(ir.warnings) - 5} more")
 
 
-def save_report(analyses: list[tuple[PackCandidate, PackAnalysis, ImportResult | None]]):
+def save_report(
+    analyses: list[tuple[PackCandidate, PackAnalysis, ImportResult | None]],
+    layout: RuntimeLayout,
+):
     report = []
     for c, a, ir in analyses:
         entry = {
@@ -1625,9 +1701,8 @@ def save_report(analyses: list[tuple[PackCandidate, PackAnalysis, ImportResult |
             }
         report.append(entry)
 
-    report_path = SURVEY_DIR / "report.json"
-    report_path.write_text(json.dumps(report, indent=2))
-    print(f"\nReport saved to {report_path}")
+    layout.report_path.write_text(json.dumps(report, indent=2))
+    print(f"\nReport saved to {layout.report_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -1655,19 +1730,343 @@ def find_empack_bin() -> Path:
     return debug  # will fail at runtime with a clear path
 
 
-def use_curated_mode(args) -> bool:
-    return (
-        not args.discover_only
-        and not args.skip_download
-        and not args.import_test
-        and args.mc_versions is None
-        and not args.all_versions
-        and args.limit == 5
+def run_clean_mode(args) -> None:
+    layouts = [survey_layout(), curated_layout()]
+    if args.clean == "all":
+        for layout in layouts:
+            if layout.root_dir.exists():
+                shutil.rmtree(layout.root_dir)
+                print(f"Removed {layout.root_dir}")
+        return
+
+    for layout in layouts:
+        if layout.projects_dir.exists():
+            shutil.rmtree(layout.projects_dir)
+            print(f"Removed {layout.projects_dir} (cached packs kept)")
+
+
+def run_internal_curated_pack(empack_bin: Path, args) -> None:
+    layout = curated_layout()
+    layout.ensure_dirs()
+
+    pack = CURATED_PACKS_BY_ID.get(args.internal_curated_pack)
+    if pack is None:
+        raise SystemExit(2)
+
+    entry, failure_reason, did_continue = run_single_curated_pack(
+        pack,
+        empack_bin,
+        args.download_timeout,
+        layout,
+        announce=False,
     )
+    print(
+        json.dumps(
+            {
+                "entry": entry,
+                "failure_reason": failure_reason,
+                "did_continue": did_continue,
+            }
+        )
+    )
+
+
+def run_survey_mode(empack_bin: Path, args, layout: RuntimeLayout) -> None:
+    max_file_size_bytes = args.max_file_size * 1024 * 1024
+    if args.mc_versions:
+        mc_versions = args.mc_versions.split(",")
+    elif args.all_versions:
+        mc_versions = ALL_MC_VERSIONS
+    else:
+        mc_versions = DEFAULT_MC_VERSIONS
+
+    layout.ensure_dirs()
+
+    fetch_limit = args.limit * 2
+    print(
+        f"Phase 1: Discovering modpacks (fetching {fetch_limit} per platform for backfill buffer)..."
+    )
+    all_candidates = []
+    for ver in mc_versions:
+        print(f"  MC {ver}...")
+        mr = discover_modrinth(ver, fetch_limit)
+        cf = discover_curseforge(ver, fetch_limit)
+        all_candidates.extend(mr)
+        all_candidates.extend(cf)
+        time.sleep(0.5)
+
+    seen_names: dict[tuple[str, str], PackCandidate] = {}
+    for candidate in all_candidates:
+        key = (normalize_name(candidate.name), candidate.mc_version)
+        if key not in seen_names:
+            seen_names[key] = candidate
+        elif candidate.source == "modrinth" and seen_names[key].source == "curseforge":
+            seen_names[key] = candidate
+
+    seen_slugs: set[tuple[str, str]] = set()
+    deduped_all: list[PackCandidate] = []
+    for candidate in seen_names.values():
+        slug_key = (
+            candidate.slug.lower().replace("-", "").replace(" ", ""),
+            candidate.mc_version,
+        )
+        if slug_key not in seen_slugs:
+            seen_slugs.add(slug_key)
+            deduped_all.append(candidate)
+
+    deduped_all.sort(
+        key=lambda candidate: (
+            -DEFAULT_MC_VERSIONS.index(candidate.mc_version)
+            if candidate.mc_version in DEFAULT_MC_VERSIONS
+            else -99,
+            -candidate.downloads,
+        )
+    )
+
+    by_version: dict[str, list[PackCandidate]] = {}
+    for candidate in deduped_all:
+        by_version.setdefault(candidate.mc_version, []).append(candidate)
+
+    primary: list[PackCandidate] = []
+    buffer: list[PackCandidate] = []
+    for ver in mc_versions:
+        version_candidates = by_version.get(ver, [])
+        version_candidates.sort(key=lambda candidate: -candidate.downloads)
+        primary.extend(version_candidates[:args.limit])
+        buffer.extend(version_candidates[args.limit:])
+
+    deduped = primary
+    total_discovered = len(deduped) + len(buffer)
+    print(
+        f"  Found {total_discovered} unique packs ({len(deduped)} primary + {len(buffer)} buffer) across {len(mc_versions)} MC versions"
+    )
+    print_discovery(deduped)
+
+    if args.discover_only:
+        return
+
+    print("\nPhase 2: Resolving download URLs...")
+    resolved = []
+    skipped_resolve = 0
+    for candidate in deduped:
+        ok = resolve_download_url(candidate)
+        if ok:
+            if (
+                candidate.file_size is not None
+                and candidate.file_size > max_file_size_bytes
+            ):
+                size_mb = candidate.file_size / (1024 * 1024)
+                print(
+                    f"  SKIP {candidate.name} ({candidate.source}): {size_mb:.0f}MB exceeds --max-file-size {args.max_file_size}MB",
+                    file=sys.stderr,
+                )
+                skipped_resolve += 1
+            else:
+                resolved.append(candidate)
+        else:
+            print(
+                f"  SKIP {candidate.name} ({candidate.source}): no download URL",
+                file=sys.stderr,
+            )
+            skipped_resolve += 1
+        time.sleep(0.3)
+
+    if skipped_resolve > 0 and buffer:
+        print(f"  Backfilling {min(skipped_resolve, len(buffer))} candidates from buffer...")
+        resolved_filenames: set[str] = set()
+        for candidate in resolved:
+            filename = filename_from_url(candidate.file_url)
+            if filename:
+                resolved_filenames.add(filename)
+
+        backfilled = 0
+        while backfilled < skipped_resolve and buffer:
+            candidate = buffer.pop(0)
+            ok = resolve_download_url(candidate)
+            if not ok:
+                continue
+            if (
+                candidate.file_size is not None
+                and candidate.file_size > max_file_size_bytes
+            ):
+                continue
+            filename = filename_from_url(candidate.file_url)
+            if filename and filename in resolved_filenames:
+                continue
+            if filename:
+                resolved_filenames.add(filename)
+            resolved.append(candidate)
+            backfilled += 1
+            time.sleep(0.3)
+        if backfilled:
+            print(f"  Backfilled {backfilled} packs from buffer")
+
+    seen_filenames: set[str] = set()
+    filename_deduped: list[PackCandidate] = []
+    for candidate in resolved:
+        filename = filename_from_url(candidate.file_url)
+        if filename and filename in seen_filenames:
+            print(
+                f"  DEDUP {candidate.name} ({candidate.source}): duplicate filename {filename}",
+                file=sys.stderr,
+            )
+            continue
+        if filename:
+            seen_filenames.add(filename)
+        filename_deduped.append(candidate)
+    resolved = filename_deduped
+
+    print(f"  Resolved {len(resolved)}/{len(deduped)} packs")
+
+    if not args.skip_download:
+        print(
+            f"\nPhase 3: Downloading (timeout={args.download_timeout}s per pack)..."
+        )
+        downloaded = []
+        skipped_download = 0
+        for index, candidate in enumerate(resolved, start=1):
+            safe = f"{candidate.slug}_{candidate.mc_version}_{candidate.source}"
+            ext = ".mrpack" if candidate.format == "mrpack" else ".zip"
+            existing = layout.packs_dir / f"{safe}{ext}"
+            if existing.exists() and existing.stat().st_size > 0:
+                candidate.local_path = str(existing)
+                downloaded.append(candidate)
+                print(f"  [{index}/{len(resolved)}] {candidate.name}: cached")
+                continue
+
+            print(f"  [{index}/{len(resolved)}] {candidate.name}...", end=" ", flush=True)
+            ok = download_pack(candidate, layout, timeout=args.download_timeout)
+            if ok:
+                size_mb = Path(candidate.local_path).stat().st_size / (1024 * 1024)
+                print(f"{size_mb:.1f}MB")
+                downloaded.append(candidate)
+            else:
+                print("FAILED (timeout or error)")
+                skipped_download += 1
+            time.sleep(0.3)
+
+        if skipped_download > 0 and buffer:
+            print(
+                f"  Backfilling {min(skipped_download, len(buffer))} candidates from buffer for download failures..."
+            )
+            dl_backfilled = 0
+            while dl_backfilled < skipped_download and buffer:
+                candidate = buffer.pop(0)
+                if not candidate.file_url:
+                    ok = resolve_download_url(candidate)
+                    if not ok:
+                        continue
+                    if (
+                        candidate.file_size is not None
+                        and candidate.file_size > max_file_size_bytes
+                    ):
+                        continue
+                print(f"  [backfill] {candidate.name}...", end=" ", flush=True)
+                ok = download_pack(candidate, layout, timeout=args.download_timeout)
+                if ok:
+                    size_mb = Path(candidate.local_path).stat().st_size / (1024 * 1024)
+                    print(f"{size_mb:.1f}MB")
+                    downloaded.append(candidate)
+                    dl_backfilled += 1
+                else:
+                    print("FAILED")
+                time.sleep(0.3)
+            if dl_backfilled:
+                print(f"  Backfilled {dl_backfilled} packs from buffer")
+
+        print(f"  Downloaded {len(downloaded)}/{len(resolved)} packs")
+    else:
+        downloaded = [candidate for candidate in resolved if candidate.local_path and Path(candidate.local_path).exists()]
+        for archive in layout.packs_dir.iterdir():
+            if archive.suffix in (".mrpack", ".zip") and archive.stat().st_size > 0:
+                parts = archive.stem.split("_")
+                if len(parts) >= 3:
+                    existing = [
+                        candidate
+                        for candidate in downloaded
+                        if candidate.slug == parts[0] and candidate.mc_version == parts[1]
+                    ]
+                    if not existing:
+                        source = parts[-1]
+                        fmt = "mrpack" if archive.suffix == ".mrpack" else "cfzip"
+                        downloaded.append(
+                            PackCandidate(
+                                name=parts[0],
+                                mc_version=parts[1],
+                                source=source,
+                                slug=parts[0],
+                                project_id="",
+                                downloads=0,
+                                loader="unknown",
+                                format=fmt,
+                                local_path=str(archive),
+                            )
+                        )
+
+    print("\nPhase 4: Analyzing archives...")
+
+    analyses = []
+    for candidate in downloaded:
+        path = Path(candidate.local_path)
+        if candidate.format == "mrpack" or path.suffix == ".mrpack":
+            analysis = analyze_mrpack(path)
+        else:
+            analysis = analyze_cfzip(path)
+
+        analysis.name = analysis.name or candidate.name
+        analysis.mc_version = analysis.mc_version or candidate.mc_version
+        analysis.source = candidate.source
+        analysis.slug = candidate.slug
+        analysis.loader = analysis.loader or candidate.loader
+
+        import_result = None
+        if args.import_test:
+            project_name = f"{candidate.slug}_{candidate.mc_version}_{candidate.source}"
+            print(f"  import: {analysis.name}...", end=" ", flush=True)
+            import_result = run_import_test(path, project_name, empack_bin, layout)
+            if import_result.success:
+                parts = [
+                    f"OK refs={import_result.platform_refs_added} ovr={import_result.overrides_copied}"
+                ]
+                if import_result.warnings:
+                    parts.append(f"warn={len(import_result.warnings)}")
+                print(" ".join(parts))
+            else:
+                first_err = ""
+                for warning in import_result.warnings:
+                    if warning.startswith("Error:") or warning.startswith("Caused by:"):
+                        first_err = warning
+                        break
+                if not first_err and import_result.warnings:
+                    first_err = import_result.warnings[0]
+                if not first_err:
+                    first_err = (
+                        import_result.stderr.strip().splitlines()[0]
+                        if import_result.stderr.strip()
+                        else "unknown error"
+                    )
+                print(f"FAIL exit={import_result.exit_code}: {first_err[:120]}")
+
+        analyses.append((candidate, analysis, import_result))
+
+    print_analysis_summary(analyses)
+    save_report(analyses, layout)
 
 
 def main():
     parser = argparse.ArgumentParser(description="empack import smoke test")
+    parser.add_argument(
+        "--profile",
+        choices=["curated", "pr"],
+        default=None,
+        help="Curated smoke profile: full curated set or platform-specific PR smoke",
+    )
+    parser.add_argument(
+        "--pack",
+        choices=sorted(CURATED_PACKS_BY_ID),
+        default=None,
+        help="Run exactly one curated pack by id",
+    )
     parser.add_argument("--discover-only", action="store_true",
                         help="List packs without downloading")
     parser.add_argument("--skip-download", action="store_true",
@@ -1683,7 +2082,7 @@ def main():
     parser.add_argument("--empack-bin", type=str, default=None,
                         help="Path to empack binary")
     parser.add_argument("--clean", choices=["projects", "all"],
-                        help="Remove import output (projects) or everything (all) and exit")
+                        help="Remove survey/curated projects or all smoke artifacts and exit")
     parser.add_argument("--download-timeout", type=int, default=60,
                         help="Per-pack download timeout in seconds (default: 60)")
     parser.add_argument("--max-file-size", type=int, default=100,
@@ -1692,308 +2091,29 @@ def main():
                         help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    if args.internal_curated_pack:
-        global SURVEY_DIR, PACKS_DIR, PROJECTS_DIR
-        SURVEY_DIR = CURATED_DIR
-        PACKS_DIR = SURVEY_DIR / "packs"
-        PROJECTS_DIR = SURVEY_DIR / "projects"
-        PACKS_DIR.mkdir(parents=True, exist_ok=True)
-        PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-
-        empack_bin = Path(args.empack_bin) if args.empack_bin else find_empack_bin()
-        pack = next(
-            (
-                candidate
-                for candidate in CURATED_GOLDEN_PACKS
-                if curated_project_name(candidate) == args.internal_curated_pack
-            ),
-            None,
-        )
-        if pack is None:
-            raise SystemExit(2)
-        entry, failure_reason, did_continue = run_single_curated_pack(
-            pack,
-            empack_bin,
-            args.download_timeout,
-            announce=False,
-        )
-        print(
-            json.dumps(
-                {
-                    "entry": entry,
-                    "failure_reason": failure_reason,
-                    "did_continue": did_continue,
-                }
-            )
-        )
-        return
-
-    max_file_size_bytes = args.max_file_size * 1024 * 1024
-
-    if args.clean:
-        if args.clean == "all":
-            if SURVEY_DIR.exists():
-                shutil.rmtree(SURVEY_DIR)
-                print(f"Removed {SURVEY_DIR}")
-        else:
-            if PROJECTS_DIR.exists():
-                shutil.rmtree(PROJECTS_DIR)
-                print(f"Removed {PROJECTS_DIR} (cached packs kept)")
-        return
-
-    if args.mc_versions:
-        mc_versions = args.mc_versions.split(",")
-    elif args.all_versions:
-        mc_versions = ALL_MC_VERSIONS
-    else:
-        mc_versions = DEFAULT_MC_VERSIONS
-
-    PACKS_DIR.mkdir(parents=True, exist_ok=True)
-    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    if args.pack and args.profile == "pr":
+        parser.error("--pack cannot be combined with --profile pr")
+    if survey_flags_requested(args) and (args.profile or args.pack):
+        parser.error("--profile and --pack are only valid in curated mode")
+    if args.clean and (args.profile or args.pack):
+        parser.error("--profile and --pack cannot be combined with --clean")
+    if args.internal_curated_pack and (args.profile or args.pack):
+        parser.error("--internal-curated-pack cannot be combined with --profile or --pack")
 
     empack_bin = Path(args.empack_bin) if args.empack_bin else find_empack_bin()
-    if use_curated_mode(args):
-        raise SystemExit(run_curated_smoke(empack_bin, args))
 
-    # Phase 1: Discover (fetch limit * 2 for backfill buffer)
-    fetch_limit = args.limit * 2
-    print(f"Phase 1: Discovering modpacks (fetching {fetch_limit} per platform for backfill buffer)...")
-    all_candidates = []
-    for ver in mc_versions:
-        print(f"  MC {ver}...")
-        mr = discover_modrinth(ver, fetch_limit)
-        cf = discover_curseforge(ver, fetch_limit)
-        # Modrinth first so it wins dedup ties (preferred: direct download URLs)
-        all_candidates.extend(mr)
-        all_candidates.extend(cf)
-        time.sleep(0.5)  # rate limit courtesy
-
-    # First-pass dedup: normalized name + mc_version (catches cross-platform dupes)
-    # Prefer Modrinth over CurseForge (direct download URLs, no restricted files)
-    seen_names: dict[tuple[str, str], PackCandidate] = {}
-    for c in all_candidates:
-        key = (normalize_name(c.name), c.mc_version)
-        if key not in seen_names:
-            seen_names[key] = c
-        elif c.source == "modrinth" and seen_names[key].source == "curseforge":
-            # Replace CF with Modrinth
-            seen_names[key] = c
-
-    # Also dedup by slug (original behavior, catches slug-based dupes)
-    seen_slugs: set[tuple[str, str]] = set()
-    deduped_all: list[PackCandidate] = []
-    for c in seen_names.values():
-        slug_key = (c.slug.lower().replace("-", "").replace(" ", ""), c.mc_version)
-        if slug_key not in seen_slugs:
-            seen_slugs.add(slug_key)
-            deduped_all.append(c)
-
-    # Sort by downloads descending within each version to prioritize popular packs
-    deduped_all.sort(key=lambda c: (-DEFAULT_MC_VERSIONS.index(c.mc_version) if c.mc_version in DEFAULT_MC_VERSIONS else -99, -c.downloads))
-
-    # Split into primary candidates and backfill buffer
-    # Group by mc_version, take first `limit` as primary, rest as buffer
-    by_version: dict[str, list[PackCandidate]] = {}
-    for c in deduped_all:
-        by_version.setdefault(c.mc_version, []).append(c)
-
-    primary: list[PackCandidate] = []
-    buffer: list[PackCandidate] = []
-    for ver in mc_versions:
-        ver_candidates = by_version.get(ver, [])
-        # Sort by downloads descending within version
-        ver_candidates.sort(key=lambda c: -c.downloads)
-        primary.extend(ver_candidates[:args.limit])
-        buffer.extend(ver_candidates[args.limit:])
-
-    deduped = primary  # active working set
-    total_discovered = len(deduped) + len(buffer)
-    print(f"  Found {total_discovered} unique packs ({len(deduped)} primary + {len(buffer)} buffer) across {len(mc_versions)} MC versions")
-    print_discovery(deduped)
-
-    if args.discover_only:
+    if args.internal_curated_pack:
+        run_internal_curated_pack(empack_bin, args)
         return
 
-    # Phase 2: Resolve download URLs
-    print("\nPhase 2: Resolving download URLs...")
-    resolved = []
-    skipped_resolve = 0
-    for c in deduped:
-        ok = resolve_download_url(c)
-        if ok:
-            # Check max file size
-            if c.file_size is not None and c.file_size > max_file_size_bytes:
-                size_mb = c.file_size / (1024 * 1024)
-                print(f"  SKIP {c.name} ({c.source}): {size_mb:.0f}MB exceeds --max-file-size {args.max_file_size}MB", file=sys.stderr)
-                skipped_resolve += 1
-            else:
-                resolved.append(c)
-        else:
-            print(f"  SKIP {c.name} ({c.source}): no download URL", file=sys.stderr)
-            skipped_resolve += 1
-        time.sleep(0.3)
+    mode = determine_mode(args)
+    if mode == "clean":
+        run_clean_mode(args)
+        return
+    if mode == "curated":
+        raise SystemExit(run_curated_mode(empack_bin, args, curated_layout()))
 
-    # Backfill from buffer for packs skipped during resolve
-    if skipped_resolve > 0 and buffer:
-        print(f"  Backfilling {min(skipped_resolve, len(buffer))} candidates from buffer...")
-        # Second-pass dedup: by downloaded filename (after resolve, before download)
-        resolved_filenames: set[str] = set()
-        for c in resolved:
-            fn = filename_from_url(c.file_url)
-            if fn:
-                resolved_filenames.add(fn)
-
-        backfilled = 0
-        while backfilled < skipped_resolve and buffer:
-            bc = buffer.pop(0)
-            ok = resolve_download_url(bc)
-            if not ok:
-                continue
-            # Check max file size for backfill candidate
-            if bc.file_size is not None and bc.file_size > max_file_size_bytes:
-                continue
-            # Filename dedup
-            fn = filename_from_url(bc.file_url)
-            if fn and fn in resolved_filenames:
-                continue
-            if fn:
-                resolved_filenames.add(fn)
-            resolved.append(bc)
-            backfilled += 1
-            time.sleep(0.3)
-        if backfilled:
-            print(f"  Backfilled {backfilled} packs from buffer")
-
-    # Second-pass dedup on resolved set: by downloaded filename
-    seen_filenames: set[str] = set()
-    filename_deduped: list[PackCandidate] = []
-    for c in resolved:
-        fn = filename_from_url(c.file_url)
-        if fn and fn in seen_filenames:
-            print(f"  DEDUP {c.name} ({c.source}): duplicate filename {fn}", file=sys.stderr)
-            continue
-        if fn:
-            seen_filenames.add(fn)
-        filename_deduped.append(c)
-    resolved = filename_deduped
-
-    print(f"  Resolved {len(resolved)}/{len(deduped)} packs")
-
-    # Phase 3: Download
-    if not args.skip_download:
-        print(f"\nPhase 3: Downloading (timeout={args.download_timeout}s per pack)...")
-        downloaded = []
-        skipped_download = 0
-        for i, c in enumerate(resolved):
-            safe = f"{c.slug}_{c.mc_version}_{c.source}"
-            ext = ".mrpack" if c.format == "mrpack" else ".zip"
-            existing = PACKS_DIR / f"{safe}{ext}"
-            if existing.exists() and existing.stat().st_size > 0:
-                c.local_path = str(existing)
-                downloaded.append(c)
-                print(f"  [{i+1}/{len(resolved)}] {c.name}: cached")
-                continue
-
-            print(f"  [{i+1}/{len(resolved)}] {c.name}...", end=" ", flush=True)
-            ok = download_pack(c, timeout=args.download_timeout)
-            if ok:
-                size_mb = Path(c.local_path).stat().st_size / (1024 * 1024)
-                print(f"{size_mb:.1f}MB")
-                downloaded.append(c)
-            else:
-                print("FAILED (timeout or error)")
-                skipped_download += 1
-            time.sleep(0.3)
-
-        # Backfill from buffer for download failures
-        if skipped_download > 0 and buffer:
-            print(f"  Backfilling {min(skipped_download, len(buffer))} candidates from buffer for download failures...")
-            dl_backfilled = 0
-            while dl_backfilled < skipped_download and buffer:
-                bc = buffer.pop(0)
-                if not bc.file_url:
-                    ok = resolve_download_url(bc)
-                    if not ok:
-                        continue
-                    if bc.file_size is not None and bc.file_size > max_file_size_bytes:
-                        continue
-                print(f"  [backfill] {bc.name}...", end=" ", flush=True)
-                ok = download_pack(bc, timeout=args.download_timeout)
-                if ok:
-                    size_mb = Path(bc.local_path).stat().st_size / (1024 * 1024)
-                    print(f"{size_mb:.1f}MB")
-                    downloaded.append(bc)
-                    dl_backfilled += 1
-                else:
-                    print("FAILED")
-                time.sleep(0.3)
-            if dl_backfilled:
-                print(f"  Backfilled {dl_backfilled} packs from buffer")
-
-        print(f"  Downloaded {len(downloaded)}/{len(resolved)} packs")
-    else:
-        downloaded = [c for c in resolved if c.local_path and Path(c.local_path).exists()]
-        # Also pick up any packs already on disk
-        for f in PACKS_DIR.iterdir():
-            if f.suffix in (".mrpack", ".zip") and f.stat().st_size > 0:
-                parts = f.stem.split("_")
-                if len(parts) >= 3:
-                    existing = [c for c in downloaded if c.slug == parts[0] and c.mc_version == parts[1]]
-                    if not existing:
-                        # Reconstruct minimal candidate
-                        source = parts[-1]
-                        fmt = "mrpack" if f.suffix == ".mrpack" else "cfzip"
-                        downloaded.append(PackCandidate(
-                            name=parts[0], mc_version=parts[1], source=source,
-                            slug=parts[0], project_id="", downloads=0,
-                            loader="unknown", format=fmt, local_path=str(f),
-                        ))
-
-    # Phase 4: Analyze
-    print("\nPhase 4: Analyzing archives...")
-
-    analyses = []
-    for c in downloaded:
-        path = Path(c.local_path)
-        if c.format == "mrpack" or path.suffix == ".mrpack":
-            a = analyze_mrpack(path)
-        else:
-            a = analyze_cfzip(path)
-
-        # Backfill from candidate
-        a.name = a.name or c.name
-        a.mc_version = a.mc_version or c.mc_version
-        a.source = c.source
-        a.slug = c.slug
-        a.loader = a.loader or c.loader
-
-        ir = None
-        if args.import_test:
-            project_name = f"{c.slug}_{c.mc_version}_{c.source}"
-            print(f"  import: {a.name}...", end=" ", flush=True)
-            ir = run_import_test(path, project_name, empack_bin)
-            if ir.success:
-                parts = [f"OK refs={ir.platform_refs_added} ovr={ir.overrides_copied}"]
-                if ir.warnings:
-                    parts.append(f"warn={len(ir.warnings)}")
-                print(" ".join(parts))
-            else:
-                # Show the first error line for quick diagnosis
-                first_err = ""
-                for w in ir.warnings:
-                    if w.startswith("Error:") or w.startswith("Caused by:"):
-                        first_err = w
-                        break
-                if not first_err and ir.warnings:
-                    first_err = ir.warnings[0]
-                if not first_err:
-                    first_err = ir.stderr.strip().splitlines()[0] if ir.stderr.strip() else "unknown error"
-                print(f"FAIL exit={ir.exit_code}: {first_err[:120]}")
-
-        analyses.append((c, a, ir))
-
-    print_analysis_summary(analyses)
-    save_report(analyses)
+    run_survey_mode(empack_bin, args, survey_layout())
 
 
 if __name__ == "__main__":
