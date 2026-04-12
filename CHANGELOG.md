@@ -3,14 +3,58 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.5 - 2026-04-12
+
+### Bug Fixes
+
+- Harden import and local path handling
+
+### Testing
+
+- Expand import and path guard coverage
+
+### Documentation
+
+- Update README CI badge
+
+### CI/CD
+
+- Pass release token via input
+
+### Maintenance
+
+- **(deps)** Update softprops/action-gh-release action to v3
+- Update changelog for 0.4.0-alpha.4
+
+### Other
+
+- Merge remote-tracking branch 'origin/main' into dev
+
+# Conflicts:
+#	crates/empack-lib/src/application/commands.rs
+#	crates/empack-lib/src/application/commands.test.rs
+#	crates/empack-lib/src/application/session_mocks.rs
+
 ## v0.4.0-alpha.4 - 2026-04-12
 
 ### Features
 
 - Stabilize cli contracts and tracked local deps
+- Stabilize cli contracts and tracked local deps
 
 ### Bug Fixes
 
+- Preserve reported restricted download paths
+- Tighten exit and restricted parser heuristics
+- Align zip type exit handling and build validation
+- Suppress duplicate process error output
+- Classify local dependency validation as usage
+- Harden restricted parsing and local removal
+- Bound subprocess marker cleanup
+- Guard local key collisions and empty urls
+- Guard clean and restricted build edges
+- Harden local dependency validation
+- Detect recent restricted downloads by metadata
 - Preserve reported restricted download paths
 - Tighten exit and restricted parser heuristics
 - Align zip type exit handling and build validation
@@ -27,13 +71,18 @@ All notable changes to empack are documented in this file.
 - Backfill reviewer lint and coverage pass
 - Stabilize interactive browser opener e2e
 - Align init e2e with display error output
+- Backfill reviewer lint and coverage pass
+- Stabilize interactive browser opener e2e
+- Align init e2e with display error output
 
 ### Documentation
 
 - Consolidate specs and drop stale audit
+- Consolidate specs and drop stale audit
 
 ### CI/CD
 
+- Split branch, pr, and post-merge workflows
 - Split branch, pr, and post-merge workflows
 
 ### Maintenance
