@@ -140,8 +140,14 @@ fn classify_unrecognized_url() {
 #[test]
 fn classify_unrecognized_extension() {
     let url = "https://example.com/file.exe";
-    let err = classify_url(url).unwrap_err();
-    assert!(err.to_string().contains(url));
+    let kind = classify_url(url).unwrap();
+    assert_eq!(
+        kind,
+        UrlKind::DirectDownload {
+            url: url.to_string(),
+            extension: "exe".to_string(),
+        }
+    );
 }
 
 #[test]

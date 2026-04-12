@@ -1757,7 +1757,12 @@ mod handle_init_from_source_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn download_curseforge_modpack_wrapper_requires_api_key() {
-        let session = MockCommandSession::new();
+        let session = MockCommandSession::new().with_config(MockConfigProvider::new(
+            crate::application::config::AppConfig {
+                curseforge_api_client_key: None,
+                ..Default::default()
+            },
+        ));
 
         let err = download_curseforge_modpack(&session, "test-pack")
             .await
@@ -7128,6 +7133,53 @@ mod tracked_local_dependency_tests {
     }
 
     #[tokio::test]
+    async fn remove_local_dependency_succeeds_when_tracked_file_is_missing() {
+        let workdir = mock_root().join("remove-local-dependency-missing-file");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
+        );
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: "pack/resourcepacks/example-pack.zip".to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256: "deadbeef".to_string(),
+                }),
+            )
+            .expect("add local dependency");
+
+        handle_remove(&session, vec!["example-pack".to_string()], false)
+            .await
+            .expect("remove local dependency with missing file");
+
+        assert!(
+            session
+                .filesystem()
+                .config_manager(workdir.clone())
+                .find_dependency("example-pack")
+                .expect("read updated config")
+                .is_none(),
+            "local dependency should be removed from empack.yml even when the file is absent"
+        );
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+                .is_empty(),
+            "tracked local removal should not invoke packwiz"
+        );
+    }
+
+    #[tokio::test]
     async fn sync_fails_when_tracked_local_dependency_is_missing() {
         let workdir = mock_root().join("sync-local-dependency-missing");
         let session = MockCommandSession::new().with_filesystem(
@@ -7161,6 +7213,45 @@ mod tracked_local_dependency_tests {
                 .to_string()
                 .contains("tracked local dependenc"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_dry_run_reports_missing_local_dependency_without_failing() {
+        let workdir = mock_root().join("sync-local-dependency-missing-dry-run");
+        let mut session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone()),
+        );
+        session.config_provider.app_config.dry_run = true;
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: "pack/resourcepacks/example-pack.zip".to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256: "deadbeef".to_string(),
+                }),
+            )
+            .expect("add local dependency");
+
+        handle_sync(&session)
+            .await
+            .expect("dry-run sync should report local dependency drift without failing");
+
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+                .is_empty(),
+            "dry-run local dependency validation should not invoke packwiz"
         );
     }
 
@@ -7209,6 +7300,73 @@ mod tracked_local_dependency_tests {
                 .to_string()
                 .contains("Tracked local dependencies are not yet supported for mrpack exports"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_client_succeeds_when_tracked_local_dependency_is_valid() {
+        let workdir = mock_root().join("build-client-local-dependency-valid");
+        let relative_path = "pack/resourcepacks/example-pack.zip";
+        let absolute_path = workdir.join(relative_path);
+        let bootstrap_jar_path = workdir.join("cache").join("packwiz-installer-bootstrap.jar");
+        let bytes = b"resourcepack-bytes".to_vec();
+        let sha256 = compute_sha256_hex_for_bytes(&bytes);
+
+        let filesystem = MockFileSystemProvider::new()
+            .with_current_dir(workdir.clone())
+            .with_configured_project(workdir.clone())
+            .with_binary_file(absolute_path, bytes)
+            .with_binary_file(bootstrap_jar_path.clone(), b"bootstrap-jar".to_vec());
+        let session = MockCommandSession::new()
+            .with_filesystem(filesystem)
+            .with_process(
+                MockProcessProvider::new()
+                    .with_mrpack_export_side_effects()
+                    .with_java_installer_side_effects(),
+            );
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: relative_path.to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256,
+                }),
+            )
+            .expect("add local dependency");
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                targets: vec!["client".to_string()],
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "valid tracked local dependency should not block client build: {result:?}"
+        );
+
+        let pack_file_arg = workdir.join("pack").join("pack.toml").display().to_string();
+        assert!(
+            session.process_provider.verify_call(
+                crate::empack::packwiz::PACKWIZ_BIN,
+                &["--pack-file", &pack_file_arg, "refresh"],
+                &workdir
+            ),
+            "expected packwiz refresh call before client build"
+        );
+        assert!(
+            session.filesystem().exists(&workdir.join("dist").join("client")),
+            "expected client build output directory to exist"
         );
     }
 

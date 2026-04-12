@@ -22,6 +22,11 @@ use std::sync::{Arc, Mutex};
 
 /// Type alias for deferred file map: directory path -> Vec<(filename, content)>.
 pub type DeferredFileMap = Arc<Mutex<HashMap<PathBuf, Vec<(String, String)>>>>;
+type ProcessKey = (String, Vec<String>);
+type ProcessResult = std::result::Result<ProcessOutput, String>;
+type ProcessResultQueue = VecDeque<ProcessResult>;
+type ProcessResultMap = HashMap<ProcessKey, ProcessResult>;
+type ProcessSequenceMap = HashMap<ProcessKey, ProcessResultQueue>;
 
 /// Returns a platform-appropriate absolute path root for mock/test paths.
 /// On Unix: `/test`, on Windows: `C:\test`
@@ -139,8 +144,32 @@ impl MockFileSystemProvider {
         minecraft_version: &str,
         loader: &str,
     ) -> Self {
-        let empack_yml = format!(
-            r#"empack:
+        let empack_yml = if loader == "none" {
+            format!(
+                r#"empack:
+  dependencies:
+    fabric_api:
+      status: resolved
+      title: Fabric API
+      platform: modrinth
+      project_id: P7dR8mSH
+      type: mod
+    sodium:
+      status: resolved
+      title: Sodium
+      platform: modrinth
+      project_id: AANobbMI
+      type: mod
+  minecraft_version: "{}"
+  name: "{}"
+  author: "Test Author"
+  version: "1.0.0"
+"#,
+                minecraft_version, name
+            )
+        } else {
+            format!(
+                r#"empack:
   dependencies:
     fabric_api:
       status: resolved
@@ -160,11 +189,30 @@ impl MockFileSystemProvider {
   author: "Test Author"
   version: "1.0.0"
 "#,
-            minecraft_version, loader, name
-        );
+                minecraft_version, loader, name
+            )
+        };
 
-        let pack_toml = format!(
-            r#"name = "{}"
+        let pack_toml = if loader == "none" {
+            format!(
+                r#"name = "{}"
+author = "Test Author"
+version = "1.0.0"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = ""
+
+[versions]
+minecraft = "{}"
+"#,
+                name, minecraft_version
+            )
+        } else {
+            format!(
+                r#"name = "{}"
 author = "Test Author"
 version = "1.0.0"
 pack-format = "packwiz:1.1.0"
@@ -178,8 +226,9 @@ hash = ""
 minecraft = "{}"
 {} = "0.14.21"
 "#,
-            name, minecraft_version, loader
-        );
+                name, minecraft_version, loader
+            )
+        };
 
         let index_toml = DEFAULT_INDEX_TOML;
 
@@ -742,10 +791,8 @@ pub struct ProcessCall {
 /// Mock process provider for testing with spy pattern
 pub struct MockProcessProvider {
     pub calls: Arc<Mutex<Vec<ProcessCall>>>,
-    pub results: HashMap<(String, Vec<String>), std::result::Result<ProcessOutput, String>>,
-    pub result_sequences: Arc<
-        Mutex<HashMap<(String, Vec<String>), VecDeque<std::result::Result<ProcessOutput, String>>>>,
-    >,
+    pub results: ProcessResultMap,
+    pub result_sequences: Arc<Mutex<ProcessSequenceMap>>,
     pub programs: HashMap<String, Option<String>>,
     materialize_mrpack_exports: bool,
     java_installer_side_effects: bool,
@@ -860,7 +907,7 @@ impl MockProcessProvider {
         mut self,
         command: String,
         args: Vec<String>,
-        result: std::result::Result<ProcessOutput, String>,
+        result: ProcessResult,
     ) -> Self {
         self.results.insert((command, args), result);
         self
@@ -870,7 +917,7 @@ impl MockProcessProvider {
         self,
         command: String,
         args: Vec<String>,
-        results: Vec<std::result::Result<ProcessOutput, String>>,
+        results: Vec<ProcessResult>,
     ) -> Self {
         self.result_sequences
             .lock()
@@ -879,11 +926,7 @@ impl MockProcessProvider {
         self
     }
 
-    pub fn with_packwiz_result(
-        mut self,
-        args: Vec<String>,
-        result: std::result::Result<ProcessOutput, String>,
-    ) -> Self {
+    pub fn with_packwiz_result(mut self, args: Vec<String>, result: ProcessResult) -> Self {
         self.results.insert(
             (crate::empack::packwiz::PACKWIZ_BIN.to_string(), args),
             result,
@@ -894,7 +937,7 @@ impl MockProcessProvider {
     pub fn with_packwiz_result_sequence(
         self,
         args: Vec<String>,
-        results: Vec<std::result::Result<ProcessOutput, String>>,
+        results: Vec<ProcessResult>,
     ) -> Self {
         self.with_result_sequence(
             crate::empack::packwiz::PACKWIZ_BIN.to_string(),

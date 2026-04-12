@@ -27,7 +27,7 @@ pub struct CliConfig {
 }
 
 pub enum CliLoad {
-    Ready(CliConfig),
+    Ready(Box<CliConfig>),
     Display(String),
 }
 
@@ -54,10 +54,10 @@ impl CliConfig {
         T: Into<OsString> + Clone,
     {
         match Cli::try_parse_from(args) {
-            Ok(cli) => Ok(CliLoad::Ready(Self {
+            Ok(cli) => Ok(CliLoad::Ready(Box::new(Self {
                 app_config: cli.config,
                 command: cli.command,
-            })),
+            }))),
             Err(error) => match error.kind() {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
                     Ok(CliLoad::Display(error.to_string()))

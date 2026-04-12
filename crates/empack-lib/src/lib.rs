@@ -49,6 +49,21 @@ pub type Result<T> = anyhow::Result<T>;
 
 use application::CliConfig;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn clear_interrupt_requested() {
+    INTERRUPT_REQUESTED.store(false, Ordering::SeqCst);
+}
+
+pub(crate) fn request_interrupt() {
+    INTERRUPT_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+pub(crate) fn interrupt_requested() -> bool {
+    INTERRUPT_REQUESTED.load(Ordering::SeqCst)
+}
 
 pub async fn main() -> Result<()> {
     let config = CliConfig::load()?;
@@ -57,7 +72,7 @@ pub async fn main() -> Result<()> {
 
 pub async fn process_main() -> std::process::ExitCode {
     match CliConfig::load_for_process() {
-        Ok(CliLoad::Ready(config)) => match run_with_config(config).await {
+        Ok(CliLoad::Ready(config)) => match run_with_config(*config).await {
             Ok(()) => EmpackExitCode::Success.as_process_exit_code(),
             Err(error) => {
                 let exit_code = application::classify_error(&error);
@@ -92,16 +107,24 @@ where
     // Recover cursor from prior crashed runs
     terminal::cursor::force_show_cursor();
     terminal::cursor::install_panic_hook();
+    clear_interrupt_requested();
+    let mut interrupt_listener = tokio::spawn(async {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            request_interrupt();
+        }
+    });
 
     // Run command with signal handling
     tokio::select! {
         biased;
         result = command => {
+            interrupt_listener.abort();
+            clear_interrupt_requested();
             terminal::cursor::force_show_cursor();
             logger::global_shutdown();
             result
         }
-        _ = tokio::signal::ctrl_c() => {
+        _ = &mut interrupt_listener => {
             terminal::cursor::force_show_cursor();
             logger::global_shutdown();
 
