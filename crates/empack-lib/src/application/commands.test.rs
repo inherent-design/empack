@@ -7383,6 +7383,63 @@ mod tracked_local_dependency_tests {
     }
 
     #[tokio::test]
+    async fn remove_local_dependency_rejects_absolute_tracked_path() {
+        let workdir = mock_root().join("remove-local-dependency-absolute-path");
+        let outside_path = mock_root().join("outside-tracked-local.zip");
+        let session = MockCommandSession::new().with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_binary_file(outside_path.clone(), b"outside-bytes".to_vec()),
+        );
+
+        session
+            .filesystem()
+            .config_manager(workdir.clone())
+            .add_dependency_entry(
+                "example-pack",
+                DependencyEntry::Local(LocalDependencyRecord {
+                    status: DependencyStatus::Local,
+                    title: "Example Pack".to_string(),
+                    project_type: ProjectType::ResourcePack,
+                    path: outside_path.to_string_lossy().to_string(),
+                    source_url: Some("https://example.com/example-pack.zip".to_string()),
+                    sha256: "deadbeef".to_string(),
+                }),
+            )
+            .expect("add local dependency");
+
+        let error = handle_remove(&session, vec!["example-pack".to_string()], false)
+            .await
+            .expect_err("absolute tracked local paths should be rejected");
+
+        assert!(
+            error.to_string().contains("must be relative"),
+            "expected relative-path guard error, got: {error:#}"
+        );
+        assert!(
+            session.filesystem().exists(&outside_path),
+            "absolute tracked local path should not be removed"
+        );
+        assert!(
+            session
+                .filesystem()
+                .config_manager(workdir.clone())
+                .find_dependency("example-pack")
+                .expect("read config after rejected removal")
+                .is_some(),
+            "local dependency should remain in empack.yml when the path is rejected"
+        );
+        assert!(
+            session
+                .process_provider
+                .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+                .is_empty(),
+            "tracked local removal should not invoke packwiz"
+        );
+    }
+
+    #[tokio::test]
     async fn remove_local_dependency_fails_when_config_write_fails_after_file_deletion() {
         let workdir = mock_root().join("remove-local-dependency-config-write-failure");
         let relative_path = "pack/resourcepacks/example-pack.zip";

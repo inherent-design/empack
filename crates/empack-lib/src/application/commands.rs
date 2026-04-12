@@ -2957,7 +2957,13 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             .with_context(|| format!("failed to inspect dependency '{mod_name}'"))?;
 
         if let Some((dependency_key, DependencyEntry::Local(record))) = dependency_entry {
-            let local_path = workdir.join(PathBuf::from(&record.path));
+            let rel = PathBuf::from(&record.path);
+            anyhow::ensure!(
+                rel.is_relative(),
+                "Tracked local dependency path must be relative: {}",
+                record.path
+            );
+            let local_path = workdir.join(&rel);
             if session.filesystem().exists(&local_path) {
                 if session.filesystem().is_directory(&local_path) {
                     session
@@ -3309,7 +3315,13 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
                 .display()
                 .status()
                 .success("All restricted mods cached", "Continuing build.");
-            return continue_pending_restricted_build(session, &manager.workdir, args, start).await;
+            return continue_pending_restricted_build_validated(
+                session,
+                &manager.workdir,
+                args,
+                start,
+            )
+            .await;
         }
 
         display_pending_restricted_build(session, &pending, &remaining)?;
@@ -3325,7 +3337,13 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
                 .display()
                 .status()
                 .success("All restricted mods cached", "Continuing build.");
-            return continue_pending_restricted_build(session, &manager.workdir, args, start).await;
+            return continue_pending_restricted_build_validated(
+                session,
+                &manager.workdir,
+                args,
+                start,
+            )
+            .await;
         }
         return Err(anyhow::anyhow!(
             "{} restricted download(s) are still required. After downloading them, run 'empack build --continue'.",
@@ -3376,6 +3394,49 @@ async fn continue_pending_restricted_build(
     args: &BuildArgs,
     start: std::time::Instant,
 ) -> Result<()> {
+    let (pending, build_targets, archive_format) =
+        load_pending_restricted_build_context(session, workdir)?;
+    validate_build_project_plan(session, workdir, &build_targets)?;
+    continue_pending_restricted_build_inner(
+        session,
+        workdir,
+        args,
+        start,
+        pending,
+        build_targets,
+        archive_format,
+    )
+    .await
+}
+
+async fn continue_pending_restricted_build_validated(
+    session: &dyn Session,
+    workdir: &std::path::Path,
+    args: &BuildArgs,
+    start: std::time::Instant,
+) -> Result<()> {
+    let (pending, build_targets, archive_format) =
+        load_pending_restricted_build_context(session, workdir)?;
+    continue_pending_restricted_build_inner(
+        session,
+        workdir,
+        args,
+        start,
+        pending,
+        build_targets,
+        archive_format,
+    )
+    .await
+}
+
+fn load_pending_restricted_build_context(
+    session: &dyn Session,
+    workdir: &std::path::Path,
+) -> Result<(
+    crate::empack::restricted_build::PendingRestrictedBuild,
+    Vec<BuildTarget>,
+    crate::empack::archive::ArchiveFormat,
+)> {
     let Some(pending) =
         crate::empack::restricted_build::load_pending_build(session.filesystem(), workdir)?
     else {
@@ -3395,8 +3456,19 @@ async fn continue_pending_restricted_build(
 
     let build_targets = pending.target_list()?;
     let archive_format = pending.archive_format_value()?;
-    validate_build_project_plan(session, workdir, &build_targets)?;
 
+    Ok((pending, build_targets, archive_format))
+}
+
+async fn continue_pending_restricted_build_inner(
+    session: &dyn Session,
+    workdir: &std::path::Path,
+    args: &BuildArgs,
+    start: std::time::Instant,
+    pending: crate::empack::restricted_build::PendingRestrictedBuild,
+    build_targets: Vec<BuildTarget>,
+    archive_format: crate::empack::archive::ArchiveFormat,
+) -> Result<()> {
     session
         .display()
         .status()
@@ -3791,6 +3863,9 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
         || targets.contains(&"builds".to_string())
         || targets.contains(&"all".to_string())
     {
+        let had_dist = session
+            .filesystem()
+            .is_directory(&crate::empack::state::artifact_root(&manager.workdir));
         session
             .display()
             .status()
@@ -3807,10 +3882,12 @@ async fn handle_clean(session: &dyn Session, targets: Vec<String>) -> Result<()>
         for w in &result.warnings {
             session.display().status().warning(w);
         }
-        session
-            .display()
-            .status()
-            .complete("Build artifacts cleaned");
+        let message = if had_dist {
+            "Build artifacts cleaned"
+        } else {
+            "No build artifacts to clean"
+        };
+        session.display().status().complete(message);
     }
 
     if targets.contains(&"cache".to_string()) || targets.contains(&"all".to_string()) {
