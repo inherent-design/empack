@@ -3766,9 +3766,9 @@ fn count_unique_restricted_mod_urls(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RestrictedRerunComparison {
-    SameAsPending,
-    SubsetOfPending,
-    DifferentFromPending,
+    Same,
+    Subset,
+    Different,
 }
 
 fn restricted_download_dirs(
@@ -3853,11 +3853,11 @@ fn compare_rerun_restricted_entries(
         .collect();
 
     if rerun_signatures == pending_signatures {
-        RestrictedRerunComparison::SameAsPending
+        RestrictedRerunComparison::Same
     } else if rerun_signatures.is_subset(&pending_signatures) {
-        RestrictedRerunComparison::SubsetOfPending
+        RestrictedRerunComparison::Subset
     } else {
-        RestrictedRerunComparison::DifferentFromPending
+        RestrictedRerunComparison::Different
     }
 }
 
@@ -3865,15 +3865,15 @@ fn restricted_rerun_diagnostic(
     comparison: RestrictedRerunComparison,
 ) -> (&'static str, Option<&'static str>) {
     match comparison {
-        RestrictedRerunComparison::SameAsPending => (
+        RestrictedRerunComparison::Same => (
             "The same restricted download(s) were reported again after restore. The managed cache entry may be stale, invalid, or the wrong file.",
             Some("Managed cache"),
         ),
-        RestrictedRerunComparison::SubsetOfPending => (
+        RestrictedRerunComparison::Subset => (
             "A subset of the original restricted download(s) were reported again after restore. The remaining managed cache entries may be stale, invalid, or the wrong file.",
             Some("Managed cache"),
         ),
-        RestrictedRerunComparison::DifferentFromPending => (
+        RestrictedRerunComparison::Different => (
             "The rerun reported a different restricted download set than the original pending state.",
             None,
         ),
