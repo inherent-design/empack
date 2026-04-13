@@ -385,7 +385,10 @@ pub fn stage_cached_entries_to_destinations(
 
     for entry in &pending.entries {
         let cache_path = cache_dir.join(&entry.filename);
-        if !provider.exists(&cache_path) {
+        if !matches!(
+            cache_entry_status(provider, &cache_path, &pending.candidate_baseline),
+            CacheEntryStatus::Current
+        ) {
             missing.push(entry.clone());
             continue;
         }
