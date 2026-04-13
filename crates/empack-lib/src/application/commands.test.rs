@@ -5916,6 +5916,9 @@ mod handle_build_continue_tests {
         assert!(err_text.contains("restricted download(s) are still required after continue"));
         assert!(err_text.contains("OptiFine.jar"));
         assert!(err_text.contains("https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"));
+        assert!(!err_text.contains(
+            "The same restricted download(s) were reported again after restore. The managed cache entry may be stale, invalid, or the wrong file."
+        ));
         let optifine_dest = workdir
             .join("dist")
             .join("client-full")
@@ -5981,9 +5984,15 @@ mod handle_build_continue_tests {
         .await
         .expect_err("repeated restricted installer output should fail");
 
-        assert!(err
-            .to_string()
-            .contains("The same restricted download(s) were reported again after restore. The managed cache entry may be stale, invalid, or the wrong file."));
+        let err_text = err.to_string();
+        assert!(err_text.contains("restricted download(s) are still required after continue"));
+        assert!(err_text.contains("OptiFine.jar"));
+        assert!(err_text.contains(
+            "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+        ));
+        assert!(!err_text.contains(
+            "The same restricted download(s) were reported again after restore. The managed cache entry may be stale, invalid, or the wrong file."
+        ));
     }
 
     #[tokio::test]
@@ -6042,11 +6051,36 @@ mod handle_build_continue_tests {
         .expect_err("different rerun restricted output should fail");
 
         let err_text = err.to_string();
-        assert!(err_text.contains(
+        assert!(err_text.contains("restricted download(s) are still required after continue"));
+        assert!(!err_text.contains(
             "The rerun reported a different restricted download set than the original pending state."
         ));
-        assert!(err_text.contains("ReplayMod.jar"));
-        assert!(err_text.contains("https://www.curseforge.com/minecraft/mc-mods/replay-mod/download/222"));
+        assert!(err_text.contains(
+            "ReplayMod.jar"
+        ));
+        assert!(err_text.contains(
+            "https://www.curseforge.com/minecraft/mc-mods/replay-mod/download/222"
+        ));
+    }
+
+    #[test]
+    fn dedup_restricted_mod_infos_normalizes_curseforge_url_variants() {
+        let entries = vec![
+            crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: "/tmp/dist/client-full/mods/OptiFine.jar".to_string(),
+            },
+            crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"
+                    .to_string(),
+                dest_path: "/tmp/dist/client-full/mods/OptiFine.jar".to_string(),
+            },
+        ];
+
+        assert_eq!(dedup_restricted_mod_infos(&entries).len(), 1);
     }
 
     #[tokio::test]

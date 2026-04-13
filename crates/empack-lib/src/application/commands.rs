@@ -3612,10 +3612,17 @@ async fn continue_pending_restricted_build_inner(
                 .status()
                 .info(&format!("{cache_label}: {}", cache_dir.display()));
         }
+        let restricted_count = count_unique_restricted_mod_urls(&restricted_entries);
+        if let Some(detail) = restricted_rerun_error_detail(&restricted_entries) {
+            return Err(anyhow::anyhow!(
+                "{} restricted download(s) are still required after continue: {}",
+                restricted_count,
+                detail
+            ));
+        }
         return Err(anyhow::anyhow!(
-            "{} restricted download(s) are still required after continue: {}",
-            count_unique_restricted_mod_urls(&restricted_entries),
-            restricted_rerun_error_detail(diagnostic, &restricted_entries)
+            "{} restricted download(s) are still required after continue",
+            restricted_count
         ));
     }
 
@@ -3815,7 +3822,12 @@ fn dedup_restricted_mod_infos(
     let mut seen = std::collections::HashSet::new();
     entries
         .iter()
-        .filter(|entry| seen.insert((entry.url.clone(), entry.dest_path.clone())))
+        .filter(|entry| {
+            seen.insert((
+                restricted_entry_url_key(&entry.url),
+                entry.dest_path.clone(),
+            ))
+        })
         .collect()
 }
 
@@ -3895,9 +3907,8 @@ fn restricted_mod_info_summary(entry: &crate::empack::packwiz::RestrictedModInfo
 }
 
 fn restricted_rerun_error_detail(
-    diagnostic: &str,
     rerun_entries: &[crate::empack::packwiz::RestrictedModInfo],
-) -> String {
+) -> Option<String> {
     let summaries = dedup_restricted_mod_infos(rerun_entries)
         .into_iter()
         .map(restricted_mod_info_summary)
@@ -3905,9 +3916,9 @@ fn restricted_rerun_error_detail(
         .join("; ");
 
     if summaries.is_empty() {
-        diagnostic.to_string()
+        None
     } else {
-        format!("{diagnostic} {summaries}")
+        Some(summaries)
     }
 }
 
