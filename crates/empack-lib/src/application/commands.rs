@@ -3615,7 +3615,7 @@ async fn continue_pending_restricted_build_inner(
         return Err(anyhow::anyhow!(
             "{} restricted download(s) are still required after continue: {}",
             count_unique_restricted_mod_urls(&restricted_entries),
-            restricted_rerun_error_detail(rerun_comparison, &restricted_entries)
+            restricted_rerun_error_detail(diagnostic, &restricted_entries)
         ));
     }
 
@@ -3760,7 +3760,7 @@ fn count_unique_restricted_mod_urls(
     let mut seen = std::collections::HashSet::new();
     entries
         .iter()
-        .filter(|entry| seen.insert(entry.url.clone()))
+        .filter(|entry| seen.insert(restricted_entry_url_key(&entry.url)))
         .count()
 }
 
@@ -3816,6 +3816,16 @@ fn dedup_restricted_mod_infos(
     entries
         .iter()
         .filter(|entry| seen.insert((entry.url.clone(), entry.dest_path.clone())))
+        .collect()
+}
+
+fn dedup_restricted_mod_urls(
+    entries: &[crate::empack::packwiz::RestrictedModInfo],
+) -> Vec<&crate::empack::packwiz::RestrictedModInfo> {
+    let mut seen = std::collections::HashSet::new();
+    entries
+        .iter()
+        .filter(|entry| seen.insert(restricted_entry_url_key(&entry.url)))
         .collect()
 }
 
@@ -3885,10 +3895,9 @@ fn restricted_mod_info_summary(entry: &crate::empack::packwiz::RestrictedModInfo
 }
 
 fn restricted_rerun_error_detail(
-    comparison: RestrictedRerunComparison,
+    diagnostic: &str,
     rerun_entries: &[crate::empack::packwiz::RestrictedModInfo],
 ) -> String {
-    let (diagnostic, _) = restricted_rerun_diagnostic(comparison);
     let summaries = dedup_restricted_mod_infos(rerun_entries)
         .into_iter()
         .map(restricted_mod_info_summary)
@@ -3907,11 +3916,11 @@ fn display_restricted_mod_infos(
     cache_dir: &Path,
     restricted_entries: &[crate::empack::packwiz::RestrictedModInfo],
 ) -> Result<()> {
-    let unique_entries = dedup_restricted_mod_infos(restricted_entries);
+    let unique_entries = dedup_restricted_mod_urls(restricted_entries);
 
     session.display().status().section(&format!(
         "Build incomplete: {} restricted download(s) are still required after continue",
-        count_unique_restricted_mod_urls(restricted_entries)
+        unique_entries.len()
     ));
 
     for entry in unique_entries {

@@ -773,6 +773,43 @@ fn missing_cached_entries_treats_preexisting_unchanged_cache_as_missing_when_bas
 }
 
 #[test]
+fn stage_cached_entries_to_destinations_treats_preexisting_unchanged_cache_as_missing_when_baseline_exists(
+) {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-stale-cache-stage-missing");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    let cache_path = pending.restricted_cache_path().join("No_Enchant_Glint.zip");
+    let cache_meta = recent_file_metadata("stale cache bytes".len(), 200_000);
+    provider
+        .write_bytes(&cache_path, b"stale cache bytes")
+        .expect("write stale cache bytes");
+    provider.set_file_metadata(cache_path.clone(), cache_meta.clone());
+    pending.candidate_baseline = vec![baseline_snapshot(cache_path, &cache_meta)];
+
+    let missing = stage_cached_entries_to_destinations(&provider, &pending)
+        .expect("stage stale cache entry");
+    assert_eq!(missing.len(), 1);
+    assert!(
+        !provider.exists(&PathBuf::from(&pending.entries[0].dest_path)),
+        "stale cache entry should not be restored to the destination"
+    );
+}
+
+#[test]
 fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_exact_candidate() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
