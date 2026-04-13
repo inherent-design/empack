@@ -743,6 +743,205 @@ fn import_matching_downloads_into_cache_ignores_preexisting_recent_zip_noise_whe
 }
 
 #[test]
+fn missing_cached_entries_treats_preexisting_unchanged_cache_as_missing_when_baseline_exists() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-stale-cache-missing");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    let cache_path = pending.restricted_cache_path().join("No_Enchant_Glint.zip");
+    let cache_meta = recent_file_metadata("stale cache bytes".len(), 200_000);
+    provider
+        .write_bytes(&cache_path, b"stale cache bytes")
+        .expect("write stale cache bytes");
+    provider.set_file_metadata(cache_path.clone(), cache_meta.clone());
+    pending.candidate_baseline = vec![baseline_snapshot(cache_path, &cache_meta)];
+
+    assert_eq!(missing_cached_entries(&provider, &pending).len(), 1);
+}
+
+#[test]
+fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_exact_candidate() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-stale-cache-exact-refresh");
+    let downloads_dir = workdir.join("downloads");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    let cache_path = pending.restricted_cache_path().join("No_Enchant_Glint.zip");
+    let cache_meta = recent_file_metadata("stale cache bytes".len(), 200_000);
+    provider
+        .write_bytes(&cache_path, b"stale cache bytes")
+        .expect("write stale cache bytes");
+    provider.set_file_metadata(cache_path.clone(), cache_meta.clone());
+    pending.candidate_baseline = vec![baseline_snapshot(cache_path.clone(), &cache_meta)];
+
+    provider
+        .write_bytes(&downloads_dir.join("No_Enchant_Glint.zip"), b"fresh exact bytes")
+        .expect("write fresh exact download");
+    provider.set_file_metadata(
+        downloads_dir.join("No_Enchant_Glint.zip"),
+        recent_file_metadata("fresh exact bytes".len(), 205_000),
+    );
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("refresh stale cache from exact candidate");
+
+    assert_eq!(
+        provider.read_bytes(&cache_path).expect("read refreshed cache"),
+        b"fresh exact bytes"
+    );
+    assert!(missing_cached_entries(&provider, &pending).is_empty());
+}
+
+#[test]
+fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_unique_baseline_candidate(
+) {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-stale-cache-fallback-refresh");
+    let downloads_dir = workdir.join("downloads");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    let cache_path = pending.restricted_cache_path().join("No_Enchant_Glint.zip");
+    let cache_meta = recent_file_metadata("stale cache bytes".len(), 200_000);
+    provider
+        .write_bytes(&cache_path, b"stale cache bytes")
+        .expect("write stale cache bytes");
+    provider.set_file_metadata(cache_path.clone(), cache_meta.clone());
+    pending.candidate_baseline = vec![baseline_snapshot(cache_path.clone(), &cache_meta)];
+
+    let variant_path = downloads_dir.join("§6No Enchant Glint 1.20.1.zip");
+    provider
+        .write_bytes(&variant_path, b"fresh fallback bytes")
+        .expect("write fallback candidate");
+    provider.set_file_metadata(
+        variant_path,
+        recent_file_metadata("fresh fallback bytes".len(), 205_000),
+    );
+
+    import_matching_downloads_into_cache(
+        &provider,
+        &workdir,
+        &pending,
+        std::slice::from_ref(&downloads_dir),
+    )
+    .expect("refresh stale cache from unique fallback candidate");
+
+    assert_eq!(
+        provider.read_bytes(&cache_path).expect("read refreshed cache"),
+        b"fresh fallback bytes"
+    );
+    assert!(missing_cached_entries(&provider, &pending).is_empty());
+}
+
+#[test]
+fn import_matching_downloads_into_cache_leaves_preexisting_stale_cache_unresolved_without_new_candidate(
+) {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-stale-cache-unresolved");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let mut pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    let cache_path = pending.restricted_cache_path().join("No_Enchant_Glint.zip");
+    let cache_meta = recent_file_metadata("stale cache bytes".len(), 200_000);
+    provider
+        .write_bytes(&cache_path, b"stale cache bytes")
+        .expect("write stale cache bytes");
+    provider.set_file_metadata(cache_path.clone(), cache_meta.clone());
+    pending.candidate_baseline = vec![baseline_snapshot(cache_path.clone(), &cache_meta)];
+
+    import_matching_downloads_into_cache(&provider, &workdir, &pending, &[])
+        .expect("scan without new candidates");
+
+    assert_eq!(
+        provider.read_bytes(&cache_path).expect("read unchanged cache"),
+        b"stale cache bytes"
+    );
+    assert_eq!(missing_cached_entries(&provider, &pending).len(), 1);
+}
+
+#[test]
+fn missing_cached_entries_legacy_pending_still_trusts_existing_cache() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache_root = TempDir::new().expect("cache root tempdir");
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+    let workdir = mock_root().join("restricted-build-legacy-cache-trust");
+    let provider = MockFileSystemProvider::new()
+        .with_current_dir(workdir.clone())
+        .with_configured_project(workdir.clone());
+
+    let pending = save_pending_build(
+        &provider,
+        &workdir,
+        &[BuildTarget::ClientFull],
+        ArchiveFormat::Zip,
+        &[sample_resourcepack_restricted_mod(&workdir)],
+    )
+    .expect("save pending build");
+    let cache_path = pending.restricted_cache_path().join("No_Enchant_Glint.zip");
+    provider
+        .write_bytes(&cache_path, b"legacy cache bytes")
+        .expect("write legacy cache bytes");
+
+    assert!(missing_cached_entries(&provider, &pending).is_empty());
+}
+
+#[test]
 fn import_matching_downloads_into_cache_keeps_blocking_when_multiple_new_distinct_zip_candidates_exist_after_baseline(
 ) {
     let _guard = crate::test_support::env_lock().lock().unwrap();

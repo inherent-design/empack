@@ -4366,6 +4366,24 @@ mod handle_build_continue_tests {
         }
     }
 
+    fn different_restricted_install_output(
+        workdir: &std::path::Path,
+    ) -> crate::application::session::ProcessOutput {
+        crate::application::session::ProcessOutput {
+            stdout: "Failed to download modpack, the following errors were encountered:\nReplayMod.jar:".to_string(),
+            stderr: format!(
+                "java.lang.Exception: This mod is excluded from the CurseForge API and must be downloaded manually.\nPlease go to https://www.curseforge.com/minecraft/mc-mods/replay-mod/files/222 and save this file to {}\n\tat link.infra.packwiz.installer.DownloadTask.download(DownloadTask.java:42)",
+                workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("ReplayMod.jar")
+                    .to_string_lossy()
+            ),
+            success: false,
+        }
+    }
+
     fn mrpack_export_args(workdir: &Path) -> Vec<String> {
         vec![
             "--pack-file".to_string(),
@@ -5044,6 +5062,98 @@ mod handle_build_continue_tests {
                 .filesystem()
                 .exists(&restricted_cache_dir.join("No_Enchant_Glint.zip")),
             "the new variant should still be imported into the expected cache filename"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_continue_refreshes_preexisting_stale_cache_from_exact_download() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-refresh-stale-cache-exact");
+        let downloads_dir = workdir.join("manual-downloads");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+        let mut pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+
+        let cache_path = pending.restricted_cache_path().join("OptiFine.jar");
+        let stale_meta = recent_file_metadata("stale bytes".len());
+        session
+            .filesystem()
+            .write_bytes(&cache_path, b"stale bytes")
+            .expect("write stale cache");
+        session
+            .filesystem_provider
+            .set_file_metadata(cache_path.clone(), stale_meta.clone());
+        pending.candidate_baseline = vec![
+            crate::empack::restricted_build::PendingRestrictedCandidateSnapshot {
+                path: cache_path.to_string_lossy().to_string(),
+                len: stale_meta.len,
+                modified_unix_ms: stale_meta.modified_unix_ms,
+                created_unix_ms: stale_meta.created_unix_ms,
+            },
+        ];
+        crate::empack::restricted_build::persist_pending_build(
+            session.filesystem(),
+            &workdir,
+            &pending,
+        )
+        .expect("persist pending build with stale cache baseline");
+
+        let exact_download = downloads_dir.join("OptiFine.jar");
+        session
+            .filesystem()
+            .write_bytes(&exact_download, b"fresh manual bytes")
+            .expect("write fresh manual download");
+        session
+            .filesystem_provider
+            .set_file_metadata(exact_download, recent_file_metadata("fresh manual bytes".len()));
+
+        let result = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                downloads_dir: Some(downloads_dir.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "continue build should refresh a stale managed cache entry from an exact manual download: {result:?}"
+        );
+        assert_eq!(
+            session
+                .filesystem()
+                .read_bytes(&pending.restricted_cache_path().join("OptiFine.jar"))
+                .expect("read refreshed cache"),
+            b"fresh manual bytes"
         );
     }
 
@@ -5747,7 +5857,8 @@ mod handle_build_continue_tests {
     }
 
     #[tokio::test]
-    async fn build_continue_errors_when_restricted_downloads_recur() {
+    async fn build_continue_reports_specific_restricted_entries_when_rerun_still_requires_manual_download(
+    ) {
         let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
@@ -5801,9 +5912,141 @@ mod handle_build_continue_tests {
         .await
         .expect_err("repeated restricted installer output should fail");
 
+        let err_text = err.to_string();
+        assert!(err_text.contains("restricted download(s) are still required after continue"));
+        assert!(err_text.contains("OptiFine.jar"));
+        assert!(err_text.contains("https://www.curseforge.com/minecraft/mc-mods/optifine/download/4912891"));
+        let optifine_dest = workdir
+            .join("dist")
+            .join("client-full")
+            .join("mods")
+            .join("OptiFine.jar")
+            .to_string_lossy()
+            .to_string();
+        assert!(err_text.contains(&optifine_dest));
+    }
+
+    #[tokio::test]
+    async fn build_continue_reports_same_entry_repeated_after_continue_as_stale_cache_hint() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-restricted-again-stale-cache-hint");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_result(
+                "java".to_string(),
+                client_full_installer_args(&workdir),
+                Ok(restricted_install_output(&workdir)),
+            ));
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+        session
+            .filesystem()
+            .write_bytes(&pending.restricted_cache_path().join("OptiFine.jar"), b"cached bytes")
+            .expect("write cached restricted file");
+
+        let err = continue_pending_restricted_build(
+            &session,
+            &workdir,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+            std::time::Instant::now(),
+        )
+        .await
+        .expect_err("repeated restricted installer output should fail");
+
         assert!(err
             .to_string()
-            .contains("restricted download(s) are still required after continue"));
+            .contains("The same restricted download(s) were reported again after restore. The managed cache entry may be stale, invalid, or the wrong file."));
+    }
+
+    #[tokio::test]
+    async fn build_continue_reports_different_rerun_restricted_set_when_entries_change() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-restricted-again-different-set");
+        let session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_result(
+                "java".to_string(),
+                client_full_installer_args(&workdir),
+                Ok(different_restricted_install_output(&workdir)),
+            ));
+
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+        session
+            .filesystem()
+            .write_bytes(&pending.restricted_cache_path().join("OptiFine.jar"), b"cached bytes")
+            .expect("write cached restricted file");
+
+        let err = continue_pending_restricted_build(
+            &session,
+            &workdir,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+            std::time::Instant::now(),
+        )
+        .await
+        .expect_err("different rerun restricted output should fail");
+
+        let err_text = err.to_string();
+        assert!(err_text.contains(
+            "The rerun reported a different restricted download set than the original pending state."
+        ));
+        assert!(err_text.contains("ReplayMod.jar"));
+        assert!(err_text.contains("https://www.curseforge.com/minecraft/mc-mods/replay-mod/download/222"));
     }
 
     #[tokio::test]
