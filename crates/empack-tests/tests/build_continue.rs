@@ -209,3 +209,119 @@ async fn e2e_build_continue_imports_recent_unicode_variant_download() -> Result<
 
     Ok(())
 }
+
+#[tokio::test]
+async fn e2e_build_continue_refreshes_stale_restricted_cache_from_new_manual_download() -> Result<()>
+{
+    let project_name = "continue-stale-cache-refresh";
+    let workdir = empack_lib::application::session_mocks::mock_root().join("workdir");
+    let downloads_dir = workdir.join("manual-downloads");
+    let cache_filename = "No_Enchant_Glint.zip";
+
+    let session = MockSessionBuilder::new()
+        .with_empack_project(project_name, "1.21.1", "fabric")
+        .build();
+
+    let mut pending = empack_lib::empack::restricted_build::save_pending_build(
+        session.filesystem(),
+        &workdir,
+        &[empack_lib::primitives::BuildTarget::Mrpack],
+        ArchiveFormat::Zip,
+        &[RestrictedModInfo {
+            name: "No Enchant Glint".to_string(),
+            url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
+                .to_string(),
+            dest_path: workdir
+                .join("packwiz-cache")
+                .join("import")
+                .join(cache_filename)
+                .to_string_lossy()
+                .to_string(),
+        }],
+    )?;
+
+    let cache_path = pending.restricted_cache_path().join(cache_filename);
+    session
+        .filesystem()
+        .write_bytes(&cache_path, b"stale cache bytes")?;
+    let stale_now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let stale_meta = FileMetadata {
+        is_directory: false,
+        len: "stale cache bytes".len() as u64,
+        modified_unix_ms: Some(stale_now),
+        created_unix_ms: Some(stale_now),
+    };
+    session
+        .filesystem_provider
+        .set_file_metadata(cache_path.clone(), stale_meta.clone());
+    pending.candidate_baseline = vec![
+        empack_lib::empack::restricted_build::PendingRestrictedCandidateSnapshot {
+            path: cache_path.to_string_lossy().to_string(),
+            len: stale_meta.len,
+            modified_unix_ms: stale_meta.modified_unix_ms,
+            created_unix_ms: stale_meta.created_unix_ms,
+        },
+    ];
+    empack_lib::empack::restricted_build::persist_pending_build(
+        session.filesystem(),
+        &workdir,
+        &pending,
+    )?;
+
+    session.filesystem_provider.write_bytes(
+        &downloads_dir.join(cache_filename),
+        b"fresh manual resource pack bytes",
+    )?;
+    let fresh_now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    session.filesystem_provider.set_file_metadata(
+        downloads_dir.join(cache_filename),
+        FileMetadata {
+            is_directory: false,
+            len: "fresh manual resource pack bytes".len() as u64,
+            modified_unix_ms: Some(fresh_now),
+            created_unix_ms: Some(fresh_now),
+        },
+    );
+
+    Display::init_or_get(TerminalCapabilities::minimal());
+
+    let result = execute_command_with_session(
+        Commands::Build(BuildArgs {
+            continue_build: true,
+            downloads_dir: Some(downloads_dir.to_string_lossy().to_string()),
+            ..Default::default()
+        }),
+        &session,
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "continue build should refresh a stale cache entry from a new exact manual download: {result:?}"
+    );
+    assert_eq!(
+        session.filesystem().read_bytes(&cache_path)?,
+        b"fresh manual resource pack bytes"
+    );
+    assert!(
+        session.filesystem().exists(
+            &workdir
+                .join("dist")
+                .join(format!("{project_name}-v1.0.0.mrpack"))
+        ),
+        "continued build should produce the mrpack archive"
+    );
+    assert!(
+        empack_lib::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)?
+            .is_none(),
+        "pending restricted state should be cleared after continue succeeds"
+    );
+
+    Ok(())
+}

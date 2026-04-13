@@ -3601,9 +3601,21 @@ async fn continue_pending_restricted_build_inner(
     let results = run_build_pipeline(session, &build_targets, archive_format, true).await?;
     let restricted_entries = collect_restricted_entries(&results);
     if !restricted_entries.is_empty() {
+        let cache_dir = pending.restricted_cache_path();
+        display_restricted_mod_infos(session, &cache_dir, &restricted_entries)?;
+        let rerun_comparison = compare_rerun_restricted_entries(&pending, &restricted_entries);
+        let (diagnostic, cache_label) = restricted_rerun_diagnostic(rerun_comparison);
+        session.display().status().warning(diagnostic);
+        if let Some(cache_label) = cache_label {
+            session
+                .display()
+                .status()
+                .info(&format!("{cache_label}: {}", cache_dir.display()));
+        }
         return Err(anyhow::anyhow!(
-            "{} restricted download(s) are still required after continue",
-            count_unique_restricted_mod_urls(&restricted_entries)
+            "{} restricted download(s) are still required after continue: {}",
+            count_unique_restricted_mod_urls(&restricted_entries),
+            restricted_rerun_error_detail(rerun_comparison, &restricted_entries)
         ));
     }
 
@@ -3752,6 +3764,13 @@ fn count_unique_restricted_mod_urls(
         .count()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RestrictedRerunComparison {
+    SameAsPending,
+    SubsetOfPending,
+    DifferentFromPending,
+}
+
 fn restricted_download_dirs(
     downloads_dir: Option<&str>,
     pending: &crate::empack::restricted_build::PendingRestrictedBuild,
@@ -3788,6 +3807,137 @@ fn dedup_restricted_entry_urls(
         .iter()
         .filter(|entry| seen.insert(entry.url.clone()))
         .collect()
+}
+
+fn dedup_restricted_mod_infos(
+    entries: &[crate::empack::packwiz::RestrictedModInfo],
+) -> Vec<&crate::empack::packwiz::RestrictedModInfo> {
+    let mut seen = std::collections::HashSet::new();
+    entries
+        .iter()
+        .filter(|entry| seen.insert((entry.url.clone(), entry.dest_path.clone())))
+        .collect()
+}
+
+fn restricted_entry_url_key(url: &str) -> String {
+    crate::empack::packwiz::restricted_curseforge_file_id(url)
+        .map(|file_id| format!("curseforge:{file_id}"))
+        .unwrap_or_else(|| url.to_string())
+}
+
+fn compare_rerun_restricted_entries(
+    pending: &crate::empack::restricted_build::PendingRestrictedBuild,
+    rerun_entries: &[crate::empack::packwiz::RestrictedModInfo],
+) -> RestrictedRerunComparison {
+    let pending_signatures: HashSet<(String, String, String)> = pending
+        .entries
+        .iter()
+        .map(|entry| {
+            (
+                restricted_entry_url_key(&entry.url),
+                entry.dest_path.clone(),
+                entry.filename.clone(),
+            )
+        })
+        .collect();
+    let rerun_signatures: HashSet<(String, String, String)> = rerun_entries
+        .iter()
+        .map(|entry| {
+            (
+                restricted_entry_url_key(&entry.url),
+                entry.dest_path.clone(),
+                crate::empack::packwiz::restricted_destination_filename(&entry.dest_path)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+
+    if rerun_signatures == pending_signatures {
+        RestrictedRerunComparison::SameAsPending
+    } else if rerun_signatures.is_subset(&pending_signatures) {
+        RestrictedRerunComparison::SubsetOfPending
+    } else {
+        RestrictedRerunComparison::DifferentFromPending
+    }
+}
+
+fn restricted_rerun_diagnostic(
+    comparison: RestrictedRerunComparison,
+) -> (&'static str, Option<&'static str>) {
+    match comparison {
+        RestrictedRerunComparison::SameAsPending => (
+            "The same restricted download(s) were reported again after restore. The managed cache entry may be stale, invalid, or the wrong file.",
+            Some("Managed cache"),
+        ),
+        RestrictedRerunComparison::SubsetOfPending => (
+            "A subset of the original restricted download(s) were reported again after restore. The remaining managed cache entries may be stale, invalid, or the wrong file.",
+            Some("Managed cache"),
+        ),
+        RestrictedRerunComparison::DifferentFromPending => (
+            "The rerun reported a different restricted download set than the original pending state.",
+            None,
+        ),
+    }
+}
+
+fn restricted_mod_info_summary(entry: &crate::empack::packwiz::RestrictedModInfo) -> String {
+    format!("{} [{} -> {}]", entry.name, entry.url, entry.dest_path)
+}
+
+fn restricted_rerun_error_detail(
+    comparison: RestrictedRerunComparison,
+    rerun_entries: &[crate::empack::packwiz::RestrictedModInfo],
+) -> String {
+    let (diagnostic, _) = restricted_rerun_diagnostic(comparison);
+    let summaries = dedup_restricted_mod_infos(rerun_entries)
+        .into_iter()
+        .map(restricted_mod_info_summary)
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    if summaries.is_empty() {
+        diagnostic.to_string()
+    } else {
+        format!("{diagnostic} {summaries}")
+    }
+}
+
+fn display_restricted_mod_infos(
+    session: &dyn Session,
+    cache_dir: &Path,
+    restricted_entries: &[crate::empack::packwiz::RestrictedModInfo],
+) -> Result<()> {
+    let unique_entries = dedup_restricted_mod_infos(restricted_entries);
+
+    session.display().status().section(&format!(
+        "Build incomplete: {} restricted download(s) are still required after continue",
+        count_unique_restricted_mod_urls(restricted_entries)
+    ));
+
+    for entry in unique_entries {
+        session
+            .display()
+            .status()
+            .warning(&format!("  {}", entry.name));
+        session
+            .display()
+            .status()
+            .info(&format!("    Download: {}", entry.url));
+        if let Some(filename) =
+            crate::empack::packwiz::restricted_destination_filename(&entry.dest_path)
+        {
+            session.display().status().info(&format!(
+                "    Cache as: {}",
+                cache_dir.join(filename).display()
+            ));
+        }
+        session
+            .display()
+            .status()
+            .subtle(&format!("    Will restore to: {}", entry.dest_path));
+    }
+
+    Ok(())
 }
 
 fn display_pending_restricted_build(

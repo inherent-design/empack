@@ -56,6 +56,13 @@ pub struct PendingRestrictedBuild {
     pub entries: Vec<PendingRestrictedBuildEntry>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CacheEntryStatus {
+    Missing,
+    Current,
+    PreexistingUnchanged,
+}
+
 impl PendingRestrictedBuild {
     pub fn target_list(&self) -> Result<Vec<BuildTarget>> {
         self.targets
@@ -235,15 +242,32 @@ pub fn import_matching_downloads_into_cache(
 
     for (filename, entry) in entries_by_filename {
         let cache_path = cache_dir.join(&filename);
-        if provider.exists(&cache_path) {
+        let mut cache_status =
+            cache_entry_status(provider, &cache_path, &pending.candidate_baseline);
+        tracing::debug!(
+            filename = %filename,
+            cache_path = %cache_path.display(),
+            cache_status = ?cache_status,
+            "restricted download evaluated cache entry status"
+        );
+        if matches!(cache_status, CacheEntryStatus::Current) {
             continue;
         }
 
         if let Some(candidate) =
             find_exact_candidate(provider, &cache_path, &filename, &search_dirs)
         {
+            tracing::debug!(
+                filename = %filename,
+                candidate = %candidate.display(),
+                refreshes_stale_cache = matches!(cache_status, CacheEntryStatus::PreexistingUnchanged),
+                "restricted download exact filename candidate selected"
+            );
             import_candidate_into_cache(provider, &candidate, &cache_path)?;
-            continue;
+            cache_status = cache_entry_status(provider, &cache_path, &pending.candidate_baseline);
+            if matches!(cache_status, CacheEntryStatus::Current) {
+                continue;
+            }
         }
 
         tracing::debug!(
@@ -267,9 +291,22 @@ pub fn import_matching_downloads_into_cache(
                 &pending.candidate_baseline,
                 &used_fallback_hashes,
             )? {
+                tracing::debug!(
+                    filename = %filename,
+                    candidate = %candidate.display(),
+                    refreshes_stale_cache = matches!(cache_status, CacheEntryStatus::PreexistingUnchanged),
+                    "restricted download baseline-aware fallback selected a refresh candidate"
+                );
                 import_candidate_into_cache(provider, &candidate, &cache_path)?;
                 used_fallback_hashes.insert(hash);
+                continue;
             }
+            tracing::debug!(
+                filename = %filename,
+                cache_path = %cache_path.display(),
+                cache_status = ?cache_status,
+                "restricted download remains unresolved after baseline-aware candidate scan"
+            );
             continue;
         }
 
@@ -295,9 +332,23 @@ pub fn import_matching_downloads_into_cache(
             recent_cutoff_ms,
             &used_fallback_hashes,
         )? {
+            tracing::debug!(
+                filename = %filename,
+                candidate = %candidate.display(),
+                refreshes_stale_cache = matches!(cache_status, CacheEntryStatus::PreexistingUnchanged),
+                "restricted download legacy recent-file fallback selected a refresh candidate"
+            );
             import_candidate_into_cache(provider, &candidate, &cache_path)?;
             used_fallback_hashes.insert(hash);
+            continue;
         }
+
+        tracing::debug!(
+            filename = %filename,
+            cache_path = %cache_path.display(),
+            cache_status = ?cache_status,
+            "restricted download remains unresolved after legacy recent-file candidate scan"
+        );
     }
 
     Ok(())
@@ -311,7 +362,16 @@ pub fn missing_cached_entries(
     pending
         .entries
         .iter()
-        .filter(|entry| !provider.exists(&cache_dir.join(&entry.filename)))
+        .filter(|entry| {
+            !matches!(
+                cache_entry_status(
+                    provider,
+                    &cache_dir.join(&entry.filename),
+                    &pending.candidate_baseline
+                ),
+                CacheEntryStatus::Current
+            )
+        })
         .cloned()
         .collect()
 }
@@ -376,6 +436,38 @@ fn find_exact_candidate(
         }
     }
     None
+}
+
+fn cache_entry_status(
+    provider: &dyn FileSystemProvider,
+    cache_path: &Path,
+    baseline: &[PendingRestrictedCandidateSnapshot],
+) -> CacheEntryStatus {
+    if !provider.exists(cache_path) {
+        return CacheEntryStatus::Missing;
+    }
+
+    if baseline.is_empty() {
+        return CacheEntryStatus::Current;
+    }
+
+    let metadata = match provider.file_metadata(cache_path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            tracing::debug!(
+                path = %cache_path.display(),
+                error = %error,
+                "treating restricted cache entry with unreadable metadata as missing"
+            );
+            return CacheEntryStatus::Missing;
+        }
+    };
+
+    if snapshot_changed(cache_path, &metadata, baseline) {
+        CacheEntryStatus::Current
+    } else {
+        CacheEntryStatus::PreexistingUnchanged
+    }
 }
 
 pub fn capture_candidate_baseline(
