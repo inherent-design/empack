@@ -3,6 +3,22 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.8 - 2026-04-14
+
+### Bug Fixes
+
+- Diagnose repeated restricted downloads
+- Align restricted rerun diagnostics
+- Trim duplicate rerun diagnostics
+
+### Maintenance
+
+- Update changelog for 0.4.0-alpha.7
+
+### Other
+
+- Satisfy clippy on rerun diagnostics
+
 ## v0.4.0-alpha.7 - 2026-04-12
 
 ### Bug Fixes
