@@ -32,7 +32,7 @@ quick-xml = { version = "0.39.2", features = ["serialize"] } # XML parsing for F
 reqwest = { version = "0.13.2", features = ["json", "gzip", "blocking"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-serde-saphyr = "0.0.23"
+serde-saphyr = "0.0.25"
 semver = "1"
 sha1 = "0.11.0"
 sha2 = "0.11"
