@@ -70,7 +70,7 @@ opentelemetry-otlp = { version = "0.31", default-features = false, features = ["
 # Dev dependencies
 assert_cmd = "2.2"
 criterion = "0.8.2"
-expectrl = "0.8"
+expectrl = "0.9"
 mockito = "1.7.2"
 predicates = "3"
 tempfile = "3.27.0"
