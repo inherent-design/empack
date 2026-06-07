@@ -124,7 +124,7 @@ jobs:
           cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           fail_ci_if_error: false
