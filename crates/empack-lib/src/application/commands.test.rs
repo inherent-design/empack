@@ -3929,7 +3929,7 @@ fabric = "0.15.0"
     }
 
     #[tokio::test]
-    async fn it_proceeds_with_warning_when_some_planning_resolutions_fail() {
+    async fn it_applies_valid_actions_but_fails_when_some_planning_resolutions_fail() {
         // mod_a has empty project_id (resolver fails), mod_b has real project_id (succeeds)
         let workdir = mock_root().join("partial-fail-sync");
         let empack_yml = r#"empack:
@@ -4001,7 +4001,7 @@ fabric = "0.15.0"
 
         let result = handle_sync(&session).await;
 
-        assert!(result.is_ok(), "handle_sync should succeed for partial failure: {result:?}");
+        assert!(result.is_err(), "incomplete sync must report failure: {result:?}");
         // Only the successful resolution should have been executed
         let calls = session.process_provider.get_calls();
         assert_eq!(

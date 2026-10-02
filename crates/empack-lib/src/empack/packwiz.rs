@@ -191,7 +191,36 @@ impl PackwizOps for LivePackwizOps<'_> {
 
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>> {
         let pack_dir = workdir.join("pack");
-        let scan_dirs = ["mods", "resourcepacks", "shaderpacks"];
+        let mut scan_dirs = HashSet::from([
+            "mods".to_string(),
+            "resourcepacks".to_string(),
+            "shaderpacks".to_string(),
+            "datapacks".to_string(),
+        ]);
+        if self.filesystem.exists(&workdir.join("empack.yml"))
+            && let Some(folder) = self
+                .filesystem
+                .config_manager(workdir.to_path_buf())
+                .load_empack_config()?
+                .empack
+                .datapack_folder
+        {
+            scan_dirs.insert(folder);
+        }
+        let pack_path = pack_dir.join("pack.toml");
+        if self.filesystem.exists(&pack_path) {
+            let metadata: toml::Value =
+                toml::from_str(&self.filesystem.read_to_string(&pack_path)?)?;
+            if let Some(folder) = metadata
+                .get("options")
+                .and_then(|o| o.get("datapack-folder"))
+            {
+                let folder = folder.as_str().ok_or_else(|| {
+                    anyhow::anyhow!("pack.toml options.datapack-folder must be a string")
+                })?;
+                scan_dirs.insert(folder.to_string());
+            }
+        }
 
         let mut installed = HashSet::new();
         for folder in &scan_dirs {

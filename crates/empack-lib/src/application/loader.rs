@@ -6,7 +6,7 @@ use super::{cli::CliConfig, config::AppConfig, env::EnvironmentConfig};
 
 static GLOBAL_CONFIG: OnceLock<AppConfig> = OnceLock::new();
 
-fn load_dotenv_files() -> Result<(), ConfigError> {
+pub(crate) fn load_dotenv_files() -> Result<(), ConfigError> {
     use dotenvy::from_filename;
 
     for env_file in [".env.local", ".env"] {

@@ -7,8 +7,10 @@ empack uses deterministic in-process tests as the primary proof layer, then live
 Use the `mise` tasks in [`../mise.toml`](../mise.toml):
 
 ```bash
-mise run test              # unit + mock/integration, excludes E2E
+mise run test              # unit + mock/integration + doctests, excludes E2E
+mise run smoke             # deterministic subprocess runtime contracts
 mise run e2e               # live E2E suite only
+mise run e2e:strict        # telemetry build, missing prerequisites fail
 mise run e2e:filter add    # filtered E2E slice
 mise run coverage          # instrumented binary + workspace coverage
 mise run check             # cargo check --workspace --all-targets
@@ -16,6 +18,130 @@ mise run clippy            # cargo clippy --workspace --all-targets -- -D warnin
 ```
 
 `mise run test` is the fast default gate. `mise run e2e` is a separate live suite because it depends on external tools and network conditions.
+
+`mise run smoke` builds the CLI and runs `crates/empack-tests/tests/smoke.rs`.
+These tests also run in the default test gate. They use isolated projects, a
+fake packwiz executable, and seeded HTTP responses, with a ten-second subprocess
+deadline and a loopback proxy to prevent fallback to live providers. No Java,
+provider credentials, or managed tool download is required. They verify:
+
+- search-based dry-run previews include the resolved add command and preserve `empack.yml`, `pack/pack.toml`, and `pack/index.toml` byte for byte;
+- a provider failure returns network exit code `3` in normal and dry-run sync, while preserving project files;
+- empty dependency sets remain a successful no-op;
+- dotenv precedence reaches actual command execution, and malformed dotenv files return configuration exit code `2`;
+- installed datapacks in default and custom YAML/TOML folders are recognized;
+- unreadable installed state aborts sync instead of being treated as an empty pack.
+
+This smoke layer exercises the real CLI, configuration loading, disk cache,
+planning, output, and exit status. It does not establish real packwiz execution,
+provider availability, archive correctness, or interactive behavior.
+
+The complementary `sync_workflow` tests exercise mixed successful and failed
+resolution, preservation of installed unresolved dependencies, and successful
+search resolution followed by an add. Partial success must not be reported as a
+fully synchronized project.
+
+## Runtime contract review, 2026-10-02
+
+Review started at `b9ecfc772c5268fab98ec298826d2e8737a1ac38` on macOS arm64,
+with Rust 1.94.0, Java 21.0.2, and managed packwiz-tx. The bootstrap notes at
+`~/.atlas/bootstrap/empack.md` describe an April snapshot, not current evidence.
+The initial default suite passed 1262 tests; the live suite reported 93 passes,
+but prerequisite checks could return early and still count as passing functions.
+
+Regression tests reproduced six runtime defects before their fixes:
+
+- Search-based sync previews rewrote `empack.yml` instead of resolving intent in memory.
+- Unresolved searches and partial planning failures could return success. Sync now retains the typed resolution error and reports incomplete work, including after applying valid actions.
+- Executable startup bypassed dotenv loading. CLI arguments now override existing environment values, which override `.env.local`, then `.env`.
+- Relative workdirs reached packwiz twice relative to the subprocess directory. Startup now makes workdirs absolute before session construction, including nonexistent init targets.
+- Installed-mod discovery omitted default and configured datapack folders.
+- Failed installed-state reads were treated as an empty pack. Sync now aborts the reconciliation instead.
+
+The harness now prefers instrumented binaries during coverage, uses successful
+exit status for Java detection, and shares the CLI's built-in CurseForge key
+default. `EMPACK_E2E_STRICT=1` makes missing prerequisites fail, including the
+optional live-test opt-in and telemetry trace output. Exit-code tests use the
+selected executable instead of rebuilding it concurrently through `cargo run`.
+A negative strict run with a nonexistent packwiz override failed as intended.
+
+Two NeoForge tests now use cached installer fixtures and assert the actual Java
+invocation and missing-run-script error. They previously downloaded from live
+services in the default suite and accepted unrelated failures. A cache test's
+10 ms expiry race was replaced with an explicitly expired entry and assertions
+on renewed expiry, ETag, body, and conditional request. Six broken public API
+examples were repaired; doctests are now part of `mise run test`.
+
+### Review follow-up
+
+The first PR review exposed three additional cases, each reproduced by an offline
+CLI smoke assertion before its fix: a parent-relative datapack path accepted by
+init was rejected by sync; an installed-state scan failure could follow a search
+resolution write; and malformed dotenv files prevented Clap help/version output.
+Sync now honors configured datapack paths and scans installed state before
+persisting resolutions. Help/version flags bypass dotenv errors. All nine smoke
+tests pass, including YAML/TOML datapack paths, invalid option types, and
+normal/dry-run scan failures. An injected manifest-write failure also verifies
+that sync preserves installed dependencies and fails, while dry-run succeeds
+without attempting the write.
+
+The first Windows CI run failed before executing tests because cmd.exe passed
+single-quoted nextest filters literally. Windows task commands now use double
+quotes and separate command steps so a failed test/build cannot be masked by a
+later successful command. The ignored project-level shell setting was removed.
+Windows execution of this correction still needs CI confirmation.
+
+### Runtime evidence map
+
+Paths below are relative to `crates/empack-tests/tests/` unless stated otherwise.
+These checks establish the listed contracts, not every possible option combination.
+
+| Runtime path | Evidence exercised |
+| --- | --- |
+| Startup, CLI/env/dotenv precedence, relative workdir, exit codes | `smoke.rs`, `e2e_exit_codes.rs`, `e2e_build_relative_workdir_exports_valid_mrpack`; application parser/config tests |
+| Init, force, loader/version choices, local and remote imports | `init_workflows.rs`, `init_matrix.rs`, `e2e_init.rs`, `e2e_live_import.rs`, `e2e_import_build.rs`; curated imports across Forge, Fabric, Quilt, NeoForge |
+| Add, provider preference, project type, version pinning, local dependencies | `add_command.rs`, `add_matrix.rs`, `e2e_add.rs`, including opted-in live Sodium resolution |
+| Sync, dry-run, partial failures, installed-state preservation | `sync_workflow.rs`, `smoke.rs`, `dry_run_matrix.rs`; application command tests |
+| Remove, dependency state, cleanup | `remove_command.rs`, `clean_command.rs`, `e2e_add.rs`, `e2e_exit_codes.rs`; source preservation and failure assertions |
+| Five build targets, all-target dispatch, ZIP/tar.gz/7z, templates and loaders | `build_matrix.rs`, `e2e_build.rs`, `lifecycle_forge_full.rs`; relative-workdir test extracts and validates the generated mrpack manifest |
+| Restricted builds, persisted sessions, cache/fingerprint checks, continue/browser/watcher flows | `build_continue.rs`, `e2e_restricted_build.rs`, `e2e_import_build.rs`; curated CurseForge Fabric import required two restricted files and completed continuation |
+| Live and injected sessions, filesystem/process/archive/network/display providers | inline tests in `crates/empack-lib/src/application/session.rs` and provider tests; live subprocess tests exercise their composition |
+| HTTP cache, retries, timeouts and shared rate budgets | `crates/empack-lib/src/networking/*.test.rs`, API fixture tests, live provider requests |
+| Interrupt, interactive prompts, color/log options, telemetry | `e2e_exit_codes.rs`, `e2e_interactive.rs`, `e2e_version.rs`, display tests; a separate CLI run parsed JSON stdout logging and a flushed Chrome trace |
+| Managed packwiz and Java dependencies | Platform tool-resolution tests and live imports/builds; strict prerequisite failures cannot silently pass |
+
+### Verification snapshot
+
+The implementation and tests in this change passed these local checks. Counts are
+historical, not permanent guarantees; live downloads depend on provider state.
+
+| Command/check | Result |
+| --- | --- |
+| `mise run test` | 1276 non-E2E tests and 8 doctests passed |
+| `cargo test --workspace --doc --all-features` | 8 passed |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Passed |
+| `cargo check --workspace --all-targets --features telemetry` | Passed |
+| `cargo llvm-cov --no-report run -p empack --features telemetry -- version`, then `EMPACK_E2E_STRICT=1 EMPACK_RUN_LIVE_TESTS=1 cargo llvm-cov --no-clean nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info` | 1370 passed, one ignored manual prompt-rendering test; includes all seven offline smoke tests |
+| LCOV production-source line coverage, excluding `.test.rs` under `empack-lib/src` and `empack/src` | 14765 / 16613 lines, 88.88%; inline tests in those files remain included |
+| `scripts/import-smoke-test.py --profile curated --empack-bin target/debug/empack`, with its output root redirected to a fresh temporary directory | All seven imports and client-full builds passed, including restricted continuation |
+| Python `zipfile.ZipFile.testzip()` on all seven artifacts | All CRC checks passed; JAR counts: 58, 48, 90, 14, 35, 2, 55 in curated order |
+| CLI `version` with JSON logging and `EMPACK_PROFILE=chrome` | Successful exit; one JSON log record and two trace events parsed |
+| `git diff --check` | Passed |
+
+This does not verify launching Minecraft or every loader's generated server.
+Linux and Windows execution must be established by CI. One manual PTY rendering
+test remains ignored. `--cpu-jobs` and the Modrinth credential fields are parsed
+but have no runtime consumers; help and usage now label them reserved. Packwiz
+directory imports remain unsupported, local dependencies cannot be exported to
+mrpack, and real YAML rewrites do not preserve comments. `requirements` reports
+capabilities but is not a strict prerequisite exit-status gate.
+
+The review also used the sibling playground project's `docs/ui/TESTING.md`,
+`docs/ui/ASYNC.md`, `docs/platform/RUNTIME.md`, and `docs/render/CONTRACTS.md`.
+Applicable rules are language-independent: distinguish intent from committed
+state, make failure observable, preserve pending work where promised, and assert
+final state as well as command completion. Playground's networking document is
+a design direction, not an implemented transport API to reuse.
 
 ## Test Layers
 
@@ -69,9 +195,12 @@ Live E2E coverage requires:
 - Java 21+
 - `mise`
 - network access
-- `.env.local` with `EMPACK_KEY_CURSEFORGE` for CurseForge-backed cases
+- a valid CurseForge credential for CurseForge-backed cases; the CLI and harness use the built-in default unless `EMPACK_KEY_CURSEFORGE` overrides it
 
-Some live tests self-skip when prerequisites are missing. That is expected.
+Ordinary live runs may self-skip when prerequisites are missing. Use
+`mise run e2e:strict` to require them and enable optional live tests and telemetry.
+For the same guarantee during coverage, run
+`EMPACK_E2E_STRICT=1 EMPACK_RUN_LIVE_TESTS=1 mise run coverage`.
 
 ## VCR Fixtures
 

@@ -3347,7 +3347,12 @@ neoforge = "{loader_version}"
                 "hash-format = \"sha256\"\n".to_string(),
             );
 
+        let filesystem = filesystem.with_file(
+            dist_dir.join(format!("neoforge-{version}-installer.jar")),
+            "installer fixture".to_string(),
+        );
         let session = MockCommandSession::new()
+            .with_network(MockNetworkProvider::new().with_failing_http_client())
             .with_filesystem(filesystem)
             .with_process(process);
 
@@ -3362,34 +3367,16 @@ neoforge = "{loader_version}"
 
         let result = orchestrator.download_server_jar(&dist_dir, &pack_info);
 
-        // The call will fail: either the HTTP download fails (network) or the
-        // mock java doesn't produce run.sh/run.bat. Either way, it must not
-        // fail with "unsupported loader type" (that would mean NeoForge isn't dispatched).
-        assert!(result.is_err());
-        let err_msg = format!("{}", result.unwrap_err());
-        assert!(
-            !err_msg.contains("unsupported loader type"),
-            "NeoForge should be dispatched to install_neoforge_server, not rejected"
-        );
-
-        // If the HTTP download succeeded and java ran, verify the invocation args
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("installer did not produce run.sh or run.bat"), "{error}");
         let java_calls = session.process_provider.get_calls_for_command("java");
-        if !java_calls.is_empty() {
-            let args = &java_calls[0].args;
-            assert!(
-                args.contains(&"-jar".to_string()),
-                "Java should be invoked with -jar: {args:?}"
-            );
-            assert!(
-                args.iter()
-                    .any(|a| a.contains("neoforge") && a.contains("installer")),
-                "Java should receive the neoforge installer jar path: {args:?}"
-            );
-            assert!(
-                args.contains(&"--install-server".to_string()),
-                "Java should be invoked with --install-server: {args:?}"
-            );
-        }
+        assert_eq!(java_calls.len(), 1);
+        assert_eq!(java_calls[0].args, vec![
+            "-jar".to_string(),
+            dist_dir.join(format!("neoforge-{version}-installer.jar")).to_string_lossy().into_owned(),
+            "--install-server".to_string(),
+            dist_dir.to_string_lossy().into_owned(),
+        ]);
     }
 
     /// Sanity test: NeoForge server build (non-full, mrpack + packwiz-installer)
@@ -3398,7 +3385,8 @@ neoforge = "{loader_version}"
     /// and that the server JAR download dispatches to install_neoforge_server.
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_neoforge_server_non_full_dispatches_correctly() {
-        let mock = MockBuildOrchestrator::new();
+        let mut mock = MockBuildOrchestrator::new();
+        mock.session.network_provider = MockNetworkProvider::new().with_failing_http_client();
         let mc_version = "1.21.4";
         let loader_version = "21.4.157";
         setup_neoforge_project(&mock, mc_version, loader_version);
@@ -3415,14 +3403,14 @@ neoforge = "{loader_version}"
         let dist_dir = mock.workdir().join("dist").join("server");
         mock.session.filesystem().create_dir_all(&dist_dir).unwrap();
 
+        mock.session.filesystem().write_file(
+            &dist_dir.join(format!("neoforge-{loader_version}-installer.jar")),
+            "installer fixture",
+        ).unwrap();
         let result = orchestrator.download_server_jar(&dist_dir, &pack_info);
-        // The call will fail (no HTTP server), but should NOT be "unsupported loader type"
-        assert!(result.is_err());
-        let error_msg = format!("{}", result.unwrap_err());
-        assert!(
-            !error_msg.contains("unsupported loader type"),
-            "NeoForge should be recognized as a valid loader type"
-        );
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("installer did not produce run.sh or run.bat"), "{error}");
+        assert_eq!(mock.session.process_provider.get_calls_for_command("java").len(), 1);
     }
 
     /// Verify unsupported pre-NeoForge Minecraft versions still fail fast.

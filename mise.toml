@@ -1,6 +1,3 @@
-[settings]
-windows_default_inline_shell_args = "pwsh -NoProfile -NonInteractive -Command"
-
 [tools]
 git-cliff = "latest"
 # cargo-nextest and cargo-llvm-cov installed via taiki-e/install-action in CI
@@ -48,15 +45,21 @@ run_windows = "cargo run -p empack --release --"
 alias = "t"
 depends = ["build:bin"]
 description = "Run unit + integration tests (excludes E2E)"
-run = "cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'"
-run_windows = "cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'"
+run = """
+cargo nextest run -p empack-lib --features test-utils -p empack-tests -E 'not test(~e2e_)'
+cargo test --workspace --doc
+"""
+run_windows = [
+    'cargo nextest run -p empack-lib --features test-utils -p empack-tests -E "not test(~e2e_)"',
+    'cargo test --workspace --doc',
+]
 
 [tasks.e2e]
 alias = "e"
 depends = ["build:bin"]
 description = "Run E2E tests"
 run = "cargo nextest run -p empack-tests -E 'test(~e2e_)'"
-run_windows = "cargo nextest run -p empack-tests -E 'test(~e2e_)'"
+run_windows = 'cargo nextest run -p empack-tests -E "test(~e2e_)"'
 
 [tasks."e2e:filter"]
 alias = "fe"
@@ -66,15 +69,31 @@ usage = 'arg "filter" help="nextest filter expression"'
 run = """
 cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
 """
-run_windows = """
-cargo nextest run -p empack-tests -E 'test(~{{arg(name="filter")}})'
+run_windows = 'cargo nextest run -p empack-tests -E "test(~{{arg(name="filter")}})"'
+
+[tasks."e2e:strict"]
+description = "Build telemetry CLI and require all live E2E prerequisites"
+env = { EMPACK_E2E_STRICT = "1", EMPACK_RUN_LIVE_TESTS = "1" }
+run = """
+cargo build -p empack --features telemetry
+cargo nextest run -p empack-tests --features empack-lib/telemetry -E 'test(~e2e_)'
 """
+run_windows = [
+    'cargo build -p empack --features telemetry',
+    'cargo nextest run -p empack-tests --features empack-lib/telemetry -E "test(~e2e_)"',
+]
 
 [tasks."smoke:import:pr"]
 depends = ["build:bin"]
 description = "Run the platform-selected PR import smoke profile"
 run = "python3 scripts/import-smoke-test.py --profile pr"
 run_windows = "python scripts/import-smoke-test.py --profile pr"
+
+[tasks.smoke]
+depends = ["build:bin"]
+description = "Run deterministic CLI smoke contracts without live providers"
+run = "cargo nextest run -p empack-tests --test smoke"
+run_windows = "cargo nextest run -p empack-tests --test smoke"
 
 [tasks."smoke:import:curated"]
 depends = ["build:bin"]
@@ -92,11 +111,11 @@ cargo llvm-cov clean --workspace
 cargo llvm-cov --no-report run -p empack --features telemetry -- version
 cargo llvm-cov --no-clean nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info
 """
-run_windows = """
-cargo llvm-cov clean --workspace
-cargo llvm-cov --no-report run -p empack --features telemetry -- version
-cargo llvm-cov --no-clean nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info
-"""
+run_windows = [
+    'cargo llvm-cov clean --workspace',
+    'cargo llvm-cov --no-report run -p empack --features telemetry -- version',
+    'cargo llvm-cov --no-clean nextest --workspace --features test-utils,telemetry --lcov --output-path lcov.info',
+]
 
 # Lint
 

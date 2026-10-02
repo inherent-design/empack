@@ -55,9 +55,10 @@ fn e2e_telemetry_chrome_trace() {
             })
         })
         .unwrap_or(false);
-    if !has_trace {
-        eprintln!("SKIP: binary lacks telemetry feature; trace file not produced");
-    }
+    empack_tests::e2e::prerequisite_available(
+        has_trace,
+        "binary lacks telemetry feature; trace file not produced",
+    );
 }
 
 /// Verify empack requirements shows packwiz-tx with version and path.

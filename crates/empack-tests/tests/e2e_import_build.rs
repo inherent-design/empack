@@ -224,9 +224,12 @@ fn e2e_import_curseforge_and_check_restricted() {
     empack_tests::skip_if_no_java!();
     empack_tests::skip_if_no_cf_key!();
 
-    let cf_key = std::env::var("EMPACK_KEY_CURSEFORGE").expect("CurseForge key");
+    let cf_key = empack_tests::e2e::curseforge_key();
 
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .expect("HTTP client");
 
     let files_resp = client
         .get("https://api.curseforge.com/v1/mods/835044/files?gameVersion=1.20.1&pageSize=1")
@@ -316,8 +319,17 @@ fn e2e_import_curseforge_and_check_restricted() {
             "build failed without a restricted-mod message:\n{combined}"
         );
     }
-    // If exit == 0: the pack built successfully, which is also acceptable
-    // since CurseForge restriction status can change over time.
+    if build_output.status.success() {
+        empack_tests::e2e::assert_dist_artifact_suffix(&pack_dir, "-client-full.zip");
+    } else {
+        let pending = empack_lib::empack::restricted_build::load_pending_build(
+            &empack_lib::application::session::LiveFileSystemProvider,
+            &pack_dir,
+        )
+        .unwrap()
+        .expect("restricted failure must persist continuation state");
+        assert!(!pending.entries.is_empty());
+    }
 }
 
 #[test]

@@ -2,7 +2,7 @@
 spec: testing-architecture
 status: partial
 created: 2026-04-08
-updated: 2026-04-11
+updated: 2026-10-02
 depends: [overview, session-providers]
 ---
 
@@ -16,8 +16,10 @@ Current `mise` tasks:
 
 | Command | Behavior |
 | --- | --- |
-| `mise run test` | unit and integration tests, excludes `e2e_` tests |
+| `mise run test` | unit, integration, and doctests; excludes `e2e_` tests |
+| `mise run smoke` | deterministic subprocess runtime contracts using isolated files and seeded HTTP responses |
 | `mise run e2e` | live E2E tests only |
+| `mise run e2e:strict` | telemetry-enabled live E2E; missing prerequisites fail |
 | `mise run e2e:filter <expr>` | filtered live E2E slice |
 | `mise run coverage` | workspace coverage with instrumented binary and telemetry feature |
 
@@ -59,10 +61,10 @@ Typical coverage:
 
 Current E2E harness behavior includes:
 
-- `empack_bin()` resolution from `EMPACK_E2E_BIN`, debug build, release build, coverage-only llvm-cov output, then PATH
+- `empack_bin()` resolution from `EMPACK_E2E_BIN`, coverage-only llvm-cov output when active, debug build, release build, then PATH
 - `NO_COLOR=1` in subprocess helpers
 - isolated `EMPACK_CACHE_DIR` per E2E workdir to avoid host-cache leakage across subprocess tests
-- prerequisite skip macros for missing packwiz-tx or Java
+- prerequisite skip macros for missing packwiz-tx or Java; `EMPACK_E2E_STRICT` turns unavailable prerequisites into failures
 - support for fake `packwiz-tx` via `EMPACK_PACKWIZ_BIN`
 
 ## PTY Coverage
@@ -107,7 +109,8 @@ The `--no-clean` step is required so E2E subprocess tests can find the instrumen
 
 ## Current Counts
 
-These counts are a dated snapshot, not a timeless contract.
+These counts are dated snapshots, not a timeless contract. The expanded
+2026-10-02 verification and runtime evidence map are in [testing.md](../testing.md).
 
 As of 2026-04-10:
 

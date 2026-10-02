@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - [Rust toolchain](https://rustup.rs/) (1.94.0, pinned via `rust-toolchain.toml`)
-- [cargo-nextest](https://nexte.st/) (test runner; CI uses it exclusively)
+- [cargo-nextest](https://nexte.st/) (test runner; runs unit/integration tests; Cargo runs doctests)
 - [mise](https://mise.jdx.dev/) (task runner)
 
 packwiz-tx is auto-managed by empack (downloaded on first use). Override: `EMPACK_PACKWIZ_BIN=/path/to/packwiz-tx` for development.
@@ -11,8 +11,7 @@ packwiz-tx is auto-managed by empack (downloaded on first use). Override: `EMPAC
 For E2E tests (not required for unit tests or development):
 
 - [Java 21+](https://adoptium.net/) (server build E2E tests)
-- `.env.local` with `EMPACK_KEY_CURSEFORGE` (CurseForge API E2E tests)
-- Optional: [Colima](https://github.com/abiosoft/colima) (containerized E2E)
+- A valid CurseForge credential; the built-in default is used unless `EMPACK_KEY_CURSEFORGE` overrides it
 - Optional: `jq` (VCR cassette recording)
 
 ## Getting Started
@@ -42,6 +41,7 @@ Run the compiled binary with real providers (real filesystem, real packwiz, real
 
 ```bash
 mise run e2e
+mise run e2e:strict        # fail on missing prerequisites; include telemetry/live tests
 mise run e2e:filter init    # filtered subset
 ```
 

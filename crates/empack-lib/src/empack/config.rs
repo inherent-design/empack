@@ -343,6 +343,14 @@ impl<'a> ConfigManager<'a> {
     /// Create unified project plan from empack.yml with pack.toml fallbacks
     pub fn create_project_plan(&self) -> Result<ProjectPlan, ConfigError> {
         let empack_config = self.load_empack_config()?;
+        self.create_project_plan_from_config(&empack_config)
+    }
+
+    /// Build a plan from resolved in-memory intent without persisting it.
+    pub(crate) fn create_project_plan_from_config(
+        &self,
+        empack_config: &EmpackConfig,
+    ) -> Result<ProjectPlan, ConfigError> {
         let pack_metadata = self.load_pack_metadata()?;
 
         // Resolve metadata with empack.yml taking precedence

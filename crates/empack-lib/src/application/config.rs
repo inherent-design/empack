@@ -56,7 +56,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub workdir: Option<PathBuf>,
 
-    /// Number of parallel API requests
+    /// Reserved parallelism setting (currently unused)
     #[arg(short = 'j', long, env = "EMPACK_CPU_JOBS", default_value = defaults::CPU_PARALLELS)]
     #[serde(default = "default_fns::cpu_parallels")]
     pub cpu_jobs: usize,
@@ -66,12 +66,12 @@ pub struct AppConfig {
     #[serde(default = "default_fns::net_timeout")]
     pub net_timeout: u64,
 
-    /// Modrinth API Client ID
+    /// Reserved Modrinth client identifier (currently unused)
     #[arg(long, env = "EMPACK_ID_MODRINTH", hide_env_values = true)]
     #[serde(default)]
     pub modrinth_api_client_id: Option<String>,
 
-    /// Modrinth API Client Key
+    /// Reserved Modrinth client key (currently unused)
     #[arg(long, env = "EMPACK_KEY_MODRINTH", hide_env_values = true)]
     #[serde(default)]
     pub modrinth_api_client_key: Option<String>,
@@ -210,6 +210,13 @@ impl AppConfig {
             self.workdir = Some(
                 std::env::current_dir().map_err(|e| ConfigError::CurrentDirError { source: e })?,
             );
+        }
+        if let Some(workdir) = self.workdir.as_mut()
+            && workdir.is_relative()
+        {
+            *workdir = std::env::current_dir()
+                .map_err(|source| ConfigError::CurrentDirError { source })?
+                .join(&*workdir);
         }
 
         Ok(())

@@ -27,8 +27,10 @@ fn e2e_add_to_uninitialized() {
 #[test]
 fn e2e_add_sodium_live() {
     empack_tests::skip_if_no_packwiz!();
-    if std::env::var("EMPACK_RUN_LIVE_TESTS").is_err() {
-        eprintln!("SKIP: set EMPACK_RUN_LIVE_TESTS=1 to run live network tests");
+    if !empack_tests::e2e::prerequisite_available(
+        std::env::var_os("EMPACK_RUN_LIVE_TESTS").is_some(),
+        "set EMPACK_RUN_LIVE_TESTS=1 to run live network tests",
+    ) {
         return;
     }
 
