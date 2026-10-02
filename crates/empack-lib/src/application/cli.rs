@@ -34,16 +34,9 @@ pub enum CliLoad {
 impl CliConfig {
     /// Load configuration from command line arguments
     pub fn load() -> Result<Self, ConfigError> {
-        if let Err(error) = Cli::try_parse()
-            && matches!(
-                error.kind(),
-                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
-            )
-        {
-            error.exit();
-        }
-        super::loader::load_dotenv_files()?;
+        let dotenv = super::loader::load_dotenv_files();
         let cli = Cli::parse();
+        dotenv?;
         Ok(Self {
             app_config: cli.config,
             command: cli.command,

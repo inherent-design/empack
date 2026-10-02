@@ -93,6 +93,33 @@ async fn test_sync_unresolved_search_fails_and_preserves_installed_dependency() 
 }
 
 #[tokio::test]
+async fn test_sync_resolution_write_failure_preserves_manifest_and_installed_dependency() -> Result<()> {
+    let workdir = mock_root().join("workdir");
+    for dry_run in [false, true] {
+        let mut session = MockSessionBuilder::new()
+            .with_empack_project("search-write-failure", "1.21.1", "fabric")
+            .with_mock_http_client()
+            .with_mock_search_result("Sodium", sodium_result())
+            .with_installed_mods(HashSet::from(["sodium".to_string()]))
+            .with_file(workdir.join("empack.yml"), search_project_config().to_string())
+            .build();
+        session.config_provider.app_config.dry_run = dry_run;
+        session.filesystem_provider.add_write_failure(workdir.join("empack.yml"), "manifest is read-only");
+
+        let result = execute_command_with_session(Commands::Sync {}, &session).await;
+        if dry_run {
+            result?;
+        } else {
+            let error = result.expect_err("failed resolution write must fail sync");
+            assert!(format!("{error:#}").contains("manifest is read-only"));
+        }
+        assert!(session.process_provider.get_calls().is_empty());
+        assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml"))?, search_project_config());
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_sync_search_applies_resolution_and_adds_dependency() -> Result<()> {
     let workdir = mock_root().join("workdir");
     let session = MockSessionBuilder::new()

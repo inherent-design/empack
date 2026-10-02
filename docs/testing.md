@@ -79,8 +79,11 @@ CLI smoke assertion before its fix: a parent-relative datapack path accepted by
 init was rejected by sync; an installed-state scan failure could follow a search
 resolution write; and malformed dotenv files prevented Clap help/version output.
 Sync now honors configured datapack paths and scans installed state before
-persisting resolutions. Help/version flags bypass dotenv errors. All eight smoke
-tests pass, including YAML/TOML datapack paths and normal/dry-run scan failures.
+persisting resolutions. Help/version flags bypass dotenv errors. All nine smoke
+tests pass, including YAML/TOML datapack paths, invalid option types, and
+normal/dry-run scan failures. An injected manifest-write failure also verifies
+that sync preserves installed dependencies and fails, while dry-run succeeds
+without attempting the write.
 
 The first Windows CI run failed before executing tests because cmd.exe passed
 single-quoted nextest filters literally. Windows task commands now use double

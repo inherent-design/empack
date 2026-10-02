@@ -240,3 +240,24 @@ fn smoke_malformed_dotenv_does_not_block_clap_help_or_version() {
         }
     }
 }
+
+#[test]
+fn smoke_sync_rejects_non_string_datapack_option_without_changes() {
+    let project = search_project(200);
+    let path = project.dir().join("pack/pack.toml");
+    let content = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(
+        &path,
+        format!("{content}\n[options]\ndatapack-folder = 42\n"),
+    )
+    .unwrap();
+    let before = snapshot(&project);
+    command(&project)
+        .arg("sync")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "options.datapack-folder must be a string",
+        ));
+    assert_eq!(snapshot(&project), before);
+}
