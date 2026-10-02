@@ -3,6 +3,44 @@
 All notable changes to empack are documented in this file.
 
 
+## v0.4.0-alpha.9 - 2026-10-02
+
+### Bug Fixes
+
+- Enforce runtime contracts and strengthen verification
+- Address runtime review findings and Windows test tasks
+- Migrate dependency updates and enforce strict verification
+- Report incomplete mod removal when manifest writes fail
+- Clarify recovery when a manifest write leaves partial data
+
+### Testing
+
+- Cover malformed config and sync write failures
+
+### Maintenance
+
+- Update changelog for 0.4.0-alpha.8
+- **(deps)** Update rust to v1.99.0
+- **(deps)** Update rust crate serde-saphyr to 0.0.29
+- **(deps)** Update rust crate sevenz-rust2 to 0.23
+- **(deps)** Update rust crate expectrl to 0.9
+- **(deps)** Update rust crate quick-xml to 0.42.0
+- **(deps)** Update rust crate tracing-opentelemetry to 0.34
+- **(deps)** Update opentelemetry-rust monorepo to 0.33
+- **(deps)** Update codecov/codecov-action action to v7
+- **(deps)** Update actions/checkout action to v7
+- **(deps)** Update actions/setup-go action to v7
+
+### Other
+
+- Merge pull request #77 from inherent-design/dev
+
+fix: enforce runtime contracts and strengthen verification
+- Merge remote-tracking branch 'origin/main' into maintenance/dependency-updates
+- Merge pull request #78 from inherent-design/maintenance/dependency-updates
+
+fix: migrate dependency updates and require strict runtime verification
+
 ## v0.4.0-alpha.8 - 2026-04-14
 
 ### Bug Fixes
@@ -49,20 +87,40 @@ All notable changes to empack are documented in this file.
 
 ## v0.4.0-alpha.5 - 2026-04-12
 
+### Features
+
+- Stabilize cli contracts and tracked local deps
+
 ### Bug Fixes
 
+- Preserve reported restricted download paths
+- Tighten exit and restricted parser heuristics
+- Align zip type exit handling and build validation
+- Suppress duplicate process error output
+- Classify local dependency validation as usage
+- Harden restricted parsing and local removal
+- Bound subprocess marker cleanup
+- Guard local key collisions and empty urls
+- Guard clean and restricted build edges
+- Harden local dependency validation
+- Detect recent restricted downloads by metadata
 - Harden import and local path handling
 
 ### Testing
 
+- Backfill reviewer lint and coverage pass
+- Stabilize interactive browser opener e2e
+- Align init e2e with display error output
 - Expand import and path guard coverage
 
 ### Documentation
 
+- Consolidate specs and drop stale audit
 - Update README CI badge
 
 ### CI/CD
 
+- Split branch, pr, and post-merge workflows
 - Pass release token via input
 
 ### Maintenance
@@ -84,21 +142,9 @@ All notable changes to empack are documented in this file.
 ### Features
 
 - Stabilize cli contracts and tracked local deps
-- Stabilize cli contracts and tracked local deps
 
 ### Bug Fixes
 
-- Preserve reported restricted download paths
-- Tighten exit and restricted parser heuristics
-- Align zip type exit handling and build validation
-- Suppress duplicate process error output
-- Classify local dependency validation as usage
-- Harden restricted parsing and local removal
-- Bound subprocess marker cleanup
-- Guard local key collisions and empty urls
-- Guard clean and restricted build edges
-- Harden local dependency validation
-- Detect recent restricted downloads by metadata
 - Preserve reported restricted download paths
 - Tighten exit and restricted parser heuristics
 - Align zip type exit handling and build validation
@@ -115,18 +161,13 @@ All notable changes to empack are documented in this file.
 - Backfill reviewer lint and coverage pass
 - Stabilize interactive browser opener e2e
 - Align init e2e with display error output
-- Backfill reviewer lint and coverage pass
-- Stabilize interactive browser opener e2e
-- Align init e2e with display error output
 
 ### Documentation
 
 - Consolidate specs and drop stale audit
-- Consolidate specs and drop stale audit
 
 ### CI/CD
 
-- Split branch, pr, and post-merge workflows
 - Split branch, pr, and post-merge workflows
 
 ### Maintenance
