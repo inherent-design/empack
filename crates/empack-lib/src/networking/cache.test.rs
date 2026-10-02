@@ -319,7 +319,7 @@ async fn test_http_cache_hit_returns_cached_data() {
 #[tokio::test]
 async fn test_http_etag_revalidation_304() {
     let temp_dir = TempDir::new().unwrap();
-    let cache = HttpCache::with_ttl(temp_dir.path().to_path_buf(), Duration::from_millis(10));
+    let cache = HttpCache::new(temp_dir.path().to_path_buf());
     let client = Client::new();
 
     let mut server = Server::new_async().await;
@@ -343,8 +343,9 @@ async fn test_http_etag_revalidation_304() {
 
     mock1.assert_async().await;
 
-    // Wait for cache to expire
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    let mut expired = result1.clone();
+    expired.expires = SystemTime::now() - Duration::from_secs(1);
+    cache.put(url.clone(), expired).await;
 
     // Second request - returns 304 Not Modified
     let mock2 = server
@@ -356,9 +357,12 @@ async fn test_http_etag_revalidation_304() {
         .await;
 
     // Second request - should revalidate with ETag and get 304
+    let revalidation_started = SystemTime::now();
     let result2 = cache.get_with_etag(&client, &url).await.unwrap();
     assert_eq!(result2.data, b"original data"); // Should return cached data
-    assert!(!result2.is_expired()); // TTL should be extended
+    assert_eq!(result2.etag, result1.etag);
+    assert!(result2.expires >= revalidation_started + cache.default_ttl());
+    assert_eq!(cache.get(&url).await.unwrap().expires, result2.expires);
 
     mock2.assert_async().await;
 }

@@ -2,7 +2,7 @@
 spec: config-and-manifest
 status: partial
 created: 2026-04-08
-updated: 2026-04-11
+updated: 2026-10-02
 depends: [overview, types]
 ---
 
@@ -153,6 +153,8 @@ Current sync rules depend on the config model:
 - `empack.yml` is the source of dependency intent.
 - `pack.toml` is the source of packwiz pack metadata.
 - Search entries must resolve to canonical platform records before they enter the operational `ProjectPlan`.
+- Dry-run sync builds the operational plan from in-memory resolved intent without persisting search resolutions.
+- Search resolution and planning failures make sync fail, even when other actions succeed. The first resolution error remains in the error chain for exit-code classification.
 - Local entries enter the operational `ProjectPlan` directly without packwiz resolution.
 - Resolved dependency keys are compared against installed `.pw.toml` filename stems.
 - `clean` preserves `empack.yml` and `pack/`.

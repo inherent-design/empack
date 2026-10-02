@@ -27,9 +27,10 @@ impl<'a> ProgressDisplay<'a> {
     ///
     /// Example:
     /// ```
-    /// let progress = Display::progress()
-    ///     .message("Downloading mods")
-    ///     .total(25);
+    /// # use empack_lib::display::Display;
+    /// let display = Display::progress();
+    /// let progress = display.bar(25);
+    /// progress.set_message("Downloading mods");
     ///
     /// for i in 0..25 {
     ///     progress.set_position(i);
@@ -68,8 +69,9 @@ impl<'a> ProgressDisplay<'a> {
     ///
     /// Example:
     /// ```
-    /// let spinner = Display::progress()
-    ///     .spinner("Resolving dependencies");
+    /// # use empack_lib::display::Display;
+    /// let display = Display::progress();
+    /// let spinner = display.spinner("Resolving dependencies");
     ///
     /// // ... long operation
     ///

@@ -8,8 +8,8 @@ use crate::fixtures::WorkflowProjectFixture;
 ///
 /// Checks in order:
 /// - `EMPACK_E2E_BIN`
-/// - debug/release builds for normal local runs
-/// - llvm-cov instrumented builds only when coverage is active
+/// - llvm-cov instrumented builds first when coverage is active
+/// - debug/release builds for normal local runs or fallback
 /// - bare PATH fallback
 pub fn empack_bin() -> PathBuf {
     if let Ok(bin) = std::env::var("EMPACK_E2E_BIN") {
@@ -23,23 +23,25 @@ pub fn empack_bin() -> PathBuf {
     let coverage_active = std::env::var_os("LLVM_PROFILE_FILE").is_some()
         || std::env::var_os("CARGO_LLVM_COV").is_some();
 
-    for profile in &["debug", "release"] {
-        let candidate = target_root.join(format!("{profile}/empack{exe}"));
-        if candidate.exists() {
-            return candidate;
-        }
-    }
+    find_empack_bin(&target_root, exe, coverage_active)
+        .unwrap_or_else(|| PathBuf::from(format!("empack{exe}")))
+}
 
-    if coverage_active {
-        for cov_dir in &["llvm-cov-target/debug", "llvm-cov-target/release"] {
-            let candidate = target_root.join(format!("{cov_dir}/empack{exe}"));
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-    }
-
-    PathBuf::from(format!("empack{exe}"))
+fn find_empack_bin(target_root: &Path, exe: &str, coverage_active: bool) -> Option<PathBuf> {
+    let profiles: &[&str] = if coverage_active {
+        &[
+            "llvm-cov-target/debug",
+            "llvm-cov-target/release",
+            "debug",
+            "release",
+        ]
+    } else {
+        &["debug", "release"]
+    };
+    profiles
+        .iter()
+        .map(|profile| target_root.join(format!("{profile}/empack{exe}")))
+        .find(|candidate| candidate.is_file())
 }
 
 pub fn has_packwiz() -> bool {
@@ -47,16 +49,38 @@ pub fn has_packwiz() -> bool {
 }
 
 pub fn has_java() -> bool {
-    Command::new("java")
-        .arg("-version")
+    command_succeeds(Command::new("java").arg("-version"))
+}
+
+fn command_succeeds(command: &mut Command) -> bool {
+    command
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .is_ok()
+        .is_ok_and(|status| status.success())
+}
+
+/// Resolve the same CurseForge credential default used by the CLI.
+pub fn curseforge_key() -> String {
+    std::env::var("EMPACK_KEY_CURSEFORGE").unwrap_or_else(|_| {
+        empack_lib::application::config::defaults::CURSEFORGE_API_CLIENT_KEY.to_string()
+    })
 }
 
 pub fn has_cf_key() -> bool {
-    std::env::var("EMPACK_KEY_CURSEFORGE").is_ok()
+    !curseforge_key().trim().is_empty()
+}
+
+/// Report an unavailable prerequisite, failing strict verification runs.
+pub fn prerequisite_available(available: bool, reason: &str) -> bool {
+    if !available {
+        assert!(
+            std::env::var_os("EMPACK_E2E_STRICT").is_none(),
+            "Missing E2E prerequisite: {reason}"
+        );
+        eprintln!("SKIP: {reason}");
+    }
+    available
 }
 
 #[cfg(windows)]
@@ -284,8 +308,10 @@ fi
 #[macro_export]
 macro_rules! skip_if_no_packwiz {
     () => {
-        if !$crate::e2e::has_packwiz() {
-            eprintln!("SKIP: packwiz not in PATH");
+        if !$crate::e2e::prerequisite_available(
+            $crate::e2e::has_packwiz(),
+            "packwiz-tx unavailable",
+        ) {
             return;
         }
     };
@@ -296,8 +322,7 @@ macro_rules! skip_if_no_packwiz {
 macro_rules! skip_if_no_java {
     () => {
         $crate::skip_if_no_packwiz!();
-        if !$crate::e2e::has_java() {
-            eprintln!("SKIP: java not in PATH");
+        if !$crate::e2e::prerequisite_available($crate::e2e::has_java(), "java -version failed") {
             return;
         }
     };
@@ -308,8 +333,10 @@ macro_rules! skip_if_no_java {
 macro_rules! skip_if_no_cf_key {
     () => {
         $crate::skip_if_no_packwiz!();
-        if !$crate::e2e::has_cf_key() {
-            eprintln!("SKIP: EMPACK_KEY_CURSEFORGE not set");
+        if !$crate::e2e::prerequisite_available(
+            $crate::e2e::has_cf_key(),
+            "CurseForge API key unavailable",
+        ) {
             return;
         }
     };
@@ -895,4 +922,52 @@ pub fn write_local_mrpack(
     create_archive(source_dir.path(), archive_path, ArchiveFormat::Zip)
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod harness_tests {
+    use super::*;
+
+    #[test]
+    fn coverage_uses_instrumented_binary_even_with_existing_debug_build() {
+        let root = tempfile::tempdir().unwrap();
+        for profile in ["debug", "release", "llvm-cov-target/debug"] {
+            let dir = root.path().join(profile);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("empack"), "fixture").unwrap();
+        }
+        assert_eq!(
+            find_empack_bin(root.path(), "", true).unwrap(),
+            root.path().join("llvm-cov-target/debug/empack")
+        );
+        assert_eq!(
+            find_empack_bin(root.path(), "", false).unwrap(),
+            root.path().join("debug/empack")
+        );
+    }
+
+    #[test]
+    fn ordinary_runs_do_not_select_stale_coverage_binary() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("llvm-cov-target/debug");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("empack.exe"), "fixture").unwrap();
+        assert!(find_empack_bin(root.path(), ".exe", false).is_none());
+        assert_eq!(
+            find_empack_bin(root.path(), ".exe", true).unwrap(),
+            dir.join("empack.exe")
+        );
+    }
+
+    #[test]
+    fn prerequisite_probe_requires_successful_exit() {
+        let exe = std::env::current_exe().unwrap();
+        assert!(command_succeeds(Command::new(&exe).arg("--list")));
+        assert!(!command_succeeds(
+            Command::new(&exe).arg("--invalid-prerequisite-probe")
+        ));
+        assert!(!command_succeeds(&mut Command::new(
+            "nonexistent-empack-test-program"
+        )));
+    }
 }

@@ -3747,7 +3747,7 @@ async fn run_build_pipeline(
             session
                 .display()
                 .status()
-                .info("If the build left partial artifacts, run 'empack clean --builds' to reset");
+                .info("If the build left partial artifacts, run 'empack clean builds' to reset");
         })
         .context("Failed to execute build pipeline")
 }
@@ -4203,7 +4203,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         .project_resolver(client.clone(), curseforge_api_key);
 
     // Phase 1: Resolve any Search entries before building the project plan
-    let empack_config = config_manager
+    let mut empack_config = config_manager
         .load_empack_config()
         .context("Failed to load empack.yml configuration")?;
 
@@ -4222,6 +4222,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     // Track slugs whose Search resolution fails so we can protect them from removal
     let mut unresolved_slugs: HashSet<String> = HashSet::new();
+    let mut resolution_error: Option<anyhow::Error> = None;
 
     if !search_entries.is_empty() {
         session
@@ -4284,16 +4285,21 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         version: None,
                     };
 
-                    // Remove old search entry if slug differs from resolved slug
-                    let resolved_slug = slug.clone();
-                    if let Err(e) = config_manager.add_dependency(&resolved_slug, record) {
+                    if !session.config().app_config().dry_run
+                        && let Err(e) = config_manager.add_dependency(slug, record.clone())
+                    {
                         session.display().status().warning(&format!(
                             "Failed to update empack.yml for '{}': {}",
                             search.title, e
                         ));
                         unresolved_slugs.insert(slug.clone());
+                        resolution_error.get_or_insert_with(|| e.into());
                         continue;
                     }
+                    empack_config
+                        .empack
+                        .dependencies
+                        .insert(slug.clone(), DependencyEntry::Resolved(record));
 
                     session.display().status().success(
                         "Resolved",
@@ -4309,6 +4315,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         .status()
                         .warning(&format!("Could not resolve '{}': {}", search.title, e));
                     unresolved_slugs.insert(slug.clone());
+                    resolution_error.get_or_insert_with(|| e.into());
                 }
             }
         }
@@ -4316,7 +4323,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     // Phase 2: Build project plan (now all resolvable entries are Resolved)
     let project_plan = config_manager
-        .create_project_plan()
+        .create_project_plan_from_config(&empack_config)
         .context("Failed to load empack.yml configuration")?;
 
     let local_dependency_issues =
@@ -4349,27 +4356,14 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         project_plan.minecraft_version, project_plan.loader_version
     ));
 
-    // Get currently installed mods
-    let installed_mods = match session.packwiz().get_installed_mods(&workdir) {
-        Ok(mods) => {
-            session
-                .display()
-                .status()
-                .info(&format!("Found {} currently installed mods", mods.len()));
-            mods
-        }
-        Err(e) => {
-            session
-                .display()
-                .status()
-                .warning(&format!("Could not read installed mods: {}", e));
-            session
-                .display()
-                .status()
-                .info("Assuming empty pack (add-only mode)");
-            HashSet::new()
-        }
-    };
+    let installed_mods = session
+        .packwiz()
+        .get_installed_mods(&workdir)
+        .context("Could not read installed mods; sync aborted")?;
+    session.display().status().info(&format!(
+        "Found {} currently installed mods",
+        installed_mods.len()
+    ));
 
     let sync_plan = build_sync_plan(&project_plan, &installed_mods);
 
@@ -4441,27 +4435,18 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     &format!("Failed to plan {action_label}"),
                     &render_add_contract_error_details(&e),
                 );
+                resolution_error.get_or_insert_with(|| e.into());
             }
         }
     }
 
     // Show planned actions
     if planned_actions.is_empty() {
-        if planning_failure_count > 0 {
-            anyhow::bail!(
-                "All {} planned action(s) failed during resolution. Check warnings above.",
-                planning_failure_count
-            );
-        } else if !unresolved_slugs.is_empty() {
-            session.display().status().warning(&format!(
-                "{} search {} could not be resolved. Run sync again to retry.",
-                unresolved_slugs.len(),
-                if unresolved_slugs.len() == 1 {
-                    "entry"
-                } else {
-                    "entries"
-                }
-            ));
+        if let Some(error) = resolution_error {
+            return Err(error.context(format!(
+                "{} action(s) failed during resolution. Run sync again to retry.",
+                planning_failure_count + unresolved_slugs.len()
+            )));
         } else if !local_dependency_issues.is_empty() {
             session
                 .display()
@@ -4522,6 +4507,12 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 
     if session.config().app_config().dry_run {
+        if let Some(error) = resolution_error {
+            return Err(error.context(format!(
+                "Dry run incomplete: {} action(s) failed during resolution; no changes applied",
+                planning_failure_count + unresolved_slugs.len()
+            )));
+        }
         session
             .display()
             .status()
@@ -4659,6 +4650,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 
     session.display().status().section("Sync Summary");
+    failure_count += planning_failure_count + unresolved_slugs.len();
     session
         .display()
         .status()
@@ -4688,10 +4680,14 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .display()
             .status()
             .warning(&format!("Sync completed with {} failures", failure_count));
-        anyhow::bail!(
+        let message = format!(
             "Sync completed with {} failed action(s); review warnings above",
             failure_count
-        )
+        );
+        Err(match resolution_error {
+            Some(error) => error.context(message),
+            None => anyhow::anyhow!(message),
+        })
     }
 }
 

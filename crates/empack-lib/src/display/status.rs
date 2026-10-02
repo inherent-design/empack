@@ -97,6 +97,7 @@ impl<'a> StatusDisplay<'a> {
     ///
     /// Example:
     /// ```
+    /// # use empack_lib::display::Display;
     /// Display::status().list(&[
     ///     "packwiz installed",
     ///     "archive tools available",

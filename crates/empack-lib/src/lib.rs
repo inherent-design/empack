@@ -16,10 +16,11 @@
 //! ## Quick Start
 //!
 //! ```no_run
-//! # tokio_test::block_on(async {
+//! #[tokio::main]
+//! async fn main() {
 //! // Initialize and run empack
 //! empack_lib::main().await.unwrap();
-//! # })
+//! }
 //! ```
 
 pub mod api;
@@ -98,7 +99,8 @@ pub async fn process_main() -> std::process::ExitCode {
     }
 }
 
-pub async fn run_with_config(config: CliConfig) -> Result<()> {
+pub async fn run_with_config(mut config: CliConfig) -> Result<()> {
+    config.app_config.validate()?;
     let workdir = config.app_config.workdir.clone();
     run_main_loop(workdir, execute_command(config)).await
 }

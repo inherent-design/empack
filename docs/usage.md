@@ -21,10 +21,10 @@ These options are defined on the root CLI and shape all command execution.
 | Flag | Env var | Default | Meaning |
 | --- | --- | --- | --- |
 | `-w`, `--workdir <PATH>` | `EMPACK_WORKDIR` | current directory | Working directory for project operations |
-| `-j`, `--cpu-jobs <N>` | `EMPACK_CPU_JOBS` | `2` | Configured parallel job count |
+| `-j`, `--cpu-jobs <N>` | `EMPACK_CPU_JOBS` | `2` | Reserved; currently unused |
 | `-t`, `--net-timeout <SECS>` | `EMPACK_NET_TIMEOUT` | `30` | HTTP timeout in seconds |
-| `--modrinth-api-client-id <VALUE>` | `EMPACK_ID_MODRINTH` | *none* | Optional Modrinth client identifier |
-| `--modrinth-api-client-key <VALUE>` | `EMPACK_KEY_MODRINTH` | *none* | Optional Modrinth API key |
+| `--modrinth-api-client-id <VALUE>` | `EMPACK_ID_MODRINTH` | *none* | Reserved; currently unused |
+| `--modrinth-api-client-key <VALUE>` | `EMPACK_KEY_MODRINTH` | *none* | Reserved; currently unused |
 | `--curseforge-api-client-key <VALUE>` | `EMPACK_KEY_CURSEFORGE` | built-in default key | CurseForge API key |
 | `--log-level <N>` | `EMPACK_LOG_LEVEL` | `0` | Verbosity from error to trace |
 | `--log-format <FMT>` | `EMPACK_LOG_FORMAT` | `text` | `text`, `json`, or `yaml` |
@@ -32,6 +32,11 @@ These options are defined on the root CLI and shape all command execution.
 | `-c`, `--color <MODE>` | `EMPACK_COLOR` | `auto` | `auto`, `always`, or `never` |
 | `-y`, `--yes` | `EMPACK_YES` | `false` | Non-interactive defaults |
 | `--dry-run` | `EMPACK_DRY_RUN` | `false` | Preview supported operations without changing files |
+
+CLI flags override existing environment variables, then `.env.local`, then `.env`.
+Dotenv files are read from the invocation directory before parsing the CLI.
+Relative `--workdir` paths are resolved against that directory before project
+operations or subprocesses start.
 
 ## Commands
 
@@ -164,6 +169,9 @@ Current sync behavior:
 - tracked local dependencies are validated in place and are not passed to packwiz
 - missing local files or hash drift fail normal sync
 - `--dry-run` reports local dependency drift without mutating the project
+- search entries resolve in memory during `--dry-run`; the manifest, pack metadata, and index remain unchanged
+- unresolved search entries and failed action planning return a nonzero result, including during dry runs
+- normal sync can apply valid actions despite resolution failures, but reports the overall sync as incomplete; installed entries whose searches fail remain protected from removal
 
 ### empack build
 

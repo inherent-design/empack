@@ -2,7 +2,7 @@
 spec: session-providers
 status: partial
 created: 2026-04-04
-updated: 2026-04-11
+updated: 2026-10-02
 depends: [overview]
 ---
 
@@ -85,7 +85,10 @@ Interrupt cleanup is scope-aware:
 
 ## Session Construction
 
-`CommandSession::new_async()` is the standard live entry point.
+`CommandSession::new_async()` is the standard live session entry point.
+The executable loads dotenv before parsing CLI arguments; `run_with_config()`
+validates configuration and makes the working directory absolute before entering
+the main loop and constructing the session.
 
 Construction steps:
 
@@ -128,9 +131,9 @@ Subprocess E2E tests bypass the session injection layer and execute the compiled
 | Component | Purpose |
 | --- | --- |
 | `TestProject` | Isolated TempDir + `cmd()` builder with NO_COLOR |
-| `empack_bin()` | Binary resolution: EMPACK_E2E_BIN, debug, release, coverage-only llvm-cov, then PATH |
+| `empack_bin()` | Binary resolution: EMPACK_E2E_BIN, active coverage llvm-cov, debug, release, then PATH |
 | `empack_assert_cmd()` | assert_cmd Command from resolved binary |
-| `skip_if_no_packwiz!()` | Skip macros for missing prerequisites (chained) |
+| `skip_if_no_packwiz!()` | Chained prerequisite checks; fail when EMPACK_E2E_STRICT is set |
 
 Current PTY scope is intentionally limited:
 

@@ -24,7 +24,8 @@ impl<'a> StructuredDisplay<'a> {
     ///
     /// Example:
     /// ```
-    /// Display::table()
+    /// # use empack_lib::display::Display;
+    /// Display::table().table()
     ///     .header(&["Tool", "Status", "Version"])
     ///     .row(&["packwiz", "✓", "v0.16.1"])
     ///     .row(&["Go", "✗", "not found"])
@@ -38,7 +39,8 @@ impl<'a> StructuredDisplay<'a> {
     ///
     /// Example:
     /// ```
-    /// Display::structured()
+    /// # use empack_lib::display::Display;
+    /// Display::table()
     ///     .pairs(&[
     ///         ("Project", "my-modpack"),
     ///         ("Minecraft", "1.21.6"),

@@ -1,5 +1,5 @@
 use empack_lib::EmpackExitCode;
-use empack_tests::e2e::{TestProject, empack_cmd};
+use empack_tests::e2e::{TestProject, empack_bin, empack_cmd};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -45,20 +45,19 @@ fn configure_command_env(cmd: &mut Command, workdir: &Path) {
     }
 }
 
-fn cargo_empack_cmd(workdir: &Path) -> Command {
-    let mut cmd = Command::new("cargo");
+fn binary_empack_cmd(workdir: &Path) -> Command {
+    let mut cmd = Command::new(empack_bin());
     cmd.current_dir(workspace_root());
-    cmd.args(["run", "-q", "-p", "empack", "--", "--workdir"]);
+    cmd.arg("--workdir");
     cmd.arg(workdir);
     configure_command_env(&mut cmd, workdir);
     cmd
 }
 
-fn cargo_empack_root_cmd() -> Command {
+fn binary_empack_root_cmd() -> Command {
     let root = workspace_root();
-    let mut cmd = Command::new("cargo");
+    let mut cmd = Command::new(empack_bin());
     cmd.current_dir(&root);
-    cmd.args(["run", "-q", "-p", "empack", "--"]);
     configure_command_env(&mut cmd, &root);
     cmd
 }
@@ -107,7 +106,7 @@ fn write_blocking_packwiz_binary(workdir: &Path, started_marker: &Path) -> PathB
 
 #[test]
 fn e2e_parse_error_exits_two() {
-    let output = cargo_empack_root_cmd()
+    let output = binary_empack_root_cmd()
         .arg("--definitely-invalid-flag")
         .output()
         .expect("spawn parse-error command");
@@ -128,7 +127,7 @@ fn e2e_parse_error_exits_two() {
 #[test]
 fn e2e_uninitialized_build_exits_two() {
     let project = TestProject::new();
-    let output = cargo_empack_cmd(project.dir())
+    let output = binary_empack_cmd(project.dir())
         .args(["build", "mrpack"])
         .output()
         .expect("spawn build command");
@@ -150,7 +149,7 @@ fn e2e_uninitialized_build_exits_two() {
 #[test]
 fn e2e_direct_zip_without_type_exits_two() {
     let project = TestProject::workflow_fixture("exit-zip-without-type", "fabric", "1.21.1");
-    let output = cargo_empack_cmd(project.dir())
+    let output = binary_empack_cmd(project.dir())
         .args(["add", "https://example.invalid/pack.zip"])
         .output()
         .expect("spawn zip-without-type command");
@@ -172,7 +171,7 @@ fn e2e_direct_zip_without_type_exits_two() {
 #[test]
 fn e2e_direct_zip_with_invalid_type_exits_two() {
     let project = TestProject::workflow_fixture("exit-zip-invalid-type", "fabric", "1.21.1");
-    let output = cargo_empack_cmd(project.dir())
+    let output = binary_empack_cmd(project.dir())
         .args(["add", "--type", "mod", "https://example.invalid/pack.zip"])
         .output()
         .expect("spawn zip-invalid-type command");
@@ -195,7 +194,7 @@ fn e2e_direct_zip_with_invalid_type_exits_two() {
 #[test]
 fn e2e_unsupported_direct_extension_exits_two() {
     let project = TestProject::workflow_fixture("exit-unsupported-extension", "fabric", "1.21.1");
-    let output = cargo_empack_cmd(project.dir())
+    let output = binary_empack_cmd(project.dir())
         .args([
             "add",
             "--type",
@@ -243,7 +242,7 @@ fn e2e_missing_tracked_local_dependency_validation_exits_two() {
     )
     .expect("write empack.yml with tracked local dependency");
 
-    let output = cargo_empack_cmd(project.dir())
+    let output = binary_empack_cmd(project.dir())
         .args(["build", "mrpack"])
         .output()
         .expect("spawn local-validation build command");
@@ -293,7 +292,7 @@ fn e2e_tracked_local_parent_dir_validation_exits_two() {
     )
     .expect("write empack.yml with parent-dir tracked local dependency");
 
-    let output = cargo_empack_cmd(project.dir())
+    let output = binary_empack_cmd(project.dir())
         .args(["build", "mrpack"])
         .output()
         .expect("spawn parent-dir local-validation build command");
@@ -325,7 +324,7 @@ fn e2e_packwiz_process_failure_exits_one() {
     let project = TestProject::workflow_fixture("exit-remove-fail", "fabric", "1.21.1");
     let fake_packwiz = write_failing_packwiz_binary(project.dir());
 
-    let output = cargo_empack_cmd(project.dir())
+    let output = binary_empack_cmd(project.dir())
         .env("EMPACK_PACKWIZ_BIN", fake_packwiz)
         .args(["remove", "sodium"])
         .output()
@@ -349,7 +348,7 @@ fn e2e_packwiz_process_failure_exits_one() {
 fn e2e_network_failure_exits_three() {
     let project = TestProject::workflow_fixture("exit-network-fail", "fabric", "1.21.1");
 
-    let output = cargo_empack_cmd(project.dir())
+    let output = binary_empack_cmd(project.dir())
         .env("EMPACK_NET_TIMEOUT", "1")
         .env("HTTPS_PROXY", "http://127.0.0.1:9")
         .env("https_proxy", "http://127.0.0.1:9")
