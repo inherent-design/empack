@@ -6690,7 +6690,7 @@ fn test_render_add_contract_error_low_confidence() {
 fn test_render_add_contract_error_incompatible_project_loader() {
     let rendered = render_add_contract_error(&AddContractError::ResolveProject {
         query: "sodium".to_string(),
-        source: crate::empack::search::SearchError::IncompatibleProject {
+        source: crate::empack::search::SearchError::IncompatibleProject(Box::new(crate::empack::search::IncompatibleProject {
             query: "sodium".to_string(),
             project_title: "Sodium".to_string(),
             project_slug: "sodium".to_string(),
@@ -6703,7 +6703,7 @@ fn test_render_add_contract_error_incompatible_project_loader() {
             requested_loader: Some("forge".to_string()),
             requested_version: Some("1.21.4".to_string()),
             downloads: 134_306_743,
-        },
+        })),
     });
 
     assert_eq!(rendered.item, "Mod found but incompatible");
@@ -6733,7 +6733,7 @@ fn test_render_add_contract_error_incompatible_project_loader() {
 fn test_render_add_contract_error_incompatible_project_loader_only() {
     let rendered = render_add_contract_error(&AddContractError::ResolveProject {
         query: "sodium".to_string(),
-        source: crate::empack::search::SearchError::IncompatibleProject {
+        source: crate::empack::search::SearchError::IncompatibleProject(Box::new(crate::empack::search::IncompatibleProject {
             query: "sodium".to_string(),
             project_title: "Sodium".to_string(),
             project_slug: "sodium".to_string(),
@@ -6742,7 +6742,7 @@ fn test_render_add_contract_error_incompatible_project_loader_only() {
             requested_loader: Some("forge".to_string()),
             requested_version: None,
             downloads: 50_000,
-        },
+        })),
     });
 
     assert_eq!(rendered.item, "Mod found but incompatible");
@@ -8701,7 +8701,7 @@ mod render_error_edge_case_tests {
     fn incompatible_project_version_only_no_loader() {
         let rendered = render_add_contract_error(&AddContractError::ResolveProject {
             query: "sodium".to_string(),
-            source: crate::empack::search::SearchError::IncompatibleProject {
+            source: crate::empack::search::SearchError::IncompatibleProject(Box::new(crate::empack::search::IncompatibleProject {
                 query: "sodium".to_string(),
                 project_title: "Sodium".to_string(),
                 project_slug: "sodium".to_string(),
@@ -8710,7 +8710,7 @@ mod render_error_edge_case_tests {
                 requested_loader: None,
                 requested_version: Some("1.20.1".to_string()),
                 downloads: 100_000_000,
-            },
+            })),
         });
 
         assert_eq!(rendered.item, "Mod found but incompatible");
@@ -8730,7 +8730,7 @@ mod render_error_edge_case_tests {
     fn incompatible_project_neither_loader_nor_version() {
         let rendered = render_add_contract_error(&AddContractError::ResolveProject {
             query: "sodium".to_string(),
-            source: crate::empack::search::SearchError::IncompatibleProject {
+            source: crate::empack::search::SearchError::IncompatibleProject(Box::new(crate::empack::search::IncompatibleProject {
                 query: "sodium".to_string(),
                 project_title: "Sodium".to_string(),
                 project_slug: "sodium".to_string(),
@@ -8739,7 +8739,7 @@ mod render_error_edge_case_tests {
                 requested_loader: None,
                 requested_version: None,
                 downloads: 0,
-            },
+            })),
         });
 
         assert_eq!(rendered.item, "Mod found but incompatible");

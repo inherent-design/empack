@@ -2012,7 +2012,7 @@ struct RenderedStatusError {
 fn render_add_contract_error(error: &AddContractError) -> RenderedStatusError {
     let item = match error {
         AddContractError::ResolveProject { source, .. } => {
-            if matches!(source, SearchError::IncompatibleProject { .. }) {
+            if matches!(source, SearchError::IncompatibleProject(..)) {
                 "Mod found but incompatible"
             } else {
                 "Failed to resolve mod"
@@ -2030,15 +2030,15 @@ fn render_add_contract_error(error: &AddContractError) -> RenderedStatusError {
 fn render_add_contract_error_details(error: &AddContractError) -> String {
     match error {
         AddContractError::ResolveProject { query, source } => {
-            if let SearchError::IncompatibleProject {
-                project_title,
-                available_loaders,
-                requested_loader,
-                requested_version,
-                downloads,
-                ..
-            } = source
-            {
+            if let SearchError::IncompatibleProject(details) = source {
+                let crate::empack::search::IncompatibleProject {
+                    project_title,
+                    available_loaders,
+                    requested_loader,
+                    requested_version,
+                    downloads,
+                    ..
+                } = details.as_ref();
                 let loaders_str = available_loaders.join(", ");
                 let dl_str = format_downloads(*downloads);
                 match (requested_loader.as_deref(), requested_version.as_deref()) {

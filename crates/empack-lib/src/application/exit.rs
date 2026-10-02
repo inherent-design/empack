@@ -41,7 +41,7 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
             SearchError::MissingApiKey { .. } => EmpackExitCode::Usage,
             SearchError::LowConfidence { .. }
             | SearchError::ExtraWords { .. }
-            | SearchError::IncompatibleProject { .. }
+            | SearchError::IncompatibleProject(..)
             | SearchError::Other(_) => EmpackExitCode::Usage,
             SearchError::JsonError { .. } => EmpackExitCode::General,
         };

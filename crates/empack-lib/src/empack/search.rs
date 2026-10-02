@@ -46,23 +46,29 @@ pub enum SearchError {
     #[error("Project has extra words: '{found}' vs '{query}'")]
     ExtraWords { found: String, query: String },
 
-    #[error("'{project_title}' exists but is incompatible with the requested configuration. Supported loaders: {}", available_loaders.join(", "))]
-    IncompatibleProject {
-        query: String,
-        project_title: String,
-        project_slug: String,
-        available_loaders: Vec<String>,
-        available_versions: Vec<String>,
-        requested_loader: Option<String>,
-        requested_version: Option<String>,
-        downloads: u64,
-    },
+    #[error("'{}' exists but is incompatible with the requested configuration. Supported loaders: {}", .0.project_title, .0.available_loaders.join(", "))]
+    IncompatibleProject(Box<IncompatibleProject>),
 
     #[error("API key missing for platform: {platform}")]
     MissingApiKey { platform: String },
 
     #[error("{0}")]
     Other(#[from] anyhow::Error),
+}
+
+/// Compatibility details for an existing project with no matching release.
+///
+/// Boxed in [`SearchError`] to keep ordinary resolution results small.
+#[derive(Debug)]
+pub struct IncompatibleProject {
+    pub query: String,
+    pub project_title: String,
+    pub project_slug: String,
+    pub available_loaders: Vec<String>,
+    pub available_versions: Vec<String>,
+    pub requested_loader: Option<String>,
+    pub requested_version: Option<String>,
+    pub downloads: u64,
 }
 
 /// Trait for project resolution across project platforms
@@ -432,7 +438,7 @@ impl ProjectResolver {
             project.confidence =
                 fuzzy::calculate_confidence(query, &project.title, project.downloads);
         }
-        projects.sort_by(|a, b| b.confidence.cmp(&a.confidence));
+        projects.sort_by_key(|project| std::cmp::Reverse(project.confidence));
         projects
     }
 
@@ -817,16 +823,18 @@ impl ProjectResolver {
             return Ok(None);
         }
 
-        Ok(Some(SearchError::IncompatibleProject {
-            query: title.to_string(),
-            project_title: project.title.clone(),
-            project_slug: project.slug.clone(),
-            available_loaders,
-            available_versions: project.versions.clone(),
-            requested_loader: requested_loader.map(|s| s.to_string()),
-            requested_version: requested_version.map(|s| s.to_string()),
-            downloads: project.downloads,
-        }))
+        Ok(Some(SearchError::IncompatibleProject(Box::new(
+            IncompatibleProject {
+                query: title.to_string(),
+                project_title: project.title.clone(),
+                project_slug: project.slug.clone(),
+                available_loaders,
+                available_versions: project.versions.clone(),
+                requested_loader: requested_loader.map(|s| s.to_string()),
+                requested_version: requested_version.map(|s| s.to_string()),
+                downloads: project.downloads,
+            },
+        ))))
     }
 
     fn parse_project_type(project_type: &str) -> Option<ProjectType> {

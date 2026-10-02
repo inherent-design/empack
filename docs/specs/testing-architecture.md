@@ -97,6 +97,9 @@ Current provider groups include:
 
 These fixtures are used for stable response-shape and contract testing. They are not a substitute for live E2E confirmation.
 
+PR CI uses `e2e:strict` and sets `EMPACK_E2E_STRICT=1` plus
+`EMPACK_RUN_LIVE_TESTS=1` for coverage. Local non-strict tasks remain available.
+
 ## Coverage Pipeline
 
 `mise run coverage` currently runs:

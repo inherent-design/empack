@@ -1013,3 +1013,10 @@ fn test_filter_forge_mc_version_normalization_21() {
     assert_eq!(result.len(), 1);
     assert_eq!(result[0], "51.0.33");
 }
+
+#[test]
+fn test_parse_forge_maven_metadata_rejects_malformed_xml() {
+    let error = parse_forge_maven_metadata("<metadata><versioning><versions><version>1.20.1-47.3.0</versions></versioning></metadata>")
+        .expect_err("mismatched XML elements must not become loader versions");
+    assert!(error.to_string().contains("Failed to parse Forge maven-metadata.xml"));
+}

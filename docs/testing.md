@@ -89,7 +89,7 @@ The first Windows CI run failed before executing tests because cmd.exe passed
 single-quoted nextest filters literally. Windows task commands now use double
 quotes and separate command steps so a failed test/build cannot be masked by a
 later successful command. The ignored project-level shell setting was removed.
-Windows execution of this correction still needs CI confirmation.
+The corrected Windows default and E2E test commands passed in PR CI.
 
 ### Runtime evidence map
 
@@ -142,6 +142,39 @@ Applicable rules are language-independent: distinguish intent from committed
 state, make failure observable, preserve pending work where promised, and assert
 final state as well as command completion. Playground's networking document is
 a design direction, not an implemented transport API to reuse.
+
+## Dependency migration review, 2026-10-02
+
+The dependency integration retains the ten Renovate changes together so the
+telemetry crates never land with incompatible trait versions. The original
+telemetry PRs failed when upgraded independently. The sevenz and XML PRs had
+failed at Windows task quoting, before their tests ran; the runtime review fixes
+that task path. An older Codecov failure log had expired, so the updated action
+must be validated by a fresh coverage job.
+
+| Update | Compatibility review and verification |
+| --- | --- |
+| Rust 1.94 to 1.99, PR #69 | [Release notes](https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/); keep edition 2024 and update the pinned toolchain. Clippy required boxing the compatibility diagnostic payload and using `sort_by_key` for descending confidence. Error text and exit classifications remain covered by existing tests. |
+| thiserror 2.0.21, compiler migration follow-up | [Generated-code fix](https://github.com/dtolnay/thiserror/releases/tag/2.0.20); 2.0.18 generated fields trigger Rust 1.99 Clippy warnings. Upgrade the generator instead of suppressing application warnings. |
+| OpenTelemetry 0.33 and tracing-opentelemetry 0.34, PRs #74/#68 | [Tracing migration](https://docs.rs/crate/tracing-opentelemetry/0.34.0/source/CHANGELOG.md) and [OTLP changes](https://github.com/open-telemetry/opentelemetry-rust/blob/opentelemetry-0.33.0/opentelemetry-otlp/CHANGELOG.md); empack already uses the supported exporter builder. New default retries warrant real local-collector export and failure/shutdown checks. |
+| quick-xml 0.42, PR #67 | [Changelog](https://github.com/tafia/quick-xml/blob/v0.42.0/Changelog.md); low-level byte/string API changes do not affect empack's `de::from_str` consumers. Existing Forge/Quilt metadata fixtures and a malformed XML rejection check cover that boundary. |
+| sevenz-rust2 0.23, PR #64 | [Changelog](https://github.com/hasenbanck/sevenz-rust2/blob/v0.23.0/CHANGELOG.md); MSRV 1.93 is satisfied. Compression still uses `compress_to_path`; verification now extracts nested files and compares exact binary contents and root-relative paths. |
+| serde-saphyr 0.0.29, PR #63 | [Release notes](https://github.com/bourumir-wyngs/serde-saphyr/releases/tag/0.0.29); default features remain serialize/deserialize. Property interpolation and filesystem includes are not enabled. A manifest regression verifies literal `${...}` names remain literal. |
+| expectrl 0.9, PR #66 | No upstream release notes were published. The published crate API retains the `Session`, `Expect`, and `Regex` surface used here; compile and active PTY workflows provide the migration evidence. |
+| checkout v7 and setup-go v7, PRs #75/#76 | [Checkout changes](https://github.com/actions/checkout) and [setup-go releases](https://github.com/actions/setup-go/releases); current workflows use push/pull_request triggers, not privileged fork-checkout triggers. Hosted runner execution validates the Node runtime requirements. |
+| Codecov v7, PR #70 | [Action notes](https://github.com/codecov/codecov-action); uploader verification-key handling changed. The fresh coverage upload/check validates integration rather than relying on the expired historical log. |
+
+The library constructor `SearchError::IncompatibleProject { ... }` now takes
+`SearchError::IncompatibleProject(Box::new(IncompatibleProject { ... }))`; all
+diagnostic fields remain available on the public payload. CLI behavior is unchanged.
+
+PR CI now runs strict E2E and strict coverage with optional live tests enabled.
+Missing prerequisites fail instead of returning a passing test function. Chrome
+trace tests parse the flushed JSON and require the executed sync span. OTLP
+smoke tests require an HTTP/protobuf request containing that span and a successful
+process exit with both accepting and failing collectors, under a subprocess
+deadline. These checks do not establish delivery during arbitrary collector
+outages or server launch correctness.
 
 ## Test Layers
 

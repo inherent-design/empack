@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [Rust toolchain](https://rustup.rs/) (1.94.0, pinned via `rust-toolchain.toml`)
+- [Rust toolchain](https://rustup.rs/) (1.99.0, pinned via `rust-toolchain.toml`)
 - [cargo-nextest](https://nexte.st/) (test runner; runs unit/integration tests; Cargo runs doctests)
 - [mise](https://mise.jdx.dev/) (task runner)
 
