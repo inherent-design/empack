@@ -3288,6 +3288,41 @@ mod handle_remove_tests {
     use super::*;
 
     #[tokio::test]
+    async fn it_fails_when_manifest_write_fails_after_packwiz_remove() {
+        for deps in [false, true] {
+            let workdir = mock_root().join("remove-manifest-failure");
+            let session = configured_session(&workdir)
+                .with_process(MockProcessProvider::new());
+            let manager = session.filesystem().config_manager(workdir.clone());
+            manager.add_dependency_entry("sodium", DependencyEntry::Resolved(DependencyRecord {
+                status: DependencyStatus::Resolved,
+                title: "Sodium".to_string(),
+                platform: ProjectPlatform::Modrinth,
+                project_id: "AANobbMI".to_string(),
+                project_type: ProjectType::Mod,
+                version: None,
+            })).unwrap();
+            let before = session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap();
+            session.filesystem_provider.add_write_failure(
+                workdir.join("empack.yml"), "manifest is read-only",
+            );
+
+            let error = handle_remove(&session, vec!["sodium".to_string()], deps)
+                .await.expect_err("manifest write failure must fail removal");
+            let message = error.to_string();
+            assert!(message.contains("packwiz removed the mod, but empack.yml still contains 'sodium'"), "{message}");
+            assert!(message.contains("remove this stale manifest entry before syncing"), "{message}");
+            assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), before);
+            let calls = session.process_provider.get_calls();
+            assert_eq!(calls.len(), 1, "failed commit must not continue to orphan removal");
+            assert!(session.process_provider.verify_call(
+                crate::empack::packwiz::PACKWIZ_BIN,
+                &["remove", "-y", "sodium"], &workdir.join("pack"),
+            ));
+        }
+    }
+
+    #[tokio::test]
     async fn it_removes_single_mod_successfully() {
         let workdir = mock_root().join("configured-project");
         let session = configured_session(&workdir)

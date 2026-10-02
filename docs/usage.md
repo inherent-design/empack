@@ -27,7 +27,7 @@ These options are defined on the root CLI and shape all command execution.
 | `--modrinth-api-client-key <VALUE>` | `EMPACK_KEY_MODRINTH` | *none* | Reserved; currently unused |
 | `--curseforge-api-client-key <VALUE>` | `EMPACK_KEY_CURSEFORGE` | built-in default key | CurseForge API key |
 | `--log-level <N>` | `EMPACK_LOG_LEVEL` | `0` | Verbosity from error to trace |
-| `--log-format <FMT>` | `EMPACK_LOG_FORMAT` | `text` | `text`, `json`, or `yaml` |
+| `--log-format <FMT>` | `EMPACK_LOG_FORMAT` | `text` | `text`, `json`, or `yaml` (currently pretty text, not YAML serialization) |
 | `--log-output <DEST>` | `EMPACK_LOG_OUTPUT` | `stderr` | `stderr` or `stdout` |
 | `-c`, `--color <MODE>` | `EMPACK_COLOR` | `auto` | `auto`, `always`, or `never` |
 | `-y`, `--yes` | `EMPACK_YES` | `false` | Non-interactive defaults |

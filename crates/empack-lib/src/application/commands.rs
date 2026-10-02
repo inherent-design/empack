@@ -3068,12 +3068,17 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
         match result {
             Ok(_) => {
-                // Atomically remove from empack.yml
                 if let Err(e) = config_manager.remove_dependency(&mod_name) {
+                    let detail = format!(
+                        "packwiz removed the mod, but empack.yml still contains '{}'. Fix the write error and remove this stale manifest entry before syncing: {}",
+                        mod_name, e
+                    );
                     session
                         .display()
                         .status()
-                        .warning(&format!("Failed to update empack.yml: {}", e));
+                        .error("Failed to update empack.yml", &detail);
+                    failed_mods.push((mod_name, detail));
+                    continue;
                 }
                 session
                     .display()

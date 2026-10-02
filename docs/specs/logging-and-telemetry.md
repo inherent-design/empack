@@ -2,7 +2,7 @@
 spec: logging-and-telemetry
 status: partial
 created: 2026-04-08
-updated: 2026-04-11
+updated: 2026-10-02
 depends: [overview]
 ---
 
@@ -31,6 +31,10 @@ Root config fields map directly to logger configuration.
 | level | error, warning, info, debug, trace |
 | format | text, json, yaml |
 | output | stderr, stdout |
+
+The `yaml` selector currently uses tracing's pretty-text formatter, not a YAML
+serializer. Use `json` for machine-readable log records. This remains a feature
+gap; the selector alone does not establish a YAML output contract.
 
 Log level filtering is built from the selected level unless `RUST_LOG` or other tracing env filters override it.
 

@@ -168,6 +168,12 @@ The library constructor `SearchError::IncompatibleProject { ... }` now takes
 `SearchError::IncompatibleProject(Box::new(IncompatibleProject { ... }))`; all
 diagnostic fields remain available on the public payload. CLI behavior is unchanged.
 
+A release-preparation probe also reproduced `remove` reporting success after
+packwiz removed a mod but a read-only `empack.yml` rejected the manifest update.
+The handler now records a failure and explains how to repair the stale manifest, matching tracked
+local removal. A regression checks both ordinary and `--deps` removal. This
+reports partial mutation accurately; it does not roll back packwiz state.
+
 PR CI now runs strict E2E and strict coverage with optional live tests enabled.
 Missing prerequisites fail instead of returning a passing test function. Chrome
 trace tests parse the flushed JSON and require the executed sync span. OTLP
