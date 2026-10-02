@@ -4202,6 +4202,11 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         .network()
         .project_resolver(client.clone(), curseforge_api_key);
 
+    let installed_mods = session
+        .packwiz()
+        .get_installed_mods(&workdir)
+        .context("Could not read installed mods; sync aborted")?;
+
     // Phase 1: Resolve any Search entries before building the project plan
     let mut empack_config = config_manager
         .load_empack_config()
@@ -4356,10 +4361,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         project_plan.minecraft_version, project_plan.loader_version
     ));
 
-    let installed_mods = session
-        .packwiz()
-        .get_installed_mods(&workdir)
-        .context("Could not read installed mods; sync aborted")?;
     session.display().status().info(&format!(
         "Found {} currently installed mods",
         installed_mods.len()

@@ -165,6 +165,8 @@ fn smoke_sync_recognizes_installed_datapacks() {
         ("datapacks", "default"),
         ("config/paxi/datapacks", "yaml"),
         ("config/openloader/data", "pack"),
+        ("../shared/datapacks", "yaml"),
+        ("../shared/datapacks", "pack"),
     ] {
         let project = TestProject::workflow_fixture("datapacks", "fabric", "1.21.1");
         let mut manifest = MANIFEST
@@ -201,9 +203,40 @@ fn smoke_sync_recognizes_installed_datapacks() {
 
 #[test]
 fn smoke_sync_unreadable_installed_state_fails_closed() {
-    let project = TestProject::workflow_fixture("broken-scan", "fabric", "1.21.1");
-    std::fs::write(project.dir().join("pack/mods"), "not a directory").unwrap();
-    let before = snapshot(&project);
-    command(&project).arg("sync").assert().failure();
-    assert_eq!(snapshot(&project), before);
+    for dry_run in [false, true] {
+        let project = search_project(200);
+        std::fs::write(project.dir().join("pack/mods"), "not a directory").unwrap();
+        let before = snapshot(&project);
+        let mut cmd = command(&project);
+        cmd.arg("sync");
+        if dry_run {
+            cmd.arg("--dry-run");
+        }
+        cmd.assert().failure();
+        assert_eq!(snapshot(&project), before);
+    }
+}
+
+#[test]
+fn smoke_malformed_dotenv_does_not_block_clap_help_or_version() {
+    for filename in [".env", ".env.local"] {
+        let project = TestProject::new();
+        std::fs::write(
+            project.dir().join(filename),
+            "EMPACK_DRY_RUN='unterminated\n",
+        )
+        .unwrap();
+        for args in [
+            vec!["--help"],
+            vec!["--version"],
+            vec!["init", "--help"],
+            vec!["build", "--help"],
+        ] {
+            command(&project)
+                .args(args)
+                .assert()
+                .success()
+                .stdout(predicates::str::contains("empack"));
+        }
+    }
 }

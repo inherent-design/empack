@@ -72,6 +72,22 @@ services in the default suite and accepted unrelated failures. A cache test's
 on renewed expiry, ETag, body, and conditional request. Six broken public API
 examples were repaired; doctests are now part of `mise run test`.
 
+### Review follow-up
+
+The first PR review exposed three additional cases, each reproduced by an offline
+CLI smoke assertion before its fix: a parent-relative datapack path accepted by
+init was rejected by sync; an installed-state scan failure could follow a search
+resolution write; and malformed dotenv files prevented Clap help/version output.
+Sync now honors configured datapack paths and scans installed state before
+persisting resolutions. Help/version flags bypass dotenv errors. All eight smoke
+tests pass, including YAML/TOML datapack paths and normal/dry-run scan failures.
+
+The first Windows CI run failed before executing tests because cmd.exe passed
+single-quoted nextest filters literally. Windows task commands now use double
+quotes and separate command steps so a failed test/build cannot be masked by a
+later successful command. The ignored project-level shell setting was removed.
+Windows execution of this correction still needs CI confirmation.
+
 ### Runtime evidence map
 
 Paths below are relative to `crates/empack-tests/tests/` unless stated otherwise.

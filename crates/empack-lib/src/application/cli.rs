@@ -34,6 +34,14 @@ pub enum CliLoad {
 impl CliConfig {
     /// Load configuration from command line arguments
     pub fn load() -> Result<Self, ConfigError> {
+        if let Err(error) = Cli::try_parse()
+            && matches!(
+                error.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            )
+        {
+            error.exit();
+        }
         super::loader::load_dotenv_files()?;
         let cli = Cli::parse();
         Ok(Self {
@@ -45,8 +53,12 @@ impl CliConfig {
     /// Load CLI configuration for process entrypoints without letting clap exit
     /// the process directly.
     pub fn load_for_process() -> Result<CliLoad, ConfigError> {
+        let args: Vec<_> = std::env::args_os().collect();
+        if let Ok(display @ CliLoad::Display(_)) = Self::load_for_process_from(&args) {
+            return Ok(display);
+        }
         super::loader::load_dotenv_files()?;
-        Self::load_for_process_from(std::env::args_os())
+        Self::load_for_process_from(args)
     }
 
     /// Load explicit command line arguments for process entrypoints.

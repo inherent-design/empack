@@ -224,14 +224,6 @@ impl PackwizOps for LivePackwizOps<'_> {
 
         let mut installed = HashSet::new();
         for folder in &scan_dirs {
-            anyhow::ensure!(
-                !folder.is_empty()
-                    && Path::new(folder).components().all(|component| matches!(
-                        component,
-                        std::path::Component::Normal(_) | std::path::Component::CurDir
-                    )),
-                "datapack folder must be relative to pack/: {folder}"
-            );
             let dir = pack_dir.join(folder);
             if !self.filesystem.exists(&dir) {
                 continue;

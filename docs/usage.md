@@ -34,7 +34,8 @@ These options are defined on the root CLI and shape all command execution.
 | `--dry-run` | `EMPACK_DRY_RUN` | `false` | Preview supported operations without changing files |
 
 CLI flags override existing environment variables, then `.env.local`, then `.env`.
-Dotenv files are read from the invocation directory before parsing the CLI.
+Dotenv files are read from the invocation directory before parsing execution
+options. Clap help and version flags work even when a dotenv file is malformed.
 Relative `--workdir` paths are resolved against that directory before project
 operations or subprocesses start.
 
@@ -169,6 +170,7 @@ Current sync behavior:
 - tracked local dependencies are validated in place and are not passed to packwiz
 - missing local files or hash drift fail normal sync
 - `--dry-run` reports local dependency drift without mutating the project
+- installed state is scanned before search resolutions are persisted; an unreadable folder aborts without changing the manifest
 - search entries resolve in memory during `--dry-run`; the manifest, pack metadata, and index remain unchanged
 - unresolved search entries and failed action planning return a nonzero result, including during dry runs
 - normal sync can apply valid actions despite resolution failures, but reports the overall sync as incomplete; installed entries whose searches fail remain protected from removal
