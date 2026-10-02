@@ -1238,13 +1238,14 @@ async fn test_phase2_detects_incompatible_project() {
         .unwrap_err();
 
     match &err {
-        SearchError::IncompatibleProject {
-            project_title,
-            available_loaders,
-            requested_loader,
-            downloads,
-            ..
-        } => {
+        SearchError::IncompatibleProject(details) => {
+            let IncompatibleProject {
+                project_title,
+                available_loaders,
+                requested_loader,
+                downloads,
+                ..
+            } = details.as_ref();
             assert_eq!(project_title, "Sodium");
             assert!(available_loaders.contains(&"fabric".to_string()));
             assert!(available_loaders.contains(&"neoforge".to_string()));
@@ -1395,7 +1396,7 @@ async fn test_phase2_incompatible_propagates_through_platform_search() {
         .unwrap_err();
 
     assert!(
-        matches!(err, SearchError::IncompatibleProject { .. }),
+        matches!(err, SearchError::IncompatibleProject(..)),
         "Expected IncompatibleProject to propagate, got: {err:?}"
     );
 

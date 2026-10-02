@@ -28,16 +28,16 @@ html-escape = "0.2.13"
 indicatif = { version = "0.18.4", features = ["rayon", "improved_unicode"] }
 percent-encoding = "2.3.2"
 petgraph = "0.8.3" # Graph data structures for dependency resolution
-quick-xml = { version = "0.39.2", features = ["serialize"] } # XML parsing for Forge maven-metadata
+quick-xml = { version = "0.42.0", features = ["serialize"] } # XML parsing for Forge maven-metadata
 reqwest = { version = "0.13.2", features = ["json", "gzip", "blocking"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-serde-saphyr = "0.0.23"
+serde-saphyr = "0.0.29"
 semver = "1"
 sha1 = "0.11.0"
 sha2 = "0.11"
 murmur2 = "0.1" # Murmur2 hash for CurseForge fingerprint API
-thiserror = "2.0.18"
+thiserror = "2.0.21"
 toml = "1.0.7"
 tokio = { version = "1.50.0", features = ["full"] }
 console = "0.16"
@@ -57,20 +57,20 @@ windows-core = "0.62.2"
 zip = { version = "8.2", default-features = false, features = ["deflate"] } # Zip create/extract for mrpack and distribution archives
 tar = "0.4" # Tar archive creation for .tar.gz distribution fallback
 flate2 = "1.1" # Gzip compression paired with tar
-sevenz-rust2 = { version = "0.20", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
+sevenz-rust2 = { version = "0.23", default-features = false, features = ["compress", "util"] } # 7z archive support; util enables compress_to_path helper
 handlebars = "6.4.0"
 
 # Telemetry (optional, behind `telemetry` feature gate)
 tracing-chrome = "0.7"
-tracing-opentelemetry = "0.32"
-opentelemetry = "0.31"
-opentelemetry_sdk = { version = "0.31", features = ["trace"] }
-opentelemetry-otlp = { version = "0.31", default-features = false, features = ["http-proto", "reqwest-blocking-client"] }
+tracing-opentelemetry = "0.34"
+opentelemetry = "0.33"
+opentelemetry_sdk = { version = "0.33", features = ["trace"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client"] }
 
 # Dev dependencies
 assert_cmd = "2.2"
 criterion = "0.8.2"
-expectrl = "0.8"
+expectrl = "0.9"
 mockito = "1.7.2"
 predicates = "3"
 tempfile = "3.27.0"

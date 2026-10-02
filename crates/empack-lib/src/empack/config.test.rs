@@ -2524,3 +2524,12 @@ empack:
         Some(vec!["1.20".to_string(), "1.20.2".to_string()]),
     );
 }
+
+#[test]
+fn test_manifest_names_do_not_interpolate_environment_properties() {
+    let workdir = mock_root().join("literal-config");
+    let content = "empack:\n  dependencies: {}\n  name: ${EMPACK_TEST_NAME:-fallback}\n";
+    let provider = with_empack_yml(create_mock_config_provider(workdir.clone()), &workdir, content);
+    let config = provider.config_manager(workdir).load_empack_config().unwrap();
+    assert_eq!(config.empack.name.as_deref(), Some("${EMPACK_TEST_NAME:-fallback}"));
+}

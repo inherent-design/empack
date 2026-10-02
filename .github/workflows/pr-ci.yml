@@ -27,7 +27,7 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -47,9 +47,9 @@ jobs:
       matrix:
         os: [blacksmith-4vcpu-ubuntu-2404, macos-26, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -57,7 +57,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@cargo-nextest
       - run: mise run test
-      - run: mise run e2e
+      - run: mise run e2e:strict
 
   import-smoke:
     name: import-smoke (${{ matrix.os }})
@@ -69,9 +69,9 @@ jobs:
       matrix:
         os: [blacksmith-4vcpu-ubuntu-2404, macos-26, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -92,9 +92,9 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -104,6 +104,9 @@ jobs:
         with:
           tool: cargo-llvm-cov,cargo-nextest
       - run: mise run coverage
+        env:
+          EMPACK_E2E_STRICT: "1"
+          EMPACK_RUN_LIVE_TESTS: "1"
       - name: Coverage summary
         run: |
           TOTAL=$(cargo llvm-cov report --summary-only 2>&1 | grep '^TOTAL' | awk '{print $10}')
@@ -124,7 +127,7 @@ jobs:
           cargo llvm-cov report --summary-only >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           fail_ci_if_error: false

@@ -43,17 +43,22 @@ fn test_create_tar_gz() {
 }
 
 #[test]
-fn test_create_7z() {
+fn test_create_and_extract_7z_round_trip() {
     let tmp = tempdir().unwrap();
     let src = tmp.path().join("src");
-    std::fs::create_dir_all(&src).unwrap();
-    std::fs::write(src.join("data.bin"), vec![0u8; 1024]).unwrap();
+    std::fs::create_dir_all(src.join("nested")).unwrap();
+    let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
+    std::fs::write(src.join("data.bin"), &data).unwrap();
+    std::fs::write(src.join("nested/settings.txt"), "loader=fabric\n").unwrap();
 
     let sz_path = tmp.path().join("out.7z");
     create_archive(&src, &sz_path, ArchiveFormat::SevenZ).unwrap();
 
-    assert!(sz_path.exists());
-    assert!(std::fs::metadata(&sz_path).unwrap().len() > 0);
+    let extracted = tmp.path().join("verify");
+    sevenz_rust2::decompress_file(&sz_path, &extracted).unwrap();
+    assert_eq!(std::fs::read(extracted.join("data.bin")).unwrap(), data);
+    assert_eq!(std::fs::read_to_string(extracted.join("nested/settings.txt")).unwrap(), "loader=fabric\n");
+    assert!(!extracted.join("src").exists(), "archive paths must be relative to the source root");
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use empack_tests::e2e::{TestProject, empack_assert_cmd, empack_bin, empack_cmd};
+use empack_tests::e2e::{TestProject, configure_fake_packwiz, empack_assert_cmd, empack_cmd};
 use predicates::prelude::*;
 
 #[test]
@@ -21,44 +21,79 @@ fn e2e_test_project_creates_tempdir() {
     assert!(project.dir().exists());
 }
 
-/// Verify the telemetry feature produces a Perfetto trace file.
-///
-/// Runs empack version with EMPACK_PROFILE=chrome. Exercises the full
-/// Logger::init telemetry path: Chrome layer construction, per-layer
-/// filtering, guard creation, and shutdown flush.
-///
-/// Only meaningful when the binary is built with --features telemetry.
-/// Detects this by checking whether EMPACK_PROFILE=chrome produces a
-/// trace file; if not, the binary lacks telemetry support and the test
-/// passes vacuously (coverage job builds with telemetry enabled).
+fn telemetry_command(project: &TestProject, profile: &str) -> assert_cmd::Command {
+    let mut cmd = project.cmd();
+    configure_fake_packwiz(&mut cmd, project.dir());
+    cmd.env("EMPACK_PROFILE", profile)
+        .env("OTEL_SDK_DISABLED", "false")
+        .env("OTEL_TRACES_SAMPLER", "always_on")
+        .arg("sync");
+    let mut cmd = assert_cmd::Command::from_std(cmd);
+    cmd.timeout(std::time::Duration::from_secs(15));
+    cmd
+}
+
+fn verify_chrome_trace(project: &TestProject) -> bool {
+    telemetry_command(project, "chrome").assert().success();
+    let trace = std::fs::read_dir(project.dir())
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with("trace-") && name.ends_with(".json"))
+        });
+    if !empack_tests::e2e::prerequisite_available(
+        trace.is_some(),
+        "binary lacks telemetry feature; trace file not produced",
+    ) {
+        return false;
+    }
+    let events: Vec<serde_json::Value> =
+        serde_json::from_slice(&std::fs::read(trace.unwrap().path()).unwrap())
+            .expect("Chrome trace must be valid JSON after shutdown");
+    assert!(
+        events.iter().any(|event| event["name"] == "handle_sync"),
+        "trace must contain the executed command span"
+    );
+    true
+}
+
 #[test]
 fn e2e_telemetry_chrome_trace() {
-    let project = TestProject::new();
-    let output = std::process::Command::new(empack_bin())
-        .current_dir(project.dir())
-        .env("NO_COLOR", "1")
-        .env("EMPACK_PROFILE", "chrome")
-        .arg("version")
-        .output()
-        .expect("spawn failed");
-    assert!(
-        output.status.success(),
-        "empack version with EMPACK_PROFILE=chrome failed: {}",
-        String::from_utf8_lossy(&output.stderr),
-    );
-    let has_trace = std::fs::read_dir(project.dir())
-        .map(|rd| {
-            rd.filter_map(|e| e.ok()).any(|e| {
-                e.file_name()
-                    .to_str()
-                    .is_some_and(|n| n.starts_with("trace-") && n.ends_with(".json"))
-            })
-        })
-        .unwrap_or(false);
-    empack_tests::e2e::prerequisite_available(
-        has_trace,
-        "binary lacks telemetry feature; trace file not produced",
-    );
+    let project = TestProject::workflow_fixture("chrome-trace", "fabric", "1.21.1");
+    verify_chrome_trace(&project);
+}
+
+#[test]
+fn e2e_telemetry_otlp_exports_and_exits_when_collector_fails() {
+    let project = TestProject::workflow_fixture("otlp-trace", "fabric", "1.21.1");
+    if !verify_chrome_trace(&project) {
+        return;
+    }
+    for status in [200, 503] {
+        let mut server = mockito::Server::new();
+        let request = server
+            .mock("POST", "/v1/traces")
+            .match_header("content-type", "application/x-protobuf")
+            .match_body(mockito::Matcher::Regex("handle_sync".to_string()))
+            .with_status(status)
+            .expect_at_least(1)
+            .create();
+        telemetry_command(&project, "otlp")
+            .env(
+                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+                format!("{}/v1/traces", server.url()),
+            )
+            .env("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/protobuf")
+            .env("OTEL_EXPORTER_OTLP_TRACES_COMPRESSION", "none")
+            .env_remove("OTEL_EXPORTER_OTLP_HEADERS")
+            .env_remove("OTEL_EXPORTER_OTLP_TRACES_HEADERS")
+            .assert()
+            .success();
+        request.assert();
+    }
 }
 
 /// Verify empack requirements shows packwiz-tx with version and path.

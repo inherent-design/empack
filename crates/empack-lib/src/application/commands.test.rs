@@ -3288,6 +3288,41 @@ mod handle_remove_tests {
     use super::*;
 
     #[tokio::test]
+    async fn it_fails_when_manifest_write_fails_after_packwiz_remove() {
+        for deps in [false, true] {
+            let workdir = mock_root().join("remove-manifest-failure");
+            let session = configured_session(&workdir)
+                .with_process(MockProcessProvider::new());
+            let manager = session.filesystem().config_manager(workdir.clone());
+            manager.add_dependency_entry("sodium", DependencyEntry::Resolved(DependencyRecord {
+                status: DependencyStatus::Resolved,
+                title: "Sodium".to_string(),
+                platform: ProjectPlatform::Modrinth,
+                project_id: "AANobbMI".to_string(),
+                project_type: ProjectType::Mod,
+                version: None,
+            })).unwrap();
+            let before = session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap();
+            session.filesystem_provider.add_write_failure(
+                workdir.join("empack.yml"), "manifest is read-only",
+            );
+
+            let error = handle_remove(&session, vec!["sodium".to_string()], deps)
+                .await.expect_err("manifest write failure must fail removal");
+            let message = error.to_string();
+            assert!(message.contains("packwiz removed 'sodium', but updating empack.yml failed"), "{message}");
+            assert!(message.contains("Inspect or restore the manifest"), "{message}");
+            assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), before);
+            let calls = session.process_provider.get_calls();
+            assert_eq!(calls.len(), 1, "failed commit must not continue to orphan removal");
+            assert!(session.process_provider.verify_call(
+                crate::empack::packwiz::PACKWIZ_BIN,
+                &["remove", "-y", "sodium"], &workdir.join("pack"),
+            ));
+        }
+    }
+
+    #[tokio::test]
     async fn it_removes_single_mod_successfully() {
         let workdir = mock_root().join("configured-project");
         let session = configured_session(&workdir)
@@ -6690,7 +6725,7 @@ fn test_render_add_contract_error_low_confidence() {
 fn test_render_add_contract_error_incompatible_project_loader() {
     let rendered = render_add_contract_error(&AddContractError::ResolveProject {
         query: "sodium".to_string(),
-        source: crate::empack::search::SearchError::IncompatibleProject {
+        source: crate::empack::search::SearchError::IncompatibleProject(Box::new(crate::empack::search::IncompatibleProject {
             query: "sodium".to_string(),
             project_title: "Sodium".to_string(),
             project_slug: "sodium".to_string(),
@@ -6703,7 +6738,7 @@ fn test_render_add_contract_error_incompatible_project_loader() {
             requested_loader: Some("forge".to_string()),
             requested_version: Some("1.21.4".to_string()),
             downloads: 134_306_743,
-        },
+        })),
     });
 
     assert_eq!(rendered.item, "Mod found but incompatible");
@@ -6733,7 +6768,7 @@ fn test_render_add_contract_error_incompatible_project_loader() {
 fn test_render_add_contract_error_incompatible_project_loader_only() {
     let rendered = render_add_contract_error(&AddContractError::ResolveProject {
         query: "sodium".to_string(),
-        source: crate::empack::search::SearchError::IncompatibleProject {
+        source: crate::empack::search::SearchError::IncompatibleProject(Box::new(crate::empack::search::IncompatibleProject {
             query: "sodium".to_string(),
             project_title: "Sodium".to_string(),
             project_slug: "sodium".to_string(),
@@ -6742,7 +6777,7 @@ fn test_render_add_contract_error_incompatible_project_loader_only() {
             requested_loader: Some("forge".to_string()),
             requested_version: None,
             downloads: 50_000,
-        },
+        })),
     });
 
     assert_eq!(rendered.item, "Mod found but incompatible");
@@ -8701,7 +8736,7 @@ mod render_error_edge_case_tests {
     fn incompatible_project_version_only_no_loader() {
         let rendered = render_add_contract_error(&AddContractError::ResolveProject {
             query: "sodium".to_string(),
-            source: crate::empack::search::SearchError::IncompatibleProject {
+            source: crate::empack::search::SearchError::IncompatibleProject(Box::new(crate::empack::search::IncompatibleProject {
                 query: "sodium".to_string(),
                 project_title: "Sodium".to_string(),
                 project_slug: "sodium".to_string(),
@@ -8710,7 +8745,7 @@ mod render_error_edge_case_tests {
                 requested_loader: None,
                 requested_version: Some("1.20.1".to_string()),
                 downloads: 100_000_000,
-            },
+            })),
         });
 
         assert_eq!(rendered.item, "Mod found but incompatible");
@@ -8730,7 +8765,7 @@ mod render_error_edge_case_tests {
     fn incompatible_project_neither_loader_nor_version() {
         let rendered = render_add_contract_error(&AddContractError::ResolveProject {
             query: "sodium".to_string(),
-            source: crate::empack::search::SearchError::IncompatibleProject {
+            source: crate::empack::search::SearchError::IncompatibleProject(Box::new(crate::empack::search::IncompatibleProject {
                 query: "sodium".to_string(),
                 project_title: "Sodium".to_string(),
                 project_slug: "sodium".to_string(),
@@ -8739,7 +8774,7 @@ mod render_error_edge_case_tests {
                 requested_loader: None,
                 requested_version: None,
                 downloads: 0,
-            },
+            })),
         });
 
         assert_eq!(rendered.item, "Mod found but incompatible");
