@@ -3310,8 +3310,8 @@ mod handle_remove_tests {
             let error = handle_remove(&session, vec!["sodium".to_string()], deps)
                 .await.expect_err("manifest write failure must fail removal");
             let message = error.to_string();
-            assert!(message.contains("packwiz removed the mod, but empack.yml still contains 'sodium'"), "{message}");
-            assert!(message.contains("remove this stale manifest entry before syncing"), "{message}");
+            assert!(message.contains("packwiz removed 'sodium', but updating empack.yml failed"), "{message}");
+            assert!(message.contains("Inspect or restore the manifest"), "{message}");
             assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), before);
             let calls = session.process_provider.get_calls();
             assert_eq!(calls.len(), 1, "failed commit must not continue to orphan removal");

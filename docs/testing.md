@@ -170,7 +170,7 @@ diagnostic fields remain available on the public payload. CLI behavior is unchan
 
 A release-preparation probe also reproduced `remove` reporting success after
 packwiz removed a mod but a read-only `empack.yml` rejected the manifest update.
-The handler now records a failure and explains how to repair the stale manifest, matching tracked
+The handler now records a failure and explains how to inspect or restore a stale or damaged manifest, matching tracked
 local removal. A regression checks both ordinary and `--deps` removal. This
 reports partial mutation accurately; it does not roll back packwiz state.
 
