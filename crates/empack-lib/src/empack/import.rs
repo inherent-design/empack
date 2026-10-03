@@ -1195,6 +1195,24 @@ pub async fn execute_import(
     config: ImportConfig,
     session: &dyn Session,
 ) -> Result<ImportResult> {
+    let needs_archive = !resolved.manifest.overrides.is_empty()
+        || resolved
+            .manifest
+            .content
+            .iter()
+            .any(|entry| matches!(entry, ContentEntry::EmbeddedJar(_)));
+    let mut archive = if needs_archive {
+        let mut archive = zip::ZipArchive::new(
+            session
+                .filesystem()
+                .open_reader(&resolved.manifest.archive_path)?,
+        )?;
+        validate_zip_limits(&mut archive)?;
+        Some(archive)
+    } else {
+        None
+    };
+
     let mut stats = ImportStats {
         platform_referenced: 0,
         platform_failed: 0,
@@ -1386,7 +1404,9 @@ pub async fn execute_import(
             ContentEntry::EmbeddedJar(embed) => {
                 let dest = sanitize_archive_path(&pack_dir, &embed.destination_path)?;
                 extract_embedded_from_archive(
-                    &resolved.manifest.archive_path,
+                    archive
+                        .as_mut()
+                        .context("Embedded archive was not opened")?,
                     &embed.source_path,
                     &dest,
                     session.filesystem(),
@@ -1489,7 +1509,9 @@ pub async fn execute_import(
     for override_entry in &resolved.manifest.overrides {
         let dest = sanitize_archive_path(&pack_dir, &override_entry.destination_path)?;
         extract_embedded_from_archive(
-            &resolved.manifest.archive_path,
+            archive
+                .as_mut()
+                .context("Override archive was not opened")?,
             &override_entry.source_path,
             &dest,
             session.filesystem(),
@@ -1823,29 +1845,55 @@ fn sanitize_archive_path(base: &Path, relative: &str) -> Result<PathBuf> {
     Ok(joined)
 }
 
-fn extract_embedded_from_archive(
-    archive_path: &Path,
+const MAX_IMPORT_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_IMPORT_TOTAL_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_IMPORT_ENTRIES: usize = 100_000;
+
+fn validate_zip_limits<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<()> {
+    anyhow::ensure!(
+        archive.len() <= MAX_IMPORT_ENTRIES,
+        "Import archive contains too many entries"
+    );
+    let mut total = 0u64;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)?;
+        anyhow::ensure!(
+            entry.size() <= MAX_IMPORT_ENTRY_BYTES,
+            "Import entry exceeds 512 MiB: {}",
+            entry.name()
+        );
+        total = total
+            .checked_add(entry.size())
+            .context("Import archive size overflow")?;
+        anyhow::ensure!(
+            total <= MAX_IMPORT_TOTAL_BYTES,
+            "Import archive exceeds 4 GiB unpacked"
+        );
+    }
+    Ok(())
+}
+
+fn extract_embedded_from_archive<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
     source_path: &str,
     dest_path: &Path,
     fs: &dyn crate::application::session::FileSystemProvider,
 ) -> Result<()> {
+    let entry = archive
+        .by_name(source_path)
+        .with_context(|| format!("entry '{source_path}' not found in archive"))?;
+    let mut bytes = Vec::new();
+    entry
+        .take(MAX_IMPORT_ENTRY_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    anyhow::ensure!(
+        bytes.len() as u64 <= MAX_IMPORT_ENTRY_BYTES,
+        "Import entry exceeds 512 MiB: {source_path}"
+    );
     if let Some(parent) = dest_path.parent() {
         fs.create_dir_all(parent)?;
     }
-
-    let archive_bytes = fs
-        .read_bytes(archive_path)
-        .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    let mut archive = open_zip_archive(archive_bytes)?;
-
-    let mut entry = archive
-        .by_name(source_path)
-        .with_context(|| format!("entry '{}' not found in archive", source_path))?;
-
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(&mut entry, &mut bytes)?;
     fs.write_bytes(dest_path, &bytes)?;
-
     Ok(())
 }
 
@@ -2009,8 +2057,10 @@ fn read_zip_entry_to_string<R: std::io::Read>(
 fn open_zip_archive(data: Vec<u8>) -> Result<zip::ZipArchive<Cursor<Vec<u8>>>> {
     // Import tests and live code both enter through filesystem-provided bytes,
     // so we open archives from an in-memory cursor rather than a second file-backed path.
-    zip::ZipArchive::new(Cursor::new(data))
-        .map_err(|e| ImportError::ArchiveRead(e.to_string()).into())
+    let mut archive = zip::ZipArchive::new(Cursor::new(data))
+        .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    validate_zip_limits(&mut archive)?;
+    Ok(archive)
 }
 
 fn mr_side_requirement(value: Option<&str>) -> SideRequirement {

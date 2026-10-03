@@ -2259,3 +2259,15 @@ async fn test_add_platform_ref_retry_exhaustion() {
     assert_eq!(calls.len(), 6);
     assert!(calls.iter().all(|call| call.args == expected_args));
 }
+
+#[test]
+fn import_rejects_oversized_zip_entries_before_extraction() {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file::<_, ()>("oversized.jar", zip::write::FileOptions::default()).unwrap();
+    zip.write_all(b"payload").unwrap();
+    let mut bytes = zip.finish().unwrap().into_inner();
+    let central = bytes.windows(4).position(|v| v == b"PK\x01\x02").unwrap();
+    bytes[central + 24..central + 28].copy_from_slice(&((MAX_IMPORT_ENTRY_BYTES + 1) as u32).to_le_bytes());
+    let error = open_zip_archive(bytes).expect_err("oversized entry must fail");
+    assert!(error.to_string().contains("512 MiB"), "{error}");
+}

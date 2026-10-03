@@ -147,3 +147,7 @@ Current command outcome rules:
 - `--dry-run` stops after resolve and summary
 
 An import is considered incomplete if any platform references fail to add.
+
+## Archive Resource Limits
+
+Import execution opens one seekable archive reader and reuses it for embedded content and overrides. The live reader is file-backed; mocks use an in-memory cursor. Archive metadata is checked before execution creates the target project. Imports accept at most 100,000 entries, 512 MiB per uncompressed entry, and 4 GiB of declared uncompressed content. Extraction also enforces the per-entry limit while reading. Individual output files still pass through the filesystem provider as byte buffers.
