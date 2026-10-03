@@ -98,17 +98,14 @@ and non-UTF-8 path bytes. The full default gate passed 1,312 tests and eight
 doctests before the additional alias regression; all 29 focused cache and
 continuation tests passed afterward.
 
-Windows job registration now has a bounded cleanup fallback when a host job
-refuses nesting. Windows-only tests exercise retained output and child cleanup
-under injected registration failure. A further review exposed descendants surviving after parent exit. Snapshot-based
-cleanup now retains handles and checks process creation times; a Windows
-regression keeps an inherited pipe open after the parent exits and requires
-cleanup to close it. A separate regression presents an unrelated process as a
-stale descendant and requires a fresh parent check with open handles before
-termination. The fallback remains best-effort if process access is denied
-or intermediate ancestors exit before observation, and does not alter host job
-restrictions. Windows E2E fixtures retain native known-folder
-environment values and compare destinations as paths.
+Windows children start suspended and resume only after joining an owned job.
+Hosts that prohibit nested job registration receive an error before child code
+executes. Windows-only regressions verify that rejected registration has no child
+side effects, job cleanup closes inherited pipes after ancestors exit, and
+stopping one job preserves another. This avoids depending on process snapshots
+that can miss short-lived ancestors. Native CI must verify these Windows-only
+cases. Windows E2E fixtures retain native known-folder environment values and
+compare destinations as paths.
 
 ### Remaining boundaries
 

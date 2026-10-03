@@ -92,8 +92,12 @@ pub(crate) fn execute(
             command.kill_on_drop(true).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
             #[cfg(unix)]
             command.process_group(0);
+            #[cfg(unix)]
             let mut child = command.spawn().context("Failed to spawn command")?;
+            #[cfg(unix)]
             let tree = ProcessTree::new(&child)?;
+            #[cfg(windows)]
+            let (mut child, tree) = spawn_windows_child(&mut command, ProcessTree::new)?;
             let stdout = child.stdout.take().context("Failed to capture stdout")?;
             let stderr = child.stderr.take().context("Failed to capture stderr")?;
             let result = {
@@ -151,190 +155,72 @@ impl Drop for ProcessTree {
 }
 
 #[cfg(windows)]
-struct ProcessTree {
-    _job: Option<WindowsJob>,
-    fallback: Option<WindowsProcess>,
-}
-#[cfg(windows)]
-impl ProcessTree {
-    fn new(child: &tokio::process::Child) -> Result<Self> {
-        Self::from_registration(child, WindowsJob::attach(child))
-    }
-    fn from_registration(
-        child: &tokio::process::Child,
-        result: Result<WindowsJob>,
-    ) -> Result<Self> {
-        let job = match result {
-            Ok(job) => Some(job),
-            Err(error) => {
-                tracing::warn!(%error, "Windows job registration unavailable; using bounded process-tree cleanup");
-                None
-            }
-        };
-        let fallback = if job.is_none() {
-            Some(WindowsProcess::from_child(child)?)
-        } else {
-            None
-        };
-        Ok(Self {
-            _job: job,
-            fallback,
-        })
-    }
-}
-#[cfg(windows)]
-impl Drop for ProcessTree {
-    fn drop(&mut self) {
-        // Retain both the job and process handles until cleanup completes.
-        if let Some(root) = self.fallback.take() {
-            terminate_windows_tree(root);
-        }
-    }
+fn spawn_windows_child(
+    command: &mut tokio::process::Command,
+    register: impl FnOnce(&tokio::process::Child) -> Result<ProcessTree>,
+) -> Result<(tokio::process::Child, ProcessTree)> {
+    use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
+    command.kill_on_drop(true).creation_flags(CREATE_SUSPENDED);
+    let child = command.spawn().context("Failed to spawn command")?;
+    let tree = register(&child).context(
+        "Cannot establish Windows subprocess ownership: the host must permit nested job registration; the child was not started",
+    )?;
+    resume_windows_child(&child)?;
+    Ok((child, tree))
 }
 
 #[cfg(windows)]
-struct WindowsProcess {
-    handle: std::os::windows::io::OwnedHandle,
-    pid: u32,
-    created: u64,
-}
-#[cfg(windows)]
-impl WindowsProcess {
-    fn from_child(child: &tokio::process::Child) -> Result<Self> {
-        use std::os::windows::io::BorrowedHandle;
-        let raw = child.raw_handle().context("Child handle unavailable")?;
-        let handle = unsafe { BorrowedHandle::borrow_raw(raw) }.try_clone_to_owned()?;
-        Self::from_handle(handle, child.id().context("Child process ID unavailable")?)
-    }
-    fn from_handle(handle: std::os::windows::io::OwnedHandle, pid: u32) -> Result<Self> {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::{Foundation::FILETIME, System::Threading::GetProcessTimes};
-        let mut created: FILETIME = unsafe { std::mem::zeroed() };
-        let mut exited = created;
-        let mut kernel = created;
-        let mut user = created;
-        if unsafe {
-            GetProcessTimes(
-                handle.as_raw_handle() as _,
-                &mut created,
-                &mut exited,
-                &mut kernel,
-                &mut user,
-            )
-        } == 0
-        {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        let created = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
-        Ok(Self {
-            handle,
-            pid,
-            created,
-        })
-    }
-    fn open(pid: u32) -> Result<Self> {
-        use std::os::windows::io::{FromRawHandle, OwnedHandle};
-        use windows_sys::Win32::System::Threading::*;
-        let raw = unsafe {
-            OpenProcess(
-                PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
-                0,
-                pid,
-            )
-        };
-        if raw.is_null() {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        Self::from_handle(unsafe { OwnedHandle::from_raw_handle(raw as _) }, pid)
-    }
-    fn terminate(&self) {
-        use std::os::windows::io::AsRawHandle;
-        unsafe {
-            windows_sys::Win32::System::Threading::TerminateProcess(
-                self.handle.as_raw_handle() as _,
-                1,
-            );
-        }
-    }
-}
-
-#[cfg(windows)]
-fn windows_process_snapshot() -> Result<Vec<(u32, u32)>> {
+fn resume_windows_child(child: &tokio::process::Child) -> Result<()> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-    use windows_sys::Win32::{Foundation::INVALID_HANDLE_VALUE, System::Diagnostics::ToolHelp::*};
-    let raw = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    use windows_sys::Win32::{
+        Foundation::INVALID_HANDLE_VALUE,
+        System::{Diagnostics::ToolHelp::*, Threading::*},
+    };
+    let pid = child.id().context("Suspended child ID unavailable")?;
+    let raw = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
     if raw == INVALID_HANDLE_VALUE {
         return Err(std::io::Error::last_os_error().into());
     }
     let snapshot = unsafe { OwnedHandle::from_raw_handle(raw as _) };
-    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
     entry.dwSize = std::mem::size_of_val(&entry) as u32;
-    let mut entries = Vec::new();
-    let mut present = unsafe { Process32FirstW(snapshot.as_raw_handle() as _, &mut entry) };
+    let mut present = unsafe { Thread32First(snapshot.as_raw_handle() as _, &mut entry) };
     while present != 0 {
-        entries.push((entry.th32ProcessID, entry.th32ParentProcessID));
-        present = unsafe { Process32NextW(snapshot.as_raw_handle() as _, &mut entry) };
+        if entry.th32OwnerProcessID == pid {
+            let raw = unsafe {
+                OpenThread(
+                    THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                    0,
+                    entry.th32ThreadID,
+                )
+            };
+            if raw.is_null() {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            let thread = unsafe { OwnedHandle::from_raw_handle(raw as _) };
+            // Validate the handle, not the possibly stale thread ID. The live child
+            // handle keeps its PID from being reused while registration/resume run.
+            if unsafe { GetProcessIdOfThread(thread.as_raw_handle() as _) } != pid {
+                anyhow::bail!("Suspended child thread identity changed before resume");
+            }
+            let previous = unsafe { ResumeThread(thread.as_raw_handle() as _) };
+            if previous == u32::MAX {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            if previous > 0 {
+                return Ok(());
+            }
+        }
+        present = unsafe { Thread32Next(snapshot.as_raw_handle() as _, &mut entry) };
     }
-    Ok(entries)
+    anyhow::bail!("Suspended child has no resumable thread")
 }
 
 #[cfg(windows)]
-fn is_current_windows_child(child: &WindowsProcess, parent: &WindowsProcess) -> bool {
-    // Both identities are now pinned by handles. The initial snapshot may have
-    // raced PID reuse before OpenProcess; re-read the parent relation only after
-    // opening the handle, so an unrelated replacement cannot pass validation.
-    child.created >= parent.created
-        && windows_process_snapshot()
-            .is_ok_and(|entries| entries.contains(&(child.pid, parent.pid)))
-}
-
+struct ProcessTree(windows_sys::Win32::Foundation::HANDLE);
 #[cfg(windows)]
-fn terminate_windows_tree(root: WindowsProcess) {
-    // Open handles prevent PID reuse, including after a parent exits. Creation
-    // times reject stale parent IDs that predate the process we actually launched.
-    let mut tracked = std::collections::BTreeMap::from([(root.pid, root)]);
-    let deadline = std::time::Instant::now() + Duration::from_secs(2);
-    loop {
-        for process in tracked.values() {
-            process.terminate();
-        }
-        let Ok(entries) = windows_process_snapshot() else {
-            return;
-        };
-        let mut discovered = false;
-        loop {
-            let mut added = false;
-            for &(pid, parent) in &entries {
-                if std::time::Instant::now() >= deadline {
-                    return;
-                }
-                if tracked.contains_key(&pid) {
-                    continue;
-                }
-                if let Some(parent) = tracked.get(&parent)
-                    && let Ok(child) = WindowsProcess::open(pid)
-                    && is_current_windows_child(&child, parent)
-                {
-                    child.terminate();
-                    tracked.insert(pid, child);
-                    added = true;
-                    discovered = true;
-                }
-            }
-            if !added {
-                break;
-            }
-        }
-        if !discovered || std::time::Instant::now() >= deadline {
-            return;
-        }
-    }
-}
-#[cfg(windows)]
-struct WindowsJob(windows_sys::Win32::Foundation::HANDLE);
-#[cfg(windows)]
-impl WindowsJob {
-    fn attach(child: &tokio::process::Child) -> Result<Self> {
+impl ProcessTree {
+    fn new(child: &tokio::process::Child) -> Result<Self> {
         use windows_sys::Win32::System::JobObjects::*;
         unsafe {
             let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -362,7 +248,7 @@ impl WindowsJob {
     }
 }
 #[cfg(windows)]
-impl Drop for WindowsJob {
+impl Drop for ProcessTree {
     fn drop(&mut self) {
         unsafe {
             windows_sys::Win32::Foundation::CloseHandle(self.0);
@@ -373,60 +259,38 @@ impl Drop for WindowsJob {
 #[cfg(all(test, windows))]
 mod windows_tests {
     use super::*;
+
     #[tokio::test]
-    async fn rejected_job_registration_preserves_successful_output() {
-        let child = tokio::process::Command::new("cmd.exe")
-            .args(["/C", "echo retained output"])
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let tree = ProcessTree::from_registration(
-            &child,
-            Err(anyhow::anyhow!("host job refuses nesting")),
-        )
-        .unwrap();
-        let output = child.wait_with_output().await.unwrap();
-        drop(tree);
-        assert!(output.status.success());
-        assert!(String::from_utf8_lossy(&output.stdout).contains("retained output"));
+    async fn rejected_job_registration_prevents_child_side_effects() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut command = tokio::process::Command::new("cmd.exe");
+        command
+            .args(["/C", "echo started>started.txt"])
+            .current_dir(dir.path());
+        let result = spawn_windows_child(&mut command, |_| {
+            Err(anyhow::anyhow!("host refuses nesting"))
+        });
+        let error = match result {
+            Ok(_) => panic!("registration must fail"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("child was not started"));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!dir.path().join("started.txt").exists());
     }
+
     #[tokio::test]
-    async fn rejected_job_registration_keeps_cleanup_bounded() {
-        let mut child = tokio::process::Command::new("cmd.exe")
-            .args(["/C", "ping -n 30 127.0.0.1 >nul"])
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let tree = ProcessTree::from_registration(
-            &child,
-            Err(anyhow::anyhow!("host job refuses nesting")),
-        )
-        .unwrap();
-        let start = std::time::Instant::now();
-        drop(tree);
-        let status = tokio::time::timeout(Duration::from_secs(3), child.wait())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!status.success());
-        assert!(start.elapsed() < Duration::from_secs(5));
-    }
-    #[tokio::test]
-    async fn fallback_closes_inherited_pipes_after_parent_exits() {
-        use std::os::windows::io::AsRawHandle;
-        let mut child = tokio::process::Command::new("cmd.exe")
-            .args(["/C", "start /b ping.exe -n 30 127.0.0.1"])
+    async fn owned_job_closes_grandchild_pipes_after_ancestors_exit() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("intermediate.cmd"),
+            "@echo off\r\nstart /b ping.exe -n 30 127.0.0.1\r\necho done>intermediate-done\r\nexit /b 0\r\n").unwrap();
+        let mut command = tokio::process::Command::new("cmd.exe");
+        command
+            .args(["/C", "start /b cmd.exe /c intermediate.cmd"])
+            .current_dir(dir.path())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let pid = child.id().unwrap();
-        let tree = ProcessTree::from_registration(
-            &child,
-            Err(anyhow::anyhow!("host job refuses nesting")),
-        )
-        .unwrap();
+            .stderr(std::process::Stdio::piped());
+        let (mut child, tree) = spawn_windows_child(&mut command, ProcessTree::new).unwrap();
         let mut stdout = child.stdout.take().unwrap();
         assert!(
             tokio::time::timeout(Duration::from_secs(10), child.wait())
@@ -435,58 +299,44 @@ mod windows_tests {
                 .unwrap()
                 .success()
         );
-        let descendant_id = windows_process_snapshot()
-            .unwrap()
-            .into_iter()
-            .find_map(|(id, parent)| (parent == pid).then_some(id))
-            .expect("descendant should outlive parent");
-        let descendant = WindowsProcess::open(descendant_id).unwrap();
-        drop(tree);
-        assert_eq!(
-            unsafe {
-                windows_sys::Win32::System::Threading::WaitForSingleObject(
-                    descendant.handle.as_raw_handle() as _,
-                    3000,
-                )
-            },
-            0
-        );
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !dir.path().join("intermediate-done").exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         let mut output = Vec::new();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), stdout.read_to_end(&mut output))
+                .await
+                .is_err()
+        );
+        drop(tree);
         tokio::time::timeout(Duration::from_secs(3), stdout.read_to_end(&mut output))
             .await
             .unwrap()
             .unwrap();
     }
+
     #[tokio::test]
-    async fn stale_snapshot_cannot_claim_an_unrelated_process() {
-        let mut parent = tokio::process::Command::new("cmd.exe")
-            .args(["/C", "ping -n 30 127.0.0.1 >nul"])
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let parent_tree =
-            ProcessTree::from_registration(&parent, Err(anyhow::anyhow!("fixture"))).unwrap();
-        let mut unrelated = tokio::process::Command::new("cmd.exe")
-            .args(["/C", "ping -n 30 127.0.0.1 >nul"])
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let unrelated_tree =
-            ProcessTree::from_registration(&unrelated, Err(anyhow::anyhow!("fixture"))).unwrap();
-        let owned = parent_tree.fallback.as_ref().unwrap();
-        let replacement = unrelated_tree.fallback.as_ref().unwrap();
-        // An old snapshot could pair replacement.pid with owned.pid. The later
-        // creation-time comparison alone accepts that false relationship.
-        assert!(replacement.created >= owned.created);
-        assert!(!is_current_windows_child(replacement, owned));
-        drop(parent_tree);
-        assert!(unrelated.try_wait().unwrap().is_none());
-        drop(unrelated_tree);
-        tokio::time::timeout(Duration::from_secs(3), parent.wait())
+    async fn stopping_one_owned_job_preserves_another() {
+        let mut first = tokio::process::Command::new("cmd.exe");
+        first.args(["/C", "ping -n 30 127.0.0.1 >nul"]);
+        let (mut first_child, first_tree) =
+            spawn_windows_child(&mut first, ProcessTree::new).unwrap();
+        let mut second = tokio::process::Command::new("cmd.exe");
+        second.args(["/C", "ping -n 30 127.0.0.1 >nul"]);
+        let (mut second_child, second_tree) =
+            spawn_windows_child(&mut second, ProcessTree::new).unwrap();
+        drop(first_tree);
+        tokio::time::timeout(Duration::from_secs(3), first_child.wait())
             .await
             .unwrap()
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(3), unrelated.wait())
+        assert!(second_child.try_wait().unwrap().is_none());
+        drop(second_tree);
+        tokio::time::timeout(Duration::from_secs(3), second_child.wait())
             .await
             .unwrap()
             .unwrap();
