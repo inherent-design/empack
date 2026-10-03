@@ -156,7 +156,9 @@ Current sync rules depend on the config model:
 - Dry-run sync builds the operational plan from in-memory resolved intent without persisting search resolutions.
 - Search resolution and planning failures make sync fail, even when other actions succeed. The first resolution error remains in the error chain for exit-code classification.
 - Local entries enter the operational `ProjectPlan` directly without packwiz resolution.
-- Resolved dependency keys are compared against installed `.pw.toml` filename stems. Live sync also validates provider, project ID, content type, and explicit version/file pins before persisting resolutions or executing actions. Unsupported replacement fails with an explicit diagnostic; unpinned entries retain their installed version when identity matches. Duplicate installed keys are errors.
+- Resolved entries match an installed snapshot by provider, project ID and content type. Manifest keys are labels and may differ from installed filenames. Duplicate identities and conflicting installed keys fail before mutation. Explicit pin drift schedules a reinstall for the same identity; unpinned entries keep the installed version. Provider/project replacement still requires explicit removal.
+- Sync preserves unlisted installations because root intent does not describe required dependency edges. Deleting a manifest entry does not authorize deleting its installation. Use explicit `remove` for removal.
+- Successful backend execution is followed by a fresh installed-state check. Missing identities or unsatisfied pins fail the command even when the subprocess returned success.
 - `clean` preserves `empack.yml` and `pack/`.
 - Destructive reset of `empack.yml` and `pack/` is an explicit init rollback / `init --force` path, not a normal state-machine clean transition.
 
@@ -166,7 +168,7 @@ Forced initialization defers the existing-project reset until input resolution a
 
 Dependency entries with `status: resolved` or `status: local` must satisfy that record schema. Unknown fields and invalid status values are errors. Search entries omit `status` and accept only `title`, `type`, and `platform`; a malformed explicit record never falls back to a search.
 
-Sync resolves search entries in memory in both execution and preview modes. Persistence starts after planning and installed-intent validation. Successful planning does not provide a transaction across packwiz and the manifest; automatic installed-dependency replacement remains unsupported.
+Sync resolves search entries in memory in both execution and preview modes. Persistence starts after planning and installed-intent validation. Successful planning does not provide a transaction across packwiz and the manifest; provider/project replacement remains unsupported; pin changes for an unchanged identity are reconciled.
 
 Explicit `add --version-id` and `add --file-id` requests retain their pin in the
 resolved record. Unpinned requests remain unpinned. Backend installation and

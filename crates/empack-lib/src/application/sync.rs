@@ -1,4 +1,5 @@
 use crate::empack::config::{DependencySource, ProjectPlan, ProjectSpec};
+use crate::empack::installed::{DependencyIdentity, InstalledDependency};
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::{ProjectResolverTrait, SearchError};
 use crate::primitives::{ProjectPlatform, ProjectType};
@@ -8,6 +9,8 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncPlan {
     pub expected_mods: HashSet<String>,
+    pub satisfied: HashSet<String>,
+    pub retained: Vec<String>,
     pub actions: Vec<SyncPlanAction>,
 }
 
@@ -78,41 +81,85 @@ pub enum AddCommandPlanError {
     InvalidPlan,
 }
 
-pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<String>) -> SyncPlan {
+pub fn build_sync_plan(
+    project_plan: &ProjectPlan,
+    installed: &[InstalledDependency],
+) -> anyhow::Result<SyncPlan> {
     let mut expected_mods = HashSet::new();
+    let mut satisfied = HashSet::new();
+    let mut identities = HashSet::new();
+    let mut observed = HashSet::new();
     let mut actions = Vec::new();
-
-    for dep_spec in &project_plan.dependencies {
-        let slug = dep_spec.key.clone();
-        expected_mods.insert(slug.clone());
-
-        if installed_mods.contains(&slug) {
+    for spec in &project_plan.dependencies {
+        expected_mods.insert(spec.key.clone());
+        let Some(identity) = DependencyIdentity::from_spec(spec) else {
+            continue;
+        };
+        if identity.project_id.is_empty() {
+            actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
             continue;
         }
-
-        let plan = SyncDependencyPlan::from_spec(dep_spec);
-        if matches!(plan.source, DependencySource::Local { .. }) {
-            continue;
+        anyhow::ensure!(
+            !installed
+                .iter()
+                .any(|entry| entry
+                    .identity
+                    .as_ref()
+                    .is_some_and(|other| other.platform == identity.platform
+                        && other.project_id == identity.project_id
+                        && other.project_type != identity.project_type)),
+            "Installed dependency '{}' has a different content type. Automatic replacement is not supported",
+            spec.key
+        );
+        anyhow::ensure!(
+            identities.insert(identity.clone()),
+            "Multiple manifest entries declare the same provider identity: {}",
+            spec.key
+        );
+        let matches: Vec<_> = installed
+            .iter()
+            .filter(|entry| entry.identity.as_ref() == Some(&identity))
+            .collect();
+        anyhow::ensure!(
+            matches.len() <= 1,
+            "Multiple installed files declare the same provider identity: {}",
+            spec.key
+        );
+        if let Some(entry) = matches.first() {
+            observed.insert(entry.key.clone());
+            let DependencySource::Platform { version_pin, .. } = &spec.source else {
+                unreachable!()
+            };
+            if version_pin.is_some() && entry.version.as_ref() != version_pin.as_ref() {
+                // A pinned reinstall keeps provider identity; packwiz owns replacement
+                // of its metadata and required dependency resolution.
+                actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
+            } else {
+                satisfied.insert(spec.key.clone());
+            }
+        } else {
+            anyhow::ensure!(
+                !installed.iter().any(|entry| entry.key == spec.key),
+                "Installed dependency '{}' has a different provider, project, or content type. Automatic replacement is not supported; remove it explicitly and sync again.",
+                spec.key
+            );
+            actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
         }
-
-        actions.push(SyncPlanAction::Add(plan));
     }
-
-    let mut installed_keys = installed_mods.iter().collect::<Vec<_>>();
-    installed_keys.sort();
-    for installed_mod in installed_keys {
-        if !expected_mods.contains(installed_mod) {
-            actions.push(SyncPlanAction::Remove {
-                key: installed_mod.clone(),
-                title: installed_mod.clone(),
-            });
-        }
-    }
-
-    SyncPlan {
+    // A root manifest is not a complete dependency graph. Absence never proves
+    // removability: retain transitive and externally managed installations.
+    let mut retained: Vec<_> = installed
+        .iter()
+        .filter(|entry| !observed.contains(&entry.key))
+        .map(|entry| entry.key.clone())
+        .collect();
+    retained.sort();
+    Ok(SyncPlan {
         expected_mods,
+        satisfied,
+        retained,
         actions,
-    }
+    })
 }
 
 pub async fn resolve_sync_action(

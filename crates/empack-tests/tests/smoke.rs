@@ -263,11 +263,10 @@ fn smoke_sync_rejects_non_string_datapack_option_without_changes() {
 }
 
 #[test]
-fn smoke_sync_rejects_identity_and_pin_drift_without_mutation() {
+fn smoke_sync_rejects_identity_drift_without_mutation() {
     for (platform, id, version, success) in [
         ("modrinth", "AANobbMI", None, true),
         ("modrinth", "AANobbMI", Some("installed"), true),
-        ("modrinth", "AANobbMI", Some("changed"), false),
         ("modrinth", "different-project", None, false),
         ("curseforge", "12345", None, false),
     ] {
@@ -382,4 +381,95 @@ fn smoke_version_does_not_resolve_managed_tooling() {
         .assert()
         .success();
     assert!(!project.dir().join(".empack-cache/bin").exists());
+}
+
+#[test]
+fn smoke_sync_matches_aliases_and_retains_transitive_metadata() {
+    let project = TestProject::workflow_fixture("identity", "fabric", "1.21.1");
+    std::fs::write(project.dir().join("empack.yml"), "empack:\n  minecraft_version: '1.21.1'\n  loader: fabric\n  dependencies:\n    renderer-alias:\n      status: resolved\n      title: Renderer\n      platform: modrinth\n      project_id: AANobbMI\n").unwrap();
+    let mods = project.dir().join("pack/mods");
+    std::fs::create_dir_all(&mods).unwrap();
+    let root = "name = 'Renderer'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'v1'\n";
+    let dependency = "name = 'Library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'v2'\n";
+    std::fs::write(mods.join("canonical.pw.toml"), root).unwrap();
+    std::fs::write(mods.join("required.pw.toml"), dependency).unwrap();
+    let before = snapshot(&project);
+    for _ in 0..2 {
+        command(&project).arg("sync").assert().success();
+        assert_eq!(
+            std::fs::read_to_string(mods.join("canonical.pw.toml")).unwrap(),
+            root
+        );
+        assert_eq!(
+            std::fs::read_to_string(mods.join("required.pw.toml")).unwrap(),
+            dependency
+        );
+        assert_eq!(snapshot(&project), before);
+    }
+}
+
+#[test]
+fn smoke_sync_detects_backend_success_without_reconciliation() {
+    let project = TestProject::workflow_fixture("postcondition", "fabric", "1.21.1");
+    std::fs::write(project.dir().join("empack.yml"), "empack:\n  minecraft_version: '1.21.1'\n  loader: fabric\n  dependencies:\n    missing:\n      status: resolved\n      title: Missing\n      platform: modrinth\n      project_id: AANobbMI\n").unwrap();
+    // The generic fake returns success but creates no dependency metadata.
+    command(&project)
+        .arg("sync")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Backend reported success but installed dependencies",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
+fn smoke_pinned_add_then_sync_preserves_required_content_and_updates_pin() {
+    use std::os::unix::fs::PermissionsExt;
+    for (platform, pin_flag, first, second) in [
+        ("modrinth", "--version-id", "v1", "v2"),
+        ("curseforge", "--file-id", "101", "102"),
+    ] {
+        let project = TestProject::workflow_fixture("root-closure", "fabric", "1.21.1");
+        let tool = project.dir().join("install-fixture");
+        std::fs::write(&tool, r#"#!/bin/sh
+provider=$1
+shift
+[ "$1" = add ] || exit 0
+shift
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --project-id|--addon-id) id=$2; shift 2;;
+    --version-id|--file-id) pin=$2; shift 2;;
+    *) shift;;
+  esac
+done
+printf 'add\n' >> ../backend-calls
+mkdir -p mods
+if [ "$provider" = modrinth ]; then
+  printf "name = 'Root'\n[update.modrinth]\nmod-id = '%s'\nversion = '%s'\n" "$id" "$pin" > mods/canonical-root.pw.toml
+else
+  printf "name = 'Root'\n[update.curseforge]\nproject-id = '%s'\nfile-id = '%s'\n" "$id" "$pin" > mods/canonical-root.pw.toml
+fi
+printf "name = 'Required library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'r1'\n" > mods/required.pw.toml
+"#).unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        command(&project).env("EMPACK_PACKWIZ_BIN", &tool)
+            .args(["add", "12345", "--platform", platform, pin_flag, first]).assert().success();
+        let manifest = project.dir().join("empack.yml");
+        let original = std::fs::read_to_string(&manifest).unwrap();
+        assert!(original.contains(first), "explicit pin must survive: {original}");
+        for _ in 0..2 {
+            command(&project).env("EMPACK_PACKWIZ_BIN", &tool).arg("sync").assert().success();
+            assert!(project.dir().join("pack/mods/required.pw.toml").exists());
+        }
+        assert_eq!(std::fs::read_to_string(project.dir().join("backend-calls")).unwrap(), "add\n");
+        std::fs::write(&manifest, original.replace(first, second)).unwrap();
+        for _ in 0..2 {
+            command(&project).env("EMPACK_PACKWIZ_BIN", &tool).arg("sync").assert().success();
+        }
+        assert_eq!(std::fs::read_to_string(project.dir().join("backend-calls")).unwrap(), "add\nadd\n");
+        assert!(std::fs::read_to_string(project.dir().join("pack/mods/canonical-root.pw.toml")).unwrap().contains(second));
+        assert!(project.dir().join("pack/mods/required.pw.toml").exists());
+    }
 }

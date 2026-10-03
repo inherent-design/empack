@@ -355,3 +355,18 @@ Latest documented snapshots:
 - 2026-04-09: the latest documented coverage snapshot was 88.02% on non-`.test.rs` files under `crates/empack-lib/src` and `crates/empack/src`, and 94.14% on `TOTAL`.
 - `mise run coverage` is the combined instrumented path for unit and E2E coverage.
 - there is no `mise run e2e:container` task in the current repo.
+
+## Workflow reconciliation follow-up
+
+The second audit starts at `e69baf4`. Four focused regressions failed before the
+first fixes: dropped add pins, successful exit after failed manifest publication,
+stale continuation deletion, and a missing import leaf behind a symlink. The
+boundary suite then passed 151 tests. Stale previews have a separate regression.
+
+The identity refactor adds real CLI sequences for both providers: pinned add,
+required-library installation, two no-op syncs, a pin change, and convergence
+after one reinstall. Further cases cover manifest aliases, duplicate identities,
+unlisted content retention, and backend success without matching installed
+metadata. The focused planner/command suite passed 46 tests and CLI smoke passed
+15 tests at this stage. These checks do not establish a complete dependency
+closure or authorize automatic orphan removal.

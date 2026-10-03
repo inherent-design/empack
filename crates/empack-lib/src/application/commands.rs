@@ -4120,7 +4120,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     let installed_mods = session
         .packwiz()
-        .get_installed_mods(&workdir)
+        .installed_snapshot(&workdir)
         .context("Could not read installed mods; sync aborted")?;
 
     // Phase 1: Resolve any Search entries before building the project plan
@@ -4236,9 +4236,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         .create_project_plan_from_config(&empack_config)
         .context("Failed to load empack.yml configuration")?;
 
-    session
-        .packwiz()
-        .validate_installed_intent(&workdir, &project_plan)?;
+    let sync_plan = build_sync_plan(&project_plan, &installed_mods)?;
 
     let local_dependency_issues =
         validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
@@ -4275,7 +4273,9 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         installed_mods.len()
     ));
 
-    let sync_plan = build_sync_plan(&project_plan, &installed_mods);
+    if !sync_plan.retained.is_empty() {
+        session.display().status().info(&format!("Retaining {} unlisted installations; root intent does not authorize dependency cleanup", sync_plan.retained.len()));
+    }
 
     // Protect installed mods whose Search entries failed resolution from removal
     let protected_actions: Vec<_> = sync_plan
@@ -4292,7 +4292,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let already_installed: Vec<_> = project_plan
         .dependencies
         .iter()
-        .filter(|dep| installed_mods.contains(&dep.key))
+        .filter(|dep| sync_plan.satisfied.contains(&dep.key))
         .collect();
     let total_steps = already_installed.len() + protected_actions.len();
     let mut step = 0;
@@ -4587,6 +4587,9 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         .info(&format!("Failed actions: {}", failure_count));
 
     if failure_count == 0 {
+        session
+            .packwiz()
+            .verify_reconciled(&workdir, &project_plan)?;
         session
             .display()
             .status()

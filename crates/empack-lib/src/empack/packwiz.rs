@@ -49,12 +49,26 @@ pub trait PackwizOps {
     /// Get list of currently installed mods from packwiz
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>>;
 
-    /// Reject installed identity or version drift that membership-only sync cannot replace safely.
-    fn validate_installed_intent(
+    /// Snapshot provider identity, version and installed filename for reconciliation.
+    fn installed_snapshot(
         &self,
         workdir: &Path,
-        plan: &crate::empack::config::ProjectPlan,
-    ) -> crate::Result<()>;
+    ) -> crate::Result<Vec<super::installed::InstalledDependency>>;
+
+    /// Verify the live postcondition, including requested pins, after backend success.
+    fn verify_reconciled(
+        &self,
+        workdir: &Path,
+        plan: &super::config::ProjectPlan,
+    ) -> crate::Result<()> {
+        let observed = self.installed_snapshot(workdir)?;
+        let remaining = crate::application::sync::build_sync_plan(plan, &observed)?;
+        anyhow::ensure!(
+            remaining.actions.is_empty(),
+            "Backend reported success but installed dependencies do not satisfy empack.yml; inspect pack metadata before syncing again"
+        );
+        Ok(())
+    }
 
     /// Get the expected cache path for packwiz-installer-bootstrap.jar
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf>;
@@ -281,67 +295,27 @@ impl PackwizOps for LivePackwizOps<'_> {
         Ok(self.installed_paths(workdir)?.into_keys().collect())
     }
 
-    fn validate_installed_intent(
+    fn installed_snapshot(
         &self,
         workdir: &Path,
-        plan: &crate::empack::config::ProjectPlan,
-    ) -> crate::Result<()> {
-        let installed = self.installed_paths(workdir)?;
-        for dependency in &plan.dependencies {
-            let crate::empack::config::DependencySource::Platform {
-                project_id,
-                project_platform,
-                version_pin,
-            } = &dependency.source
-            else {
-                continue;
-            };
-            let Some(path) = installed.get(&dependency.key) else {
-                continue;
-            };
-            let pack = workdir.join("pack");
-            let installed_type = if path.starts_with(pack.join("mods")) {
-                crate::primitives::ProjectType::Mod
-            } else if path.starts_with(pack.join("resourcepacks")) {
-                crate::primitives::ProjectType::ResourcePack
-            } else if path.starts_with(pack.join("shaderpacks")) {
-                crate::primitives::ProjectType::Shader
-            } else {
-                crate::primitives::ProjectType::Datapack
-            };
-            if installed_type != dependency.project_type {
-                anyhow::bail!(
-                    "Installed dependency '{}' has a different content type. Automatic replacement is not supported; remove it explicitly and sync again.",
-                    dependency.key
-                );
-            }
-            let metadata: toml::Value = toml::from_str(&self.filesystem.read_to_string(path)?)?;
-            let update = metadata
-                .get("update")
-                .and_then(|v| v.get(project_platform.to_string()));
-            let (id_field, version_field) = match project_platform {
-                crate::primitives::ProjectPlatform::Modrinth => ("mod-id", "version"),
-                crate::primitives::ProjectPlatform::CurseForge => ("project-id", "file-id"),
-            };
-            let field = |key| {
-                update.and_then(|v| v.get(key)).and_then(|v| match v {
-                    toml::Value::String(s) => Some(s.clone()),
-                    toml::Value::Integer(n) => Some(n.to_string()),
-                    _ => None,
-                })
-            };
-            if field(id_field).as_ref() != Some(project_id)
-                || version_pin
-                    .as_ref()
-                    .is_some_and(|pin| field(version_field).as_ref() != Some(pin))
-            {
-                anyhow::bail!(
-                    "Installed dependency '{}' differs from its declared provider, project, or version. Automatic replacement is not supported; remove it explicitly and sync again.",
-                    dependency.key
-                );
-            }
-        }
-        Ok(())
+    ) -> crate::Result<Vec<super::installed::InstalledDependency>> {
+        self.installed_paths(workdir)?
+            .into_iter()
+            .map(|(key, path)| {
+                let pack = workdir.join("pack");
+                let project_type = if path.starts_with(pack.join("mods")) {
+                    crate::primitives::ProjectType::Mod
+                } else if path.starts_with(pack.join("resourcepacks")) {
+                    crate::primitives::ProjectType::ResourcePack
+                } else if path.starts_with(pack.join("shaderpacks")) {
+                    crate::primitives::ProjectType::Shader
+                } else {
+                    crate::primitives::ProjectType::Datapack
+                };
+                let metadata = toml::from_str(&self.filesystem.read_to_string(&path)?)?;
+                super::installed::InstalledDependency::from_metadata(key, project_type, &metadata)
+            })
+            .collect()
     }
 
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
@@ -606,11 +580,46 @@ minecraft = "{}"
         Ok(self.installed_mods.clone())
     }
 
-    fn validate_installed_intent(
+    fn installed_snapshot(
+        &self,
+        workdir: &Path,
+    ) -> crate::Result<Vec<super::installed::InstalledDependency>> {
+        // Legacy mock names model satisfied declarations. Live safety regressions
+        // use LivePackwizOps and real metadata rather than this convenience fixture.
+        let files = self.filesystem.lock().unwrap();
+        let config = files
+            .get(&workdir.join("empack.yml"))
+            .and_then(|text| serde_saphyr::from_str::<super::config::EmpackConfig>(text).ok());
+        Ok(self
+            .installed_mods
+            .iter()
+            .map(|key| {
+                let record = config
+                    .as_ref()
+                    .and_then(|c| c.empack.dependencies.get(key))
+                    .and_then(|entry| match entry {
+                        super::config::DependencyEntry::Resolved(record) => Some(record),
+                        _ => None,
+                    });
+                super::installed::InstalledDependency {
+                    key: key.clone(),
+                    identity: record.map(|r| super::installed::DependencyIdentity {
+                        platform: r.platform,
+                        project_id: r.project_id.clone(),
+                        project_type: r.project_type,
+                    }),
+                    version: record.and_then(|r| r.version.clone()),
+                }
+            })
+            .collect())
+    }
+
+    fn verify_reconciled(
         &self,
         _workdir: &Path,
-        _plan: &crate::empack::config::ProjectPlan,
+        _plan: &super::config::ProjectPlan,
     ) -> crate::Result<()> {
+        // This mock records process calls. Live provider tests verify postconditions.
         Ok(())
     }
 

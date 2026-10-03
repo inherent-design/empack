@@ -3684,7 +3684,7 @@ mod handle_sync_tests {
     }
 
     #[tokio::test]
-    async fn it_removes_extra_mod() {
+    async fn it_retains_unlisted_dependencies() {
         let mut installed_mods = HashSet::new();
         installed_mods.insert("fabric_api".to_string());
         installed_mods.insert("sodium".to_string());
@@ -3712,12 +3712,7 @@ mod handle_sync_tests {
         assert!(result.is_ok());
 
         let calls = session.process_provider.get_calls();
-        assert_eq!(calls.len(), 1);
-        assert!(session.process_provider.verify_call(
-            crate::empack::packwiz::PACKWIZ_BIN,
-            &["remove", "-y", "extra_mod"],
-            &workdir.join("pack")
-        ));
+        assert!(calls.is_empty(), "absence from root intent cannot authorize removal");
     }
 
     #[tokio::test]

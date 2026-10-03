@@ -153,3 +153,10 @@ Current PTY scope is intentionally limited:
 Live mutating commands hold an OS-backed project lock through execution and cleanup. Initialization locks its resolved target directory. Locks use canonical project paths and persistent files under the application data directory, separate from cleanable caches. Dry-run creates no project lock or project files. Provider implementations used outside the live command path must supply their own mutation ownership; the mock provider uses an in-memory no-op guard.
 
 These contracts prevent concurrent empack command mutations and partial document replacement. They do not provide rollback across packwiz, the manifest, and generated artifacts, or coordinate arbitrary external editors. Journaled multi-file recovery remains future work.
+
+`PackwizOps::installed_snapshot` exposes observed provider identity, version and
+metadata filename for reconciliation. Filename membership alone is insufficient
+for the live planner. `verify_reconciled` reads a new snapshot after execution.
+The legacy mock models declared installed names and records subprocess calls;
+CLI smoke tests with real files establish alias matching, required-content
+retention, pin convergence and detection of false backend success.

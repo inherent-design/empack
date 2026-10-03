@@ -40,7 +40,7 @@ fn test_build_sync_plan_preserves_direct_lookup_contracts() {
         dependencies: vec![direct_dep],
     };
 
-    let sync_plan = build_sync_plan(&plan, &HashSet::new());
+    let sync_plan = plan_for_keys(&plan, &HashSet::new());
     match &sync_plan.actions[0] {
         SyncPlanAction::Add(dep) => {
             match &dep.source {
@@ -57,7 +57,7 @@ fn test_build_sync_plan_preserves_direct_lookup_contracts() {
 }
 
 #[test]
-fn test_build_sync_plan_adds_missing_and_removes_extra_mods() {
+fn test_build_sync_plan_adds_missing_and_retains_unlisted_mods() {
     let plan = ProjectPlan {
         name: "Test Pack".to_string(),
         author: None,
@@ -68,10 +68,10 @@ fn test_build_sync_plan_adds_missing_and_removes_extra_mods() {
         dependencies: vec![project_spec("fabric_api")],
     };
 
-    let sync_plan = build_sync_plan(&plan, &HashSet::from(["extra_mod".to_string()]));
-    assert_eq!(sync_plan.actions.len(), 2);
+    let sync_plan = plan_for_keys(&plan, &HashSet::from(["extra_mod".to_string()]));
+    assert_eq!(sync_plan.actions.len(), 1);
     assert!(sync_plan.actions.iter().any(|action| matches!(action, SyncPlanAction::Add(_))));
-    assert!(sync_plan.actions.iter().any(|action| matches!(action, SyncPlanAction::Remove { key, .. } if key == "extra_mod")));
+    assert_eq!(sync_plan.retained, vec!["extra_mod"]);
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn test_build_sync_plan_matches_by_slug_key() {
         dependencies: vec![project_spec("fabric_api")],
     };
 
-    let sync_plan = build_sync_plan(&plan, &HashSet::from(["fabric_api".to_string()]));
+    let sync_plan = plan_for_keys(&plan, &HashSet::from(["fabric_api".to_string()]));
 
     assert!(sync_plan.actions.is_empty());
     assert!(sync_plan.expected_mods.contains("fabric_api"));
@@ -372,7 +372,7 @@ fn make_plan(deps: Vec<ProjectSpec>) -> ProjectPlan {
 #[test]
 fn test_build_sync_plan_add_only() {
     let plan = make_plan(vec![project_spec("sodium"), project_spec("iris")]);
-    let sync = build_sync_plan(&plan, &HashSet::new());
+    let sync = plan_for_keys(&plan, &HashSet::new());
 
     let mut to_add: Vec<String> = sync
         .actions
@@ -397,10 +397,10 @@ fn test_build_sync_plan_add_only() {
 }
 
 #[test]
-fn test_build_sync_plan_remove_only() {
+fn test_build_sync_plan_retains_unlisted_roots() {
     let plan = make_plan(vec![]);
     let installed = HashSet::from(["sodium".to_string(), "iris".to_string()]);
-    let sync = build_sync_plan(&plan, &installed);
+    let sync = plan_for_keys(&plan, &installed);
 
     let to_add: Vec<&str> = sync
         .actions
@@ -421,14 +421,15 @@ fn test_build_sync_plan_remove_only() {
         })
         .collect();
     to_remove.sort();
-    assert_eq!(to_remove, vec!["iris", "sodium"]);
+    assert!(to_remove.is_empty());
+    assert_eq!(sync.retained, vec!["iris", "sodium"]);
 }
 
 #[test]
-fn test_build_sync_plan_mixed_add_and_remove() {
+fn test_build_sync_plan_mixed_add_and_retain() {
     let plan = make_plan(vec![project_spec("sodium"), project_spec("iris")]);
     let installed = HashSet::from(["sodium".to_string(), "lithium".to_string()]);
-    let sync = build_sync_plan(&plan, &installed);
+    let sync = plan_for_keys(&plan, &installed);
 
     let to_add: Vec<String> = sync
         .actions
@@ -448,14 +449,15 @@ fn test_build_sync_plan_mixed_add_and_remove() {
             _ => None,
         })
         .collect();
-    assert_eq!(to_remove, vec!["lithium"]);
+    assert!(to_remove.is_empty());
+    assert_eq!(sync.retained, vec!["lithium"]);
 }
 
 #[test]
 fn test_build_sync_plan_noop() {
     let plan = make_plan(vec![project_spec("sodium")]);
     let installed = HashSet::from(["sodium".to_string()]);
-    let sync = build_sync_plan(&plan, &installed);
+    let sync = plan_for_keys(&plan, &installed);
 
     assert!(sync.actions.is_empty());
     assert!(sync.expected_mods.contains("sodium"));
@@ -464,7 +466,7 @@ fn test_build_sync_plan_noop() {
 #[test]
 fn test_build_sync_plan_empty_both() {
     let plan = make_plan(vec![]);
-    let sync = build_sync_plan(&plan, &HashSet::new());
+    let sync = plan_for_keys(&plan, &HashSet::new());
 
     assert!(sync.actions.is_empty());
     assert!(sync.expected_mods.is_empty());
@@ -487,7 +489,7 @@ fn test_build_sync_plan_tracks_local_keys_in_expected_mods() {
     };
 
     let plan = make_plan(vec![dep]);
-    let sync = build_sync_plan(&plan, &HashSet::new());
+    let sync = plan_for_keys(&plan, &HashSet::new());
 
     assert!(sync.expected_mods.contains("local-mod"));
     assert!(sync.actions.is_empty());
@@ -649,4 +651,53 @@ async fn test_resolve_add_contract_search_failure() {
         }
         other => panic!("expected ResolveProject error, got {other:?}"),
     }
+}
+
+fn plan_for_keys(plan: &ProjectPlan, keys: &HashSet<String>) -> SyncPlan {
+    let installed: Vec<_> = keys.iter().map(|key| InstalledDependency {
+        key: key.clone(), identity: DependencyIdentity::from_spec(&project_spec(key)), version: None,
+    }).collect();
+    build_sync_plan(plan, &installed).unwrap()
+}
+
+#[test]
+fn identity_reconciliation_retains_required_content_across_repeated_sync() {
+    let mut root = project_spec("renderer-alias");
+    root.source = project_spec("canonical-renderer").source;
+    let installed = vec![
+        InstalledDependency { key: "canonical-renderer".into(), identity: DependencyIdentity::from_spec(&root), version: Some("v1".into()) },
+        InstalledDependency { key: "required-library".into(), identity: DependencyIdentity::from_spec(&project_spec("required-library")), version: None },
+    ];
+    let plan = make_plan(vec![root]);
+    for _ in 0..2 {
+        let sync = build_sync_plan(&plan, &installed).unwrap();
+        assert!(sync.actions.is_empty());
+        assert!(sync.satisfied.contains("renderer-alias"));
+        assert_eq!(sync.retained, vec!["required-library"]);
+    }
+}
+
+#[test]
+fn pin_changes_schedule_reinstallation_and_then_converge() {
+    let mut root = project_spec("alias");
+    let DependencySource::Platform { version_pin, .. } = &mut root.source else { unreachable!() };
+    *version_pin = Some("v2".into());
+    let mut installed = vec![InstalledDependency { key: "canonical".into(), identity: DependencyIdentity::from_spec(&root), version: Some("v1".into()) }];
+    let plan = make_plan(vec![root]);
+    let sync = build_sync_plan(&plan, &installed).unwrap();
+    assert_eq!(sync.actions.len(), 1);
+    assert!(matches!(sync.actions[0], SyncPlanAction::Add(_)));
+    installed[0].version = Some("v2".into());
+    assert!(build_sync_plan(&plan, &installed).unwrap().actions.is_empty());
+}
+
+#[test]
+fn duplicate_identity_and_key_collisions_fail_before_execution() {
+    let root = project_spec("root");
+    let installed = InstalledDependency { key: "root".into(), identity: DependencyIdentity::from_spec(&root), version: None };
+    assert!(build_sync_plan(&make_plan(vec![root.clone()]), &[installed.clone(), installed.clone()]).is_err());
+    let mut alias = root.clone(); alias.key = "alias".into();
+    assert!(build_sync_plan(&make_plan(vec![root, alias]), &[]).is_err());
+    let wrong_identity = InstalledDependency { key: "root".into(), identity: DependencyIdentity::from_spec(&project_spec("other")), version: None };
+    assert!(build_sync_plan(&make_plan(vec![project_spec("root")]), &[wrong_identity]).is_err());
 }
