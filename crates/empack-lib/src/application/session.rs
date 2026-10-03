@@ -144,6 +144,8 @@ pub enum ProcessStream {
     Stderr,
 }
 
+/// Receives output on the calling thread. Callbacks must return promptly and must
+/// not block: process deadlines bound the owned child, not user callback execution.
 pub trait ProcessObserver {
     fn on_line(&self, stream: ProcessStream, line: &str);
 }

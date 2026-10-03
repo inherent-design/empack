@@ -3196,10 +3196,9 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     }
 
     // Parse build targets
-    let build_targets =
-        crate::empack::builds::plan_build_targets(&parse_build_targets(args.targets.clone())?);
-
-    validate_build_project_plan(session, &manager.workdir, &build_targets)?;
+    let requested_targets = parse_build_targets(args.targets.clone())?;
+    validate_build_project_plan(session, &manager.workdir, &requested_targets)?;
+    let build_targets = crate::empack::builds::plan_build_targets(&requested_targets);
 
     session
         .display()
@@ -3247,7 +3246,7 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
         let mut pending = crate::empack::restricted_build::save_pending_build(
             session.filesystem(),
             &manager.workdir,
-            &build_targets,
+            &requested_targets,
             archive_format,
             &restricted_entries,
         )
@@ -3439,6 +3438,14 @@ async fn continue_pending_restricted_build_inner(
         .display()
         .status()
         .section(&format!("Continuing build targets: {:?}", build_targets));
+
+    crate::empack::restricted_build::associate_downloads(
+        session.filesystem(),
+        workdir,
+        &pending,
+        &args.associate_downloads,
+        session.config().app_config().dry_run,
+    )?;
 
     if session.config().app_config().dry_run {
         session.display().status().section("Planned Actions");
@@ -3882,6 +3889,7 @@ fn display_pending_restricted_build(
     pending: &crate::empack::restricted_build::PendingRestrictedBuild,
     remaining: &[crate::empack::restricted_build::PendingRestrictedBuildEntry],
 ) -> Result<()> {
+    session.display().status().info("Renamed downloads require a matching digest. Without one, use build --continue --associate-download FILENAME=PATH or place the exact file in the managed cache.");
     let unique_remaining = dedup_restricted_entry_urls(remaining);
     let cache_dir = pending.restricted_cache_path();
 
@@ -3901,7 +3909,7 @@ fn display_pending_restricted_build(
             .info(&format!("    Download: {}", entry.url));
         session.display().status().info(&format!(
             "    Cache as: {}",
-            cache_dir.join(&entry.filename).display()
+            cache_dir.join(entry.cache_filename()).display()
         ));
         session
             .display()

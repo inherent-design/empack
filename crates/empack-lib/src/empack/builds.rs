@@ -1956,8 +1956,6 @@ impl<'a> BuildOrchestrator<'a> {
     }
 }
 
-
-
 /// Expand actual production prerequisites in dependency order, once per invocation.
 pub fn plan_build_targets(targets: &[BuildTarget]) -> Vec<BuildTarget> {
     let mut ordered = Vec::new();

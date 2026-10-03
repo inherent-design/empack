@@ -2289,3 +2289,19 @@ fn archive_input_limit_precedes_zip_parsing_or_allocation() {
     let error = open_zip_archive(file).unwrap_err();
     assert!(error.to_string().contains("compressed input limit"));
 }
+
+#[test]
+#[cfg(feature = "test-utils")]
+fn override_fallback_requires_destination_and_environment_coverage() {
+    let mut reference = modrinth_pref("example");
+    let mut overrides = vec![make_override("config/example.jar")];
+    assert!(!overrides_cover_reference(&overrides, &reference, None));
+    overrides[0].destination_path = reference.destination_path.clone();
+    overrides[0].side = OverrideSide::ClientOnly;
+    assert!(!overrides_cover_reference(&overrides, &reference, None));
+    reference.env.server = SideRequirement::Unsupported;
+    assert!(overrides_cover_reference(&overrides, &reference, None));
+    reference.env.server = SideRequirement::Required;
+    overrides.push(OverrideEntry { source_path: "server-overrides/mods/example.jar".into(), destination_path: reference.destination_path.clone(), side: OverrideSide::ServerOnly, category: OverrideCategory::Other });
+    assert!(overrides_cover_reference(&overrides, &reference, None));
+}

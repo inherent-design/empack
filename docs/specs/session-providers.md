@@ -160,3 +160,5 @@ for the live planner. `verify_reconciled` reads a new snapshot after execution.
 The legacy mock models declared installed names and records subprocess calls;
 CLI smoke tests with real files establish alias matching, required-content
 retention, pin convergence and detection of false backend success.
+
+Process observers run on the synchronous caller and must return promptly. The worker enforces child and pipe deadlines independently, but cannot preempt a blocked user callback. Embedders should enqueue output for slow consumers. Global display/error state and Tokio-dependent build operations still limit independent concurrent sessions.

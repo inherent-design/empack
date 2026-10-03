@@ -842,7 +842,7 @@ async fn test_build_neoforge_client_full() -> Result<()> {
     assert!(
         session
             .filesystem()
-            .exists(&client_full_dir.join("mods").join("both-installed.txt")),
+            .exists(&client_full_dir.join("mods").join("client-installed.txt")),
         "Mock installer should leave a deterministic install marker"
     );
 
@@ -859,10 +859,10 @@ async fn test_build_neoforge_client_full() -> Result<()> {
         java_calls
             .iter()
             .any(|call| call.args.iter().any(|a| a == "-s")
-                && call.args.iter().any(|a| a == "both")
+                && call.args.iter().any(|a| a == "client")
                 && call.args.iter().any(|a| a == "--bootstrap-main-jar")
                 && call.args.iter().any(|a| a.contains("pack.toml"))),
-        "client-full build should invoke packwiz installer for both sides: {java_calls:?}"
+        "client-full build should invoke packwiz installer for the client side: {java_calls:?}"
     );
 
     Ok(())
@@ -1202,7 +1202,7 @@ async fn e2e_build_client_full_successfully() -> Result<()> {
     assert!(
         session
             .filesystem()
-            .exists(&client_full_dir.join("mods").join("both-installed.txt")),
+            .exists(&client_full_dir.join("mods").join("client-installed.txt")),
         "Mock installer should leave a deterministic install marker"
     );
 
@@ -1235,10 +1235,10 @@ async fn e2e_build_client_full_successfully() -> Result<()> {
         java_calls
             .iter()
             .any(|call| call.args.iter().any(|a| a == "-s")
-                && call.args.iter().any(|a| a == "both")
+                && call.args.iter().any(|a| a == "client")
                 && call.args.iter().any(|a| a == "--bootstrap-main-jar")
                 && call.args.iter().any(|a| a.contains("pack.toml"))),
-        "client-full build should invoke packwiz installer for both sides: {java_calls:?}"
+        "client-full build should invoke packwiz installer for the client side: {java_calls:?}"
     );
 
     Ok(())
@@ -1288,7 +1288,7 @@ async fn e2e_build_client_full_missing_installer() -> Result<()> {
                 .join("dist")
                 .join("client-full")
                 .join("mods")
-                .join("both-installed.txt")
+                .join("client-installed.txt")
         ),
         "The full installer step should not run when the installer bootstrap is missing"
     );
@@ -1347,7 +1347,7 @@ async fn e2e_build_client_full_with_pack_structure() -> Result<()> {
     assert!(
         session
             .filesystem()
-            .exists(&client_full_dir.join("mods").join("both-installed.txt")),
+            .exists(&client_full_dir.join("mods").join("client-installed.txt")),
         "Installer marker should confirm the mocked full download step"
     );
 

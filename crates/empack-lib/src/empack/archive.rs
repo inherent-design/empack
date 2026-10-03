@@ -223,8 +223,6 @@ fn create_7z_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archiv
     Ok(())
 }
 
-
-
 /// Publish a ZIP with named file replacements, streaming the existing entries.
 /// Callers validate each source and destination against their workflow roots.
 pub fn overlay_zip(archive_path: &Path, additions: &[(PathBuf, String)]) -> anyhow::Result<()> {

@@ -203,6 +203,14 @@ pub struct BuildArgs {
     /// Directory to scan for manually downloaded restricted mods
     #[arg(long, env = "EMPACK_DOWNLOADS_DIR")]
     pub downloads_dir: Option<String>,
+
+    /// Explicitly associate a local download with a pending filename
+    #[arg(
+        long = "associate-download",
+        value_name = "FILENAME=PATH",
+        requires = "continue_build"
+    )]
+    pub associate_downloads: Vec<String>,
 }
 
 impl Default for BuildArgs {
@@ -213,6 +221,7 @@ impl Default for BuildArgs {
             clean: false,
             format: CliArchiveFormat::Zip,
             downloads_dir: None,
+            associate_downloads: Vec::new(),
         }
     }
 }
@@ -658,6 +667,31 @@ mod tests {
         assert!(args.continue_build);
         assert!(args.targets.is_empty());
         assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/downloads"));
+    }
+
+    #[test]
+    fn explicit_download_association_requires_continuation() {
+        assert!(
+            CliConfig::load_from([
+                "empack",
+                "build",
+                "--associate-download",
+                "mod.jar=chosen.jar"
+            ])
+            .is_err()
+        );
+        let parsed = CliConfig::load_from([
+            "empack",
+            "build",
+            "--continue",
+            "--associate-download",
+            "mod.jar=chosen.jar",
+        ])
+        .unwrap();
+        let Some(Commands::Build(args)) = parsed.command else {
+            panic!("expected build");
+        };
+        assert_eq!(args.associate_downloads, ["mod.jar=chosen.jar"]);
     }
 
     #[test]

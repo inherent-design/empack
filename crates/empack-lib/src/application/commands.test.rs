@@ -4434,6 +4434,12 @@ mod handle_build_continue_tests {
             )
     }
 
+    fn expected_download(session: &MockCommandSession, workdir: &Path, filename: &str, file_id: u64, bytes: &[u8]) {
+        use sha2::{Digest, Sha256};
+        let hash: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+        session.filesystem().write_file(&workdir.join("pack/mods/expected.pw.toml"), &format!("filename = {filename:?}\n[download]\nhash-format = 'sha256'\nhash = '{hash}'\n[update.curseforge]\nproject-id = 1\nfile-id = {file_id}\n")).unwrap();
+    }
+
     fn tty_capabilities() -> crate::terminal::TerminalCapabilities {
         crate::terminal::TerminalCapabilities {
             color: crate::primitives::TerminalColorCaps::None,
@@ -4815,6 +4821,7 @@ mod handle_build_continue_tests {
             .with_process(process)
             .with_interactive(MockInteractiveProvider::new().with_confirm(true))
             .with_terminal_capabilities(tty_capabilities());
+        expected_download(&session, &workdir, "BeeFix-1.20-1.0.7.jar", 4618962, b"manual bytes");
 
         let files = session.filesystem_provider.files.clone();
         let directories = session.filesystem_provider.directories.clone();
@@ -4850,7 +4857,7 @@ mod handle_build_continue_tests {
         assert!(
             session
                 .filesystem()
-                .exists(&restricted_cache_dir.join(manual_filename)),
+                .exists(&restricted_cache_dir.join({ use sha2::{Digest, Sha256}; format!("sha256-{}", Sha256::digest(b"manual bytes").iter().map(|b| format!("{b:02x}")).collect::<String>()) })),
             "import-dir download should be copied into the managed restricted cache"
         );
         assert!(
@@ -4900,6 +4907,7 @@ mod handle_build_continue_tests {
                 ),
             )
             .with_process(process);
+        expected_download(&session, &workdir, "OptiFine.jar", 4912891, b"manual bytes");
 
         let _ = handle_build(
             &session,
@@ -4920,7 +4928,7 @@ mod handle_build_continue_tests {
         assert!(
             session
                 .filesystem()
-                .exists(&pending.restricted_cache_path().join("OptiFine.jar")),
+                .exists(&pending.restricted_cache_path().join(pending.entries[0].cache_filename())),
             "downloads-dir file should be imported into the managed restricted cache"
         );
     }
@@ -4942,6 +4950,7 @@ mod handle_build_continue_tests {
         let session = MockCommandSession::new()
             .with_filesystem(filesystem)
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+        expected_download(&session, &workdir, "No_Enchant_Glint.zip", 4660358, b"manual bytes");
 
         let pending = crate::empack::restricted_build::save_pending_build(
             session.filesystem(),
@@ -4980,7 +4989,7 @@ mod handle_build_continue_tests {
         assert!(
             session
                 .filesystem()
-                .exists(&restricted_cache_dir.join("No_Enchant_Glint.zip")),
+                .exists(&restricted_cache_dir.join(pending.entries[0].cache_filename())),
             "variant filename should be imported into the expected cache filename"
         );
         assert!(
@@ -5022,6 +5031,7 @@ mod handle_build_continue_tests {
         let session = MockCommandSession::new()
             .with_filesystem(filesystem)
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+        expected_download(&session, &workdir, "§6No Enchant Glint 1.20.1.zip", 4660358, &download_bytes);
 
         let pending = crate::empack::restricted_build::save_pending_build(
             session.filesystem(),
@@ -5058,7 +5068,7 @@ mod handle_build_continue_tests {
         assert!(
             session
                 .filesystem()
-                .exists(&pending.restricted_cache_path().join(exact_name)),
+                .exists(&pending.restricted_cache_path().join(pending.entries[0].cache_filename())),
             "exact filename should be imported into the managed restricted cache"
         );
         assert!(
@@ -5091,6 +5101,7 @@ mod handle_build_continue_tests {
         let session = MockCommandSession::new()
             .with_filesystem(filesystem)
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
+        expected_download(&session, &workdir, "No_Enchant_Glint.zip", 4660358, b"manual bytes");
 
         let mut pending = crate::empack::restricted_build::save_pending_build(
             session.filesystem(),
@@ -5163,7 +5174,7 @@ mod handle_build_continue_tests {
         assert!(
             session
                 .filesystem()
-                .exists(&restricted_cache_dir.join("No_Enchant_Glint.zip")),
+                .exists(&restricted_cache_dir.join(pending.entries[0].cache_filename())),
             "the new variant should still be imported into the expected cache filename"
         );
     }
@@ -5179,6 +5190,7 @@ mod handle_build_continue_tests {
         let session = MockCommandSession::new()
             .with_filesystem(cached_full_build_filesystem(workdir.clone()))
             .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+        expected_download(&session, &workdir, "OptiFine.jar", 4912891, b"fresh manual bytes");
 
         let mut pending = crate::empack::restricted_build::save_pending_build(
             session.filesystem(),
@@ -5204,7 +5216,7 @@ mod handle_build_continue_tests {
             .create_dir_all(&workdir.join("dist").join("client-full"))
             .expect("create client-full output");
 
-        let cache_path = pending.restricted_cache_path().join("OptiFine.jar");
+        let cache_path = pending.restricted_cache_path().join(pending.entries[0].cache_filename());
         let stale_meta = recent_file_metadata("stale bytes".len());
         session
             .filesystem()
@@ -5254,7 +5266,7 @@ mod handle_build_continue_tests {
         assert_eq!(
             session
                 .filesystem()
-                .read_bytes(&pending.restricted_cache_path().join("OptiFine.jar"))
+                .read_bytes(&pending.restricted_cache_path().join(pending.entries[0].cache_filename()))
                 .expect("read refreshed cache"),
             b"fresh manual bytes"
         );
@@ -5428,6 +5440,7 @@ mod handle_build_continue_tests {
             .with_process(process)
             .with_interactive(MockInteractiveProvider::new().with_confirm(true))
             .with_terminal_capabilities(tty_capabilities());
+        expected_download(&session, &workdir, "OptiFine.jar", 4912891, b"manual bytes");
 
         let staged_download_dir = workdir.join("dist").join("client-full").join("mods");
         let files = session.filesystem_provider.files.clone();
@@ -5482,6 +5495,7 @@ mod handle_build_continue_tests {
             .with_process(MockProcessProvider::new().with_java_installer_side_effects())
             .with_interactive(MockInteractiveProvider::new().with_confirm(true))
             .with_terminal_capabilities(tty_capabilities());
+        expected_download(&session, &workdir, "OptiFine.jar", 4912891, b"manual bytes");
 
         let pending = crate::empack::restricted_build::save_pending_build(
             session.filesystem(),
@@ -5596,6 +5610,7 @@ mod handle_build_continue_tests {
             .with_process(MockProcessProvider::new().with_mrpack_export_side_effects())
             .with_interactive(MockInteractiveProvider::new().with_confirm(true))
             .with_terminal_capabilities(tty_capabilities());
+        expected_download(&session, &workdir, "No_Enchant_Glint.zip", 4660358, b"manual exact variant");
 
         let pending = crate::empack::restricted_build::save_pending_build(
             session.filesystem(),
@@ -5645,7 +5660,7 @@ mod handle_build_continue_tests {
         assert!(
             session
                 .filesystem()
-                .exists(&pending.restricted_cache_path().join("No_Enchant_Glint.zip")),
+                .exists(&pending.restricted_cache_path().join(pending.entries[0].cache_filename())),
             "new variant should be imported into the managed restricted cache after baseline capture"
         );
         assert!(

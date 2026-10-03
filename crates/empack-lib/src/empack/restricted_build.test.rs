@@ -358,6 +358,7 @@ fn imports_downloads_into_cache_and_restores_to_every_destination() {
             "cached mod bytes".to_string(),
         );
 
+    record_expected_fixture(&provider, &workdir, "entityculling.jar", b"cached mod bytes");
     let pending = save_pending_build(
         &provider,
         &workdir,
@@ -382,7 +383,7 @@ fn imports_downloads_into_cache_and_restores_to_every_destination() {
     )
     .expect("import downloads into cache");
     assert!(
-        provider.exists(&pending.restricted_cache_path().join("entityculling.jar")),
+        provider.exists(&pending.restricted_cache_path().join(pending.entries[0].cache_filename())),
         "download should be imported into the managed restricted cache"
     );
 
@@ -404,7 +405,7 @@ fn imports_downloads_into_cache_and_restores_to_every_destination() {
 }
 
 #[test]
-fn import_matching_downloads_into_cache_imports_recent_unicode_named_zip_when_exact_filename_is_missing(
+fn verified_content_imports_verified_unicode_named_zip_when_exact_filename_is_missing(
 ) {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
@@ -422,6 +423,7 @@ fn import_matching_downloads_into_cache_imports_recent_unicode_named_zip_when_ex
             recent_file_metadata(bytes.len(), 205_000),
         );
 
+    record_expected_fixture(&provider, &workdir, "No_Enchant_Glint.zip", &bytes);
     let mut pending = save_pending_build(
         &provider,
         &workdir,
@@ -442,14 +444,14 @@ fn import_matching_downloads_into_cache_imports_recent_unicode_named_zip_when_ex
 
     assert_eq!(
         provider
-            .read_bytes(&pending.restricted_cache_path().join("No_Enchant_Glint.zip"))
+            .read_bytes(&pending.restricted_cache_path().join(pending.entries[0].cache_filename()))
             .expect("read cached file"),
         bytes
     );
 }
 
 #[test]
-fn import_matching_downloads_into_cache_imports_exact_deceasedcraft_filename_when_present() {
+fn verified_content_imports_exact_deceasedcraft_filename_when_present() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
     let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
@@ -467,6 +469,7 @@ fn import_matching_downloads_into_cache_imports_exact_deceasedcraft_filename_whe
             recent_file_metadata(bytes.len(), 205_000),
         );
 
+    record_expected_fixture(&provider, &workdir, "§6No Enchant Glint 1.20.1.zip", &bytes);
     let pending = save_pending_build(
         &provider,
         &workdir,
@@ -486,7 +489,7 @@ fn import_matching_downloads_into_cache_imports_exact_deceasedcraft_filename_whe
 
     assert_eq!(
         provider
-            .read_bytes(&pending.restricted_cache_path().join(exact_name))
+            .read_bytes(&pending.restricted_cache_path().join(pending.entries[0].cache_filename()))
             .expect("read cached exact file"),
         bytes
     );
@@ -536,7 +539,7 @@ fn import_matching_downloads_into_cache_ignores_old_unicode_zip_candidates() {
 }
 
 #[test]
-fn import_matching_downloads_into_cache_uses_modified_time_when_created_time_is_unavailable() {
+fn verified_content_does_not_require_creation_time() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
     let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
@@ -553,6 +556,7 @@ fn import_matching_downloads_into_cache_uses_modified_time_when_created_time_is_
             modified_only_file_metadata(bytes.len(), 205_000),
         );
 
+    record_expected_fixture(&provider, &workdir, "No_Enchant_Glint.zip", &bytes);
     let mut pending = save_pending_build(
         &provider,
         &workdir,
@@ -573,14 +577,14 @@ fn import_matching_downloads_into_cache_uses_modified_time_when_created_time_is_
 
     assert_eq!(
         provider
-            .read_bytes(&pending.restricted_cache_path().join("No_Enchant_Glint.zip"))
+            .read_bytes(&pending.restricted_cache_path().join(pending.entries[0].cache_filename()))
             .expect("read cached file"),
         bytes
     );
 }
 
 #[test]
-fn import_matching_downloads_into_cache_collapses_duplicate_candidates_by_sha256() {
+fn verified_content_collapses_duplicate_candidates_by_sha256() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
     let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
@@ -603,6 +607,7 @@ fn import_matching_downloads_into_cache_collapses_duplicate_candidates_by_sha256
             recent_file_metadata(bytes.len(), 206_000),
         );
 
+    record_expected_fixture(&provider, &workdir, "No_Enchant_Glint.zip", &bytes);
     let mut pending = save_pending_build(
         &provider,
         &workdir,
@@ -622,7 +627,7 @@ fn import_matching_downloads_into_cache_collapses_duplicate_candidates_by_sha256
     .expect("import duplicate candidates");
 
     assert!(
-        provider.exists(&pending.restricted_cache_path().join("No_Enchant_Glint.zip")),
+        provider.exists(&pending.restricted_cache_path().join(pending.entries[0].cache_filename())),
         "duplicate candidates with identical hashes should collapse into one import"
     );
 }
@@ -676,7 +681,7 @@ fn import_matching_downloads_into_cache_does_not_guess_when_multiple_distinct_re
 }
 
 #[test]
-fn import_matching_downloads_into_cache_ignores_preexisting_recent_zip_noise_when_baseline_exists() {
+fn verified_content_ignores_preexisting_recent_zip_noise_when_baseline_exists() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
     let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
@@ -697,6 +702,7 @@ fn import_matching_downloads_into_cache_ignores_preexisting_recent_zip_noise_whe
         .with_binary_file_and_metadata(noise_b.clone(), b"noise-b".to_vec(), noise_b_meta.clone())
         .with_binary_file_and_metadata(noise_c.clone(), b"noise-c".to_vec(), noise_c_meta.clone());
 
+    record_expected_fixture(&provider, &workdir, "§6No Enchant Glint 1.20.1.zip", b"manual resource pack bytes");
     let mut pending = save_pending_build(
         &provider,
         &workdir,
@@ -732,7 +738,7 @@ fn import_matching_downloads_into_cache_ignores_preexisting_recent_zip_noise_whe
             .read_bytes(
                 &pending
                     .restricted_cache_path()
-                    .join("§6No Enchant Glint 1.20.1.zip")
+                    .join(pending.entries[0].cache_filename())
             )
             .expect("read cached target"),
         b"manual resource pack bytes"
@@ -807,7 +813,7 @@ fn stage_cached_entries_to_destinations_treats_preexisting_unchanged_cache_as_mi
 }
 
 #[test]
-fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_exact_candidate() {
+fn verified_content_refreshes_preexisting_stale_cache_from_exact_candidate() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
     let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
@@ -818,6 +824,7 @@ fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_e
         .with_current_dir(workdir.clone())
         .with_configured_project(workdir.clone());
 
+    record_expected_fixture(&provider, &workdir, "No_Enchant_Glint.zip", b"fresh exact bytes");
     let mut pending = save_pending_build(
         &provider,
         &workdir,
@@ -826,7 +833,7 @@ fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_e
         &[sample_resourcepack_restricted_mod(&workdir)],
     )
     .expect("save pending build");
-    let cache_path = pending.restricted_cache_path().join("No_Enchant_Glint.zip");
+    let cache_path = pending.restricted_cache_path().join(pending.entries[0].cache_filename());
     let cache_meta = recent_file_metadata("stale cache bytes".len(), 200_000);
     provider
         .write_bytes(&cache_path, b"stale cache bytes")
@@ -858,7 +865,7 @@ fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_e
 }
 
 #[test]
-fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_unique_baseline_candidate(
+fn verified_content_refreshes_preexisting_stale_cache_from_unique_baseline_candidate(
 ) {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
@@ -870,6 +877,7 @@ fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_u
         .with_current_dir(workdir.clone())
         .with_configured_project(workdir.clone());
 
+    record_expected_fixture(&provider, &workdir, "No_Enchant_Glint.zip", b"fresh fallback bytes");
     let mut pending = save_pending_build(
         &provider,
         &workdir,
@@ -878,7 +886,7 @@ fn import_matching_downloads_into_cache_refreshes_preexisting_stale_cache_from_u
         &[sample_resourcepack_restricted_mod(&workdir)],
     )
     .expect("save pending build");
-    let cache_path = pending.restricted_cache_path().join("No_Enchant_Glint.zip");
+    let cache_path = pending.restricted_cache_path().join(pending.entries[0].cache_filename());
     let cache_meta = recent_file_metadata("stale cache bytes".len(), 200_000);
     provider
         .write_bytes(&cache_path, b"stale cache bytes")
@@ -1036,7 +1044,7 @@ fn import_matching_downloads_into_cache_keeps_blocking_when_multiple_new_distinc
 }
 
 #[test]
-fn import_matching_downloads_into_cache_scans_managed_cache_for_recent_variant_names() {
+fn verified_content_scans_managed_cache_for_verified_variant_names() {
     let _guard = crate::test_support::env_lock().lock().unwrap();
     let cache_root = TempDir::new().expect("cache root tempdir");
     let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
@@ -1046,6 +1054,7 @@ fn import_matching_downloads_into_cache_scans_managed_cache_for_recent_variant_n
         .with_current_dir(workdir.clone())
         .with_configured_project(workdir.clone());
 
+    record_expected_fixture(&provider, &workdir, "No_Enchant_Glint.zip", b"cached variant bytes");
     let mut pending = save_pending_build(
         &provider,
         &workdir,
@@ -1075,7 +1084,7 @@ fn import_matching_downloads_into_cache_scans_managed_cache_for_recent_variant_n
 
     assert_eq!(
         provider
-            .read_bytes(&pending.restricted_cache_path().join("No_Enchant_Glint.zip"))
+            .read_bytes(&pending.restricted_cache_path().join(pending.entries[0].cache_filename()))
             .expect("read normalized cache target"),
         b"cached variant bytes"
     );
@@ -1102,5 +1111,85 @@ fn forged_continuation_paths_are_rejected_before_staging() {
         let before = fs.files.lock().unwrap().clone();
         assert!(stage_cached_entries_to_destinations(&fs, &workdir, &pending).is_err());
         assert_eq!(*fs.files.lock().unwrap(), before);
+    }
+}
+
+#[test]
+fn renamed_download_cannot_satisfy_unverified_pending_requests() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache = TempDir::new().unwrap();
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache.path()) };
+    let workdir = mock_root().join("unverified-renamed");
+    let downloads = workdir.join("downloads");
+    let provider = MockFileSystemProvider::new().with_configured_project(workdir.clone())
+        .with_binary_file_and_metadata(downloads.join("renamed.jar"), b"unrelated".to_vec(), recent_file_metadata(9, 205_000));
+    let mut requested = sample_restricted_mods(&workdir);
+    requested[1].url = "https://www.curseforge.com/minecraft/mc-mods/other/files/99999".into();
+    requested[1].dest_path = restricted_dest(&workdir, "server-full", "other.jar");
+    let mut pending = save_pending_build(&provider, &workdir, &[BuildTarget::ClientFull, BuildTarget::ServerFull], ArchiveFormat::Zip, &requested).unwrap();
+    pending.recorded_at_unix_ms = Some(200_000);
+    import_matching_downloads_into_cache(&provider, &workdir, &pending, &[downloads]).unwrap();
+    assert_eq!(missing_cached_entries(&provider, &pending).len(), 2);
+}
+
+fn record_expected_fixture(provider: &MockFileSystemProvider, workdir: &Path, filename: &str, bytes: &[u8]) {
+    let file_id = if filename == "entityculling.jar" { 4763646 } else { 4660358 };
+    provider.write_file(&workdir.join("pack/mods/expected.pw.toml"), &format!("filename = {filename:?}\n[download]\nhash-format = 'sha256'\nhash = '{}'\nsize = {}\n[update.curseforge]\nproject-id = 1\nfile-id = {file_id}\n", hex_sha256(bytes), bytes.len())).unwrap();
+}
+
+#[test]
+fn explicit_association_is_read_only_in_preview_and_validates_before_writes() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache = TempDir::new().unwrap();
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache.path()) };
+    let workdir = mock_root().join("explicit-association");
+    let fs = MockFileSystemProvider::new().with_configured_project(workdir.clone());
+    fs.write_file(&workdir.join("chosen.jar"), "selected bytes").unwrap();
+    let pending = save_pending_build(&fs, &workdir, &[BuildTarget::ClientFull, BuildTarget::ServerFull], ArchiveFormat::Zip, &sample_restricted_mods(&workdir)).unwrap();
+    let mapping = vec!["entityculling.jar=chosen.jar".to_string()];
+    let before = fs.files.lock().unwrap().clone();
+    associate_downloads(&fs, &workdir, &pending, &mapping, true).unwrap();
+    assert_eq!(*fs.files.lock().unwrap(), before);
+    let mut invalid = mapping.clone();
+    invalid.push("unknown.jar=chosen.jar".into());
+    assert!(associate_downloads(&fs, &workdir, &pending, &invalid, false).is_err());
+    assert_eq!(*fs.files.lock().unwrap(), before);
+    associate_downloads(&fs, &workdir, &pending, &mapping, false).unwrap();
+    assert!(missing_cached_entries(&fs, &pending).is_empty());
+    stage_cached_entries_to_destinations(&fs, &workdir, &pending).unwrap();
+    for entry in pending.entries {
+        assert_eq!(fs.read_bytes(Path::new(&entry.dest_path)).unwrap(), b"selected bytes");
+    }
+}
+
+#[test]
+fn verified_association_rejects_wrong_bytes_and_cache_tampering() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let cache = TempDir::new().unwrap();
+    let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache.path()) };
+    let workdir = mock_root().join("verified-association");
+    let fs = MockFileSystemProvider::new().with_configured_project(workdir.clone());
+    record_expected_fixture(&fs, &workdir, "entityculling.jar", b"expected");
+    fs.write_file(&workdir.join("chosen.jar"), "unrelated").unwrap();
+    let pending = save_pending_build(&fs, &workdir, &[BuildTarget::ClientFull, BuildTarget::ServerFull], ArchiveFormat::Zip, &sample_restricted_mods(&workdir)).unwrap();
+    let mapping = vec!["entityculling.jar=chosen.jar".to_string()];
+    assert!(associate_downloads(&fs, &workdir, &pending, &mapping, false).unwrap_err().to_string().contains("expected content"));
+    fs.write_file(&workdir.join("chosen.jar"), "expected").unwrap();
+    associate_downloads(&fs, &workdir, &pending, &mapping, false).unwrap();
+    assert!(missing_cached_entries(&fs, &pending).is_empty());
+    fs.write_file(&pending.restricted_cache_path().join(pending.entries[0].cache_filename()), "tampered").unwrap();
+    assert_eq!(missing_cached_entries(&fs, &pending).len(), 2);
+    stage_cached_entries_to_destinations(&fs, &workdir, &pending).unwrap();
+    assert!(!fs.exists(Path::new(&pending.entries[0].dest_path)));
+}
+
+#[test]
+fn continuation_fingerprint_tracks_content_layers_and_templates() {
+    let workdir = mock_root().join("content-fingerprint");
+    let fs = MockFileSystemProvider::new().with_configured_project(workdir.clone());
+    for relative in ["pack/config/options.txt", "overrides/client/options.txt", "overrides/server/options.txt", "templates/client/README.template"] {
+        let before = compute_project_fingerprint(&fs, &workdir).unwrap();
+        fs.write_file(&workdir.join(relative), "changed").unwrap();
+        assert_ne!(compute_project_fingerprint(&fs, &workdir).unwrap(), before, "{relative}");
     }
 }

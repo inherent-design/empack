@@ -1284,21 +1284,6 @@ pub async fn execute_import(
         content_dirs.push(df);
     }
 
-    // Build a set of override basenames so we can identify platform refs
-    // that are already covered by override files (e.g. datapacks distributed
-    // via Paxi that also appear in the mrpack files[] array).
-    let override_basenames: std::collections::HashSet<String> = resolved
-        .manifest
-        .overrides
-        .iter()
-        .filter_map(|o| {
-            std::path::Path::new(&o.destination_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
-
     let content_total = resolved.manifest.content.len();
     let use_no_refresh = content_total > 1;
     let content_progress = session.display().progress().bar(content_total as u64);
@@ -1345,11 +1330,11 @@ pub async fn execute_import(
                         ));
                     }
                     AddRefResult::Failed(detail) => {
-                        let basename = std::path::Path::new(&pref.destination_path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("");
-                        if override_basenames.contains(basename) {
+                        if overrides_cover_reference(
+                            &resolved.manifest.overrides,
+                            pref,
+                            datapack_folder.as_deref(),
+                        ) {
                             session.display().status().info(&format!(
                                 "skipped packwiz add for '{}' (already in overrides)",
                                 pref.destination_path
@@ -1964,20 +1949,54 @@ fn collect_override_entries<R: Read + Seek>(
     Ok(())
 }
 
+fn overrides_cover_reference(
+    overrides: &[OverrideEntry],
+    reference: &PlatformRef,
+    datapack_folder: Option<&str>,
+) -> bool {
+    let destination = if reference.resolved_type == Some(crate::primitives::ProjectType::Datapack) {
+        datapack_folder
+            .and_then(|folder| {
+                Path::new(&reference.destination_path)
+                    .file_name()
+                    .map(|name| format!("{folder}/{}", name.to_string_lossy()))
+            })
+            .unwrap_or_else(|| reference.destination_path.clone())
+    } else {
+        reference.destination_path.clone()
+    };
+    let covers = |side| {
+        overrides.iter().any(|entry| {
+            entry.destination_path == destination
+                && (entry.side == OverrideSide::Both || entry.side == side)
+        })
+    };
+    (reference.env.client == SideRequirement::Unsupported || covers(OverrideSide::ClientOnly))
+        && (reference.env.server == SideRequirement::Unsupported
+            || covers(OverrideSide::ServerOnly))
+}
+
 fn prune_packwiz_override_metadata<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
     entries: &mut Vec<OverrideEntry>,
 ) {
-    let existing_destinations: std::collections::HashSet<String> = entries
+    let existing_destinations: Vec<_> = entries
         .iter()
-        .map(|entry| entry.destination_path.replace('\\', "/"))
+        .map(|entry| {
+            (
+                entry.destination_path.replace('\\', "/"),
+                entry.side.clone(),
+            )
+        })
         .collect();
 
     entries.retain(|entry| {
         let Some(payload_path) = packwiz_override_payload_destination(archive, entry) else {
             return true;
         };
-        !existing_destinations.contains(&payload_path)
+        !existing_destinations
+            .iter()
+            .any(|(path, side)| path == &payload_path && side == &entry.side)
     });
 }
 

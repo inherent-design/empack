@@ -63,6 +63,7 @@ empack is a Rust CLI for Minecraft modpack lifecycle management. It wraps a pack
 
 ## Cross References
 
+- [workflow-contracts.md](workflow-contracts.md)
 - [types.md](types.md)
 - [state-machine.md](state-machine.md)
 - [session-providers.md](session-providers.md)

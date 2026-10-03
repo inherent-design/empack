@@ -594,6 +594,17 @@ minecraft = "{}"
             .installed_mods
             .iter()
             .map(|key| {
+                if let Some(metadata) =
+                    files.get(&workdir.join("pack/mods").join(format!("{key}.pw.toml")))
+                    && let Ok(metadata) = toml::from_str(metadata)
+                    && let Ok(observed) = super::installed::InstalledDependency::from_metadata(
+                        key.clone(),
+                        crate::primitives::ProjectType::Mod,
+                        &metadata,
+                    )
+                {
+                    return observed;
+                }
                 let record = config
                     .as_ref()
                     .and_then(|c| c.empack.dependencies.get(key))

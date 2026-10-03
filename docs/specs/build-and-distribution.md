@@ -115,18 +115,22 @@ Current behavior:
 - the same continuation state is reused when `mrpack` export is blocked on manual downloads
 - records keep every destination path; user-facing display is deduplicated by download URL
 - the command prints the download URL, managed cache path, and destination path for each unique restricted download
-- fresh builds scan for matching filenames in this order:
+- when pack metadata supplies a SHA-1, SHA-256 or SHA-512 digest, fresh builds scan for matching content in this order:
   - empack-managed restricted-build cache
   - `--downloads-dir`
   - `~/Downloads`
   - recorded parent directories of the pending destination paths
-- matching files found outside the cache are imported into the managed cache
+- matching content is stored under its digest and checked again before staging
+- without a supported digest, empack does not guess from filenames, timestamps or extensions; use `empack build --continue --associate-download FILENAME=PATH`, or place the selected file at the printed cache path
+- explicit associations validate all selections before copying and respect dry-run
+- saved fingerprints cover the manifest, pack files, side layers and templates; changed inputs retain the stale record and require a fresh build
+- continuation records from before content fingerprints were introduced require a fresh build
 - if every required file is cached, empack reuses the same continuation path as `build --continue`
 - `build --continue` restores cached files into the recorded destination paths and reruns the original targets in continuation mode
 - continuation mode skips the initial clean for `client-full` and `server-full`
 - `build --continue` is parse-time incompatible with positional targets, `--clean`, and `--format`
 - if files are still missing and the terminal is interactive, empack can offer to open direct CurseForge `/download/{file-id}` URLs in the browser
-- after opening those URLs, empack waits up to 5 minutes for files to appear in the watched directories and continues automatically if they all arrive
+- after opening those URLs, empack waits up to 5 minutes for verified content or explicitly staged cache files and continues automatically if all requests are satisfied
 - empack does not directly fetch restricted CurseForge download URLs itself
 
 If restricted files remain missing, the command exits with an error after printing the managed cache location and `empack build --continue`.

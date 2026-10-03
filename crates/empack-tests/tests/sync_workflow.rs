@@ -103,6 +103,10 @@ async fn test_sync_resolution_write_failure_preserves_manifest_and_installed_dep
             .with_mock_search_result("Sodium", sodium_result())
             .with_installed_mods(HashSet::from(["sodium".to_string()]))
             .with_file(
+                workdir.join("pack/mods/sodium.pw.toml"),
+                "[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'installed'\n".to_string(),
+            )
+            .with_file(
                 workdir.join("empack.yml"),
                 search_project_config().to_string(),
             )
@@ -117,7 +121,10 @@ async fn test_sync_resolution_write_failure_preserves_manifest_and_installed_dep
             result?;
         } else {
             let error = result.expect_err("failed resolution write must fail sync");
-            assert!(format!("{error:#}").contains("manifest is read-only"));
+            assert!(
+                format!("{error:#}").contains("manifest is read-only"),
+                "{error:#}"
+            );
         }
         assert!(session.process_provider.get_calls().is_empty());
         assert_eq!(
@@ -262,11 +269,11 @@ async fn test_sync_workflow_full() -> Result<()> {
         "sync should add the missing dependency by project id: {packwiz_calls:?}"
     );
     assert!(
-        packwiz_calls.iter().any(|call| {
+        !packwiz_calls.iter().any(|call| {
             let args: Vec<&str> = call.args.iter().map(String::as_str).collect();
             args.windows(3).any(|w| w == ["remove", "-y", "old-mod"])
         }),
-        "sync should remove mods not declared in empack.yml: {packwiz_calls:?}"
+        "sync must retain installed content without dependency-closure evidence: {packwiz_calls:?}"
     );
     assert!(
         !packwiz_calls.iter().any(|call| {

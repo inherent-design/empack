@@ -53,7 +53,7 @@ empack:
 
 ### Dependency map
 
-Each dependency key is the canonical slug used by empack and packwiz file naming.
+Dependency keys are user-facing labels. Resolved dependencies are reconciled by provider, project ID and content type, independently of packwiz filenames.
 
 The value is an untagged union:
 

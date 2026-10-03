@@ -123,6 +123,7 @@ empack build --continue [OPTIONS]
 | `--continue` | *none* | *none* | `false` | Resume a previously blocked restricted-mod build from persisted state |
 | `--clean` | `-c` | *none* | `false` | Remove previous build artifacts before building |
 | `--format <FMT>` | *none* | *none* | `zip` | Archive format for distribution packages |
+| `--associate-download <FILENAME=PATH>` | *none* | none | none | Explicit pending-file association; requires `--continue` |
 | `--downloads-dir <PATH>` | *none* | `EMPACK_DOWNLOADS_DIR` | `~/Downloads` fallback | Directory scanned for restricted CurseForge downloads |
 
 ### Build targets
@@ -153,7 +154,7 @@ empack build --continue [OPTIONS]
 - `--downloads-dir` is used in both fresh and continuation flows as an auxiliary search path for manually downloaded restricted files.
 - all build entry paths validate tracked local dependency paths and SHA-256 hashes before build work starts
 - `mrpack` is rejected when the current `ProjectPlan` still contains tracked local dependencies
-- Fresh and continued restricted builds search for matching files in the managed cache first, then `--downloads-dir`, then `~/Downloads`, then the recorded parent directories of the pending destination paths.
+- Fresh and continued restricted builds search for digest-matching content in the managed cache first, then `--downloads-dir`, then `~/Downloads`, then the recorded parent directories of the pending destination paths.
 - If the terminal is interactive and `--yes` is not set, the command can offer to open direct CurseForge `/download/{file-id}` URLs in the browser and wait up to 5 minutes for files to appear before falling back to manual continuation.
 
 ## Add Command
