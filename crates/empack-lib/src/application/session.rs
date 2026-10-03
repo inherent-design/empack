@@ -1958,6 +1958,7 @@ mod tests {
         assert!(error.to_string().contains("Failed to spawn command"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn live_process_provider_uses_custom_path_for_execution_and_lookup() {
         let temp = TempDir::new().expect("temp dir");

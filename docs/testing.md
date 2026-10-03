@@ -62,7 +62,12 @@ The implementation keeps the session/provider architecture.
 
 The review ran on macOS arm64. The default gate passed 1,303 tests and eight
 doctests; the offline CLI smoke gate passed 12 tests. All-feature Clippy passed.
-Strict E2E, coverage and platform CI results are recorded in the review PR.
+All 95 strict E2E tests passed. A fresh instrumented run passed 1,398 tests
+with one manual rendering test ignored; production-source line coverage was
+15,306 / 17,205 (88.96%), excluding separate `.test.rs` files but including inline
+tests. All seven curated imports and client-full builds passed, including
+restricted continuation, and every output ZIP passed CRC validation. Platform
+CI results and review follow-up checks are recorded in PR #82.
 A separate empty-cache `requirements` run downloaded the pinned managed tool,
 verified its digest and successfully probed its version.
 
