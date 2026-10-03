@@ -74,14 +74,9 @@ In the standard async construction path, the HTTP cache is loaded from disk unde
 - `select()`
 - `fuzzy_select()`
 
-The live implementation short-circuits to defaults in `--yes` mode or when stdin and stdout are not TTYs. Ctrl+C handling restores the cursor, flushes telemetry, removes the state marker when possible, and exits with status `130`.
+The live implementation short-circuits to defaults in `--yes` mode or when stdin and stdout are not TTYs. Interrupted prompts return a typed cancellation error. Providers never terminate the host process or remove interruption markers.
 
-Interrupt cleanup is scope-aware:
-
-- top-level interactive cleanup targets the active workdir only
-- subprocess cleanup may walk upward from the subprocess working directory
-- that upward walk stops as soon as the marker is removed or the nearest empack project boundary is reached
-- cleanup never continues into parent projects beyond the current project boundary
+The executable owns the signal listener, logger lifecycle, cursor restoration, and exit status. Each live command receives its own cancellation token. Child exit and asynchronous pipe drainage share a deadline; Unix children run in a process group, and Windows children are assigned to a job object after spawning. Cleanup closes readers and terminates owned children. The synchronous provider interface waits for its process worker to finish before returning. Output is limited to 16 MiB per stream.
 
 ## Session Construction
 
@@ -94,7 +89,7 @@ Construction steps:
 
 1. Resolve `packwiz_bin_path` with `platform::packwiz_bin::resolve_packwiz_binary()`.
 2. Detect terminal capabilities from `AppConfig.color`.
-3. Initialize display and logger systems.
+3. Initialize display access; the executable initializes logging.
 4. Create live filesystem, network, process, config, archive, and interactive providers.
 5. Load the live HTTP cache from `<cache_root>/http`.
 6. Expose packwiz operations through `LivePackwizOps`, bound to the resolved binary path.
@@ -150,3 +145,11 @@ Current PTY scope is intentionally limited:
 - Interrupt handling exits the process directly with status `130`.
 - `LiveFileSystemProvider` is path-transparent. Filesystem safety guarantees come from command/workflow constraints, not from a sandboxed provider boundary.
 - Public compatibility wrappers such as `parse_curseforge_zip(path)` and `parse_modrinth_mrpack(path)` still expose path-based parsing APIs, even though live command paths now read archive bytes through `FileSystemProvider`.
+
+## Document Publication and Mutation Locks
+
+`write_atomic()` publishes manifests, state markers, and continuation records through a same-directory temporary file. The live implementation preserves existing permissions, refuses read-only files and symlinks, syncs file contents, replaces the destination, and syncs the parent directory on Unix. A post-publication durability error explicitly reports that publication already occurred.
+
+Live mutating commands hold an OS-backed project lock through execution and cleanup. Initialization locks its resolved target directory. Locks use canonical project paths and persistent files under the application data directory, separate from cleanable caches. Dry-run creates no project lock or project files. Provider implementations used outside the live command path must supply their own mutation ownership; the mock provider uses an in-memory no-op guard.
+
+These contracts prevent concurrent empack command mutations and partial document replacement. They do not provide rollback across packwiz, the manifest, and generated artifacts, or coordinate arbitrary external editors. Journaled multi-file recovery remains future work.

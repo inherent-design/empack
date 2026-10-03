@@ -33,8 +33,18 @@ use tracing::instrument;
 
 /// Execute CLI commands using the new session-based architecture
 pub async fn execute_command(config: CliConfig) -> Result<()> {
+    execute_command_with_cancellation(config, Default::default()).await
+}
+
+pub async fn execute_command_with_cancellation(
+    config: CliConfig,
+    cancellation: super::process_runtime::Cancellation,
+) -> Result<()> {
     // Create command session (owns all ephemeral state)
-    let session = CommandSession::new_async(config.app_config).await;
+    let session = CommandSession::new_async(config.app_config)
+        .await
+        .with_cancellation(cancellation.clone());
+    cancellation.check()?;
 
     let command = match config.command {
         Some(cmd) => cmd,
@@ -57,6 +67,23 @@ pub async fn execute_command(config: CliConfig) -> Result<()> {
 
 /// Execute a specific command with a provided session (for testing)
 pub async fn execute_command_with_session(command: Commands, session: &dyn Session) -> Result<()> {
+    session.process().check_cancelled()?;
+    let _mutation_lock = if !session.config().app_config().dry_run
+        && !matches!(
+            &command,
+            Commands::Init(_) | Commands::Version | Commands::Requirements
+        ) {
+        let workdir = session
+            .config()
+            .app_config()
+            .workdir
+            .clone()
+            .unwrap_or(session.filesystem().current_dir()?);
+        Some(session.filesystem().lock_project(&workdir)?)
+    } else {
+        None
+    };
+
     match command {
         Commands::Requirements => handle_requirements(session).await,
         Commands::Version => handle_version(session).await,
@@ -268,6 +295,11 @@ async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
         (base_dir, false)
     };
 
+    let _mutation_lock = if session.config().app_config().dry_run {
+        None
+    } else {
+        Some(session.filesystem().lock_project(&target_dir)?)
+    };
     let mut reset_existing = false;
     // Check state only if the directory already exists
     if !needs_mkdir {
@@ -963,6 +995,11 @@ async fn handle_init_from_source(
         base_dir.join(&safe_name)
     };
 
+    let _mutation_lock = if session.config().app_config().dry_run {
+        None
+    } else {
+        Some(session.filesystem().lock_project(&target_dir)?)
+    };
     let mut reset_existing = false;
     if session.filesystem().exists(&target_dir) {
         let manager =

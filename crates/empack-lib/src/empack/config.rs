@@ -701,7 +701,7 @@ impl<'a> ConfigManager<'a> {
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
         self.fs_provider
-            .write_file(&empack_path, &yaml_content)
+            .write_atomic(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::other(e),
             })?;
@@ -779,7 +779,7 @@ impl<'a> ConfigManager<'a> {
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
         self.fs_provider
-            .write_file(&empack_path, &yaml_content)
+            .write_atomic(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::other(e),
             })?;
@@ -822,7 +822,7 @@ impl<'a> ConfigManager<'a> {
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
         self.fs_provider
-            .write_file(&empack_path, &yaml_content)
+            .write_atomic(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::other(e),
             })?;
@@ -851,7 +851,7 @@ impl<'a> ConfigManager<'a> {
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
         self.fs_provider
-            .write_file(&empack_path, &yaml_content)
+            .write_atomic(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::other(e),
             })?;

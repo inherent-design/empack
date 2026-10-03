@@ -32,6 +32,9 @@ impl EmpackExitCode {
 }
 
 pub fn classify_error(error: &Error) -> EmpackExitCode {
+    if find_chain_error::<super::process_runtime::Interrupted>(error).is_some() {
+        return EmpackExitCode::Interrupted;
+    }
     if let Some(search_error) = find_chain_error::<SearchError>(error) {
         return match search_error {
             SearchError::NoResults { .. } => EmpackExitCode::NotFound,

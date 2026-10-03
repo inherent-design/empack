@@ -130,12 +130,10 @@ impl<'a> LivePackwizOps<'a> {
                 if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
                     && let Some(slug) = file_name.strip_suffix(".pw.toml")
                     && !slug.is_empty()
+                    && let Some(previous) = installed.insert(slug.to_string(), path.clone())
+                    && previous != *path
                 {
-                    if let Some(previous) = installed.insert(slug.to_string(), path.clone())
-                        && previous != *path
-                    {
-                        anyhow::bail!("Duplicate installed dependency key: {slug}");
-                    }
+                    anyhow::bail!("Duplicate installed dependency key: {slug}");
                 }
             }
         }

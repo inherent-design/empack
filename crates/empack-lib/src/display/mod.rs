@@ -31,11 +31,13 @@ pub(crate) fn mark_error_rendered() {
     ERROR_RENDERED.store(true, Ordering::SeqCst);
 }
 
-pub(crate) fn clear_error_rendered() {
+/// Reset the CLI error-rendering flag before dispatch.
+pub fn clear_error_rendered() {
     ERROR_RENDERED.store(false, Ordering::SeqCst);
 }
 
-pub(crate) fn take_error_rendered() -> bool {
+/// Consume the CLI error-rendering flag to avoid duplicate diagnostics.
+pub fn take_error_rendered() -> bool {
     ERROR_RENDERED.swap(false, Ordering::SeqCst)
 }
 

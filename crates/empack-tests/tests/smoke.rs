@@ -306,3 +306,68 @@ fn smoke_sync_rejects_identity_and_pin_drift_without_mutation() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn smoke_interrupt_preserves_marker_and_excludes_concurrent_mutation() {
+    use std::os::unix::fs::PermissionsExt;
+    let project = TestProject::workflow_fixture("interrupt", "fabric", "1.21.1");
+    let tool = project.dir().join("slow-packwiz");
+    std::fs::write(
+        &tool,
+        "#!/bin/sh\nprintf started > process-started\nsleep 30 &\nwait\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut cmd = project.cmd();
+    cmd.env("EMPACK_PACKWIZ_BIN", &tool)
+        .env("EMPACK_PROCESS_TIMEOUT_SECS", "10")
+        .args(["build", "mrpack"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let mut child = cmd.spawn().unwrap();
+    let started = std::time::Instant::now();
+    while !project.dir().join("process-started").exists() {
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("build exited before fake tool: {status}");
+        }
+        if started.elapsed() > Duration::from_secs(8) {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("build did not reach fake tool");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let marker = project.dir().join(".empack-state");
+    assert!(marker.exists());
+    command(&project)
+        .args(["clean", "builds"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("Project is busy"));
+    assert!(
+        std::process::Command::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let interrupted = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if interrupted.elapsed() > Duration::from_secs(5) {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("interrupted command did not terminate");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(status.code(), Some(130));
+    assert_eq!(std::fs::read_to_string(marker).unwrap(), "building");
+    command(&project)
+        .args(["clean", "builds"])
+        .assert()
+        .success();
+}

@@ -25,10 +25,10 @@ Current security posture:
 Current live-session behavior includes:
 
 - managed or overridden `packwiz-tx` execution through the process provider
-- best-effort state-marker cleanup on Ctrl+C, bounded to the active project
+- preservation of operation markers on cancellation
 - cursor restoration and logger shutdown on panic or interrupt
 
-Subprocess interrupt cleanup is allowed to walk upward from the subprocess working directory, but it stops once the marker is removed or the nearest empack project boundary is reached. It does not continue into parent projects.
+Subprocess cancellation leaves project markers intact. Only a completed operation or successful explicit recovery removes them.
 
 ## Contract Boundary
 

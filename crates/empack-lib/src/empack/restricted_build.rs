@@ -156,7 +156,7 @@ pub fn persist_pending_build(
     pending: &PendingRestrictedBuild,
 ) -> Result<()> {
     let serialized = serde_json::to_string_pretty(pending)?;
-    provider.write_file(&pending_state_path(workdir), &serialized)
+    provider.write_atomic(&pending_state_path(workdir), &serialized)
 }
 
 pub fn load_pending_build(
