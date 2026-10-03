@@ -74,7 +74,7 @@ async fn read_stream(
     Ok(all)
 }
 
-pub(super) fn execute(
+pub(crate) fn execute(
     command: std::process::Command,
     timeout: Duration,
     cancellation: Cancellation,

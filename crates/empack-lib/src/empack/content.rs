@@ -195,14 +195,31 @@ pub struct ApiJarResolver<'a> {
     pub curseforge_api_key: Option<&'a str>,
 }
 
+fn identification_response_found(status: reqwest::StatusCode) -> Result<bool> {
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    anyhow::ensure!(
+        status.is_success(),
+        "JAR identification provider returned HTTP {status}"
+    );
+    Ok(true)
+}
+
 impl ApiJarResolver<'_> {
     /// Attempt to identify a JAR via Modrinth's `/v2/version_file/{sha1}` endpoint.
     async fn query_modrinth(&self, sha1: &str) -> Result<Option<JarIdentity>> {
         let client = self.modrinth.http_client()?;
         let url = format!("https://api.modrinth.com/v2/version_file/{sha1}?algorithm=sha1");
 
-        let response = client.get(&url).send().await?;
-        if !response.status().is_success() {
+        let response = self
+            .modrinth
+            .execute_api_request(
+                crate::primitives::ProjectPlatform::Modrinth,
+                client.get(&url).build()?,
+            )
+            .await?;
+        if !identification_response_found(response.status())? {
             return Ok(None);
         }
 
@@ -232,14 +249,17 @@ impl ApiJarResolver<'_> {
 
         let client = self.curseforge.http_client()?;
 
-        let response = client
+        let request = client
             .post("https://api.curseforge.com/v1/fingerprints")
             .header("x-api-key", api_key)
             .json(&serde_json::json!({ "fingerprints": [murmur2_hash] }))
-            .send()
+            .build()?;
+        let response = self
+            .curseforge
+            .execute_api_request(crate::primitives::ProjectPlatform::CurseForge, request)
             .await?;
 
-        if !response.status().is_success() {
+        if !identification_response_found(response.status())? {
             return Ok(None);
         }
 

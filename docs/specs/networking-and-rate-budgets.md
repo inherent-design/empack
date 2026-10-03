@@ -116,3 +116,11 @@ Current configuration fields:
 - `trace_requests`
 
 This manager is part of the runtime library, but the live CLI contract is still centered on the `NetworkProvider` shared client/cache/budget seam rather than a single globally wired `NetworkingManager`.
+
+## Reservation and Identification Contracts
+
+Header-driven budgets reserve future-window capacity when exhausted. Concurrent callers cannot all claim the same unreserved reset slot. Response feedback cannot increase the remaining token count or shorten a known reset time; this treats delayed responses conservatively. Budget reservations are process-local and do not coordinate other empack processes or external API clients.
+
+`NetworkProvider::execute_api_request()` applies the shared host budget and retry policy to provider requests. JAR identification uses this entry point and treats only HTTP 404 as an absent identity. Authorization failures, exhausted retries, and server errors remain errors instead of becoming unidentified files.
+
+HTTP cache publication uses an atomic replacement on a blocking worker. Loads and saves are limited to 64 MiB, and the in-memory cache retains at most 1,024 entries, evicting the earliest expiry first. Separate processes publish complete snapshots with last-writer-wins semantics; cache entries can be lost, but readers do not receive a partially written snapshot. Persistence remains best-effort and currently runs after each mutation.

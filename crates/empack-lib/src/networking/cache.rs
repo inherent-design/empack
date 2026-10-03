@@ -83,6 +83,17 @@ impl HttpCache {
             return Ok(());
         }
 
+        let size = tokio::fs::metadata(&cache_file)
+            .await
+            .map_err(|e| NetworkingError::CacheError {
+                message: e.to_string(),
+            })?
+            .len();
+        if size > 64 * 1024 * 1024 {
+            return Err(NetworkingError::CacheError {
+                message: "HTTP cache exceeds 64 MiB load limit".into(),
+            });
+        }
         let data = tokio::fs::read_to_string(&cache_file).await.map_err(|e| {
             NetworkingError::CacheError {
                 message: format!("Failed to read cache file: {}", e),
@@ -100,13 +111,25 @@ impl HttpCache {
         let mut valid_count = 0;
         let mut expired_count = 0;
 
-        for (url, entry) in loaded_cache {
+        let mut loaded_entries = loaded_cache.into_iter().collect::<Vec<_>>();
+        loaded_entries.sort_unstable_by_key(|(_, entry)| std::cmp::Reverse(entry.expires));
+        loaded_entries.truncate(1024);
+        for (url, entry) in loaded_entries {
             if entry.expires > now {
                 cache.insert(url, entry);
                 valid_count += 1;
             } else {
                 expired_count += 1;
             }
+        }
+
+        while cache.len() > 1024 {
+            let oldest = cache
+                .iter()
+                .min_by_key(|(_, entry)| entry.expires)
+                .map(|(url, _)| url.clone())
+                .expect("nonempty cache");
+            cache.remove(&oldest);
         }
 
         debug!(
@@ -134,11 +157,21 @@ impl HttpCache {
                 message: format!("Failed to serialize cache: {}", e),
             })?;
 
-        tokio::fs::write(&cache_file, data)
-            .await
-            .map_err(|e| NetworkingError::CacheError {
-                message: format!("Failed to write cache file: {}", e),
-            })?;
+        if data.len() > 64 * 1024 * 1024 {
+            return Err(NetworkingError::CacheError {
+                message: "HTTP cache exceeds 64 MiB persistence limit".into(),
+            });
+        }
+        tokio::task::spawn_blocking(move || {
+            crate::application::persistence::atomic_write(&cache_file, data.as_bytes())
+        })
+        .await
+        .map_err(|e| NetworkingError::CacheError {
+            message: format!("Cache writer failed: {e}"),
+        })?
+        .map_err(|e| NetworkingError::CacheError {
+            message: format!("Failed to publish cache: {e}"),
+        })?;
 
         debug!("Saved {} cache entries to disk", cache.len());
         Ok(())
@@ -154,6 +187,15 @@ impl HttpCache {
     pub async fn put(&self, url: String, response: CachedResponse) {
         {
             let mut cache = self.cache.write().await;
+            if cache.len() >= 1024
+                && !cache.contains_key(&url)
+                && let Some(oldest) = cache
+                    .iter()
+                    .min_by_key(|(_, value)| value.expires)
+                    .map(|(key, _)| key.clone())
+            {
+                cache.remove(&oldest);
+            }
             cache.insert(url, response);
         }
         self.persist_best_effort("put").await;

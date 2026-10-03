@@ -371,3 +371,15 @@ fn smoke_interrupt_preserves_marker_and_excludes_concurrent_mutation() {
         .assert()
         .success();
 }
+
+#[test]
+fn smoke_version_does_not_resolve_managed_tooling() {
+    let project = TestProject::new();
+    command(&project)
+        .env_remove("EMPACK_PACKWIZ_BIN")
+        .env("PATH", "")
+        .arg("version")
+        .assert()
+        .success();
+    assert!(!project.dir().join(".empack-cache/bin").exists());
+}

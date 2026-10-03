@@ -837,3 +837,12 @@ fn url_classify_error_debug() {
     let debug = format!("{:?}", err);
     assert!(debug.contains("Unrecognized"));
 }
+
+#[test]
+fn identification_only_treats_not_found_as_absence() {
+    assert!(!identification_response_found(reqwest::StatusCode::NOT_FOUND).unwrap());
+    assert!(identification_response_found(reqwest::StatusCode::OK).unwrap());
+    for status in [401, 403, 429, 500, 503] {
+        assert!(identification_response_found(reqwest::StatusCode::from_u16(status).unwrap()).is_err());
+    }
+}

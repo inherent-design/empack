@@ -30,7 +30,14 @@ pub struct FileMetadata {
     pub created_unix_ms: Option<u64>,
 }
 
+pub trait ReadSeek: std::io::Read + std::io::Seek {}
+impl<T: std::io::Read + std::io::Seek> ReadSeek for T {}
+
 pub trait FileSystemProvider {
+    fn open_reader(&self, path: &Path) -> Result<Box<dyn ReadSeek>> {
+        Ok(Box::new(std::io::Cursor::new(self.read_bytes(path)?)))
+    }
+
     fn write_atomic(&self, path: &Path, content: &str) -> Result<()> {
         self.write_file(path, content)
     }
@@ -77,6 +84,25 @@ pub trait FileSystemProvider {
 
 /// Provider trait for network operations
 pub trait NetworkProvider {
+    /// Execute a provider API request using the shared host budget and retry policy.
+    fn execute_api_request(
+        &self,
+        platform: crate::primitives::ProjectPlatform,
+        request: reqwest::Request,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<reqwest::Response>> + Send>>
+    {
+        let client = self.http_client();
+        let budget = self.rate_budgets().for_url(request.url().as_str());
+        Box::pin(async move {
+            let mut client =
+                crate::networking::rate_limit::RateLimitedClient::new(client?, platform);
+            if let Some(budget) = budget {
+                client.set_budget(budget);
+            }
+            Ok(client.execute(request).await?)
+        })
+    }
+
     fn http_client(&self) -> Result<Client>;
 
     fn project_resolver(
@@ -304,6 +330,10 @@ pub trait Session {
 pub struct LiveFileSystemProvider;
 
 impl FileSystemProvider for LiveFileSystemProvider {
+    fn open_reader(&self, path: &Path) -> Result<Box<dyn ReadSeek>> {
+        Ok(Box::new(std::fs::File::open(path)?))
+    }
+
     fn write_atomic(&self, path: &Path, content: &str) -> Result<()> {
         super::persistence::atomic_write(path, content.as_bytes())
     }
@@ -998,6 +1028,15 @@ impl InteractiveProvider for LiveInteractiveProvider {
     }
 }
 
+pub(crate) fn resolve_packwiz_bin_path() -> String {
+    crate::platform::packwiz_bin::resolve_packwiz_binary()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "packwiz-tx binary resolution failed; falling back to PATH lookup");
+                crate::empack::packwiz::PACKWIZ_BIN.to_string()
+            })
+}
+
 pub struct CommandSession<F, N, P, C, I, A = LiveArchiveProvider>
 where
     F: FileSystemProvider,
@@ -1018,7 +1057,7 @@ where
     archive_provider: A,
     /// Resolved packwiz-tx binary path for process execution.
     /// Computed once at session construction via `resolve_packwiz_binary()`.
-    packwiz_bin_path: String,
+    packwiz_bin_path: std::sync::OnceLock<String>,
 }
 
 impl
@@ -1031,20 +1070,7 @@ impl
         LiveArchiveProvider,
     >
 {
-    fn resolve_packwiz_bin_path() -> String {
-        crate::platform::packwiz_bin::resolve_packwiz_binary()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "packwiz-tx binary resolution failed; falling back to PATH lookup");
-                crate::empack::packwiz::PACKWIZ_BIN.to_string()
-            })
-    }
-
-    fn build_live_session(
-        app_config: AppConfig,
-        packwiz_bin_path: String,
-        network_provider: LiveNetworkProvider,
-    ) -> Self {
+    fn build_live_session(app_config: AppConfig, network_provider: LiveNetworkProvider) -> Self {
         // Initialize display and logger systems
         let terminal_capabilities = match TerminalCapabilities::detect_from_config(app_config.color)
         {
@@ -1071,7 +1097,7 @@ impl
                 app_config.workdir.clone(),
             ),
             archive_provider: LiveArchiveProvider,
-            packwiz_bin_path,
+            packwiz_bin_path: std::sync::OnceLock::new(),
         }
     }
 
@@ -1081,20 +1107,13 @@ impl
     }
 
     pub fn new(app_config: AppConfig) -> Self {
-        let packwiz_bin_path = Self::resolve_packwiz_bin_path();
         let network_provider = LiveNetworkProvider::with_timeout(app_config.net_timeout);
-        Self::build_live_session(app_config, packwiz_bin_path, network_provider)
+        Self::build_live_session(app_config, network_provider)
     }
 
     pub async fn new_async(app_config: AppConfig) -> Self {
-        let packwiz_bin_path = tokio::task::spawn_blocking(Self::resolve_packwiz_bin_path)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "packwiz-tx binary resolution task failed; falling back to PATH lookup");
-                crate::empack::packwiz::PACKWIZ_BIN.to_string()
-            });
         let network_provider = LiveNetworkProvider::new_async(app_config.net_timeout).await;
-        Self::build_live_session(app_config, packwiz_bin_path, network_provider)
+        Self::build_live_session(app_config, network_provider)
     }
 }
 
@@ -1129,7 +1148,9 @@ where
             config_provider,
             interactive_provider,
             archive_provider,
-            packwiz_bin_path: crate::empack::packwiz::PACKWIZ_BIN.to_string(),
+            packwiz_bin_path: std::sync::OnceLock::from(
+                crate::empack::packwiz::PACKWIZ_BIN.to_string(),
+            ),
         }
     }
 
@@ -1231,11 +1252,11 @@ where
     }
 
     fn packwiz_bin(&self) -> &str {
-        &self.packwiz_bin_path
+        self.packwiz_bin_path.get_or_init(resolve_packwiz_bin_path)
     }
 
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
-        Box::new(LivePackwizOps::new(
+        Box::new(LivePackwizOps::new_lazy(
             self.process(),
             self.filesystem(),
             &self.packwiz_bin_path,
@@ -2100,13 +2121,7 @@ mod tests {
         let missing = temp.path().join("missing-packwiz");
         let _override = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", missing.as_os_str()) };
 
-        let resolved = CommandSession::<
-            LiveFileSystemProvider,
-            LiveNetworkProvider,
-            LiveProcessProvider,
-            LiveConfigProvider,
-            LiveInteractiveProvider,
-        >::resolve_packwiz_bin_path();
+        let resolved = resolve_packwiz_bin_path();
 
         assert_eq!(resolved, crate::empack::packwiz::PACKWIZ_BIN);
     }

@@ -69,6 +69,7 @@ pub struct LivePackwizOps<'a> {
     filesystem: &'a dyn FileSystemProvider,
     /// Resolved packwiz-tx binary path (absolute path or bare name).
     packwiz_bin: &'a str,
+    lazy_bin: Option<&'a std::sync::OnceLock<String>>,
 }
 
 impl<'a> LivePackwizOps<'a> {
@@ -81,8 +82,31 @@ impl<'a> LivePackwizOps<'a> {
             process,
             filesystem,
             packwiz_bin,
+            lazy_bin: None,
         }
     }
+    pub fn new_lazy(
+        process: &'a dyn ProcessProvider,
+        filesystem: &'a dyn FileSystemProvider,
+        bin: &'a std::sync::OnceLock<String>,
+    ) -> Self {
+        Self {
+            process,
+            filesystem,
+            packwiz_bin: PACKWIZ_BIN,
+            lazy_bin: Some(bin),
+        }
+    }
+
+    fn binary(&self) -> &str {
+        self.lazy_bin
+            .map(|bin| {
+                bin.get_or_init(crate::application::session::resolve_packwiz_bin_path)
+                    .as_str()
+            })
+            .unwrap_or(self.packwiz_bin)
+    }
+
     fn installed_paths(
         &self,
         workdir: &Path,
@@ -209,7 +233,7 @@ impl PackwizOps for LivePackwizOps<'_> {
 
         let output = self
             .process
-            .execute(self.packwiz_bin, &args, &pack_dir)
+            .execute(self.binary(), &args, &pack_dir)
             .map_err(|e| StateError::CommandFailed {
                 command: format!("packwiz init failed: {}", e),
             })?;
@@ -233,7 +257,7 @@ impl PackwizOps for LivePackwizOps<'_> {
         let output = self
             .process
             .execute(
-                self.packwiz_bin,
+                self.binary(),
                 &["--pack-file", pack_file_str, "refresh"],
                 workdir,
             )
@@ -359,7 +383,7 @@ impl LivePackwizOps<'_> {
 
         let output = self
             .process
-            .execute(self.packwiz_bin, &args, &pack_dir)
+            .execute(self.binary(), &args, &pack_dir)
             .map_err(|e| StateError::CommandFailed {
                 command: format!("packwiz init failed: {}", e),
             })?;

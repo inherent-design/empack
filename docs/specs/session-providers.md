@@ -87,12 +87,12 @@ the main loop and constructing the session.
 
 Construction steps:
 
-1. Resolve `packwiz_bin_path` with `platform::packwiz_bin::resolve_packwiz_binary()`.
+1. Allocate an empty cache for the packwiz binary path.
 2. Detect terminal capabilities from `AppConfig.color`.
 3. Initialize display access; the executable initializes logging.
 4. Create live filesystem, network, process, config, archive, and interactive providers.
 5. Load the live HTTP cache from `<cache_root>/http`.
-6. Expose packwiz operations through `LivePackwizOps`, bound to the resolved binary path.
+6. Expose packwiz operations through `LivePackwizOps`. Resolve and cache the binary path when execution first requires it; inventory reads and version display do not bootstrap tools.
 
 If managed binary resolution fails, the session logs a warning and falls back to the bare `packwiz-tx` program name for PATH lookup.
 
@@ -142,7 +142,7 @@ Current PTY scope is intentionally limited:
 ### Abstraction Gaps
 
 - Display is initialized through `LiveDisplayProvider` and the global display singleton. Unit tests do not capture the same output path as subprocess E2E.
-- Interrupt handling exits the process directly with status `130`.
+- Display error suppression still uses a process-global flag; command outcomes are not yet a complete structured reporting API.
 - `LiveFileSystemProvider` is path-transparent. Filesystem safety guarantees come from command/workflow constraints, not from a sandboxed provider boundary.
 - Public compatibility wrappers such as `parse_curseforge_zip(path)` and `parse_modrinth_mrpack(path)` still expose path-based parsing APIs, even though live command paths now read archive bytes through `FileSystemProvider`.
 
