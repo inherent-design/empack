@@ -31,3 +31,5 @@ Fingerprints include pack content, side layers and templates. A stale continuati
 ## Verification boundary
 
 Planner tests cover identity and pin decisions. Live temporary-filesystem tests cover publication failures, symlink confinement, content-layer round trips and stale exports. CLI smoke tests combine add and repeated sync against a deterministic backend. Strict live tests exercise external tooling separately. These checks do not establish Minecraft runtime compatibility or complete cooperative cancellation of synchronous filesystem work.
+
+The environment precedence follows the [Modrinth format specification](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack): each side layer is applied after common overrides. Installed identities and digest fields come from the [packwiz metadata contract](https://packwiz.infra.link/reference/pack-format/mod-toml/). Empack's automatic restricted-file association accepts SHA digests; files with only MD5 or Murmur2 metadata require explicit selection.

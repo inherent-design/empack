@@ -380,3 +380,28 @@ this test does not launch Minecraft. Another live-filesystem test makes a manife
 read-only after installation and requires import to return a structured partial
 failure. A sparse oversized input verifies the compressed archive limit before
 ZIP parsing or whole-file allocation.
+
+## Workflow verification, 2026-10-03
+
+The second audit added cross-command identity checks, explicit pin persistence,
+truthful manifest-publication failures, layered imports, fresh intermediate
+exports and verified restricted-file association. The design and remaining
+boundaries are in [workflow contracts](specs/workflow-contracts.md).
+
+At `cf73ec8`, all 95 strict E2E tests and 15 offline CLI smoke tests passed.
+The preceding default run passed 1,333 tests and eight doctests; the final
+continuation changes then passed all 56 affected tests. A fresh coverage target
+ran 1,428 tests with strict prerequisites, all passing; one manual rendering test
+remains ignored. Coverage used `EMPACK_E2E_BIN` to select the newly instrumented
+binary rather than an older build in another target directory.
+
+All seven curated imports and client-full builds passed using an isolated
+`9fd3f18` binary, including the two-file restricted CurseForge continuation.
+Every output ZIP passed `zipfile.ZipFile.testzip()`. The only changes between
+that binary and `cf73ec8` update verification fixtures. These checks establish
+archive and workflow behavior, not Minecraft startup compatibility.
+
+The fresh LCOV report covered 15,313 of 16,857 production-source lines (90.84%),
+counting `empack-lib/src` and `empack/src` and excluding `.test.rs` files. Inline
+tests in production files remain included in that measure. This is a line metric,
+not a claim of complete path or platform coverage.
