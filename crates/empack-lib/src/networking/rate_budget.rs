@@ -25,8 +25,27 @@ pub trait RateBudget: Send + Sync {
     /// Returns zero when the request may proceed immediately.
     fn acquire(&self) -> Duration;
 
+    /// A change invalidates outstanding delayed reservations. Callers must re-acquire.
+    fn generation(&self) -> u64 {
+        0
+    }
+
     /// Check if the budget is currently exhausted.
     fn is_exhausted(&self) -> bool;
+}
+
+/// Wait for a reservation, replacing it if response feedback invalidates its window.
+pub async fn wait_for_budget(budget: &dyn RateBudget) {
+    loop {
+        let generation = budget.generation();
+        let delay = budget.acquire();
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
+        if generation == budget.generation() {
+            return;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +64,7 @@ pub struct HeaderDrivenBudget {
     limit: AtomicU32,
     reservations: Mutex<(u64, u32)>,
     observed_reset: AtomicBool,
+    generation: AtomicU64,
 }
 
 impl HeaderDrivenBudget {
@@ -58,6 +78,7 @@ impl HeaderDrivenBudget {
             limit: AtomicU32::new(initial_limit.max(1)),
             reservations: Mutex::new((0, 0)),
             observed_reset: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
         }
     }
 
@@ -116,7 +137,7 @@ impl HeaderDrivenBudget {
 
 impl RateBudget for HeaderDrivenBudget {
     fn record_response(&self, headers: &HeaderMap, status: StatusCode) {
-        let _reservation_guard = self.reservations.lock().expect("header budget poisoned");
+        let mut reservations = self.reservations.lock().expect("header budget poisoned");
         if status == StatusCode::TOO_MANY_REQUESTS {
             self.remaining.store(0, Ordering::Relaxed);
             let retry_after = Self::parse_header_u64(headers, "retry-after")
@@ -127,6 +148,8 @@ impl RateBudget for HeaderDrivenBudget {
             } else {
                 self.reset_at.store(new_reset, Ordering::Relaxed);
             }
+            *reservations = (0, 0);
+            self.generation.fetch_add(1, Ordering::SeqCst);
             return;
         }
 
@@ -139,12 +162,21 @@ impl RateBudget for HeaderDrivenBudget {
         }
         if let Some(reset_secs) = Self::parse_header_u64(headers, "x-ratelimit-reset") {
             let new_reset = Self::now_secs() + reset_secs;
+            let previous = self.reset_at.load(Ordering::Relaxed);
             if self.observed_reset.swap(true, Ordering::Relaxed) {
                 self.reset_at.fetch_max(new_reset, Ordering::Relaxed);
             } else {
                 self.reset_at.store(new_reset, Ordering::Relaxed);
             }
+            if new_reset > previous {
+                *reservations = (0, 0);
+                self.generation.fetch_add(1, Ordering::SeqCst);
+            }
         }
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
     }
 
     fn acquire(&self) -> Duration {
@@ -745,5 +777,49 @@ mod tests {
         );
         assert_eq!(budget.remaining.load(Ordering::Relaxed), 3);
         assert!(budget.reset_at.load(Ordering::Relaxed) >= reset);
+    }
+    #[test]
+    fn later_cooldown_cannot_be_overwritten_by_a_reserved_window() {
+        let budget = HeaderDrivenBudget::new(2);
+        let now = HeaderDrivenBudget::now_secs();
+        budget.remaining.store(0, Ordering::Relaxed);
+        budget.reset_at.store(now + 10, Ordering::Relaxed);
+        assert_eq!(budget.acquire_at(now).as_secs(), 10);
+        budget.record_response(
+            &make_headers(&[("retry-after", "120")]),
+            StatusCode::TOO_MANY_REQUESTS,
+        );
+        assert!(budget.acquire_at(now + 10).as_secs() >= 110);
+        assert!(budget.reset_at.load(Ordering::Relaxed) >= now + 120);
+    }
+    #[tokio::test]
+    async fn waiting_request_reacquires_an_invalidated_reservation() {
+        struct InvalidatedBudget {
+            generation: AtomicU64,
+            calls: AtomicU32,
+        }
+        impl RateBudget for InvalidatedBudget {
+            fn record_response(&self, _: &HeaderMap, _: StatusCode) {}
+            fn is_exhausted(&self) -> bool {
+                false
+            }
+            fn generation(&self) -> u64 {
+                self.generation.load(Ordering::SeqCst)
+            }
+            fn acquire(&self) -> Duration {
+                if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    self.generation.fetch_add(1, Ordering::SeqCst);
+                    Duration::from_millis(1)
+                } else {
+                    Duration::ZERO
+                }
+            }
+        }
+        let budget = InvalidatedBudget {
+            generation: AtomicU64::new(0),
+            calls: AtomicU32::new(0),
+        };
+        wait_for_budget(&budget).await;
+        assert_eq!(budget.calls.load(Ordering::SeqCst), 2);
     }
 }

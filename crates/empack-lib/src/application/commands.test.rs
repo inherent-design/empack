@@ -1418,6 +1418,8 @@ mod handle_init_from_source_tests {
         let archive = create_mrpack(MR_MANIFEST_JSON);
         let archive_bytes = std::fs::read(archive.path()).expect("mrpack bytes");
 
+        let limited = server.mock("GET", "/v2/project/test-pack/version")
+            .with_status(429).expect(1).create_async().await;
         let _versions = server
             .mock("GET", "/v2/project/test-pack/version")
             .with_status(200)
@@ -1455,6 +1457,7 @@ mod handle_init_from_source_tests {
         .await
         .expect("modrinth download");
 
+        limited.assert_async().await;
         assert_eq!(manifest.identity.name, "ModrinthPack");
         assert_eq!(dest_path.file_name().and_then(|name| name.to_str()), Some("modrinth-pack.mrpack"));
     }

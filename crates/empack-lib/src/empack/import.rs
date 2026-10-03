@@ -924,23 +924,6 @@ async fn resolve_platform_ref_with_client(
     }
 }
 
-async fn apply_rate_budget(budget: Option<&Arc<dyn RateBudget>>) {
-    let Some(budget) = budget else {
-        return;
-    };
-
-    let delay = budget.acquire();
-    if !delay.is_zero() {
-        tokio::time::sleep(delay).await;
-    }
-}
-
-fn record_rate_budget(budget: Option<&Arc<dyn RateBudget>>, response: &reqwest::Response) {
-    if let Some(budget) = budget {
-        budget.record_response(response.headers(), response.status());
-    }
-}
-
 #[derive(Deserialize)]
 struct MrProjectResponse {
     title: String,
@@ -973,21 +956,30 @@ async fn resolve_modrinth_project_with_client(
         && let Some(sha1) = pref.hashes.get("sha1")
     {
         let url = api_bases.modrinth_url(&format!("v2/version_file/{}?algorithm=sha1", sha1));
-        apply_rate_budget(budget).await;
-        if let Ok(resp) = client.get(&url).send().await {
-            record_rate_budget(budget, &resp);
-            if resp.status().is_success()
-                && let Ok(body) = resp.json::<MrVersionFileResponse>().await
-            {
-                pref.file_id = Some(body.id);
-            }
+        if let Ok(resp) = crate::networking::rate_limit::execute_api_request(
+            client.clone(),
+            ProjectPlatform::Modrinth,
+            budget.cloned(),
+            client.get(&url),
+        )
+        .await
+            && resp.status().is_success()
+            && let Ok(body) = resp.json::<MrVersionFileResponse>().await
+        {
+            pref.file_id = Some(body.id);
         }
     }
 
     let url = api_bases.modrinth_url(&format!("v2/project/{}", pref.project_id));
 
-    apply_rate_budget(budget).await;
-    let response = match client.get(&url).send().await {
+    let response = match crate::networking::rate_limit::execute_api_request(
+        client.clone(),
+        ProjectPlatform::Modrinth,
+        budget.cloned(),
+        client.get(&url),
+    )
+    .await
+    {
         Ok(r) => r,
         Err(e) => {
             warnings.push(format!(
@@ -997,7 +989,6 @@ async fn resolve_modrinth_project_with_client(
             return;
         }
     };
-    record_rate_budget(budget, &response);
 
     if !response.status().is_success() {
         warnings.push(format!(
@@ -1063,8 +1054,14 @@ async fn resolve_curseforge_project_with_client(
 
     let url = api_bases.curseforge_url(&format!("v1/mods/{}", pref.project_id));
 
-    apply_rate_budget(budget).await;
-    let response = match client.get(&url).header("x-api-key", api_key).send().await {
+    let response = match crate::networking::rate_limit::execute_api_request(
+        client.clone(),
+        ProjectPlatform::CurseForge,
+        budget.cloned(),
+        client.get(&url).header("x-api-key", api_key),
+    )
+    .await
+    {
         Ok(r) => r,
         Err(e) => {
             warnings.push(format!(
@@ -1074,7 +1071,6 @@ async fn resolve_curseforge_project_with_client(
             return;
         }
     };
-    record_rate_budget(budget, &response);
 
     if !response.status().is_success() {
         warnings.push(format!(
@@ -1150,13 +1146,16 @@ async fn resolve_curseforge_file_ids(
     // CF API accepts batches; process in chunks of 50.
     for chunk in file_ids.chunks(50) {
         let body = serde_json::json!({ "fileIds": chunk });
-        apply_rate_budget(budget).await;
-        let response = match client
-            .post(api_bases.curseforge_url("v1/mods/files"))
-            .header("x-api-key", api_key)
-            .json(&body)
-            .send()
-            .await
+        let response = match crate::networking::rate_limit::execute_api_request(
+            client.clone(),
+            ProjectPlatform::CurseForge,
+            budget.cloned(),
+            client
+                .post(api_bases.curseforge_url("v1/mods/files"))
+                .header("x-api-key", api_key)
+                .json(&body),
+        )
+        .await
         {
             Ok(r) => r,
             Err(e) => {
@@ -1164,7 +1163,6 @@ async fn resolve_curseforge_file_ids(
                 continue;
             }
         };
-        record_rate_budget(budget, &response);
 
         if !response.status().is_success() {
             warnings.push(format!(

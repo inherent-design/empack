@@ -76,6 +76,21 @@ telemetry-enabled CLI; a concurrent default build can replace that executable
 and invalidate telemetry assertions. Use `EMPACK_E2E_BIN` with an isolated copy
 when separate runs need different binaries.
 
+### PR review regressions
+
+Greptile identified a later 429 cooldown being overwritten by an earlier reserved
+window, and oversized cache entries preventing subsequent persistence. Both
+regressions failed before their fixes. Budget generations now invalidate sleeping
+reservations; callers re-acquire instead of using an obsolete slot. Cache entries
+are bounded by total bytes as well as count, with tests for eviction, oversized
+responses and preservation of unrelated cached data.
+
+A separate remote-import test reproduced immediate failure on a recoverable 429.
+Modpack metadata and import enrichment now use the same request policy as JAR
+identification. The focused network/import suite passed 189 tests after these
+changes. Platform CI also caught a Unix test missing its platform guard; the
+guard was restored before the next run.
+
 ### Remaining boundaries
 
 Atomic document replacement and project locks are not a multi-file transaction.

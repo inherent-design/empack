@@ -12,6 +12,31 @@ use super::NetworkingError;
 /// Default cache TTL (Time To Live) - 5 minutes
 const DEFAULT_CACHE_TTL_SECS: u64 = 300;
 
+// Compact JSON can expand raw bytes or escaped strings by at most six times.
+// Reserve metadata overhead per entry and keep the resulting snapshot below 64 MiB.
+const MAX_CACHE_BYTES: usize = 8 * 1024 * 1024;
+fn entry_bytes(url: &str, entry: &CachedResponse) -> usize {
+    url.len()
+        .saturating_add(entry.data.len())
+        .saturating_add(entry.etag.as_ref().map_or(0, String::len))
+        .saturating_add(256)
+}
+fn trim_cache(cache: &mut HashMap<String, CachedResponse>) {
+    let mut bytes: usize = cache
+        .iter()
+        .map(|(url, entry)| entry_bytes(url, entry))
+        .sum();
+    while cache.len() > 1024 || bytes > MAX_CACHE_BYTES {
+        let oldest = cache
+            .iter()
+            .min_by_key(|(_, entry)| entry.expires)
+            .map(|(url, _)| url.clone())
+            .expect("nonempty cache");
+        let removed = cache.remove(&oldest).expect("existing cache entry");
+        bytes -= entry_bytes(&oldest, &removed);
+    }
+}
+
 /// Cached HTTP response with ETag support
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedResponse {
@@ -123,14 +148,7 @@ impl HttpCache {
             }
         }
 
-        while cache.len() > 1024 {
-            let oldest = cache
-                .iter()
-                .min_by_key(|(_, entry)| entry.expires)
-                .map(|(url, _)| url.clone())
-                .expect("nonempty cache");
-            cache.remove(&oldest);
-        }
+        trim_cache(&mut cache);
 
         debug!(
             "Loaded cache from disk: {} valid entries, {} expired entries removed",
@@ -152,10 +170,9 @@ impl HttpCache {
             })?;
 
         let cache_file = self.cache_dir.join("http_cache.json");
-        let data =
-            serde_json::to_string_pretty(&*cache).map_err(|e| NetworkingError::CacheError {
-                message: format!("Failed to serialize cache: {}", e),
-            })?;
+        let data = serde_json::to_string(&*cache).map_err(|e| NetworkingError::CacheError {
+            message: format!("Failed to serialize cache: {}", e),
+        })?;
 
         if data.len() > 64 * 1024 * 1024 {
             return Err(NetworkingError::CacheError {
@@ -187,16 +204,13 @@ impl HttpCache {
     pub async fn put(&self, url: String, response: CachedResponse) {
         {
             let mut cache = self.cache.write().await;
-            if cache.len() >= 1024
-                && !cache.contains_key(&url)
-                && let Some(oldest) = cache
-                    .iter()
-                    .min_by_key(|(_, value)| value.expires)
-                    .map(|(key, _)| key.clone())
-            {
-                cache.remove(&oldest);
+            if entry_bytes(&url, &response) <= MAX_CACHE_BYTES {
+                cache.insert(url, response);
+                trim_cache(&mut cache);
+            } else {
+                // A response that cannot be persisted must not evict unrelated entries.
+                cache.remove(&url);
             }
-            cache.insert(url, response);
         }
         self.persist_best_effort("put").await;
     }

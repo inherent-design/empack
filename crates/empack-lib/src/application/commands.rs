@@ -1253,11 +1253,14 @@ async fn download_modrinth_modpack_with_client(
 
     let version_url = format!("{api_base}/project/{slug}/version");
 
-    let response = client
-        .get(&version_url)
-        .send()
-        .await
-        .context("failed to fetch Modrinth version list")?;
+    let response = crate::networking::rate_limit::execute_api_request(
+        client.clone(),
+        ProjectPlatform::Modrinth,
+        session.network().rate_budgets().for_url(&version_url),
+        client.get(&version_url),
+    )
+    .await
+    .context("failed to fetch Modrinth version list")?;
 
     if !response.status().is_success() {
         anyhow::bail!(
@@ -1360,12 +1363,14 @@ async fn download_curseforge_modpack_with_client(
 
     // Resolve slug to project ID via search
     let search_url = format!("{api_base}/mods/search?gameId=432&classId=4471&slug={slug}",);
-    let search_resp = client
-        .get(&search_url)
-        .header("x-api-key", &api_key)
-        .send()
-        .await
-        .context("failed to search CurseForge for modpack")?;
+    let search_resp = crate::networking::rate_limit::execute_api_request(
+        client.clone(),
+        ProjectPlatform::CurseForge,
+        session.network().rate_budgets().for_url(&search_url),
+        client.get(&search_url).header("x-api-key", &api_key),
+    )
+    .await
+    .context("failed to search CurseForge for modpack")?;
 
     if !search_resp.status().is_success() {
         anyhow::bail!(
@@ -1401,12 +1406,14 @@ async fn download_curseforge_modpack_with_client(
 
     // Get latest file
     let files_url = format!("{api_base}/mods/{}/files?pageSize=1", project.id);
-    let files_resp = client
-        .get(&files_url)
-        .header("x-api-key", &api_key)
-        .send()
-        .await
-        .context("failed to fetch CurseForge file list")?;
+    let files_resp = crate::networking::rate_limit::execute_api_request(
+        client.clone(),
+        ProjectPlatform::CurseForge,
+        session.network().rate_budgets().for_url(&files_url),
+        client.get(&files_url).header("x-api-key", &api_key),
+    )
+    .await
+    .context("failed to fetch CurseForge file list")?;
 
     if !files_resp.status().is_success() {
         anyhow::bail!("CurseForge files endpoint returned {}", files_resp.status());
@@ -1443,12 +1450,14 @@ async fn download_curseforge_modpack_with_client(
             "{api_base}/mods/{}/files/{}/download-url",
             project.id, file.id
         );
-        let dl_resp = client
-            .get(&dl_endpoint)
-            .header("x-api-key", &api_key)
-            .send()
-            .await
-            .context("failed to fetch CurseForge download URL")?;
+        let dl_resp = crate::networking::rate_limit::execute_api_request(
+            client.clone(),
+            ProjectPlatform::CurseForge,
+            session.network().rate_budgets().for_url(&dl_endpoint),
+            client.get(&dl_endpoint).header("x-api-key", &api_key),
+        )
+        .await
+        .context("failed to fetch CurseForge download URL")?;
 
         if !dl_resp.status().is_success() {
             anyhow::bail!(
