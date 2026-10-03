@@ -41,7 +41,7 @@ empack:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `dependencies` | `BTreeMap<String, DependencyEntry>` | Dependency map keyed by slug |
+| `dependencies` | `BTreeMap<String, DependencyEntry>` | Dependency map keyed by user-facing label |
 | `minecraft_version` | `Option<String>` | Target Minecraft version |
 | `loader` | `Option<ModLoader>` | Target loader |
 | `loader_version` | `Option<String>` | Loader version |
@@ -55,7 +55,7 @@ empack:
 
 Dependency keys are user-facing labels. Resolved dependencies are reconciled by provider, project ID and content type, independently of packwiz filenames.
 
-The value is an untagged union:
+Deserialization dispatches on explicit status and rejects malformed intent. Supported variants are:
 
 - `DependencyEntry::Resolved(DependencyRecord)`
 - `DependencyEntry::Local(LocalDependencyRecord)`

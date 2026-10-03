@@ -182,7 +182,10 @@ async fn test_resolve_add_contract_matches_sync_search_resolution() {
 
 #[tokio::test]
 async fn test_resolve_add_contract_matches_sync_curseforge_version_pin() {
-    let resolver = MockProjectResolver::new();
+    let resolver = MockProjectResolver::new().with_response("238222".into(), Ok(crate::empack::search::ProjectInfo {
+        platform: ProjectPlatform::CurseForge, project_id: "238222".into(), title: "Just Enough Items".into(),
+        project_type: "mod".into(), downloads: 0, confidence: 100,
+    }));
 
     let add_resolution = resolve_add_contract(
         "Just Enough Items",
@@ -575,7 +578,10 @@ async fn test_resolve_add_contract_modrinth_search_resolution() {
 
 #[tokio::test]
 async fn test_resolve_add_contract_curseforge_direct_id() {
-    let resolver = MockProjectResolver::new();
+    let resolver = MockProjectResolver::new().with_response("238222".into(), Ok(crate::empack::search::ProjectInfo {
+        platform: ProjectPlatform::CurseForge, project_id: "238222".into(), title: "Just Enough Items".into(),
+        project_type: "mod".into(), downloads: 0, confidence: 100,
+    }));
 
     let resolution = resolve_add_contract(
         "Just Enough Items",
@@ -602,7 +608,10 @@ async fn test_resolve_add_contract_curseforge_direct_id() {
 
 #[tokio::test]
 async fn test_resolve_add_contract_modrinth_direct_id_with_version_pin() {
-    let resolver = MockProjectResolver::new();
+    let resolver = MockProjectResolver::new().with_response("AANobbMI".into(), Ok(crate::empack::search::ProjectInfo {
+        platform: ProjectPlatform::Modrinth, project_id: "AANobbMI".into(), title: "Sodium".into(),
+        project_type: "mod".into(), downloads: 0, confidence: 100,
+    }));
 
     let resolution = resolve_add_contract(
         "Sodium",

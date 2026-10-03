@@ -180,6 +180,25 @@ pub async fn resolve_sync_action(
                 project_platform,
                 version_pin,
             } => {
+                if !project_id.is_empty() {
+                    let commands = build_packwiz_add_commands(
+                        project_id,
+                        *project_platform,
+                        version_pin.as_deref(),
+                    )
+                    .map_err(|source| AddContractError::PlanPackwizAdd {
+                        project_id: project_id.clone(),
+                        platform: *project_platform,
+                        source,
+                    })?;
+                    return Ok(SyncExecutionAction::Add {
+                        key: dep.key.clone(),
+                        title: dep.search_query.clone(),
+                        commands,
+                        resolved_project_id: project_id.clone(),
+                        resolved_platform: *project_platform,
+                    });
+                }
                 let resolution = resolve_add_contract(
                     &dep.search_query,
                     Some(dep.project_type),
@@ -217,44 +236,51 @@ pub async fn resolve_add_contract(
     preferred_platform: Option<ProjectPlatform>,
     resolver: &dyn ProjectResolverTrait,
 ) -> std::result::Result<AddResolution, AddContractError> {
-    let (project_id, platform, title, confidence, resolved_type) = if !direct_project_id.is_empty()
-    {
-        (
-            direct_project_id.to_string(),
-            direct_platform,
-            search_query.to_string(),
-            None,
-            project_type,
-        )
+    let direct = !direct_project_id.is_empty();
+    let project = if direct {
+        resolver
+            .resolve_selector(
+                crate::empack::search::ProjectSelector {
+                    platform: direct_platform,
+                    value: direct_project_id.to_owned(),
+                },
+                version_pin.map(str::to_owned),
+            )
+            .await
     } else {
-        let pt_arg = project_type.map(project_type_arg);
-        let project = resolver
+        resolver
             .resolve_project(
                 search_query,
-                pt_arg,
+                project_type.map(project_type_arg),
                 minecraft_version,
                 loader.map(loader_arg),
                 preferred_platform,
             )
             .await
-            .map_err(|source| AddContractError::ResolveProject {
-                query: search_query.to_string(),
-                source,
-            })?;
-        let resolved = match project.project_type.as_str() {
-            "resourcepack" => ProjectType::ResourcePack,
-            "shader" => ProjectType::Shader,
-            "datapack" => ProjectType::Datapack,
-            _ => ProjectType::Mod,
-        };
-        (
-            project.project_id,
-            project.platform,
-            project.title,
-            Some(project.confidence),
-            Some(resolved),
-        )
+    }
+    .map_err(|source| AddContractError::ResolveProject {
+        query: search_query.to_owned(),
+        source,
+    })?;
+    let resolved = match project.project_type.as_str() {
+        "resourcepack" => ProjectType::ResourcePack,
+        "shader" => ProjectType::Shader,
+        "datapack" => ProjectType::Datapack,
+        _ => ProjectType::Mod,
     };
+    if project_type.is_some_and(|requested| requested != resolved) {
+        return Err(AddContractError::ResolveProject {
+            query: search_query.to_owned(),
+            source: SearchError::Other(anyhow::anyhow!(
+                "Resolved content type differs from the requested type"
+            )),
+        });
+    }
+    let project_id = project.project_id;
+    let platform = project.platform;
+    let title = project.title;
+    let confidence = (!direct).then_some(project.confidence);
+    let resolved_type = Some(resolved);
 
     let commands =
         build_packwiz_add_commands(&project_id, platform, version_pin).map_err(|source| {

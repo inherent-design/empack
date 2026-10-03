@@ -2204,7 +2204,10 @@ mod resolve_curseforge_slug_tests {
             .create_async()
             .await;
 
-        let resolver = MockProjectResolver::new();
+        let resolver = MockProjectResolver::new().with_response("394468".into(), Ok(crate::empack::search::ProjectInfo {
+            platform: ProjectPlatform::CurseForge, project_id: "394468".into(), title: "Sodium".into(),
+            project_type: "mod".into(), downloads: 0, confidence: 100,
+        }));
         let resolution = resolve_curseforge_slug_with_api_base(
             "sodium",
             &test_http_client(),

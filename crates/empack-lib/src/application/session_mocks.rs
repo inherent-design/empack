@@ -795,6 +795,30 @@ impl Default for MockProjectResolver {
 }
 
 impl ProjectResolverTrait for MockProjectResolver {
+    fn resolve_selector(
+        &self,
+        selector: crate::empack::search::ProjectSelector,
+        _version_pin: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = std::result::Result<ProjectInfo, SearchError>> + Send + '_>>
+    {
+        Box::pin(async move {
+            match self.responses.lock().unwrap().get(&selector.value).cloned() {
+                Some(Ok(info)) => Ok(info),
+                Some(Err(query)) => Err(SearchError::NoResults { query }),
+                // Convenience fixture treats unknown selectors as exact mod IDs.
+                // Live resolver and CLI tests exercise slug canonicalization and pins.
+                None => Ok(ProjectInfo {
+                    platform: selector.platform,
+                    project_id: selector.value.clone(),
+                    title: selector.value,
+                    downloads: 0,
+                    confidence: 100,
+                    project_type: "mod".into(),
+                }),
+            }
+        })
+    }
+
     fn resolve_project(
         &self,
         title: &str,

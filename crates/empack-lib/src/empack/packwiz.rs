@@ -70,6 +70,34 @@ pub trait PackwizOps {
         Ok(())
     }
 
+    /// Return the observed metadata key only after identity, type and pin agree.
+    fn verify_added(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<Option<String>> {
+        let identity = super::installed::DependencyIdentity {
+            platform: record.platform,
+            project_id: record.project_id.clone(),
+            project_type: record.project_type,
+        };
+        let observed = self.installed_snapshot(workdir)?;
+        let matches: Vec<_> = observed
+            .iter()
+            .filter(|entry| entry.identity.as_ref() == Some(&identity))
+            .collect();
+        anyhow::ensure!(
+            matches.len() == 1
+                && record
+                    .version
+                    .as_ref()
+                    .is_none_or(|pin| matches[0].version.as_ref() == Some(pin)),
+            "Backend reported success but installed metadata does not match requested identity or pin for '{}'; inspect pack metadata before retrying",
+            record.title
+        );
+        Ok(Some(matches[0].key.clone()))
+    }
+
     /// A successful backend exit must actually remove the selected installation.
     fn verify_removed(
         &self,
@@ -639,6 +667,14 @@ minecraft = "{}"
                 }
             })
             .collect())
+    }
+
+    fn verify_added(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<Option<String>> {
+        Ok(None)
     }
 
     fn verify_removed(

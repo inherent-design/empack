@@ -431,6 +431,30 @@ fn smoke_pinned_add_then_sync_preserves_required_content_and_updates_pin() {
         ("curseforge", "--file-id", "101", "102"),
     ] {
         let project = TestProject::workflow_fixture("root-closure", "fabric", "1.21.1");
+        let responses = if platform == "modrinth" {
+            vec![
+                (
+                    "https://api.modrinth.com/v2/project/12345".into(),
+                    serde_json::json!({"id":"12345","title":"Root","project_type":"mod"}),
+                ),
+                (
+                    format!("https://api.modrinth.com/v2/version/{first}"),
+                    serde_json::json!({"id":first,"project_id":"12345"}),
+                ),
+            ]
+        } else {
+            vec![
+                (
+                    "https://api.curseforge.com/v1/mods/12345".into(),
+                    serde_json::json!({"data":{"id":12345,"name":"Root","classId":6}}),
+                ),
+                (
+                    format!("https://api.curseforge.com/v1/mods/12345/files/{first}"),
+                    serde_json::json!({"data":{"id":first.parse::<u64>().unwrap(),"modId":12345}}),
+                ),
+            ]
+        };
+        cache_responses(&project, responses);
         let tool = project.dir().join("install-fixture");
         std::fs::write(&tool, r#"#!/bin/sh
 provider=$1
@@ -670,4 +694,82 @@ fn smoke_remove_backend_noop_retains_manifest_intent() {
         .assert()
         .failure();
     assert_eq!(snapshot(&project), before);
+}
+
+fn cache_responses(project: &TestProject, responses: Vec<(String, serde_json::Value)>) {
+    let cache = project.dir().join(".empack-cache/http");
+    std::fs::create_dir_all(&cache).unwrap();
+    let entries: HashMap<_, _> = responses
+        .into_iter()
+        .map(|(url, data)| {
+            (
+                url,
+                CachedResponse {
+                    data: serde_json::to_vec(&data).unwrap(),
+                    etag: None,
+                    expires: SystemTime::now() + Duration::from_secs(300),
+                    status: 200,
+                },
+            )
+        })
+        .collect();
+    std::fs::write(
+        cache.join("http_cache.json"),
+        serde_json::to_vec(&entries).unwrap(),
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn smoke_add_slug_id_and_url_persist_one_identity_and_type() {
+    use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
+    use empack_lib::empack::config::DependencyEntry;
+    use std::os::unix::fs::PermissionsExt;
+    for (project_type, folder) in [
+        ("mod", "mods"),
+        ("resourcepack", "resourcepacks"),
+        ("shader", "shaderpacks"),
+    ] {
+        for selector in [
+            "pretty".to_string(),
+            "CANONICAL".to_string(),
+            format!("https://modrinth.com/{project_type}/pretty"),
+        ] {
+            let project = TestProject::workflow_fixture("canonical-add", "fabric", "1.21.1");
+            cache_responses(&project, ["pretty", "CANONICAL"].into_iter().map(|selector| (
+                format!("https://api.modrinth.com/v2/project/{selector}"),
+                serde_json::json!({"id":"CANONICAL", "title":"Pretty", "project_type":project_type}),
+            )).collect());
+            let tool = project.dir().join("add-fixture");
+            std::fs::write(&tool, format!("#!/bin/sh\n[ \"$2\" = add ] || exit 0\nprintf 'add\\n' >> ../calls\nmkdir -p {folder}\nprintf \"name = 'Pretty'\\n[update.modrinth]\\nmod-id = 'CANONICAL'\\nversion = 'v1'\\n\" > {folder}/pretty.pw.toml\n")).unwrap();
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+            command(&project)
+                .env("EMPACK_PACKWIZ_BIN", &tool)
+                .args(["add", &selector, "--platform", "modrinth"])
+                .assert()
+                .success();
+            let manager = LiveFileSystemProvider.config_manager(project.dir().to_path_buf());
+            let (_, entry) = manager.find_dependency("pretty").unwrap().unwrap();
+            let DependencyEntry::Resolved(record) = entry else {
+                panic!("resolved record required")
+            };
+            assert_eq!(record.project_id, "CANONICAL");
+            assert_eq!(
+                empack_lib::application::sync::project_type_arg(record.project_type),
+                project_type
+            );
+            for _ in 0..2 {
+                command(&project)
+                    .env("EMPACK_PACKWIZ_BIN", &tool)
+                    .arg("sync")
+                    .assert()
+                    .success();
+            }
+            assert_eq!(
+                std::fs::read_to_string(project.dir().join("calls")).unwrap(),
+                "add\n"
+            );
+        }
+    }
 }

@@ -1823,6 +1823,10 @@ async fn handle_add(
                                     project_type: resolution.project_type,
                                     version: None,
                                 };
+                                let dep_key = session
+                                    .packwiz()
+                                    .verify_added(&workdir, &record)?
+                                    .unwrap_or(dep_key);
                                 config_manager.record_installed_dependency(
                                     &dep_key,
                                     DependencyEntry::Resolved(record),
@@ -1979,6 +1983,10 @@ async fn handle_add(
                             .unwrap_or(ProjectType::Mod),
                         version: resolved.resolution.requested_pin.clone(),
                     };
+                    let dep_key = session
+                        .packwiz()
+                        .verify_added(&workdir, &record)?
+                        .unwrap_or(dep_key);
                     config_manager
                         .record_installed_dependency(&dep_key, DependencyEntry::Resolved(record))?;
                     added_mods.push(resolved.query);
