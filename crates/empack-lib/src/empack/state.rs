@@ -552,11 +552,16 @@ pub fn reset_project_configuration_for_init<
             .context("Failed to remove empack.yml")?;
     }
 
-    let pack_dir = workdir.join("pack");
-    if provider.is_directory(&pack_dir) {
-        provider
-            .remove_dir_all(&pack_dir)
-            .context("Failed to remove pack directory")?;
+    for directory in ["pack", "overrides"] {
+        let path = workdir.join(directory);
+        if provider.is_directory(&path) {
+            provider
+                .validate_output_path(workdir, &path)
+                .context("Unsafe initialization reset destination")?;
+            provider
+                .remove_dir_all(&path)
+                .context("Failed to remove project content")?;
+        }
     }
 
     Ok(())

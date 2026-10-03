@@ -3196,7 +3196,8 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     }
 
     // Parse build targets
-    let build_targets = parse_build_targets(args.targets.clone())?;
+    let build_targets =
+        crate::empack::builds::plan_build_targets(&parse_build_targets(args.targets.clone())?);
 
     validate_build_project_plan(session, &manager.workdir, &build_targets)?;
 

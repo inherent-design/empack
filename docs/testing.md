@@ -370,3 +370,13 @@ unlisted content retention, and backend success without matching installed
 metadata. The focused planner/command suite passed 46 tests and CLI smoke passed
 15 tests at this stage. These checks do not establish a complete dependency
 closure or authorize automatic orphan removal.
+
+A stale-export regression failed before build freshness was corrected. A live
+filesystem and ZIP round-trip fixture now imports distinct common/client/server
+bytes for one path, builds all four distribution targets, and re-exports mrpack.
+It repeats after changing common content without a version bump, checking output
+bytes and side-exclusive files. External tool responses are deterministic fixtures;
+this test does not launch Minecraft. Another live-filesystem test makes a manifest
+read-only after installation and requires import to return a structured partial
+failure. A sparse oversized input verifies the compressed archive limit before
+ZIP parsing or whole-file allocation.

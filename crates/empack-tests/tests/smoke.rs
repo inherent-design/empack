@@ -454,22 +454,46 @@ fi
 printf "name = 'Required library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'r1'\n" > mods/required.pw.toml
 "#).unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        command(&project).env("EMPACK_PACKWIZ_BIN", &tool)
-            .args(["add", "12345", "--platform", platform, pin_flag, first]).assert().success();
+        command(&project)
+            .env("EMPACK_PACKWIZ_BIN", &tool)
+            .args(["add", "12345", "--platform", platform, pin_flag, first])
+            .assert()
+            .success();
         let manifest = project.dir().join("empack.yml");
         let original = std::fs::read_to_string(&manifest).unwrap();
-        assert!(original.contains(first), "explicit pin must survive: {original}");
+        assert!(
+            original.contains(first),
+            "explicit pin must survive: {original}"
+        );
         for _ in 0..2 {
-            command(&project).env("EMPACK_PACKWIZ_BIN", &tool).arg("sync").assert().success();
+            command(&project)
+                .env("EMPACK_PACKWIZ_BIN", &tool)
+                .arg("sync")
+                .assert()
+                .success();
             assert!(project.dir().join("pack/mods/required.pw.toml").exists());
         }
-        assert_eq!(std::fs::read_to_string(project.dir().join("backend-calls")).unwrap(), "add\n");
+        assert_eq!(
+            std::fs::read_to_string(project.dir().join("backend-calls")).unwrap(),
+            "add\n"
+        );
         std::fs::write(&manifest, original.replace(first, second)).unwrap();
         for _ in 0..2 {
-            command(&project).env("EMPACK_PACKWIZ_BIN", &tool).arg("sync").assert().success();
+            command(&project)
+                .env("EMPACK_PACKWIZ_BIN", &tool)
+                .arg("sync")
+                .assert()
+                .success();
         }
-        assert_eq!(std::fs::read_to_string(project.dir().join("backend-calls")).unwrap(), "add\nadd\n");
-        assert!(std::fs::read_to_string(project.dir().join("pack/mods/canonical-root.pw.toml")).unwrap().contains(second));
+        assert_eq!(
+            std::fs::read_to_string(project.dir().join("backend-calls")).unwrap(),
+            "add\nadd\n"
+        );
+        assert!(
+            std::fs::read_to_string(project.dir().join("pack/mods/canonical-root.pw.toml"))
+                .unwrap()
+                .contains(second)
+        );
         assert!(project.dir().join("pack/mods/required.pw.toml").exists());
     }
 }

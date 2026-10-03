@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{Cursor, Read, Seek};
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -316,26 +316,20 @@ fn extract_forgecdn_file_id(url: &str) -> Option<String> {
 
 /// Parse a CurseForge modpack archive (zip containing `manifest.json`).
 pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
-    let bytes = std::fs::read(archive_path)
-        .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    parse_curseforge_zip_bytes(bytes, archive_path)
+    parse_curseforge_zip_with_filesystem(
+        &crate::application::session::LiveFileSystemProvider,
+        archive_path,
+    )
 }
 
 pub fn parse_curseforge_zip_with_filesystem(
     fs: &dyn crate::application::session::FileSystemProvider,
     archive_path: &Path,
 ) -> Result<ModpackManifest> {
-    let bytes = fs
-        .read_bytes(archive_path)
+    let reader = fs
+        .open_reader(archive_path)
         .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    parse_curseforge_zip_bytes(bytes, archive_path)
-}
-
-fn parse_curseforge_zip_bytes(
-    archive_bytes: Vec<u8>,
-    archive_path: &Path,
-) -> Result<ModpackManifest> {
-    let mut archive = open_zip_archive(archive_bytes)?;
+    let mut archive = open_zip_archive(reader)?;
     let manifest_entry = archive
         .by_name("manifest.json")
         .map_err(|_| ImportError::CurseForgeManifestMissing)?;
@@ -431,26 +425,20 @@ fn parse_curseforge_zip_bytes(
 
 /// Parse a Modrinth modpack archive (mrpack containing `modrinth.index.json`).
 pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
-    let bytes = std::fs::read(file_path)
-        .with_context(|| format!("opening mrpack: {}", file_path.display()))?;
-    parse_modrinth_mrpack_bytes(bytes, file_path)
+    parse_modrinth_mrpack_with_filesystem(
+        &crate::application::session::LiveFileSystemProvider,
+        file_path,
+    )
 }
 
 pub fn parse_modrinth_mrpack_with_filesystem(
     fs: &dyn crate::application::session::FileSystemProvider,
     file_path: &Path,
 ) -> Result<ModpackManifest> {
-    let bytes = fs
-        .read_bytes(file_path)
+    let reader = fs
+        .open_reader(file_path)
         .with_context(|| format!("opening mrpack: {}", file_path.display()))?;
-    parse_modrinth_mrpack_bytes(bytes, file_path)
-}
-
-fn parse_modrinth_mrpack_bytes(
-    archive_bytes: Vec<u8>,
-    file_path: &Path,
-) -> Result<ModpackManifest> {
-    let mut archive = open_zip_archive(archive_bytes)?;
+    let mut archive = open_zip_archive(reader)?;
     let manifest_entry = archive
         .by_name("modrinth.index.json")
         .map_err(|_| ImportError::ModrinthManifestMissing)?;
@@ -1200,13 +1188,11 @@ pub async fn execute_import(
             .iter()
             .any(|entry| matches!(entry, ContentEntry::EmbeddedJar(_)));
     let mut archive = if needs_archive {
-        let mut archive = zip::ZipArchive::new(
+        Some(open_zip_archive(
             session
                 .filesystem()
                 .open_reader(&resolved.manifest.archive_path)?,
-        )?;
-        validate_zip_limits(&mut archive)?;
-        Some(archive)
+        )?)
     } else {
         None
     };
@@ -1400,9 +1386,14 @@ pub async fn execute_import(
                 }
             }
             ContentEntry::EmbeddedJar(embed) => {
+                let directory = match side_from_env(&embed.env) {
+                    "client" => OverrideSide::ClientOnly.project_directory(),
+                    "server" => OverrideSide::ServerOnly.project_directory(),
+                    _ => OverrideSide::Both.project_directory(),
+                };
                 let dest = sanitize_archive_path(
                     &config.target_dir,
-                    &format!("pack/{}", embed.destination_path),
+                    &format!("{directory}/{}", embed.destination_path),
                     session.filesystem(),
                 )?;
                 extract_embedded_from_archive(
@@ -1509,7 +1500,11 @@ pub async fn execute_import(
     for override_entry in &resolved.manifest.overrides {
         let dest = sanitize_archive_path(
             &config.target_dir,
-            &format!("pack/{}", override_entry.destination_path),
+            &format!(
+                "{}/{}",
+                override_entry.side.project_directory(),
+                override_entry.destination_path
+            ),
             session.filesystem(),
         )?;
         extract_embedded_from_archive(
@@ -2034,20 +2029,34 @@ fn parse_cf_loader(loaders: &[CfModLoader]) -> Result<(ModLoader, String)> {
     Ok((mod_loader, loader_version.to_string()))
 }
 
-fn read_zip_entry_to_string<R: std::io::Read>(
-    mut entry: zip::read::ZipFile<'_, R>,
-) -> Result<String> {
+fn read_zip_entry_to_string<R: std::io::Read>(entry: zip::read::ZipFile<'_, R>) -> Result<String> {
+    anyhow::ensure!(
+        entry.size() <= MAX_IMPORT_MANIFEST_BYTES,
+        "Import manifest exceeds 16 MiB"
+    );
     let mut buf = String::new();
-    std::io::Read::read_to_string(&mut entry, &mut buf)
+    let mut limited = entry.take(MAX_IMPORT_MANIFEST_BYTES + 1);
+    std::io::Read::read_to_string(&mut limited, &mut buf)
         .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    anyhow::ensure!(
+        buf.len() as u64 <= MAX_IMPORT_MANIFEST_BYTES,
+        "Import manifest exceeds 16 MiB"
+    );
     Ok(buf)
 }
 
-fn open_zip_archive(data: Vec<u8>) -> Result<zip::ZipArchive<Cursor<Vec<u8>>>> {
-    // Import tests and live code both enter through filesystem-provided bytes,
-    // so we open archives from an in-memory cursor rather than a second file-backed path.
-    let mut archive = zip::ZipArchive::new(Cursor::new(data))
-        .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+const MAX_IMPORT_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_IMPORT_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
+
+fn open_zip_archive<R: Read + Seek>(mut reader: R) -> Result<zip::ZipArchive<R>> {
+    let length = reader.seek(std::io::SeekFrom::End(0))?;
+    anyhow::ensure!(
+        length <= MAX_IMPORT_ARCHIVE_BYTES,
+        "Import archive exceeds 2 GiB compressed input limit"
+    );
+    reader.rewind()?;
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
     validate_zip_limits(&mut archive)?;
     Ok(archive)
 }

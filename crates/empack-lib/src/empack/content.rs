@@ -392,6 +392,23 @@ pub enum OverrideSide {
     ServerOnly,
 }
 
+impl OverrideSide {
+    pub fn project_directory(&self) -> &'static str {
+        match self {
+            Self::Both => "pack",
+            Self::ClientOnly => "overrides/client",
+            Self::ServerOnly => "overrides/server",
+        }
+    }
+    pub fn archive_directory(&self) -> &'static str {
+        match self {
+            Self::Both => "overrides",
+            Self::ClientOnly => "client-overrides",
+            Self::ServerOnly => "server-overrides",
+        }
+    }
+}
+
 /// Semantic category of an override file or directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverrideCategory {

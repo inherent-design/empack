@@ -258,6 +258,10 @@ pub trait ConfigProvider {
 
 /// Provider trait for archive operations (zip extraction, archive creation)
 pub trait ArchiveProvider {
+    fn overlay_zip(&self, _archive: &Path, _additions: &[(PathBuf, String)]) -> Result<()> {
+        anyhow::bail!("Archive provider does not support content layers")
+    }
+
     fn extract_zip(&self, archive_path: &Path, dest_dir: &Path) -> Result<()>;
 
     fn create_archive(
@@ -271,6 +275,10 @@ pub trait ArchiveProvider {
 pub struct LiveArchiveProvider;
 
 impl ArchiveProvider for LiveArchiveProvider {
+    fn overlay_zip(&self, archive: &Path, additions: &[(PathBuf, String)]) -> Result<()> {
+        crate::empack::archive::overlay_zip(archive, additions)
+    }
+
     fn extract_zip(&self, archive_path: &Path, dest_dir: &Path) -> Result<()> {
         crate::empack::archive::extract_zip(archive_path, dest_dir)
             .with_context(|| format!("Failed to extract zip: {}", archive_path.display()))

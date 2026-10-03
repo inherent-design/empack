@@ -3,6 +3,7 @@
 
 use crate::application::session::execute_process_with_live_issues;
 use crate::empack::PackwizInstaller;
+use crate::empack::content::OverrideSide;
 use crate::empack::templates::TemplateEngine;
 use crate::empack::versions::{
     canonicalize_forge_loader_version, parse_version, uses_forge_style_neoforge_coordinate,
@@ -105,6 +106,7 @@ pub struct BuildOrchestrator<'a> {
 
     pack_refreshed: bool,
     mrpack_extracted: bool,
+    mrpack_built: bool,
 
     pack_info: Option<PackInfo>,
 
@@ -267,6 +269,7 @@ impl<'a> BuildOrchestrator<'a> {
             dist_dir,
             pack_refreshed: false,
             mrpack_extracted: false,
+            mrpack_built: false,
             pack_info: None,
             archive_format,
             continue_full_builds: false,
@@ -1036,8 +1039,13 @@ impl<'a> BuildOrchestrator<'a> {
         let pack_info = self.load_pack_info()?.clone();
         let mrpack_file = self.artifact_path(&pack_info, None, "mrpack")?;
 
-        if !self.session.filesystem().exists(&mrpack_file) {
-            self.build_mrpack_impl()?;
+        if !self.mrpack_built {
+            let result = self.build_mrpack_impl()?;
+            if !result.success {
+                return Err(BuildError::CommandFailed {
+                    command: "Required mrpack export did not complete".into(),
+                });
+            }
         }
 
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
@@ -1188,7 +1196,23 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
+        let mut additions = Vec::new();
+        for side in [OverrideSide::ClientOnly, OverrideSide::ServerOnly] {
+            let root = self.workdir.join(side.project_directory());
+            if self.session.filesystem().exists(&root) {
+                self.collect_layer_files(&root, &root, side.archive_directory(), &mut additions)?;
+            }
+        }
+        if !additions.is_empty() {
+            self.session
+                .archive()
+                .overlay_zip(&output_file, &additions)
+                .map_err(|e| BuildError::ConfigError {
+                    reason: e.to_string(),
+                })?;
+        }
         let artifact = self.create_artifact(&output_file)?;
+        self.mrpack_built = true;
 
         Ok(BuildResult {
             target: BuildTarget::Mrpack,
@@ -1243,14 +1267,15 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        let pack_dir = self.workdir.join("pack");
-        self.copy_dir_contents(&pack_dir, &minecraft_dir.join("pack"))?;
+        self.stage_pack_for_side(&minecraft_dir.join("pack"), OverrideSide::ClientOnly)?;
 
         self.extract_mrpack()?;
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
-        let overrides_dir = temp_extract_dir.join("overrides");
-        if self.session.filesystem().exists(&overrides_dir) {
-            self.copy_dir_contents(&overrides_dir, &minecraft_dir)?;
+        for directory in ["overrides", "client-overrides"] {
+            let overrides_dir = temp_extract_dir.join(directory);
+            if self.session.filesystem().exists(&overrides_dir) {
+                self.copy_dir_contents(&overrides_dir, &minecraft_dir)?;
+            }
         }
 
         let zip_path = self.zip_distribution(BuildTarget::Client)?;
@@ -1282,8 +1307,7 @@ impl<'a> BuildOrchestrator<'a> {
         self.process_build_templates("templates/common", &dist_dir)?;
         self.process_build_templates("templates/server", &dist_dir)?;
 
-        let pack_dir = self.workdir.join("pack");
-        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+        self.stage_pack_for_side(&dist_dir.join("pack"), OverrideSide::ServerOnly)?;
 
         let bootstrap_content = self
             .session
@@ -1318,9 +1342,11 @@ impl<'a> BuildOrchestrator<'a> {
         self.extract_mrpack()?;
 
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
-        let overrides_dir = temp_extract_dir.join("overrides");
-        if self.session.filesystem().exists(&overrides_dir) {
-            self.copy_dir_contents(&overrides_dir, &dist_dir)?;
+        for directory in ["overrides", "server-overrides"] {
+            let overrides_dir = temp_extract_dir.join(directory);
+            if self.session.filesystem().exists(&overrides_dir) {
+                self.copy_dir_contents(&overrides_dir, &dist_dir)?;
+            }
         }
 
         let zip_path = self.zip_distribution(BuildTarget::Server)?;
@@ -1360,8 +1386,7 @@ impl<'a> BuildOrchestrator<'a> {
         self.process_build_templates("templates/client", &dist_dir)?;
 
         // Copy pack files so the installer can resolve .toml mod entries
-        let pack_dir = self.workdir.join("pack");
-        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+        self.stage_pack_for_side(&dist_dir.join("pack"), OverrideSide::ClientOnly)?;
 
         let installer = PackwizInstaller::new(
             self.session,
@@ -1369,11 +1394,11 @@ impl<'a> BuildOrchestrator<'a> {
             installer_jar_path.to_owned(),
         );
 
-        match installer
-            .install_mods("both", &dist_dir)
-            .map_err(|e| BuildError::CommandFailed {
+        match installer.install_mods("client", &dist_dir).map_err(|e| {
+            BuildError::CommandFailed {
                 command: format!("packwiz-installer-bootstrap.jar: {}", e),
-            })? {
+            }
+        })? {
             crate::empack::packwiz::InstallResult::Success => {}
             crate::empack::packwiz::InstallResult::RestrictedMods(restricted) => {
                 return Ok(BuildResult {
@@ -1435,8 +1460,7 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         // Copy pack files so the installer can resolve .toml mod entries
-        let pack_dir = self.workdir.join("pack");
-        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+        self.stage_pack_for_side(&dist_dir.join("pack"), OverrideSide::ServerOnly)?;
 
         let installer = PackwizInstaller::new(
             self.session,
@@ -1481,6 +1505,11 @@ impl<'a> BuildOrchestrator<'a> {
         &mut self,
         targets: &[BuildTarget],
     ) -> Result<Vec<BuildResult>, BuildError> {
+        self.pack_info = None;
+        self.template_engine = None;
+        self.pack_refreshed = false;
+        self.mrpack_extracted = false;
+        self.mrpack_built = false;
         let info = self.load_pack_info()?.clone();
         self.artifact_path(&info, None, "mrpack")?;
         let state_mgr = self.session.state().map_err(|e| BuildError::ConfigError {
@@ -1543,7 +1572,8 @@ impl<'a> BuildOrchestrator<'a> {
 
         let mut results = Vec::new();
 
-        for target in targets {
+        let ordered = plan_build_targets(targets);
+        for target in &ordered {
             let result = match target {
                 BuildTarget::Mrpack => self.build_mrpack_impl()?,
                 BuildTarget::Client => self.build_client_impl(&bootstrap_jar_path)?,
@@ -1788,6 +1818,70 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
+    fn collect_layer_files(
+        &self,
+        root: &Path,
+        directory: &Path,
+        prefix: &str,
+        result: &mut Vec<(PathBuf, String)>,
+    ) -> Result<(), BuildError> {
+        let fs = self.session.filesystem();
+        let error = |e: anyhow::Error| BuildError::ConfigError {
+            reason: e.to_string(),
+        };
+        fs.validate_output_path(&self.workdir, directory)
+            .map_err(error)?;
+        for path in fs.get_file_list(directory).map_err(error)? {
+            fs.validate_output_path(&self.workdir, &path)
+                .map_err(error)?;
+            if fs.is_directory(&path) {
+                self.collect_layer_files(root, &path, prefix, result)?;
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: e.to_string(),
+                    })?;
+                result.push((
+                    path.clone(),
+                    format!("{prefix}/{}", relative.to_string_lossy().replace('\\', "/")),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn stage_pack_for_side(
+        &self,
+        destination: &Path,
+        side: OverrideSide,
+    ) -> Result<(), BuildError> {
+        self.copy_dir_contents(&self.workdir.join("pack"), destination)?;
+        let root = self.workdir.join(side.project_directory());
+        if !self.session.filesystem().exists(&root) {
+            return Ok(());
+        }
+        let mut files = Vec::new();
+        self.collect_layer_files(&root, &root, "", &mut files)?;
+        self.copy_dir_contents(&root, destination)?;
+        let pack_file = destination.join("pack.toml");
+        let output = execute_process_with_live_issues(
+            self.session,
+            self.session.packwiz_bin(),
+            &["--pack-file", &pack_file.to_string_lossy(), "refresh"],
+            destination,
+        )
+        .map_err(|e| BuildError::ConfigError {
+            reason: e.to_string(),
+        })?;
+        if !output.success {
+            return Err(BuildError::CommandFailed {
+                command: format!("refresh staged content layer: {}", output.error_output()),
+            });
+        }
+        Ok(())
+    }
+
     /// Copy directory contents recursively
     fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), BuildError> {
         self.session
@@ -1860,6 +1954,24 @@ impl<'a> BuildOrchestrator<'a> {
             size,
         })
     }
+}
+
+
+
+/// Expand actual production prerequisites in dependency order, once per invocation.
+pub fn plan_build_targets(targets: &[BuildTarget]) -> Vec<BuildTarget> {
+    let mut ordered = Vec::new();
+    for target in targets {
+        if matches!(target, BuildTarget::Client | BuildTarget::Server)
+            && !ordered.contains(&BuildTarget::Mrpack)
+        {
+            ordered.push(BuildTarget::Mrpack);
+        }
+        if !ordered.contains(target) {
+            ordered.push(*target);
+        }
+    }
+    ordered
 }
 
 #[cfg(test)]

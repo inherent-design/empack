@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Cursor, Write};
 
 use tempfile::NamedTempFile;
 
@@ -2268,7 +2268,7 @@ fn import_rejects_oversized_zip_entries_before_extraction() {
     let mut bytes = zip.finish().unwrap().into_inner();
     let central = bytes.windows(4).position(|v| v == b"PK\x01\x02").unwrap();
     bytes[central + 24..central + 28].copy_from_slice(&((MAX_IMPORT_ENTRY_BYTES + 1) as u32).to_le_bytes());
-    let error = open_zip_archive(bytes).expect_err("oversized entry must fail");
+    let error = open_zip_archive(std::io::Cursor::new(bytes)).expect_err("oversized entry must fail");
     assert!(error.to_string().contains("512 MiB"), "{error}");
 }
 
@@ -2280,4 +2280,12 @@ fn archive_destination_rejects_existing_symlink_with_missing_leaf() {
     std::os::unix::fs::symlink(outside.path(), root.path().join("config")).unwrap();
     assert!(sanitize_archive_path(root.path(), "config/new.toml", &crate::application::session::LiveFileSystemProvider).is_err());
     assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn archive_input_limit_precedes_zip_parsing_or_allocation() {
+    let file = tempfile::tempfile().unwrap();
+    file.set_len(MAX_IMPORT_ARCHIVE_BYTES + 1).unwrap();
+    let error = open_zip_archive(file).unwrap_err();
+    assert!(error.to_string().contains("compressed input limit"));
 }

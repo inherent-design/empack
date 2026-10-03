@@ -31,7 +31,7 @@ Current pipeline structure:
 1. Validate tracked local dependencies from the current `ProjectPlan`.
 2. Prepare the build environment under `dist/`.
 3. Resolve cached paths for `packwiz-installer-bootstrap.jar` and `packwiz-installer.jar`.
-4. Execute targets in the requested order.
+4. Expand production prerequisites, placing `mrpack` before light client/server targets, then execute each target once.
 5. Remove the temporary mrpack extraction directory if it exists.
 6. Complete the marker guard on success.
 
@@ -153,3 +153,24 @@ Initialization installs client and server templates with their placeholders inta
 Loading a saved continuation is read-only. Stale state returns an error and
 remains available for inspection, including during a preview. A fresh build or
 explicit cleanup can replace or clear the saved state.
+
+## Content layers and freshness
+
+A build invocation refreshes its inputs and produces one fresh mrpack export when
+needed. An existing archive with the same name and version is not a cache hit.
+Reusing an orchestrator for another invocation resets its input and export state.
+Prerequisite export failures stop dependent targets and retain restricted-download
+continuation information.
+
+Common content lives in `pack/`. Optional `overrides/client/` and
+`overrides/server/` directories contain environment-specific content. Each target
+copies common content into its bundled pack, applies the selected side, and
+refreshes that staged pack index before installation. Client-full uses the
+installer's client side; server-full uses its server side. Light distributions
+apply common export overrides followed by their matching side overrides.
+
+Mrpack exports retain both side layers under `client-overrides/` and
+`server-overrides/`, using streamed ZIP replacement. This follows Modrinth's
+[override precedence](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack).
+Project templates remain distribution scaffolding and do not store imported
+side-specific game content.
