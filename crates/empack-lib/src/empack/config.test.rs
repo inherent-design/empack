@@ -1703,38 +1703,9 @@ title: Unresolved Mod
 
 #[test]
 fn test_untagged_yaml_resolved_missing_platform_fails() {
-    // status: resolved but missing required platform field ; 
-    // should fail Resolved and also fail Search (which requires no status).
-    // With untagged, serde tries Resolved first (fails: missing platform),
-    // then Search (succeeds: title is present, extra fields ignored).
-    let yaml = r#"
-status: resolved
-title: Broken Mod
-project_id: test-id
-type: mod
-"#;
-
-    let result: Result<DependencyEntry, _> = serde_saphyr::from_str(yaml);
-    // serde untagged: Resolved fails (missing platform), Search succeeds
-    // because DependencySearch only requires `title` and ignores unknown fields
-    match result {
-        Ok(DependencyEntry::Search(s)) => {
-            assert_eq!(s.title, "Broken Mod");
-        }
-        Ok(DependencyEntry::Resolved(_)) => {
-            panic!("Should not parse as Resolved without platform field");
-        }
-        Ok(DependencyEntry::Local(_)) => {
-            panic!("Should not parse as Local without local dependency fields");
-        }
-        Err(e) => {
-            // Also acceptable if serde rejects it entirely
-            assert!(
-                e.to_string().contains("data did not match any variant"),
-                "Unexpected error: {e}"
-            );
-        }
-    }
+    let yaml = "status: resolved\ntitle: Broken Mod\nproject_id: test-id\ntype: mod\n";
+    let error = serde_saphyr::from_str::<DependencyEntry>(yaml).unwrap_err();
+    assert!(error.to_string().contains("missing field `platform`"));
 }
 
 #[test]
@@ -2532,4 +2503,19 @@ fn test_manifest_names_do_not_interpolate_environment_properties() {
     let provider = with_empack_yml(create_mock_config_provider(workdir.clone()), &workdir, content);
     let config = provider.config_manager(workdir).load_empack_config().unwrap();
     assert_eq!(config.empack.name.as_deref(), Some("${EMPACK_TEST_NAME:-fallback}"));
+}
+
+#[test]
+fn explicit_dependency_intent_never_falls_back_to_search() {
+    for yaml in [
+        "status: resolved\ntitle: Sodium\nplatform: modrinth\nprojectID: AANobbMI\nversion: pinned-version\n",
+        "status: local\ntitle: Local\ntype: mod\npath: pack/mods/a.jar\n",
+        "status: mystery\ntitle: Mystery\n",
+        "status: local\ntitle: Sodium\nplatform: modrinth\nproject_id: AANobbMI\n",
+        "title: Sodium\nproject_id: AANobbMI\nversion: pinned-version\n",
+    ] {
+        assert!(serde_saphyr::from_str::<DependencyEntry>(yaml).is_err(), "accepted invalid intent: {yaml}");
+    }
+    let search: DependencyEntry = serde_saphyr::from_str("title: Sodium\nplatform: modrinth\n").unwrap();
+    assert!(matches!(search, DependencyEntry::Search(_)));
 }

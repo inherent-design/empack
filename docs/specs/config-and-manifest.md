@@ -163,3 +163,5 @@ Current sync rules depend on the config model:
 ## Initialization Preview
 
 Forced initialization defers the existing-project reset until input resolution and validation succeed, the user confirms ordinary initialization, and dry-run has returned. Declining ordinary initialization or previewing either initialization path preserves the project tree. Execution after that point remains a destructive reset; it does not provide rollback if replacement initialization fails.
+
+Dependency entries with `status: resolved` or `status: local` must satisfy that record schema. Unknown fields and invalid status values are errors. Search entries omit `status` and accept only `title`, `type`, and `platform`; a malformed explicit record never falls back to a search.

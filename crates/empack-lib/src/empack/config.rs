@@ -64,6 +64,7 @@ pub enum DependencyStatus {
 
 /// A fully resolved dependency entry in empack.yml
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DependencyRecord {
     /// Status discriminator (always "resolved")
     pub status: DependencyStatus,
@@ -89,6 +90,7 @@ pub struct DependencyRecord {
 
 /// A tracked local dependency entry in empack.yml
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LocalDependencyRecord {
     /// Status discriminator (always "local")
     pub status: DependencyStatus,
@@ -113,6 +115,7 @@ pub struct LocalDependencyRecord {
 
 /// Hand-written search stub, resolved to DependencyRecord on sync
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DependencySearch {
     pub title: String,
 
@@ -125,12 +128,36 @@ pub struct DependencySearch {
 }
 
 /// A dependency entry that is either a resolved record or a search stub
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum DependencyEntry {
     Resolved(DependencyRecord),
     Local(LocalDependencyRecord),
     Search(DependencySearch),
+}
+
+impl<'de> Deserialize<'de> for DependencyEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value.get("status") {
+            Some(serde_json::Value::String(status)) if status == "resolved" => {
+                serde_json::from_value(value)
+                    .map(Self::Resolved)
+                    .map_err(serde::de::Error::custom)
+            }
+            Some(serde_json::Value::String(status)) if status == "local" => {
+                serde_json::from_value(value)
+                    .map(Self::Local)
+                    .map_err(serde::de::Error::custom)
+            }
+            Some(_) => Err(serde::de::Error::custom(
+                "dependency status must be resolved or local",
+            )),
+            None => serde_json::from_value(value)
+                .map(Self::Search)
+                .map_err(serde::de::Error::custom),
+        }
+    }
 }
 
 /// Common accessors for any dependency variant
