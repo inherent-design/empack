@@ -195,7 +195,7 @@ empack rm <MOD>... [OPTIONS]
 
 | Flag | Short | Meaning |
 | --- | --- | --- |
-| `--deps` | `-d` | Also remove dependencies that are no longer needed |
+| `--deps` | `-d` | Reserved; refuses execution because dependency edges are incomplete |
 
 ## Clean Command
 

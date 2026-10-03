@@ -2935,6 +2935,12 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         return Err(anyhow::anyhow!("No mods specified to remove"));
     }
 
+    if deps {
+        anyhow::bail!(
+            "Automatic orphan cleanup is unavailable: packwiz metadata does not provide complete dependency edges. Remove explicitly named dependencies without --deps."
+        );
+    }
+
     let manager = session.state()?;
 
     let current_state = manager.discover_state()?;
@@ -2951,7 +2957,6 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         .section(&format!("Removing {} mod(s) from modpack", mods.len()));
 
     let workdir = manager.workdir.clone();
-    let mods_dir = workdir.join("pack").join("mods");
     let config_manager = session.filesystem().config_manager(workdir.clone());
     let mut removed_mods = Vec::new();
     let mut failed_mods = Vec::new();
@@ -3093,137 +3098,11 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         }
     }
 
-    // Orphan detection: Find mods with no dependents (if --deps flag is set)
-    let mut removed_orphans = Vec::new();
-    if deps && !removed_mods.is_empty() && session.filesystem().exists(&mods_dir) {
-        session
-            .display()
-            .status()
-            .section("Detecting orphaned dependencies");
-
-        let mut dep_graph = crate::api::dependency_graph::DependencyGraph::new();
-        if let Err(e) = dep_graph.build_from_directory_with(&mods_dir, session.filesystem()) {
-            session
-                .display()
-                .status()
-                .warning(&format!("Failed to build dependency graph: {}", e));
-        } else {
-            // Load empack.yml to get top-level mods
-            let top_level_mods: std::collections::HashSet<String> =
-                match config_manager.create_project_plan() {
-                    Ok(plan) => {
-                        // Use the dependency key as the mod identifier
-                        plan.dependencies
-                            .iter()
-                            .map(|dep| dep.key.clone())
-                            .collect()
-                    }
-                    Err(_) => std::collections::HashSet::new(),
-                };
-
-            // Find orphans: mods not in top-level AND no dependents
-            let mut orphans = Vec::new();
-            for node in dep_graph.all_nodes() {
-                // Skip if mod is explicitly declared in empack.yml
-                if top_level_mods.contains(&node.mod_id) {
-                    continue;
-                }
-
-                // Check if any mods depend on this one
-                let has_dependents = dep_graph
-                    .get_dependents(&node.mod_id)
-                    .map(|deps| !deps.is_empty())
-                    .unwrap_or(false);
-
-                if !has_dependents {
-                    orphans.push(node.mod_id.clone());
-                }
-            }
-
-            if !orphans.is_empty() {
-                session
-                    .display()
-                    .status()
-                    .info(&format!("Found {} orphaned dependencies:", orphans.len()));
-                for orphan in &orphans {
-                    session
-                        .display()
-                        .status()
-                        .subtle(&format!("  - {}", orphan));
-                }
-
-                let should_remove = session
-                    .interactive()
-                    .confirm("Remove orphaned dependencies?", false)?;
-
-                if should_remove {
-                    session.display().status().section("Removing orphans");
-
-                    for orphan in orphans {
-                        let result = session
-                            .process()
-                            .execute(
-                                session.packwiz_bin(),
-                                &["remove", "-y", &orphan],
-                                &workdir.join("pack"),
-                            )
-                            .and_then(|output| {
-                                if output.success {
-                                    Ok(())
-                                } else {
-                                    Err(anyhow::anyhow!(
-                                        "Packwiz command failed: {}",
-                                        output.error_output()
-                                    ))
-                                }
-                            });
-
-                        match result {
-                            Ok(_) => {
-                                // Atomically remove from empack.yml
-                                if let Err(e) = config_manager.remove_dependency(&orphan) {
-                                    session
-                                        .display()
-                                        .status()
-                                        .warning(&format!("Failed to update empack.yml: {}", e));
-                                }
-                                session
-                                    .display()
-                                    .status()
-                                    .success(&format!("Removed orphan: {}", orphan), "");
-                                removed_orphans.push(orphan);
-                            }
-                            Err(e) => {
-                                session.display().status().error(
-                                    &format!("Failed to remove orphan: {}", orphan),
-                                    &e.to_string(),
-                                );
-                            }
-                        }
-                    }
-                } else {
-                    session.display().status().info("Orphans not removed");
-                }
-            } else {
-                session
-                    .display()
-                    .status()
-                    .info("No orphaned dependencies found");
-            }
-        }
-    }
-
     session.display().status().section("Remove Summary");
     session
         .display()
         .status()
         .success("Successfully removed", &removed_mods.len().to_string());
-    if !removed_orphans.is_empty() {
-        session
-            .display()
-            .status()
-            .success("Orphans removed", &removed_orphans.len().to_string());
-    }
     session
         .display()
         .status()
@@ -3250,7 +3129,6 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         command = "remove",
         duration_ms = start.elapsed().as_millis() as u64,
         removed_count = removed_mods.len(),
-        orphans_removed = removed_orphans.len(),
         exit_code = 0,
         "command complete"
     );

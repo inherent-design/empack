@@ -30,4 +30,4 @@ Current guarantees:
 
 ## Wiring Status
 
-This is partial rather than ratified because the API exists and is tested, but CLI-level orphan cleanup still uses it selectively rather than as the sole supported command path.
+The API remains available for graph analysis. `remove --deps` fails before mutation because installed packwiz metadata does not prove that dependency edges are complete. Manifest keys and provider IDs also use different namespaces. Automatic cleanup requires provider-qualified identities and complete reachability information before it can safely select removals. Explicit removal remains supported.

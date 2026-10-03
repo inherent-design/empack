@@ -3340,7 +3340,7 @@ mod handle_remove_tests {
 
     #[tokio::test]
     async fn it_fails_when_manifest_write_fails_after_packwiz_remove() {
-        for deps in [false, true] {
+        for deps in [false] {
             let workdir = mock_root().join("remove-manifest-failure");
             let session = configured_session(&workdir)
                 .with_process(MockProcessProvider::new());
@@ -3441,15 +3441,8 @@ mod handle_remove_tests {
 
         let result = handle_remove(&session, vec!["test-mod".to_string()], true).await;
 
-        assert!(result.is_ok());
-
-        // Verify packwiz remove command was called (without --remove-deps flag)
-        // Note: packwiz does not support --remove-deps, orphan detection is implemented separately
-        assert!(session.process_provider.verify_call(
-            crate::empack::packwiz::PACKWIZ_BIN,
-            &["remove", "-y", "test-mod"],
-            &session.filesystem_provider.current_dir.join("pack")
-        ));
+        assert!(result.unwrap_err().to_string().contains("complete dependency edges"));
+        assert!(session.process_provider.get_calls().is_empty());
     }
 
     #[tokio::test]
@@ -7697,7 +7690,7 @@ mod init_interactive_tests {
 
     // I3: Orphan removal in handle_remove must use confirm(), not text_input().
     #[tokio::test]
-    async fn test_handle_remove_orphan_uses_confirm() {
+    async fn test_handle_remove_refuses_unproven_orphan_cleanup() {
         let workdir = mock_root().join("orphan-confirm");
         let mods_dir = workdir.join("pack").join("mods");
         let session = MockCommandSession::new()
@@ -7722,20 +7715,12 @@ mod init_interactive_tests {
                 }),
             ));
 
-        let _result = handle_remove(
-            &session,
-            vec!["sodium".to_string()],
-            true, // --deps: enable orphan detection
-        )
-        .await;
-
-        let confirm_calls = session.interactive_provider.get_confirm_calls();
-        assert!(
-            !confirm_calls.is_empty(),
-            "Orphan removal must use confirm(), not text_input(); confirm_calls was empty. \
-             text_input_calls: {:?}",
-            session.interactive_provider.get_text_input_calls()
-        );
+        let before = session.filesystem_provider.files.lock().unwrap().clone();
+        let error = handle_remove(&session, vec!["sodium".into()], true).await.unwrap_err();
+        assert!(error.to_string().contains("complete dependency edges"));
+        assert!(session.process_provider.get_calls().is_empty());
+        assert!(session.interactive_provider.get_confirm_calls().is_empty());
+        assert_eq!(*session.filesystem_provider.files.lock().unwrap(), before);
     }
 
     // I4: handle_init with --modloader none and --loader-version 0.15.0 should
