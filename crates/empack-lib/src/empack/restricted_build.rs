@@ -184,6 +184,52 @@ pub fn clear_pending_build(provider: &dyn FileSystemProvider, workdir: &Path) ->
     Ok(())
 }
 
+fn validate_pending_paths(
+    provider: &dyn FileSystemProvider,
+    workdir: &Path,
+    pending: &PendingRestrictedBuild,
+) -> Result<()> {
+    let cache_root = crate::platform::cache::cache_root()?;
+    let cache_dir = restricted_cache_dir(workdir)?;
+    if pending.restricted_cache_path() != cache_dir {
+        anyhow::bail!("Restricted cache path differs from the configured project cache");
+    }
+    provider.validate_output_path(&cache_root, &cache_dir)?;
+    let targets = pending.target_list()?;
+    for entry in &pending.entries {
+        crate::empack::paths::validate_filename(&entry.filename)?;
+        provider.validate_output_path(&cache_root, &cache_dir.join(&entry.filename))?;
+        let dest = Path::new(&entry.dest_path);
+        if dest.file_name() != Some(std::ffi::OsStr::new(&entry.filename)) {
+            anyhow::bail!("Restricted destination filename does not match its cache entry");
+        }
+        let mut allowed = false;
+        for target in &targets {
+            if matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull) {
+                let root = crate::empack::state::artifact_root(workdir).join(target.to_string());
+                if dest.starts_with(&root) {
+                    provider.validate_output_path(workdir, dest)?;
+                    allowed = true;
+                }
+            }
+        }
+        if targets.contains(&BuildTarget::Mrpack) {
+            let root = crate::platform::cache::packwiz_download_cache_dir()?.join("import");
+            if dest.parent() == Some(root.as_path()) {
+                provider.validate_output_path(&cache_root, dest)?;
+                allowed = true;
+            }
+        }
+        if !allowed {
+            anyhow::bail!(
+                "Restricted destination is outside the selected build roots: {}",
+                dest.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_pending_build(
     provider: &dyn FileSystemProvider,
     workdir: &Path,
@@ -202,6 +248,8 @@ pub fn validate_pending_build(
             "project files changed since the restricted build was recorded".to_string(),
         ));
     }
+
+    validate_pending_paths(provider, workdir, pending)?;
 
     for target in pending.target_list()? {
         if matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull) {
@@ -228,6 +276,7 @@ pub fn import_matching_downloads_into_cache(
     pending: &PendingRestrictedBuild,
     search_dirs: &[PathBuf],
 ) -> Result<()> {
+    validate_pending_paths(provider, workdir, pending)?;
     let cache_dir = pending.restricted_cache_path();
     provider.create_dir_all(&cache_dir)?;
     let search_dirs = ordered_search_dirs(&cache_dir, search_dirs);
@@ -378,8 +427,10 @@ pub fn missing_cached_entries(
 
 pub fn stage_cached_entries_to_destinations(
     provider: &dyn FileSystemProvider,
+    workdir: &Path,
     pending: &PendingRestrictedBuild,
 ) -> Result<Vec<PendingRestrictedBuildEntry>> {
+    validate_pending_paths(provider, workdir, pending)?;
     let cache_dir = pending.restricted_cache_path();
     let mut missing = Vec::new();
 

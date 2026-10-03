@@ -223,6 +223,28 @@ pub struct BuildArtifact {
     pub size: u64,
 }
 
+fn validate_output_tree(
+    fs: &dyn crate::application::session::FileSystemProvider,
+    root: &Path,
+    path: &Path,
+) -> Result<(), BuildError> {
+    fs.validate_output_path(root, path)
+        .map_err(|e| BuildError::ValidationError {
+            reason: e.to_string(),
+        })?;
+    if fs.is_directory(path) {
+        for entry in fs
+            .get_file_list(path)
+            .map_err(|e| BuildError::ValidationError {
+                reason: e.to_string(),
+            })?
+        {
+            validate_output_tree(fs, root, &entry)?;
+        }
+    }
+    Ok(())
+}
+
 impl<'a> BuildOrchestrator<'a> {
     pub fn new(
         session: &'a dyn crate::application::session::Session,
@@ -238,6 +260,7 @@ impl<'a> BuildOrchestrator<'a> {
                 })?,
         };
         let dist_dir = crate::empack::state::artifact_root(&workdir);
+        validate_output_tree(session.filesystem(), &workdir, &dist_dir)?;
 
         Ok(Self {
             workdir,
@@ -255,6 +278,33 @@ impl<'a> BuildOrchestrator<'a> {
     pub fn continue_full_builds(mut self) -> Self {
         self.continue_full_builds = true;
         self
+    }
+
+    fn artifact_path(
+        &self,
+        info: &PackInfo,
+        target: Option<BuildTarget>,
+        extension: &str,
+    ) -> Result<PathBuf, BuildError> {
+        for value in [&info.name, &info.version] {
+            crate::empack::paths::validate_filename(value).map_err(|e| {
+                BuildError::ValidationError {
+                    reason: e.to_string(),
+                }
+            })?;
+        }
+        let suffix = target.map(|t| format!("-{t}")).unwrap_or_default();
+        let path = self.dist_dir.join(format!(
+            "{}-v{}{suffix}.{extension}",
+            info.name, info.version
+        ));
+        self.session
+            .filesystem()
+            .validate_output_path(&self.workdir, &path)
+            .map_err(|e| BuildError::ValidationError {
+                reason: e.to_string(),
+            })?;
+        Ok(path)
     }
 
     /// Load pack info from pack.toml
@@ -984,9 +1034,7 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         let pack_info = self.load_pack_info()?.clone();
-        let mrpack_file = self
-            .dist_dir
-            .join(format!("{}-v{}.mrpack", pack_info.name, pack_info.version));
+        let mrpack_file = self.artifact_path(&pack_info, None, "mrpack")?;
 
         if !self.session.filesystem().exists(&mrpack_file) {
             self.build_mrpack_impl()?;
@@ -1036,14 +1084,7 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         let format = self.archive_format;
-        let filename = format!(
-            "{}-v{}-{}.{}",
-            pack_info.name,
-            pack_info.version,
-            target,
-            format.extension()
-        );
-        let archive_path = self.dist_dir.join(&filename);
+        let archive_path = self.artifact_path(pack_info, Some(target), format.extension())?;
 
         if self.session.filesystem().exists(&archive_path) {
             self.session
@@ -1070,9 +1111,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         let pack_info = self.load_pack_info()?.clone();
         let pack_file = self.workdir.join("pack").join("pack.toml");
-        let output_file = self
-            .dist_dir
-            .join(format!("{}-v{}.mrpack", pack_info.name, pack_info.version));
+        let output_file = self.artifact_path(&pack_info, None, "mrpack")?;
 
         self.session
             .filesystem()
@@ -1091,10 +1130,17 @@ impl<'a> BuildOrchestrator<'a> {
                 })?;
         }
 
+        let download_cache = crate::platform::cache::packwiz_download_cache_dir().map_err(|e| {
+            BuildError::ConfigError {
+                reason: e.to_string(),
+            }
+        })?;
         let output = execute_process_with_live_issues(
             self.session,
             self.session.packwiz_bin(),
             &[
+                "--cache",
+                &download_cache.to_string_lossy(),
                 "--pack-file",
                 &pack_file.to_string_lossy(),
                 "mr",
@@ -1431,12 +1477,13 @@ impl<'a> BuildOrchestrator<'a> {
     }
 
     /// Execute the 5-target build pipeline with state management.
-    /// Uses an RAII guard so the state marker is removed on both success and
-    /// failure (including panics) without manual cleanup.
+    /// Completion removes the marker; errors and panics preserve interruption evidence.
     pub async fn execute_build_pipeline(
         &mut self,
         targets: &[BuildTarget],
     ) -> Result<Vec<BuildResult>, BuildError> {
+        let info = self.load_pack_info()?.clone();
+        self.artifact_path(&info, None, "mrpack")?;
         let state_mgr = self.session.state().map_err(|e| BuildError::ConfigError {
             reason: format!("Failed to get state manager: {}", e),
         })?;
@@ -1591,6 +1638,9 @@ impl<'a> BuildOrchestrator<'a> {
         if self.pack_info.is_none() {
             let _ = self.load_pack_info();
         }
+        if let Some(info) = &self.pack_info {
+            self.artifact_path(info, Some(target), "zip")?;
+        }
         let pack_info = self.pack_info.as_ref();
 
         let dist_dir = self.dist_dir.join(target.to_string());
@@ -1628,10 +1678,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         if let Some(info) = pack_info {
             for ext in ["zip", "tar.gz", "7z"] {
-                let archive_file = self.dist_dir.join(format!(
-                    "{}-v{}-{}.{}",
-                    info.name, info.version, target, ext
-                ));
+                let archive_file = self.artifact_path(info, Some(target), ext)?;
                 if self.session.filesystem().exists(&archive_file) {
                     self.session
                         .filesystem()

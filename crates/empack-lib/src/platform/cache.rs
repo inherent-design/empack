@@ -40,6 +40,10 @@ pub fn restricted_builds_cache_dir() -> Result<PathBuf> {
     Ok(cache_root()?.join("restricted-builds"))
 }
 
+pub fn packwiz_download_cache_dir() -> Result<PathBuf> {
+    Ok(cache_root()?.join("packwiz").join("cache"))
+}
+
 pub fn versions_cache_dir() -> Result<PathBuf> {
     Ok(cache_root()?.join("versions"))
 }

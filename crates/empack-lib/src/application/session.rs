@@ -32,6 +32,11 @@ pub struct FileMetadata {
 }
 
 pub trait FileSystemProvider {
+    /// Validate a generated destination before creating, replacing, or deleting it.
+    fn validate_output_path(&self, root: &Path, destination: &Path) -> Result<()> {
+        crate::empack::paths::validate_relative_destination(root, destination)
+    }
+
     fn current_dir(&self) -> Result<PathBuf>;
 
     fn config_manager(&self, workdir: PathBuf) -> ConfigManager<'_>;
@@ -288,6 +293,23 @@ pub trait Session {
 pub struct LiveFileSystemProvider;
 
 impl FileSystemProvider for LiveFileSystemProvider {
+    fn validate_output_path(&self, root: &Path, destination: &Path) -> Result<()> {
+        crate::empack::paths::validate_relative_destination(root, destination)?;
+        let mut current = root.to_path_buf();
+        for component in destination.strip_prefix(root)?.components() {
+            current.push(component);
+            match std::fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    anyhow::bail!("Output path contains a symlink: {}", current.display())
+                }
+                Ok(_) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(())
+    }
+
     fn current_dir(&self) -> Result<PathBuf> {
         env::current_dir().context("Failed to get current directory")
     }

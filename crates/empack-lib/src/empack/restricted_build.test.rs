@@ -270,7 +270,7 @@ fn validate_pending_build_detects_missing_target_dir() {
     let pending = save_pending_build(
         &provider,
         &workdir,
-        &[BuildTarget::ClientFull],
+        &[BuildTarget::ClientFull, BuildTarget::ServerFull],
         ArchiveFormat::Zip,
         &sample_restricted_mods(&workdir),
     )
@@ -389,7 +389,7 @@ fn imports_downloads_into_cache_and_restores_to_every_destination() {
         "download should be imported into the managed restricted cache"
     );
 
-    let missing = stage_cached_entries_to_destinations(&provider, &pending)
+    let missing = stage_cached_entries_to_destinations(&provider, &workdir, &pending)
         .expect("stage cached entries to destinations");
     assert!(missing.is_empty());
     assert_eq!(
@@ -800,7 +800,7 @@ fn stage_cached_entries_to_destinations_treats_preexisting_unchanged_cache_as_mi
     provider.set_file_metadata(cache_path.clone(), cache_meta.clone());
     pending.candidate_baseline = vec![baseline_snapshot(cache_path, &cache_meta)];
 
-    let missing = stage_cached_entries_to_destinations(&provider, &pending)
+    let missing = stage_cached_entries_to_destinations(&provider, &workdir, &pending)
         .expect("stage stale cache entry");
     assert_eq!(missing.len(), 1);
     assert!(
@@ -1082,4 +1082,28 @@ fn import_matching_downloads_into_cache_scans_managed_cache_for_recent_variant_n
             .expect("read normalized cache target"),
         b"cached variant bytes"
     );
+}
+
+#[test]
+fn forged_continuation_paths_are_rejected_before_staging() {
+    let _guard = crate::test_support::env_lock().lock().unwrap();
+    let root = TempDir::new().unwrap();
+    let _cache = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", root.path()) };
+    let workdir = mock_root().join("forged-continuation");
+    let fs = MockFileSystemProvider::new().with_configured_project(workdir.clone());
+    let valid = save_pending_build(&fs, &workdir,
+        &[BuildTarget::ClientFull, BuildTarget::ServerFull], ArchiveFormat::Zip,
+        &sample_restricted_mods(&workdir)).unwrap();
+    for attack in 0..4 {
+        let mut pending = valid.clone();
+        match attack {
+            0 => pending.restricted_cache_dir = root.path().join("outside").to_string_lossy().into_owned(),
+            1 => pending.entries[0].filename = "../escape.jar".into(),
+            2 => pending.entries[0].dest_path = workdir.join("empack.yml").to_string_lossy().into_owned(),
+            _ => pending.entries[0].dest_path = workdir.join("dist/client-full/../../entityculling.jar").to_string_lossy().into_owned(),
+        }
+        let before = fs.files.lock().unwrap().clone();
+        assert!(stage_cached_entries_to_destinations(&fs, &workdir, &pending).is_err());
+        assert_eq!(*fs.files.lock().unwrap(), before);
+    }
 }

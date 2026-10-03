@@ -4190,7 +4190,7 @@ mod handle_build_tests {
         ), "expected packwiz refresh call");
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
-            &["--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
+            &["--cache", &crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy(), "--pack-file", &pack_file_arg, "mr", "export", "-o", &built_mrpack_arg],
             &workdir
         ), "expected packwiz mr export call");
     }
@@ -4226,7 +4226,7 @@ mod handle_build_tests {
         ), "expected packwiz refresh call");
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
-            &["--pack-file", &pack_file_arg, "mr", "export", "-o", &rebuilt_mrpack_arg],
+            &["--cache", &crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy(), "--pack-file", &pack_file_arg, "mr", "export", "-o", &rebuilt_mrpack_arg],
             &workdir
         ), "expected packwiz mr export call");
     }
@@ -4324,7 +4324,7 @@ mod handle_build_tests {
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
             &[
-                "--pack-file",
+                "--cache", &crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy(), "--pack-file",
                 &pack_file_arg,
                 "mr",
                 "export",
@@ -4465,7 +4465,7 @@ mod handle_build_continue_tests {
 
     fn mrpack_export_args(workdir: &Path) -> Vec<String> {
         vec![
-            "--pack-file".to_string(),
+            "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
             workdir
                 .join("pack")
                 .join("pack.toml")
@@ -4602,7 +4602,7 @@ mod handle_build_continue_tests {
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
         let workdir = mock_root().join("continue-record-mrpack-state");
-        let import_dir = workdir.join("packwiz-cache").join("import");
+        let import_dir = crate::platform::cache::packwiz_download_cache_dir().unwrap().join("import");
         let process = MockProcessProvider::new()
             .with_packwiz_result(
                 vec![
@@ -4666,7 +4666,7 @@ mod handle_build_continue_tests {
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
         let workdir = mock_root().join("continue-record-all-state");
-        let import_dir = workdir.join("packwiz-cache").join("import");
+        let import_dir = crate::platform::cache::packwiz_download_cache_dir().unwrap().join("import");
         let process = MockProcessProvider::new()
             .with_packwiz_result(
                 vec![
@@ -4751,7 +4751,7 @@ mod handle_build_continue_tests {
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
         let workdir = mock_root().join("continue-mrpack-auto-continue");
-        let import_dir = workdir.join("packwiz-cache").join("import");
+        let import_dir = crate::platform::cache::packwiz_download_cache_dir().unwrap().join("import");
         let mrpack_path = workdir.join("dist").join("Restricted Pack-v1.0.0.mrpack");
         let manual_filename = "BeeFix-1.20-1.0.7.jar";
         let process = MockProcessProvider::new()
@@ -4925,8 +4925,7 @@ mod handle_build_continue_tests {
                 name: "No Enchant Glint".to_string(),
                 url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
                     .to_string(),
-                dest_path: workdir
-                    .join("packwiz-cache")
+                dest_path: crate::platform::cache::packwiz_download_cache_dir().unwrap()
                     .join("import")
                     .join("No_Enchant_Glint.zip")
                     .to_string_lossy()
@@ -5006,8 +5005,7 @@ mod handle_build_continue_tests {
                 name: "No Enchant Glint".to_string(),
                 url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
                     .to_string(),
-                dest_path: workdir
-                    .join("packwiz-cache")
+                dest_path: crate::platform::cache::packwiz_download_cache_dir().unwrap()
                     .join("import")
                     .join(exact_name)
                     .to_string_lossy()
@@ -5076,8 +5074,7 @@ mod handle_build_continue_tests {
                 name: "No Enchant Glint".to_string(),
                 url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
                     .to_string(),
-                dest_path: workdir
-                    .join("packwiz-cache")
+                dest_path: crate::platform::cache::packwiz_download_cache_dir().unwrap()
                     .join("import")
                     .join("No_Enchant_Glint.zip")
                     .to_string_lossy()
@@ -5546,7 +5543,7 @@ mod handle_build_continue_tests {
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
 
         let workdir = mock_root().join("continue-browser-legacy-baseline");
-        let import_dir = workdir.join("packwiz-cache").join("import");
+        let import_dir = crate::platform::cache::packwiz_download_cache_dir().unwrap().join("import");
         let noise_a = import_dir.join("noise-a.zip");
         let noise_b = import_dir.join("noise-b.zip");
         let noise_c = import_dir.join("noise-c.zip");

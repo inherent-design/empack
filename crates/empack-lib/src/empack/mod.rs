@@ -6,6 +6,7 @@ pub mod fuzzy;
 pub mod import;
 pub mod packwiz;
 pub mod parsing;
+pub mod paths;
 pub mod restricted_build;
 pub mod search;
 pub mod state;

@@ -3467,6 +3467,7 @@ async fn continue_pending_restricted_build_inner(
 
     let still_missing = crate::empack::restricted_build::stage_cached_entries_to_destinations(
         session.filesystem(),
+        workdir,
         &pending,
     )
     .context("Failed to restore cached restricted files into the build output")?;
