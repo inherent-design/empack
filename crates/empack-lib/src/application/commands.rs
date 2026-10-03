@@ -3002,13 +3002,28 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         })
         .collect();
 
+    let manifest = config_manager.load_empack_config()?.empack.dependencies;
+    let installed = session.packwiz().installed_snapshot(&workdir)?;
+    let plans = super::removal::plan_removals(&validated_mods, &manifest, &installed)?;
+    // Validate every local target before executing any part of the batch.
+    for plan in &plans {
+        if let Some(DependencyEntry::Local(record)) = &plan.entry {
+            crate::empack::paths::TrackedProjectFile::validate(
+                session.filesystem(),
+                &workdir,
+                &record.path,
+            )?;
+        }
+    }
     if session.config().app_config().dry_run {
-        session.display().status().section("Planned Actions");
-        for mod_name in &validated_mods {
-            session
-                .display()
-                .status()
-                .info(&format!("Would remove: {}", mod_name));
+        for plan in &plans {
+            session.display().status().info(&format!(
+                "Would remove: {} (installed: {})",
+                plan.query,
+                plan.installed
+                    .as_ref()
+                    .map_or("none", |entry| entry.key.as_str())
+            ));
         }
         session
             .display()
@@ -3017,106 +3032,46 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
         return Ok(());
     }
 
-    for mod_name in validated_mods {
-        session
-            .display()
-            .status()
-            .checking(&format!("Removing mod: {}", mod_name));
-
-        let dependency_entry = config_manager
-            .find_dependency(&mod_name)
-            .with_context(|| format!("failed to inspect dependency '{mod_name}'"))?;
-
-        if let Some((dependency_key, DependencyEntry::Local(record))) = dependency_entry {
-            let validated_file = crate::empack::paths::TrackedProjectFile::validate(
-                session.filesystem(),
-                &workdir,
-                &record.path,
-            )?;
-            let local_path = validated_file.path();
-            if session.filesystem().exists(local_path) {
-                session
-                    .filesystem()
-                    .remove_file(local_path)
-                    .with_context(|| {
-                        format!("failed to remove local dependency {}", local_path.display())
-                    })?;
-            } else {
-                session.display().status().warning(&format!(
-                    "Tracked local file was already missing: {}",
-                    local_path.display()
-                ));
-            }
-
-            match config_manager.remove_dependency(&dependency_key) {
-                Ok(_) => {
-                    session
-                        .display()
-                        .status()
-                        .success("Successfully removed tracked local dependency", "");
-                    removed_mods.push(mod_name);
-                }
-                Err(e) => {
-                    let detail = format!(
-                        "Local file was removed, but empack.yml still contains '{}'. Fix the write error and rerun 'empack remove {}': {}",
-                        dependency_key, dependency_key, e
-                    );
-                    session
-                        .display()
-                        .status()
-                        .error("Failed to update empack.yml", &detail);
-                    failed_mods.push((mod_name, detail));
+    for plan in plans {
+        let result = (|| -> Result<()> {
+            if let Some(DependencyEntry::Local(record)) = &plan.entry {
+                let file = crate::empack::paths::TrackedProjectFile::validate(
+                    session.filesystem(),
+                    &workdir,
+                    &record.path,
+                )?;
+                if session.filesystem().exists(file.path()) {
+                    session.filesystem().remove_file(file.path())?;
                 }
             }
-            continue;
-        }
-
-        // Execute packwiz remove command
-        // Note: packwiz does not support --remove-deps flag
-        // Orphan detection must be implemented using DependencyGraph
-        let packwiz_args = vec!["remove", "-y", &mod_name];
-
-        let result = session
-            .process()
-            .execute(session.packwiz_bin(), &packwiz_args, &workdir.join("pack"))
-            .and_then(|output| {
-                if output.success {
-                    Ok(())
-                } else {
-                    Err(anyhow::anyhow!(
-                        "Packwiz command failed: {}",
-                        output.error_output()
-                    ))
-                }
-            });
-
+            if let Some(target) = &plan.installed {
+                let observed = session.packwiz().installed_snapshot(&workdir)?;
+                anyhow::ensure!(
+                    observed.contains(target),
+                    "Installed target '{}' changed after planning; retry removal",
+                    target.key
+                );
+                let output = session.process().execute(
+                    session.packwiz_bin(),
+                    &["remove", "-y", &target.key],
+                    &workdir.join("pack"),
+                )?;
+                anyhow::ensure!(
+                    output.success,
+                    "Packwiz command failed: {}",
+                    output.error_output()
+                );
+                session.packwiz().verify_removed(&workdir, target)?;
+            }
+            if let (Some(key), Some(entry)) = (&plan.manifest_key, &plan.entry) {
+                config_manager.remove_dependency_exact(key, entry).with_context(|| format!(
+                    "Removal effects completed for '{}', but updating empack.yml failed. Inspect or restore the manifest and rerun removal before syncing", plan.query))?;
+            }
+            Ok(())
+        })();
         match result {
-            Ok(_) => {
-                if let Err(e) = config_manager.remove_dependency(&mod_name) {
-                    let detail = format!(
-                        "packwiz removed '{}', but updating empack.yml failed. Inspect or restore the manifest and remove any stale entry for this mod before syncing: {}",
-                        mod_name, e
-                    );
-                    session
-                        .display()
-                        .status()
-                        .error("Failed to update empack.yml", &detail);
-                    failed_mods.push((mod_name, detail));
-                    continue;
-                }
-                session
-                    .display()
-                    .status()
-                    .success("Successfully removed from pack", "");
-                removed_mods.push(mod_name);
-            }
-            Err(e) => {
-                session
-                    .display()
-                    .status()
-                    .error("Failed to remove from pack", &e.to_string());
-                failed_mods.push((mod_name, e.to_string()));
-            }
+            Ok(()) => removed_mods.push(plan.query),
+            Err(error) => failed_mods.push((plan.query, format!("{error:#}"))),
         }
     }
 

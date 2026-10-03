@@ -3374,7 +3374,10 @@ mod handle_remove_tests {
     async fn it_fails_when_manifest_write_fails_after_packwiz_remove() {
         for deps in [false] {
             let workdir = mock_root().join("remove-manifest-failure");
-            let session = configured_session(&workdir)
+            let session = configured_session(&workdir).with_filesystem(
+                MockFileSystemProvider::new().with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone())
+                    .with_installed_mods(["sodium", "test-mod", "mod1", "mod2", "bad-mod"].into_iter().map(str::to_owned).collect()))
                 .with_process(MockProcessProvider::new());
             let manager = session.filesystem().config_manager(workdir.clone());
             manager.add_dependency_entry("sodium", DependencyEntry::Resolved(DependencyRecord {
@@ -3393,7 +3396,7 @@ mod handle_remove_tests {
             let error = handle_remove(&session, vec!["sodium".to_string()], deps)
                 .await.expect_err("manifest write failure must fail removal");
             let message = error.to_string();
-            assert!(message.contains("packwiz removed 'sodium', but updating empack.yml failed"), "{message}");
+            assert!(message.contains("Removal effects completed for 'sodium', but updating empack.yml failed"), "{message}");
             assert!(message.contains("Inspect or restore the manifest"), "{message}");
             assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), before);
             let calls = session.process_provider.get_calls();
@@ -3408,7 +3411,10 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_removes_single_mod_successfully() {
         let workdir = mock_root().join("configured-project");
-        let session = configured_session(&workdir)
+        let session = configured_session(&workdir).with_filesystem(
+                MockFileSystemProvider::new().with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone())
+                    .with_installed_mods(["sodium", "test-mod", "mod1", "mod2", "bad-mod"].into_iter().map(str::to_owned).collect()))
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec!["remove".to_string(), "-y".to_string(), "test-mod".to_string()],
                 Ok(ProcessOutput {
@@ -3433,7 +3439,10 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_removes_multiple_mods_successfully() {
         let workdir = mock_root().join("configured-project");
-        let session = configured_session(&workdir)
+        let session = configured_session(&workdir).with_filesystem(
+                MockFileSystemProvider::new().with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone())
+                    .with_installed_mods(["sodium", "test-mod", "mod1", "mod2", "bad-mod"].into_iter().map(str::to_owned).collect()))
             .with_process(MockProcessProvider::new());
 
         let result = handle_remove(
@@ -3461,7 +3470,10 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_removes_mod_with_dependencies() {
         let workdir = mock_root().join("configured-project");
-        let session = configured_session(&workdir)
+        let session = configured_session(&workdir).with_filesystem(
+                MockFileSystemProvider::new().with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone())
+                    .with_installed_mods(["sodium", "test-mod", "mod1", "mod2", "bad-mod"].into_iter().map(str::to_owned).collect()))
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec!["remove".to_string(), "-y".to_string(), "test-mod".to_string()],
                 Ok(ProcessOutput {
@@ -3561,7 +3573,10 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_skips_side_effects_in_dry_run() {
         let workdir = mock_root().join("configured-project");
-        let mut session = configured_session(&workdir);
+        let mut session = configured_session(&workdir).with_filesystem(
+                MockFileSystemProvider::new().with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone())
+                    .with_installed_mods(["sodium", "test-mod", "mod1", "mod2", "bad-mod"].into_iter().map(str::to_owned).collect()));
         session.config_provider.app_config.dry_run = true;
 
         let result = handle_remove(&session, vec!["test-mod".to_string()], false).await;
@@ -3576,7 +3591,10 @@ mod handle_remove_tests {
     #[tokio::test]
     async fn it_returns_error_when_remove_fails() {
         let workdir = mock_root().join("configured-project");
-        let session = configured_session(&workdir)
+        let session = configured_session(&workdir).with_filesystem(
+                MockFileSystemProvider::new().with_current_dir(workdir.clone())
+                    .with_configured_project(workdir.clone())
+                    .with_installed_mods(["sodium", "test-mod", "mod1", "mod2", "bad-mod"].into_iter().map(str::to_owned).collect()))
             .with_process(
                 MockProcessProvider::new().with_packwiz_result(
                     vec!["remove".to_string(), "-y".to_string(), "bad-mod".to_string()],
@@ -9282,7 +9300,10 @@ mod handle_remove_empty_name_tests {
     #[tokio::test]
     async fn filters_empty_mod_names() {
         let workdir = mock_root().join("configured-project");
-        let session = configured_session(&workdir)
+        let session = configured_session(&workdir).with_filesystem(
+            MockFileSystemProvider::new().with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_installed_mods(["sodium".to_string()].into_iter().collect()))
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec!["remove".to_string(), "-y".to_string(), "sodium".to_string()],
                 Ok(ProcessOutput {

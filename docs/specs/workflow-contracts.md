@@ -8,6 +8,8 @@ The manifest records explicit roots. An installed snapshot records provider, pro
 
 After execution, the live adapter observes the project again and requires the remaining plan to be empty. A backend success exit alone is insufficient. Explicit add pins pass through resolution into persistence. Search aliases do not create an add/remove pair.
 
+Removal has its own read-only plan. An exact manifest key selects that logical record; otherwise a unique title or installed filename can select it. Provider identities connect intent to the observed metadata filename and version. Ambiguous identities and unknown selectors fail before any removal begins. Local paths are validated across the whole batch. Execution checks that the observed target has not changed, removes that filename, verifies its absence, then publishes removal of the exact manifest record. An already absent installation permits intent cleanup without deleting an unrelated same-name file. Backend success without removal retains the manifest and fails the command.
+
 Retention is conservative because packwiz metadata does not establish a complete dependency graph. Automatic orphan removal remains unavailable. A future closure model needs provider-qualified edges, provenance and completeness evidence before it may authorize deletion. Provider/project replacement still requires explicit removal.
 
 ## Mutation outcomes

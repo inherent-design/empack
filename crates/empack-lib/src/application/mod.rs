@@ -18,3 +18,5 @@ pub use exit::{EmpackExitCode, classify_error};
 pub mod process_runtime;
 
 pub mod persistence;
+
+pub mod removal;

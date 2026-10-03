@@ -554,3 +554,120 @@ fn smoke_local_removal_cannot_follow_a_symlinked_ancestor() {
     );
     assert_eq!(snapshot(&project), before);
 }
+
+#[cfg(unix)]
+#[test]
+fn smoke_remove_resolves_alias_title_and_stem_without_wrong_target_deletion() {
+    use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
+    use empack_lib::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
+    use empack_lib::primitives::{ProjectPlatform, ProjectType};
+    use std::os::unix::fs::PermissionsExt;
+    for query in ["renderer-alias", "Renderer title", "actual-renderer"] {
+        let project = TestProject::workflow_fixture("removal", "fabric", "1.21.1");
+        let manager = LiveFileSystemProvider.config_manager(project.dir().to_path_buf());
+        manager
+            .add_dependency_entry(
+                "renderer-alias",
+                DependencyEntry::Resolved(DependencyRecord {
+                    status: DependencyStatus::Resolved,
+                    title: "Renderer title".into(),
+                    platform: ProjectPlatform::Modrinth,
+                    project_id: "project-P".into(),
+                    project_type: ProjectType::Mod,
+                    version: None,
+                }),
+            )
+            .unwrap();
+        std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
+        for (stem, id) in [
+            ("actual-renderer", "project-P"),
+            ("renderer-alias", "project-Q"),
+        ] {
+            std::fs::write(
+                project.dir().join(format!("pack/mods/{stem}.pw.toml")),
+                format!("name = '{stem}'\n[update.modrinth]\nmod-id = '{id}'\nversion = 'v1'\n"),
+            )
+            .unwrap();
+        }
+        let tool = project.dir().join("remove-fixture");
+        std::fs::write(&tool, "#!/bin/sh\nif [ \"$1\" = remove ]; then\n  rm -- \"mods/$3.pw.toml\"\nelse\n  exit 0\nfi\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        command(&project)
+            .env("EMPACK_PACKWIZ_BIN", &tool)
+            .args(["remove", query])
+            .assert()
+            .success();
+        assert!(
+            !project
+                .dir()
+                .join("pack/mods/actual-renderer.pw.toml")
+                .exists()
+        );
+        assert!(
+            project
+                .dir()
+                .join("pack/mods/renderer-alias.pw.toml")
+                .exists()
+        );
+        assert!(manager.find_dependency("renderer-alias").unwrap().is_none());
+        for _ in 0..2 {
+            command(&project)
+                .env("EMPACK_PACKWIZ_BIN", &tool)
+                .arg("sync")
+                .assert()
+                .success();
+        }
+        assert!(
+            project
+                .dir()
+                .join("pack/mods/renderer-alias.pw.toml")
+                .exists()
+        );
+        assert!(
+            !project
+                .dir()
+                .join("pack/mods/actual-renderer.pw.toml")
+                .exists()
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn smoke_remove_backend_noop_retains_manifest_intent() {
+    use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
+    use empack_lib::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
+    use empack_lib::primitives::{ProjectPlatform, ProjectType};
+    let project = TestProject::workflow_fixture("removal-noop", "fabric", "1.21.1");
+    let manager = LiveFileSystemProvider.config_manager(project.dir().to_path_buf());
+    manager
+        .add_dependency_entry(
+            "alias",
+            DependencyEntry::Resolved(DependencyRecord {
+                status: DependencyStatus::Resolved,
+                title: "Renderer".into(),
+                platform: ProjectPlatform::Modrinth,
+                project_id: "P".into(),
+                project_type: ProjectType::Mod,
+                version: None,
+            }),
+        )
+        .unwrap();
+    std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
+    std::fs::write(
+        project.dir().join("pack/mods/actual.pw.toml"),
+        "name = 'Renderer'\n[update.modrinth]\nmod-id = 'P'\nversion = 'v1'\n",
+    )
+    .unwrap();
+    let tool = project.dir().join("noop-tool");
+    std::fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let before = snapshot(&project);
+    command(&project)
+        .env("EMPACK_PACKWIZ_BIN", &tool)
+        .args(["remove", "alias"])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&project), before);
+}

@@ -801,6 +801,30 @@ impl<'a> ConfigManager<'a> {
         Ok(removed)
     }
 
+    /// Publish removal of precisely the record selected during planning.
+    pub fn remove_dependency_exact(
+        &self,
+        key: &str,
+        expected: &DependencyEntry,
+    ) -> Result<(), ConfigError> {
+        let mut config = self.load_empack_config()?;
+        if config.empack.dependencies.get(key) != Some(expected) {
+            return Err(ConfigError::ValidationError {
+                reason: format!(
+                    "Dependency '{key}' changed after removal planning; inspect empack.yml before retrying"
+                ),
+            });
+        }
+        config.empack.dependencies.remove(key);
+        let content = serde_saphyr::to_string(&config)
+            .map_err(|source| ConfigError::YamlSerError { source })?;
+        self.fs_provider
+            .write_atomic(&self.workdir.join("empack.yml"), &content)
+            .map_err(|error| ConfigError::IoError {
+                source: std::io::Error::other(error),
+            })
+    }
+
     /// Read the `datapack_folder` value from empack.yml.
     pub fn datapack_folder(&self) -> Option<String> {
         self.load_empack_config()

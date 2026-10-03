@@ -70,6 +70,22 @@ pub trait PackwizOps {
         Ok(())
     }
 
+    /// A successful backend exit must actually remove the selected installation.
+    fn verify_removed(
+        &self,
+        workdir: &Path,
+        target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()> {
+        let observed = self.installed_snapshot(workdir)?;
+        anyhow::ensure!(
+            !observed.iter().any(|entry| entry.key == target.key
+                || (target.identity.is_some() && entry.identity == target.identity)),
+            "Backend reported success but '{}' is still installed; manifest intent was retained",
+            target.key
+        );
+        Ok(())
+    }
+
     /// Get the expected cache path for packwiz-installer-bootstrap.jar
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf>;
 
@@ -623,6 +639,15 @@ minecraft = "{}"
                 }
             })
             .collect())
+    }
+
+    fn verify_removed(
+        &self,
+        _workdir: &Path,
+        _target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()> {
+        // Call-recording mock; real filesystem smoke tests verify this postcondition.
+        Ok(())
     }
 
     fn verify_reconciled(
