@@ -152,8 +152,8 @@ impl Drop for ProcessTree {
 
 #[cfg(windows)]
 struct ProcessTree {
-    job: Option<WindowsJob>,
-    pid: u32,
+    _job: Option<WindowsJob>,
+    fallback: Option<WindowsProcess>,
 }
 #[cfg(windows)]
 impl ProcessTree {
@@ -164,7 +164,6 @@ impl ProcessTree {
         child: &tokio::process::Child,
         result: Result<WindowsJob>,
     ) -> Result<Self> {
-        let pid = child.id().context("Child process ID unavailable")?;
         let job = match result {
             Ok(job) => Some(job),
             Err(error) => {
@@ -172,49 +171,152 @@ impl ProcessTree {
                 None
             }
         };
-        Ok(Self { job, pid })
+        let fallback = if job.is_none() {
+            Some(WindowsProcess::from_child(child)?)
+        } else {
+            None
+        };
+        Ok(Self {
+            _job: job,
+            fallback,
+        })
     }
 }
 #[cfg(windows)]
 impl Drop for ProcessTree {
     fn drop(&mut self) {
-        if self.job.is_some() {
-            return;
+        // Retain both the job and process handles until cleanup completes.
+        if let Some(root) = self.fallback.take() {
+            terminate_windows_tree(root);
         }
-        // Restrictive host jobs may refuse nesting. Keep output/deadline handling
-        // available and attempt bounded tree cleanup without changing host job limits.
-        use std::os::windows::process::CommandExt;
-        let program = std::env::var_os("SystemRoot")
-            .map(|root| {
-                std::path::PathBuf::from(root)
-                    .join("System32")
-                    .join("taskkill.exe")
-            })
-            .unwrap_or_else(|| "taskkill.exe".into());
-        let Ok(mut cleanup) = std::process::Command::new(program)
-            .args(["/PID", &self.pid.to_string(), "/T", "/F"])
-            .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        else {
+    }
+}
+
+#[cfg(windows)]
+struct WindowsProcess {
+    handle: std::os::windows::io::OwnedHandle,
+    pid: u32,
+    created: u64,
+}
+#[cfg(windows)]
+impl WindowsProcess {
+    fn from_child(child: &tokio::process::Child) -> Result<Self> {
+        use std::os::windows::io::BorrowedHandle;
+        let raw = child.raw_handle().context("Child handle unavailable")?;
+        let handle = unsafe { BorrowedHandle::borrow_raw(raw) }.try_clone_to_owned()?;
+        Self::from_handle(handle, child.id().context("Child process ID unavailable")?)
+    }
+    fn from_handle(handle: std::os::windows::io::OwnedHandle, pid: u32) -> Result<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::{Foundation::FILETIME, System::Threading::GetProcessTimes};
+        let mut created: FILETIME = unsafe { std::mem::zeroed() };
+        let mut exited = created;
+        let mut kernel = created;
+        let mut user = created;
+        if unsafe {
+            GetProcessTimes(
+                handle.as_raw_handle() as _,
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let created = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+        Ok(Self {
+            handle,
+            pid,
+            created,
+        })
+    }
+    fn open(pid: u32) -> Result<Self> {
+        use std::os::windows::io::{FromRawHandle, OwnedHandle};
+        use windows_sys::Win32::System::Threading::*;
+        let raw = unsafe {
+            OpenProcess(
+                PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                0,
+                pid,
+            )
+        };
+        if raw.is_null() {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Self::from_handle(unsafe { OwnedHandle::from_raw_handle(raw as _) }, pid)
+    }
+    fn terminate(&self) {
+        use std::os::windows::io::AsRawHandle;
+        unsafe {
+            windows_sys::Win32::System::Threading::TerminateProcess(
+                self.handle.as_raw_handle() as _,
+                1,
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+fn windows_process_snapshot() -> Result<Vec<(u32, u32)>> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::{Foundation::INVALID_HANDLE_VALUE, System::Diagnostics::ToolHelp::*};
+    let raw = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if raw == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(raw as _) };
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of_val(&entry) as u32;
+    let mut entries = Vec::new();
+    let mut present = unsafe { Process32FirstW(snapshot.as_raw_handle() as _, &mut entry) };
+    while present != 0 {
+        entries.push((entry.th32ProcessID, entry.th32ParentProcessID));
+        present = unsafe { Process32NextW(snapshot.as_raw_handle() as _, &mut entry) };
+    }
+    Ok(entries)
+}
+
+#[cfg(windows)]
+fn terminate_windows_tree(root: WindowsProcess) {
+    // Open handles prevent PID reuse, including after a parent exits. Creation
+    // times reject stale parent IDs that predate the process we actually launched.
+    let mut tracked = std::collections::BTreeMap::from([(root.pid, root)]);
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        for process in tracked.values() {
+            process.terminate();
+        }
+        let Ok(entries) = windows_process_snapshot() else {
             return;
         };
-        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut discovered = false;
         loop {
-            match cleanup.try_wait() {
-                Ok(Some(_)) => return,
-                Err(_) => {
-                    let _ = cleanup.kill();
+            let mut added = false;
+            for &(pid, parent) in &entries {
+                if std::time::Instant::now() >= deadline {
                     return;
                 }
-                Ok(None) if std::time::Instant::now() >= deadline => {
-                    let _ = cleanup.kill();
-                    return;
+                if tracked.contains_key(&pid) {
+                    continue;
                 }
-                Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+                if let Some(parent) = tracked.get(&parent)
+                    && let Ok(child) = WindowsProcess::open(pid)
+                    && child.created >= parent.created
+                {
+                    child.terminate();
+                    tracked.insert(pid, child);
+                    added = true;
+                    discovered = true;
+                }
             }
+            if !added {
+                break;
+            }
+        }
+        if !discovered || std::time::Instant::now() >= deadline {
+            return;
         }
     }
 }
@@ -298,5 +400,51 @@ mod windows_tests {
             .unwrap();
         assert!(!status.success());
         assert!(start.elapsed() < Duration::from_secs(5));
+    }
+    #[tokio::test]
+    async fn fallback_closes_inherited_pipes_after_parent_exits() {
+        use std::os::windows::io::AsRawHandle;
+        let mut child = tokio::process::Command::new("cmd.exe")
+            .args(["/C", "start \"\" /b ping.exe -n 30 127.0.0.1"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        let tree = ProcessTree::from_registration(
+            &child,
+            Err(anyhow::anyhow!("host job refuses nesting")),
+        )
+        .unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(10), child.wait())
+                .await
+                .unwrap()
+                .unwrap()
+                .success()
+        );
+        let descendant_id = windows_process_snapshot()
+            .unwrap()
+            .into_iter()
+            .find_map(|(id, parent)| (parent == pid).then_some(id))
+            .expect("descendant should outlive parent");
+        let descendant = WindowsProcess::open(descendant_id).unwrap();
+        drop(tree);
+        assert_eq!(
+            unsafe {
+                windows_sys::Win32::System::Threading::WaitForSingleObject(
+                    descendant.handle.as_raw_handle() as _,
+                    3000,
+                )
+            },
+            0
+        );
+        let mut output = Vec::new();
+        tokio::time::timeout(Duration::from_secs(3), stdout.read_to_end(&mut output))
+            .await
+            .unwrap()
+            .unwrap();
     }
 }
