@@ -96,7 +96,9 @@ pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<Stri
         actions.push(SyncPlanAction::Add(plan));
     }
 
-    for installed_mod in installed_mods {
+    let mut installed_keys = installed_mods.iter().collect::<Vec<_>>();
+    installed_keys.sort();
+    for installed_mod in installed_keys {
         if !expected_mods.contains(installed_mod) {
             actions.push(SyncPlanAction::Remove {
                 key: installed_mod.clone(),

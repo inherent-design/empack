@@ -190,7 +190,7 @@ fn smoke_sync_recognizes_installed_datapacks() {
         }
         let dir = project.dir().join("pack").join(folder);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("sodium.pw.toml"), "name = \"Sodium\"\n").unwrap();
+        std::fs::write(dir.join("sodium.pw.toml"), "name = \"Sodium\"\n[update.modrinth]\nmod-id = \"AANobbMI\"\nversion = \"installed\"\n").unwrap();
         let before = snapshot(&project);
         command(&project)
             .args(["sync", "--dry-run"])
@@ -260,4 +260,49 @@ fn smoke_sync_rejects_non_string_datapack_option_without_changes() {
             "options.datapack-folder must be a string",
         ));
     assert_eq!(snapshot(&project), before);
+}
+
+#[test]
+fn smoke_sync_rejects_identity_and_pin_drift_without_mutation() {
+    for (platform, id, version, success) in [
+        ("modrinth", "AANobbMI", None, true),
+        ("modrinth", "AANobbMI", Some("installed"), true),
+        ("modrinth", "AANobbMI", Some("changed"), false),
+        ("modrinth", "different-project", None, false),
+        ("curseforge", "12345", None, false),
+    ] {
+        for dry_run in [true, false] {
+            let project = TestProject::workflow_fixture("drift", "fabric", "1.21.1");
+            let mut manifest = format!(
+                "empack:\n  minecraft_version: '1.21.1'\n  loader: fabric\n  dependencies:\n    sodium:\n      status: resolved\n      title: Sodium\n      platform: {platform}\n      project_id: '{id}'\n"
+            );
+            if let Some(version) = version {
+                manifest.push_str(&format!("      version: '{version}'\n"));
+            }
+            std::fs::write(project.dir().join("empack.yml"), manifest).unwrap();
+            let mods = project.dir().join("pack/mods");
+            std::fs::create_dir_all(&mods).unwrap();
+            let metadata =
+                "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'installed'\n";
+            std::fs::write(mods.join("sodium.pw.toml"), metadata).unwrap();
+            let before = snapshot(&project);
+            let mut cmd = command(&project);
+            cmd.arg("sync");
+            if dry_run {
+                cmd.arg("--dry-run");
+            }
+            if success {
+                cmd.assert().success();
+            } else {
+                cmd.assert().failure().stderr(predicates::str::contains(
+                    "Automatic replacement is not supported",
+                ));
+            }
+            assert_eq!(snapshot(&project), before);
+            assert_eq!(
+                std::fs::read_to_string(mods.join("sodium.pw.toml")).unwrap(),
+                metadata
+            );
+        }
+    }
 }

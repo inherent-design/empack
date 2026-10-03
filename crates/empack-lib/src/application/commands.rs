@@ -4171,17 +4171,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         version: None,
                     };
 
-                    if !session.config().app_config().dry_run
-                        && let Err(e) = config_manager.add_dependency(slug, record.clone())
-                    {
-                        session.display().status().warning(&format!(
-                            "Failed to update empack.yml for '{}': {}",
-                            search.title, e
-                        ));
-                        unresolved_slugs.insert(slug.clone());
-                        resolution_error.get_or_insert_with(|| e.into());
-                        continue;
-                    }
                     empack_config
                         .empack
                         .dependencies
@@ -4211,6 +4200,10 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     let project_plan = config_manager
         .create_project_plan_from_config(&empack_config)
         .context("Failed to load empack.yml configuration")?;
+
+    session
+        .packwiz()
+        .validate_installed_intent(&workdir, &project_plan)?;
 
     let local_dependency_issues =
         validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
@@ -4324,6 +4317,15 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     // Show planned actions
     if planned_actions.is_empty() {
+        if resolution_error.is_none() && !session.config().app_config().dry_run {
+            for (slug, _) in &search_entries {
+                if let Some(DependencyEntry::Resolved(record)) =
+                    empack_config.empack.dependencies.get(slug)
+                {
+                    config_manager.add_dependency(slug, record.clone())?;
+                }
+            }
+        }
         if let Some(error) = resolution_error {
             return Err(error.context(format!(
                 "{} action(s) failed during resolution. Run sync again to retry.",
@@ -4400,6 +4402,13 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .status()
             .complete("Dry run complete - no changes applied");
         return Ok(());
+    }
+
+    for (slug, _) in &search_entries {
+        if let Some(DependencyEntry::Resolved(record)) = empack_config.empack.dependencies.get(slug)
+        {
+            config_manager.add_dependency(slug, record.clone())?;
+        }
     }
 
     // Execute planned actions

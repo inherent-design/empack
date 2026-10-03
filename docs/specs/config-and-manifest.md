@@ -156,7 +156,7 @@ Current sync rules depend on the config model:
 - Dry-run sync builds the operational plan from in-memory resolved intent without persisting search resolutions.
 - Search resolution and planning failures make sync fail, even when other actions succeed. The first resolution error remains in the error chain for exit-code classification.
 - Local entries enter the operational `ProjectPlan` directly without packwiz resolution.
-- Resolved dependency keys are compared against installed `.pw.toml` filename stems.
+- Resolved dependency keys are compared against installed `.pw.toml` filename stems. Live sync also validates provider, project ID, content type, and explicit version/file pins before persisting resolutions or executing actions. Unsupported replacement fails with an explicit diagnostic; unpinned entries retain their installed version when identity matches. Duplicate installed keys are errors.
 - `clean` preserves `empack.yml` and `pack/`.
 - Destructive reset of `empack.yml` and `pack/` is an explicit init rollback / `init --force` path, not a normal state-machine clean transition.
 
@@ -165,3 +165,5 @@ Current sync rules depend on the config model:
 Forced initialization defers the existing-project reset until input resolution and validation succeed, the user confirms ordinary initialization, and dry-run has returned. Declining ordinary initialization or previewing either initialization path preserves the project tree. Execution after that point remains a destructive reset; it does not provide rollback if replacement initialization fails.
 
 Dependency entries with `status: resolved` or `status: local` must satisfy that record schema. Unknown fields and invalid status values are errors. Search entries omit `status` and accept only `title`, `type`, and `platform`; a malformed explicit record never falls back to a search.
+
+Sync resolves search entries in memory in both execution and preview modes. Persistence starts after planning and installed-intent validation. Successful planning does not provide a transaction across packwiz and the manifest; automatic installed-dependency replacement remains unsupported.

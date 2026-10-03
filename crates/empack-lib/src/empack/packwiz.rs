@@ -49,6 +49,13 @@ pub trait PackwizOps {
     /// Get list of currently installed mods from packwiz
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>>;
 
+    /// Reject installed identity or version drift that membership-only sync cannot replace safely.
+    fn validate_installed_intent(
+        &self,
+        workdir: &Path,
+        plan: &crate::empack::config::ProjectPlan,
+    ) -> crate::Result<()>;
+
     /// Get the expected cache path for packwiz-installer-bootstrap.jar
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf>;
 
@@ -75,6 +82,65 @@ impl<'a> LivePackwizOps<'a> {
             filesystem,
             packwiz_bin,
         }
+    }
+    fn installed_paths(
+        &self,
+        workdir: &Path,
+    ) -> crate::Result<std::collections::BTreeMap<String, PathBuf>> {
+        let pack_dir = workdir.join("pack");
+        let mut scan_dirs = HashSet::from([
+            "mods".to_string(),
+            "resourcepacks".to_string(),
+            "shaderpacks".to_string(),
+            "datapacks".to_string(),
+        ]);
+        if self.filesystem.exists(&workdir.join("empack.yml"))
+            && let Some(folder) = self
+                .filesystem
+                .config_manager(workdir.to_path_buf())
+                .load_empack_config()?
+                .empack
+                .datapack_folder
+        {
+            scan_dirs.insert(folder);
+        }
+        let pack_path = pack_dir.join("pack.toml");
+        if self.filesystem.exists(&pack_path) {
+            let metadata: toml::Value =
+                toml::from_str(&self.filesystem.read_to_string(&pack_path)?)?;
+            if let Some(folder) = metadata
+                .get("options")
+                .and_then(|o| o.get("datapack-folder"))
+            {
+                let folder = folder.as_str().ok_or_else(|| {
+                    anyhow::anyhow!("pack.toml options.datapack-folder must be a string")
+                })?;
+                scan_dirs.insert(folder.to_string());
+            }
+        }
+
+        let mut installed = std::collections::BTreeMap::new();
+        for folder in &scan_dirs {
+            let dir = pack_dir.join(folder);
+            if !self.filesystem.exists(&dir) {
+                continue;
+            }
+            let file_list = self.filesystem.get_file_list(&dir)?;
+            for path in &file_list {
+                if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
+                    && let Some(slug) = file_name.strip_suffix(".pw.toml")
+                    && !slug.is_empty()
+                {
+                    if let Some(previous) = installed.insert(slug.to_string(), path.clone())
+                        && previous != *path
+                    {
+                        anyhow::bail!("Duplicate installed dependency key: {slug}");
+                    }
+                }
+            }
+        }
+
+        Ok(installed)
     }
 }
 
@@ -190,56 +256,70 @@ impl PackwizOps for LivePackwizOps<'_> {
     }
 
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>> {
-        let pack_dir = workdir.join("pack");
-        let mut scan_dirs = HashSet::from([
-            "mods".to_string(),
-            "resourcepacks".to_string(),
-            "shaderpacks".to_string(),
-            "datapacks".to_string(),
-        ]);
-        if self.filesystem.exists(&workdir.join("empack.yml"))
-            && let Some(folder) = self
-                .filesystem
-                .config_manager(workdir.to_path_buf())
-                .load_empack_config()?
-                .empack
-                .datapack_folder
-        {
-            scan_dirs.insert(folder);
-        }
-        let pack_path = pack_dir.join("pack.toml");
-        if self.filesystem.exists(&pack_path) {
-            let metadata: toml::Value =
-                toml::from_str(&self.filesystem.read_to_string(&pack_path)?)?;
-            if let Some(folder) = metadata
-                .get("options")
-                .and_then(|o| o.get("datapack-folder"))
-            {
-                let folder = folder.as_str().ok_or_else(|| {
-                    anyhow::anyhow!("pack.toml options.datapack-folder must be a string")
-                })?;
-                scan_dirs.insert(folder.to_string());
-            }
-        }
+        Ok(self.installed_paths(workdir)?.into_keys().collect())
+    }
 
-        let mut installed = HashSet::new();
-        for folder in &scan_dirs {
-            let dir = pack_dir.join(folder);
-            if !self.filesystem.exists(&dir) {
+    fn validate_installed_intent(
+        &self,
+        workdir: &Path,
+        plan: &crate::empack::config::ProjectPlan,
+    ) -> crate::Result<()> {
+        let installed = self.installed_paths(workdir)?;
+        for dependency in &plan.dependencies {
+            let crate::empack::config::DependencySource::Platform {
+                project_id,
+                project_platform,
+                version_pin,
+            } = &dependency.source
+            else {
                 continue;
+            };
+            let Some(path) = installed.get(&dependency.key) else {
+                continue;
+            };
+            let pack = workdir.join("pack");
+            let installed_type = if path.starts_with(pack.join("mods")) {
+                crate::primitives::ProjectType::Mod
+            } else if path.starts_with(pack.join("resourcepacks")) {
+                crate::primitives::ProjectType::ResourcePack
+            } else if path.starts_with(pack.join("shaderpacks")) {
+                crate::primitives::ProjectType::Shader
+            } else {
+                crate::primitives::ProjectType::Datapack
+            };
+            if installed_type != dependency.project_type {
+                anyhow::bail!(
+                    "Installed dependency '{}' has a different content type. Automatic replacement is not supported; remove it explicitly and sync again.",
+                    dependency.key
+                );
             }
-            let file_list = self.filesystem.get_file_list(&dir)?;
-            for path in &file_list {
-                if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
-                    && let Some(slug) = file_name.strip_suffix(".pw.toml")
-                    && !slug.is_empty()
-                {
-                    installed.insert(slug.to_string());
-                }
+            let metadata: toml::Value = toml::from_str(&self.filesystem.read_to_string(path)?)?;
+            let update = metadata
+                .get("update")
+                .and_then(|v| v.get(project_platform.to_string()));
+            let (id_field, version_field) = match project_platform {
+                crate::primitives::ProjectPlatform::Modrinth => ("mod-id", "version"),
+                crate::primitives::ProjectPlatform::CurseForge => ("project-id", "file-id"),
+            };
+            let field = |key| {
+                update.and_then(|v| v.get(key)).and_then(|v| match v {
+                    toml::Value::String(s) => Some(s.clone()),
+                    toml::Value::Integer(n) => Some(n.to_string()),
+                    _ => None,
+                })
+            };
+            if field(id_field).as_ref() != Some(project_id)
+                || version_pin
+                    .as_ref()
+                    .is_some_and(|pin| field(version_field).as_ref() != Some(pin))
+            {
+                anyhow::bail!(
+                    "Installed dependency '{}' differs from its declared provider, project, or version. Automatic replacement is not supported; remove it explicitly and sync again.",
+                    dependency.key
+                );
             }
         }
-
-        Ok(installed)
+        Ok(())
     }
 
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
@@ -502,6 +582,14 @@ minecraft = "{}"
 
     fn get_installed_mods(&self, _workdir: &Path) -> crate::Result<HashSet<String>> {
         Ok(self.installed_mods.clone())
+    }
+
+    fn validate_installed_intent(
+        &self,
+        _workdir: &Path,
+        _plan: &crate::empack::config::ProjectPlan,
+    ) -> crate::Result<()> {
+        Ok(())
     }
 
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
