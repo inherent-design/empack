@@ -159,3 +159,7 @@ Current sync rules depend on the config model:
 - Resolved dependency keys are compared against installed `.pw.toml` filename stems.
 - `clean` preserves `empack.yml` and `pack/`.
 - Destructive reset of `empack.yml` and `pack/` is an explicit init rollback / `init --force` path, not a normal state-machine clean transition.
+
+## Initialization Preview
+
+Forced initialization defers the existing-project reset until input resolution and validation succeed, the user confirms ordinary initialization, and dry-run has returned. Declining ordinary initialization or previewing either initialization path preserves the project tree. Execution after that point remains a destructive reset; it does not provide rollback if replacement initialization fails.

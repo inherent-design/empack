@@ -386,6 +386,38 @@ mod handle_init_tests {
     use super::*;
 
     #[tokio::test]
+    async fn forced_init_preview_and_decline_preserve_entire_project() {
+        for (dry_run, confirm) in [(true, true), (false, false)] {
+            let workdir = mock_root().join("force-preserve");
+            let fs = MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_built_project(workdir.clone())
+                .with_file(workdir.join("pack/mods/custom.jar"), "custom".into())
+                .with_file(workdir.join("templates/keep.txt"), "template".into());
+            let before = fs.files.lock().unwrap().clone();
+            let dirs = fs.directories.lock().unwrap().clone();
+            let session = MockCommandSession::new()
+                .with_filesystem(fs)
+                .with_config(MockConfigProvider::new(crate::AppConfig { dry_run, ..Default::default() }))
+                .with_interactive(MockInteractiveProvider::new().with_confirm(confirm));
+            handle_init(&session, &InitArgs {
+                force: true,
+                modloader: Some("fabric".into()),
+                mc_version: Some("1.21.1".into()),
+                author: Some("Author".into()),
+                ..Default::default()
+            }).await.unwrap();
+            let files = session.filesystem_provider.files.lock().unwrap().iter()
+                .filter(|(path, _)| path.starts_with(&workdir)).map(|(p, v)| (p.clone(), v.clone())).collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(files, before);
+            let after_dirs = session.filesystem_provider.directories.lock().unwrap().iter()
+                .filter(|path| path.starts_with(&workdir)).cloned().collect::<std::collections::HashSet<_>>();
+            let dirs = dirs.into_iter().filter(|path| path.starts_with(&workdir)).collect();
+            assert_eq!(after_dirs, dirs);
+        }
+    }
+
+    #[tokio::test]
     async fn it_initializes_new_project() {
         let workdir = mock_root().join("empty-project");
         let target_dir = workdir.join("test-pack");
@@ -1111,6 +1143,25 @@ mod handle_init_tests {
 
 mod handle_init_from_source_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn forced_import_preview_preserves_entire_project() {
+        let base = mock_root().join("import-preview");
+        let target = base.join("target");
+        let archive = create_mrpack(MR_MANIFEST_JSON);
+        let fs = MockFileSystemProvider::new()
+            .with_current_dir(base)
+            .with_built_project(target.clone())
+            .with_binary_file(archive.path().to_path_buf(), std::fs::read(archive.path()).unwrap());
+        let before = fs.files.lock().unwrap().clone();
+        let dirs = fs.directories.lock().unwrap().clone();
+        let session = MockCommandSession::new().with_filesystem(fs)
+            .with_config(MockConfigProvider::new(crate::AppConfig { dry_run: true, ..Default::default() }));
+        handle_init_from_source(&session, &archive.path().to_string_lossy(), Some("target".into()),
+            true, None, None, None).await.unwrap();
+        assert_eq!(*session.filesystem_provider.files.lock().unwrap(), before);
+        assert_eq!(*session.filesystem_provider.directories.lock().unwrap(), dirs);
+    }
 
     #[tokio::test]
     async fn it_rejects_missing_local_source() {

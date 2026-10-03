@@ -268,6 +268,7 @@ async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
         (base_dir, false)
     };
 
+    let mut reset_existing = false;
     // Check state only if the directory already exists
     if !needs_mkdir {
         let manager =
@@ -294,15 +295,8 @@ async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
             ));
         }
 
-        if args.force
-            && (current_state != PackState::Uninitialized || layout.is_partial_configuration())
-        {
-            session
-                .display()
-                .status()
-                .checking("Resetting existing project state for --force init");
-            reset_project_for_force_init(session, &target_dir)?;
-        }
+        reset_existing = args.force
+            && (current_state != PackState::Uninitialized || layout.is_partial_configuration());
     }
 
     session
@@ -704,6 +698,10 @@ async fn handle_init(session: &dyn Session, args: &InitArgs) -> Result<()> {
         )?;
     }
 
+    if reset_existing {
+        reset_project_for_force_init(session, &target_dir)?;
+    }
+
     let created_dir = needs_mkdir;
 
     // Create directory if needed (deferred from path resolution)
@@ -965,6 +963,7 @@ async fn handle_init_from_source(
         base_dir.join(&safe_name)
     };
 
+    let mut reset_existing = false;
     if session.filesystem().exists(&target_dir) {
         let manager =
             crate::empack::state::PackStateManager::new(target_dir.clone(), session.filesystem());
@@ -989,14 +988,8 @@ async fn handle_init_from_source(
             ));
         }
 
-        if force && (current_state != PackState::Uninitialized || layout.is_partial_configuration())
-        {
-            session
-                .display()
-                .status()
-                .checking("Resetting existing project state for --force init");
-            reset_project_for_force_init(session, &target_dir)?;
-        }
+        reset_existing = force
+            && (current_state != PackState::Uninitialized || layout.is_partial_configuration());
     }
 
     session.display().status().info(&format!(
@@ -1054,6 +1047,10 @@ async fn handle_init_from_source(
             .status()
             .complete("Dry run complete; no changes applied");
         return Ok(());
+    }
+
+    if reset_existing {
+        reset_project_for_force_init(session, &target_dir)?;
     }
 
     // Phase C: Execute
