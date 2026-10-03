@@ -145,3 +145,7 @@ Build cleanup has two layers:
 `build --clean` also clears any pending restricted-build continuation state before rebuilding.
 
 State-machine cleanup for `Configured` projects is documented in [state-machine.md](state-machine.md).
+
+## Template Data
+
+Initialization installs client and server templates with their placeholders intact. Builds render them using current pack metadata. The embedded Bash installer uses `shell_quote` for metadata assignments and `printf` for display, so names and versions remain literal data. Existing project templates are user-owned; update old installer templates to use `{{shell_quote NAME}}` and `{{shell_quote VERSION}}` in shell assignments before distributing them. Raw metadata does not belong in shell source or generated comments.

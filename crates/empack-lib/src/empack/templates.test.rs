@@ -62,8 +62,8 @@ fn test_template_installer_full_install() {
     assert!(gitignore_content.contains("dist/"));
 
     let instance_content = std::fs::read_to_string(temp_dir.path().join("templates").join("client").join("instance.cfg.template")).unwrap();
-    assert!(instance_content.contains("name=Test Pack"));
-    assert!(instance_content.contains("ExportAuthor=TestAuthor"));
+    assert!(instance_content.contains("name={{NAME}}"));
+    assert!(instance_content.contains("ExportAuthor={{AUTHOR}}"));
 }
 
 #[test]
@@ -240,8 +240,9 @@ minecraft = "1.21.1"
         temp_dir.path().join("templates").join("server").join("install_pack.sh.template")
     ).unwrap();
 
-    assert!(install_script.contains("# MyModpack v2.1.0 Server Installer"));
-    assert!(install_script.contains("Installing MyModpack v2.1.0 server pack"));
+    let rendered = installer.engine.render_string(&install_script).unwrap();
+    assert!(rendered.contains("PACK_NAME='MyModpack'"));
+    assert!(rendered.contains("PACK_VERSION='2.1.0'"));
 }
 
 #[test]
@@ -292,7 +293,38 @@ fn test_installer_with_modloader_variables() {
     )
     .unwrap();
     assert!(
-        install_sh.contains("MyPack v1.0.0"),
-        "install_pack.sh should contain substituted pack name and version"
+        install_sh.contains("{{shell_quote NAME}}"),
+        "install_pack.sh should retain build-time placeholders"
     );
+}
+
+#[test]
+fn installed_templates_retain_build_time_placeholders() {
+    let dir = TempDir::new().unwrap();
+    let fs = LiveFileSystemProvider;
+    let mut installer = TemplateInstaller::new(&fs);
+    installer.configure("Old Name", "Author", "1.21.1", "old");
+    installer.install_client_templates(dir.path()).unwrap();
+    installer.install_server_templates(dir.path()).unwrap();
+    let template = std::fs::read_to_string(dir.path().join("templates/client/instance.cfg.template")).unwrap();
+    assert!(template.contains("{{NAME}}"));
+    installer.configure("New Name", "Author", "1.21.1", "new");
+    assert!(installer.engine.render_string(&template).unwrap().contains("New Name"));
+}
+
+#[cfg(unix)]
+#[test]
+fn generated_installer_treats_shell_metadata_as_data() {
+    let dir = TempDir::new().unwrap();
+    let mut engine = TemplateEngine::new();
+    let name = "$(touch injected); `touch injected2` ' quoted\n$(touch injected3)";
+    engine.set_pack_variables(name, "Author", "1.21.1", "$(touch injected4)");
+    let script = engine.render_template("install_pack.sh").unwrap();
+    std::fs::write(dir.path().join("install.sh"), script).unwrap();
+    let output = std::process::Command::new("bash").arg("install.sh").arg("/usr/bin/true")
+        .current_dir(dir.path()).output().unwrap();
+    assert!(String::from_utf8_lossy(&output.stdout).contains(name));
+    for file in ["injected", "injected2", "injected3", "injected4"] {
+        assert!(!dir.path().join(file).exists(), "shell executed metadata: {file}");
+    }
 }
