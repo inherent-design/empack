@@ -2601,7 +2601,12 @@ fn build_tracked_local_dependency(
         tracked_local_dependency_relative_path(project_type, filename, datapack_folder.as_deref());
     let dep_key = tracked_local_dependency_key(filename);
     ensure_tracked_local_dependency_key_available(session, workdir, &dep_key, &relative_path)?;
-    let dest_path = workdir.join(PathBuf::from(&relative_path));
+    let validated_file = crate::empack::paths::TrackedProjectFile::validate(
+        session.filesystem(),
+        workdir,
+        &relative_path,
+    )?;
+    let dest_path = validated_file.path();
     if let Some(parent) = dest_path.parent() {
         session
             .filesystem()
@@ -2610,7 +2615,7 @@ fn build_tracked_local_dependency(
     }
     session
         .filesystem()
-        .write_bytes(&dest_path, bytes)
+        .write_bytes(dest_path, bytes)
         .with_context(|| {
             format!(
                 "failed to write local dependency to {}",
@@ -2823,12 +2828,6 @@ fn validate_tracked_local_dependency_relative_path(
     Ok(rel)
 }
 
-fn resolve_tracked_local_dependency_path(workdir: &Path, path: &str) -> Result<PathBuf> {
-    let rel = validate_tracked_local_dependency_relative_path(path)
-        .map_err(|reason| anyhow::anyhow!("Tracked local dependency {}: {}", reason, path))?;
-    Ok(workdir.join(rel))
-}
-
 fn validate_local_dependencies(
     filesystem: &dyn FileSystemProvider,
     workdir: &Path,
@@ -2917,16 +2916,11 @@ fn validate_build_project_plan(session: &dyn Session, workdir: &Path) -> Result<
     }
     for dependency in &project_plan.dependencies {
         if let DependencySource::Local { path, .. } = &dependency.source {
-            let relative = Path::new(path)
-                .strip_prefix("pack")
-                .context("Tracked local build inputs must be stored under pack/")?;
-            anyhow::ensure!(
-                !relative.as_os_str().is_empty(),
-                "Tracked local input must name a file"
-            );
-            session
-                .filesystem()
-                .validate_output_path(workdir, &workdir.join(path))?;
+            crate::empack::paths::TrackedProjectFile::validate(
+                session.filesystem(),
+                workdir,
+                path,
+            )?;
         }
     }
 
@@ -3034,23 +3028,19 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             .with_context(|| format!("failed to inspect dependency '{mod_name}'"))?;
 
         if let Some((dependency_key, DependencyEntry::Local(record))) = dependency_entry {
-            let local_path = resolve_tracked_local_dependency_path(&workdir, &record.path)?;
-            if session.filesystem().exists(&local_path) {
-                if session.filesystem().is_directory(&local_path) {
-                    session
-                        .filesystem()
-                        .remove_dir_all(&local_path)
-                        .with_context(|| {
-                            format!("failed to remove local dependency {}", local_path.display())
-                        })?;
-                } else {
-                    session
-                        .filesystem()
-                        .remove_file(&local_path)
-                        .with_context(|| {
-                            format!("failed to remove local dependency {}", local_path.display())
-                        })?;
-                }
+            let validated_file = crate::empack::paths::TrackedProjectFile::validate(
+                session.filesystem(),
+                &workdir,
+                &record.path,
+            )?;
+            let local_path = validated_file.path();
+            if session.filesystem().exists(local_path) {
+                session
+                    .filesystem()
+                    .remove_file(local_path)
+                    .with_context(|| {
+                        format!("failed to remove local dependency {}", local_path.display())
+                    })?;
             } else {
                 session.display().status().warning(&format!(
                     "Tracked local file was already missing: {}",

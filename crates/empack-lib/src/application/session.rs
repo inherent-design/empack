@@ -69,6 +69,10 @@ pub trait FileSystemProvider {
 
     fn is_directory(&self, path: &Path) -> bool;
 
+    fn is_regular_file(&self, path: &Path) -> bool {
+        self.exists(path) && !self.is_directory(path)
+    }
+
     fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
 
     fn create_dir_all(&self, path: &Path) -> Result<()>;
@@ -406,6 +410,10 @@ impl FileSystemProvider for LiveFileSystemProvider {
 
     fn is_directory(&self, path: &Path) -> bool {
         path.is_dir()
+    }
+
+    fn is_regular_file(&self, path: &Path) -> bool {
+        std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file())
     }
 
     fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {

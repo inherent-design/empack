@@ -497,3 +497,60 @@ printf "name = 'Required library'\n[update.modrinth]\nmod-id = 'required'\nversi
         assert!(project.dir().join("pack/mods/required.pw.toml").exists());
     }
 }
+
+fn record_local_removal_fixture(project: &TestProject, path: &str) {
+    use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
+    use empack_lib::empack::config::{DependencyEntry, DependencyStatus, LocalDependencyRecord};
+    LiveFileSystemProvider
+        .config_manager(project.dir().to_path_buf())
+        .add_dependency_entry(
+            "local",
+            DependencyEntry::Local(LocalDependencyRecord {
+                status: DependencyStatus::Local,
+                title: "Local".into(),
+                project_type: empack_lib::primitives::ProjectType::Mod,
+                path: path.into(),
+                source_url: None,
+                sha256: "unused-for-removal".into(),
+            }),
+        )
+        .unwrap();
+}
+
+#[test]
+fn smoke_local_removal_cannot_delete_a_directory() {
+    for path in ["pack", "pack/mods"] {
+        let project = TestProject::workflow_fixture("local-remove", "fabric", "1.21.1");
+        std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
+        let sentinel = project.dir().join("pack/mods/keep.jar");
+        std::fs::write(&sentinel, b"keep").unwrap();
+        record_local_removal_fixture(&project, path);
+        let before = snapshot(&project);
+        command(&project)
+            .args(["remove", "local"])
+            .assert()
+            .failure();
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
+        assert_eq!(snapshot(&project), before);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn smoke_local_removal_cannot_follow_a_symlinked_ancestor() {
+    let project = TestProject::workflow_fixture("local-remove-link", "fabric", "1.21.1");
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("sentinel.jar"), b"keep outside").unwrap();
+    std::os::unix::fs::symlink(outside.path(), project.dir().join("pack/linked")).unwrap();
+    record_local_removal_fixture(&project, "pack/linked/sentinel.jar");
+    let before = snapshot(&project);
+    command(&project)
+        .args(["remove", "local"])
+        .assert()
+        .failure();
+    assert_eq!(
+        std::fs::read(outside.path().join("sentinel.jar")).unwrap(),
+        b"keep outside"
+    );
+    assert_eq!(snapshot(&project), before);
+}

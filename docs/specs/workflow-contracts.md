@@ -12,6 +12,8 @@ Retention is conservative because packwiz metadata does not establish a complete
 
 ## Mutation outcomes
 
+Tracked local files use a validated path under `pack/`. Existing destinations must be regular files, and ancestor checks apply before writes, builds and removal. Removing a file record never authorizes recursive directory deletion.
+
 Project locks serialize live empack mutations; atomic replacement protects individual documents. Backend installation and manifest publication remain separate effects. `InstalledButUnrecorded` reports an installation whose manifest update failed, with recovery guidance. Commands return failure rather than counting that dependency as fully added.
 
 A future recovery journal should record operation identity, preconditions, completed effects and pending publication. It should support reconciliation after interruption before promising rollback. This revision does not claim a transaction across packwiz and empack files.

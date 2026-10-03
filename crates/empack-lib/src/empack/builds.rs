@@ -1944,9 +1944,11 @@ impl<'a> BuildOrchestrator<'a> {
         let size = self
             .session
             .filesystem()
-            .read_to_string(path)
-            .map(|content| content.len() as u64)
-            .unwrap_or(0);
+            .file_metadata(path)
+            .map_err(|error| BuildError::ConfigError {
+                reason: format!("Failed to stat artifact: {error}"),
+            })?
+            .len;
 
         Ok(BuildArtifact {
             name,

@@ -548,7 +548,7 @@ fn test_create_artifact_missing_file_returns_validation_error() {
 }
 
 #[test]
-fn test_create_artifact_binary_file_falls_back_to_zero_size() {
+fn test_create_artifact_reports_binary_byte_length() {
     let mock = MockBuildOrchestrator::new();
     let filesystem = mock.session.filesystem();
     let artifact_path = mock.workdir().join("binary-artifact.zip");
@@ -561,7 +561,7 @@ fn test_create_artifact_binary_file_falls_back_to_zero_size() {
 
     assert_eq!(artifact.name, "binary-artifact.zip");
     assert_eq!(artifact.path, artifact_path);
-    assert_eq!(artifact.size, 0);
+    assert_eq!(artifact.size, 4);
 }
 
 #[test]

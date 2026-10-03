@@ -36,6 +36,50 @@ pub fn validate_relative_destination(root: &Path, destination: &Path) -> Result<
     Ok(())
 }
 
+/// A file under the managed pack tree, validated against the current filesystem.
+/// Revalidate immediately before mutation; this is not a filesystem capability.
+#[derive(Debug, Clone)]
+pub struct TrackedProjectFile(std::path::PathBuf);
+
+impl TrackedProjectFile {
+    pub fn validate(
+        fs: &dyn crate::application::session::FileSystemProvider,
+        root: &Path,
+        relative: &str,
+    ) -> Result<Self> {
+        let relative = Path::new(relative);
+        anyhow::ensure!(
+            relative.is_relative(),
+            "Tracked local dependency path must be relative"
+        );
+        anyhow::ensure!(
+            !relative
+                .components()
+                .any(|c| matches!(c, Component::ParentDir)),
+            "Tracked local dependency path escapes the project directory"
+        );
+        let inside = relative.strip_prefix("pack").map_err(|_| {
+            anyhow::anyhow!("Tracked local build inputs must be stored under pack/")
+        })?;
+        anyhow::ensure!(
+            !inside.as_os_str().is_empty(),
+            "Tracked local dependency must name a file under pack/"
+        );
+        let path = root.join(relative);
+        fs.validate_output_path(root, &path)?;
+        anyhow::ensure!(
+            !fs.exists(&path) || fs.is_regular_file(&path),
+            "Tracked local dependency is not a regular file: {}",
+            path.display()
+        );
+        Ok(Self(path))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
