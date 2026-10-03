@@ -2892,18 +2892,7 @@ fn validate_local_dependencies(
         .collect()
 }
 
-fn project_plan_has_local_dependencies(project_plan: &crate::empack::config::ProjectPlan) -> bool {
-    project_plan
-        .dependencies
-        .iter()
-        .any(|dependency| matches!(dependency.source, DependencySource::Local { .. }))
-}
-
-fn validate_build_project_plan(
-    session: &dyn Session,
-    workdir: &Path,
-    build_targets: &[BuildTarget],
-) -> Result<()> {
+fn validate_build_project_plan(session: &dyn Session, workdir: &Path) -> Result<()> {
     let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
     let project_plan = config_manager
         .create_project_plan()
@@ -2926,12 +2915,19 @@ fn validate_build_project_plan(
             }
         );
     }
-    if build_targets.contains(&BuildTarget::Mrpack)
-        && project_plan_has_local_dependencies(&project_plan)
-    {
-        anyhow::bail!(
-            "Tracked local dependencies are not yet supported for mrpack exports. Remove the mrpack target or replace those entries with resolved platform dependencies."
-        );
+    for dependency in &project_plan.dependencies {
+        if let DependencySource::Local { path, .. } = &dependency.source {
+            let relative = Path::new(path)
+                .strip_prefix("pack")
+                .context("Tracked local build inputs must be stored under pack/")?;
+            anyhow::ensure!(
+                !relative.as_os_str().is_empty(),
+                "Tracked local input must name a file"
+            );
+            session
+                .filesystem()
+                .validate_output_path(workdir, &workdir.join(path))?;
+        }
     }
 
     Ok(())
@@ -3197,7 +3193,7 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
 
     // Parse build targets
     let requested_targets = parse_build_targets(args.targets.clone())?;
-    validate_build_project_plan(session, &manager.workdir, &requested_targets)?;
+    validate_build_project_plan(session, &manager.workdir)?;
     let build_targets = crate::empack::builds::plan_build_targets(&requested_targets);
 
     session
@@ -3362,7 +3358,7 @@ async fn continue_pending_restricted_build(
 ) -> Result<()> {
     let (pending, build_targets, archive_format) =
         load_pending_restricted_build_context(session, workdir)?;
-    validate_build_project_plan(session, workdir, &build_targets)?;
+    validate_build_project_plan(session, workdir)?;
     continue_pending_restricted_build_inner(
         session,
         workdir,

@@ -114,3 +114,78 @@ fn e2e_clean_removes_artifacts() {
             .is_none();
     assert!(dist_empty, "dist/ should be empty or absent after clean");
 }
+
+#[test]
+fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
+    use empack_lib::application::session::{
+        ArchiveProvider, FileSystemProvider, LiveArchiveProvider, LiveFileSystemProvider,
+    };
+    use empack_lib::empack::config::{DependencyEntry, DependencyStatus, LocalDependencyRecord};
+    use empack_lib::primitives::ProjectType;
+    empack_tests::skip_if_no_packwiz!();
+    empack_tests::skip_if_no_java!();
+    let project = TestProject::workflow_fixture("local-content", "fabric", "1.21.1");
+    let bytes = b"tracked local resource bytes";
+    std::fs::create_dir_all(project.dir().join("pack/resourcepacks")).unwrap();
+    std::fs::write(project.dir().join("pack/resourcepacks/local.zip"), bytes).unwrap();
+    LiveFileSystemProvider
+        .config_manager(project.dir().to_path_buf())
+        .add_dependency_entry(
+            "local",
+            DependencyEntry::Local(LocalDependencyRecord {
+                status: DependencyStatus::Local,
+                title: "Local".into(),
+                project_type: ProjectType::ResourcePack,
+                path: "pack/resourcepacks/local.zip".into(),
+                source_url: None,
+                sha256: "1c7bdeb93532e2e899d11fa3ebd0cf1a78c1753645e8b92e504721b6649762f8".into(),
+            }),
+        )
+        .unwrap();
+    for target in ["mrpack", "client", "server"] {
+        assert_cmd::Command::from_std(project.cmd())
+            .args(["build", target])
+            .timeout(std::time::Duration::from_secs(90))
+            .assert()
+            .success();
+        let suffix = if target == "mrpack" {
+            ".mrpack".to_string()
+        } else {
+            format!("-{target}.zip")
+        };
+        let artifact = assert_dist_artifact_suffix(project.dir(), &suffix);
+        let extracted = project.dir().join(format!("inspect-{target}"));
+        LiveArchiveProvider
+            .extract_zip(&artifact, &extracted)
+            .unwrap();
+        let relative = if target == "mrpack" {
+            "overrides/resourcepacks/local.zip"
+        } else if target == "client" {
+            ".minecraft/resourcepacks/local.zip"
+        } else {
+            "resourcepacks/local.zip"
+        };
+        assert_eq!(
+            std::fs::read(extracted.join(relative)).unwrap_or_else(|error| panic!(
+                "{target}: {}: {error}; entries={:?}",
+                extracted.join(relative).display(),
+                LiveFileSystemProvider.get_file_list(&extracted)
+            )),
+            bytes,
+            "{target}"
+        );
+    }
+    std::fs::write(project.dir().join("local.zip"), bytes).unwrap();
+    let manifest = project.dir().join("empack.yml");
+    let original = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        original.replace("pack/resourcepacks/local.zip", "local.zip"),
+    )
+    .unwrap();
+    assert_cmd::Command::from_std(project.cmd())
+        .args(["--dry-run", "build", "client"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("must be stored under pack/"));
+}

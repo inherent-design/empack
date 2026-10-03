@@ -20,7 +20,7 @@ A future recovery journal should record operation identity, preconditions, compl
 
 Common imported content belongs in `pack/`. Client and server layers remain in `overrides/client/` and `overrides/server/`. Each distribution stages common content followed by its own layer. Mrpack exports preserve all three environments and their precedence.
 
-Production target planning inserts one fresh mrpack export before lightweight client/server targets. A file left by a previous invocation is not evidence of freshness. Archive parsing is file-backed and bounds compressed input, manifests, entries and declared extraction size. Import destinations use the same ancestor validation as other confined workflows.
+Production target planning inserts one fresh mrpack export before lightweight client/server targets. A file left by a previous invocation is not evidence of freshness. Tracked local files under `pack/` use the same export path after SHA-256 and ancestor validation; the CLI no longer rejects this supported packwiz operation. Archive parsing is file-backed and bounds compressed input, manifests, entries and declared extraction size. Import destinations use the same ancestor validation as other confined workflows.
 
 ## Restricted download identity
 

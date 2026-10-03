@@ -8529,7 +8529,7 @@ mod tracked_local_dependency_tests {
     }
 
     #[tokio::test]
-    async fn build_mrpack_rejects_tracked_local_dependencies() {
+    async fn build_mrpack_accepts_valid_tracked_local_dependencies() {
         let workdir = mock_root().join("build-mrpack-local-dependency");
         let relative_path = "pack/resourcepacks/example-pack.zip";
         let absolute_path = workdir.join(relative_path);
@@ -8540,7 +8540,7 @@ mod tracked_local_dependency_tests {
             .with_current_dir(workdir.clone())
             .with_configured_project(workdir.clone())
             .with_binary_file(absolute_path, bytes);
-        let session = MockCommandSession::new().with_filesystem(filesystem);
+        let session = MockCommandSession::new().with_filesystem(filesystem).with_process(MockProcessProvider::new().with_mrpack_export_side_effects());
 
         session
             .filesystem()
@@ -8558,22 +8558,15 @@ mod tracked_local_dependency_tests {
             )
             .expect("add local dependency");
 
-        let error = handle_build(
+        let result = handle_build(
             &session,
             &BuildArgs {
                 targets: vec!["mrpack".to_string()],
                 ..Default::default()
             },
         )
-        .await
-        .expect_err("mrpack should reject tracked local dependencies");
-
-        assert!(
-            error
-                .to_string()
-                .contains("Tracked local dependencies are not yet supported for mrpack exports"),
-            "unexpected error: {error}"
-        );
+        .await;
+        assert!(result.is_ok(), "valid local files should export: {result:?}");
     }
 
     #[tokio::test]

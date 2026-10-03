@@ -219,8 +219,8 @@ This does not verify launching Minecraft or every loader's generated server.
 Linux and Windows execution must be established by CI. One manual PTY rendering
 test remains ignored. `--cpu-jobs` and the Modrinth credential fields are parsed
 but have no runtime consumers; help and usage now label them reserved. Packwiz
-directory imports remain unsupported, local dependencies cannot be exported to
-mrpack, and real YAML rewrites do not preserve comments. `requirements` reports
+directory imports remain unsupported, and real YAML rewrites do not preserve
+comments. Tracked local files under `pack/` now support mrpack export. `requirements` reports
 capabilities but is not a strict prerequisite exit-status gate.
 
 The review also used the sibling playground project's `docs/ui/TESTING.md`,

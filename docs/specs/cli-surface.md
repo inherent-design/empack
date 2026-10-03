@@ -153,7 +153,7 @@ empack build --continue [OPTIONS]
 - `build --continue` is incompatible with `--format`.
 - `--downloads-dir` is used in both fresh and continuation flows as an auxiliary search path for manually downloaded restricted files.
 - all build entry paths validate tracked local dependency paths and SHA-256 hashes before build work starts
-- `mrpack` is rejected when the current `ProjectPlan` still contains tracked local dependencies
+- tracked local build inputs must live under `pack/`; valid files participate in mrpack exports and lightweight distributions
 - Fresh and continued restricted builds search for digest-matching content in the managed cache first, then `--downloads-dir`, then `~/Downloads`, then the recorded parent directories of the pending destination paths.
 - If the terminal is interactive and `--yes` is not set, the command can offer to open direct CurseForge `/download/{file-id}` URLs in the browser and wait up to 5 minutes for files to appear before falling back to manual continuation.
 
