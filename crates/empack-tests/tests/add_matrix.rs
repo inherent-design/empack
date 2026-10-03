@@ -101,6 +101,13 @@ async fn test_add_type_resourcepack() -> Result<()> {
         }),
     );
 
+    // This call-recording process fixture supplies the resulting installation separately.
+    std::fs::create_dir_all(workdir.join("pack/resourcepacks"))?;
+    std::fs::write(
+        workdir.join("pack/resourcepacks/faithless.pw.toml"),
+        "name = 'Fixture'\n[update.modrinth]\nmod-id = 'faithless'\nversion = 'v1'\n",
+    )?;
+
     let session = CommandSession::new_with_providers(
         LiveFileSystemProvider,
         mock_network,
@@ -172,6 +179,13 @@ async fn test_add_type_shader() -> Result<()> {
             success: true,
         }),
     );
+
+    // This call-recording process fixture supplies the resulting installation separately.
+    std::fs::create_dir_all(workdir.join("pack/shaderpacks"))?;
+    std::fs::write(
+        workdir.join("pack/shaderpacks/complementary.pw.toml"),
+        "name = 'Fixture'\n[update.modrinth]\nmod-id = 'complementary'\nversion = 'v1'\n",
+    )?;
 
     let session = CommandSession::new_with_providers(
         LiveFileSystemProvider,

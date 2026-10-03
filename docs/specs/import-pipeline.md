@@ -163,3 +163,5 @@ Environment distinctions persist in the project layout. Common overrides go to
 same relative destination can exist in all three layers without overwriting
 another layer during import. Forced initialization resets these managed content
 directories only after its execution checks.
+
+Remote acquisition uses a temporary file and enforces the 2 GiB compressed-input limit while receiving bytes. It rejects an excessive Content-Length before receiving the body and counts streamed chunks even when the header is absent. Cancellation interrupts stalled header or body waits. Failed acquisition drops the temporary file; completed acquisition publishes through the filesystem provider's streamed atomic replacement. Production publication does not buffer the file in memory. In-memory test providers may buffer their fixtures.

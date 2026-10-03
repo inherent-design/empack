@@ -1379,6 +1379,7 @@ mod handle_init_from_source_tests {
         let dest = mock_root().join("downloads").join("artifact.bin");
         download_file(
             &filesystem,
+            &MockProcessProvider::new(),
             &test_http_client(),
             &format!("{}/artifact.bin", server.url()),
             &dest,
@@ -1402,6 +1403,7 @@ mod handle_init_from_source_tests {
         let dest = mock_root().join("downloads").join("missing.bin");
         let err = download_file(
             &filesystem,
+            &MockProcessProvider::new(),
             &test_http_client(),
             &format!("{}/missing.bin", server.url()),
             &dest,
@@ -8380,7 +8382,7 @@ mod tracked_local_dependency_tests {
         );
         let error_text = error.to_string();
         assert!(
-            error_text.contains("Local file was removed, but empack.yml still contains 'example-pack'"),
+            error_text.contains("Removal effects completed for 'example-pack', but updating empack.yml failed"),
             "unexpected error: {error_text}"
         );
         assert!(

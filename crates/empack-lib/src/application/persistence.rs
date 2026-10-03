@@ -3,7 +3,6 @@
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Holds the OS lock until the command and its cleanup finish.
@@ -60,6 +59,11 @@ fn canonical_project_path(path: &Path) -> Result<PathBuf> {
 
 /// Replace a document using a sibling temporary file. Errors after publication say so.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    atomic_write_reader(path, &mut std::io::Cursor::new(bytes))
+}
+
+/// Publish a streamed file with the same replacement guarantees as documents.
+pub fn atomic_write_reader(path: &Path, reader: &mut dyn std::io::Read) -> Result<()> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => {
             anyhow::ensure!(
@@ -87,7 +91,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
             .as_file()
             .set_permissions(metadata.permissions())?;
     }
-    temporary.write_all(bytes)?;
+    std::io::copy(reader, &mut temporary)?;
     temporary.as_file().sync_all()?;
     temporary
         .persist(path)

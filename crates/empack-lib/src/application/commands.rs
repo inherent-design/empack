@@ -1324,9 +1324,17 @@ async fn download_modrinth_modpack_with_client(
         .info(&format!("Downloading {}...", filename));
 
     let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    crate::empack::paths::validate_filename(filename)?;
     let dest_path = tmp_dir.path().join(filename);
 
-    download_file(session.filesystem(), client, download_url, &dest_path).await?;
+    download_file(
+        session.filesystem(),
+        session.process(),
+        client,
+        download_url,
+        &dest_path,
+    )
+    .await?;
 
     let manifest = parse_modrinth_mrpack_with_filesystem(session.filesystem(), &dest_path)?;
     Ok((manifest, tmp_dir, dest_path))
@@ -1496,9 +1504,17 @@ async fn download_curseforge_modpack_with_client(
         .info(&format!("Downloading {}...", filename));
 
     let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    crate::empack::paths::validate_filename(filename)?;
     let dest_path = tmp_dir.path().join(filename);
 
-    download_file(session.filesystem(), client, &dl_url, &dest_path).await?;
+    download_file(
+        session.filesystem(),
+        session.process(),
+        client,
+        &dl_url,
+        &dest_path,
+    )
+    .await?;
 
     let manifest = parse_curseforge_zip_with_filesystem(session.filesystem(), &dest_path)?;
     Ok((manifest, tmp_dir, dest_path))
@@ -1506,36 +1522,22 @@ async fn download_curseforge_modpack_with_client(
 
 async fn download_file(
     filesystem: &dyn FileSystemProvider,
+    process: &dyn crate::application::session::ProcessProvider,
     client: &reqwest::Client,
     url: &str,
     dest: &std::path::Path,
 ) -> Result<()> {
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("failed to download from {}", url))?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("HTTP {} for {}", response.status(), url);
-    }
-
-    let bytes = response
-        .bytes()
-        .await
-        .with_context(|| format!("failed to read response body from {}", url))?;
-
+    let mut staged = crate::networking::download::acquire(
+        client,
+        process,
+        url,
+        crate::empack::import::MAX_IMPORT_ARCHIVE_BYTES,
+    )
+    .await?;
     if let Some(parent) = dest.parent() {
-        filesystem
-            .create_dir_all(parent)
-            .with_context(|| format!("failed to create parent directory for {}", dest.display()))?;
+        filesystem.create_dir_all(parent)?;
     }
-
-    filesystem
-        .write_bytes(dest, &bytes)
-        .with_context(|| format!("failed to write to {}", dest.display()))?;
-
-    Ok(())
+    filesystem.publish_reader(dest, staged.as_file_mut())
 }
 
 #[instrument(skip_all, fields(mod_count = mods.len()))]
@@ -2429,9 +2431,17 @@ async fn handle_direct_download_jar_with_client_and_resolver<R: JarResolver>(
 
     let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
     let filename = url.rsplit('/').next().unwrap_or("download.jar");
+    crate::empack::paths::validate_filename(filename)?;
     let dest_path = tmp_dir.path().join(filename);
 
-    download_file(session.filesystem(), client, url, &dest_path).await?;
+    download_file(
+        session.filesystem(),
+        session.process(),
+        client,
+        url,
+        &dest_path,
+    )
+    .await?;
 
     let sha1 = {
         let bytes = session.filesystem().read_bytes(&dest_path)?;
@@ -2586,7 +2596,14 @@ async fn handle_direct_download_non_jar(
     let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
     let filename = download_filename(url, "download.zip");
     let dest_path = tmp_dir.path().join(&filename);
-    download_file(session.filesystem(), &client, url, &dest_path).await?;
+    download_file(
+        session.filesystem(),
+        session.process(),
+        &client,
+        url,
+        &dest_path,
+    )
+    .await?;
     let bytes = session.filesystem().read_bytes(&dest_path)?;
 
     build_tracked_local_dependency(session, &workdir, url, &filename, project_type, &bytes)
@@ -3073,7 +3090,7 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
             }
             if let (Some(key), Some(entry)) = (&plan.manifest_key, &plan.entry) {
                 config_manager.remove_dependency_exact(key, entry).with_context(|| format!(
-                    "Removal effects completed for '{}', but updating empack.yml failed. Inspect or restore the manifest and rerun removal before syncing", plan.query))?;
+                    "Removal effects completed for '{}', but updating empack.yml failed. Inspect or restore the manifest and rerun 'empack remove {}' before syncing", plan.query, plan.query))?;
             }
             Ok(())
         })();

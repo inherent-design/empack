@@ -2064,7 +2064,7 @@ fn read_zip_entry_to_string<R: std::io::Read>(entry: zip::read::ZipFile<'_, R>) 
     Ok(buf)
 }
 
-const MAX_IMPORT_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub(crate) const MAX_IMPORT_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_IMPORT_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
 
 fn open_zip_archive<R: Read + Seek>(mut reader: R) -> Result<zip::ZipArchive<R>> {

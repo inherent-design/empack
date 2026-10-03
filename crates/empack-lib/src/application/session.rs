@@ -63,6 +63,13 @@ pub trait FileSystemProvider {
 
     fn write_bytes(&self, path: &Path, content: &[u8]) -> Result<()>;
 
+    /// Publish a staged stream. In-memory providers may buffer; live publication streams.
+    fn publish_reader(&self, path: &Path, reader: &mut dyn std::io::Read) -> Result<()> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+        self.write_bytes(path, &bytes)
+    }
+
     fn exists(&self, path: &Path) -> bool;
 
     fn metadata_exists(&self, path: &Path) -> bool;
@@ -398,6 +405,10 @@ impl FileSystemProvider for LiveFileSystemProvider {
     fn write_bytes(&self, path: &Path, content: &[u8]) -> Result<()> {
         std::fs::write(path, content)
             .with_context(|| format!("Failed to write file: {}", path.display()))
+    }
+
+    fn publish_reader(&self, path: &Path, reader: &mut dyn std::io::Read) -> Result<()> {
+        super::persistence::atomic_write_reader(path, reader)
     }
 
     fn exists(&self, path: &Path) -> bool {
