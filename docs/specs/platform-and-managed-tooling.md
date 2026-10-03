@@ -104,7 +104,7 @@ This staging behavior is part of the supported runtime path, not a test-only fal
 
 ## Session Integration
 
-`CommandSession` resolves the packwiz binary once at session construction and exposes the result through `Session::packwiz_bin()`.
+`CommandSession` resolves the packwiz binary on first execution demand, caches the result, and exposes it through `Session::packwiz_bin()`. Inventory inspection and version display do not bootstrap tooling.
 
 Callers that execute packwiz commands should use that accessor instead of the bare `PACKWIZ_BIN` constant.
 

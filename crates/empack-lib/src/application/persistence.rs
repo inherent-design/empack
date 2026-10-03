@@ -93,12 +93,14 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         .persist(path)
         .with_context(|| format!("Failed to publish {}", path.display()))?;
     #[cfg(unix)]
-    File::open(parent)?.sync_all().with_context(|| {
-        format!(
-            "Published {}, but directory durability could not be confirmed",
-            path.display()
-        )
-    })?;
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .with_context(|| {
+            format!(
+                "Published {}, but directory durability could not be confirmed",
+                path.display()
+            )
+        })?;
     Ok(())
 }
 

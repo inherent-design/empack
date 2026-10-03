@@ -41,6 +41,57 @@ resolution, preservation of installed unresolved dependencies, and successful
 search resolution followed by an add. Partial success must not be reported as a
 fully synchronized project.
 
+## Safety and runtime review, 2026-10-03
+
+This review starts at `3625a89`. The supplied source audit was treated as a set
+of hypotheses, then checked against executable regressions and current code.
+The implementation keeps the session/provider architecture.
+
+| Contract | Change and evidence |
+| --- | --- |
+| Preview and declined initialization preserve project files | Forced reset now follows validation, confirmation and the dry-run return. Init tests compare the existing project tree after preview and rejection. |
+| Explicit dependency intent cannot become a search | Deserialization dispatches on `status` and rejects unknown fields. Config tests cover missing identities, misspelled fields and malformed local entries. |
+| Sync detects installed identity and pin drift | Live packwiz metadata is checked before manifest writes or subprocess calls. CLI smoke covers provider, project and pin changes under the same manifest key. Unsupported replacement returns an error. |
+| Explicit roots cannot be removed by incomplete orphan analysis | `remove --deps` fails before mutation because installed metadata does not supply complete dependency edges. Ordinary explicit removal remains available. |
+| Generated shell metadata remains data | The embedded installer uses shell-quoted assignments and `printf`. A regression executes hostile metadata in a temporary directory and checks that no command substitution runs. New project templates retain build-time placeholders. |
+| Build and continuation outputs stay in selected roots | Artifact names reject path components. Live output checks reject symlinked ancestors. Continuation cache and destinations are checked against runtime-derived roots before writes. Tests cover traversal and crafted saved state. |
+| Process deadlines cover child and pipe lifetimes | A shared deadline covers exit and stream drainage. Tests close pipes before sleeping and retain pipes in descendants. Cancellation stops owned processes; CLI smoke verifies exit 130, retained recovery markers and lock release. |
+| Mutation ownership and document publication are explicit | Mutating commands hold an OS project lock. Manifests, markers and continuation records use atomic sibling-file replacement. Tests cover lock contention, symlinks, read-only documents and unchanged old content after failed publication. |
+| Tool and network policy has observable failures | Tool resolution is lazy, probes require successful exit status, new managed downloads use pinned SHA256 digests, and installation locks survive process crashes. JAR identification uses shared retry/rate policy and distinguishes 404 from provider failures. |
+| Resource use has defined bounds | Future rate permits are reserved, cache persistence is atomic and size-limited, and imports reuse one archive reader during extraction with entry/count/total limits. Focused tests cover exhausted budgets, stale headers and oversized archive metadata. |
+
+The review ran on macOS arm64. The default gate passed 1,303 tests and eight
+doctests; the offline CLI smoke gate passed 12 tests. All-feature Clippy passed.
+Strict E2E, coverage and platform CI results are recorded in the review PR.
+A separate empty-cache `requirements` run downloaded the pinned managed tool,
+verified its digest and successfully probed its version.
+
+Run binary-producing validation tasks sequentially. The strict suite requires a
+telemetry-enabled CLI; a concurrent default build can replace that executable
+and invalidate telemetry assertions. Use `EMPACK_E2E_BIN` with an isolated copy
+when separate runs need different binaries.
+
+### Remaining boundaries
+
+Atomic document replacement and project locks are not a multi-file transaction.
+A failed external action can leave partial state, and forced initialization does
+not yet stage a replacement with rollback. Direct library mutation callers must
+hold the project lock themselves. External editors do not participate in it.
+
+Sync rejects identity/version drift instead of replacing installed dependencies.
+Automatic orphan cleanup remains unavailable until graph edges and provider
+identities can be verified. These are explicit feature gaps, not successful
+reconciliation. Existing user-owned shell templates are executable code; projects
+must adopt the new quoting pattern themselves. Path validation does not provide
+a sandbox against another process swapping paths during an operation.
+
+Cancellation reaches subprocesses and restricted-download waits, but is not yet
+threaded through every synchronous filesystem or bootstrap operation. Display
+state still has process-global components. Cache writers in separate processes
+can lose disposable cache updates; project document locks do not cover the cache.
+Import planning still reads archive bytes, while execution reuses a file-backed
+reader. These limits remain inputs to the transaction and command-service design.
+
 ## Runtime contract review, 2026-10-02
 
 Review started at `b9ecfc772c5268fab98ec298826d2e8737a1ac38` on macOS arm64,

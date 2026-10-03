@@ -917,6 +917,10 @@ async fn e2e_build_mrpack_successfully() -> Result<()> {
         packwiz_calls.iter().any(|call| {
             call.args
                 == vec![
+                    "--cache",
+                    &empack_lib::platform::cache::packwiz_download_cache_dir()
+                        .unwrap()
+                        .to_string_lossy(),
                     "--pack-file",
                     pack_file_str.as_ref(),
                     "mr",
@@ -1014,6 +1018,10 @@ async fn e2e_build_clean_recreates_mrpack_and_preserves_configuration() -> Resul
         packwiz_calls.iter().any(|call| {
             call.args
                 == vec![
+                    "--cache",
+                    &empack_lib::platform::cache::packwiz_download_cache_dir()
+                        .unwrap()
+                        .to_string_lossy(),
                     "--pack-file",
                     pack_file_str.as_ref(),
                     "mr",
@@ -1104,6 +1112,11 @@ async fn e2e_build_packwiz_export_fails() -> Result<()> {
         )
         .with_packwiz_result(
             vec![
+                "--cache".to_string(),
+                empack_lib::platform::cache::packwiz_download_cache_dir()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
                 "--pack-file".to_string(),
                 pack_file.to_string_lossy().to_string(),
                 "mr".to_string(),

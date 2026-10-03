@@ -277,7 +277,7 @@ pub enum Commands {
         #[arg(
             short,
             long,
-            help = "Also remove dependencies that are no longer needed"
+            help = "Reserved: automatic orphan cleanup requires complete dependency metadata"
         )]
         deps: bool,
     },

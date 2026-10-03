@@ -97,7 +97,7 @@ fn write_failing_packwiz_binary(workdir: &Path) -> PathBuf {
 fn write_blocking_packwiz_binary(workdir: &Path, started_marker: &Path) -> PathBuf {
     let path = workdir.join("fake-packwiz-block");
     let script = format!(
-        "#!/bin/sh\nset -eu\nif [ \"${{3-}}\" = \"refresh\" ]; then\n  exit 0\nfi\nif [ \"${{3-}}\" = \"mr\" ] && [ \"${{4-}}\" = \"export\" ]; then\n  : > \"{}\"\n  sleep 20\n  exit 0\nfi\nexit 0\n",
+        "#!/bin/sh\nset -eu\nif [ \"${{1-}}\" = \"--cache\" ]; then shift 2; fi\nif [ \"${{3-}}\" = \"refresh\" ]; then\n  exit 0\nfi\nif [ \"${{3-}}\" = \"mr\" ] && [ \"${{4-}}\" = \"export\" ]; then\n  : > \"{}\"\n  sleep 20\n  exit 0\nfi\nexit 0\n",
         started_marker.display()
     );
     write_executable(&path, &script);
