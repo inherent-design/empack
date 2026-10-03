@@ -91,6 +91,19 @@ identification. The focused network/import suite passed 189 tests after these
 changes. Platform CI also caught a Unix test missing its platform guard; the
 guard was restored before the next run.
 
+The next review found that restricted mrpack exports shared an import cache
+across projects. Export and continuation now derive that cache from canonical
+project identity. Tests cover identical filenames in two projects, path aliases
+and non-UTF-8 path bytes. The full default gate passed 1,312 tests and eight
+doctests before the additional alias regression; all 29 focused cache and
+continuation tests passed afterward.
+
+Windows job registration now has a bounded cleanup fallback when a host job
+refuses nesting. Windows-only tests exercise retained output and child cleanup
+under injected registration failure. This fallback is best-effort and does not
+alter host job restrictions. Windows E2E fixtures retain native known-folder
+environment values and compare destinations as paths.
+
 ### Remaining boundaries
 
 Atomic document replacement and project locks are not a multi-file transaction.

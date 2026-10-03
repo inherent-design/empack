@@ -1787,7 +1787,7 @@ async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
         )
         .with_packwiz_result(
             vec![
-                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -1839,7 +1839,7 @@ async fn test_execute_build_pipeline_stops_after_restricted_mrpack_result() {
         )
         .with_packwiz_result(
             vec![
-                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -1901,7 +1901,7 @@ async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_e
         )
         .with_packwiz_result(
             vec![
-                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -1951,7 +1951,7 @@ async fn test_execute_build_pipeline_success_cleans_temp_extract_dir_and_build_m
         )
         .with_packwiz_result(
             vec![
-                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -2005,7 +2005,7 @@ async fn test_execute_build_pipeline_failure_still_cleans_temp_extract_dir() {
         )
         .with_packwiz_result(
             vec![
-                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -2100,7 +2100,7 @@ fn test_extract_mrpack_builds_missing_artifact_and_caches_repeated_calls() {
         )
         .with_packwiz_result(
             vec![
-                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -2188,7 +2188,7 @@ fn test_build_mrpack_returns_restricted_mods_on_export_failure() {
         )
         .with_packwiz_result(
             vec![
-                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -2246,7 +2246,7 @@ async fn test_build_mrpack_replaces_existing_artifact_and_returns_metadata() {
         )
         .with_packwiz_result(
             vec![
-                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir().unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),

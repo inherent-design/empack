@@ -145,7 +145,7 @@ async fn e2e_build_continue_imports_recent_unicode_variant_download() -> Result<
             name: "No Enchant Glint".to_string(),
             url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
                 .to_string(),
-            dest_path: empack_lib::platform::cache::packwiz_download_cache_dir()?
+            dest_path: empack_lib::platform::cache::packwiz_download_cache_dir(&workdir)?
                 .join("import")
                 .join(cache_filename)
                 .to_string_lossy()
@@ -230,7 +230,7 @@ async fn e2e_build_continue_refreshes_stale_restricted_cache_from_new_manual_dow
             name: "No Enchant Glint".to_string(),
             url: "https://www.curseforge.com/minecraft/texture-packs/no-enchant-glint/download/4660358"
                 .to_string(),
-            dest_path: empack_lib::platform::cache::packwiz_download_cache_dir()?
+            dest_path: empack_lib::platform::cache::packwiz_download_cache_dir(&workdir)?
                 .join("import")
                 .join(cache_filename)
                 .to_string_lossy()

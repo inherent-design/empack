@@ -76,7 +76,7 @@ In the standard async construction path, the HTTP cache is loaded from disk unde
 
 The live implementation short-circuits to defaults in `--yes` mode or when stdin and stdout are not TTYs. Interrupted prompts return a typed cancellation error. Providers never terminate the host process or remove interruption markers.
 
-The executable owns the signal listener, logger lifecycle, cursor restoration, and exit status. Each live command receives its own cancellation token. Child exit and asynchronous pipe drainage share a deadline; Unix children run in a process group, and Windows children are assigned to a job object after spawning. Cleanup closes readers and terminates owned children. The synchronous provider interface waits for its process worker to finish before returning. Output is limited to 16 MiB per stream.
+The executable owns the signal listener, logger lifecycle, cursor restoration, and exit status. Each live command receives its own cancellation token. Child exit and asynchronous pipe drainage share a deadline; Unix children run in a process group, and Windows children are assigned to a job object after spawning. If a host Windows job refuses nested registration, execution continues with bounded `taskkill /T` cleanup. This fallback is best-effort, especially after the parent has exited; it does not change host job restrictions. Cleanup closes readers and terminates owned children. The synchronous provider interface waits for its process worker to finish before returning. Output is limited to 16 MiB per stream.
 
 ## Session Construction
 

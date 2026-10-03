@@ -56,7 +56,18 @@ fn combined_output(output: &std::process::Output) -> String {
 #[test]
 fn e2e_build_mrpack_restricted_records_pending_state() {
     let project = TestProject::workflow_fixture("restricted-mrpack", "fabric", "1.21.1");
-    let import_dir = project.dir().join(".empack-cache/packwiz/cache/import");
+    let import_dir = project
+        .dir()
+        .join(".empack-cache")
+        .join("packwiz")
+        .join(
+            empack_lib::empack::restricted_build::restricted_cache_dir(project.dir())
+                .unwrap()
+                .file_name()
+                .unwrap(),
+        )
+        .join("cache")
+        .join("import");
     let fake_packwiz = write_fake_restricted_mrpack_packwiz_binary(project.dir(), &import_dir);
 
     let mut cmd = project_assert_cmd(&project);
@@ -78,8 +89,8 @@ fn e2e_build_mrpack_restricted_records_pending_state() {
         "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
     );
     assert_eq!(
-        pending.entries[0].dest_path,
-        import_dir.join("BeeFix-1.20-1.0.7.jar").to_string_lossy()
+        Path::new(&pending.entries[0].dest_path),
+        import_dir.join("BeeFix-1.20-1.0.7.jar")
     );
 }
 
@@ -87,7 +98,18 @@ fn e2e_build_mrpack_restricted_records_pending_state() {
 fn e2e_build_all_restricted_at_mrpack_stops_before_later_targets() {
     let project = TestProject::workflow_fixture("restricted-all", "fabric", "1.21.1");
     seed_packwiz_installer_jars(project.dir());
-    let import_dir = project.dir().join(".empack-cache/packwiz/cache/import");
+    let import_dir = project
+        .dir()
+        .join(".empack-cache")
+        .join("packwiz")
+        .join(
+            empack_lib::empack::restricted_build::restricted_cache_dir(project.dir())
+                .unwrap()
+                .file_name()
+                .unwrap(),
+        )
+        .join("cache")
+        .join("import");
     let fake_packwiz = write_fake_restricted_mrpack_packwiz_binary(project.dir(), &import_dir);
 
     let mut cmd = project_assert_cmd(&project);
@@ -112,8 +134,8 @@ fn e2e_build_all_restricted_at_mrpack_stops_before_later_targets() {
         "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
     );
     assert_eq!(
-        pending.entries[0].dest_path,
-        import_dir.join("BeeFix-1.20-1.0.7.jar").to_string_lossy()
+        Path::new(&pending.entries[0].dest_path),
+        import_dir.join("BeeFix-1.20-1.0.7.jar")
     );
     assert!(
         !project.dir().join("dist").join("client").exists(),

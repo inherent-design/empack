@@ -1130,11 +1130,10 @@ impl<'a> BuildOrchestrator<'a> {
                 })?;
         }
 
-        let download_cache = crate::platform::cache::packwiz_download_cache_dir().map_err(|e| {
-            BuildError::ConfigError {
+        let download_cache = crate::platform::cache::packwiz_download_cache_dir(&self.workdir)
+            .map_err(|e| BuildError::ConfigError {
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
         let output = execute_process_with_live_issues(
             self.session,
             self.session.packwiz_bin(),

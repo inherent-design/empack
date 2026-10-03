@@ -36,10 +36,17 @@ fn configure_command_env(cmd: &mut Command, workdir: &Path) {
         std::fs::create_dir_all(&user_profile).expect("create USERPROFILE fallback");
         std::fs::create_dir_all(&temp_dir).expect("create TEMP fallback");
 
-        cmd.env("LOCALAPPDATA", local_app_data);
-        cmd.env("LocalAppData", workdir.join(".windows-localappdata"));
-        cmd.env("APPDATA", roaming_app_data);
-        cmd.env("USERPROFILE", user_profile);
+        // Known-folder APIs require the native profile layout when it is available.
+        for (key, fallback) in [
+            ("LOCALAPPDATA", local_app_data),
+            ("APPDATA", roaming_app_data),
+            ("USERPROFILE", user_profile),
+        ] {
+            cmd.env(
+                key,
+                std::env::var_os(key).unwrap_or_else(|| fallback.into_os_string()),
+            );
+        }
         cmd.env("TEMP", temp_dir.clone());
         cmd.env("TMP", temp_dir);
     }

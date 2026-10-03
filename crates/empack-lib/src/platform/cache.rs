@@ -40,8 +40,22 @@ pub fn restricted_builds_cache_dir() -> Result<PathBuf> {
     Ok(cache_root()?.join("restricted-builds"))
 }
 
-pub fn packwiz_download_cache_dir() -> Result<PathBuf> {
-    Ok(cache_root()?.join("packwiz").join("cache"))
+pub(crate) fn project_cache_key(workdir: &std::path::Path) -> String {
+    use sha2::{Digest, Sha256};
+    let identity = workdir
+        .canonicalize()
+        .unwrap_or_else(|_| workdir.to_path_buf());
+    Sha256::digest(identity.as_os_str().as_encoded_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+pub fn packwiz_download_cache_dir(workdir: &std::path::Path) -> Result<PathBuf> {
+    Ok(cache_root()?
+        .join("packwiz")
+        .join(project_cache_key(workdir))
+        .join("cache"))
 }
 
 pub fn versions_cache_dir() -> Result<PathBuf> {
@@ -144,5 +158,48 @@ mod tests {
             legacy_versions_cache_file("minecraft_versions.json").expect("legacy file"),
             temp_dir.path().join("minecraft_versions.json")
         );
+    }
+    #[test]
+    fn packwiz_imports_with_identical_filenames_are_isolated_by_project() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let _cache = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", dir.path().join("cache")) };
+        let first = packwiz_download_cache_dir(&dir.path().join("first"))
+            .unwrap()
+            .join("import");
+        let second = packwiz_download_cache_dir(&dir.path().join("second"))
+            .unwrap()
+            .join("import");
+        assert_ne!(first, second);
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        std::fs::write(first.join("mod.jar"), b"first version").unwrap();
+        std::fs::write(second.join("mod.jar"), b"second version").unwrap();
+        assert_eq!(
+            std::fs::read(first.join("mod.jar")).unwrap(),
+            b"first version"
+        );
+        assert_eq!(
+            std::fs::read(second.join("mod.jar")).unwrap(),
+            b"second version"
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn project_cache_identity_resolves_aliases_and_preserves_path_bytes() {
+        use std::os::unix::ffi::OsStringExt;
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        let alias = dir.path().join("alias");
+        std::fs::create_dir(&project).unwrap();
+        std::os::unix::fs::symlink(&project, &alias).unwrap();
+        assert_eq!(project_cache_key(&project), project_cache_key(&alias));
+        let first = dir
+            .path()
+            .join(std::ffi::OsString::from_vec(vec![b'p', 0xfe]));
+        let second = dir
+            .path()
+            .join(std::ffi::OsString::from_vec(vec![b'p', 0xff]));
+        assert_ne!(project_cache_key(&first), project_cache_key(&second));
     }
 }

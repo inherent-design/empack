@@ -302,10 +302,7 @@ fn validate_pending_build_allows_missing_future_full_build_dirs_for_mrpack_restr
             name: "Bee Fix".to_string(),
             url: "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
                 .to_string(),
-            dest_path: cache_root
-                .path()
-                .join("packwiz")
-                .join("cache")
+            dest_path: crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap()
                 .join("import")
                 .join("BeeFix-1.20-1.0.7.jar")
                 .to_string_lossy()

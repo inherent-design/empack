@@ -90,7 +90,7 @@ pub fn pending_state_path(workdir: &Path) -> PathBuf {
 
 pub fn restricted_cache_dir(workdir: &Path) -> Result<PathBuf> {
     let cache_root = crate::platform::cache::restricted_builds_cache_dir()?;
-    let project_hash = hex_sha256(workdir.to_string_lossy().as_bytes());
+    let project_hash = crate::platform::cache::project_cache_key(workdir);
     Ok(cache_root.join(project_hash))
 }
 
@@ -214,7 +214,7 @@ fn validate_pending_paths(
             }
         }
         if targets.contains(&BuildTarget::Mrpack) {
-            let root = crate::platform::cache::packwiz_download_cache_dir()?.join("import");
+            let root = crate::platform::cache::packwiz_download_cache_dir(workdir)?.join("import");
             if dest.parent() == Some(root.as_path()) {
                 provider.validate_output_path(&cache_root, dest)?;
                 allowed = true;

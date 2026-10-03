@@ -151,10 +151,78 @@ impl Drop for ProcessTree {
 }
 
 #[cfg(windows)]
-struct ProcessTree(windows_sys::Win32::Foundation::HANDLE);
+struct ProcessTree {
+    job: Option<WindowsJob>,
+    pid: u32,
+}
 #[cfg(windows)]
 impl ProcessTree {
     fn new(child: &tokio::process::Child) -> Result<Self> {
+        Self::from_registration(child, WindowsJob::attach(child))
+    }
+    fn from_registration(
+        child: &tokio::process::Child,
+        result: Result<WindowsJob>,
+    ) -> Result<Self> {
+        let pid = child.id().context("Child process ID unavailable")?;
+        let job = match result {
+            Ok(job) => Some(job),
+            Err(error) => {
+                tracing::warn!(%error, "Windows job registration unavailable; using bounded process-tree cleanup");
+                None
+            }
+        };
+        Ok(Self { job, pid })
+    }
+}
+#[cfg(windows)]
+impl Drop for ProcessTree {
+    fn drop(&mut self) {
+        if self.job.is_some() {
+            return;
+        }
+        // Restrictive host jobs may refuse nesting. Keep output/deadline handling
+        // available and attempt bounded tree cleanup without changing host job limits.
+        use std::os::windows::process::CommandExt;
+        let program = std::env::var_os("SystemRoot")
+            .map(|root| {
+                std::path::PathBuf::from(root)
+                    .join("System32")
+                    .join("taskkill.exe")
+            })
+            .unwrap_or_else(|| "taskkill.exe".into());
+        let Ok(mut cleanup) = std::process::Command::new(program)
+            .args(["/PID", &self.pid.to_string(), "/T", "/F"])
+            .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        else {
+            return;
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            match cleanup.try_wait() {
+                Ok(Some(_)) => return,
+                Err(_) => {
+                    let _ = cleanup.kill();
+                    return;
+                }
+                Ok(None) if std::time::Instant::now() >= deadline => {
+                    let _ = cleanup.kill();
+                    return;
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            }
+        }
+    }
+}
+#[cfg(windows)]
+struct WindowsJob(windows_sys::Win32::Foundation::HANDLE);
+#[cfg(windows)]
+impl WindowsJob {
+    fn attach(child: &tokio::process::Child) -> Result<Self> {
         use windows_sys::Win32::System::JobObjects::*;
         unsafe {
             let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -182,10 +250,53 @@ impl ProcessTree {
     }
 }
 #[cfg(windows)]
-impl Drop for ProcessTree {
+impl Drop for WindowsJob {
     fn drop(&mut self) {
         unsafe {
             windows_sys::Win32::Foundation::CloseHandle(self.0);
         }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    #[tokio::test]
+    async fn rejected_job_registration_preserves_successful_output() {
+        let child = tokio::process::Command::new("cmd.exe")
+            .args(["/C", "echo retained output"])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let tree = ProcessTree::from_registration(
+            &child,
+            Err(anyhow::anyhow!("host job refuses nesting")),
+        )
+        .unwrap();
+        let output = child.wait_with_output().await.unwrap();
+        drop(tree);
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("retained output"));
+    }
+    #[tokio::test]
+    async fn rejected_job_registration_keeps_cleanup_bounded() {
+        let mut child = tokio::process::Command::new("cmd.exe")
+            .args(["/C", "ping -n 30 127.0.0.1 >nul"])
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let tree = ProcessTree::from_registration(
+            &child,
+            Err(anyhow::anyhow!("host job refuses nesting")),
+        )
+        .unwrap();
+        let start = std::time::Instant::now();
+        drop(tree);
+        let status = tokio::time::timeout(Duration::from_secs(3), child.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!status.success());
+        assert!(start.elapsed() < Duration::from_secs(5));
     }
 }
