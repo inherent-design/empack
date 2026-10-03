@@ -279,6 +279,16 @@ fn windows_process_snapshot() -> Result<Vec<(u32, u32)>> {
 }
 
 #[cfg(windows)]
+fn is_current_windows_child(child: &WindowsProcess, parent: &WindowsProcess) -> bool {
+    // Both identities are now pinned by handles. The initial snapshot may have
+    // raced PID reuse before OpenProcess; re-read the parent relation only after
+    // opening the handle, so an unrelated replacement cannot pass validation.
+    child.created >= parent.created
+        && windows_process_snapshot()
+            .is_ok_and(|entries| entries.contains(&(child.pid, parent.pid)))
+}
+
+#[cfg(windows)]
 fn terminate_windows_tree(root: WindowsProcess) {
     // Open handles prevent PID reuse, including after a parent exits. Creation
     // times reject stale parent IDs that predate the process we actually launched.
@@ -303,7 +313,7 @@ fn terminate_windows_tree(root: WindowsProcess) {
                 }
                 if let Some(parent) = tracked.get(&parent)
                     && let Ok(child) = WindowsProcess::open(pid)
-                    && child.created >= parent.created
+                    && is_current_windows_child(&child, parent)
                 {
                     child.terminate();
                     tracked.insert(pid, child);
@@ -443,6 +453,40 @@ mod windows_tests {
         );
         let mut output = Vec::new();
         tokio::time::timeout(Duration::from_secs(3), stdout.read_to_end(&mut output))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    #[tokio::test]
+    async fn stale_snapshot_cannot_claim_an_unrelated_process() {
+        let mut parent = tokio::process::Command::new("cmd.exe")
+            .args(["/C", "ping -n 30 127.0.0.1 >nul"])
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let parent_tree =
+            ProcessTree::from_registration(&parent, Err(anyhow::anyhow!("fixture"))).unwrap();
+        let mut unrelated = tokio::process::Command::new("cmd.exe")
+            .args(["/C", "ping -n 30 127.0.0.1 >nul"])
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let unrelated_tree =
+            ProcessTree::from_registration(&unrelated, Err(anyhow::anyhow!("fixture"))).unwrap();
+        let owned = parent_tree.fallback.as_ref().unwrap();
+        let replacement = unrelated_tree.fallback.as_ref().unwrap();
+        // An old snapshot could pair replacement.pid with owned.pid. The later
+        // creation-time comparison alone accepts that false relationship.
+        assert!(replacement.created >= owned.created);
+        assert!(!is_current_windows_child(replacement, owned));
+        drop(parent_tree);
+        assert!(unrelated.try_wait().unwrap().is_none());
+        drop(unrelated_tree);
+        tokio::time::timeout(Duration::from_secs(3), parent.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), unrelated.wait())
             .await
             .unwrap()
             .unwrap();

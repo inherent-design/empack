@@ -103,7 +103,9 @@ refuses nesting. Windows-only tests exercise retained output and child cleanup
 under injected registration failure. A further review exposed descendants surviving after parent exit. Snapshot-based
 cleanup now retains handles and checks process creation times; a Windows
 regression keeps an inherited pipe open after the parent exits and requires
-cleanup to close it. The fallback remains best-effort if process access is denied
+cleanup to close it. A separate regression presents an unrelated process as a
+stale descendant and requires a fresh parent check with open handles before
+termination. The fallback remains best-effort if process access is denied
 or intermediate ancestors exit before observation, and does not alter host job
 restrictions. Windows E2E fixtures retain native known-folder
 environment values and compare destinations as paths.
