@@ -1400,7 +1400,11 @@ pub async fn execute_import(
                 }
             }
             ContentEntry::EmbeddedJar(embed) => {
-                let dest = sanitize_archive_path(&pack_dir, &embed.destination_path)?;
+                let dest = sanitize_archive_path(
+                    &config.target_dir,
+                    &format!("pack/{}", embed.destination_path),
+                    session.filesystem(),
+                )?;
                 extract_embedded_from_archive(
                     archive
                         .as_mut()
@@ -1451,12 +1455,10 @@ pub async fn execute_import(
             project_type: dep.project_type,
             version: dep.version.clone(),
         };
-        if let Err(e) = config_manager.add_dependency(&dep.derived_key, record) {
-            session
-                .display()
-                .status()
-                .warning(&format!("failed to update empack.yml: {}", e));
-        }
+        config_manager.record_installed_dependency(
+            &dep.derived_key,
+            crate::empack::config::DependencyEntry::Resolved(record),
+        )?;
     }
 
     if !add_durations.is_empty() {
@@ -1505,7 +1507,11 @@ pub async fn execute_import(
     override_progress.set_message("Copying overrides");
 
     for override_entry in &resolved.manifest.overrides {
-        let dest = sanitize_archive_path(&pack_dir, &override_entry.destination_path)?;
+        let dest = sanitize_archive_path(
+            &config.target_dir,
+            &format!("pack/{}", override_entry.destination_path),
+            session.filesystem(),
+        )?;
         extract_embedded_from_archive(
             archive
                 .as_mut()
@@ -1814,33 +1820,18 @@ async fn add_platform_ref(
 }
 
 /// Validate that a relative path from an archive does not escape the target directory.
-fn sanitize_archive_path(base: &Path, relative: &str) -> Result<PathBuf> {
-    // Canonicalize the base first so the join inherits the resolved prefix.
-    // On macOS, /tmp is a symlink to /private/tmp; without this, the base
-    // canonicalizes to /private/tmp/... but the joined path stays at /tmp/...
-    // and the starts_with check fails.
-    let canonical_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
-    let joined = canonical_base.join(relative);
-    let canonical_dest = joined.canonicalize().unwrap_or_else(|_| {
-        let mut components = Vec::new();
-        for c in joined.components() {
-            match c {
-                std::path::Component::ParentDir => {
-                    components.pop();
-                }
-                std::path::Component::CurDir => {}
-                _ => components.push(c),
-            }
-        }
-        components.iter().collect()
-    });
-    if !canonical_dest.starts_with(&canonical_base) {
-        anyhow::bail!(
-            "path traversal detected: '{}' escapes target directory",
-            relative
-        );
-    }
-    Ok(joined)
+fn sanitize_archive_path(
+    base: &Path,
+    relative: &str,
+    fs: &dyn crate::application::session::FileSystemProvider,
+) -> Result<PathBuf> {
+    anyhow::ensure!(
+        !relative.contains('\\'),
+        "Archive paths must use forward slashes"
+    );
+    let destination = base.join(relative);
+    fs.validate_output_path(base, &destination)?;
+    Ok(destination)
 }
 
 const MAX_IMPORT_ENTRY_BYTES: u64 = 512 * 1024 * 1024;

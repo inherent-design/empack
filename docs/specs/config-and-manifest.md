@@ -167,3 +167,9 @@ Forced initialization defers the existing-project reset until input resolution a
 Dependency entries with `status: resolved` or `status: local` must satisfy that record schema. Unknown fields and invalid status values are errors. Search entries omit `status` and accept only `title`, `type`, and `platform`; a malformed explicit record never falls back to a search.
 
 Sync resolves search entries in memory in both execution and preview modes. Persistence starts after planning and installed-intent validation. Successful planning does not provide a transaction across packwiz and the manifest; automatic installed-dependency replacement remains unsupported.
+
+Explicit `add --version-id` and `add --file-id` requests retain their pin in the
+resolved record. Unpinned requests remain unpinned. Backend installation and
+manifest publication are separate steps: if publication fails, add and import
+return an incomplete-operation error naming the installed dependency and the
+manifest that needs repair. They do not report full success or imply rollback.

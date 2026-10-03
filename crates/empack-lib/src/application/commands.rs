@@ -1823,22 +1823,16 @@ async fn handle_add(
                                     project_type: resolution.project_type,
                                     version: None,
                                 };
-                                if let Err(e) = config_manager.add_dependency(&dep_key, record) {
-                                    session
-                                        .display()
-                                        .status()
-                                        .warning(&format!("Failed to update empack.yml: {}", e));
-                                }
+                                config_manager.record_installed_dependency(
+                                    &dep_key,
+                                    DependencyEntry::Resolved(record),
+                                )?;
                             }
                             DirectDownloadKind::Local { dep_key, record } => {
-                                if let Err(e) = config_manager
-                                    .add_dependency_entry(&dep_key, DependencyEntry::Local(record))
-                                {
-                                    session
-                                        .display()
-                                        .status()
-                                        .warning(&format!("Failed to update empack.yml: {}", e));
-                                }
+                                config_manager.record_installed_dependency(
+                                    &dep_key,
+                                    DependencyEntry::Local(record),
+                                )?;
                             }
                         }
                         added_mods.push(mod_query);
@@ -1983,14 +1977,10 @@ async fn handle_add(
                             .resolution
                             .resolved_project_type
                             .unwrap_or(ProjectType::Mod),
-                        version: None,
+                        version: resolved.resolution.requested_pin.clone(),
                     };
-                    if let Err(e) = config_manager.add_dependency(&dep_key, record) {
-                        session
-                            .display()
-                            .status()
-                            .warning(&format!("Failed to update empack.yml: {}", e));
-                    }
+                    config_manager
+                        .record_installed_dependency(&dep_key, DependencyEntry::Resolved(record))?;
                     added_mods.push(resolved.query);
                 }
             }
@@ -3424,7 +3414,6 @@ fn load_pending_restricted_build_context(
         workdir,
         &pending,
     )? {
-        crate::empack::restricted_build::clear_pending_build(session.filesystem(), workdir)?;
         return Err(anyhow::anyhow!(
             "Pending restricted build is stale: {reason}. Run a fresh build again."
         ));

@@ -2271,3 +2271,13 @@ fn import_rejects_oversized_zip_entries_before_extraction() {
     let error = open_zip_archive(bytes).expect_err("oversized entry must fail");
     assert!(error.to_string().contains("512 MiB"), "{error}");
 }
+
+#[cfg(unix)]
+#[test]
+fn archive_destination_rejects_existing_symlink_with_missing_leaf() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.path().join("config")).unwrap();
+    assert!(sanitize_archive_path(root.path(), "config/new.toml", &crate::application::session::LiveFileSystemProvider).is_err());
+    assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+}

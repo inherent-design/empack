@@ -151,3 +151,8 @@ An import is considered incomplete if any platform references fail to add.
 ## Archive Resource Limits
 
 Import execution opens one seekable archive reader and reuses it for embedded content and overrides. The live reader is file-backed; mocks use an in-memory cursor. Archive metadata is checked before execution creates the target project. Imports accept at most 100,000 entries, 512 MiB per uncompressed entry, and 4 GiB of declared uncompressed content. Extraction also enforces the per-entry limit while reading. Individual output files still pass through the filesystem provider as byte buffers.
+
+Archive destinations use the workflow output validator before extraction. The
+live filesystem rejects symlinked ancestors even when the final file does not
+exist. A failed manifest publication after installation is a command failure;
+its diagnostic identifies the partial installation and required reconciliation.

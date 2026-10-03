@@ -677,6 +677,20 @@ impl<'a> ConfigManager<'a> {
         self.add_dependency_entry(slug, DependencyEntry::Resolved(record))
     }
 
+    /// Publish intent after backend installation. Failure means partial execution.
+    pub fn record_installed_dependency(
+        &self,
+        key: &str,
+        entry: DependencyEntry,
+    ) -> anyhow::Result<()> {
+        self.add_dependency_entry(key, entry)
+            .map_err(|source| InstalledButUnrecorded {
+                dependency: key.to_string(),
+                source,
+            })?;
+        Ok(())
+    }
+
     /// Add or replace any dependency entry in empack.yml.
     pub fn add_dependency_entry(
         &self,
@@ -920,4 +934,15 @@ pub(crate) fn format_empack_yml(
 #[cfg(test)]
 mod tests {
     include!("config.test.rs");
+}
+
+/// Backend installation succeeded but durable project intent was not published.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Dependency '{dependency}' was installed, but updating empack.yml failed. Inspect installed metadata and record or restore the intended dependency before syncing: {source}"
+)]
+pub struct InstalledButUnrecorded {
+    pub dependency: String,
+    #[source]
+    pub source: ConfigError,
 }

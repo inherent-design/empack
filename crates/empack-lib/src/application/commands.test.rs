@@ -2821,6 +2821,35 @@ mod handle_add_tests {
     use super::*;
 
     #[tokio::test]
+    async fn added_pins_survive_manifest_publication() {
+        for (platform, id, version, file) in [
+            (SearchPlatform::Modrinth, "AANobbMI", Some("pinned-mr".to_string()), None),
+            (SearchPlatform::Curseforge, "238222", None, Some("12345".to_string())),
+        ] {
+            let workdir = mock_root().join("add-pin-publication");
+            let session = configured_session(&workdir);
+            let expected = version.clone().or(file.clone());
+            handle_add(&session, vec![id.to_string()], false, Some(platform), None, version, file).await.unwrap();
+            let config = session.filesystem().config_manager(workdir).load_empack_config().unwrap();
+            let DependencyEntry::Resolved(record) = config.empack.dependencies.values().next().unwrap() else { panic!("resolved record required") };
+            assert_eq!(record.version, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn add_reports_partial_failure_when_manifest_publication_fails() {
+        let workdir = mock_root().join("add-publication-failure");
+        let session = configured_session(&workdir);
+        let before = session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap();
+        session.filesystem_provider.add_write_failure(workdir.join("empack.yml"), "injected publication failure");
+        let error = handle_add(&session, vec!["238222".to_string()], false, Some(SearchPlatform::Curseforge), None, None, None).await.expect_err("partial execution must fail");
+        let message = format!("{error:#}");
+        assert!(message.contains("installed") && message.contains("empack.yml") && message.contains("before syncing"), "{message}");
+        assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), before);
+        assert_eq!(session.process_provider.get_calls().len(), 1);
+    }
+
+    #[tokio::test]
     async fn it_adds_single_mod_successfully() {
         let workdir = mock_root().join("configured-project");
 
@@ -5764,7 +5793,7 @@ mod handle_build_continue_tests {
     }
 
     #[tokio::test]
-    async fn build_continue_clears_stale_pending_state() {
+    async fn build_continue_preserves_stale_pending_state() {
         let _guard = crate::test_support::env_lock().lock_async().await;
         let cache_root = TempDir::new().expect("cache root tempdir");
         let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
@@ -5820,8 +5849,71 @@ mod handle_build_continue_tests {
         assert!(
             crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
                 .expect("load pending build")
-                .is_none(),
-            "stale pending state should be cleared"
+                .is_some(),
+            "stale pending state should remain for inspection"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_continue_preview_preserves_stale_pending_state() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
+        let cache_root = TempDir::new().expect("cache root tempdir");
+        let _cache_dir = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", cache_root.path()) };
+
+        let workdir = mock_root().join("continue-stale");
+        let mut session = MockCommandSession::new()
+            .with_filesystem(cached_full_build_filesystem(workdir.clone()))
+            .with_process(MockProcessProvider::new().with_java_installer_side_effects());
+
+        session.config_provider.app_config.dry_run = true;
+        let pending = crate::empack::restricted_build::save_pending_build(
+            session.filesystem(),
+            &workdir,
+            &[BuildTarget::ClientFull],
+            crate::empack::archive::ArchiveFormat::Zip,
+            &[crate::empack::RestrictedModInfo {
+                name: "OptiFine.jar".to_string(),
+                url: "https://www.curseforge.com/minecraft/mc-mods/optifine/files/4912891"
+                    .to_string(),
+                dest_path: workdir
+                    .join("dist")
+                    .join("client-full")
+                    .join("mods")
+                    .join("OptiFine.jar")
+                    .to_string_lossy()
+                    .to_string(),
+            }],
+        )
+        .expect("save pending build");
+        session
+            .filesystem()
+            .write_file(&workdir.join("empack.yml"), "empack:\n  name: changed\n")
+            .expect("rewrite empack.yml");
+        session
+            .filesystem()
+            .create_dir_all(&workdir.join("dist").join("client-full"))
+            .expect("create client-full output");
+        session
+            .filesystem()
+            .write_bytes(&pending.restricted_cache_path().join("OptiFine.jar"), b"cached bytes")
+            .expect("write cached restricted file");
+
+        let err = handle_build(
+            &session,
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("stale pending state should fail");
+
+        assert!(err.to_string().contains("Pending restricted build is stale"));
+        assert!(
+            crate::empack::restricted_build::load_pending_build(session.filesystem(), &workdir)
+                .expect("load pending build")
+                .is_some(),
+            "stale pending state should remain for inspection"
         );
     }
 

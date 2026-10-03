@@ -44,6 +44,8 @@ pub enum SyncExecutionAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddResolution {
+    /// Explicit requested pin; resolved unpinned installs remain unpinned.
+    pub requested_pin: Option<String>,
     pub title: String,
     pub commands: Vec<Vec<String>>,
     pub resolved_project_id: String,
@@ -217,6 +219,7 @@ pub async fn resolve_add_contract(
         })?;
 
     Ok(AddResolution {
+        requested_pin: version_pin.map(str::to_owned),
         title,
         commands,
         resolved_project_id: project_id,
