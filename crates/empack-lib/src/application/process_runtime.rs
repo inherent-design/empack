@@ -405,7 +405,7 @@ mod windows_tests {
     async fn fallback_closes_inherited_pipes_after_parent_exits() {
         use std::os::windows::io::AsRawHandle;
         let mut child = tokio::process::Command::new("cmd.exe")
-            .args(["/C", "start \"\" /b ping.exe -n 30 127.0.0.1"])
+            .args(["/C", "start /b ping.exe -n 30 127.0.0.1"])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
