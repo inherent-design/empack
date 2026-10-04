@@ -49,7 +49,7 @@ fn test_build_sync_plan_preserves_direct_lookup_contracts() {
                     assert_eq!(*project_platform, ProjectPlatform::CurseForge);
                     assert_eq!(*version_pin, Some("5678901".to_string()));
                 }
-                DependencySource::Local { .. } => panic!("expected Platform source"),
+                DependencySource::Local { .. } | DependencySource::Url(_) => panic!("expected Platform source"),
             }
         }
         other => panic!("expected add action, got {other:?}"),

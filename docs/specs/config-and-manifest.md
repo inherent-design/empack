@@ -59,10 +59,17 @@ Deserialization dispatches on explicit status and rejects malformed intent. Supp
 
 - `DependencyEntry::Resolved(DependencyRecord)`
 - `DependencyEntry::Local(LocalDependencyRecord)`
+- `DependencyEntry::Url(UrlDependencyRecord)`
 - `DependencyEntry::Search(DependencySearch)`
 
 Resolved entries are current-state declarations. Search entries are deferred intent that sync resolves before building the `ProjectPlan`.
-Local entries are first-class tracked project files that stay outside packwiz metadata.
+Local entries are tracked project files that stay outside packwiz metadata. URL entries preserve provider-free remote files with packwiz download metadata. Imported resolved records may carry an `environment` object with client and server requirements; sync reapplies it after a pin change or metadata drift.
+
+### UrlDependencyRecord
+
+A `status: url` record contains `title`, `type`, a pack-relative `destination`, `downloads`, `hashes`, optional byte `size`, and `env.client` / `env.server`. Each environment is `required`, `optional`, `unsupported`, or `unknown`. The source must declare at least one valid SHA-1, SHA-256 or SHA-512 digest. All supported declared digests are verified before initial publication or reconstruction. Unknown fields are rejected.
+
+The metadata file is stored next to the declared destination as `<filename>.pw.toml`. The download URL's basename does not select the installed filename. Sync validates existing metadata against the record and can restore missing metadata after verifying the source again. Divergent metadata fails validation. Removal deletes that validated metadata file and refreshes the index before removing intent.
 
 ### LocalDependencyRecord
 

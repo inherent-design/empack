@@ -38,7 +38,7 @@ pub fn plan_removals(
             .filter(|entry| entry.key == *query)
             .collect();
         ensure!(stems.len() <= 1, "Ambiguous installed name: {query}");
-        let by_stem: Vec<_> = stems
+        let mut by_stem: Vec<_> = stems
             .first()
             .into_iter()
             .flat_map(|observed| {
@@ -50,6 +50,10 @@ pub fn plan_removals(
                 })
             })
             .collect();
+        for candidate in manifest.iter().filter(|(_, entry)| matches!(entry, DependencyEntry::Url(record)
+            if record.metadata_relative_path().file_name().and_then(|v| v.to_str()).and_then(|v| v.strip_suffix(".pw.toml")) == Some(query.as_str()))) {
+            by_stem.push(candidate);
+        }
         let chosen = if let Some(exact) = exact {
             Some(exact)
         } else {
@@ -65,6 +69,29 @@ pub fn plan_removals(
             );
             candidates.into_iter().next()
         };
+        if exact.is_none()
+            && let (Some((_, entry)), Some(stem)) = (chosen, stems.first())
+        {
+            let same = match entry {
+                DependencyEntry::Resolved(record) => {
+                    stem.identity.as_ref() == Some(&identity(record))
+                }
+                DependencyEntry::Url(record) => {
+                    stem.identity.is_none()
+                        && record
+                            .metadata_relative_path()
+                            .file_name()
+                            .and_then(|v| v.to_str())
+                            .and_then(|v| v.strip_suffix(".pw.toml"))
+                            == Some(stem.key.as_str())
+                }
+                _ => false,
+            };
+            ensure!(
+                same,
+                "Ambiguous title and installed filename '{query}'; use an exact manifest key"
+            );
+        }
         let observed = match chosen.map(|(_, entry)| entry) {
             Some(DependencyEntry::Resolved(record)) => {
                 let id = identity(record);
@@ -110,6 +137,7 @@ mod tests {
 
     fn entry(id: &str) -> DependencyEntry {
         DependencyEntry::Resolved(DependencyRecord {
+            environment: None,
             status: DependencyStatus::Resolved,
             title: "Shared title".into(),
             platform: ProjectPlatform::Modrinth,

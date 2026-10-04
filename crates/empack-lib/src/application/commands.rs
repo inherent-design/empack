@@ -26,7 +26,7 @@ use crate::empack::search::SearchError;
 use crate::primitives::{BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition};
 use anyhow::Context;
 use std::collections::HashSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use crate::empack::config::format_empack_yml;
 use tracing::instrument;
@@ -1818,6 +1818,7 @@ async fn handle_add(
                                 };
 
                                 let record = DependencyRecord {
+                                    environment: None,
                                     status: DependencyStatus::Resolved,
                                     title: resolution.title.clone(),
                                     platform,
@@ -1975,6 +1976,7 @@ async fn handle_add(
 
                 {
                     let record = DependencyRecord {
+                        environment: None,
                         status: DependencyStatus::Resolved,
                         title: resolved.resolution.title.clone(),
                         platform: resolved.resolution.resolved_platform,
@@ -2617,6 +2619,7 @@ fn build_tracked_local_dependency(
     project_type: ProjectType,
     bytes: &[u8],
 ) -> std::result::Result<DirectDownloadResult, anyhow::Error> {
+    crate::empack::paths::validate_filename(filename)?;
     let datapack_folder = if matches!(project_type, ProjectType::Datapack) {
         Some(ensure_tracked_local_datapack_folder(session, workdir)?)
     } else {
@@ -2694,6 +2697,9 @@ fn ensure_tracked_local_dependency_key_available(
             dep_key,
             existing.title
         ),
+        Some(DependencyEntry::Url(_)) => {
+            anyhow::bail!("Dependency key '{dep_key}' already belongs to a URL file")
+        }
         Some(DependencyEntry::Search(existing)) => anyhow::bail!(
             "Tracked local dependency key '{}' is already used by dependency '{}'. Rename the file or remove the existing dependency first.",
             dep_key,
@@ -2837,22 +2843,6 @@ struct LocalDependencyIssue {
     reason: String,
 }
 
-fn validate_tracked_local_dependency_relative_path(
-    path: &str,
-) -> std::result::Result<PathBuf, &'static str> {
-    let rel = PathBuf::from(path);
-    if !rel.is_relative() {
-        return Err("path must be relative");
-    }
-    if rel
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
-        return Err("path escapes the project directory");
-    }
-    Ok(rel)
-}
-
 fn validate_local_dependencies(
     filesystem: &dyn FileSystemProvider,
     workdir: &Path,
@@ -2866,20 +2856,22 @@ fn validate_local_dependencies(
                 return None;
             };
 
-            let rel = match validate_tracked_local_dependency_relative_path(path) {
-                Ok(rel) => rel,
-                Err(reason) => {
-                    return Some(LocalDependencyIssue {
-                        key: dependency.key.clone(),
-                        title: dependency.search_query.clone(),
-                        path: path.clone(),
-                        reason: reason.to_string(),
-                    });
-                }
-            };
+            let file =
+                match crate::empack::paths::TrackedProjectFile::validate(filesystem, workdir, path)
+                {
+                    Ok(file) => file,
+                    Err(reason) => {
+                        return Some(LocalDependencyIssue {
+                            key: dependency.key.clone(),
+                            title: dependency.search_query.clone(),
+                            path: path.clone(),
+                            reason: reason.to_string(),
+                        });
+                    }
+                };
 
-            let absolute_path = workdir.join(&rel);
-            if !filesystem.exists(&absolute_path) {
+            let absolute_path = file.path();
+            if !filesystem.exists(absolute_path) {
                 return Some(LocalDependencyIssue {
                     key: dependency.key.clone(),
                     title: dependency.search_query.clone(),
@@ -2888,7 +2880,7 @@ fn validate_local_dependencies(
                 });
             }
 
-            match filesystem.read_bytes(&absolute_path) {
+            match filesystem.read_bytes(absolute_path) {
                 Ok(bytes) => {
                     let actual_sha256 = compute_sha256_hex_for_bytes(&bytes);
                     if &actual_sha256 == sha256 {
@@ -2918,6 +2910,20 @@ fn validate_local_dependencies(
 
 fn validate_build_project_plan(session: &dyn Session, workdir: &Path) -> Result<()> {
     let config_manager = session.filesystem().config_manager(workdir.to_path_buf());
+    for entry in config_manager
+        .load_empack_config()?
+        .empack
+        .dependencies
+        .values()
+    {
+        if let DependencyEntry::Resolved(record) = entry {
+            anyhow::ensure!(
+                session.packwiz().requirements_satisfied(workdir, record)?,
+                "Imported requirements differ from installed metadata for '{}'; run empack sync",
+                record.title
+            );
+        }
+    }
     let project_plan = config_manager
         .create_project_plan()
         .context("Failed to load empack.yml configuration")?;
@@ -2940,6 +2946,13 @@ fn validate_build_project_plan(session: &dyn Session, workdir: &Path) -> Result<
         );
     }
     for dependency in &project_plan.dependencies {
+        if let DependencySource::Url(record) = &dependency.source {
+            anyhow::ensure!(
+                record.is_installed(session.filesystem(), workdir)?,
+                "URL file '{}' is missing metadata; run empack sync",
+                dependency.key
+            );
+        }
         if let DependencySource::Local { path, .. } = &dependency.source {
             crate::empack::paths::TrackedProjectFile::validate(
                 session.filesystem(),
@@ -3032,6 +3045,14 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
     let plans = super::removal::plan_removals(&validated_mods, &manifest, &installed)?;
     // Validate every local target before executing any part of the batch.
     for plan in &plans {
+        if let Some(target) = &plan.installed {
+            session
+                .packwiz()
+                .validate_removal_target(&workdir, target)?;
+        }
+        if let Some(DependencyEntry::Url(record)) = &plan.entry {
+            record.is_installed(session.filesystem(), &workdir)?;
+        }
         if let Some(DependencyEntry::Local(record)) = &plan.entry {
             crate::empack::paths::TrackedProjectFile::validate(
                 session.filesystem(),
@@ -3059,6 +3080,13 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
 
     for plan in plans {
         let result = (|| -> Result<()> {
+            if let Some(DependencyEntry::Url(record)) = &plan.entry
+                && record.is_installed(session.filesystem(), &workdir)?
+            {
+                let path = record.metadata_path(session.filesystem(), &workdir)?;
+                session.filesystem().remove_file(&path)?;
+                session.packwiz().run_packwiz_refresh(&workdir)?;
+            }
             if let Some(DependencyEntry::Local(record)) = &plan.entry {
                 let file = crate::empack::paths::TrackedProjectFile::validate(
                     session.filesystem(),
@@ -3076,6 +3104,9 @@ async fn handle_remove(session: &dyn Session, mods: Vec<String>, deps: bool) -> 
                     "Installed target '{}' changed after planning; retry removal",
                     target.key
                 );
+                session
+                    .packwiz()
+                    .validate_removal_target(&workdir, target)?;
                 let output = session.process().execute(
                     session.packwiz_bin(),
                     &["remove", "-y", &target.key],
@@ -4173,6 +4204,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                     };
 
                     let record = DependencyRecord {
+                        environment: None,
                         status: DependencyStatus::Resolved,
                         title: project_info.title.clone(),
                         platform: project_info.platform,
@@ -4212,6 +4244,27 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         .context("Failed to load empack.yml configuration")?;
 
     let sync_plan = build_sync_plan(&project_plan, &installed_mods)?;
+    let mut requirement_repairs = Vec::new();
+    for entry in empack_config.empack.dependencies.values() {
+        if let DependencyEntry::Resolved(record) = entry
+            && !session.packwiz().requirements_satisfied(&workdir, record)?
+        {
+            requirement_repairs.push(record);
+        }
+    }
+
+    let mut url_repairs = Vec::new();
+    for dependency in &project_plan.dependencies {
+        if let DependencySource::Url(record) = &dependency.source
+            && !record.is_installed(session.filesystem(), &workdir)?
+        {
+            session
+                .display()
+                .status()
+                .info(&format!("Restore URL file: {}", dependency.key));
+            url_repairs.push(record.as_ref());
+        }
+    }
 
     let local_dependency_issues =
         validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
@@ -4326,7 +4379,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 
     // Show planned actions
-    if planned_actions.is_empty() {
+    if planned_actions.is_empty() && url_repairs.is_empty() && requirement_repairs.is_empty() {
         if resolution_error.is_none() && !session.config().app_config().dry_run {
             for (slug, _) in &search_entries {
                 if let Some(DependencyEntry::Resolved(record)) =
@@ -4419,6 +4472,17 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         {
             config_manager.add_dependency(slug, record.clone())?;
         }
+    }
+
+    let mut verified_urls = Vec::new();
+    for record in &url_repairs {
+        verified_urls.push(record.verify_download(session).await?);
+    }
+    for (record, url) in url_repairs.iter().zip(&verified_urls) {
+        record.publish(session.filesystem(), &workdir, url)?;
+    }
+    if !url_repairs.is_empty() {
+        session.packwiz().run_packwiz_refresh(&workdir)?;
     }
 
     // Execute planned actions
@@ -4562,6 +4626,14 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         .info(&format!("Failed actions: {}", failure_count));
 
     if failure_count == 0 {
+        for entry in empack_config.empack.dependencies.values() {
+            if let DependencyEntry::Resolved(record) = entry {
+                session.packwiz().apply_requirements(&workdir, record)?;
+            }
+        }
+        if empack_config.empack.dependencies.values().any(|entry| matches!(entry, DependencyEntry::Resolved(record) if record.environment.is_some())) {
+            session.packwiz().run_packwiz_refresh(&workdir)?;
+        }
         session
             .packwiz()
             .verify_reconciled(&workdir, &project_plan)?;

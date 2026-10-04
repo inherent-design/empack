@@ -30,6 +30,14 @@ Common imported content belongs in `pack/`. Client and server layers remain in `
 
 Production target planning inserts one fresh mrpack export before lightweight client/server targets. A file left by a previous invocation is not evidence of freshness. Tracked local files under `pack/` use the same export path after SHA-256 and ancestor validation; the CLI no longer rejects this supported packwiz operation. Archive parsing is file-backed and bounds compressed input, manifests, entries and declared extraction size. Import destinations use the same ancestor validation as other confined workflows.
 
+## Verified remote files and requirements
+
+`UrlDependencyRecord` carries destination, download alternatives, source digests, byte size and environment without a provider identity. Import verifies these bytes before creating the project. The persisted record produces packwiz metadata with the declared filename, side and optional flag. Sync restores missing metadata through the same verification path. Build validates it before export; removal validates its exact path and current content before deletion.
+
+Provider-backed imports persist their environment requirements too. Sync reapplies those requirements after installation and repairs missing optional metadata. Packwiz can represent an optional file on one or both supported sides. A file that is required on one side and optional on the other cannot be represented by a single packwiz record; import rejects that conversion before initialization. Optional embedded files are also rejected rather than converted to unconditional overrides.
+
+Mrpack exports that need preserved URL or optional records disable packwiz's hosting-domain restriction. The format permits direct URLs, while modrinth.com upload rules may restrict their hosts. This keeps format semantics intact; it does not promise eligibility for publication on every hosting service. Optional files that require a restricted-provider download mode cannot be exported losslessly by the backend; mrpack export rejects them and directs the user to a full distribution or an explicit requirement change. URL exports are checked for the declared destination, environment and size because a successful backend exit can still omit a failed download.
+
 ## Restricted download identity
 
 Continuation records bind requests to strong digests from installed metadata where available. Candidate discovery compares content, and cache entries are checked again before staging. A renamed file can satisfy only the identity its bytes establish. Without a supported digest, the user must associate a file explicitly or place it at the printed cache destination; extension and recency are not evidence of identity.

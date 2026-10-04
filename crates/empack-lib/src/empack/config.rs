@@ -60,6 +60,7 @@ pub struct EmpackConfig {
 pub enum DependencyStatus {
     Resolved,
     Local,
+    Url,
 }
 
 /// A fully resolved dependency entry in empack.yml
@@ -82,6 +83,10 @@ pub struct DependencyRecord {
     #[serde(default = "default_project_type")]
     #[serde(rename = "type")]
     pub project_type: ProjectType,
+
+    /// Imported physical-side requirements, preserved across reinstalls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<super::content::SideEnv>,
 
     /// Optional pinned version ID
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,6 +138,7 @@ pub struct DependencySearch {
 pub enum DependencyEntry {
     Resolved(DependencyRecord),
     Local(LocalDependencyRecord),
+    Url(super::url_file::UrlDependencyRecord),
     Search(DependencySearch),
 }
 
@@ -150,8 +156,14 @@ impl<'de> Deserialize<'de> for DependencyEntry {
                     .map(Self::Local)
                     .map_err(serde::de::Error::custom)
             }
+            Some(serde_json::Value::String(status)) if status == "url" => {
+                let record: super::url_file::UrlDependencyRecord =
+                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                record.validate().map_err(serde::de::Error::custom)?;
+                Ok(Self::Url(record))
+            }
             Some(_) => Err(serde::de::Error::custom(
-                "dependency status must be resolved or local",
+                "dependency status must be resolved, local or url",
             )),
             None => serde_json::from_value(value)
                 .map(Self::Search)
@@ -171,6 +183,7 @@ impl Dependency for DependencyEntry {
         match self {
             DependencyEntry::Resolved(r) => &r.title,
             DependencyEntry::Local(l) => &l.title,
+            DependencyEntry::Url(u) => &u.title,
             DependencyEntry::Search(s) => &s.title,
         }
     }
@@ -179,6 +192,7 @@ impl Dependency for DependencyEntry {
         match self {
             DependencyEntry::Resolved(r) => Some(r.project_type),
             DependencyEntry::Local(l) => Some(l.project_type),
+            DependencyEntry::Url(u) => Some(u.project_type),
             DependencyEntry::Search(s) => s.project_type,
         }
     }
@@ -297,6 +311,7 @@ pub struct ProjectSpec {
 /// Shared source model used by config, sync, remove, and build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencySource {
+    Url(Box<super::url_file::UrlDependencyRecord>),
     Platform {
         project_id: String,
         project_platform: ProjectPlatform,
@@ -454,6 +469,14 @@ impl<'a> ConfigManager<'a> {
                     );
                     dependencies.push(spec);
                 }
+                DependencyEntry::Url(record) => dependencies.push(ProjectSpec {
+                    key: slug.clone(),
+                    search_query: record.title.clone(),
+                    project_type: record.project_type,
+                    minecraft_version: minecraft_version.clone(),
+                    loader,
+                    source: DependencySource::Url(Box::new(record.clone())),
+                }),
                 DependencyEntry::Search(_) => {}
             }
         }
@@ -581,6 +604,7 @@ impl<'a> ConfigManager<'a> {
             deps.insert(
                 "sodium".to_string(),
                 DependencyEntry::Resolved(DependencyRecord {
+                    environment: None,
                     status: DependencyStatus::Resolved,
                     title: "Sodium".to_string(),
                     platform: ProjectPlatform::Modrinth,
@@ -592,6 +616,7 @@ impl<'a> ConfigManager<'a> {
             deps.insert(
                 "lithium".to_string(),
                 DependencyEntry::Resolved(DependencyRecord {
+                    environment: None,
                     status: DependencyStatus::Resolved,
                     title: "Lithium".to_string(),
                     platform: ProjectPlatform::Modrinth,
@@ -604,6 +629,7 @@ impl<'a> ConfigManager<'a> {
                 deps.insert(
                     "fabric-api".to_string(),
                     DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
                         status: DependencyStatus::Resolved,
                         title: "Fabric API".to_string(),
                         platform: ProjectPlatform::Modrinth,

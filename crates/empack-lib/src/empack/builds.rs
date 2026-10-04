@@ -1142,19 +1142,57 @@ impl<'a> BuildOrchestrator<'a> {
             .map_err(|e| BuildError::ConfigError {
                 reason: e.to_string(),
             })?;
+        let manifest = self
+            .session
+            .filesystem()
+            .config_manager(self.workdir.clone())
+            .load_empack_config()
+            .map_err(|e| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
+        for entry in manifest.empack.dependencies.values() {
+            if let super::config::DependencyEntry::Resolved(record) = entry {
+                self.session
+                    .packwiz()
+                    .validate_optional_export(&self.workdir, record)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: e.to_string(),
+                    })?;
+            }
+        }
+        let preserve_urls = manifest
+            .empack
+            .dependencies
+            .values()
+            .any(|entry| match entry {
+                super::config::DependencyEntry::Url(_) => true,
+                super::config::DependencyEntry::Resolved(record) => {
+                    record.environment.as_ref().is_some_and(|env| {
+                        matches!(env.client, super::content::SideRequirement::Optional)
+                            || matches!(env.server, super::content::SideRequirement::Optional)
+                    })
+                }
+                _ => false,
+            });
+        let mut args = vec![
+            "--cache".to_string(),
+            download_cache.to_string_lossy().into_owned(),
+            "--pack-file".to_string(),
+            pack_file.to_string_lossy().into_owned(),
+            "mr".to_string(),
+            "export".to_string(),
+            "-o".to_string(),
+            output_file.to_string_lossy().into_owned(),
+        ];
+        // Domain restrictions are a hosting policy. Flattening URL files into overrides
+        // would erase optional requirements from a format that supports arbitrary URLs.
+        if preserve_urls {
+            args.push("--restrictDomains=false".into());
+        }
         let output = execute_process_with_live_issues(
             self.session,
             self.session.packwiz_bin(),
-            &[
-                "--cache",
-                &download_cache.to_string_lossy(),
-                "--pack-file",
-                &pack_file.to_string_lossy(),
-                "mr",
-                "export",
-                "-o",
-                &output_file.to_string_lossy(),
-            ],
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
             &self.workdir,
         )
         .map_err(|e| BuildError::CommandFailed {
@@ -1196,6 +1234,21 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
+        let url_files: Vec<_> = manifest
+            .empack
+            .dependencies
+            .values()
+            .filter_map(|entry| match entry {
+                super::config::DependencyEntry::Url(record) => Some(record),
+                _ => None,
+            })
+            .collect();
+        if !url_files.is_empty() {
+            super::url_file::verify_export(self.session.filesystem(), &output_file, &url_files)
+                .map_err(|e| BuildError::ConfigError {
+                    reason: e.to_string(),
+                })?;
+        }
         let mut additions = Vec::new();
         for side in [OverrideSide::ClientOnly, OverrideSide::ServerOnly] {
             let root = self.workdir.join(side.project_directory());

@@ -172,7 +172,7 @@ pub async fn resolve_sync_action(
             title: title.clone(),
         }),
         SyncPlanAction::Add(dep) => match &dep.source {
-            DependencySource::Local { .. } => {
+            DependencySource::Local { .. } | DependencySource::Url(_) => {
                 unreachable!("build_sync_plan filters out Local entries before dispatch");
             }
             DependencySource::Platform {

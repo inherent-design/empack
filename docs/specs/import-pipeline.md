@@ -165,3 +165,9 @@ another layer during import. Forced initialization resets these managed content
 directories only after its execution checks.
 
 Remote acquisition uses a temporary file and enforces the 2 GiB compressed-input limit while receiving bytes. It rejects an excessive Content-Length before receiving the body and counts streamed chunks even when the header is absent. Cancellation interrupts stalled header or body waits. Failed acquisition drops the temporary file; completed acquisition publishes through the filesystem provider's streamed atomic replacement. Production publication does not buffer the file in memory. In-memory test providers may buffer their fixtures.
+
+### Provider-free files and optional requirements
+
+Unknown-host downloads become `ContentEntry::UrlFile` and persist as `status: url`; they do not pass through `packwiz url add` or acquire an empty Modrinth ID. The record retains every download alternative, the archive's expected digests and size, its destination, and its environment. Acquisition verifies supported source hashes before project initialization. Metadata publication uses the verified alternative without replacing the source digest with a digest of arbitrary replacement bytes.
+
+Provider imports persist an optional `environment` in their resolved manifest record. After the backend writes metadata, empack applies the declared side and optional flag, then refreshes the index. Sync restores these requirements after pin changes. Required/optional combinations that differ between supported sides, and optional embedded files, fail preflight because the current packwiz representation cannot preserve them. The tests inspect generated metadata and a real backend re-export.

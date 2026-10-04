@@ -70,6 +70,27 @@ pub trait PackwizOps {
         Ok(())
     }
 
+    /// Whether persisted imported side/optional intent matches installed metadata.
+    fn requirements_satisfied(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<bool>;
+
+    /// Apply imported side/optional intent after an installation or pin change.
+    fn apply_requirements(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<()>;
+
+    /// Refuse mrpack conversions that would turn optional restricted files into overrides.
+    fn validate_optional_export(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<()>;
+
     /// Return the observed metadata key only after identity, type and pin agree.
     fn verify_added(
         &self,
@@ -97,6 +118,13 @@ pub trait PackwizOps {
         );
         Ok(Some(matches[0].key.clone()))
     }
+
+    /// Validate the filesystem authority of the observed backend removal target.
+    fn validate_removal_target(
+        &self,
+        _workdir: &Path,
+        _target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()>;
 
     /// A successful backend exit must actually remove the selected installation.
     fn verify_removed(
@@ -362,6 +390,90 @@ impl PackwizOps for LivePackwizOps<'_> {
             .collect()
     }
 
+    fn validate_removal_target(
+        &self,
+        workdir: &Path,
+        target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()> {
+        let paths = self.installed_paths(workdir)?;
+        let path = paths
+            .get(&target.key)
+            .ok_or_else(|| anyhow::anyhow!("Removal target disappeared"))?;
+        self.filesystem
+            .validate_output_path(&workdir.join("pack"), path)?;
+        anyhow::ensure!(
+            self.filesystem.is_regular_file(path),
+            "Removal metadata must be a regular file"
+        );
+        Ok(())
+    }
+
+    fn validate_optional_export(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<()> {
+        let Some(env) = &record.environment else {
+            return Ok(());
+        };
+        if !super::url_file::requirements(env)?.1 {
+            return Ok(());
+        }
+        let (_, metadata) = self
+            .requirement_metadata(workdir, record)?
+            .ok_or_else(|| anyhow::anyhow!("Missing optional metadata for {}", record.title))?;
+        let mode = metadata
+            .get("download")
+            .and_then(|d| d.get("mode"))
+            .and_then(toml::Value::as_str)
+            .unwrap_or("url");
+        anyhow::ensure!(
+            mode == "url",
+            "Mrpack export cannot preserve optional restricted file '{}'; use a full distribution target or explicitly make it required",
+            record.title
+        );
+        Ok(())
+    }
+
+    fn requirements_satisfied(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<bool> {
+        let Some(env) = &record.environment else {
+            return Ok(true);
+        };
+        super::url_file::requirements(env)?;
+        let Some((_, metadata)) = self.requirement_metadata(workdir, record)? else {
+            return Ok(false);
+        };
+        let mut desired = metadata.clone();
+        super::url_file::apply_requirements(&mut desired, env)?;
+        Ok(metadata == desired)
+    }
+
+    fn apply_requirements(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<()> {
+        let Some(env) = &record.environment else {
+            return Ok(());
+        };
+        let (path, mut metadata) =
+            self.requirement_metadata(workdir, record)?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Installed metadata is missing for '{}' while preserving import requirements",
+                    record.title
+                )
+            })?;
+        super::url_file::apply_requirements(&mut metadata, env)?;
+        self.filesystem
+            .validate_output_path(&workdir.join("pack"), &path)?;
+        self.filesystem
+            .write_atomic(&path, &toml::to_string(&metadata)?)
+    }
+
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
         let cache_dir = crate::platform::cache::jar_cache_dir()?;
         Ok(cache_dir.join("packwiz-installer-bootstrap.jar"))
@@ -374,6 +486,35 @@ impl PackwizOps for LivePackwizOps<'_> {
 }
 
 impl LivePackwizOps<'_> {
+    fn requirement_metadata(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<Option<(PathBuf, toml::Value)>> {
+        let identity = super::installed::DependencyIdentity {
+            platform: record.platform,
+            project_id: record.project_id.clone(),
+            project_type: record.project_type,
+        };
+        let matches: Vec<_> = self
+            .installed_snapshot(workdir)?
+            .into_iter()
+            .filter(|entry| entry.identity.as_ref() == Some(&identity))
+            .collect();
+        anyhow::ensure!(
+            matches.len() <= 1,
+            "Ambiguous installed identity for {}",
+            record.title
+        );
+        let Some(target) = matches.first() else {
+            return Ok(None);
+        };
+        let paths = self.installed_paths(workdir)?;
+        let path = &paths[&target.key];
+        let metadata = toml::from_str(&self.filesystem.read_to_string(path)?)?;
+        Ok(Some((path.clone(), metadata)))
+    }
+
     fn run_legacy_forge_init(
         &self,
         workdir: &Path,
@@ -667,6 +808,36 @@ minecraft = "{}"
                 }
             })
             .collect())
+    }
+
+    fn validate_optional_export(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn requirements_satisfied(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<bool> {
+        Ok(true)
+    }
+    fn apply_requirements(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+    fn validate_removal_target(
+        &self,
+        _workdir: &Path,
+        _target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()> {
+        Ok(())
     }
 
     fn verify_added(

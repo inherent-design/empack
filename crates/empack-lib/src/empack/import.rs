@@ -52,6 +52,7 @@ pub struct RuntimeTarget {
 #[derive(Debug, Clone)]
 pub enum ContentEntry {
     PlatformReferenced(PlatformRef),
+    UrlFile(super::url_file::UrlDependencyRecord),
     EmbeddedJar(EmbeddedJar),
 }
 
@@ -544,6 +545,18 @@ pub fn parse_modrinth_mrpack_with_filesystem(
                         (ProjectPlatform::Modrinth, pid, version_id)
                     };
 
+                if project_id.is_empty() && file_id.is_none() {
+                    return ContentEntry::UrlFile(super::url_file::UrlDependencyRecord {
+                        status: DependencyStatus::Url,
+                        title: filename_from_path(&f.path),
+                        project_type: url_project_type(&f.path),
+                        destination: f.path,
+                        downloads: f.downloads,
+                        hashes: f.hashes.into_iter().collect(),
+                        size: f.file_size,
+                        env,
+                    });
+                }
                 ContentEntry::PlatformReferenced(PlatformRef {
                     destination_path: f.path.clone(),
                     platform,
@@ -772,6 +785,9 @@ async fn resolve_manifest_with_api_bases(
                         (ContentEntry::PlatformReferenced(pref), task_warnings)
                     }),
                 ));
+            }
+            ContentEntry::UrlFile(file) => {
+                passthrough.push((i, ContentEntry::UrlFile(file), Vec::new()))
             }
             ContentEntry::EmbeddedJar(embed) => {
                 let w = vec![format!(
@@ -1181,6 +1197,48 @@ pub async fn execute_import(
     config: ImportConfig,
     session: &dyn Session,
 ) -> Result<ImportResult> {
+    let mut resolved = resolved;
+    for entry in &mut resolved.manifest.content {
+        if let ContentEntry::PlatformReferenced(pref) = entry
+            && pref.project_id.is_empty()
+            && pref.file_id.is_none()
+            && !pref.download_urls.is_empty()
+        {
+            *entry = ContentEntry::UrlFile(super::url_file::UrlDependencyRecord {
+                status: DependencyStatus::Url,
+                title: pref
+                    .resolved_name
+                    .clone()
+                    .unwrap_or_else(|| filename_from_path(&pref.destination_path)),
+                project_type: url_project_type(&pref.destination_path),
+                destination: pref.destination_path.clone(),
+                downloads: pref.download_urls.clone(),
+                hashes: pref.hashes.clone().into_iter().collect(),
+                size: None,
+                env: pref.env.clone(),
+            });
+        }
+    }
+    // Validate all semantic conversions, and verify provider-free bytes, before initialization.
+    let mut verified_urls = HashMap::new();
+    for (index, entry) in resolved.manifest.content.iter().enumerate() {
+        match entry {
+            ContentEntry::UrlFile(file) => {
+                file.metadata_path(session.filesystem(), &config.target_dir)?;
+                verified_urls.insert(index, file.verify_download(session).await?);
+            }
+            ContentEntry::PlatformReferenced(pref) => {
+                super::url_file::requirements(&imported_requirements(pref))?;
+            }
+            ContentEntry::EmbeddedJar(embed) => {
+                let (_, optional) = super::url_file::requirements(&embed.env)?;
+                anyhow::ensure!(
+                    !optional,
+                    "Optional embedded files cannot be represented as unconditional overrides"
+                );
+            }
+        }
+    }
     let needs_archive = !resolved.manifest.overrides.is_empty()
         || resolved
             .manifest
@@ -1302,11 +1360,25 @@ pub async fn execute_import(
         project_id: String,
         project_type: crate::primitives::ProjectType,
         version: Option<String>,
+        environment: SideEnv,
     }
     let mut pending_deps: Vec<PendingDep> = Vec::new();
 
-    for entry in &resolved.manifest.content {
+    for (entry_index, entry) in resolved.manifest.content.iter().enumerate() {
         match entry {
+            ContentEntry::UrlFile(file) => {
+                file.publish(
+                    session.filesystem(),
+                    &config.target_dir,
+                    &verified_urls[&entry_index],
+                )?;
+                let key = format!("url:{}", file.destination);
+                config_manager.record_installed_dependency(
+                    &key,
+                    crate::empack::config::DependencyEntry::Url(file.clone()),
+                )?;
+                stats.platform_referenced += 1;
+            }
             ContentEntry::PlatformReferenced(pref) => {
                 content_progress.tick(&pref.destination_path);
 
@@ -1366,6 +1438,7 @@ pub async fn execute_import(
                                 .resolved_type
                                 .unwrap_or(crate::primitives::ProjectType::Mod),
                             version: pref.file_id.clone(),
+                            environment: imported_requirements(pref),
                         });
                     }
                 }
@@ -1396,7 +1469,33 @@ pub async fn execute_import(
     }
     content_progress.finish(&format!("{} platform references processed", content_total));
 
-    if use_no_refresh {
+    let scan_start = std::time::Instant::now();
+    let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
+    let post_scan_ms = scan_start.elapsed().as_millis() as u64;
+
+    let new_stems: std::collections::HashSet<_> =
+        post_stems.difference(&pre_stems).cloned().collect();
+
+    for dep in &pending_deps {
+        let record = DependencyRecord {
+            environment: Some(dep.environment.clone()),
+            status: DependencyStatus::Resolved,
+            title: dep.title.clone(),
+            platform: dep.platform,
+            project_id: dep.project_id.clone(),
+            project_type: dep.project_type,
+            version: dep.version.clone(),
+        };
+        session
+            .packwiz()
+            .apply_requirements(&config.target_dir, &record)?;
+        config_manager.record_installed_dependency(
+            &dep.derived_key,
+            crate::empack::config::DependencyEntry::Resolved(record),
+        )?;
+    }
+
+    if use_no_refresh || !verified_urls.is_empty() || !pending_deps.is_empty() {
         let pack_toml = pack_dir.join("pack.toml");
         let pack_toml_str = pack_toml
             .to_str()
@@ -1413,28 +1512,6 @@ pub async fn execute_import(
                 refresh_output.error_output()
             );
         }
-    }
-
-    let scan_start = std::time::Instant::now();
-    let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
-    let post_scan_ms = scan_start.elapsed().as_millis() as u64;
-
-    let new_stems: std::collections::HashSet<_> =
-        post_stems.difference(&pre_stems).cloned().collect();
-
-    for dep in &pending_deps {
-        let record = DependencyRecord {
-            status: DependencyStatus::Resolved,
-            title: dep.title.clone(),
-            platform: dep.platform,
-            project_id: dep.project_id.clone(),
-            project_type: dep.project_type,
-            version: dep.version.clone(),
-        };
-        config_manager.record_installed_dependency(
-            &dep.derived_key,
-            crate::empack::config::DependencyEntry::Resolved(record),
-        )?;
     }
 
     if !add_durations.is_empty() {
@@ -1512,6 +1589,7 @@ pub async fn execute_import(
 }
 
 /// Outcome of attempting to add a platform reference via packwiz.
+#[derive(Debug)]
 enum AddRefResult {
     /// packwiz add succeeded; the .pw.toml was created.
     Added,
@@ -1596,33 +1674,10 @@ async fn add_platform_ref(
                 return Ok(AddRefResult::Skipped);
             }
 
-            // Fallback to url add for direct downloads without project/version IDs
-            if pref.project_id.is_empty() && pref.file_id.is_none() {
-                if let Some(url) = pref.download_urls.first() {
-                    let name = std::path::Path::new(&pref.destination_path)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("unknown");
-                    let mut args: Vec<&str> = Vec::new();
-                    if no_refresh {
-                        args.push("--no-refresh");
-                    }
-                    args.extend(["url", "add", name, url, "-y"]);
-                    let output =
-                        session
-                            .process()
-                            .execute(session.packwiz_bin(), &args, pack_dir)?;
-                    if output.success {
-                        return Ok(AddRefResult::Added);
-                    }
-                    return Ok(AddRefResult::Failed(format!(
-                        "packwiz url add failed for '{}': {}",
-                        pref.destination_path,
-                        output.error_output()
-                    )));
-                }
-                return Ok(AddRefResult::Skipped);
-            }
+            anyhow::ensure!(
+                !pref.project_id.is_empty(),
+                "Provider-free files require verified URL import, not a provider installation"
+            );
 
             let has_offline_data = !pref.download_urls.is_empty()
                 && !pref.hashes.is_empty()
@@ -2251,6 +2306,29 @@ pub enum SourceKind {
     CurseForgeRemote {
         slug: String,
     },
+}
+
+fn url_project_type(destination: &str) -> crate::primitives::ProjectType {
+    use crate::primitives::ProjectType;
+    match destination.split('/').next() {
+        Some("resourcepacks") => ProjectType::ResourcePack,
+        Some("shaderpacks") => ProjectType::Shader,
+        Some("datapacks") => ProjectType::Datapack,
+        _ => ProjectType::Mod,
+    }
+}
+
+fn imported_requirements(pref: &PlatformRef) -> SideEnv {
+    let mut env = pref.env.clone();
+    if !pref.required {
+        if env.client != SideRequirement::Unsupported {
+            env.client = SideRequirement::Optional;
+        }
+        if env.server != SideRequirement::Unsupported {
+            env.server = SideRequirement::Optional;
+        }
+    }
+    env
 }
 
 #[cfg(test)]

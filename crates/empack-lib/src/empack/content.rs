@@ -369,7 +369,8 @@ pub(crate) mod hex {
 // ---------------------------------------------------------------------------
 
 /// Whether content is required, optional, unsupported, or unknown for a side.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SideRequirement {
     Required,
     Optional,
@@ -378,7 +379,8 @@ pub enum SideRequirement {
 }
 
 /// Client and server side requirements for a piece of content.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SideEnv {
     pub client: SideRequirement,
     pub server: SideRequirement,

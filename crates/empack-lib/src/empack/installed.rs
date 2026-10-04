@@ -21,7 +21,7 @@ impl DependencyIdentity {
                 project_id: project_id.clone(),
                 project_type: spec.project_type,
             }),
-            DependencySource::Local { .. } => None,
+            DependencySource::Local { .. } | DependencySource::Url(_) => None,
         }
     }
 }

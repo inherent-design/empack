@@ -593,6 +593,7 @@ fn smoke_remove_resolves_alias_title_and_stem_without_wrong_target_deletion() {
             .add_dependency_entry(
                 "renderer-alias",
                 DependencyEntry::Resolved(DependencyRecord {
+                    environment: None,
                     status: DependencyStatus::Resolved,
                     title: "Renderer title".into(),
                     platform: ProjectPlatform::Modrinth,
@@ -668,6 +669,7 @@ fn smoke_remove_backend_noop_retains_manifest_intent() {
         .add_dependency_entry(
             "alias",
             DependencyEntry::Resolved(DependencyRecord {
+                environment: None,
                 status: DependencyStatus::Resolved,
                 title: "Renderer".into(),
                 platform: ProjectPlatform::Modrinth,
@@ -772,4 +774,22 @@ fn smoke_add_slug_id_and_url_persist_one_identity_and_type() {
             );
         }
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn smoke_platform_removal_rejects_symlinked_metadata_ancestors() {
+    let project = TestProject::workflow_fixture("confined-metadata", "fabric", "1.21.1");
+    let outside = tempfile::tempdir().unwrap();
+    let metadata = outside.path().join("target.pw.toml");
+    let bytes = "name = 'Target'\n[update.modrinth]\nmod-id = 'P'\nversion = 'v1'\n";
+    std::fs::write(&metadata, bytes).unwrap();
+    std::os::unix::fs::symlink(outside.path(), project.dir().join("pack/mods")).unwrap();
+    let before = snapshot(&project);
+    command(&project)
+        .args(["remove", "target"])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&project), before);
+    assert_eq!(std::fs::read_to_string(metadata).unwrap(), bytes);
 }

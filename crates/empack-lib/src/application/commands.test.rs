@@ -2711,6 +2711,7 @@ mod handle_direct_download_jar_tests {
             .add_dependency(
                 "sodium",
                 DependencyRecord {
+                        environment: None,
                     status: DependencyStatus::Resolved,
                     title: "Sodium".to_string(),
                     platform: ProjectPlatform::Modrinth,
@@ -3386,6 +3387,7 @@ mod handle_remove_tests {
                 .with_process(MockProcessProvider::new());
             let manager = session.filesystem().config_manager(workdir.clone());
             manager.add_dependency_entry("sodium", DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
                 status: DependencyStatus::Resolved,
                 title: "Sodium".to_string(),
                 platform: ProjectPlatform::Modrinth,
@@ -8506,7 +8508,7 @@ mod tracked_local_dependency_tests {
         assert_eq!(issues.len(), 1, "absolute path should produce one validation issue");
         assert_eq!(issues[0].key, "example-pack");
         assert_eq!(issues[0].path, outside_path.to_string_lossy());
-        assert_eq!(issues[0].reason, "path must be relative");
+        assert_eq!(issues[0].reason, "Tracked local dependency path must be relative");
     }
 
     #[tokio::test]
@@ -8548,7 +8550,7 @@ mod tracked_local_dependency_tests {
         assert_eq!(issues.len(), 1, "parent-dir path should produce one validation issue");
         assert_eq!(issues[0].key, "example-pack");
         assert_eq!(issues[0].path, "../outside-parent-dir-validate-local-dependency.zip");
-        assert_eq!(issues[0].reason, "path escapes the project directory");
+        assert_eq!(issues[0].reason, "Tracked local dependency path escapes the project directory");
     }
 
     #[tokio::test]

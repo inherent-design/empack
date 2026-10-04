@@ -1106,6 +1106,7 @@ empack:
     let result = config_manager.add_dependency(
         "appleskin",
         DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "AppleSkin".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1153,6 +1154,7 @@ empack:
 
     // Add the same dependency twice (upsert)
     let record = DependencyRecord {
+                        environment: None,
         status: DependencyStatus::Resolved,
         title: "Fabric API".to_string(),
         platform: ProjectPlatform::Modrinth,
@@ -1194,6 +1196,7 @@ empack:
     let result = config_manager.add_dependency(
         "fabric_api",
         DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Fabric API Renamed".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1228,6 +1231,7 @@ fn test_add_dependency_no_existing_file() {
     let result = config_manager.add_dependency(
         "appleskin",
         DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "AppleSkin".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1384,6 +1388,7 @@ empack:
 #[test]
 fn test_serde_round_trip_resolved_modrinth_mod_no_version() {
     let entry = DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
         status: DependencyStatus::Resolved,
         title: "Sodium".to_string(),
         platform: ProjectPlatform::Modrinth,
@@ -1398,6 +1403,7 @@ fn test_serde_round_trip_resolved_modrinth_mod_no_version() {
     assert_eq!(
         deserialized,
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Sodium".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1411,6 +1417,7 @@ fn test_serde_round_trip_resolved_modrinth_mod_no_version() {
 #[test]
 fn test_serde_round_trip_resolved_curseforge_with_version() {
     let entry = DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
         status: DependencyStatus::Resolved,
         title: "Just Enough Items".to_string(),
         platform: ProjectPlatform::CurseForge,
@@ -1425,6 +1432,7 @@ fn test_serde_round_trip_resolved_curseforge_with_version() {
     assert_eq!(
         deserialized,
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Just Enough Items".to_string(),
             platform: ProjectPlatform::CurseForge,
@@ -1438,6 +1446,7 @@ fn test_serde_round_trip_resolved_curseforge_with_version() {
 #[test]
 fn test_serde_round_trip_resolved_project_type_datapack() {
     let entry = DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
         status: DependencyStatus::Resolved,
         title: "Vanilla Tweaks".to_string(),
         platform: ProjectPlatform::Modrinth,
@@ -1452,6 +1461,7 @@ fn test_serde_round_trip_resolved_project_type_datapack() {
     assert_eq!(
         deserialized,
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Vanilla Tweaks".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1465,6 +1475,7 @@ fn test_serde_round_trip_resolved_project_type_datapack() {
 #[test]
 fn test_serde_round_trip_resolved_project_type_resourcepack() {
     let entry = DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
         status: DependencyStatus::Resolved,
         title: "Faithful".to_string(),
         platform: ProjectPlatform::CurseForge,
@@ -1479,6 +1490,7 @@ fn test_serde_round_trip_resolved_project_type_resourcepack() {
     assert_eq!(
         deserialized,
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Faithful".to_string(),
             platform: ProjectPlatform::CurseForge,
@@ -1492,6 +1504,7 @@ fn test_serde_round_trip_resolved_project_type_resourcepack() {
 #[test]
 fn test_serde_round_trip_resolved_project_type_shader() {
     let entry = DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
         status: DependencyStatus::Resolved,
         title: "Complementary Shaders".to_string(),
         platform: ProjectPlatform::Modrinth,
@@ -1506,6 +1519,7 @@ fn test_serde_round_trip_resolved_project_type_shader() {
     assert_eq!(
         deserialized,
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Complementary Shaders".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1519,6 +1533,7 @@ fn test_serde_round_trip_resolved_project_type_shader() {
 #[test]
 fn test_serde_round_trip_resolved_unicode_title() {
     let entry = DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
         status: DependencyStatus::Resolved,
         title: "Xaero's Minimap".to_string(),
         platform: ProjectPlatform::Modrinth,
@@ -1533,6 +1548,7 @@ fn test_serde_round_trip_resolved_unicode_title() {
     assert_eq!(
         deserialized,
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Xaero's Minimap".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1546,6 +1562,7 @@ fn test_serde_round_trip_resolved_unicode_title() {
 #[test]
 fn test_serde_round_trip_resolved_special_chars_project_id() {
     let entry = DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
         status: DependencyStatus::Resolved,
         title: "Test Mod".to_string(),
         platform: ProjectPlatform::Modrinth,
@@ -1560,6 +1577,7 @@ fn test_serde_round_trip_resolved_special_chars_project_id() {
     assert_eq!(
         deserialized,
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Test Mod".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1673,6 +1691,7 @@ type: mod
     assert_eq!(
         entry,
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Sodium".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1819,6 +1838,7 @@ empack:
     assert_eq!(
         config.empack.dependencies["sodium"],
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Sodium".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -1861,6 +1881,7 @@ fn test_empack_config_round_trip_multiple_dependencies() {
                 deps.insert(
                     "sodium".to_string(),
                     DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
                         status: DependencyStatus::Resolved,
                         title: "Sodium".to_string(),
                         platform: ProjectPlatform::Modrinth,
@@ -1880,6 +1901,7 @@ fn test_empack_config_round_trip_multiple_dependencies() {
                 deps.insert(
                     "complementary".to_string(),
                     DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
                         status: DependencyStatus::Resolved,
                         title: "Complementary Shaders".to_string(),
                         platform: ProjectPlatform::CurseForge,
@@ -2085,6 +2107,7 @@ empack:
     assert_eq!(
         config.empack.dependencies["sodium"],
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Sodium".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -2096,6 +2119,7 @@ empack:
     assert_eq!(
         config.empack.dependencies["fabric_api"],
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Fabric API".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -2140,6 +2164,7 @@ empack:
     let result = config_manager.add_dependency(
         "sodium",
         DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Sodium".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -2180,6 +2205,7 @@ empack:
     let result = config_manager.add_dependency(
         "sodium",
         DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Sodium".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -2245,6 +2271,7 @@ fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
     deps.insert(
         "zebra".to_string(),
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Zebra Mod".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -2256,6 +2283,7 @@ fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
     deps.insert(
         "alpha".to_string(),
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Alpha Mod".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -2267,6 +2295,7 @@ fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
     deps.insert(
         "middle".to_string(),
         DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
             status: DependencyStatus::Resolved,
             title: "Middle Mod".to_string(),
             platform: ProjectPlatform::Modrinth,
@@ -2477,6 +2506,7 @@ empack:
         .add_dependency(
             "lithium",
             DependencyRecord {
+                        environment: None,
                 status: DependencyStatus::Resolved,
                 title: "Lithium".to_string(),
                 platform: ProjectPlatform::Modrinth,
