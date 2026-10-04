@@ -338,6 +338,21 @@ pub fn import_matching_downloads_into_cache(
     let cache_dir = pending.restricted_cache_path();
     provider.create_dir_all(&cache_dir)?;
     let search_dirs = ordered_search_dirs(&cache_dir, search_dirs);
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    for directory in &search_dirs {
+        if !provider.is_directory(directory) {
+            continue;
+        }
+        // Automatic discovery is best-effort. Explicit associations still report IO errors.
+        let Ok(files) = provider.get_file_list(directory) else {
+            continue;
+        };
+        let mut files: Vec<_> = files.into_iter().collect();
+        files.sort();
+        candidates.extend(files.into_iter().filter(|path| seen.insert(path.clone())));
+    }
+    let mut observations = CandidateObservations::default();
     for entry in &pending.entries {
         if cached_entry_is_current(provider, pending, entry) {
             continue;
@@ -346,27 +361,11 @@ pub fn import_matching_downloads_into_cache(
             continue;
         };
         let cache_path = cache_dir.join(entry.cache_filename());
-        let mut candidates = Vec::new();
-        for directory in &search_dirs {
-            if !provider.is_directory(directory) {
+        for candidate in &candidates {
+            if candidate == &cache_path || !observations.matches(provider, candidate, expected) {
                 continue;
             }
-            let exact = directory.join(&entry.filename);
-            if provider.exists(&exact) && exact != cache_path {
-                candidates.push(exact);
-            }
-            let mut files: Vec<_> = provider.get_file_list(directory)?.into_iter().collect();
-            files.sort();
-            candidates.extend(files.into_iter().filter(|path| path != &cache_path));
-        }
-        for candidate in candidates {
-            if provider.is_directory(&candidate) {
-                continue;
-            }
-            if !content_matches(provider, &candidate, expected)? {
-                continue;
-            }
-            import_candidate_into_cache(provider, &candidate, &cache_path)?;
+            import_candidate_into_cache(provider, candidate, &cache_path)?;
             if cached_entry_is_current(provider, pending, entry) {
                 break;
             }
@@ -486,6 +485,51 @@ fn cached_entry_is_current(
     }
 }
 
+/// Observations last for one discovery pass; later passes see file changes.
+#[derive(Default)]
+struct CandidateObservations {
+    metadata: BTreeMap<PathBuf, Option<FileMetadata>>,
+    digests: BTreeMap<(PathBuf, String), Option<String>>,
+}
+
+impl CandidateObservations {
+    fn matches(
+        &mut self,
+        provider: &dyn FileSystemProvider,
+        path: &Path,
+        expected: &ExpectedContent,
+    ) -> bool {
+        let Some(metadata) = self
+            .metadata
+            .entry(path.to_path_buf())
+            .or_insert_with(|| provider.file_metadata(path).ok())
+        else {
+            return false;
+        };
+        if metadata.is_directory || expected.size.is_some_and(|size| metadata.len != size) {
+            return false;
+        }
+        self.digests
+            .entry((path.to_path_buf(), expected.algorithm.clone()))
+            .or_insert_with(|| content_digest(provider, path, &expected.algorithm).ok())
+            .as_ref()
+            .is_some_and(|digest| digest.eq_ignore_ascii_case(&expected.digest))
+    }
+}
+
+fn content_digest(
+    provider: &dyn FileSystemProvider,
+    path: &Path,
+    algorithm: &str,
+) -> Result<String> {
+    match algorithm {
+        "sha1" => stream_digest::<sha1::Sha1>(provider, path),
+        "sha256" => stream_digest::<Sha256>(provider, path),
+        "sha512" => stream_digest::<sha2::Sha512>(provider, path),
+        _ => anyhow::bail!("Unsupported restricted content digest"),
+    }
+}
+
 fn content_matches(
     provider: &dyn FileSystemProvider,
     path: &Path,
@@ -499,12 +543,7 @@ fn content_matches(
     {
         return Ok(false);
     }
-    let digest = match expected.algorithm.as_str() {
-        "sha1" => stream_digest::<sha1::Sha1>(provider, path)?,
-        "sha256" => stream_digest::<Sha256>(provider, path)?,
-        "sha512" => stream_digest::<sha2::Sha512>(provider, path)?,
-        _ => anyhow::bail!("Unsupported restricted content digest"),
-    };
+    let digest = content_digest(provider, path, &expected.algorithm)?;
     Ok(digest.eq_ignore_ascii_case(&expected.digest))
 }
 

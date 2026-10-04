@@ -607,6 +607,10 @@ fn verified_content_collapses_duplicate_candidates_by_sha256() {
             recent_file_metadata(bytes.len(), 206_000),
         );
 
+    let unreadable = downloads_a.join("000-unreadable.zip");
+    provider.write_bytes(&unreadable, b"unreadable file").unwrap();
+    provider.reader_failures.lock().unwrap().insert(unreadable, "permission denied".into());
+
     record_expected_fixture(&provider, &workdir, "No_Enchant_Glint.zip", &bytes);
     let mut pending = save_pending_build(
         &provider,
@@ -1192,4 +1196,28 @@ fn continuation_fingerprint_tracks_content_layers_and_templates() {
         fs.write_file(&workdir.join(relative), "changed").unwrap();
         assert_ne!(compute_project_fingerprint(&fs, &workdir).unwrap(), before, "{relative}");
     }
+}
+
+#[test]
+fn candidate_observations_hash_each_file_once_and_ignore_unreadable_discovery() {
+    let path = mock_root().join("downloads/candidate.jar");
+    let unreadable = mock_root().join("downloads/unreadable.jar");
+    let bytes = b"verified candidate";
+    let provider = MockFileSystemProvider::new()
+        .with_binary_file(path.clone(), bytes.to_vec())
+        .with_binary_file(unreadable.clone(), bytes.to_vec());
+    provider.reader_failures.lock().unwrap().insert(unreadable.clone(), "unreadable unrelated file".into());
+    let digest = hex_sha256(bytes);
+    let expected = ExpectedContent { algorithm: "sha256".into(), digest, size: Some(bytes.len() as u64) };
+    let mut observations = CandidateObservations::default();
+    assert!(!observations.matches(&provider, &unreadable, &expected));
+    assert!(!observations.matches(&provider, &unreadable, &expected));
+    assert!(observations.matches(&provider, &path, &expected));
+    assert!(observations.matches(&provider, &path, &expected));
+    assert_eq!(provider.reader_calls.lock().unwrap().iter().filter(|p| *p == &path).count(), 1);
+    assert_eq!(provider.reader_calls.lock().unwrap().iter().filter(|p| *p == &unreadable).count(), 1);
+    assert!(content_matches(&provider, &unreadable, &expected).is_err(), "explicit selections must report unreadable files");
+    let mut next_pass = CandidateObservations::default();
+    assert!(next_pass.matches(&provider, &path, &expected));
+    assert_eq!(provider.reader_calls.lock().unwrap().iter().filter(|p| *p == &path).count(), 2);
 }

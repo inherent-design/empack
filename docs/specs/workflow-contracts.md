@@ -40,7 +40,7 @@ Mrpack exports that need preserved URL or optional records disable packwiz's hos
 
 ## Restricted download identity
 
-Continuation records bind requests to strong digests from installed metadata where available. Candidate discovery compares content, and cache entries are checked again before staging. A renamed file can satisfy only the identity its bytes establish. Without a supported digest, the user must associate a file explicitly or place it at the printed cache destination; extension and recency are not evidence of identity.
+Continuation records bind requests to strong digests from installed metadata where available. Candidate discovery enumerates each search directory once and caches metadata and digests for that pass. Duplicate paths are scanned once. Unreadable automatic candidates are skipped; explicitly selected unreadable files still fail with an error. Cache entries are checked again after copying and before staging. A renamed file can satisfy only the identity its bytes establish. Without a supported digest, the user must associate a file explicitly or place it at the printed cache destination; extension and recency are not evidence of identity.
 
 Fingerprints include pack content, side layers and templates. A stale continuation is a read-only classification, including during preview. It preserves recovery evidence and requires a fresh build. Filesystem ancestor checks constrain every saved destination.
 
