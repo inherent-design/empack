@@ -1,4 +1,5 @@
 use crate::empack::config::{DependencySource, ProjectPlan, ProjectSpec};
+use crate::empack::installed::{DependencyIdentity, InstalledDependency};
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::{ProjectResolverTrait, SearchError};
 use crate::primitives::{ProjectPlatform, ProjectType};
@@ -8,6 +9,8 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncPlan {
     pub expected_mods: HashSet<String>,
+    pub satisfied: HashSet<String>,
+    pub retained: Vec<String>,
     pub actions: Vec<SyncPlanAction>,
 }
 
@@ -44,6 +47,8 @@ pub enum SyncExecutionAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddResolution {
+    /// Explicit requested pin; resolved unpinned installs remain unpinned.
+    pub requested_pin: Option<String>,
     pub title: String,
     pub commands: Vec<Vec<String>>,
     pub resolved_project_id: String,
@@ -76,39 +81,85 @@ pub enum AddCommandPlanError {
     InvalidPlan,
 }
 
-pub fn build_sync_plan(project_plan: &ProjectPlan, installed_mods: &HashSet<String>) -> SyncPlan {
+pub fn build_sync_plan(
+    project_plan: &ProjectPlan,
+    installed: &[InstalledDependency],
+) -> anyhow::Result<SyncPlan> {
     let mut expected_mods = HashSet::new();
+    let mut satisfied = HashSet::new();
+    let mut identities = HashSet::new();
+    let mut observed = HashSet::new();
     let mut actions = Vec::new();
-
-    for dep_spec in &project_plan.dependencies {
-        let slug = dep_spec.key.clone();
-        expected_mods.insert(slug.clone());
-
-        if installed_mods.contains(&slug) {
+    for spec in &project_plan.dependencies {
+        expected_mods.insert(spec.key.clone());
+        let Some(identity) = DependencyIdentity::from_spec(spec) else {
+            continue;
+        };
+        if identity.project_id.is_empty() {
+            actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
             continue;
         }
-
-        let plan = SyncDependencyPlan::from_spec(dep_spec);
-        if matches!(plan.source, DependencySource::Local { .. }) {
-            continue;
+        anyhow::ensure!(
+            !installed
+                .iter()
+                .any(|entry| entry
+                    .identity
+                    .as_ref()
+                    .is_some_and(|other| other.platform == identity.platform
+                        && other.project_id == identity.project_id
+                        && other.project_type != identity.project_type)),
+            "Installed dependency '{}' has a different content type. Automatic replacement is not supported",
+            spec.key
+        );
+        anyhow::ensure!(
+            identities.insert(identity.clone()),
+            "Multiple manifest entries declare the same provider identity: {}",
+            spec.key
+        );
+        let matches: Vec<_> = installed
+            .iter()
+            .filter(|entry| entry.identity.as_ref() == Some(&identity))
+            .collect();
+        anyhow::ensure!(
+            matches.len() <= 1,
+            "Multiple installed files declare the same provider identity: {}",
+            spec.key
+        );
+        if let Some(entry) = matches.first() {
+            observed.insert(entry.key.clone());
+            let DependencySource::Platform { version_pin, .. } = &spec.source else {
+                unreachable!()
+            };
+            if version_pin.is_some() && entry.version.as_ref() != version_pin.as_ref() {
+                // A pinned reinstall keeps provider identity; packwiz owns replacement
+                // of its metadata and required dependency resolution.
+                actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
+            } else {
+                satisfied.insert(spec.key.clone());
+            }
+        } else {
+            anyhow::ensure!(
+                !installed.iter().any(|entry| entry.key == spec.key),
+                "Installed dependency '{}' has a different provider, project, or content type. Automatic replacement is not supported; remove it explicitly and sync again.",
+                spec.key
+            );
+            actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
         }
-
-        actions.push(SyncPlanAction::Add(plan));
     }
-
-    for installed_mod in installed_mods {
-        if !expected_mods.contains(installed_mod) {
-            actions.push(SyncPlanAction::Remove {
-                key: installed_mod.clone(),
-                title: installed_mod.clone(),
-            });
-        }
-    }
-
-    SyncPlan {
+    // A root manifest is not a complete dependency graph. Absence never proves
+    // removability: retain transitive and externally managed installations.
+    let mut retained: Vec<_> = installed
+        .iter()
+        .filter(|entry| !observed.contains(&entry.key))
+        .map(|entry| entry.key.clone())
+        .collect();
+    retained.sort();
+    Ok(SyncPlan {
         expected_mods,
+        satisfied,
+        retained,
         actions,
-    }
+    })
 }
 
 pub async fn resolve_sync_action(
@@ -121,7 +172,7 @@ pub async fn resolve_sync_action(
             title: title.clone(),
         }),
         SyncPlanAction::Add(dep) => match &dep.source {
-            DependencySource::Local { .. } => {
+            DependencySource::Local { .. } | DependencySource::Url(_) => {
                 unreachable!("build_sync_plan filters out Local entries before dispatch");
             }
             DependencySource::Platform {
@@ -129,6 +180,32 @@ pub async fn resolve_sync_action(
                 project_platform,
                 version_pin,
             } => {
+                if !project_id.is_empty() {
+                    let mut commands = build_packwiz_add_commands(
+                        project_id,
+                        *project_platform,
+                        version_pin.as_deref(),
+                    )
+                    .map_err(|source| AddContractError::PlanPackwizAdd {
+                        project_id: project_id.clone(),
+                        platform: *project_platform,
+                        source,
+                    })?;
+                    for command in &mut commands {
+                        crate::empack::packwiz::append_content_type_override(
+                            command,
+                            *project_platform,
+                            dep.project_type,
+                        );
+                    }
+                    return Ok(SyncExecutionAction::Add {
+                        key: dep.key.clone(),
+                        title: dep.search_query.clone(),
+                        commands,
+                        resolved_project_id: project_id.clone(),
+                        resolved_platform: *project_platform,
+                    });
+                }
                 let resolution = resolve_add_contract(
                     &dep.search_query,
                     Some(dep.project_type),
@@ -166,46 +243,54 @@ pub async fn resolve_add_contract(
     preferred_platform: Option<ProjectPlatform>,
     resolver: &dyn ProjectResolverTrait,
 ) -> std::result::Result<AddResolution, AddContractError> {
-    let (project_id, platform, title, confidence, resolved_type) = if !direct_project_id.is_empty()
-    {
-        (
-            direct_project_id.to_string(),
-            direct_platform,
-            search_query.to_string(),
-            None,
-            project_type,
-        )
+    let direct = !direct_project_id.is_empty();
+    let project = if direct {
+        resolver
+            .resolve_selector(
+                crate::empack::search::ProjectSelector {
+                    platform: direct_platform,
+                    value: direct_project_id.to_owned(),
+                },
+                version_pin.map(str::to_owned),
+            )
+            .await
     } else {
-        let pt_arg = project_type.map(project_type_arg);
-        let project = resolver
+        resolver
             .resolve_project(
                 search_query,
-                pt_arg,
+                project_type.map(project_type_arg),
                 minecraft_version,
                 loader.map(loader_arg),
                 preferred_platform,
             )
             .await
-            .map_err(|source| AddContractError::ResolveProject {
-                query: search_query.to_string(),
-                source,
-            })?;
-        let resolved = match project.project_type.as_str() {
-            "resourcepack" => ProjectType::ResourcePack,
-            "shader" => ProjectType::Shader,
-            "datapack" => ProjectType::Datapack,
-            _ => ProjectType::Mod,
-        };
-        (
-            project.project_id,
-            project.platform,
-            project.title,
-            Some(project.confidence),
-            Some(resolved),
-        )
+    }
+    .map_err(|source| AddContractError::ResolveProject {
+        query: search_query.to_owned(),
+        source,
+    })?;
+    let resolved = match project.project_type.as_str() {
+        "resourcepack" => ProjectType::ResourcePack,
+        "shader" => ProjectType::Shader,
+        "datapack" => ProjectType::Datapack,
+        "world" => ProjectType::World,
+        _ => ProjectType::Mod,
     };
+    if project_type.is_some_and(|requested| requested != resolved) {
+        return Err(AddContractError::ResolveProject {
+            query: search_query.to_owned(),
+            source: SearchError::Other(anyhow::anyhow!(
+                "Resolved content type differs from the requested type"
+            )),
+        });
+    }
+    let project_id = project.project_id;
+    let platform = project.platform;
+    let title = project.title;
+    let confidence = (!direct).then_some(project.confidence);
+    let resolved_type = Some(resolved);
 
-    let commands =
+    let mut commands =
         build_packwiz_add_commands(&project_id, platform, version_pin).map_err(|source| {
             AddContractError::PlanPackwizAdd {
                 project_id: project_id.clone(),
@@ -214,7 +299,11 @@ pub async fn resolve_add_contract(
             }
         })?;
 
+    for command in &mut commands {
+        crate::empack::packwiz::append_content_type_override(command, platform, resolved);
+    }
     Ok(AddResolution {
+        requested_pin: version_pin.map(str::to_owned),
         title,
         commands,
         resolved_project_id: project_id,
@@ -263,6 +352,7 @@ pub fn project_type_arg(project_type: ProjectType) -> &'static str {
     match project_type {
         ProjectType::Mod => "mod",
         ProjectType::Datapack => "datapack",
+        ProjectType::World => "world",
         ProjectType::ResourcePack => "resourcepack",
         ProjectType::Shader => "shader",
     }

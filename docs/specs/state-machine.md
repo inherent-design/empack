@@ -50,7 +50,7 @@ Interrupted(Building) -> Configured  RefreshIndex or Clean
 Interrupted(Cleaning) -> Configured or Uninitialized  Clean recovery
 ```
 
-`Initialize` is the pure `Uninitialized -> Configured` transition. `init --force` performs an explicit command-layer reset of project core files before calling the state transition.
+`Initialize` is the filesystem-backed `Uninitialized -> Configured` transition. `init --force` performs an explicit command-layer reset of project core files before calling the state transition.
 
 ## Marker Transitions
 
@@ -75,8 +75,8 @@ Current behavior:
 - `execute_initialize()` writes a generated `empack.yml` only if the file is missing.
 - `run_packwiz_init()` populates `pack/pack.toml` and related packwiz files.
 - Failure during initialization cleans partial configuration where possible.
-- Template scaffolding is not part of the pure state transition. Command handlers install templates after the transition succeeds.
-- `init --force` performs a command-layer reset before initialization. That reset removes `empack.yml`, `pack/`, `.empack-state`, and `dist/` when present. It is not part of the pure `Initialize` transition or the `Clean` state transition.
+- Template scaffolding is not part of the filesystem-backed state transition. Command handlers install templates after the transition succeeds.
+- `init --force` performs a command-layer reset before initialization. That reset removes `empack.yml`, `pack/`, `.empack-state`, and `dist/` when present. It is not part of the `Initialize` transition or the `Clean` state transition.
 
 ### Refresh Index
 
@@ -103,7 +103,9 @@ Successful build returns `Built`.
 Additional clean rules:
 
 - `Clean` from `Uninitialized` is idempotent.
-- `Clean` from `Interrupted { .. }` removes the marker first, removes `dist/` if present, then re-discovers the underlying filesystem state.
+- `Clean` from `Interrupted { .. }` removes `dist/` if present, clears the marker after cleanup succeeds, then re-discovers the underlying filesystem state.
 - `Clean` never removes `empack.yml`.
 - `Clean` never removes `pack/`.
 - `clean --cache` is a command-layer operation. It is not part of the `PackState` transition model.
+
+Cancellation preserves the build or clean marker. Terminal restoration and exit-code handling belong to the executable and do not erase recovery state. The project mutation lock provides exclusion; the marker records interruption and is not a lock or rollback journal.

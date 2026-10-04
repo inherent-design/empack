@@ -32,6 +32,9 @@ impl EmpackExitCode {
 }
 
 pub fn classify_error(error: &Error) -> EmpackExitCode {
+    if find_chain_error::<super::process_runtime::Interrupted>(error).is_some() {
+        return EmpackExitCode::Interrupted;
+    }
     if let Some(search_error) = find_chain_error::<SearchError>(error) {
         return match search_error {
             SearchError::NoResults { .. } => EmpackExitCode::NotFound,
@@ -230,7 +233,7 @@ mod tests {
     #[test]
     fn classify_error_maps_invalid_direct_zip_type_to_usage() {
         let error = anyhow::anyhow!(
-            "Direct .zip URLs support only --type resourcepack, shader, or datapack"
+            "Direct .zip URLs support only --type resourcepack, shader, datapack, or world"
         );
         assert_eq!(classify_error(&error), EmpackExitCode::Usage);
     }

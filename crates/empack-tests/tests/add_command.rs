@@ -72,6 +72,13 @@ async fn e2e_add_mod_successfully() -> Result<()> {
         },
     );
 
+    // The call-recording process fixture supplies its installed result separately.
+    std::fs::create_dir_all(workdir.join("pack/mods"))?;
+    std::fs::write(
+        workdir.join("pack/mods/sodium.pw.toml"),
+        "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'v1'\n",
+    )?;
+
     let session = CommandSession::new_with_providers(
         LiveFileSystemProvider,
         mock_network_provider,

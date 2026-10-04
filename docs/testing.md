@@ -41,6 +41,93 @@ resolution, preservation of installed unresolved dependencies, and successful
 search resolution followed by an add. Partial success must not be reported as a
 fully synchronized project.
 
+## Safety and runtime review, 2026-10-03
+
+This review starts at `3625a89`. The supplied source audit was treated as a set
+of hypotheses, then checked against executable regressions and current code.
+The implementation keeps the session/provider architecture.
+
+| Contract | Change and evidence |
+| --- | --- |
+| Preview and declined initialization preserve project files | Forced reset now follows validation, confirmation and the dry-run return. Init tests compare the existing project tree after preview and rejection. |
+| Explicit dependency intent cannot become a search | Deserialization dispatches on `status` and rejects unknown fields. Config tests cover missing identities, misspelled fields and malformed local entries. |
+| Sync detects installed identity and pin drift | Live packwiz metadata is checked before manifest writes or subprocess calls. CLI smoke covers provider, project and pin changes under the same manifest key. Unsupported replacement returns an error. |
+| Explicit roots cannot be removed by incomplete orphan analysis | `remove --deps` fails before mutation because installed metadata does not supply complete dependency edges. Ordinary explicit removal remains available. |
+| Generated shell metadata remains data | The embedded installer uses shell-quoted assignments and `printf`. A regression executes hostile metadata in a temporary directory and checks that no command substitution runs. New project templates retain build-time placeholders. |
+| Build and continuation outputs stay in selected roots | Artifact names reject path components. Live output checks reject symlinked ancestors. Continuation cache and destinations are checked against runtime-derived roots before writes. Tests cover traversal and crafted saved state. |
+| Process deadlines cover child and pipe lifetimes | A shared deadline covers exit and stream drainage. Tests close pipes before sleeping and retain pipes in descendants. Cancellation stops owned processes; CLI smoke verifies exit 130, retained recovery markers and lock release. |
+| Mutation ownership and document publication are explicit | Mutating commands hold an OS project lock. Manifests, markers and continuation records use atomic sibling-file replacement. Tests cover lock contention, symlinks, read-only documents and unchanged old content after failed publication. |
+| Tool and network policy has observable failures | Tool resolution is lazy, probes require successful exit status, new managed downloads use pinned SHA256 digests, and installation locks survive process crashes. JAR identification uses shared retry/rate policy and distinguishes 404 from provider failures. |
+| Resource use has defined bounds | Future rate permits are reserved, cache persistence is atomic and size-limited, and imports reuse one archive reader during extraction with entry/count/total limits. Focused tests cover exhausted budgets, stale headers and oversized archive metadata. |
+
+The review ran on macOS arm64. The default gate passed 1,303 tests and eight
+doctests; the offline CLI smoke gate passed 12 tests. All-feature Clippy passed.
+All 95 strict E2E tests passed. A fresh instrumented run passed 1,398 tests
+with one manual rendering test ignored; production-source line coverage was
+15,306 / 17,205 (88.96%), excluding separate `.test.rs` files but including inline
+tests. All seven curated imports and client-full builds passed, including
+restricted continuation, and every output ZIP passed CRC validation. Platform
+CI results and review follow-up checks are recorded in PR #82.
+A separate empty-cache `requirements` run downloaded the pinned managed tool,
+verified its digest and successfully probed its version.
+
+Run binary-producing validation tasks sequentially. The strict suite requires a
+telemetry-enabled CLI; a concurrent default build can replace that executable
+and invalidate telemetry assertions. Use `EMPACK_E2E_BIN` with an isolated copy
+when separate runs need different binaries.
+
+### PR review regressions
+
+Greptile identified a later 429 cooldown being overwritten by an earlier reserved
+window, and oversized cache entries preventing subsequent persistence. Both
+regressions failed before their fixes. Budget generations now invalidate sleeping
+reservations; callers re-acquire instead of using an obsolete slot. Cache entries
+are bounded by total bytes as well as count, with tests for eviction, oversized
+responses and preservation of unrelated cached data.
+
+A separate remote-import test reproduced immediate failure on a recoverable 429.
+Modpack metadata and import enrichment now use the same request policy as JAR
+identification. The focused network/import suite passed 189 tests after these
+changes. Platform CI also caught a Unix test missing its platform guard; the
+guard was restored before the next run.
+
+The next review found that restricted mrpack exports shared an import cache
+across projects. Export and continuation now derive that cache from canonical
+project identity. Tests cover identical filenames in two projects, path aliases
+and non-UTF-8 path bytes. The full default gate passed 1,312 tests and eight
+doctests before the additional alias regression; all 29 focused cache and
+continuation tests passed afterward.
+
+Windows children start suspended and resume only after joining an owned job.
+Hosts that prohibit nested job registration receive an error before child code
+executes. Windows-only regressions verify that rejected registration has no child
+side effects, job cleanup closes inherited pipes after ancestors exit, and
+stopping one job preserves another. This avoids depending on process snapshots
+that can miss short-lived ancestors. Native CI must verify these Windows-only
+cases. Windows E2E fixtures retain native known-folder environment values and
+compare destinations as paths.
+
+### Remaining boundaries
+
+Atomic document replacement and project locks are not a multi-file transaction.
+A failed external action can leave partial state, and forced initialization does
+not yet stage a replacement with rollback. Direct library mutation callers must
+hold the project lock themselves. External editors do not participate in it.
+
+Sync rejects identity/version drift instead of replacing installed dependencies.
+Automatic orphan cleanup remains unavailable until graph edges and provider
+identities can be verified. These are explicit feature gaps, not successful
+reconciliation. Existing user-owned shell templates are executable code; projects
+must adopt the new quoting pattern themselves. Path validation does not provide
+a sandbox against another process swapping paths during an operation.
+
+Cancellation reaches subprocesses and restricted-download waits, but is not yet
+threaded through every synchronous filesystem or bootstrap operation. Display
+state still has process-global components. Cache writers in separate processes
+can lose disposable cache updates; project document locks do not cover the cache.
+Import planning still reads archive bytes, while execution reuses a file-backed
+reader. These limits remain inputs to the transaction and command-service design.
+
 ## Runtime contract review, 2026-10-02
 
 Review started at `b9ecfc772c5268fab98ec298826d2e8737a1ac38` on macOS arm64,
@@ -132,8 +219,8 @@ This does not verify launching Minecraft or every loader's generated server.
 Linux and Windows execution must be established by CI. One manual PTY rendering
 test remains ignored. `--cpu-jobs` and the Modrinth credential fields are parsed
 but have no runtime consumers; help and usage now label them reserved. Packwiz
-directory imports remain unsupported, local dependencies cannot be exported to
-mrpack, and real YAML rewrites do not preserve comments. `requirements` reports
+directory imports remain unsupported, and real YAML rewrites do not preserve
+comments. Tracked local files under `pack/` now support mrpack export. `requirements` reports
 capabilities but is not a strict prerequisite exit-status gate.
 
 The review also used the sibling playground project's `docs/ui/TESTING.md`,
@@ -268,3 +355,53 @@ Latest documented snapshots:
 - 2026-04-09: the latest documented coverage snapshot was 88.02% on non-`.test.rs` files under `crates/empack-lib/src` and `crates/empack/src`, and 94.14% on `TOTAL`.
 - `mise run coverage` is the combined instrumented path for unit and E2E coverage.
 - there is no `mise run e2e:container` task in the current repo.
+
+## Workflow reconciliation follow-up
+
+The second audit starts at `e69baf4`. Four focused regressions failed before the
+first fixes: dropped add pins, successful exit after failed manifest publication,
+stale continuation deletion, and a missing import leaf behind a symlink. The
+boundary suite then passed 151 tests. Stale previews have a separate regression.
+
+The identity refactor adds real CLI sequences for both providers: pinned add,
+required-library installation, two no-op syncs, a pin change, and convergence
+after one reinstall. Further cases cover manifest aliases, duplicate identities,
+unlisted content retention, and backend success without matching installed
+metadata. The focused planner/command suite passed 46 tests and CLI smoke passed
+15 tests at this stage. These checks do not establish a complete dependency
+closure or authorize automatic orphan removal.
+
+A stale-export regression failed before build freshness was corrected. A live
+filesystem and ZIP round-trip fixture now imports distinct common/client/server
+bytes for one path, builds all four distribution targets, and re-exports mrpack.
+It repeats after changing common content without a version bump, checking output
+bytes and side-exclusive files. External tool responses are deterministic fixtures;
+this test does not launch Minecraft. Another live-filesystem test makes a manifest
+read-only after installation and requires import to return a structured partial
+failure. A sparse oversized input verifies the compressed archive limit before
+ZIP parsing or whole-file allocation.
+
+## Workflow verification, 2026-10-03
+
+The second audit added cross-command identity checks, explicit pin persistence,
+truthful manifest-publication failures, layered imports, fresh intermediate
+exports and verified restricted-file association. The design and remaining
+boundaries are in [workflow contracts](specs/workflow-contracts.md).
+
+At `cf73ec8`, all 95 strict E2E tests and 15 offline CLI smoke tests passed.
+The preceding default run passed 1,333 tests and eight doctests; the final
+continuation changes then passed all 56 affected tests. A fresh coverage target
+ran 1,428 tests with strict prerequisites, all passing; one manual rendering test
+remains ignored. Coverage used `EMPACK_E2E_BIN` to select the newly instrumented
+binary rather than an older build in another target directory.
+
+All seven curated imports and client-full builds passed using an isolated
+`9fd3f18` binary, including the two-file restricted CurseForge continuation.
+Every output ZIP passed `zipfile.ZipFile.testzip()`. The only changes between
+that binary and `cf73ec8` update verification fixtures. These checks establish
+archive and workflow behavior, not Minecraft startup compatibility.
+
+The fresh LCOV report covered 15,313 of 16,857 production-source lines (90.84%),
+counting `empack-lib/src` and `empack/src` and excluding `.test.rs` files. Inline
+tests in production files remain included in that measure. This is a line metric,
+not a claim of complete path or platform coverage.

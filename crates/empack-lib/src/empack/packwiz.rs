@@ -15,6 +15,25 @@ use crate::empack::state::StateError;
 use crate::empack::versions::{canonicalize_forge_loader_version, uses_legacy_forge_coordinate};
 use crate::primitives::ProjectPlatform;
 
+/// The pinned backend's online CurseForge routing does not recognize shaders.
+/// Use the resolved type consistently for direct add, sync and import.
+pub fn append_content_type_override(
+    args: &mut Vec<String>,
+    platform: crate::primitives::ProjectPlatform,
+    kind: crate::primitives::ProjectType,
+) {
+    if platform == crate::primitives::ProjectPlatform::CurseForge {
+        let folder = match kind {
+            crate::primitives::ProjectType::Shader => Some("shaderpacks"),
+            crate::primitives::ProjectType::World => Some("saves"),
+            _ => None,
+        };
+        if let Some(folder) = folder {
+            args.extend(["--meta-folder".into(), folder.into()]);
+        }
+    }
+}
+
 /// Binary name for packwiz CLI operations.
 ///
 /// Uses `packwiz-tx` fork (mannie-exe/packwiz-tx) which adds `--no-refresh`
@@ -49,6 +68,99 @@ pub trait PackwizOps {
     /// Get list of currently installed mods from packwiz
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>>;
 
+    /// Snapshot provider identity, version and installed filename for reconciliation.
+    fn installed_snapshot(
+        &self,
+        workdir: &Path,
+    ) -> crate::Result<Vec<super::installed::InstalledDependency>>;
+
+    /// Verify the live postcondition, including requested pins, after backend success.
+    fn verify_reconciled(
+        &self,
+        workdir: &Path,
+        plan: &super::config::ProjectPlan,
+    ) -> crate::Result<()> {
+        let observed = self.installed_snapshot(workdir)?;
+        let remaining = crate::application::sync::build_sync_plan(plan, &observed)?;
+        anyhow::ensure!(
+            remaining.actions.is_empty(),
+            "Backend reported success but installed dependencies do not satisfy empack.yml; inspect pack metadata before syncing again"
+        );
+        Ok(())
+    }
+
+    /// Whether persisted imported side/optional intent matches installed metadata.
+    fn requirements_satisfied(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<bool>;
+
+    /// Apply imported side/optional intent after an installation or pin change.
+    fn apply_requirements(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<()>;
+
+    /// Refuse mrpack conversions that would turn optional restricted files into overrides.
+    fn validate_optional_export(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<()>;
+
+    /// Return the observed metadata key only after identity, type and pin agree.
+    fn verify_added(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<Option<String>> {
+        let identity = super::installed::DependencyIdentity {
+            platform: record.platform,
+            project_id: record.project_id.clone(),
+            project_type: record.project_type,
+        };
+        let observed = self.installed_snapshot(workdir)?;
+        let matches: Vec<_> = observed
+            .iter()
+            .filter(|entry| entry.identity.as_ref() == Some(&identity))
+            .collect();
+        anyhow::ensure!(
+            matches.len() == 1
+                && record
+                    .version
+                    .as_ref()
+                    .is_none_or(|pin| matches[0].version.as_ref() == Some(pin)),
+            "Backend reported success but installed metadata does not match requested identity or pin for '{}'; inspect pack metadata before retrying",
+            record.title
+        );
+        Ok(Some(matches[0].key.clone()))
+    }
+
+    /// Validate the filesystem authority of the observed backend removal target.
+    fn validate_removal_target(
+        &self,
+        _workdir: &Path,
+        _target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()>;
+
+    /// A successful backend exit must actually remove the selected installation.
+    fn verify_removed(
+        &self,
+        workdir: &Path,
+        target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()> {
+        let observed = self.installed_snapshot(workdir)?;
+        anyhow::ensure!(
+            !observed.iter().any(|entry| entry.key == target.key
+                || (target.identity.is_some() && entry.identity == target.identity)),
+            "Backend reported success but '{}' is still installed; manifest intent was retained",
+            target.key
+        );
+        Ok(())
+    }
+
     /// Get the expected cache path for packwiz-installer-bootstrap.jar
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf>;
 
@@ -62,6 +174,7 @@ pub struct LivePackwizOps<'a> {
     filesystem: &'a dyn FileSystemProvider,
     /// Resolved packwiz-tx binary path (absolute path or bare name).
     packwiz_bin: &'a str,
+    lazy_bin: Option<&'a std::sync::OnceLock<String>>,
 }
 
 impl<'a> LivePackwizOps<'a> {
@@ -74,7 +187,88 @@ impl<'a> LivePackwizOps<'a> {
             process,
             filesystem,
             packwiz_bin,
+            lazy_bin: None,
         }
+    }
+    pub fn new_lazy(
+        process: &'a dyn ProcessProvider,
+        filesystem: &'a dyn FileSystemProvider,
+        bin: &'a std::sync::OnceLock<String>,
+    ) -> Self {
+        Self {
+            process,
+            filesystem,
+            packwiz_bin: PACKWIZ_BIN,
+            lazy_bin: Some(bin),
+        }
+    }
+
+    fn binary(&self) -> &str {
+        self.lazy_bin
+            .map(|bin| {
+                bin.get_or_init(crate::application::session::resolve_packwiz_bin_path)
+                    .as_str()
+            })
+            .unwrap_or(self.packwiz_bin)
+    }
+
+    fn installed_paths(
+        &self,
+        workdir: &Path,
+    ) -> crate::Result<std::collections::BTreeMap<String, PathBuf>> {
+        let pack_dir = workdir.join("pack");
+        let mut scan_dirs = HashSet::from([
+            "mods".to_string(),
+            "resourcepacks".to_string(),
+            "shaderpacks".to_string(),
+            "datapacks".to_string(),
+            "saves".to_string(),
+        ]);
+        if self.filesystem.exists(&workdir.join("empack.yml"))
+            && let Some(folder) = self
+                .filesystem
+                .config_manager(workdir.to_path_buf())
+                .load_empack_config()?
+                .empack
+                .datapack_folder
+        {
+            scan_dirs.insert(folder);
+        }
+        let pack_path = pack_dir.join("pack.toml");
+        if self.filesystem.exists(&pack_path) {
+            let metadata: toml::Value =
+                toml::from_str(&self.filesystem.read_to_string(&pack_path)?)?;
+            if let Some(folder) = metadata
+                .get("options")
+                .and_then(|o| o.get("datapack-folder"))
+            {
+                let folder = folder.as_str().ok_or_else(|| {
+                    anyhow::anyhow!("pack.toml options.datapack-folder must be a string")
+                })?;
+                scan_dirs.insert(folder.to_string());
+            }
+        }
+
+        let mut installed = std::collections::BTreeMap::new();
+        for folder in &scan_dirs {
+            let dir = pack_dir.join(folder);
+            if !self.filesystem.exists(&dir) {
+                continue;
+            }
+            let file_list = self.filesystem.get_file_list(&dir)?;
+            for path in &file_list {
+                if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
+                    && let Some(slug) = file_name.strip_suffix(".pw.toml")
+                    && !slug.is_empty()
+                    && let Some(previous) = installed.insert(slug.to_string(), path.clone())
+                    && previous != *path
+                {
+                    anyhow::bail!("Duplicate installed dependency key: {slug}");
+                }
+            }
+        }
+
+        Ok(installed)
     }
 }
 
@@ -145,7 +339,7 @@ impl PackwizOps for LivePackwizOps<'_> {
 
         let output = self
             .process
-            .execute(self.packwiz_bin, &args, &pack_dir)
+            .execute(self.binary(), &args, &pack_dir)
             .map_err(|e| StateError::CommandFailed {
                 command: format!("packwiz init failed: {}", e),
             })?;
@@ -169,7 +363,7 @@ impl PackwizOps for LivePackwizOps<'_> {
         let output = self
             .process
             .execute(
-                self.packwiz_bin,
+                self.binary(),
                 &["--pack-file", pack_file_str, "refresh"],
                 workdir,
             )
@@ -190,56 +384,116 @@ impl PackwizOps for LivePackwizOps<'_> {
     }
 
     fn get_installed_mods(&self, workdir: &Path) -> crate::Result<HashSet<String>> {
-        let pack_dir = workdir.join("pack");
-        let mut scan_dirs = HashSet::from([
-            "mods".to_string(),
-            "resourcepacks".to_string(),
-            "shaderpacks".to_string(),
-            "datapacks".to_string(),
-        ]);
-        if self.filesystem.exists(&workdir.join("empack.yml"))
-            && let Some(folder) = self
-                .filesystem
-                .config_manager(workdir.to_path_buf())
-                .load_empack_config()?
-                .empack
-                .datapack_folder
-        {
-            scan_dirs.insert(folder);
-        }
-        let pack_path = pack_dir.join("pack.toml");
-        if self.filesystem.exists(&pack_path) {
-            let metadata: toml::Value =
-                toml::from_str(&self.filesystem.read_to_string(&pack_path)?)?;
-            if let Some(folder) = metadata
-                .get("options")
-                .and_then(|o| o.get("datapack-folder"))
-            {
-                let folder = folder.as_str().ok_or_else(|| {
-                    anyhow::anyhow!("pack.toml options.datapack-folder must be a string")
-                })?;
-                scan_dirs.insert(folder.to_string());
-            }
-        }
+        Ok(self.installed_paths(workdir)?.into_keys().collect())
+    }
 
-        let mut installed = HashSet::new();
-        for folder in &scan_dirs {
-            let dir = pack_dir.join(folder);
-            if !self.filesystem.exists(&dir) {
-                continue;
-            }
-            let file_list = self.filesystem.get_file_list(&dir)?;
-            for path in &file_list {
-                if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
-                    && let Some(slug) = file_name.strip_suffix(".pw.toml")
-                    && !slug.is_empty()
-                {
-                    installed.insert(slug.to_string());
-                }
-            }
-        }
+    fn installed_snapshot(
+        &self,
+        workdir: &Path,
+    ) -> crate::Result<Vec<super::installed::InstalledDependency>> {
+        self.installed_paths(workdir)?
+            .into_iter()
+            .map(|(key, path)| {
+                let pack = workdir.join("pack");
+                let project_type = if path.starts_with(pack.join("mods")) {
+                    crate::primitives::ProjectType::Mod
+                } else if path.starts_with(pack.join("resourcepacks")) {
+                    crate::primitives::ProjectType::ResourcePack
+                } else if path.starts_with(pack.join("saves")) {
+                    crate::primitives::ProjectType::World
+                } else if path.starts_with(pack.join("shaderpacks")) {
+                    crate::primitives::ProjectType::Shader
+                } else {
+                    crate::primitives::ProjectType::Datapack
+                };
+                let metadata = toml::from_str(&self.filesystem.read_to_string(&path)?)?;
+                super::installed::InstalledDependency::from_metadata(key, project_type, &metadata)
+            })
+            .collect()
+    }
 
-        Ok(installed)
+    fn validate_removal_target(
+        &self,
+        workdir: &Path,
+        target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()> {
+        let paths = self.installed_paths(workdir)?;
+        let path = paths
+            .get(&target.key)
+            .ok_or_else(|| anyhow::anyhow!("Removal target disappeared"))?;
+        self.filesystem
+            .validate_output_path(&workdir.join("pack"), path)?;
+        anyhow::ensure!(
+            self.filesystem.is_regular_file(path),
+            "Removal metadata must be a regular file"
+        );
+        Ok(())
+    }
+
+    fn validate_optional_export(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<()> {
+        let Some(env) = &record.environment else {
+            return Ok(());
+        };
+        if !super::url_file::requirements(env)?.1 {
+            return Ok(());
+        }
+        let (_, metadata) = self
+            .requirement_metadata(workdir, record)?
+            .ok_or_else(|| anyhow::anyhow!("Missing optional metadata for {}", record.title))?;
+        let mode = metadata
+            .get("download")
+            .and_then(|d| d.get("mode"))
+            .and_then(toml::Value::as_str)
+            .unwrap_or("url");
+        anyhow::ensure!(
+            mode == "url",
+            "Mrpack export cannot preserve optional restricted file '{}'; use a full distribution target or explicitly make it required",
+            record.title
+        );
+        Ok(())
+    }
+
+    fn requirements_satisfied(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<bool> {
+        let Some(env) = &record.environment else {
+            return Ok(true);
+        };
+        super::url_file::requirements(env)?;
+        let Some((_, metadata)) = self.requirement_metadata(workdir, record)? else {
+            return Ok(false);
+        };
+        let mut desired = metadata.clone();
+        super::url_file::apply_requirements(&mut desired, env)?;
+        Ok(metadata == desired)
+    }
+
+    fn apply_requirements(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<()> {
+        let Some(env) = &record.environment else {
+            return Ok(());
+        };
+        let (path, mut metadata) =
+            self.requirement_metadata(workdir, record)?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Installed metadata is missing for '{}' while preserving import requirements",
+                    record.title
+                )
+            })?;
+        super::url_file::apply_requirements(&mut metadata, env)?;
+        self.filesystem
+            .validate_output_path(&workdir.join("pack"), &path)?;
+        self.filesystem
+            .write_atomic(&path, &toml::to_string(&metadata)?)
     }
 
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {
@@ -254,6 +508,35 @@ impl PackwizOps for LivePackwizOps<'_> {
 }
 
 impl LivePackwizOps<'_> {
+    fn requirement_metadata(
+        &self,
+        workdir: &Path,
+        record: &super::config::DependencyRecord,
+    ) -> crate::Result<Option<(PathBuf, toml::Value)>> {
+        let identity = super::installed::DependencyIdentity {
+            platform: record.platform,
+            project_id: record.project_id.clone(),
+            project_type: record.project_type,
+        };
+        let matches: Vec<_> = self
+            .installed_snapshot(workdir)?
+            .into_iter()
+            .filter(|entry| entry.identity.as_ref() == Some(&identity))
+            .collect();
+        anyhow::ensure!(
+            matches.len() <= 1,
+            "Ambiguous installed identity for {}",
+            record.title
+        );
+        let Some(target) = matches.first() else {
+            return Ok(None);
+        };
+        let paths = self.installed_paths(workdir)?;
+        let path = &paths[&target.key];
+        let metadata = toml::from_str(&self.filesystem.read_to_string(path)?)?;
+        Ok(Some((path.clone(), metadata)))
+    }
+
     fn run_legacy_forge_init(
         &self,
         workdir: &Path,
@@ -281,7 +564,7 @@ impl LivePackwizOps<'_> {
 
         let output = self
             .process
-            .execute(self.packwiz_bin, &args, &pack_dir)
+            .execute(self.binary(), &args, &pack_dir)
             .map_err(|e| StateError::CommandFailed {
                 command: format!("packwiz init failed: {}", e),
             })?;
@@ -502,6 +785,107 @@ minecraft = "{}"
 
     fn get_installed_mods(&self, _workdir: &Path) -> crate::Result<HashSet<String>> {
         Ok(self.installed_mods.clone())
+    }
+
+    fn installed_snapshot(
+        &self,
+        workdir: &Path,
+    ) -> crate::Result<Vec<super::installed::InstalledDependency>> {
+        // Legacy mock names model satisfied declarations. Live safety regressions
+        // use LivePackwizOps and real metadata rather than this convenience fixture.
+        let files = self.filesystem.lock().unwrap();
+        let config = files
+            .get(&workdir.join("empack.yml"))
+            .and_then(|text| serde_saphyr::from_str::<super::config::EmpackConfig>(text).ok());
+        Ok(self
+            .installed_mods
+            .iter()
+            .map(|key| {
+                if let Some(metadata) =
+                    files.get(&workdir.join("pack/mods").join(format!("{key}.pw.toml")))
+                    && let Ok(metadata) = toml::from_str(metadata)
+                    && let Ok(observed) = super::installed::InstalledDependency::from_metadata(
+                        key.clone(),
+                        crate::primitives::ProjectType::Mod,
+                        &metadata,
+                    )
+                {
+                    return observed;
+                }
+                let record = config
+                    .as_ref()
+                    .and_then(|c| c.empack.dependencies.get(key))
+                    .and_then(|entry| match entry {
+                        super::config::DependencyEntry::Resolved(record) => Some(record),
+                        _ => None,
+                    });
+                super::installed::InstalledDependency {
+                    key: key.clone(),
+                    identity: record.map(|r| super::installed::DependencyIdentity {
+                        platform: r.platform,
+                        project_id: r.project_id.clone(),
+                        project_type: r.project_type,
+                    }),
+                    version: record.and_then(|r| r.version.clone()),
+                }
+            })
+            .collect())
+    }
+
+    fn validate_optional_export(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn requirements_satisfied(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<bool> {
+        Ok(true)
+    }
+    fn apply_requirements(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+    fn validate_removal_target(
+        &self,
+        _workdir: &Path,
+        _target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn verify_added(
+        &self,
+        _workdir: &Path,
+        _record: &super::config::DependencyRecord,
+    ) -> crate::Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn verify_removed(
+        &self,
+        _workdir: &Path,
+        _target: &super::installed::InstalledDependency,
+    ) -> crate::Result<()> {
+        // Call-recording mock; real filesystem smoke tests verify this postcondition.
+        Ok(())
+    }
+
+    fn verify_reconciled(
+        &self,
+        _workdir: &Path,
+        _plan: &super::config::ProjectPlan,
+    ) -> crate::Result<()> {
+        // This mock records process calls. Live provider tests verify postconditions.
+        Ok(())
     }
 
     fn bootstrap_jar_cache_path(&self) -> crate::Result<PathBuf> {

@@ -104,6 +104,10 @@ This staging behavior is part of the supported runtime path, not a test-only fal
 
 ## Session Integration
 
-`CommandSession` resolves the packwiz binary once at session construction and exposes the result through `Session::packwiz_bin()`.
+`CommandSession` resolves the packwiz binary on first execution demand, caches the result, and exposes it through `Session::packwiz_bin()`. Inventory inspection and version display do not bootstrap tooling.
 
 Callers that execute packwiz commands should use that accessor instead of the bare `PACKWIZ_BIN` constant.
+
+## Bootstrap Verification
+
+New managed downloads must match the pinned SHA-256 digest for the selected release asset before extraction. The v0.2.0 digests come from the [GitHub release asset metadata](https://github.com/mannie-exe/packwiz-tx/releases/tag/v0.2.0). Existing user-provided and cached executables remain trusted local tools. Probes must exit successfully within five seconds. Downloads use connection, transfer, and retry time limits. Installation uses an OS-backed file lock whose ownership ends when the process exits; legacy directory locks do not block the new installer.

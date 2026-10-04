@@ -380,6 +380,8 @@ fn e2e_build_restricted_browser_confirm_accept_launches_browser_opener() {
 fn e2e_build_restricted_browser_confirm_accept_waits_and_auto_continues() {
     let project =
         TestProject::workflow_fixture("browser-confirm-auto-continue", "fabric", "1.21.1");
+    std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
+    std::fs::write(project.dir().join("pack/mods/optifine.pw.toml"), "filename = 'OptiFine.jar'\n[download]\nhash-format = 'sha256'\nhash = 'ca4d168550cf305f6f9cb94c459e683e39694ebd041e9f847c7e36ba4376b56f'\n[update.curseforge]\nproject-id = 1\nfile-id = 4912891\n").unwrap();
     seed_packwiz_installer_jars(project.dir());
 
     let fake_packwiz = write_fake_build_packwiz_binary(project.dir());

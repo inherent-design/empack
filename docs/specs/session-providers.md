@@ -74,14 +74,9 @@ In the standard async construction path, the HTTP cache is loaded from disk unde
 - `select()`
 - `fuzzy_select()`
 
-The live implementation short-circuits to defaults in `--yes` mode or when stdin and stdout are not TTYs. Ctrl+C handling restores the cursor, flushes telemetry, removes the state marker when possible, and exits with status `130`.
+The live implementation short-circuits to defaults in `--yes` mode or when stdin and stdout are not TTYs. Interrupted prompts return a typed cancellation error. Providers never terminate the host process or remove interruption markers.
 
-Interrupt cleanup is scope-aware:
-
-- top-level interactive cleanup targets the active workdir only
-- subprocess cleanup may walk upward from the subprocess working directory
-- that upward walk stops as soon as the marker is removed or the nearest empack project boundary is reached
-- cleanup never continues into parent projects beyond the current project boundary
+The executable owns the signal listener, logger lifecycle, cursor restoration, and exit status. Each live command receives its own cancellation token. Child exit and asynchronous pipe drainage share a deadline. Unix children run in a process group. Windows children start suspended, join an owned kill-on-close job, and resume only after registration succeeds. The host must permit nested job registration; otherwise the command returns an error before child code executes. The job retains ownership of descendants after their ancestors exit. Cleanup closes readers and terminates owned children. The synchronous provider interface waits for its process worker to finish before returning. Output is limited to 16 MiB per stream.
 
 ## Session Construction
 
@@ -92,12 +87,12 @@ the main loop and constructing the session.
 
 Construction steps:
 
-1. Resolve `packwiz_bin_path` with `platform::packwiz_bin::resolve_packwiz_binary()`.
+1. Allocate an empty cache for the packwiz binary path.
 2. Detect terminal capabilities from `AppConfig.color`.
-3. Initialize display and logger systems.
+3. Initialize display access; the executable initializes logging.
 4. Create live filesystem, network, process, config, archive, and interactive providers.
 5. Load the live HTTP cache from `<cache_root>/http`.
-6. Expose packwiz operations through `LivePackwizOps`, bound to the resolved binary path.
+6. Expose packwiz operations through `LivePackwizOps`. Resolve and cache the binary path when execution first requires it; inventory reads and version display do not bootstrap tools.
 
 If managed binary resolution fails, the session logs a warning and falls back to the bare `packwiz-tx` program name for PATH lookup.
 
@@ -147,6 +142,23 @@ Current PTY scope is intentionally limited:
 ### Abstraction Gaps
 
 - Display is initialized through `LiveDisplayProvider` and the global display singleton. Unit tests do not capture the same output path as subprocess E2E.
-- Interrupt handling exits the process directly with status `130`.
+- Display error suppression still uses a process-global flag; command outcomes are not yet a complete structured reporting API.
 - `LiveFileSystemProvider` is path-transparent. Filesystem safety guarantees come from command/workflow constraints, not from a sandboxed provider boundary.
 - Public compatibility wrappers such as `parse_curseforge_zip(path)` and `parse_modrinth_mrpack(path)` still expose path-based parsing APIs, even though live command paths now read archive bytes through `FileSystemProvider`.
+
+## Document Publication and Mutation Locks
+
+`write_atomic()` publishes manifests, state markers, and continuation records through a same-directory temporary file. The live implementation preserves existing permissions, refuses read-only files and symlinks, syncs file contents, replaces the destination, and syncs the parent directory on Unix. A post-publication durability error explicitly reports that publication already occurred.
+
+Live mutating commands hold an OS-backed project lock through execution and cleanup. Initialization locks its resolved target directory. Locks use canonical project paths and persistent files under the application data directory, separate from cleanable caches. Dry-run creates no project lock or project files. Provider implementations used outside the live command path must supply their own mutation ownership; the mock provider uses an in-memory no-op guard.
+
+These contracts prevent concurrent empack command mutations and partial document replacement. They do not provide rollback across packwiz, the manifest, and generated artifacts, or coordinate arbitrary external editors. Journaled multi-file recovery remains future work.
+
+`PackwizOps::installed_snapshot` exposes observed provider identity, version and
+metadata filename for reconciliation. Filename membership alone is insufficient
+for the live planner. `verify_reconciled` reads a new snapshot after execution.
+The legacy mock models declared installed names and records subprocess calls;
+CLI smoke tests with real files establish alias matching, required-content
+retention, pin convergence and detection of false backend success.
+
+Process observers run on the synchronous caller and must return promptly. The worker enforces child and pipe deadlines independently, but cannot preempt a blocked user callback. Embedders should enqueue output for slow consumers. Global display/error state and Tokio-dependent build operations still limit independent concurrent sessions.

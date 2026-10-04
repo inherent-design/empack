@@ -6,6 +6,7 @@ pub mod fuzzy;
 pub mod import;
 pub mod packwiz;
 pub mod parsing;
+pub mod paths;
 pub mod restricted_build;
 pub mod search;
 pub mod state;
@@ -43,3 +44,7 @@ pub use state::{PackStateManager, StateTransitionResult};
 pub use crate::primitives::{
     BuildTarget, PackState, ProjectPlatform, ProjectType, StateTransition,
 };
+
+pub mod installed;
+
+pub mod url_file;

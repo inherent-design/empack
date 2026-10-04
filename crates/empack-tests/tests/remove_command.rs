@@ -34,6 +34,7 @@ async fn e2e_remove_single_mod() -> Result<()> {
     let workdir = mock_root().join("workdir");
     let session = MockSessionBuilder::new()
         .with_empack_project("remove-single", "1.21.1", "fabric")
+        .with_installed_mods(["sodium".to_string(), "fabric_api".to_string()].into())
         .with_yes_flag()
         .with_file(
             workdir.join("empack.yml"),
@@ -85,6 +86,7 @@ async fn e2e_remove_multiple_mods() -> Result<()> {
     let workdir = mock_root().join("workdir");
     let session = MockSessionBuilder::new()
         .with_empack_project("remove-multi", "1.21.1", "fabric")
+        .with_installed_mods(["sodium".to_string(), "fabric_api".to_string()].into())
         .with_yes_flag()
         .with_file(
             workdir.join("empack.yml"),
@@ -186,7 +188,7 @@ async fn e2e_remove_empty_mods_is_noop() -> Result<()> {
 }
 
 #[tokio::test]
-async fn e2e_remove_dependencies_removes_orphans() -> Result<()> {
+async fn e2e_remove_dependencies_refuses_incomplete_graph() -> Result<()> {
     let workdir = mock_root().join("workdir");
     let mods_dir = workdir.join("pack").join("mods");
     let session = MockSessionBuilder::new()
@@ -269,44 +271,17 @@ sodium = "*"
     )
     .await;
 
-    assert!(result.is_ok(), "remove --deps failed: {result:?}");
-
-    let packwiz_calls = session
-        .process_provider
-        .get_calls_for_command(empack_lib::empack::packwiz::PACKWIZ_BIN);
     assert!(
-        packwiz_calls.iter().any(
-            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
-                == ["remove", "-y", "sodium"]
-        ),
-        "remove should invoke packwiz remove for sodium: {packwiz_calls:?}"
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("complete dependency edges")
     );
-    assert!(
-        packwiz_calls.iter().any(
-            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
-                == ["remove", "-y", "leaf-a"]
-        ),
-        "remove --deps should remove leaf-a as an orphan: {packwiz_calls:?}"
-    );
-    assert!(
-        packwiz_calls.iter().any(
-            |call| call.args.iter().map(String::as_str).collect::<Vec<_>>()
-                == ["remove", "-y", "leaf-b"]
-        ),
-        "remove --deps should remove leaf-b as an orphan: {packwiz_calls:?}"
-    );
-
+    assert!(session.process_provider.get_calls().is_empty());
     let config_content = session
         .filesystem()
         .read_to_string(&workdir.join("empack.yml"))?;
-    assert!(
-        !config_content.contains("sodium"),
-        "sodium should be removed from empack.yml"
-    );
-    assert!(
-        config_content.contains("fabric_api"),
-        "fabric_api should remain in empack.yml"
-    );
+    assert_eq!(config_content, remove_project_config());
 
     Ok(())
 }

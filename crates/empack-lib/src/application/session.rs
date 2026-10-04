@@ -19,7 +19,6 @@ use indicatif::MultiProgress;
 use reqwest::Client;
 use std::collections::HashSet;
 use std::env;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -31,7 +30,27 @@ pub struct FileMetadata {
     pub created_unix_ms: Option<u64>,
 }
 
+pub trait ReadSeek: std::io::Read + std::io::Seek {}
+impl<T: std::io::Read + std::io::Seek> ReadSeek for T {}
+
 pub trait FileSystemProvider {
+    fn open_reader(&self, path: &Path) -> Result<Box<dyn ReadSeek>> {
+        Ok(Box::new(std::io::Cursor::new(self.read_bytes(path)?)))
+    }
+
+    fn write_atomic(&self, path: &Path, content: &str) -> Result<()> {
+        self.write_file(path, content)
+    }
+
+    fn lock_project(&self, _project: &Path) -> Result<super::persistence::ProjectLock> {
+        Ok(super::persistence::ProjectLock::in_memory())
+    }
+
+    /// Validate a generated destination before creating, replacing, or deleting it.
+    fn validate_output_path(&self, root: &Path, destination: &Path) -> Result<()> {
+        crate::empack::paths::validate_relative_destination(root, destination)
+    }
+
     fn current_dir(&self) -> Result<PathBuf>;
 
     fn config_manager(&self, workdir: PathBuf) -> ConfigManager<'_>;
@@ -44,11 +63,22 @@ pub trait FileSystemProvider {
 
     fn write_bytes(&self, path: &Path, content: &[u8]) -> Result<()>;
 
+    /// Publish a staged stream. In-memory providers may buffer; live publication streams.
+    fn publish_reader(&self, path: &Path, reader: &mut dyn std::io::Read) -> Result<()> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+        self.write_bytes(path, &bytes)
+    }
+
     fn exists(&self, path: &Path) -> bool;
 
     fn metadata_exists(&self, path: &Path) -> bool;
 
     fn is_directory(&self, path: &Path) -> bool;
+
+    fn is_regular_file(&self, path: &Path) -> bool {
+        self.exists(path) && !self.is_directory(path)
+    }
 
     fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
 
@@ -65,6 +95,25 @@ pub trait FileSystemProvider {
 
 /// Provider trait for network operations
 pub trait NetworkProvider {
+    /// Execute a provider API request using the shared host budget and retry policy.
+    fn execute_api_request(
+        &self,
+        platform: crate::primitives::ProjectPlatform,
+        request: reqwest::Request,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<reqwest::Response>> + Send>>
+    {
+        let client = self.http_client();
+        let budget = self.rate_budgets().for_url(request.url().as_str());
+        Box::pin(async move {
+            let mut client =
+                crate::networking::rate_limit::RateLimitedClient::new(client?, platform);
+            if let Some(budget) = budget {
+                client.set_budget(budget);
+            }
+            Ok(client.execute(request).await?)
+        })
+    }
+
     fn http_client(&self) -> Result<Client>;
 
     fn project_resolver(
@@ -106,11 +155,17 @@ pub enum ProcessStream {
     Stderr,
 }
 
+/// Receives output on the calling thread. Callbacks must return promptly and must
+/// not block: process deadlines bound the owned child, not user callback execution.
 pub trait ProcessObserver {
     fn on_line(&self, stream: ProcessStream, line: &str);
 }
 
 pub trait ProcessProvider {
+    fn check_cancelled(&self) -> Result<()> {
+        Ok(())
+    }
+
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput>;
 
     fn execute_streaming(
@@ -216,6 +271,10 @@ pub trait ConfigProvider {
 
 /// Provider trait for archive operations (zip extraction, archive creation)
 pub trait ArchiveProvider {
+    fn overlay_zip(&self, _archive: &Path, _additions: &[(PathBuf, String)]) -> Result<()> {
+        anyhow::bail!("Archive provider does not support content layers")
+    }
+
     fn extract_zip(&self, archive_path: &Path, dest_dir: &Path) -> Result<()>;
 
     fn create_archive(
@@ -229,6 +288,10 @@ pub trait ArchiveProvider {
 pub struct LiveArchiveProvider;
 
 impl ArchiveProvider for LiveArchiveProvider {
+    fn overlay_zip(&self, archive: &Path, additions: &[(PathBuf, String)]) -> Result<()> {
+        crate::empack::archive::overlay_zip(archive, additions)
+    }
+
     fn extract_zip(&self, archive_path: &Path, dest_dir: &Path) -> Result<()> {
         crate::empack::archive::extract_zip(archive_path, dest_dir)
             .with_context(|| format!("Failed to extract zip: {}", archive_path.display()))
@@ -288,6 +351,35 @@ pub trait Session {
 pub struct LiveFileSystemProvider;
 
 impl FileSystemProvider for LiveFileSystemProvider {
+    fn open_reader(&self, path: &Path) -> Result<Box<dyn ReadSeek>> {
+        Ok(Box::new(std::fs::File::open(path)?))
+    }
+
+    fn write_atomic(&self, path: &Path, content: &str) -> Result<()> {
+        super::persistence::atomic_write(path, content.as_bytes())
+    }
+
+    fn lock_project(&self, project: &Path) -> Result<super::persistence::ProjectLock> {
+        super::persistence::ProjectLock::acquire(project)
+    }
+
+    fn validate_output_path(&self, root: &Path, destination: &Path) -> Result<()> {
+        crate::empack::paths::validate_relative_destination(root, destination)?;
+        let mut current = root.to_path_buf();
+        for component in destination.strip_prefix(root)?.components() {
+            current.push(component);
+            match std::fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    anyhow::bail!("Output path contains a symlink: {}", current.display())
+                }
+                Ok(_) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(())
+    }
+
     fn current_dir(&self) -> Result<PathBuf> {
         env::current_dir().context("Failed to get current directory")
     }
@@ -315,6 +407,10 @@ impl FileSystemProvider for LiveFileSystemProvider {
             .with_context(|| format!("Failed to write file: {}", path.display()))
     }
 
+    fn publish_reader(&self, path: &Path, reader: &mut dyn std::io::Read) -> Result<()> {
+        super::persistence::atomic_write_reader(path, reader)
+    }
+
     fn exists(&self, path: &Path) -> bool {
         path.exists()
     }
@@ -325,6 +421,10 @@ impl FileSystemProvider for LiveFileSystemProvider {
 
     fn is_directory(&self, path: &Path) -> bool {
         path.is_dir()
+    }
+
+    fn is_regular_file(&self, path: &Path) -> bool {
+        std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file())
     }
 
     fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
@@ -556,39 +656,28 @@ fn process_timeout() -> std::time::Duration {
     DEFAULT_PROCESS_TIMEOUT
 }
 
-fn is_empack_project_boundary(dir: &Path) -> bool {
-    dir.join("empack.yml").exists() || dir.join("pack").join("pack.toml").exists()
-}
-
-fn cleanup_process_interrupt_marker(working_dir: &Path) {
-    let mut current = Some(working_dir);
-
-    while let Some(dir) = current {
-        let marker = dir.join(crate::empack::state::STATE_MARKER_FILE);
-        if std::fs::remove_file(&marker).is_ok() {
-            return;
-        }
-
-        if is_empack_project_boundary(dir) {
-            return;
-        }
-
-        current = dir.parent();
-    }
-}
-
 pub struct LiveProcessProvider {
     custom_path: Option<String>,
+    cancellation: super::process_runtime::Cancellation,
 }
 
 impl LiveProcessProvider {
     pub fn new() -> Self {
-        Self { custom_path: None }
+        Self {
+            custom_path: None,
+            cancellation: Default::default(),
+        }
+    }
+
+    pub fn with_cancellation(mut self, cancellation: super::process_runtime::Cancellation) -> Self {
+        self.cancellation = cancellation;
+        self
     }
 
     pub fn with_custom_path(path: String) -> Self {
         Self {
             custom_path: Some(path),
+            cancellation: Default::default(),
         }
     }
 
@@ -679,7 +768,7 @@ impl Default for LiveProcessProvider {
     }
 }
 
-fn decode_process_output_chunk(bytes: &[u8]) -> String {
+pub(super) fn decode_process_output_chunk(bytes: &[u8]) -> String {
     #[cfg(windows)]
     {
         return decode_process_output_chunk_windows(bytes);
@@ -770,6 +859,10 @@ fn decode_windows_codepage(bytes: &[u8], codepage: u32) -> Option<String> {
 }
 
 impl ProcessProvider for LiveProcessProvider {
+    fn check_cancelled(&self) -> Result<()> {
+        self.cancellation.check()
+    }
+
     fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput> {
         struct NoopProcessObserver;
 
@@ -808,181 +901,7 @@ impl ProcessProvider for LiveProcessProvider {
             cmd.env("PATHEXT", self.effective_pathext());
         }
 
-        let mut child = cmd
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .with_context(|| format!("Failed to spawn command: {}", command))?;
-        let cmd_name = command.to_string();
-
-        enum ProcessEvent {
-            Chunk(ProcessStream, String),
-            ReaderFailed(ProcessStream, String),
-        }
-
-        fn spawn_reader(
-            pipe: impl std::io::Read + Send + 'static,
-            stream: ProcessStream,
-            tx: std::sync::mpsc::Sender<ProcessEvent>,
-        ) -> std::thread::JoinHandle<()> {
-            std::thread::spawn(move || {
-                let mut reader = BufReader::new(pipe);
-                let mut buf = Vec::new();
-                loop {
-                    buf.clear();
-                    match reader.read_until(b'\n', &mut buf) {
-                        Ok(0) => break,
-                        Ok(_) => {
-                            let chunk = decode_process_output_chunk(&buf);
-                            if tx.send(ProcessEvent::Chunk(stream, chunk)).is_err() {
-                                break;
-                            }
-                        }
-                        Err(error) => {
-                            let _ = tx.send(ProcessEvent::ReaderFailed(stream, error.to_string()));
-                            break;
-                        }
-                    }
-                }
-            })
-        }
-
-        let stdout_pipe = child
-            .stdout
-            .take()
-            .context("Failed to capture command stdout")?;
-        let stderr_pipe = child
-            .stderr
-            .take()
-            .context("Failed to capture command stderr")?;
-
-        let (tx, rx) = std::sync::mpsc::channel::<ProcessEvent>();
-        let stdout_thread = spawn_reader(stdout_pipe, ProcessStream::Stdout, tx.clone());
-        let stderr_thread = spawn_reader(stderr_pipe, ProcessStream::Stderr, tx);
-
-        let start = std::time::Instant::now();
-        let process_timeout = process_timeout();
-        let mut stdout = String::new();
-        let mut stderr = String::new();
-        let mut stdout_partial = String::new();
-        let mut stderr_partial = String::new();
-        let mut exit_status = None;
-
-        fn handle_process_interrupt(working_dir: &Path) -> ! {
-            crate::terminal::cursor::force_show_cursor();
-            crate::logger::global_shutdown();
-            cleanup_process_interrupt_marker(working_dir);
-
-            std::process::exit(130)
-        }
-
-        fn handle_chunk(
-            full_output: &mut String,
-            partial: &mut String,
-            chunk: &str,
-            stream: ProcessStream,
-            observer: &dyn ProcessObserver,
-        ) {
-            full_output.push_str(chunk);
-            partial.push_str(chunk);
-
-            while let Some(pos) = partial.find('\n') {
-                let line = partial[..pos].trim_end_matches('\r').to_string();
-                observer.on_line(stream, &line);
-                partial.drain(..=pos);
-            }
-        }
-
-        loop {
-            if crate::interrupt_requested() {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = stdout_thread.join();
-                let _ = stderr_thread.join();
-                handle_process_interrupt(working_dir);
-            }
-
-            if start.elapsed() > process_timeout {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = stdout_thread.join();
-                let _ = stderr_thread.join();
-                anyhow::bail!(
-                    "Command '{}' timed out after {} seconds (process killed)",
-                    cmd_name,
-                    process_timeout.as_secs()
-                )
-            }
-
-            match rx.recv_timeout(std::time::Duration::from_millis(50)) {
-                Ok(ProcessEvent::Chunk(ProcessStream::Stdout, chunk)) => {
-                    handle_chunk(
-                        &mut stdout,
-                        &mut stdout_partial,
-                        &chunk,
-                        ProcessStream::Stdout,
-                        observer,
-                    );
-                }
-                Ok(ProcessEvent::Chunk(ProcessStream::Stderr, chunk)) => {
-                    handle_chunk(
-                        &mut stderr,
-                        &mut stderr_partial,
-                        &chunk,
-                        ProcessStream::Stderr,
-                        observer,
-                    );
-                }
-                Ok(ProcessEvent::ReaderFailed(stream, error)) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = stdout_thread.join();
-                    let _ = stderr_thread.join();
-                    anyhow::bail!("Failed to read {:?} from '{}': {}", stream, cmd_name, error);
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    if exit_status.is_none() {
-                        exit_status =
-                            Some(child.wait().with_context(|| {
-                                format!("Failed to execute command: {}", cmd_name)
-                            })?);
-                    }
-                    break;
-                }
-            }
-
-            if exit_status.is_none()
-                && let Some(status) = child
-                    .try_wait()
-                    .with_context(|| format!("Failed to execute command: {}", cmd_name))?
-            {
-                exit_status = Some(status);
-            }
-        }
-
-        let _ = stdout_thread.join();
-        let _ = stderr_thread.join();
-
-        if !stdout_partial.is_empty() {
-            observer.on_line(ProcessStream::Stdout, stdout_partial.trim_end_matches('\r'));
-        }
-        if !stderr_partial.is_empty() {
-            observer.on_line(ProcessStream::Stderr, stderr_partial.trim_end_matches('\r'));
-        }
-
-        let status = match exit_status {
-            Some(status) => status,
-            None => child
-                .wait()
-                .with_context(|| format!("Failed to execute command: {}", cmd_name))?,
-        };
-
-        Ok(ProcessOutput {
-            stdout,
-            stderr,
-            success: status.success(),
-        })
+        super::process_runtime::execute(cmd, process_timeout(), self.cancellation.clone(), observer)
     }
 
     fn find_program(&self, program: &str) -> Option<String> {
@@ -1025,12 +944,11 @@ impl ConfigProvider for LiveConfigProvider {
 
 pub struct LiveInteractiveProvider {
     yes_mode: bool,
-    workdir: Option<PathBuf>,
 }
 
 impl LiveInteractiveProvider {
-    pub fn new(yes_mode: bool, workdir: Option<PathBuf>) -> Self {
-        Self { yes_mode, workdir }
+    pub fn new(yes_mode: bool, _workdir: Option<PathBuf>) -> Self {
+        Self { yes_mode }
     }
 
     /// Check if we're in a TTY environment suitable for interactive prompts
@@ -1039,22 +957,8 @@ impl LiveInteractiveProvider {
         std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
     }
 
-    fn handle_interrupt(&self) -> ! {
-        crate::terminal::cursor::force_show_cursor();
-        crate::logger::global_shutdown();
-
-        // Best-effort state marker cleanup
-        let marker_dir = self
-            .workdir
-            .as_ref()
-            .cloned()
-            .or_else(|| std::env::current_dir().ok());
-        if let Some(dir) = &marker_dir {
-            let marker = dir.join(crate::empack::state::STATE_MARKER_FILE);
-            let _ = std::fs::remove_file(marker);
-        }
-
-        std::process::exit(130)
+    fn handle_interrupt<T>(&self) -> Result<T> {
+        Err(super::process_runtime::Interrupted.into())
     }
 }
 
@@ -1153,6 +1057,15 @@ impl InteractiveProvider for LiveInteractiveProvider {
     }
 }
 
+pub(crate) fn resolve_packwiz_bin_path() -> String {
+    crate::platform::packwiz_bin::resolve_packwiz_binary()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "packwiz-tx binary resolution failed; falling back to PATH lookup");
+                crate::empack::packwiz::PACKWIZ_BIN.to_string()
+            })
+}
+
 pub struct CommandSession<F, N, P, C, I, A = LiveArchiveProvider>
 where
     F: FileSystemProvider,
@@ -1173,7 +1086,7 @@ where
     archive_provider: A,
     /// Resolved packwiz-tx binary path for process execution.
     /// Computed once at session construction via `resolve_packwiz_binary()`.
-    packwiz_bin_path: String,
+    packwiz_bin_path: std::sync::OnceLock<String>,
 }
 
 impl
@@ -1186,29 +1099,12 @@ impl
         LiveArchiveProvider,
     >
 {
-    fn resolve_packwiz_bin_path() -> String {
-        crate::platform::packwiz_bin::resolve_packwiz_binary()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "packwiz-tx binary resolution failed; falling back to PATH lookup");
-                crate::empack::packwiz::PACKWIZ_BIN.to_string()
-            })
-    }
-
-    fn build_live_session(
-        app_config: AppConfig,
-        packwiz_bin_path: String,
-        network_provider: LiveNetworkProvider,
-    ) -> Self {
+    fn build_live_session(app_config: AppConfig, network_provider: LiveNetworkProvider) -> Self {
         // Initialize display and logger systems
         let terminal_capabilities = match TerminalCapabilities::detect_from_config(app_config.color)
         {
             Ok(caps) => {
                 crate::display::Display::init_or_get(caps.clone());
-                let logger_config = app_config.to_logger_config(&caps);
-                if let Err(e) = crate::logger::Logger::init(logger_config) {
-                    eprintln!("empack: logger init failed: {e}");
-                }
                 caps
             }
             Err(_) => TerminalCapabilities::minimal(),
@@ -1230,25 +1126,23 @@ impl
                 app_config.workdir.clone(),
             ),
             archive_provider: LiveArchiveProvider,
-            packwiz_bin_path,
+            packwiz_bin_path: std::sync::OnceLock::new(),
         }
     }
 
+    pub fn with_cancellation(mut self, cancellation: super::process_runtime::Cancellation) -> Self {
+        self.process_provider.cancellation = cancellation;
+        self
+    }
+
     pub fn new(app_config: AppConfig) -> Self {
-        let packwiz_bin_path = Self::resolve_packwiz_bin_path();
         let network_provider = LiveNetworkProvider::with_timeout(app_config.net_timeout);
-        Self::build_live_session(app_config, packwiz_bin_path, network_provider)
+        Self::build_live_session(app_config, network_provider)
     }
 
     pub async fn new_async(app_config: AppConfig) -> Self {
-        let packwiz_bin_path = tokio::task::spawn_blocking(Self::resolve_packwiz_bin_path)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "packwiz-tx binary resolution task failed; falling back to PATH lookup");
-                crate::empack::packwiz::PACKWIZ_BIN.to_string()
-            });
         let network_provider = LiveNetworkProvider::new_async(app_config.net_timeout).await;
-        Self::build_live_session(app_config, packwiz_bin_path, network_provider)
+        Self::build_live_session(app_config, network_provider)
     }
 }
 
@@ -1283,7 +1177,9 @@ where
             config_provider,
             interactive_provider,
             archive_provider,
-            packwiz_bin_path: crate::empack::packwiz::PACKWIZ_BIN.to_string(),
+            packwiz_bin_path: std::sync::OnceLock::from(
+                crate::empack::packwiz::PACKWIZ_BIN.to_string(),
+            ),
         }
     }
 
@@ -1385,11 +1281,11 @@ where
     }
 
     fn packwiz_bin(&self) -> &str {
-        &self.packwiz_bin_path
+        self.packwiz_bin_path.get_or_init(resolve_packwiz_bin_path)
     }
 
     fn packwiz(&self) -> Box<dyn PackwizOps + '_> {
-        Box::new(LivePackwizOps::new(
+        Box::new(LivePackwizOps::new_lazy(
             self.process(),
             self.filesystem(),
             &self.packwiz_bin_path,
@@ -2091,53 +1987,6 @@ mod tests {
         assert!(error.to_string().contains("Failed to spawn command"));
     }
 
-    #[test]
-    fn cleanup_process_interrupt_marker_removes_marker_from_pack_parent() {
-        let temp = TempDir::new().expect("temp dir");
-        let root = temp.path();
-        let pack_dir = root.join("pack");
-        write_empack_boundary(root);
-        let marker = write_state_marker(root);
-
-        cleanup_process_interrupt_marker(&pack_dir);
-
-        assert!(!marker.exists(), "root marker should be removed");
-    }
-
-    #[test]
-    fn cleanup_process_interrupt_marker_removes_marker_from_dist_grandparent() {
-        let temp = TempDir::new().expect("temp dir");
-        let root = temp.path();
-        let dist_server_dir = root.join("dist").join("server");
-        write_empack_boundary(root);
-        std::fs::create_dir_all(&dist_server_dir).expect("create dist/server dir");
-        let marker = write_state_marker(root);
-
-        cleanup_process_interrupt_marker(&dist_server_dir);
-
-        assert!(!marker.exists(), "root marker should be removed");
-    }
-
-    #[test]
-    fn cleanup_process_interrupt_marker_does_not_remove_parent_project_marker() {
-        let temp = TempDir::new().expect("temp dir");
-        let outer = temp.path().join("outer");
-        let nested = outer.join("nested");
-        let nested_dist_server = nested.join("dist").join("server");
-
-        write_empack_boundary(&outer);
-        write_empack_boundary(&nested);
-        std::fs::create_dir_all(&nested_dist_server).expect("create nested dist/server dir");
-        let outer_marker = write_state_marker(&outer);
-
-        cleanup_process_interrupt_marker(&nested_dist_server);
-
-        assert!(
-            outer_marker.exists(),
-            "outer project marker should remain in place"
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn live_process_provider_uses_custom_path_for_execution_and_lookup() {
@@ -2302,13 +2151,7 @@ mod tests {
         let missing = temp.path().join("missing-packwiz");
         let _override = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", missing.as_os_str()) };
 
-        let resolved = CommandSession::<
-            LiveFileSystemProvider,
-            LiveNetworkProvider,
-            LiveProcessProvider,
-            LiveConfigProvider,
-            LiveInteractiveProvider,
-        >::resolve_packwiz_bin_path();
+        let resolved = resolve_packwiz_bin_path();
 
         assert_eq!(resolved, crate::empack::packwiz::PACKWIZ_BIN);
     }
@@ -2468,5 +2311,63 @@ mod tests {
             .await
             .expect("cached response should reload from disk");
         assert_eq!(cached.data, b"cached");
+    }
+    #[cfg(unix)]
+    #[test]
+    fn subprocess_deadline_covers_closed_and_inherited_pipes() {
+        let _guard = crate::test_support::env_lock().lock().unwrap();
+        let previous = std::env::var_os("EMPACK_PROCESS_TIMEOUT_SECS");
+        unsafe {
+            std::env::set_var("EMPACK_PROCESS_TIMEOUT_SECS", "1");
+        }
+        let mut results = Vec::new();
+        for script in ["exec 1>&-; exec 2>&-; sleep 4", "sleep 4 & wait"] {
+            let start = std::time::Instant::now();
+            let result = LiveProcessProvider::new().execute("sh", &["-c", script], Path::new("."));
+            results.push((result, start.elapsed()));
+        }
+        unsafe {
+            match previous {
+                Some(v) => std::env::set_var("EMPACK_PROCESS_TIMEOUT_SECS", v),
+                None => std::env::remove_var("EMPACK_PROCESS_TIMEOUT_SECS"),
+            }
+        }
+        for (result, elapsed) in results {
+            assert!(result.unwrap_err().to_string().contains("timed out"));
+            assert!(
+                elapsed < std::time::Duration::from_secs(3),
+                "deadline took {elapsed:?}"
+            );
+        }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn cancelling_one_process_preserves_markers_and_other_sessions() {
+        let dir = TempDir::new().unwrap();
+        write_empack_boundary(dir.path());
+        let marker = write_state_marker(dir.path());
+        let cancellation = super::super::process_runtime::Cancellation::default();
+        let token = cancellation.clone();
+        let trigger = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            token.cancel();
+        });
+        let start = std::time::Instant::now();
+        let result = LiveProcessProvider::new()
+            .with_cancellation(cancellation)
+            .execute("sh", &["-c", "sleep 10 & wait"], dir.path());
+        trigger.join().unwrap();
+        assert_eq!(
+            crate::application::classify_error(&result.unwrap_err()),
+            crate::application::EmpackExitCode::Interrupted
+        );
+        assert!(start.elapsed() < std::time::Duration::from_secs(3));
+        assert!(marker.exists());
+        assert!(
+            LiveProcessProvider::new()
+                .execute("sh", &["-c", "exit 0"], dir.path())
+                .unwrap()
+                .success
+        );
     }
 }

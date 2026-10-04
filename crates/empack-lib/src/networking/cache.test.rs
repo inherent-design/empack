@@ -562,3 +562,121 @@ async fn test_cache_eviction_on_clear() {
 
     mock.assert_async().await;
 }
+
+fn cache_entry(expires: SystemTime) -> CachedResponse {
+    CachedResponse { data: b"value".to_vec(), etag: None, expires, status: 200 }
+}
+
+#[tokio::test]
+async fn bounded_cache_evicts_earliest_expiry_and_persists_the_replacement() {
+    let dir = TempDir::new().unwrap();
+    let cache = HttpCache::new(dir.path().into());
+    let now = SystemTime::now() + Duration::from_secs(3600);
+    {
+        let mut entries = cache.cache.write().await;
+        for i in 0..1024 {
+            entries.insert(format!("entry-{i}"), cache_entry(now + Duration::from_secs(i)));
+        }
+    }
+    cache.put("new".into(), cache_entry(now + Duration::from_secs(2048))).await;
+    assert_eq!(cache.len().await, 1024);
+    assert!(cache.get("entry-0").await.is_none());
+    assert!(cache.get("entry-1").await.is_some());
+    let loaded = HttpCache::new(dir.path().into());
+    loaded.load_from_disk().await.unwrap();
+    assert_eq!(loaded.len().await, 1024);
+    assert!(loaded.get("new").await.is_some());
+    assert!(loaded.get("entry-0").await.is_none());
+}
+
+#[tokio::test]
+async fn loading_large_entry_sets_keeps_newest_expiries_and_bounds_merged_state() {
+    let dir = TempDir::new().unwrap();
+    let cache = HttpCache::new(dir.path().into());
+    let now = SystemTime::now() + Duration::from_secs(3600);
+    let entries: HashMap<_, _> = (0..1100).map(|i| (
+        format!("entry-{i}"), cache_entry(now + Duration::from_secs(i))
+    )).collect();
+    std::fs::write(dir.path().join("http_cache.json"), serde_json::to_vec(&entries).unwrap()).unwrap();
+    cache.cache.write().await.insert("memory".into(), cache_entry(now + Duration::from_secs(2000)));
+    cache.load_from_disk().await.unwrap();
+    assert_eq!(cache.len().await, 1024);
+    assert!(cache.get("entry-76").await.is_none());
+    assert!(cache.get("entry-77").await.is_some());
+    assert!(cache.get("entry-1099").await.is_some());
+    assert!(cache.get("memory").await.is_some());
+}
+
+#[tokio::test]
+async fn oversized_cache_is_rejected_before_parsing_or_changing_memory() {
+    let dir = TempDir::new().unwrap();
+    let cache = HttpCache::new(dir.path().into());
+    cache.cache.write().await.insert("memory".into(), cache_entry(SystemTime::now() + Duration::from_secs(3600)));
+    let file = std::fs::File::create(dir.path().join("http_cache.json")).unwrap();
+    file.set_len(64 * 1024 * 1024 + 1).unwrap();
+    let error = cache.load_from_disk().await.unwrap_err();
+    assert!(error.to_string().contains("64 MiB load limit"));
+    assert_eq!(cache.len().await, 1);
+    assert!(cache.get("memory").await.is_some());
+}
+
+#[tokio::test]
+async fn failed_cache_publication_preserves_existing_document() {
+    let dir = TempDir::new().unwrap();
+    let cache = HttpCache::new(dir.path().into());
+    cache.put("old".into(), cache_entry(SystemTime::now() + Duration::from_secs(3600))).await;
+    let path = dir.path().join("http_cache.json");
+    let before = std::fs::read(&path).unwrap();
+    let original_permissions = std::fs::metadata(&path).unwrap().permissions();
+    let mut readonly = original_permissions.clone();
+    readonly.set_readonly(true);
+    std::fs::set_permissions(&path, readonly).unwrap();
+    cache.cache.write().await.insert("new".into(), cache_entry(SystemTime::now() + Duration::from_secs(3600)));
+    let result = cache.save_to_disk().await;
+    std::fs::set_permissions(&path, original_permissions).unwrap();
+    assert!(result.unwrap_err().to_string().contains("Failed to publish cache"));
+    assert_eq!(std::fs::read(path).unwrap(), before);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
+#[tokio::test]
+async fn oversized_response_does_not_disable_subsequent_cache_persistence() {
+    let dir = TempDir::new().unwrap();
+    let cache = HttpCache::new(dir.path().into());
+    let expires = SystemTime::now() + Duration::from_secs(3600);
+    cache.put("old".into(), cache_entry(expires)).await;
+    let mut large = cache_entry(expires);
+    large.data = vec![255; 9 * 1024 * 1024];
+    cache.put("too-large".into(), large).await;
+    cache.put("new".into(), cache_entry(expires)).await;
+    let loaded = HttpCache::new(dir.path().into());
+    loaded.load_from_disk().await.unwrap();
+    assert!(loaded.get("new").await.is_some());
+    assert!(loaded.get("old").await.is_some());
+    assert!(loaded.get("too-large").await.is_none());
+}
+
+#[tokio::test]
+async fn combined_body_bytes_evict_oldest_entries_before_publication() {
+    let dir = TempDir::new().unwrap();
+    let cache = HttpCache::new(dir.path().into());
+    let expires = SystemTime::now() + Duration::from_secs(3600);
+    {
+        let mut entries = cache.cache.write().await;
+        for i in 0..3 {
+            let mut entry = cache_entry(expires + Duration::from_secs(i));
+            entry.data = vec![255; 2 * 1024 * 1024];
+            entries.insert(format!("entry-{i}"), entry);
+        }
+    }
+    let mut incoming = cache_entry(expires + Duration::from_secs(10));
+    incoming.data = vec![255; 2 * 1024 * 1024];
+    cache.put("incoming".into(), incoming).await;
+    assert_eq!(cache.len().await, 3);
+    assert!(cache.get("entry-0").await.is_none());
+    let loaded = HttpCache::new(dir.path().into());
+    loaded.load_from_disk().await.unwrap();
+    assert_eq!(loaded.len().await, 3);
+    assert!(loaded.get("incoming").await.is_some());
+    assert!(std::fs::metadata(dir.path().join("http_cache.json")).unwrap().len() < 64 * 1024 * 1024);
+}

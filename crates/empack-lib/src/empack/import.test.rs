@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Cursor, Write};
 
 use tempfile::NamedTempFile;
 
@@ -361,18 +361,17 @@ fn test_parse_modrinth_mrpack_content_entries() {
     assert_eq!(manifest.content.len(), 1);
 
     match &manifest.content[0] {
-        ContentEntry::PlatformReferenced(pref) => {
-            assert_eq!(pref.destination_path, "mods/sodium.jar");
+        ContentEntry::UrlFile(pref) => {
+            assert_eq!(pref.destination, "mods/sodium.jar");
             assert_eq!(
-                pref.download_urls,
+                pref.downloads,
                 vec!["https://cdn.modrinth.com/versions/abc123/sodium.jar"]
             );
             assert_eq!(pref.hashes.get("sha1").unwrap(), "deadbeef");
             assert_eq!(pref.env.client, SideRequirement::Required);
             assert_eq!(pref.env.server, SideRequirement::Required);
-            assert_eq!(pref.platform, ProjectPlatform::Modrinth);
         }
-        _ => panic!("expected PlatformReferenced"),
+        _ => panic!("expected UrlFile"),
     }
 }
 
@@ -1308,11 +1307,11 @@ fn test_parse_modrinth_multiple_downloads_first_used() {
     assert_eq!(manifest.content.len(), 1);
 
     match &manifest.content[0] {
-        ContentEntry::PlatformReferenced(pref) => {
-            assert_eq!(pref.download_urls.len(), 2);
-            assert!(pref.download_urls[0].contains("cdn.modrinth.com"));
+        ContentEntry::UrlFile(pref) => {
+            assert_eq!(pref.downloads.len(), 2);
+            assert!(pref.downloads[0].contains("cdn.modrinth.com"));
         }
-        _ => panic!("expected PlatformReferenced"),
+        _ => panic!("expected UrlFile"),
     }
 }
 
@@ -1341,11 +1340,11 @@ fn test_parse_modrinth_optional_env_fields() {
     assert_eq!(manifest.content.len(), 1);
 
     match &manifest.content[0] {
-        ContentEntry::PlatformReferenced(pref) => {
+        ContentEntry::UrlFile(pref) => {
             assert_eq!(pref.env.client, SideRequirement::Unknown);
             assert_eq!(pref.env.server, SideRequirement::Unknown);
         }
-        _ => panic!("expected PlatformReferenced"),
+        _ => panic!("expected UrlFile"),
     }
 }
 
@@ -2122,7 +2121,7 @@ async fn test_execute_import_uses_url_derived_modrinth_version_id_for_packwiz_ad
 
 #[cfg(feature = "test-utils")]
 #[tokio::test]
-async fn test_add_platform_ref_modrinth_direct_url_add() {
+async fn test_provider_install_refuses_unverified_url_fallback() {
     let session = crate::application::session_mocks::MockCommandSession::new();
     let pack_dir = mock_root().join("packwiz-direct-url");
     session
@@ -2136,17 +2135,10 @@ async fn test_add_platform_ref_modrinth_direct_url_add() {
     pref.file_id = None;
     pref.download_urls = vec!["https://example.com/downloads/sodium.jar".to_string()];
 
-    let result = add_platform_ref_with_retry(&pref, &pack_dir, &session, None, false)
-        .await
-        .unwrap();
+    let error = add_platform_ref_with_retry(&pref, &pack_dir, &session, None, false).await.unwrap_err();
+    assert!(error.to_string().contains("verified URL import"));
+    assert!(session.process_provider.get_calls().is_empty());
 
-    assert!(matches!(result, AddRefResult::Added));
-    let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
-    assert_eq!(calls.len(), 1);
-    assert_eq!(
-        calls[0].args,
-        vec!["url", "add", "sodium", "https://example.com/downloads/sodium.jar", "-y"]
-    );
 }
 
 #[cfg(feature = "test-utils")]
@@ -2258,4 +2250,65 @@ async fn test_add_platform_ref_retry_exhaustion() {
     let calls = session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN);
     assert_eq!(calls.len(), 6);
     assert!(calls.iter().all(|call| call.args == expected_args));
+}
+
+#[test]
+fn import_rejects_oversized_zip_entries_before_extraction() {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file::<_, ()>("oversized.jar", zip::write::FileOptions::default()).unwrap();
+    zip.write_all(b"payload").unwrap();
+    let mut bytes = zip.finish().unwrap().into_inner();
+    let central = bytes.windows(4).position(|v| v == b"PK\x01\x02").unwrap();
+    bytes[central + 24..central + 28].copy_from_slice(&((MAX_IMPORT_ENTRY_BYTES + 1) as u32).to_le_bytes());
+    let error = open_zip_archive(std::io::Cursor::new(bytes)).expect_err("oversized entry must fail");
+    assert!(error.to_string().contains("512 MiB"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
+fn archive_destination_rejects_existing_symlink_with_missing_leaf() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), root.path().join("config")).unwrap();
+    assert!(sanitize_archive_path(root.path(), "config/new.toml", &crate::application::session::LiveFileSystemProvider).is_err());
+    assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn archive_input_limit_precedes_zip_parsing_or_allocation() {
+    let file = tempfile::tempfile().unwrap();
+    file.set_len(MAX_IMPORT_ARCHIVE_BYTES + 1).unwrap();
+    let error = open_zip_archive(file).unwrap_err();
+    assert!(error.to_string().contains("compressed input limit"));
+}
+
+#[test]
+#[cfg(feature = "test-utils")]
+fn override_fallback_requires_destination_and_environment_coverage() {
+    let mut reference = modrinth_pref("example");
+    let mut overrides = vec![make_override("config/example.jar")];
+    assert!(!overrides_cover_reference(&overrides, &reference, None));
+    overrides[0].destination_path = reference.destination_path.clone();
+    overrides[0].side = OverrideSide::ClientOnly;
+    assert!(!overrides_cover_reference(&overrides, &reference, None));
+    reference.env.server = SideRequirement::Unsupported;
+    assert!(overrides_cover_reference(&overrides, &reference, None));
+    reference.env.server = SideRequirement::Required;
+    overrides.push(OverrideEntry { source_path: "server-overrides/mods/example.jar".into(), destination_path: reference.destination_path.clone(), side: OverrideSide::ServerOnly, category: OverrideCategory::Other });
+    assert!(overrides_cover_reference(&overrides, &reference, None));
+}
+
+#[tokio::test]
+async fn mixed_requirements_fail_before_project_initialization() {
+    let session = crate::application::session_mocks::MockCommandSession::new();
+    let target_dir = mock_root().join("mixed-requirements");
+    let mut pref = modrinth_pref("P");
+    pref.env = SideEnv { client: SideRequirement::Required, server: SideRequirement::Optional };
+    let result = execute_import(ResolvedManifest {
+        manifest: manifest_with_content(vec![ContentEntry::PlatformReferenced(pref)]), warnings: vec![],
+    }, ImportConfig { target_dir: target_dir.clone(), pack_name: "Mixed".into(), author: "Test".into(),
+        version: "1.0".into(), datapack_folder: None, acceptable_game_versions: None }, &session).await;
+    assert!(result.unwrap_err().to_string().contains("Mixed required/optional"));
+    assert!(!session.filesystem().exists(&target_dir));
+    assert!(session.process_provider.get_calls().is_empty());
 }

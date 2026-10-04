@@ -60,10 +60,12 @@ pub struct EmpackConfig {
 pub enum DependencyStatus {
     Resolved,
     Local,
+    Url,
 }
 
 /// A fully resolved dependency entry in empack.yml
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DependencyRecord {
     /// Status discriminator (always "resolved")
     pub status: DependencyStatus,
@@ -82,6 +84,10 @@ pub struct DependencyRecord {
     #[serde(rename = "type")]
     pub project_type: ProjectType,
 
+    /// Imported physical-side requirements, preserved across reinstalls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<super::content::SideEnv>,
+
     /// Optional pinned version ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
@@ -89,6 +95,7 @@ pub struct DependencyRecord {
 
 /// A tracked local dependency entry in empack.yml
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LocalDependencyRecord {
     /// Status discriminator (always "local")
     pub status: DependencyStatus,
@@ -113,6 +120,7 @@ pub struct LocalDependencyRecord {
 
 /// Hand-written search stub, resolved to DependencyRecord on sync
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DependencySearch {
     pub title: String,
 
@@ -125,12 +133,43 @@ pub struct DependencySearch {
 }
 
 /// A dependency entry that is either a resolved record or a search stub
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum DependencyEntry {
     Resolved(DependencyRecord),
     Local(LocalDependencyRecord),
+    Url(super::url_file::UrlDependencyRecord),
     Search(DependencySearch),
+}
+
+impl<'de> Deserialize<'de> for DependencyEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value.get("status") {
+            Some(serde_json::Value::String(status)) if status == "resolved" => {
+                serde_json::from_value(value)
+                    .map(Self::Resolved)
+                    .map_err(serde::de::Error::custom)
+            }
+            Some(serde_json::Value::String(status)) if status == "local" => {
+                serde_json::from_value(value)
+                    .map(Self::Local)
+                    .map_err(serde::de::Error::custom)
+            }
+            Some(serde_json::Value::String(status)) if status == "url" => {
+                let record: super::url_file::UrlDependencyRecord =
+                    serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                record.validate().map_err(serde::de::Error::custom)?;
+                Ok(Self::Url(record))
+            }
+            Some(_) => Err(serde::de::Error::custom(
+                "dependency status must be resolved, local or url",
+            )),
+            None => serde_json::from_value(value)
+                .map(Self::Search)
+                .map_err(serde::de::Error::custom),
+        }
+    }
 }
 
 /// Common accessors for any dependency variant
@@ -144,6 +183,7 @@ impl Dependency for DependencyEntry {
         match self {
             DependencyEntry::Resolved(r) => &r.title,
             DependencyEntry::Local(l) => &l.title,
+            DependencyEntry::Url(u) => &u.title,
             DependencyEntry::Search(s) => &s.title,
         }
     }
@@ -152,6 +192,7 @@ impl Dependency for DependencyEntry {
         match self {
             DependencyEntry::Resolved(r) => Some(r.project_type),
             DependencyEntry::Local(l) => Some(l.project_type),
+            DependencyEntry::Url(u) => Some(u.project_type),
             DependencyEntry::Search(s) => s.project_type,
         }
     }
@@ -270,6 +311,7 @@ pub struct ProjectSpec {
 /// Shared source model used by config, sync, remove, and build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DependencySource {
+    Url(Box<super::url_file::UrlDependencyRecord>),
     Platform {
         project_id: String,
         project_platform: ProjectPlatform,
@@ -427,6 +469,14 @@ impl<'a> ConfigManager<'a> {
                     );
                     dependencies.push(spec);
                 }
+                DependencyEntry::Url(record) => dependencies.push(ProjectSpec {
+                    key: slug.clone(),
+                    search_query: record.title.clone(),
+                    project_type: record.project_type,
+                    minecraft_version: minecraft_version.clone(),
+                    loader,
+                    source: DependencySource::Url(Box::new(record.clone())),
+                }),
                 DependencyEntry::Search(_) => {}
             }
         }
@@ -554,6 +604,7 @@ impl<'a> ConfigManager<'a> {
             deps.insert(
                 "sodium".to_string(),
                 DependencyEntry::Resolved(DependencyRecord {
+                    environment: None,
                     status: DependencyStatus::Resolved,
                     title: "Sodium".to_string(),
                     platform: ProjectPlatform::Modrinth,
@@ -565,6 +616,7 @@ impl<'a> ConfigManager<'a> {
             deps.insert(
                 "lithium".to_string(),
                 DependencyEntry::Resolved(DependencyRecord {
+                    environment: None,
                     status: DependencyStatus::Resolved,
                     title: "Lithium".to_string(),
                     platform: ProjectPlatform::Modrinth,
@@ -577,6 +629,7 @@ impl<'a> ConfigManager<'a> {
                 deps.insert(
                     "fabric-api".to_string(),
                     DependencyEntry::Resolved(DependencyRecord {
+                        environment: None,
                         status: DependencyStatus::Resolved,
                         title: "Fabric API".to_string(),
                         platform: ProjectPlatform::Modrinth,
@@ -650,6 +703,20 @@ impl<'a> ConfigManager<'a> {
         self.add_dependency_entry(slug, DependencyEntry::Resolved(record))
     }
 
+    /// Publish intent after backend installation. Failure means partial execution.
+    pub fn record_installed_dependency(
+        &self,
+        key: &str,
+        entry: DependencyEntry,
+    ) -> anyhow::Result<()> {
+        self.add_dependency_entry(key, entry)
+            .map_err(|source| InstalledButUnrecorded {
+                dependency: key.to_string(),
+                source,
+            })?;
+        Ok(())
+    }
+
     /// Add or replace any dependency entry in empack.yml.
     pub fn add_dependency_entry(
         &self,
@@ -674,7 +741,7 @@ impl<'a> ConfigManager<'a> {
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
         self.fs_provider
-            .write_file(&empack_path, &yaml_content)
+            .write_atomic(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::other(e),
             })?;
@@ -752,12 +819,36 @@ impl<'a> ConfigManager<'a> {
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
         self.fs_provider
-            .write_file(&empack_path, &yaml_content)
+            .write_atomic(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::other(e),
             })?;
 
         Ok(removed)
+    }
+
+    /// Publish removal of precisely the record selected during planning.
+    pub fn remove_dependency_exact(
+        &self,
+        key: &str,
+        expected: &DependencyEntry,
+    ) -> Result<(), ConfigError> {
+        let mut config = self.load_empack_config()?;
+        if config.empack.dependencies.get(key) != Some(expected) {
+            return Err(ConfigError::ValidationError {
+                reason: format!(
+                    "Dependency '{key}' changed after removal planning; inspect empack.yml before retrying"
+                ),
+            });
+        }
+        config.empack.dependencies.remove(key);
+        let content = serde_saphyr::to_string(&config)
+            .map_err(|source| ConfigError::YamlSerError { source })?;
+        self.fs_provider
+            .write_atomic(&self.workdir.join("empack.yml"), &content)
+            .map_err(|error| ConfigError::IoError {
+                source: std::io::Error::other(error),
+            })
     }
 
     /// Read the `datapack_folder` value from empack.yml.
@@ -795,7 +886,7 @@ impl<'a> ConfigManager<'a> {
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
         self.fs_provider
-            .write_file(&empack_path, &yaml_content)
+            .write_atomic(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::other(e),
             })?;
@@ -824,7 +915,7 @@ impl<'a> ConfigManager<'a> {
             .map_err(|e| ConfigError::YamlSerError { source: e })?;
 
         self.fs_provider
-            .write_file(&empack_path, &yaml_content)
+            .write_atomic(&empack_path, &yaml_content)
             .map_err(|e| ConfigError::IoError {
                 source: std::io::Error::other(e),
             })?;
@@ -893,4 +984,15 @@ pub(crate) fn format_empack_yml(
 #[cfg(test)]
 mod tests {
     include!("config.test.rs");
+}
+
+/// Backend installation succeeded but durable project intent was not published.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Dependency '{dependency}' was installed, but updating empack.yml failed. Inspect installed metadata and record or restore the intended dependency before syncing: {source}"
+)]
+pub struct InstalledButUnrecorded {
+    pub dependency: String,
+    #[source]
+    pub source: ConfigError,
 }

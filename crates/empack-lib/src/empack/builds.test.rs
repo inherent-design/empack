@@ -548,7 +548,7 @@ fn test_create_artifact_missing_file_returns_validation_error() {
 }
 
 #[test]
-fn test_create_artifact_binary_file_falls_back_to_zero_size() {
+fn test_create_artifact_reports_binary_byte_length() {
     let mock = MockBuildOrchestrator::new();
     let filesystem = mock.session.filesystem();
     let artifact_path = mock.workdir().join("binary-artifact.zip");
@@ -561,7 +561,7 @@ fn test_create_artifact_binary_file_falls_back_to_zero_size() {
 
     assert_eq!(artifact.name, "binary-artifact.zip");
     assert_eq!(artifact.path, artifact_path);
-    assert_eq!(artifact.size, 0);
+    assert_eq!(artifact.size, 4);
 }
 
 #[test]
@@ -918,7 +918,7 @@ fabric = "0.15.11"
             installer_jar_path.to_string_lossy().to_string(),
             "-g".to_string(),
             "-s".to_string(),
-            "both".to_string(),
+            "client".to_string(),
             pack_toml_path.to_string_lossy().to_string(),
         ],
         Ok(restricted_mods_process_output(
@@ -1271,7 +1271,7 @@ fabric = "0.15.11"
             installer_jar_path.to_string_lossy().to_string(),
             "-g".to_string(),
             "-s".to_string(),
-            "both".to_string(),
+            "client".to_string(),
             pack_toml_path.to_string_lossy().to_string(),
         ],
         Err("installer process exploded".to_string()),
@@ -1470,10 +1470,10 @@ fabric = "0.15.11"
     assert!(
         session
             .filesystem()
-            .exists(&dist_dir.join("mods").join("both-installed.txt"))
+            .exists(&dist_dir.join("mods").join("client-installed.txt"))
     );
     assert!(session.process_provider.get_calls_for_command("java").iter().any(
-        |call| call.args.iter().any(|arg| arg == "both")
+        |call| call.args.iter().any(|arg| arg == "client")
     ));
     assert!(session
         .process_provider
@@ -1787,7 +1787,7 @@ async fn test_execute_build_pipeline_surfaces_failed_mrpack_results() {
         )
         .with_packwiz_result(
             vec![
-                "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -1839,7 +1839,7 @@ async fn test_execute_build_pipeline_stops_after_restricted_mrpack_result() {
         )
         .with_packwiz_result(
             vec![
-                "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -1901,7 +1901,7 @@ async fn test_execute_build_pipeline_requires_mrpack_artifact_after_successful_e
         )
         .with_packwiz_result(
             vec![
-                "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -1951,7 +1951,7 @@ async fn test_execute_build_pipeline_success_cleans_temp_extract_dir_and_build_m
         )
         .with_packwiz_result(
             vec![
-                "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -2005,7 +2005,7 @@ async fn test_execute_build_pipeline_failure_still_cleans_temp_extract_dir() {
         )
         .with_packwiz_result(
             vec![
-                "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -2100,7 +2100,7 @@ fn test_extract_mrpack_builds_missing_artifact_and_caches_repeated_calls() {
         )
         .with_packwiz_result(
             vec![
-                "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -2188,7 +2188,7 @@ fn test_build_mrpack_returns_restricted_mods_on_export_failure() {
         )
         .with_packwiz_result(
             vec![
-                "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -2246,7 +2246,7 @@ async fn test_build_mrpack_replaces_existing_artifact_and_returns_metadata() {
         )
         .with_packwiz_result(
             vec![
-                "--pack-file".to_string(),
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
                 pack_file.display().to_string(),
                 "mr".to_string(),
                 "export".to_string(),
@@ -3444,4 +3444,234 @@ neoforge = "{loader_version}"
             "error should explain the version floor: {error}"
         );
     }
+}
+
+#[test]
+fn artifact_paths_reject_metadata_traversal_before_cleanup() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let mut builder = mock.orchestrator();
+    let original = builder.load_pack_info().unwrap().clone();
+    for (name, version) in [("../escape", "1"), ("Pack", "../../escape"), ("C:\\escape", "1")] {
+        let info = PackInfo { name: name.into(), version: version.into(), ..original.clone() };
+        assert!(builder.artifact_path(&info, None, "mrpack").is_err());
+        builder.pack_info = Some(info);
+        let before = mock.session.filesystem_provider.files.lock().unwrap().clone();
+        assert!(builder.clean_target(BuildTarget::Client).is_err());
+        assert_eq!(*mock.session.filesystem_provider.files.lock().unwrap(), before);
+    }
+}
+#[test]
+fn test_extract_mrpack_rebuilds_existing_artifact_once_per_invocation() {
+    let workdir = mock_root().join("extract-mrpack-cached");
+    let pack_file = workdir.join("pack").join("pack.toml");
+    let output_file = workdir.join("dist").join("Test Pack-v1.0.0.mrpack");
+    let process = MockProcessProvider::new()
+        .with_mrpack_export_side_effects()
+        .with_packwiz_result(
+            vec![
+                "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "refresh".to_string(),
+            ],
+            Ok(successful_process_output()),
+        )
+        .with_packwiz_result(
+            vec![
+                "--cache".to_string(), crate::platform::cache::packwiz_download_cache_dir(&workdir).unwrap().to_string_lossy().into_owned(), "--pack-file".to_string(),
+                pack_file.display().to_string(),
+                "mr".to_string(),
+                "export".to_string(),
+                "-o".to_string(),
+                output_file.display().to_string(),
+            ],
+            Ok(successful_process_output()),
+        );
+    let session = MockCommandSession::new()
+        .with_filesystem(
+            MockFileSystemProvider::new()
+                .with_current_dir(workdir.clone())
+                .with_configured_project(workdir.clone())
+                .with_file(output_file.clone(), "stale archive".to_string()),
+        )
+        .with_process(process);
+    let mut orchestrator =
+        BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+
+    orchestrator.extract_mrpack().unwrap();
+    orchestrator.extract_mrpack().unwrap();
+
+    assert!(session
+        .filesystem()
+        .exists(&workdir.join("dist").join("temp-mrpack-extract")));
+    assert_eq!(session.archive_provider.extract_calls.lock().unwrap().len(), 1);
+    let export_calls = session
+        .process_provider
+        .get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN)
+        .into_iter()
+        .filter(|call| call.args.iter().any(|arg| arg == "export"))
+        .count();
+    assert_eq!(export_calls, 1);
+}
+
+
+/// External tools are deterministic fixtures; persistence and archives are live.
+struct ContentLayerSession {
+    root: PathBuf,
+    inner: MockCommandSession,
+    filesystem: crate::application::session::LiveFileSystemProvider,
+    archive: crate::application::session::LiveArchiveProvider,
+    process: ContentLayerProcess,
+}
+struct ContentLayerProcess { fail_publication: bool }
+impl crate::application::session::ProcessProvider for ContentLayerProcess {
+    fn execute(&self, command: &str, args: &[&str], cwd: &Path) -> crate::Result<ProcessOutput> {
+        use std::io::Write;
+        if args.contains(&"init") {
+            std::fs::write(cwd.join("pack.toml"), "name = 'Layer Pack'\nauthor = 'Fixture'\nversion = '1.0.0'\npack-format = 'packwiz:1.1.0'\n[index]\nfile = 'index.toml'\nhash-format = 'sha256'\nhash = ''\n[versions]\nminecraft = '1.21.1'\nfabric = '0.16.0'\n")?;
+            std::fs::write(cwd.join("index.toml"), "hash-format = 'sha256'\n")?;
+        } else if args.contains(&"add") {
+            std::fs::create_dir_all(cwd.join("mods"))?;
+            std::fs::write(cwd.join("mods/fixture.pw.toml"), "name = 'Fixture'\n[update.modrinth]\nmod-id = 'fixture'\nversion = 'v1'\n")?;
+            if self.fail_publication {
+                let manifest = cwd.parent().unwrap().join("empack.yml");
+                let mut permissions = std::fs::metadata(&manifest)?.permissions();
+                permissions.set_readonly(true);
+                std::fs::set_permissions(manifest, permissions)?;
+            }
+        } else if args.contains(&"export") {
+            let output = args[args.iter().position(|arg| *arg == "-o").unwrap()+1];
+            let pack_file = args[args.iter().position(|arg| *arg == "--pack-file").unwrap()+1];
+            let pack = Path::new(pack_file).parent().unwrap();
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(output)?);
+            zip.start_file("modrinth.index.json", zip::write::SimpleFileOptions::default())?;
+            zip.write_all(br#"{"formatVersion":1,"game":"minecraft","name":"Layer Pack","versionId":"1.0.0","dependencies":{"minecraft":"1.21.1","fabric-loader":"0.16.0"},"files":[]}"#)?;
+            for entry in std::fs::read_dir(pack.join("config"))? {
+                let path = entry?.path();
+                zip.start_file(format!("overrides/config/{}", path.file_name().unwrap().to_str().unwrap()), zip::write::SimpleFileOptions::default())?;
+                std::io::copy(&mut std::fs::File::open(path)?, &mut zip)?;
+            }
+            zip.finish()?;
+        } else if command == "java" {
+            // Stand in for packwiz-installer's materialization of the staged index.
+            std::fs::create_dir_all(cwd.join("config"))?;
+            for entry in std::fs::read_dir(cwd.join("pack/config"))? {
+                let path = entry?.path();
+                std::fs::copy(&path, cwd.join("config").join(path.file_name().unwrap()))?;
+            }
+            let side = args[args.iter().position(|arg| *arg == "-s").unwrap()+1];
+            std::fs::write(cwd.join("installer-side"), side)?;
+        }
+        Ok(successful_process_output())
+    }
+    fn find_program(&self, program: &str) -> Option<String> { Some(program.to_string()) }
+}
+impl Session for ContentLayerSession {
+    fn display(&self) -> &dyn crate::display::DisplayProvider { self.inner.display() }
+    fn filesystem(&self) -> &dyn FileSystemProvider { &self.filesystem }
+    fn network(&self) -> &dyn crate::application::session::NetworkProvider { self.inner.network() }
+    fn process(&self) -> &dyn crate::application::session::ProcessProvider { &self.process }
+    fn config(&self) -> &dyn crate::application::session::ConfigProvider { self.inner.config() }
+    fn interactive(&self) -> &dyn crate::application::session::InteractiveProvider { self.inner.interactive() }
+    fn terminal(&self) -> &crate::terminal::TerminalCapabilities { self.inner.terminal() }
+    fn archive(&self) -> &dyn crate::application::session::ArchiveProvider { &self.archive }
+    fn packwiz(&self) -> Box<dyn crate::empack::packwiz::PackwizOps + '_> {
+        Box::new(crate::empack::packwiz::LivePackwizOps::new(&self.process, &self.filesystem, crate::empack::packwiz::PACKWIZ_BIN))
+    }
+    fn state(&self) -> crate::Result<crate::empack::state::PackStateManager<'_, dyn FileSystemProvider + '_>> {
+        Ok(crate::empack::state::PackStateManager::new(self.root.clone(), self.filesystem()))
+    }
+    fn packwiz_bin(&self) -> &str { crate::empack::packwiz::PACKWIZ_BIN }
+}
+
+#[tokio::test]
+async fn imported_side_layers_survive_builds_reexport_and_content_changes() {
+    use crate::empack::import::*;
+    use std::io::{Read, Write};
+    let temp = TempDir::new().unwrap();
+    let archive_path = temp.path().join("input.mrpack");
+    let mut archive = zip::ZipWriter::new(std::fs::File::create(&archive_path).unwrap());
+    for (name, bytes) in [
+        ("modrinth.index.json", r#"{"dependencies":{"minecraft":"1.21.1","fabric-loader":"0.16.0"},"files":[]}"#),
+        ("overrides/config/example.toml", "common"),
+        ("overrides/config/fresh.toml", "before"),
+        ("client-overrides/config/example.toml", "client"),
+        ("client-overrides/config/client-only.toml", "client-only"),
+        ("server-overrides/config/example.toml", "server"),
+        ("server-overrides/config/server-only.toml", "server-only"),
+    ] {
+        archive.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        archive.write_all(bytes.as_bytes()).unwrap();
+    }
+    archive.finish().unwrap();
+    let root = temp.path().join("project");
+    let mut inner = MockCommandSession::new();
+    inner.config_provider.app_config.workdir = Some(root.clone());
+    let session = ContentLayerSession { root: root.clone(), inner, filesystem: crate::application::session::LiveFileSystemProvider, archive: crate::application::session::LiveArchiveProvider, process: ContentLayerProcess { fail_publication: false } };
+    let manifest = parse_modrinth_mrpack(&archive_path).unwrap();
+    execute_import(ResolvedManifest { manifest, warnings: vec![] }, ImportConfig {
+        target_dir: root.clone(), pack_name: "Layer Pack".into(), author: "Fixture".into(), version: "1.0.0".into(), datapack_folder: None, acceptable_game_versions: None,
+    }, &session).await.unwrap();
+    assert_eq!(std::fs::read_to_string(root.join("pack/config/example.toml")).unwrap(), "common");
+    assert_eq!(std::fs::read_to_string(root.join("overrides/client/config/example.toml")).unwrap(), "client");
+    assert_eq!(std::fs::read_to_string(root.join("overrides/server/config/example.toml")).unwrap(), "server");
+    let bootstrap = root.join("bootstrap.jar"); std::fs::write(&bootstrap, "fixture").unwrap();
+    std::fs::create_dir_all(root.join("templates/server")).unwrap();
+    std::fs::write(root.join("templates/server/srv.jar"), "server prerequisite fixture").unwrap();
+    let read_member = |path: &Path, member: &str| {
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
+        let mut text = String::new(); zip.by_name(member).unwrap().read_to_string(&mut text).unwrap(); text
+    };
+    // Existing exports must never supply bytes from a previous invocation.
+    for freshness in ["before", "after"] {
+        std::fs::write(root.join("pack/config/fresh.toml"), freshness).unwrap();
+        for (target, side, prefix) in [(BuildTarget::Client, "client", ".minecraft/"), (BuildTarget::Server, "server", ""), (BuildTarget::ClientFull, "client", ""), (BuildTarget::ServerFull, "server", "")] {
+            let mut build = BuildOrchestrator::new(&session, crate::empack::archive::ArchiveFormat::Zip).unwrap();
+            let result = match target {
+                BuildTarget::Client => build.build_client_impl(&bootstrap),
+                BuildTarget::Server => build.build_server_impl(&bootstrap),
+                BuildTarget::ClientFull => build.build_client_full_impl(&bootstrap, &bootstrap),
+                BuildTarget::ServerFull => build.build_server_full_impl(&bootstrap, &bootstrap),
+                _ => unreachable!(),
+            }.unwrap();
+            assert!(result.success, "{result:?}");
+            let output = result.output_path.unwrap();
+            assert_eq!(read_member(&output, &format!("{prefix}config/example.toml")), side);
+            assert_eq!(read_member(&output, &format!("{prefix}config/fresh.toml")), freshness);
+            assert_eq!(read_member(&output, &format!("{prefix}pack/config/example.toml")), side);
+            let opposite = if side == "client" { "server" } else { "client" };
+            let mut zip = zip::ZipArchive::new(std::fs::File::open(output).unwrap()).unwrap();
+            assert!(zip.by_name(&format!("{prefix}config/{opposite}-only.toml")).is_err());
+        }
+        let exported = root.join("dist/Layer Pack-v1.0.0.mrpack");
+        assert_eq!(read_member(&exported, "overrides/config/example.toml"), "common");
+        assert_eq!(read_member(&exported, "client-overrides/config/example.toml"), "client");
+        assert_eq!(read_member(&exported, "server-overrides/config/example.toml"), "server");
+        assert_eq!(read_member(&exported, "overrides/config/fresh.toml"), freshness);
+    }
+}
+
+#[tokio::test]
+async fn import_reports_live_manifest_publication_failure_after_installation() {
+    use crate::empack::import::*;
+    use std::io::Write;
+    let temp = TempDir::new().unwrap();
+    let archive_path = temp.path().join("input.mrpack");
+    let mut archive = zip::ZipWriter::new(std::fs::File::create(&archive_path).unwrap());
+    archive.start_file("modrinth.index.json", zip::write::SimpleFileOptions::default()).unwrap();
+    archive.write_all(br#"{"dependencies":{"minecraft":"1.21.1","fabric-loader":"0.16.0"},"files":[{"path":"mods/fixture.jar","hashes":{"sha512":"abc"},"downloads":["https://cdn.modrinth.com/data/fixture/versions/v1/fixture.jar"],"fileSize":3}]}"#).unwrap();
+    archive.finish().unwrap();
+    let root = temp.path().join("project");
+    let mut inner = MockCommandSession::new();
+    inner.config_provider.app_config.workdir = Some(root.clone());
+    let session = ContentLayerSession { root: root.clone(), inner, filesystem: crate::application::session::LiveFileSystemProvider, archive: crate::application::session::LiveArchiveProvider, process: ContentLayerProcess { fail_publication: true } };
+    let manifest = parse_modrinth_mrpack(&archive_path).unwrap();
+    let error = execute_import(ResolvedManifest { manifest, warnings: vec![] }, ImportConfig {
+        target_dir: root.clone(), pack_name: "Layer Pack".into(), author: "Fixture".into(), version: "1.0.0".into(), datapack_folder: None, acceptable_game_versions: None,
+    }, &session).await.unwrap_err();
+    assert!(error.downcast_ref::<crate::empack::config::InstalledButUnrecorded>().is_some(), "{error:#}");
+    assert!(root.join("pack/mods/fixture.pw.toml").exists());
+    assert!(format!("{error:#}").contains("before syncing"));
+    // Restore permissions so Windows can remove the temporary fixture.
+    std::fs::set_permissions(root.join("empack.yml"), std::fs::metadata(&archive_path).unwrap().permissions()).unwrap();
 }

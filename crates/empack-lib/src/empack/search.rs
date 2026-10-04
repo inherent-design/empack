@@ -73,6 +73,17 @@ pub struct IncompatibleProject {
 
 /// Trait for project resolution across project platforms
 pub trait ProjectResolverTrait: Send + Sync {
+    /// Resolve an exact provider selector, including ownership of an explicit pin.
+    fn resolve_selector(
+        &self,
+        _selector: ProjectSelector,
+        _version_pin: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>> {
+        Box::pin(async {
+            Err(anyhow::anyhow!("This resolver does not support exact provider lookup").into())
+        })
+    }
+
     /// Resolve project with platform priority: Modrinth first, then CurseForge.
     ///
     /// When `preferred_platform` is `Some(CurseForge)`, tries CurseForge first.
@@ -85,6 +96,13 @@ pub trait ProjectResolverTrait: Send + Sync {
         mod_loader: Option<&str>,
         preferred_platform: Option<ProjectPlatform>,
     ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>>;
+}
+
+/// A user-supplied provider lookup key. It is not a persisted canonical identity.
+#[derive(Debug, Clone)]
+pub struct ProjectSelector {
+    pub platform: ProjectPlatform,
+    pub value: String,
 }
 
 /// Platform-specific project information
@@ -843,6 +861,7 @@ impl ProjectResolver {
             "resourcepack" => Some(ProjectType::ResourcePack),
             "shader" => Some(ProjectType::Shader),
             "datapack" => Some(ProjectType::Datapack),
+            "world" => Some(ProjectType::World),
             _ => None,
         }
     }
@@ -858,15 +877,13 @@ impl ProjectResolver {
 
     /// Get CurseForge class ID for project type.
     ///
-    /// Falls back to classId 6 (Mods) for unmapped types. This is intentional:
-    /// most CurseForge shader packs (e.g. Iris Shaders, Complementary) are
-    /// distributed as mods under classId 6. The CurseForge API does not expose
-    /// a confirmed shader-specific class ID via /v1/categories.
     fn curseforge_class_id(&self, project_type: &str) -> u32 {
         match project_type {
             "mod" => 6,
             "resourcepack" => 12,
-            "datapack" => 17,
+            "datapack" => 6945,
+            "shader" => 6552,
+            "world" => 17,
             other => {
                 debug!(
                     "No dedicated CurseForge classId for '{}', falling back to 6 (Mods)",
@@ -890,6 +907,123 @@ impl ProjectResolver {
 }
 
 impl ProjectResolverTrait for ProjectResolver {
+    fn resolve_selector(
+        &self,
+        selector: ProjectSelector,
+        version_pin: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<ProjectInfo, SearchError>> + Send + '_>> {
+        Box::pin(async move {
+            let encoded = utf8_percent_encode(&selector.value, NON_ALPHANUMERIC);
+            let (url, headers) = match selector.platform {
+                ProjectPlatform::Modrinth => (
+                    format!("{}/v2/project/{encoded}", self.modrinth_base_url),
+                    vec![("User-Agent", "empack")],
+                ),
+                ProjectPlatform::CurseForge => (
+                    format!("{}/v1/mods/{encoded}", self.curseforge_base_url),
+                    vec![(
+                        "x-api-key",
+                        self.curseforge_api_key.as_deref().ok_or_else(|| {
+                            SearchError::MissingApiKey {
+                                platform: "curseforge".into(),
+                            }
+                        })?,
+                    )],
+                ),
+            };
+            let (status, body) = self.cached_get(&url, &headers, selector.platform).await?;
+            if !(200..300).contains(&status) {
+                return Err(anyhow::anyhow!(
+                    "Project lookup returned HTTP {status} for {}",
+                    selector.value
+                )
+                .into());
+            }
+            let body: serde_json::Value = serde_json::from_slice(&body)?;
+            let data = if selector.platform == ProjectPlatform::CurseForge {
+                &body["data"]
+            } else {
+                &body
+            };
+            let id = match selector.platform {
+                ProjectPlatform::Modrinth => data["id"].as_str().map(str::to_owned),
+                ProjectPlatform::CurseForge => data["id"].as_u64().map(|id| id.to_string()),
+            }
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("Provider returned no canonical project ID"))?;
+            let project_type = match selector.platform {
+                ProjectPlatform::Modrinth => data["project_type"].as_str().unwrap_or(""),
+                ProjectPlatform::CurseForge => match data["classId"].as_u64() {
+                    Some(6) => "mod",
+                    Some(12) => "resourcepack",
+                    Some(6552) => "shader",
+                    Some(6945) => "datapack",
+                    Some(17) => "world",
+                    _ => "",
+                },
+            };
+            if Self::parse_project_type(project_type).is_none() {
+                return Err(anyhow::anyhow!(
+                    "Unsupported project content type for {}",
+                    selector.value
+                )
+                .into());
+            }
+            if let Some(pin) = version_pin {
+                let encoded_pin = utf8_percent_encode(&pin, NON_ALPHANUMERIC);
+                let pin_url = match selector.platform {
+                    ProjectPlatform::Modrinth => {
+                        format!("{}/v2/version/{encoded_pin}", self.modrinth_base_url)
+                    }
+                    ProjectPlatform::CurseForge => format!(
+                        "{}/v1/mods/{id}/files/{encoded_pin}",
+                        self.curseforge_base_url
+                    ),
+                };
+                let (status, bytes) = self
+                    .cached_get(&pin_url, &headers, selector.platform)
+                    .await?;
+                if !(200..300).contains(&status) {
+                    return Err(
+                        anyhow::anyhow!("Version lookup returned HTTP {status} for {pin}").into(),
+                    );
+                }
+                let version: serde_json::Value = serde_json::from_slice(&bytes)?;
+                let (owner, actual_pin) = match selector.platform {
+                    ProjectPlatform::Modrinth => (
+                        version["project_id"].as_str().map(str::to_owned),
+                        version["id"].as_str().map(str::to_owned),
+                    ),
+                    ProjectPlatform::CurseForge => (
+                        version["data"]["modId"].as_u64().map(|id| id.to_string()),
+                        version["data"]["id"].as_u64().map(|id| id.to_string()),
+                    ),
+                };
+                if owner.as_ref() != Some(&id) || actual_pin.as_ref() != Some(&pin) {
+                    return Err(anyhow::anyhow!(
+                        "Version '{pin}' does not belong to project '{id}'"
+                    )
+                    .into());
+                }
+            }
+            Ok(ProjectInfo {
+                platform: selector.platform,
+                project_id: id,
+                title: data[if selector.platform == ProjectPlatform::Modrinth {
+                    "title"
+                } else {
+                    "name"
+                }]
+                .as_str()
+                .unwrap_or(&selector.value)
+                .to_owned(),
+                downloads: data["downloads"].as_u64().unwrap_or(0),
+                confidence: 100,
+                project_type: project_type.into(),
+            })
+        })
+    }
+
     fn resolve_project(
         &self,
         title: &str,

@@ -50,22 +50,6 @@ pub type Result<T> = anyhow::Result<T>;
 
 use application::CliConfig;
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static INTERRUPT_REQUESTED: AtomicBool = AtomicBool::new(false);
-
-pub(crate) fn clear_interrupt_requested() {
-    INTERRUPT_REQUESTED.store(false, Ordering::SeqCst);
-}
-
-pub(crate) fn request_interrupt() {
-    INTERRUPT_REQUESTED.store(true, Ordering::SeqCst);
-}
-
-pub(crate) fn interrupt_requested() -> bool {
-    INTERRUPT_REQUESTED.load(Ordering::SeqCst)
-}
-
 pub async fn main() -> Result<()> {
     let config = CliConfig::load()?;
     run_with_config(config).await
@@ -101,8 +85,7 @@ pub async fn process_main() -> std::process::ExitCode {
 
 pub async fn run_with_config(mut config: CliConfig) -> Result<()> {
     config.app_config.validate()?;
-    let workdir = config.app_config.workdir.clone();
-    run_main_loop(workdir, execute_command(config)).await
+    execute_command(config).await
 }
 
 fn fallback_process_error_message(error: &anyhow::Error) -> Option<String> {
@@ -113,44 +96,12 @@ fn fallback_process_error_message(error: &anyhow::Error) -> Option<String> {
     }
 }
 
-pub async fn run_main_loop<F>(workdir: Option<std::path::PathBuf>, command: F) -> Result<()>
+/// Await a library command without installing process-wide signal handlers.
+pub async fn run_main_loop<F>(_workdir: Option<std::path::PathBuf>, command: F) -> Result<()>
 where
     F: Future<Output = Result<()>>,
 {
-    // Recover cursor from prior crashed runs
-    terminal::cursor::force_show_cursor();
-    terminal::cursor::install_panic_hook();
-    clear_interrupt_requested();
-    let mut interrupt_listener = tokio::spawn(async {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            request_interrupt();
-        }
-    });
-
-    // Run command with signal handling
-    tokio::select! {
-        biased;
-        result = command => {
-            interrupt_listener.abort();
-            clear_interrupt_requested();
-            terminal::cursor::force_show_cursor();
-            logger::global_shutdown();
-            result
-        }
-        _ = &mut interrupt_listener => {
-            terminal::cursor::force_show_cursor();
-            logger::global_shutdown();
-
-            // Best-effort state marker cleanup using configured workdir
-            let marker_dir = workdir.or_else(|| std::env::current_dir().ok());
-            if let Some(dir) = &marker_dir {
-                let marker = dir.join(empack::state::STATE_MARKER_FILE);
-                let _ = std::fs::remove_file(marker);
-            }
-
-            std::process::exit(130)
-        }
-    }
+    command.await
 }
 
 #[cfg(test)]

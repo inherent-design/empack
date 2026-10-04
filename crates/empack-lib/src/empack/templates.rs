@@ -48,6 +48,10 @@ impl TemplateEngine {
 
         handlebars.set_strict_mode(false);
         handlebars.register_escape_fn(handlebars::no_escape);
+        handlebars::handlebars_helper!(shell_quote: |value: str| {
+            format!("'{}'", value.replace('\'', "'\"'\"'"))
+        });
+        handlebars.register_helper("shell_quote", Box::new(shell_quote));
 
         let _ = handlebars.register_template_string(
             "gitignore",
@@ -284,10 +288,10 @@ impl<'a> TemplateInstaller<'a> {
         self.filesystem
             .create_dir_all(&base.join("templates/client"))?;
 
-        let instance_content = self.engine.render_template("instance.cfg")?;
+        let instance_content = include_str!("../../templates/client/instance.cfg.template");
         self.filesystem.write_file(
             &base.join("templates/client/instance.cfg.template"),
-            &instance_content,
+            instance_content,
         )?;
 
         Ok(())
@@ -299,16 +303,18 @@ impl<'a> TemplateInstaller<'a> {
         self.filesystem
             .create_dir_all(&base.join("templates/server"))?;
 
-        let install_script_content = self.engine.render_template("install_pack.sh")?;
+        let install_script_content =
+            include_str!("../../templates/server/install_pack.sh.template");
         self.filesystem.write_file(
             &base.join("templates/server/install_pack.sh.template"),
-            &install_script_content,
+            install_script_content,
         )?;
 
-        let server_props_content = self.engine.render_template("server.properties")?;
+        let server_props_content =
+            include_str!("../../templates/server/server.properties.template");
         self.filesystem.write_file(
             &base.join("templates/server/server.properties.template"),
-            &server_props_content,
+            server_props_content,
         )?;
 
         Ok(())

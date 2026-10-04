@@ -203,7 +203,8 @@ Build options:
 | `--continue` | Resume a previously blocked restricted-mod build from persisted state |
 | `--clean` | Remove previous build outputs before building |
 | `--format` | Output archive format: `zip`, `tar.gz`, `7z` |
-| `--downloads-dir` | Directory scanned for manually downloaded restricted CurseForge files |
+| `--downloads-dir` | Directory scanned for restricted files with matching digests |
+| `--associate-download FILENAME=PATH` | Select a pending file explicitly with `--continue`; repeat for multiple files |
 
 `--continue` resumes the original full-build targets and archive format from persisted state. It must be used without positional targets, without `--clean`, and without `--format`.
 
@@ -313,3 +314,5 @@ Standard color environment variables are respected:
 - `empack.yml`: project configuration (declared dependencies, metadata, build settings)
 - `pack/`: managed packwiz workspace
 - `dist/`: build artifact output
+
+Restricted download scanning requires a supported digest from pack metadata. Without one, select the file with `empack build --continue --associate-download mod.jar=/path/to/download.jar`, or copy it to the printed cache path. A preview validates selections without copying. Changed pack files, side overrides or templates require a fresh build; stale continuation records remain available for inspection.

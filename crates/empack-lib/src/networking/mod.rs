@@ -7,6 +7,7 @@ use tracing::trace;
 use crate::platform::SystemResources;
 
 pub mod cache;
+pub mod download;
 pub mod rate_budget;
 pub mod rate_limit;
 

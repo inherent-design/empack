@@ -95,7 +95,7 @@ fn validate_state_layout<P: crate::application::session::FileSystemProvider + ?S
     }
 }
 
-/// Discover current state from filesystem structure (pure function)
+/// Discover current state from filesystem structure (filesystem-backed)
 pub fn discover_state<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
@@ -228,7 +228,7 @@ fn write_state_marker<P: crate::application::session::FileSystemProvider + ?Size
     state_label: &str,
 ) -> Result<(), StateError> {
     provider
-        .write_file(&workdir.join(STATE_MARKER_FILE), state_label)
+        .write_atomic(&workdir.join(STATE_MARKER_FILE), state_label)
         .context("Failed to write state marker file")?;
     Ok(())
 }
@@ -304,7 +304,7 @@ impl<P: crate::application::session::FileSystemProvider + ?Sized> Drop for State
     }
 }
 
-/// Execute a state transition (pure function)
+/// Execute a state transition (filesystem-backed)
 pub async fn execute_transition<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     _process: &dyn crate::application::session::ProcessProvider,
@@ -402,8 +402,8 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
                 PackState::Interrupted { .. } => {
                     // Clean recovery is intentionally non-destructive. It clears transient
                     // state and then re-discovers whether the project is still configured.
-                    remove_state_marker(provider, workdir)?;
                     clean_build_artifacts(provider, workdir)?;
+                    remove_state_marker(provider, workdir)?;
                     let recovered = discover_state(provider, workdir)?;
                     no_warnings(recovered)
                 }
@@ -415,7 +415,7 @@ pub async fn execute_transition<P: crate::application::session::FileSystemProvid
     }
 }
 
-/// Execute initialization process (pure function)
+/// Execute initialization process (filesystem-backed)
 #[allow(clippy::too_many_arguments)]
 pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
@@ -444,7 +444,7 @@ pub fn execute_initialize<P: crate::application::session::FileSystemProvider + ?
             })?;
 
         provider
-            .write_file(&empack_yml, &default_yml)
+            .write_atomic(&empack_yml, &default_yml)
             .inspect_err(|_| {
                 reset_project_configuration_for_init(provider, workdir).ok(); // Cleanup on failure
             })
@@ -493,7 +493,7 @@ pub fn execute_refresh_index<P: crate::application::session::FileSystemProvider 
     })
 }
 
-/// Execute build process (pure function)
+/// Execute build process (filesystem-backed)
 pub async fn execute_build<'a>(
     mut orchestrator: crate::empack::builds::BuildOrchestrator<'a>,
     targets: &[BuildTarget],
@@ -506,7 +506,7 @@ pub async fn execute_build<'a>(
     Ok(PackState::Built)
 }
 
-/// Create initial modpack structure (pure function)
+/// Create initial modpack structure (filesystem-backed)
 pub fn create_initial_structure<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
@@ -524,7 +524,7 @@ pub fn create_initial_structure<P: crate::application::session::FileSystemProvid
     Ok(())
 }
 
-/// Clean build artifacts (pure function)
+/// Clean build artifacts (filesystem-backed)
 pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider + ?Sized>(
     provider: &P,
     workdir: &Path,
@@ -538,7 +538,7 @@ pub fn clean_build_artifacts<P: crate::application::session::FileSystemProvider 
     Ok(())
 }
 
-/// Reset core project configuration for an init/rollback flow (pure function)
+/// Reset core project configuration for an init/rollback flow (filesystem-backed)
 pub fn reset_project_configuration_for_init<
     P: crate::application::session::FileSystemProvider + ?Sized,
 >(
@@ -552,11 +552,16 @@ pub fn reset_project_configuration_for_init<
             .context("Failed to remove empack.yml")?;
     }
 
-    let pack_dir = workdir.join("pack");
-    if provider.is_directory(&pack_dir) {
-        provider
-            .remove_dir_all(&pack_dir)
-            .context("Failed to remove pack directory")?;
+    for directory in ["pack", "overrides"] {
+        let path = workdir.join(directory);
+        if provider.is_directory(&path) {
+            provider
+                .validate_output_path(workdir, &path)
+                .context("Unsafe initialization reset destination")?;
+            provider
+                .remove_dir_all(&path)
+                .context("Failed to remove project content")?;
+        }
     }
 
     Ok(())

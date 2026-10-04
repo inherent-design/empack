@@ -62,6 +62,9 @@ pub struct MockFileSystemProvider {
     pub metadata: Arc<Mutex<HashMap<PathBuf, FileMetadata>>>,
     /// Files to auto-create when a matching directory is created via `create_dir_all`.
     pub deferred_files: DeferredFileMap,
+    /// Stream opens and injected failures for IO-bound workflow regressions.
+    pub reader_calls: Arc<Mutex<Vec<PathBuf>>>,
+    pub reader_failures: Arc<Mutex<HashMap<PathBuf, String>>>,
     /// Path-specific write failures injected by tests.
     pub write_failures: Arc<Mutex<HashMap<PathBuf, String>>>,
 }
@@ -79,6 +82,8 @@ impl MockFileSystemProvider {
             metadata: Arc::new(Mutex::new(HashMap::new())),
             deferred_files: Arc::new(Mutex::new(HashMap::new())),
             write_failures: Arc::new(Mutex::new(HashMap::new())),
+            reader_calls: Arc::new(Mutex::new(Vec::new())),
+            reader_failures: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -405,6 +410,14 @@ impl Default for MockFileSystemProvider {
 }
 
 impl FileSystemProvider for MockFileSystemProvider {
+    fn open_reader(&self, path: &Path) -> Result<Box<dyn crate::application::session::ReadSeek>> {
+        self.reader_calls.lock().unwrap().push(path.to_path_buf());
+        if let Some(error) = self.reader_failures.lock().unwrap().get(path) {
+            anyhow::bail!("{error}");
+        }
+        Ok(Box::new(std::io::Cursor::new(self.read_bytes(path)?)))
+    }
+
     fn current_dir(&self) -> Result<PathBuf> {
         Ok(self.current_dir.clone())
     }
@@ -795,6 +808,30 @@ impl Default for MockProjectResolver {
 }
 
 impl ProjectResolverTrait for MockProjectResolver {
+    fn resolve_selector(
+        &self,
+        selector: crate::empack::search::ProjectSelector,
+        _version_pin: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = std::result::Result<ProjectInfo, SearchError>> + Send + '_>>
+    {
+        Box::pin(async move {
+            match self.responses.lock().unwrap().get(&selector.value).cloned() {
+                Some(Ok(info)) => Ok(info),
+                Some(Err(query)) => Err(SearchError::NoResults { query }),
+                // Convenience fixture treats unknown selectors as exact mod IDs.
+                // Live resolver and CLI tests exercise slug canonicalization and pins.
+                None => Ok(ProjectInfo {
+                    platform: selector.platform,
+                    project_id: selector.value.clone(),
+                    title: selector.value,
+                    downloads: 0,
+                    confidence: 100,
+                    project_type: "mod".into(),
+                }),
+            }
+        })
+    }
+
     fn resolve_project(
         &self,
         title: &str,

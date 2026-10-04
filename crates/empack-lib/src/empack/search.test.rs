@@ -72,7 +72,12 @@ fn test_curseforge_class_id() {
 
     assert_eq!(resolver.curseforge_class_id("mod"), 6);
     assert_eq!(resolver.curseforge_class_id("resourcepack"), 12);
-    assert_eq!(resolver.curseforge_class_id("datapack"), 17);
+    assert_eq!(resolver.curseforge_class_id("datapack"), 6945);
+    assert_eq!(resolver.curseforge_class_id("shader"), 6552);
+    assert_eq!(resolver.curseforge_class_id("world"), 17);
+    assert_eq!(ProjectType::Datapack.curseforge_class_id(), 6945);
+    assert_eq!(ProjectType::Shader.curseforge_class_id(), 6552);
+    assert_eq!(ProjectType::World.curseforge_class_id(), 17);
     assert_eq!(resolver.curseforge_class_id("unknown"), 6);
 }
 
@@ -1523,4 +1528,20 @@ async fn test_search_shared_budget_applies_low_remaining_delay_to_next_request()
 
     first_mock.assert_async().await;
     second_mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn exact_selector_canonicalizes_identity_and_rejects_foreign_pin() {
+    let mut server = mockito::Server::new_async().await;
+    let _project = server.mock("GET", "/v2/project/pretty")
+        .with_body(r#"{"id":"CANONICAL","title":"Pretty","project_type":"resourcepack"}"#).create_async().await;
+    let _pin = server.mock("GET", "/v2/version/wrong")
+        .with_body(r#"{"id":"wrong","project_id":"OTHER"}"#).create_async().await;
+    let resolver = ProjectResolver::new_with_base_urls(Client::new(), None, Some(server.url()), Some(server.url()));
+    let selector = ProjectSelector { platform: ProjectPlatform::Modrinth, value: "pretty".into() };
+    let result = resolver.resolve_selector(selector.clone(), None).await.unwrap();
+    assert_eq!(result.project_id, "CANONICAL");
+    assert_eq!(result.project_type, "resourcepack");
+    let error = resolver.resolve_selector(selector, Some("wrong".into())).await.unwrap_err();
+    assert!(error.to_string().contains("does not belong"));
 }

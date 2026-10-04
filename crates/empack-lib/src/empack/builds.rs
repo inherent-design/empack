@@ -3,6 +3,7 @@
 
 use crate::application::session::execute_process_with_live_issues;
 use crate::empack::PackwizInstaller;
+use crate::empack::content::OverrideSide;
 use crate::empack::templates::TemplateEngine;
 use crate::empack::versions::{
     canonicalize_forge_loader_version, parse_version, uses_forge_style_neoforge_coordinate,
@@ -105,6 +106,8 @@ pub struct BuildOrchestrator<'a> {
 
     pack_refreshed: bool,
     mrpack_extracted: bool,
+    mrpack_built: bool,
+    verified_url_files: Vec<super::url_file::UrlDependencyRecord>,
 
     pack_info: Option<PackInfo>,
 
@@ -223,6 +226,28 @@ pub struct BuildArtifact {
     pub size: u64,
 }
 
+fn validate_output_tree(
+    fs: &dyn crate::application::session::FileSystemProvider,
+    root: &Path,
+    path: &Path,
+) -> Result<(), BuildError> {
+    fs.validate_output_path(root, path)
+        .map_err(|e| BuildError::ValidationError {
+            reason: e.to_string(),
+        })?;
+    if fs.is_directory(path) {
+        for entry in fs
+            .get_file_list(path)
+            .map_err(|e| BuildError::ValidationError {
+                reason: e.to_string(),
+            })?
+        {
+            validate_output_tree(fs, root, &entry)?;
+        }
+    }
+    Ok(())
+}
+
 impl<'a> BuildOrchestrator<'a> {
     pub fn new(
         session: &'a dyn crate::application::session::Session,
@@ -238,12 +263,15 @@ impl<'a> BuildOrchestrator<'a> {
                 })?,
         };
         let dist_dir = crate::empack::state::artifact_root(&workdir);
+        validate_output_tree(session.filesystem(), &workdir, &dist_dir)?;
 
         Ok(Self {
             workdir,
             dist_dir,
             pack_refreshed: false,
             mrpack_extracted: false,
+            mrpack_built: false,
+            verified_url_files: Vec::new(),
             pack_info: None,
             archive_format,
             continue_full_builds: false,
@@ -255,6 +283,33 @@ impl<'a> BuildOrchestrator<'a> {
     pub fn continue_full_builds(mut self) -> Self {
         self.continue_full_builds = true;
         self
+    }
+
+    fn artifact_path(
+        &self,
+        info: &PackInfo,
+        target: Option<BuildTarget>,
+        extension: &str,
+    ) -> Result<PathBuf, BuildError> {
+        for value in [&info.name, &info.version] {
+            crate::empack::paths::validate_filename(value).map_err(|e| {
+                BuildError::ValidationError {
+                    reason: e.to_string(),
+                }
+            })?;
+        }
+        let suffix = target.map(|t| format!("-{t}")).unwrap_or_default();
+        let path = self.dist_dir.join(format!(
+            "{}-v{}{suffix}.{extension}",
+            info.name, info.version
+        ));
+        self.session
+            .filesystem()
+            .validate_output_path(&self.workdir, &path)
+            .map_err(|e| BuildError::ValidationError {
+                reason: e.to_string(),
+            })?;
+        Ok(path)
     }
 
     /// Load pack info from pack.toml
@@ -984,12 +1039,15 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         let pack_info = self.load_pack_info()?.clone();
-        let mrpack_file = self
-            .dist_dir
-            .join(format!("{}-v{}.mrpack", pack_info.name, pack_info.version));
+        let mrpack_file = self.artifact_path(&pack_info, None, "mrpack")?;
 
-        if !self.session.filesystem().exists(&mrpack_file) {
-            self.build_mrpack_impl()?;
+        if !self.mrpack_built {
+            let result = self.build_mrpack_impl()?;
+            if !result.success {
+                return Err(BuildError::CommandFailed {
+                    command: "Required mrpack export did not complete".into(),
+                });
+            }
         }
 
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
@@ -1036,14 +1094,7 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         let format = self.archive_format;
-        let filename = format!(
-            "{}-v{}-{}.{}",
-            pack_info.name,
-            pack_info.version,
-            target,
-            format.extension()
-        );
-        let archive_path = self.dist_dir.join(&filename);
+        let archive_path = self.artifact_path(pack_info, Some(target), format.extension())?;
 
         if self.session.filesystem().exists(&archive_path) {
             self.session
@@ -1070,9 +1121,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         let pack_info = self.load_pack_info()?.clone();
         let pack_file = self.workdir.join("pack").join("pack.toml");
-        let output_file = self
-            .dist_dir
-            .join(format!("{}-v{}.mrpack", pack_info.name, pack_info.version));
+        let output_file = self.artifact_path(&pack_info, None, "mrpack")?;
 
         self.session
             .filesystem()
@@ -1091,17 +1140,61 @@ impl<'a> BuildOrchestrator<'a> {
                 })?;
         }
 
+        let download_cache = crate::platform::cache::packwiz_download_cache_dir(&self.workdir)
+            .map_err(|e| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
+        let manifest = self
+            .session
+            .filesystem()
+            .config_manager(self.workdir.clone())
+            .load_empack_config()
+            .map_err(|e| BuildError::ConfigError {
+                reason: e.to_string(),
+            })?;
+        for entry in manifest.empack.dependencies.values() {
+            if let super::config::DependencyEntry::Resolved(record) = entry {
+                self.session
+                    .packwiz()
+                    .validate_optional_export(&self.workdir, record)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: e.to_string(),
+                    })?;
+            }
+        }
+        let preserve_urls = manifest
+            .empack
+            .dependencies
+            .values()
+            .any(|entry| match entry {
+                super::config::DependencyEntry::Url(_) => true,
+                super::config::DependencyEntry::Resolved(record) => {
+                    record.environment.as_ref().is_some_and(|env| {
+                        matches!(env.client, super::content::SideRequirement::Optional)
+                            || matches!(env.server, super::content::SideRequirement::Optional)
+                    })
+                }
+                _ => false,
+            });
+        let mut args = vec![
+            "--cache".to_string(),
+            download_cache.to_string_lossy().into_owned(),
+            "--pack-file".to_string(),
+            pack_file.to_string_lossy().into_owned(),
+            "mr".to_string(),
+            "export".to_string(),
+            "-o".to_string(),
+            output_file.to_string_lossy().into_owned(),
+        ];
+        // Domain restrictions are a hosting policy. Flattening URL files into overrides
+        // would erase optional requirements from a format that supports arbitrary URLs.
+        if preserve_urls {
+            args.push("--restrictDomains=false".into());
+        }
         let output = execute_process_with_live_issues(
             self.session,
             self.session.packwiz_bin(),
-            &[
-                "--pack-file",
-                &pack_file.to_string_lossy(),
-                "mr",
-                "export",
-                "-o",
-                &output_file.to_string_lossy(),
-            ],
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
             &self.workdir,
         )
         .map_err(|e| BuildError::CommandFailed {
@@ -1143,7 +1236,49 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
+        let url_files: Vec<_> = self.verified_url_files.iter().collect();
+        let mut export_index = None;
+        if !url_files.is_empty() {
+            use std::io::Write;
+            let updated =
+                super::url_file::verify_export(self.session.filesystem(), &output_file, &url_files)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: e.to_string(),
+                    })?;
+            let mut temporary =
+                tempfile::NamedTempFile::new().map_err(|e| BuildError::ConfigError {
+                    reason: e.to_string(),
+                })?;
+            temporary
+                .write_all(&updated)
+                .map_err(|e| BuildError::ConfigError {
+                    reason: e.to_string(),
+                })?;
+            export_index = Some(temporary);
+        }
+        let mut additions = Vec::new();
+        if let Some(index) = &export_index {
+            additions.push((
+                index.path().to_path_buf(),
+                "modrinth.index.json".to_string(),
+            ));
+        }
+        for side in [OverrideSide::ClientOnly, OverrideSide::ServerOnly] {
+            let root = self.workdir.join(side.project_directory());
+            if self.session.filesystem().exists(&root) {
+                self.collect_layer_files(&root, &root, side.archive_directory(), &mut additions)?;
+            }
+        }
+        if !additions.is_empty() {
+            self.session
+                .archive()
+                .overlay_zip(&output_file, &additions)
+                .map_err(|e| BuildError::ConfigError {
+                    reason: e.to_string(),
+                })?;
+        }
         let artifact = self.create_artifact(&output_file)?;
+        self.mrpack_built = true;
 
         Ok(BuildResult {
             target: BuildTarget::Mrpack,
@@ -1198,14 +1333,15 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        let pack_dir = self.workdir.join("pack");
-        self.copy_dir_contents(&pack_dir, &minecraft_dir.join("pack"))?;
+        self.stage_pack_for_side(&minecraft_dir.join("pack"), OverrideSide::ClientOnly)?;
 
         self.extract_mrpack()?;
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
-        let overrides_dir = temp_extract_dir.join("overrides");
-        if self.session.filesystem().exists(&overrides_dir) {
-            self.copy_dir_contents(&overrides_dir, &minecraft_dir)?;
+        for directory in ["overrides", "client-overrides"] {
+            let overrides_dir = temp_extract_dir.join(directory);
+            if self.session.filesystem().exists(&overrides_dir) {
+                self.copy_dir_contents(&overrides_dir, &minecraft_dir)?;
+            }
         }
 
         let zip_path = self.zip_distribution(BuildTarget::Client)?;
@@ -1237,8 +1373,7 @@ impl<'a> BuildOrchestrator<'a> {
         self.process_build_templates("templates/common", &dist_dir)?;
         self.process_build_templates("templates/server", &dist_dir)?;
 
-        let pack_dir = self.workdir.join("pack");
-        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+        self.stage_pack_for_side(&dist_dir.join("pack"), OverrideSide::ServerOnly)?;
 
         let bootstrap_content = self
             .session
@@ -1273,9 +1408,11 @@ impl<'a> BuildOrchestrator<'a> {
         self.extract_mrpack()?;
 
         let temp_extract_dir = self.dist_dir.join("temp-mrpack-extract");
-        let overrides_dir = temp_extract_dir.join("overrides");
-        if self.session.filesystem().exists(&overrides_dir) {
-            self.copy_dir_contents(&overrides_dir, &dist_dir)?;
+        for directory in ["overrides", "server-overrides"] {
+            let overrides_dir = temp_extract_dir.join(directory);
+            if self.session.filesystem().exists(&overrides_dir) {
+                self.copy_dir_contents(&overrides_dir, &dist_dir)?;
+            }
         }
 
         let zip_path = self.zip_distribution(BuildTarget::Server)?;
@@ -1315,8 +1452,7 @@ impl<'a> BuildOrchestrator<'a> {
         self.process_build_templates("templates/client", &dist_dir)?;
 
         // Copy pack files so the installer can resolve .toml mod entries
-        let pack_dir = self.workdir.join("pack");
-        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+        self.stage_pack_for_side(&dist_dir.join("pack"), OverrideSide::ClientOnly)?;
 
         let installer = PackwizInstaller::new(
             self.session,
@@ -1324,11 +1460,11 @@ impl<'a> BuildOrchestrator<'a> {
             installer_jar_path.to_owned(),
         );
 
-        match installer
-            .install_mods("both", &dist_dir)
-            .map_err(|e| BuildError::CommandFailed {
+        match installer.install_mods("client", &dist_dir).map_err(|e| {
+            BuildError::CommandFailed {
                 command: format!("packwiz-installer-bootstrap.jar: {}", e),
-            })? {
+            }
+        })? {
             crate::empack::packwiz::InstallResult::Success => {}
             crate::empack::packwiz::InstallResult::RestrictedMods(restricted) => {
                 return Ok(BuildResult {
@@ -1390,8 +1526,7 @@ impl<'a> BuildOrchestrator<'a> {
         }
 
         // Copy pack files so the installer can resolve .toml mod entries
-        let pack_dir = self.workdir.join("pack");
-        self.copy_dir_contents(&pack_dir, &dist_dir.join("pack"))?;
+        self.stage_pack_for_side(&dist_dir.join("pack"), OverrideSide::ServerOnly)?;
 
         let installer = PackwizInstaller::new(
             self.session,
@@ -1431,12 +1566,18 @@ impl<'a> BuildOrchestrator<'a> {
     }
 
     /// Execute the 5-target build pipeline with state management.
-    /// Uses an RAII guard so the state marker is removed on both success and
-    /// failure (including panics) without manual cleanup.
+    /// Completion removes the marker; errors and panics preserve interruption evidence.
     pub async fn execute_build_pipeline(
         &mut self,
         targets: &[BuildTarget],
     ) -> Result<Vec<BuildResult>, BuildError> {
+        self.pack_info = None;
+        self.template_engine = None;
+        self.pack_refreshed = false;
+        self.mrpack_extracted = false;
+        self.mrpack_built = false;
+        let info = self.load_pack_info()?.clone();
+        self.artifact_path(&info, None, "mrpack")?;
         let state_mgr = self.session.state().map_err(|e| BuildError::ConfigError {
             reason: format!("Failed to get state manager: {}", e),
         })?;
@@ -1446,6 +1587,11 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: format!("Failed to begin build transition: {:?}", e),
             })?;
 
+        self.verified_url_files = super::url_file::prepare_build(self.session, &self.workdir)
+            .await
+            .map_err(|e| BuildError::ValidationError {
+                reason: e.to_string(),
+            })?;
         let result = self.execute_build_pipeline_inner(targets);
 
         let temp_extract = self.dist_dir.join("temp-mrpack-extract");
@@ -1497,7 +1643,8 @@ impl<'a> BuildOrchestrator<'a> {
 
         let mut results = Vec::new();
 
-        for target in targets {
+        let ordered = plan_build_targets(targets);
+        for target in &ordered {
             let result = match target {
                 BuildTarget::Mrpack => self.build_mrpack_impl()?,
                 BuildTarget::Client => self.build_client_impl(&bootstrap_jar_path)?,
@@ -1591,6 +1738,9 @@ impl<'a> BuildOrchestrator<'a> {
         if self.pack_info.is_none() {
             let _ = self.load_pack_info();
         }
+        if let Some(info) = &self.pack_info {
+            self.artifact_path(info, Some(target), "zip")?;
+        }
         let pack_info = self.pack_info.as_ref();
 
         let dist_dir = self.dist_dir.join(target.to_string());
@@ -1628,10 +1778,7 @@ impl<'a> BuildOrchestrator<'a> {
 
         if let Some(info) = pack_info {
             for ext in ["zip", "tar.gz", "7z"] {
-                let archive_file = self.dist_dir.join(format!(
-                    "{}-v{}-{}.{}",
-                    info.name, info.version, target, ext
-                ));
+                let archive_file = self.artifact_path(info, Some(target), ext)?;
                 if self.session.filesystem().exists(&archive_file) {
                     self.session
                         .filesystem()
@@ -1742,6 +1889,70 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
+    fn collect_layer_files(
+        &self,
+        root: &Path,
+        directory: &Path,
+        prefix: &str,
+        result: &mut Vec<(PathBuf, String)>,
+    ) -> Result<(), BuildError> {
+        let fs = self.session.filesystem();
+        let error = |e: anyhow::Error| BuildError::ConfigError {
+            reason: e.to_string(),
+        };
+        fs.validate_output_path(&self.workdir, directory)
+            .map_err(error)?;
+        for path in fs.get_file_list(directory).map_err(error)? {
+            fs.validate_output_path(&self.workdir, &path)
+                .map_err(error)?;
+            if fs.is_directory(&path) {
+                self.collect_layer_files(root, &path, prefix, result)?;
+            } else {
+                let relative = path
+                    .strip_prefix(root)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: e.to_string(),
+                    })?;
+                result.push((
+                    path.clone(),
+                    format!("{prefix}/{}", relative.to_string_lossy().replace('\\', "/")),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn stage_pack_for_side(
+        &self,
+        destination: &Path,
+        side: OverrideSide,
+    ) -> Result<(), BuildError> {
+        self.copy_dir_contents(&self.workdir.join("pack"), destination)?;
+        let root = self.workdir.join(side.project_directory());
+        if !self.session.filesystem().exists(&root) {
+            return Ok(());
+        }
+        let mut files = Vec::new();
+        self.collect_layer_files(&root, &root, "", &mut files)?;
+        self.copy_dir_contents(&root, destination)?;
+        let pack_file = destination.join("pack.toml");
+        let output = execute_process_with_live_issues(
+            self.session,
+            self.session.packwiz_bin(),
+            &["--pack-file", &pack_file.to_string_lossy(), "refresh"],
+            destination,
+        )
+        .map_err(|e| BuildError::ConfigError {
+            reason: e.to_string(),
+        })?;
+        if !output.success {
+            return Err(BuildError::CommandFailed {
+                command: format!("refresh staged content layer: {}", output.error_output()),
+            });
+        }
+        Ok(())
+    }
+
     /// Copy directory contents recursively
     fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), BuildError> {
         self.session
@@ -1804,9 +2015,11 @@ impl<'a> BuildOrchestrator<'a> {
         let size = self
             .session
             .filesystem()
-            .read_to_string(path)
-            .map(|content| content.len() as u64)
-            .unwrap_or(0);
+            .file_metadata(path)
+            .map_err(|error| BuildError::ConfigError {
+                reason: format!("Failed to stat artifact: {error}"),
+            })?
+            .len;
 
         Ok(BuildArtifact {
             name,
@@ -1814,6 +2027,22 @@ impl<'a> BuildOrchestrator<'a> {
             size,
         })
     }
+}
+
+/// Expand actual production prerequisites in dependency order, once per invocation.
+pub fn plan_build_targets(targets: &[BuildTarget]) -> Vec<BuildTarget> {
+    let mut ordered = Vec::new();
+    for target in targets {
+        if matches!(target, BuildTarget::Client | BuildTarget::Server)
+            && !ordered.contains(&BuildTarget::Mrpack)
+        {
+            ordered.push(BuildTarget::Mrpack);
+        }
+        if !ordered.contains(target) {
+            ordered.push(*target);
+        }
+    }
+    ordered
 }
 
 #[cfg(test)]

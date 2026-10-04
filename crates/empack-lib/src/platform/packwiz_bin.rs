@@ -10,7 +10,7 @@ pub const PACKWIZ_TX_VERSION: &str = "v0.2.0";
 
 /// GitHub repository for packwiz-tx releases.
 const PACKWIZ_TX_REPO: &str = "mannie-exe/packwiz-tx";
-const INSTALL_LOCK_NAME: &str = ".install.lock";
+const INSTALL_LOCK_NAME: &str = ".install-file.lock";
 
 /// Resolve the packwiz-tx binary path.
 ///
@@ -37,14 +37,7 @@ pub fn resolve_packwiz_binary() -> Result<PathBuf> {
 
     // Tier 2: PATH lookup (user-installed or mise-managed)
     let path_bin = binary_name();
-    if path_contains_binary(&path_bin)
-        && std::process::Command::new(&path_bin)
-            .arg("--help")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok()
-    {
+    if path_contains_binary(&path_bin) && probe_binary_runnable(Path::new(&path_bin)).is_ok() {
         tracing::debug!(binary = %path_bin, "found packwiz-tx in PATH");
         return Ok(PathBuf::from(path_bin));
     }
@@ -100,6 +93,12 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
             "=https",
             "--tlsv1.2",
             "-fsSL",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "60",
+            "--retry-max-time",
+            "120",
             "--retry",
             "3",
             "-o",
@@ -116,6 +115,7 @@ fn download_release(version: &str, target_dir: &Path) -> Result<PathBuf> {
     let bytes = std::fs::read(&output_file)
         .with_context(|| format!("failed to read downloaded file: {}", output_file.display()))?;
 
+    verify_release_checksum(&asset, &bytes)?;
     extract_tarball(&bytes, scratch_dir.path())?;
 
     let bin_name = binary_name();
@@ -143,51 +143,62 @@ fn with_install_lock<T, F>(target_dir: &Path, action: F) -> Result<T>
 where
     F: FnOnce() -> Result<T>,
 {
-    use std::io::ErrorKind;
     use std::time::{Duration, Instant};
-
-    struct LockGuard {
-        path: PathBuf,
-    }
-
-    impl Drop for LockGuard {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir(&self.path);
-        }
-    }
-
-    std::fs::create_dir_all(target_dir)
-        .with_context(|| format!("failed to create cache directory: {}", target_dir.display()))?;
-
-    let lock_path = target_dir.join(INSTALL_LOCK_NAME);
+    std::fs::create_dir_all(target_dir)?;
+    let path = target_dir.join(INSTALL_LOCK_NAME);
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)?;
     let start = Instant::now();
     loop {
-        match std::fs::create_dir(&lock_path) {
-            Ok(()) => {
-                let _guard = LockGuard {
-                    path: lock_path.clone(),
-                };
-                return action();
-            }
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                if start.elapsed() >= Duration::from_secs(30) {
-                    anyhow::bail!(
-                        "timed out waiting for packwiz-tx install lock at {}",
-                        lock_path.display()
-                    );
-                }
-                std::thread::sleep(Duration::from_millis(100));
+        match file.try_lock() {
+            Ok(()) => return action(),
+            Err(std::fs::TryLockError::WouldBlock) if start.elapsed() < Duration::from_secs(30) => {
+                std::thread::sleep(Duration::from_millis(100))
             }
             Err(error) => {
-                return Err(error).with_context(|| {
-                    format!(
-                        "failed to acquire packwiz-tx install lock at {}",
-                        lock_path.display()
-                    )
-                });
+                return Err(anyhow::anyhow!(
+                    "Failed to acquire packwiz install lock {}: {error}",
+                    path.display()
+                ));
             }
         }
     }
+}
+
+fn verify_release_checksum(asset: &str, bytes: &[u8]) -> Result<()> {
+    use sha2::{Digest, Sha256};
+    // GitHub release asset SHA-256 digests for the pinned v0.2.0 release.
+    let expected = match asset {
+        "packwiz-tx_0.2.0_darwin_amd64.tar.gz" => {
+            "2ca0ccf2ee6812d5bb987f5497345fbc029b5bc02ed8d1d6cbaadb32ae691da7"
+        }
+        "packwiz-tx_0.2.0_darwin_arm64.tar.gz" => {
+            "72e075076014b6980299f2451770354bd4c41fe7a1fddabb9837dbb81028d407"
+        }
+        "packwiz-tx_0.2.0_linux_amd64.tar.gz" => {
+            "c7bc833395f95c77d79b2f93d112ef3df4ee6e724d7d0284956860a17572b4f7"
+        }
+        "packwiz-tx_0.2.0_linux_arm64.tar.gz" => {
+            "ca622c088c2977ad32777cd523e5e8980976a516f5a9cfd3cd637349ab830bbd"
+        }
+        "packwiz-tx_0.2.0_windows_amd64.tar.gz" => {
+            "7fb504f30f099d4001e8fb69dd2dd51bc5fcc5ee85a5b035e090e0319c6c20aa"
+        }
+        "packwiz-tx_0.2.0_windows_arm64.tar.gz" => {
+            "2fc1f3b27d7d8268e2f644dd5aece0bd49695ce6e4b6d49b9f043eb1557f3efc"
+        }
+        _ => anyhow::bail!("No pinned checksum for packwiz asset {asset}"),
+    };
+    let actual: String = Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    anyhow::ensure!(actual == expected, "Checksum mismatch for {asset}");
+    Ok(())
 }
 
 fn install_binary(source: &Path, target: &Path) -> Result<()> {
@@ -254,13 +265,26 @@ where
 }
 
 fn probe_binary_runnable(path: &Path) -> Result<()> {
-    std::process::Command::new(path)
-        .arg("--help")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|_| ())
-        .with_context(|| format!("failed to execute managed packwiz-tx at {}", path.display()))
+    let mut command = std::process::Command::new(path);
+    command.arg("--help").stdin(std::process::Stdio::null());
+    struct Observer;
+    impl crate::application::session::ProcessObserver for Observer {
+        fn on_line(&self, _: crate::application::session::ProcessStream, _: &str) {}
+    }
+    let output = crate::application::process_runtime::execute(
+        command,
+        std::time::Duration::from_secs(5),
+        Default::default(),
+        &Observer,
+    )
+    .with_context(|| format!("failed to execute managed packwiz-tx at {}", path.display()))?;
+    anyhow::ensure!(
+        output.success,
+        "packwiz probe failed at {}: {}",
+        path.display(),
+        output.error_output()
+    );
+    Ok(())
 }
 
 fn stage_binary_for_execution(path: &Path) -> Result<PathBuf> {
@@ -671,7 +695,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_packwiz_binary_downloads_and_extracts_cached_binary() {
+    fn resolve_packwiz_binary_rejects_unverified_download() {
         let _guard = crate::test_support::env_lock().lock().unwrap();
         let temp = TempDir::new().expect("temp dir");
         let binary = binary_name();
@@ -696,17 +720,31 @@ mod tests {
         let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
         let _payload = unsafe { EnvVarGuard::set("FAKE_CURL_PAYLOAD", &payload) };
 
-        let resolved = resolve_packwiz_binary().expect("download packwiz binary");
+        let error = resolve_packwiz_binary().unwrap_err();
+        assert!(error.to_string().contains("Checksum mismatch"));
         let expected = temp
             .path()
             .join("bin")
             .join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION))
             .join(&binary);
+        assert!(!expected.exists());
+    }
+    #[test]
+    fn install_file_lock_ignores_legacy_directory_and_releases() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".install.lock")).unwrap();
+        assert_eq!(with_install_lock(dir.path(), || Ok(7)).unwrap(), 7);
+        assert!(with_install_lock(dir.path(), || Ok(())).is_ok());
+        assert!(dir.path().join(INSTALL_LOCK_NAME).is_file());
+    }
 
-        assert_eq!(resolved, expected);
-        assert_eq!(
-            std::fs::read(&resolved).expect("read extracted binary"),
-            binary_contents
-        );
+    #[cfg(unix)]
+    #[test]
+    fn executable_probe_rejects_unsuccessful_exit() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad-tool");
+        std::fs::write(&path, "#!/bin/sh\nexit 17\n").unwrap();
+        set_executable(&path).unwrap();
+        assert!(probe_binary_runnable(&path).is_err());
     }
 }

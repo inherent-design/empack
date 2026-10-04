@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{Cursor, Read, Seek};
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -52,6 +52,7 @@ pub struct RuntimeTarget {
 #[derive(Debug, Clone)]
 pub enum ContentEntry {
     PlatformReferenced(PlatformRef),
+    UrlFile(super::url_file::UrlDependencyRecord),
     EmbeddedJar(EmbeddedJar),
 }
 
@@ -316,26 +317,20 @@ fn extract_forgecdn_file_id(url: &str) -> Option<String> {
 
 /// Parse a CurseForge modpack archive (zip containing `manifest.json`).
 pub fn parse_curseforge_zip(archive_path: &Path) -> Result<ModpackManifest> {
-    let bytes = std::fs::read(archive_path)
-        .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    parse_curseforge_zip_bytes(bytes, archive_path)
+    parse_curseforge_zip_with_filesystem(
+        &crate::application::session::LiveFileSystemProvider,
+        archive_path,
+    )
 }
 
 pub fn parse_curseforge_zip_with_filesystem(
     fs: &dyn crate::application::session::FileSystemProvider,
     archive_path: &Path,
 ) -> Result<ModpackManifest> {
-    let bytes = fs
-        .read_bytes(archive_path)
+    let reader = fs
+        .open_reader(archive_path)
         .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    parse_curseforge_zip_bytes(bytes, archive_path)
-}
-
-fn parse_curseforge_zip_bytes(
-    archive_bytes: Vec<u8>,
-    archive_path: &Path,
-) -> Result<ModpackManifest> {
-    let mut archive = open_zip_archive(archive_bytes)?;
+    let mut archive = open_zip_archive(reader)?;
     let manifest_entry = archive
         .by_name("manifest.json")
         .map_err(|_| ImportError::CurseForgeManifestMissing)?;
@@ -431,26 +426,20 @@ fn parse_curseforge_zip_bytes(
 
 /// Parse a Modrinth modpack archive (mrpack containing `modrinth.index.json`).
 pub fn parse_modrinth_mrpack(file_path: &Path) -> Result<ModpackManifest> {
-    let bytes = std::fs::read(file_path)
-        .with_context(|| format!("opening mrpack: {}", file_path.display()))?;
-    parse_modrinth_mrpack_bytes(bytes, file_path)
+    parse_modrinth_mrpack_with_filesystem(
+        &crate::application::session::LiveFileSystemProvider,
+        file_path,
+    )
 }
 
 pub fn parse_modrinth_mrpack_with_filesystem(
     fs: &dyn crate::application::session::FileSystemProvider,
     file_path: &Path,
 ) -> Result<ModpackManifest> {
-    let bytes = fs
-        .read_bytes(file_path)
+    let reader = fs
+        .open_reader(file_path)
         .with_context(|| format!("opening mrpack: {}", file_path.display()))?;
-    parse_modrinth_mrpack_bytes(bytes, file_path)
-}
-
-fn parse_modrinth_mrpack_bytes(
-    archive_bytes: Vec<u8>,
-    file_path: &Path,
-) -> Result<ModpackManifest> {
-    let mut archive = open_zip_archive(archive_bytes)?;
+    let mut archive = open_zip_archive(reader)?;
     let manifest_entry = archive
         .by_name("modrinth.index.json")
         .map_err(|_| ImportError::ModrinthManifestMissing)?;
@@ -556,6 +545,18 @@ fn parse_modrinth_mrpack_bytes(
                         (ProjectPlatform::Modrinth, pid, version_id)
                     };
 
+                if project_id.is_empty() && file_id.is_none() {
+                    return ContentEntry::UrlFile(super::url_file::UrlDependencyRecord {
+                        status: DependencyStatus::Url,
+                        title: filename_from_path(&f.path),
+                        project_type: url_project_type(&f.path),
+                        destination: f.path,
+                        downloads: f.downloads,
+                        hashes: f.hashes.into_iter().collect(),
+                        size: f.file_size,
+                        env,
+                    });
+                }
                 ContentEntry::PlatformReferenced(PlatformRef {
                     destination_path: f.path.clone(),
                     platform,
@@ -785,6 +786,9 @@ async fn resolve_manifest_with_api_bases(
                     }),
                 ));
             }
+            ContentEntry::UrlFile(file) => {
+                passthrough.push((i, ContentEntry::UrlFile(file), Vec::new()))
+            }
             ContentEntry::EmbeddedJar(embed) => {
                 let w = vec![format!(
                     "embedded JAR '{}' cannot be identified while inside archive; \
@@ -924,23 +928,6 @@ async fn resolve_platform_ref_with_client(
     }
 }
 
-async fn apply_rate_budget(budget: Option<&Arc<dyn RateBudget>>) {
-    let Some(budget) = budget else {
-        return;
-    };
-
-    let delay = budget.acquire();
-    if !delay.is_zero() {
-        tokio::time::sleep(delay).await;
-    }
-}
-
-fn record_rate_budget(budget: Option<&Arc<dyn RateBudget>>, response: &reqwest::Response) {
-    if let Some(budget) = budget {
-        budget.record_response(response.headers(), response.status());
-    }
-}
-
 #[derive(Deserialize)]
 struct MrProjectResponse {
     title: String,
@@ -973,21 +960,30 @@ async fn resolve_modrinth_project_with_client(
         && let Some(sha1) = pref.hashes.get("sha1")
     {
         let url = api_bases.modrinth_url(&format!("v2/version_file/{}?algorithm=sha1", sha1));
-        apply_rate_budget(budget).await;
-        if let Ok(resp) = client.get(&url).send().await {
-            record_rate_budget(budget, &resp);
-            if resp.status().is_success()
-                && let Ok(body) = resp.json::<MrVersionFileResponse>().await
-            {
-                pref.file_id = Some(body.id);
-            }
+        if let Ok(resp) = crate::networking::rate_limit::execute_api_request(
+            client.clone(),
+            ProjectPlatform::Modrinth,
+            budget.cloned(),
+            client.get(&url),
+        )
+        .await
+            && resp.status().is_success()
+            && let Ok(body) = resp.json::<MrVersionFileResponse>().await
+        {
+            pref.file_id = Some(body.id);
         }
     }
 
     let url = api_bases.modrinth_url(&format!("v2/project/{}", pref.project_id));
 
-    apply_rate_budget(budget).await;
-    let response = match client.get(&url).send().await {
+    let response = match crate::networking::rate_limit::execute_api_request(
+        client.clone(),
+        ProjectPlatform::Modrinth,
+        budget.cloned(),
+        client.get(&url),
+    )
+    .await
+    {
         Ok(r) => r,
         Err(e) => {
             warnings.push(format!(
@@ -997,7 +993,6 @@ async fn resolve_modrinth_project_with_client(
             return;
         }
     };
-    record_rate_budget(budget, &response);
 
     if !response.status().is_success() {
         warnings.push(format!(
@@ -1063,8 +1058,14 @@ async fn resolve_curseforge_project_with_client(
 
     let url = api_bases.curseforge_url(&format!("v1/mods/{}", pref.project_id));
 
-    apply_rate_budget(budget).await;
-    let response = match client.get(&url).header("x-api-key", api_key).send().await {
+    let response = match crate::networking::rate_limit::execute_api_request(
+        client.clone(),
+        ProjectPlatform::CurseForge,
+        budget.cloned(),
+        client.get(&url).header("x-api-key", api_key),
+    )
+    .await
+    {
         Ok(r) => r,
         Err(e) => {
             warnings.push(format!(
@@ -1074,7 +1075,6 @@ async fn resolve_curseforge_project_with_client(
             return;
         }
     };
-    record_rate_budget(budget, &response);
 
     if !response.status().is_success() {
         warnings.push(format!(
@@ -1102,7 +1102,7 @@ async fn resolve_curseforge_project_with_client(
         6 => crate::primitives::ProjectType::Mod,
         5 => crate::primitives::ProjectType::Mod,
         12 => crate::primitives::ProjectType::ResourcePack,
-        17 => crate::primitives::ProjectType::Datapack,
+        17 => crate::primitives::ProjectType::World,
         6945 => crate::primitives::ProjectType::Datapack,
         6552 => crate::primitives::ProjectType::Shader,
         _ => crate::primitives::ProjectType::Mod,
@@ -1150,13 +1150,16 @@ async fn resolve_curseforge_file_ids(
     // CF API accepts batches; process in chunks of 50.
     for chunk in file_ids.chunks(50) {
         let body = serde_json::json!({ "fileIds": chunk });
-        apply_rate_budget(budget).await;
-        let response = match client
-            .post(api_bases.curseforge_url("v1/mods/files"))
-            .header("x-api-key", api_key)
-            .json(&body)
-            .send()
-            .await
+        let response = match crate::networking::rate_limit::execute_api_request(
+            client.clone(),
+            ProjectPlatform::CurseForge,
+            budget.cloned(),
+            client
+                .post(api_bases.curseforge_url("v1/mods/files"))
+                .header("x-api-key", api_key)
+                .json(&body),
+        )
+        .await
         {
             Ok(r) => r,
             Err(e) => {
@@ -1164,7 +1167,6 @@ async fn resolve_curseforge_file_ids(
                 continue;
             }
         };
-        record_rate_budget(budget, &response);
 
         if !response.status().is_success() {
             warnings.push(format!(
@@ -1195,6 +1197,64 @@ pub async fn execute_import(
     config: ImportConfig,
     session: &dyn Session,
 ) -> Result<ImportResult> {
+    let mut resolved = resolved;
+    for entry in &mut resolved.manifest.content {
+        if let ContentEntry::PlatformReferenced(pref) = entry
+            && pref.project_id.is_empty()
+            && pref.file_id.is_none()
+            && !pref.download_urls.is_empty()
+        {
+            *entry = ContentEntry::UrlFile(super::url_file::UrlDependencyRecord {
+                status: DependencyStatus::Url,
+                title: pref
+                    .resolved_name
+                    .clone()
+                    .unwrap_or_else(|| filename_from_path(&pref.destination_path)),
+                project_type: url_project_type(&pref.destination_path),
+                destination: pref.destination_path.clone(),
+                downloads: pref.download_urls.clone(),
+                hashes: pref.hashes.clone().into_iter().collect(),
+                size: None,
+                env: pref.env.clone(),
+            });
+        }
+    }
+    // Validate all semantic conversions, and verify provider-free bytes, before initialization.
+    let mut verified_urls = HashMap::new();
+    for (index, entry) in resolved.manifest.content.iter().enumerate() {
+        match entry {
+            ContentEntry::UrlFile(file) => {
+                file.metadata_path(session.filesystem(), &config.target_dir)?;
+                verified_urls.insert(index, file.verify_download(session).await?);
+            }
+            ContentEntry::PlatformReferenced(pref) => {
+                super::url_file::requirements(&imported_requirements(pref))?;
+            }
+            ContentEntry::EmbeddedJar(embed) => {
+                let (_, optional) = super::url_file::requirements(&embed.env)?;
+                anyhow::ensure!(
+                    !optional,
+                    "Optional embedded files cannot be represented as unconditional overrides"
+                );
+            }
+        }
+    }
+    let needs_archive = !resolved.manifest.overrides.is_empty()
+        || resolved
+            .manifest
+            .content
+            .iter()
+            .any(|entry| matches!(entry, ContentEntry::EmbeddedJar(_)));
+    let mut archive = if needs_archive {
+        Some(open_zip_archive(
+            session
+                .filesystem()
+                .open_reader(&resolved.manifest.archive_path)?,
+        )?)
+    } else {
+        None
+    };
+
     let mut stats = ImportStats {
         platform_referenced: 0,
         platform_failed: 0,
@@ -1275,27 +1335,13 @@ pub async fn execute_import(
         .filesystem()
         .config_manager(config.target_dir.clone());
 
-    let mut content_dirs: Vec<&str> = vec!["mods", "resourcepacks", "shaderpacks", "datapacks"];
+    let mut content_dirs: Vec<&str> =
+        vec!["mods", "resourcepacks", "shaderpacks", "datapacks", "saves"];
     if let Some(ref df) = datapack_folder
         && !content_dirs.contains(&df.as_str())
     {
         content_dirs.push(df);
     }
-
-    // Build a set of override basenames so we can identify platform refs
-    // that are already covered by override files (e.g. datapacks distributed
-    // via Paxi that also appear in the mrpack files[] array).
-    let override_basenames: std::collections::HashSet<String> = resolved
-        .manifest
-        .overrides
-        .iter()
-        .filter_map(|o| {
-            std::path::Path::new(&o.destination_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
 
     let content_total = resolved.manifest.content.len();
     let use_no_refresh = content_total > 1;
@@ -1315,11 +1361,25 @@ pub async fn execute_import(
         project_id: String,
         project_type: crate::primitives::ProjectType,
         version: Option<String>,
+        environment: SideEnv,
     }
     let mut pending_deps: Vec<PendingDep> = Vec::new();
 
-    for entry in &resolved.manifest.content {
+    for (entry_index, entry) in resolved.manifest.content.iter().enumerate() {
         match entry {
+            ContentEntry::UrlFile(file) => {
+                file.publish(
+                    session.filesystem(),
+                    &config.target_dir,
+                    &verified_urls[&entry_index],
+                )?;
+                let key = format!("url:{}", file.destination);
+                config_manager.record_installed_dependency(
+                    &key,
+                    crate::empack::config::DependencyEntry::Url(file.clone()),
+                )?;
+                stats.platform_referenced += 1;
+            }
             ContentEntry::PlatformReferenced(pref) => {
                 content_progress.tick(&pref.destination_path);
 
@@ -1343,11 +1403,11 @@ pub async fn execute_import(
                         ));
                     }
                     AddRefResult::Failed(detail) => {
-                        let basename = std::path::Path::new(&pref.destination_path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("");
-                        if override_basenames.contains(basename) {
+                        if overrides_cover_reference(
+                            &resolved.manifest.overrides,
+                            pref,
+                            datapack_folder.as_deref(),
+                        ) {
                             session.display().status().info(&format!(
                                 "skipped packwiz add for '{}' (already in overrides)",
                                 pref.destination_path
@@ -1379,14 +1439,26 @@ pub async fn execute_import(
                                 .resolved_type
                                 .unwrap_or(crate::primitives::ProjectType::Mod),
                             version: pref.file_id.clone(),
+                            environment: imported_requirements(pref),
                         });
                     }
                 }
             }
             ContentEntry::EmbeddedJar(embed) => {
-                let dest = sanitize_archive_path(&pack_dir, &embed.destination_path)?;
+                let directory = match side_from_env(&embed.env) {
+                    "client" => OverrideSide::ClientOnly.project_directory(),
+                    "server" => OverrideSide::ServerOnly.project_directory(),
+                    _ => OverrideSide::Both.project_directory(),
+                };
+                let dest = sanitize_archive_path(
+                    &config.target_dir,
+                    &format!("{directory}/{}", embed.destination_path),
+                    session.filesystem(),
+                )?;
                 extract_embedded_from_archive(
-                    &resolved.manifest.archive_path,
+                    archive
+                        .as_mut()
+                        .context("Embedded archive was not opened")?,
                     &embed.source_path,
                     &dest,
                     session.filesystem(),
@@ -1398,7 +1470,33 @@ pub async fn execute_import(
     }
     content_progress.finish(&format!("{} platform references processed", content_total));
 
-    if use_no_refresh {
+    let scan_start = std::time::Instant::now();
+    let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
+    let post_scan_ms = scan_start.elapsed().as_millis() as u64;
+
+    let new_stems: std::collections::HashSet<_> =
+        post_stems.difference(&pre_stems).cloned().collect();
+
+    for dep in &pending_deps {
+        let record = DependencyRecord {
+            environment: Some(dep.environment.clone()),
+            status: DependencyStatus::Resolved,
+            title: dep.title.clone(),
+            platform: dep.platform,
+            project_id: dep.project_id.clone(),
+            project_type: dep.project_type,
+            version: dep.version.clone(),
+        };
+        session
+            .packwiz()
+            .apply_requirements(&config.target_dir, &record)?;
+        config_manager.record_installed_dependency(
+            &dep.derived_key,
+            crate::empack::config::DependencyEntry::Resolved(record),
+        )?;
+    }
+
+    if use_no_refresh || !verified_urls.is_empty() || !pending_deps.is_empty() {
         let pack_toml = pack_dir.join("pack.toml");
         let pack_toml_str = pack_toml
             .to_str()
@@ -1414,30 +1512,6 @@ pub async fn execute_import(
                 "packwiz refresh failed after batch import: {}",
                 refresh_output.error_output()
             );
-        }
-    }
-
-    let scan_start = std::time::Instant::now();
-    let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
-    let post_scan_ms = scan_start.elapsed().as_millis() as u64;
-
-    let new_stems: std::collections::HashSet<_> =
-        post_stems.difference(&pre_stems).cloned().collect();
-
-    for dep in &pending_deps {
-        let record = DependencyRecord {
-            status: DependencyStatus::Resolved,
-            title: dep.title.clone(),
-            platform: dep.platform,
-            project_id: dep.project_id.clone(),
-            project_type: dep.project_type,
-            version: dep.version.clone(),
-        };
-        if let Err(e) = config_manager.add_dependency(&dep.derived_key, record) {
-            session
-                .display()
-                .status()
-                .warning(&format!("failed to update empack.yml: {}", e));
         }
     }
 
@@ -1487,9 +1561,19 @@ pub async fn execute_import(
     override_progress.set_message("Copying overrides");
 
     for override_entry in &resolved.manifest.overrides {
-        let dest = sanitize_archive_path(&pack_dir, &override_entry.destination_path)?;
+        let dest = sanitize_archive_path(
+            &config.target_dir,
+            &format!(
+                "{}/{}",
+                override_entry.side.project_directory(),
+                override_entry.destination_path
+            ),
+            session.filesystem(),
+        )?;
         extract_embedded_from_archive(
-            &resolved.manifest.archive_path,
+            archive
+                .as_mut()
+                .context("Override archive was not opened")?,
             &override_entry.source_path,
             &dest,
             session.filesystem(),
@@ -1506,6 +1590,7 @@ pub async fn execute_import(
 }
 
 /// Outcome of attempting to add a platform reference via packwiz.
+#[derive(Debug)]
 enum AddRefResult {
     /// packwiz add succeeded; the .pw.toml was created.
     Added,
@@ -1590,33 +1675,10 @@ async fn add_platform_ref(
                 return Ok(AddRefResult::Skipped);
             }
 
-            // Fallback to url add for direct downloads without project/version IDs
-            if pref.project_id.is_empty() && pref.file_id.is_none() {
-                if let Some(url) = pref.download_urls.first() {
-                    let name = std::path::Path::new(&pref.destination_path)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("unknown");
-                    let mut args: Vec<&str> = Vec::new();
-                    if no_refresh {
-                        args.push("--no-refresh");
-                    }
-                    args.extend(["url", "add", name, url, "-y"]);
-                    let output =
-                        session
-                            .process()
-                            .execute(session.packwiz_bin(), &args, pack_dir)?;
-                    if output.success {
-                        return Ok(AddRefResult::Added);
-                    }
-                    return Ok(AddRefResult::Failed(format!(
-                        "packwiz url add failed for '{}': {}",
-                        pref.destination_path,
-                        output.error_output()
-                    )));
-                }
-                return Ok(AddRefResult::Skipped);
-            }
+            anyhow::ensure!(
+                !pref.project_id.is_empty(),
+                "Provider-free files require verified URL import, not a provider installation"
+            );
 
             let has_offline_data = !pref.download_urls.is_empty()
                 && !pref.hashes.is_empty()
@@ -1681,6 +1743,7 @@ async fn add_platform_ref(
                         crate::primitives::ProjectType::ResourcePack => "resourcepack",
                         crate::primitives::ProjectType::Shader => "shader",
                         crate::primitives::ProjectType::Datapack => "datapack",
+                        crate::primitives::ProjectType::World => "world",
                     };
                     args.push("--project-type".to_string());
                     args.push(pt_str.to_string());
@@ -1764,6 +1827,14 @@ async fn add_platform_ref(
                 }
             }
 
+            if let Some(kind) = pref.resolved_type {
+                crate::empack::packwiz::append_content_type_override(
+                    &mut args,
+                    pref.platform,
+                    kind,
+                );
+            }
+
             if pref.cf_class_id == Some(6945)
                 && let Some(folder) = datapack_folder
             {
@@ -1794,58 +1865,69 @@ async fn add_platform_ref(
 }
 
 /// Validate that a relative path from an archive does not escape the target directory.
-fn sanitize_archive_path(base: &Path, relative: &str) -> Result<PathBuf> {
-    // Canonicalize the base first so the join inherits the resolved prefix.
-    // On macOS, /tmp is a symlink to /private/tmp; without this, the base
-    // canonicalizes to /private/tmp/... but the joined path stays at /tmp/...
-    // and the starts_with check fails.
-    let canonical_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
-    let joined = canonical_base.join(relative);
-    let canonical_dest = joined.canonicalize().unwrap_or_else(|_| {
-        let mut components = Vec::new();
-        for c in joined.components() {
-            match c {
-                std::path::Component::ParentDir => {
-                    components.pop();
-                }
-                std::path::Component::CurDir => {}
-                _ => components.push(c),
-            }
-        }
-        components.iter().collect()
-    });
-    if !canonical_dest.starts_with(&canonical_base) {
-        anyhow::bail!(
-            "path traversal detected: '{}' escapes target directory",
-            relative
-        );
-    }
-    Ok(joined)
+fn sanitize_archive_path(
+    base: &Path,
+    relative: &str,
+    fs: &dyn crate::application::session::FileSystemProvider,
+) -> Result<PathBuf> {
+    anyhow::ensure!(
+        !relative.contains('\\'),
+        "Archive paths must use forward slashes"
+    );
+    let destination = base.join(relative);
+    fs.validate_output_path(base, &destination)?;
+    Ok(destination)
 }
 
-fn extract_embedded_from_archive(
-    archive_path: &Path,
+const MAX_IMPORT_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_IMPORT_TOTAL_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_IMPORT_ENTRIES: usize = 100_000;
+
+fn validate_zip_limits<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<()> {
+    anyhow::ensure!(
+        archive.len() <= MAX_IMPORT_ENTRIES,
+        "Import archive contains too many entries"
+    );
+    let mut total = 0u64;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)?;
+        anyhow::ensure!(
+            entry.size() <= MAX_IMPORT_ENTRY_BYTES,
+            "Import entry exceeds 512 MiB: {}",
+            entry.name()
+        );
+        total = total
+            .checked_add(entry.size())
+            .context("Import archive size overflow")?;
+        anyhow::ensure!(
+            total <= MAX_IMPORT_TOTAL_BYTES,
+            "Import archive exceeds 4 GiB unpacked"
+        );
+    }
+    Ok(())
+}
+
+fn extract_embedded_from_archive<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
     source_path: &str,
     dest_path: &Path,
     fs: &dyn crate::application::session::FileSystemProvider,
 ) -> Result<()> {
+    let entry = archive
+        .by_name(source_path)
+        .with_context(|| format!("entry '{source_path}' not found in archive"))?;
+    let mut bytes = Vec::new();
+    entry
+        .take(MAX_IMPORT_ENTRY_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    anyhow::ensure!(
+        bytes.len() as u64 <= MAX_IMPORT_ENTRY_BYTES,
+        "Import entry exceeds 512 MiB: {source_path}"
+    );
     if let Some(parent) = dest_path.parent() {
         fs.create_dir_all(parent)?;
     }
-
-    let archive_bytes = fs
-        .read_bytes(archive_path)
-        .with_context(|| format!("opening archive: {}", archive_path.display()))?;
-    let mut archive = open_zip_archive(archive_bytes)?;
-
-    let mut entry = archive
-        .by_name(source_path)
-        .with_context(|| format!("entry '{}' not found in archive", source_path))?;
-
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(&mut entry, &mut bytes)?;
     fs.write_bytes(dest_path, &bytes)?;
-
     Ok(())
 }
 
@@ -1932,20 +2014,54 @@ fn collect_override_entries<R: Read + Seek>(
     Ok(())
 }
 
+fn overrides_cover_reference(
+    overrides: &[OverrideEntry],
+    reference: &PlatformRef,
+    datapack_folder: Option<&str>,
+) -> bool {
+    let destination = if reference.resolved_type == Some(crate::primitives::ProjectType::Datapack) {
+        datapack_folder
+            .and_then(|folder| {
+                Path::new(&reference.destination_path)
+                    .file_name()
+                    .map(|name| format!("{folder}/{}", name.to_string_lossy()))
+            })
+            .unwrap_or_else(|| reference.destination_path.clone())
+    } else {
+        reference.destination_path.clone()
+    };
+    let covers = |side| {
+        overrides.iter().any(|entry| {
+            entry.destination_path == destination
+                && (entry.side == OverrideSide::Both || entry.side == side)
+        })
+    };
+    (reference.env.client == SideRequirement::Unsupported || covers(OverrideSide::ClientOnly))
+        && (reference.env.server == SideRequirement::Unsupported
+            || covers(OverrideSide::ServerOnly))
+}
+
 fn prune_packwiz_override_metadata<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
     entries: &mut Vec<OverrideEntry>,
 ) {
-    let existing_destinations: std::collections::HashSet<String> = entries
+    let existing_destinations: Vec<_> = entries
         .iter()
-        .map(|entry| entry.destination_path.replace('\\', "/"))
+        .map(|entry| {
+            (
+                entry.destination_path.replace('\\', "/"),
+                entry.side.clone(),
+            )
+        })
         .collect();
 
     entries.retain(|entry| {
         let Some(payload_path) = packwiz_override_payload_destination(archive, entry) else {
             return true;
         };
-        !existing_destinations.contains(&payload_path)
+        !existing_destinations
+            .iter()
+            .any(|(path, side)| path == &payload_path && side == &entry.side)
     });
 }
 
@@ -1997,20 +2113,36 @@ fn parse_cf_loader(loaders: &[CfModLoader]) -> Result<(ModLoader, String)> {
     Ok((mod_loader, loader_version.to_string()))
 }
 
-fn read_zip_entry_to_string<R: std::io::Read>(
-    mut entry: zip::read::ZipFile<'_, R>,
-) -> Result<String> {
+fn read_zip_entry_to_string<R: std::io::Read>(entry: zip::read::ZipFile<'_, R>) -> Result<String> {
+    anyhow::ensure!(
+        entry.size() <= MAX_IMPORT_MANIFEST_BYTES,
+        "Import manifest exceeds 16 MiB"
+    );
     let mut buf = String::new();
-    std::io::Read::read_to_string(&mut entry, &mut buf)
+    let mut limited = entry.take(MAX_IMPORT_MANIFEST_BYTES + 1);
+    std::io::Read::read_to_string(&mut limited, &mut buf)
         .map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    anyhow::ensure!(
+        buf.len() as u64 <= MAX_IMPORT_MANIFEST_BYTES,
+        "Import manifest exceeds 16 MiB"
+    );
     Ok(buf)
 }
 
-fn open_zip_archive(data: Vec<u8>) -> Result<zip::ZipArchive<Cursor<Vec<u8>>>> {
-    // Import tests and live code both enter through filesystem-provided bytes,
-    // so we open archives from an in-memory cursor rather than a second file-backed path.
-    zip::ZipArchive::new(Cursor::new(data))
-        .map_err(|e| ImportError::ArchiveRead(e.to_string()).into())
+pub(crate) const MAX_IMPORT_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_IMPORT_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
+
+fn open_zip_archive<R: Read + Seek>(mut reader: R) -> Result<zip::ZipArchive<R>> {
+    let length = reader.seek(std::io::SeekFrom::End(0))?;
+    anyhow::ensure!(
+        length <= MAX_IMPORT_ARCHIVE_BYTES,
+        "Import archive exceeds 2 GiB compressed input limit"
+    );
+    reader.rewind()?;
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|e| ImportError::ArchiveRead(e.to_string()))?;
+    validate_zip_limits(&mut archive)?;
+    Ok(archive)
 }
 
 fn mr_side_requirement(value: Option<&str>) -> SideRequirement {
@@ -2184,6 +2316,29 @@ pub enum SourceKind {
     CurseForgeRemote {
         slug: String,
     },
+}
+
+fn url_project_type(destination: &str) -> crate::primitives::ProjectType {
+    use crate::primitives::ProjectType;
+    match destination.split('/').next() {
+        Some("resourcepacks") => ProjectType::ResourcePack,
+        Some("shaderpacks") => ProjectType::Shader,
+        Some("datapacks") => ProjectType::Datapack,
+        _ => ProjectType::Mod,
+    }
+}
+
+fn imported_requirements(pref: &PlatformRef) -> SideEnv {
+    let mut env = pref.env.clone();
+    if !pref.required {
+        if env.client != SideRequirement::Unsupported {
+            env.client = SideRequirement::Optional;
+        }
+        if env.server != SideRequirement::Unsupported {
+            env.server = SideRequirement::Optional;
+        }
+    }
+    env
 }
 
 #[cfg(test)]

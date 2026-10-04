@@ -14,3 +14,9 @@ pub use cli::{BuildArgs, Cli, CliArchiveFormat, CliConfig, CliLoad, Commands, In
 pub use commands::{execute_command, execute_command_with_session};
 pub use config::AppConfig;
 pub use exit::{EmpackExitCode, classify_error};
+
+pub mod process_runtime;
+
+pub mod persistence;
+
+pub mod removal;

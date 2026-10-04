@@ -7,7 +7,7 @@ use crate::primitives::BuildTarget;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub const PENDING_RESTRICTED_BUILD_FILE: &str = ".empack-build-continue.json";
@@ -18,10 +18,21 @@ pub struct PendingRestrictedBuildFingerprint {
     pub empack_yml_sha256: String,
     pub pack_toml_sha256: String,
     pub index_toml_sha256: String,
+    #[serde(default)]
+    pub content_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExpectedContent {
+    pub algorithm: String,
+    pub digest: String,
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingRestrictedBuildEntry {
+    #[serde(default)]
+    pub expected_content: Option<ExpectedContent>,
     pub name: String,
     pub url: String,
     pub filename: String,
@@ -29,6 +40,12 @@ pub struct PendingRestrictedBuildEntry {
 }
 
 impl PendingRestrictedBuildEntry {
+    pub fn cache_filename(&self) -> String {
+        match &self.expected_content {
+            Some(content) => format!("{}-{}", content.algorithm, content.digest),
+            None => self.filename.clone(),
+        }
+    }
     pub fn curseforge_file_id(&self) -> Option<u64> {
         restricted_curseforge_file_id(&self.url)
     }
@@ -90,7 +107,7 @@ pub fn pending_state_path(workdir: &Path) -> PathBuf {
 
 pub fn restricted_cache_dir(workdir: &Path) -> Result<PathBuf> {
     let cache_root = crate::platform::cache::restricted_builds_cache_dir()?;
-    let project_hash = hex_sha256(workdir.to_string_lossy().as_bytes());
+    let project_hash = crate::platform::cache::project_cache_key(workdir);
     Ok(cache_root.join(project_hash))
 }
 
@@ -102,6 +119,7 @@ pub fn compute_project_fingerprint(
         empack_yml_sha256: file_sha256(provider, &workdir.join("empack.yml"))?,
         pack_toml_sha256: file_sha256(provider, &workdir.join("pack").join("pack.toml"))?,
         index_toml_sha256: file_sha256(provider, &workdir.join("pack").join("index.toml"))?,
+        content_sha256: Some(project_content_fingerprint(provider, workdir)?),
     })
 }
 
@@ -115,6 +133,7 @@ pub fn save_pending_build(
     let restricted_cache_dir = restricted_cache_dir(workdir)?;
     provider.create_dir_all(&restricted_cache_dir)?;
 
+    let metadata = installed_download_metadata(provider, workdir)?;
     let entries = restricted_mods
         .iter()
         .map(|restricted| {
@@ -126,7 +145,13 @@ pub fn save_pending_build(
                     )
                 })?;
 
+            let expected_content = expected_content_for(
+                &metadata,
+                &filename,
+                restricted_curseforge_file_id(&restricted.url),
+            )?;
             Ok(PendingRestrictedBuildEntry {
+                expected_content,
                 name: restricted.name.clone(),
                 url: restricted.url.clone(),
                 filename,
@@ -156,7 +181,7 @@ pub fn persist_pending_build(
     pending: &PendingRestrictedBuild,
 ) -> Result<()> {
     let serialized = serde_json::to_string_pretty(pending)?;
-    provider.write_file(&pending_state_path(workdir), &serialized)
+    provider.write_atomic(&pending_state_path(workdir), &serialized)
 }
 
 pub fn load_pending_build(
@@ -184,6 +209,85 @@ pub fn clear_pending_build(provider: &dyn FileSystemProvider, workdir: &Path) ->
     Ok(())
 }
 
+fn validate_pending_paths(
+    provider: &dyn FileSystemProvider,
+    workdir: &Path,
+    pending: &PendingRestrictedBuild,
+) -> Result<()> {
+    let cache_root = crate::platform::cache::cache_root()?;
+    let cache_dir = restricted_cache_dir(workdir)?;
+    if pending.restricted_cache_path() != cache_dir {
+        anyhow::bail!("Restricted cache path differs from the configured project cache");
+    }
+    provider.validate_output_path(&cache_root, &cache_dir)?;
+    let targets = crate::empack::builds::plan_build_targets(&pending.target_list()?);
+    let metadata = installed_download_metadata(provider, workdir)?;
+    let mut identities = BTreeMap::new();
+    for entry in &pending.entries {
+        crate::empack::paths::validate_filename(&entry.filename)?;
+        if let Some(content) = &entry.expected_content {
+            let length = match content.algorithm.as_str() {
+                "sha1" => 40,
+                "sha256" => 64,
+                "sha512" => 128,
+                _ => anyhow::bail!("Unsupported restricted content digest"),
+            };
+            anyhow::ensure!(
+                content.digest.len() == length
+                    && content.digest.bytes().all(|b| b.is_ascii_hexdigit()),
+                "Invalid restricted content digest"
+            );
+        }
+        anyhow::ensure!(
+            entry.expected_content
+                == expected_content_for(
+                    &metadata,
+                    &entry.filename,
+                    restricted_curseforge_file_id(&entry.url)
+                )?,
+            "Saved restricted identity differs from installed metadata for {}",
+            entry.filename
+        );
+        let cache_name = entry.cache_filename();
+        if let Some(previous) = identities.insert(cache_name.clone(), &entry.url) {
+            anyhow::ensure!(
+                previous == &entry.url || entry.expected_content.is_some(),
+                "Conflicting restricted requests use the same filename without verified identity: {}",
+                entry.filename
+            );
+        }
+        provider.validate_output_path(&cache_root, &cache_dir.join(cache_name))?;
+        let dest = Path::new(&entry.dest_path);
+        if dest.file_name() != Some(std::ffi::OsStr::new(&entry.filename)) {
+            anyhow::bail!("Restricted destination filename does not match its cache entry");
+        }
+        let mut allowed = false;
+        for target in &targets {
+            if matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull) {
+                let root = crate::empack::state::artifact_root(workdir).join(target.to_string());
+                if dest.starts_with(&root) {
+                    provider.validate_output_path(workdir, dest)?;
+                    allowed = true;
+                }
+            }
+        }
+        if targets.contains(&BuildTarget::Mrpack) {
+            let root = crate::platform::cache::packwiz_download_cache_dir(workdir)?.join("import");
+            if dest.parent() == Some(root.as_path()) {
+                provider.validate_output_path(&cache_root, dest)?;
+                allowed = true;
+            }
+        }
+        if !allowed {
+            anyhow::bail!(
+                "Restricted destination is outside the selected build roots: {}",
+                dest.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_pending_build(
     provider: &dyn FileSystemProvider,
     workdir: &Path,
@@ -202,6 +306,8 @@ pub fn validate_pending_build(
             "project files changed since the restricted build was recorded".to_string(),
         ));
     }
+
+    validate_pending_paths(provider, workdir, pending)?;
 
     for target in pending.target_list()? {
         if matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull) {
@@ -228,129 +334,95 @@ pub fn import_matching_downloads_into_cache(
     pending: &PendingRestrictedBuild,
     search_dirs: &[PathBuf],
 ) -> Result<()> {
+    validate_pending_paths(provider, workdir, pending)?;
     let cache_dir = pending.restricted_cache_path();
     provider.create_dir_all(&cache_dir)?;
     let search_dirs = ordered_search_dirs(&cache_dir, search_dirs);
-    let recent_cutoff_ms = pending_recent_cutoff_ms(provider, workdir, pending);
-    let mut used_fallback_hashes = HashSet::new();
-
-    let entries_by_filename: BTreeMap<_, _> = pending
-        .entries
-        .iter()
-        .map(|entry| (entry.filename.clone(), entry))
-        .collect();
-
-    for (filename, entry) in entries_by_filename {
-        let cache_path = cache_dir.join(&filename);
-        let mut cache_status =
-            cache_entry_status(provider, &cache_path, &pending.candidate_baseline);
-        tracing::debug!(
-            filename = %filename,
-            cache_path = %cache_path.display(),
-            cache_status = ?cache_status,
-            "restricted download evaluated cache entry status"
-        );
-        if matches!(cache_status, CacheEntryStatus::Current) {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    for directory in &search_dirs {
+        if !provider.is_directory(directory) {
             continue;
         }
-
-        if let Some(candidate) =
-            find_exact_candidate(provider, &cache_path, &filename, &search_dirs)
-        {
-            tracing::debug!(
-                filename = %filename,
-                candidate = %candidate.display(),
-                refreshes_stale_cache = matches!(cache_status, CacheEntryStatus::PreexistingUnchanged),
-                "restricted download exact filename candidate selected"
-            );
-            import_candidate_into_cache(provider, &candidate, &cache_path)?;
-            cache_status = cache_entry_status(provider, &cache_path, &pending.candidate_baseline);
-            if matches!(cache_status, CacheEntryStatus::Current) {
-                continue;
-            }
-        }
-
-        tracing::debug!(
-            filename = %filename,
-            cache_path = %cache_path.display(),
-            "restricted download exact filename match not found; trying recent-file fallback"
-        );
-
-        if !pending.candidate_baseline.is_empty() {
-            tracing::debug!(
-                filename = %filename,
-                baseline_entries = pending.candidate_baseline.len(),
-                "restricted download using baseline-aware fallback"
-            );
-
-            if let Some((hash, candidate)) = find_new_or_changed_candidate(
-                provider,
-                entry,
-                &cache_path,
-                &search_dirs,
-                &pending.candidate_baseline,
-                &used_fallback_hashes,
-            )? {
-                tracing::debug!(
-                    filename = %filename,
-                    candidate = %candidate.display(),
-                    refreshes_stale_cache = matches!(cache_status, CacheEntryStatus::PreexistingUnchanged),
-                    "restricted download baseline-aware fallback selected a refresh candidate"
-                );
-                import_candidate_into_cache(provider, &candidate, &cache_path)?;
-                used_fallback_hashes.insert(hash);
-                continue;
-            }
-            tracing::debug!(
-                filename = %filename,
-                cache_path = %cache_path.display(),
-                cache_status = ?cache_status,
-                "restricted download remains unresolved after baseline-aware candidate scan"
-            );
-            continue;
-        }
-
-        let Some(recent_cutoff_ms) = recent_cutoff_ms else {
-            tracing::debug!(
-                filename = %filename,
-                "restricted download fallback disabled because no pending-build timestamp is available"
-            );
+        // Automatic discovery is best-effort. Explicit associations still report IO errors.
+        let Ok(files) = provider.get_file_list(directory) else {
             continue;
         };
-
-        tracing::debug!(
-            filename = %filename,
-            recent_cutoff_ms,
-            "restricted download using legacy recent-file fallback"
-        );
-
-        if let Some((hash, candidate)) = find_recent_candidate(
-            provider,
-            entry,
-            &cache_path,
-            &search_dirs,
-            recent_cutoff_ms,
-            &used_fallback_hashes,
-        )? {
-            tracing::debug!(
-                filename = %filename,
-                candidate = %candidate.display(),
-                refreshes_stale_cache = matches!(cache_status, CacheEntryStatus::PreexistingUnchanged),
-                "restricted download legacy recent-file fallback selected a refresh candidate"
-            );
-            import_candidate_into_cache(provider, &candidate, &cache_path)?;
-            used_fallback_hashes.insert(hash);
+        let mut files: Vec<_> = files.into_iter().collect();
+        files.sort();
+        candidates.extend(files.into_iter().filter(|path| seen.insert(path.clone())));
+    }
+    let mut observations = CandidateObservations::default();
+    for entry in &pending.entries {
+        if cached_entry_is_current(provider, pending, entry) {
             continue;
         }
-
-        tracing::debug!(
-            filename = %filename,
-            cache_path = %cache_path.display(),
-            cache_status = ?cache_status,
-            "restricted download remains unresolved after legacy recent-file candidate scan"
-        );
+        let Some(expected) = &entry.expected_content else {
+            continue;
+        };
+        let cache_path = cache_dir.join(entry.cache_filename());
+        for candidate in &candidates {
+            if candidate == &cache_path || !observations.matches(provider, candidate, expected) {
+                continue;
+            }
+            import_candidate_into_cache(provider, candidate, &cache_path)?;
+            if cached_entry_is_current(provider, pending, entry) {
+                break;
+            }
+        }
     }
+    Ok(())
+}
 
+/// Associate a user-selected file with a named request. Validate all mappings before writes.
+pub fn associate_downloads(
+    provider: &dyn FileSystemProvider,
+    workdir: &Path,
+    pending: &PendingRestrictedBuild,
+    mappings: &[String],
+    dry_run: bool,
+) -> Result<()> {
+    validate_pending_paths(provider, workdir, pending)?;
+    let mut associations = Vec::new();
+    let mut seen = HashSet::new();
+    for mapping in mappings {
+        let (filename, path) = mapping
+            .split_once('=')
+            .context("Use --associate-download FILENAME=PATH")?;
+        let entries: Vec<_> = pending
+            .entries
+            .iter()
+            .filter(|e| e.filename == filename)
+            .collect();
+        anyhow::ensure!(!entries.is_empty(), "No pending download named {filename}");
+        let identity = entries[0].cache_filename();
+        anyhow::ensure!(
+            entries.iter().all(|e| e.cache_filename() == identity),
+            "Ambiguous pending filename {filename}; use verified cache content instead"
+        );
+        anyhow::ensure!(
+            seen.insert(identity.clone()),
+            "Duplicate association for {filename}"
+        );
+        let source = workdir.join(path);
+        anyhow::ensure!(
+            provider.exists(&source) && !provider.is_directory(&source),
+            "Download file does not exist: {}",
+            source.display()
+        );
+        if let Some(expected) = &entries[0].expected_content {
+            anyhow::ensure!(
+                content_matches(provider, &source, expected)?,
+                "Download does not match expected content for {filename}"
+            );
+        }
+        associations.push((source, pending.restricted_cache_path().join(identity)));
+    }
+    if !dry_run {
+        for (source, destination) in associations {
+            import_candidate_into_cache(provider, &source, &destination)?;
+        }
+    }
     Ok(())
 }
 
@@ -358,37 +430,26 @@ pub fn missing_cached_entries(
     provider: &dyn FileSystemProvider,
     pending: &PendingRestrictedBuild,
 ) -> Vec<PendingRestrictedBuildEntry> {
-    let cache_dir = pending.restricted_cache_path();
     pending
         .entries
         .iter()
-        .filter(|entry| {
-            !matches!(
-                cache_entry_status(
-                    provider,
-                    &cache_dir.join(&entry.filename),
-                    &pending.candidate_baseline
-                ),
-                CacheEntryStatus::Current
-            )
-        })
+        .filter(|entry| !cached_entry_is_current(provider, pending, entry))
         .cloned()
         .collect()
 }
 
 pub fn stage_cached_entries_to_destinations(
     provider: &dyn FileSystemProvider,
+    workdir: &Path,
     pending: &PendingRestrictedBuild,
 ) -> Result<Vec<PendingRestrictedBuildEntry>> {
+    validate_pending_paths(provider, workdir, pending)?;
     let cache_dir = pending.restricted_cache_path();
     let mut missing = Vec::new();
 
     for entry in &pending.entries {
-        let cache_path = cache_dir.join(&entry.filename);
-        if !matches!(
-            cache_entry_status(provider, &cache_path, &pending.candidate_baseline),
-            CacheEntryStatus::Current
-        ) {
+        let cache_path = cache_dir.join(entry.cache_filename());
+        if !cached_entry_is_current(provider, pending, entry) {
             missing.push(entry.clone());
             continue;
         }
@@ -409,6 +470,216 @@ pub fn stage_cached_entries_to_destinations(
     Ok(missing)
 }
 
+fn cached_entry_is_current(
+    provider: &dyn FileSystemProvider,
+    pending: &PendingRestrictedBuild,
+    entry: &PendingRestrictedBuildEntry,
+) -> bool {
+    let path = pending.restricted_cache_path().join(entry.cache_filename());
+    match &entry.expected_content {
+        Some(expected) => content_matches(provider, &path, expected).unwrap_or(false),
+        None => matches!(
+            cache_entry_status(provider, &path, &pending.candidate_baseline),
+            CacheEntryStatus::Current
+        ),
+    }
+}
+
+/// Observations last for one discovery pass; later passes see file changes.
+#[derive(Default)]
+struct CandidateObservations {
+    metadata: BTreeMap<PathBuf, Option<FileMetadata>>,
+    digests: BTreeMap<(PathBuf, String), Option<String>>,
+}
+
+impl CandidateObservations {
+    fn matches(
+        &mut self,
+        provider: &dyn FileSystemProvider,
+        path: &Path,
+        expected: &ExpectedContent,
+    ) -> bool {
+        let Some(metadata) = self
+            .metadata
+            .entry(path.to_path_buf())
+            .or_insert_with(|| provider.file_metadata(path).ok())
+        else {
+            return false;
+        };
+        if metadata.is_directory || expected.size.is_some_and(|size| metadata.len != size) {
+            return false;
+        }
+        self.digests
+            .entry((path.to_path_buf(), expected.algorithm.clone()))
+            .or_insert_with(|| content_digest(provider, path, &expected.algorithm).ok())
+            .as_ref()
+            .is_some_and(|digest| digest.eq_ignore_ascii_case(&expected.digest))
+    }
+}
+
+fn content_digest(
+    provider: &dyn FileSystemProvider,
+    path: &Path,
+    algorithm: &str,
+) -> Result<String> {
+    match algorithm {
+        "sha1" => stream_digest::<sha1::Sha1>(provider, path),
+        "sha256" => stream_digest::<Sha256>(provider, path),
+        "sha512" => stream_digest::<sha2::Sha512>(provider, path),
+        _ => anyhow::bail!("Unsupported restricted content digest"),
+    }
+}
+
+fn content_matches(
+    provider: &dyn FileSystemProvider,
+    path: &Path,
+    expected: &ExpectedContent,
+) -> Result<bool> {
+    if !provider.exists(path) || provider.is_directory(path) {
+        return Ok(false);
+    }
+    if let Some(size) = expected.size
+        && provider.file_metadata(path)?.len != size
+    {
+        return Ok(false);
+    }
+    let digest = content_digest(provider, path, &expected.algorithm)?;
+    Ok(digest.eq_ignore_ascii_case(&expected.digest))
+}
+
+fn stream_digest<D: Digest + Default>(
+    provider: &dyn FileSystemProvider,
+    path: &Path,
+) -> Result<String> {
+    let mut reader = provider.open_reader(path)?;
+    let mut digest = D::default();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    Ok(digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+fn project_files(
+    provider: &dyn FileSystemProvider,
+    workdir: &Path,
+    directory: &Path,
+    files: &mut Vec<PathBuf>,
+) -> Result<()> {
+    if !provider.exists(directory) {
+        return Ok(());
+    }
+    provider.validate_output_path(workdir, directory)?;
+    for path in provider.get_file_list(directory)? {
+        provider.validate_output_path(workdir, &path)?;
+        if provider.is_directory(&path) {
+            project_files(provider, workdir, &path, files)?;
+        } else {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn project_content_fingerprint(
+    provider: &dyn FileSystemProvider,
+    workdir: &Path,
+) -> Result<String> {
+    let mut files = Vec::new();
+    for directory in ["pack", "overrides", "templates"] {
+        project_files(provider, workdir, &workdir.join(directory), &mut files)?;
+    }
+    files.sort();
+    let mut digest = Sha256::new();
+    for path in files {
+        let relative = path.strip_prefix(workdir)?.as_os_str().as_encoded_bytes();
+        digest.update((relative.len() as u64).to_le_bytes());
+        digest.update(relative);
+        digest.update(stream_digest::<Sha256>(provider, &path)?.as_bytes());
+    }
+    Ok(digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+fn installed_download_metadata(
+    provider: &dyn FileSystemProvider,
+    workdir: &Path,
+) -> Result<Vec<toml::Value>> {
+    let mut paths = Vec::new();
+    project_files(provider, workdir, &workdir.join("pack"), &mut paths)?;
+    paths
+        .into_iter()
+        .filter(|path| path.to_string_lossy().ends_with(".pw.toml"))
+        .map(|path| Ok(toml::from_str(&provider.read_to_string(&path)?)?))
+        .collect()
+}
+
+fn expected_content_for(
+    metadata: &[toml::Value],
+    filename: &str,
+    file_id: Option<u64>,
+) -> Result<Option<ExpectedContent>> {
+    let mut expected = None;
+    for metadata in metadata {
+        if metadata.get("filename").and_then(|v| v.as_str()) != Some(filename) {
+            continue;
+        }
+        if let Some(file_id) = file_id {
+            let installed = metadata
+                .get("update")
+                .and_then(|v| v.get("curseforge"))
+                .and_then(|v| v.get("file-id"));
+            let installed = installed.and_then(|v| {
+                v.as_integer()
+                    .and_then(|n| u64::try_from(n).ok())
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            });
+            if installed != Some(file_id) {
+                continue;
+            }
+        }
+        let Some(download) = metadata.get("download") else {
+            continue;
+        };
+        let (Some(algorithm), Some(hash)) = (
+            download.get("hash-format").and_then(|v| v.as_str()),
+            download.get("hash").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        if !matches!(algorithm, "sha1" | "sha256" | "sha512") {
+            continue;
+        }
+        let content = ExpectedContent {
+            algorithm: algorithm.to_string(),
+            digest: hash.to_ascii_lowercase(),
+            size: download
+                .get("size")
+                .and_then(|v| v.as_integer())
+                .and_then(|n| u64::try_from(n).ok()),
+        };
+        if let Some(previous) = &expected {
+            anyhow::ensure!(
+                previous == &content,
+                "Ambiguous restricted file identity for {filename}"
+            );
+        }
+        expected = Some(content);
+    }
+    Ok(expected)
+}
+
 fn file_sha256(provider: &dyn FileSystemProvider, path: &Path) -> Result<String> {
     let bytes = provider
         .read_bytes(path)
@@ -424,21 +695,6 @@ fn ordered_search_dirs(cache_dir: &Path, search_dirs: &[PathBuf]) -> Vec<PathBuf
         }
     }
     ordered
-}
-
-fn find_exact_candidate(
-    provider: &dyn FileSystemProvider,
-    cache_path: &Path,
-    filename: &str,
-    search_dirs: &[PathBuf],
-) -> Option<PathBuf> {
-    for dir in search_dirs {
-        let candidate = dir.join(filename);
-        if candidate != cache_path && provider.exists(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
 }
 
 fn cache_entry_status(
@@ -536,217 +792,6 @@ fn snapshot_changed(
         || snapshot.created_unix_ms != metadata.created_unix_ms
 }
 
-fn find_recent_candidate(
-    provider: &dyn FileSystemProvider,
-    entry: &PendingRestrictedBuildEntry,
-    cache_path: &Path,
-    search_dirs: &[PathBuf],
-    recent_cutoff_ms: u64,
-    used_fallback_hashes: &HashSet<String>,
-) -> Result<Option<(String, PathBuf)>> {
-    let expected_extension = lowercase_extension(Path::new(&entry.filename));
-    let mut candidates_by_hash = HashMap::new();
-    let mut eligible_candidate_paths = Vec::new();
-
-    for dir in search_dirs {
-        for candidate in provider
-            .get_file_list(dir)
-            .with_context(|| format!("Failed to scan {}", dir.display()))?
-        {
-            if candidate == cache_path {
-                continue;
-            }
-
-            let metadata = match provider.file_metadata(&candidate) {
-                Ok(metadata) => metadata,
-                Err(error) => {
-                    tracing::debug!(
-                        path = %candidate.display(),
-                        error = %error,
-                        "skipping restricted download candidate with unreadable metadata"
-                    );
-                    continue;
-                }
-            };
-            if metadata.is_directory {
-                continue;
-            }
-
-            if lowercase_extension(&candidate) != expected_extension {
-                continue;
-            }
-
-            let Some(candidate_time_ms) = best_file_time_ms(&metadata) else {
-                tracing::debug!(
-                    path = %candidate.display(),
-                    "skipping restricted download candidate without usable timestamp metadata"
-                );
-                continue;
-            };
-
-            if candidate_time_ms < recent_cutoff_ms {
-                continue;
-            }
-
-            eligible_candidate_paths.push(candidate.display().to_string());
-            let hash = match candidate_sha256(provider, &candidate) {
-                Ok(hash) => hash,
-                Err(error) => {
-                    tracing::debug!(
-                        path = %candidate.display(),
-                        error = %error,
-                        "skipping restricted download candidate that could not be hashed"
-                    );
-                    continue;
-                }
-            };
-            if used_fallback_hashes.contains(&hash) {
-                continue;
-            }
-            candidates_by_hash.entry(hash).or_insert(candidate);
-        }
-    }
-
-    let distinct_candidate_paths: Vec<String> = candidates_by_hash
-        .values()
-        .map(|candidate| candidate.display().to_string())
-        .collect();
-    tracing::debug!(
-        filename = %entry.filename,
-        eligible_candidate_count = eligible_candidate_paths.len(),
-        candidate_count = candidates_by_hash.len(),
-        recent_cutoff_ms,
-        ?distinct_candidate_paths,
-        "restricted download recent-file fallback evaluated"
-    );
-
-    match candidates_by_hash.len() {
-        0 => Ok(None),
-        1 => {
-            let (hash, candidate) = candidates_by_hash
-                .into_iter()
-                .next()
-                .expect("single candidate");
-            tracing::debug!(
-                filename = %entry.filename,
-                candidate = %candidate.display(),
-                "restricted download fallback selected a unique recent candidate"
-            );
-            Ok(Some((hash, candidate)))
-        }
-        _ => {
-            tracing::debug!(
-                filename = %entry.filename,
-                candidate_count = candidates_by_hash.len(),
-                ?distinct_candidate_paths,
-                "restricted download fallback skipped due to ambiguous recent candidates"
-            );
-            Ok(None)
-        }
-    }
-}
-
-fn find_new_or_changed_candidate(
-    provider: &dyn FileSystemProvider,
-    entry: &PendingRestrictedBuildEntry,
-    cache_path: &Path,
-    search_dirs: &[PathBuf],
-    baseline: &[PendingRestrictedCandidateSnapshot],
-    used_fallback_hashes: &HashSet<String>,
-) -> Result<Option<(String, PathBuf)>> {
-    let expected_extension = lowercase_extension(Path::new(&entry.filename));
-    let mut candidates_by_hash = HashMap::new();
-    let mut eligible_candidate_paths = Vec::new();
-
-    for dir in search_dirs {
-        for candidate in provider
-            .get_file_list(dir)
-            .with_context(|| format!("Failed to scan {}", dir.display()))?
-        {
-            if candidate == cache_path {
-                continue;
-            }
-
-            let metadata = match provider.file_metadata(&candidate) {
-                Ok(metadata) => metadata,
-                Err(error) => {
-                    tracing::debug!(
-                        path = %candidate.display(),
-                        error = %error,
-                        "skipping restricted download candidate with unreadable metadata"
-                    );
-                    continue;
-                }
-            };
-            if metadata.is_directory {
-                continue;
-            }
-
-            if lowercase_extension(&candidate) != expected_extension {
-                continue;
-            }
-
-            if !snapshot_changed(&candidate, &metadata, baseline) {
-                continue;
-            }
-
-            eligible_candidate_paths.push(candidate.display().to_string());
-            let hash = match candidate_sha256(provider, &candidate) {
-                Ok(hash) => hash,
-                Err(error) => {
-                    tracing::debug!(
-                        path = %candidate.display(),
-                        error = %error,
-                        "skipping restricted download candidate that could not be hashed"
-                    );
-                    continue;
-                }
-            };
-            if used_fallback_hashes.contains(&hash) {
-                continue;
-            }
-            candidates_by_hash.entry(hash).or_insert(candidate);
-        }
-    }
-
-    let distinct_candidate_paths: Vec<String> = candidates_by_hash
-        .values()
-        .map(|candidate| candidate.display().to_string())
-        .collect();
-    tracing::debug!(
-        filename = %entry.filename,
-        eligible_candidate_count = eligible_candidate_paths.len(),
-        candidate_count = candidates_by_hash.len(),
-        ?distinct_candidate_paths,
-        "restricted download baseline-aware fallback evaluated"
-    );
-
-    match candidates_by_hash.len() {
-        0 => Ok(None),
-        1 => {
-            let (hash, candidate) = candidates_by_hash
-                .into_iter()
-                .next()
-                .expect("single candidate");
-            tracing::debug!(
-                filename = %entry.filename,
-                candidate = %candidate.display(),
-                "restricted download baseline-aware fallback selected a unique candidate"
-            );
-            Ok(Some((hash, candidate)))
-        }
-        _ => {
-            tracing::debug!(
-                filename = %entry.filename,
-                candidate_count = candidates_by_hash.len(),
-                ?distinct_candidate_paths,
-                "restricted download baseline-aware fallback skipped due to ambiguous candidates"
-            );
-            Ok(None)
-        }
-    }
-}
-
 fn import_candidate_into_cache(
     provider: &dyn FileSystemProvider,
     candidate: &Path,
@@ -758,38 +803,6 @@ fn import_candidate_into_cache(
     provider
         .write_bytes(cache_path, &bytes)
         .with_context(|| format!("Failed to cache {}", cache_path.display()))
-}
-
-fn pending_recent_cutoff_ms(
-    provider: &dyn FileSystemProvider,
-    workdir: &Path,
-    pending: &PendingRestrictedBuild,
-) -> Option<u64> {
-    pending
-        .recorded_at_unix_ms
-        .or_else(|| {
-            provider
-                .file_metadata(&pending_state_path(workdir))
-                .ok()
-                .and_then(|metadata| best_file_time_ms(&metadata))
-        })
-        .map(|recorded_at| recorded_at.saturating_sub(10_000))
-}
-
-fn best_file_time_ms(metadata: &FileMetadata) -> Option<u64> {
-    metadata.created_unix_ms.or(metadata.modified_unix_ms)
-}
-
-fn lowercase_extension(path: &Path) -> Option<String> {
-    path.extension()
-        .map(|ext| ext.to_string_lossy().to_ascii_lowercase())
-}
-
-fn candidate_sha256(provider: &dyn FileSystemProvider, path: &Path) -> Result<String> {
-    let bytes = provider
-        .read_bytes(path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
-    Ok(hex_sha256(&bytes))
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {

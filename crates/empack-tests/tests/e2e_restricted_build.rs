@@ -23,7 +23,7 @@ fn write_executable(path: &Path, script: &str) {
 fn write_fake_restricted_mrpack_packwiz_binary(workdir: &Path, import_dir: &Path) -> PathBuf {
     let path = workdir.join("fake-restricted-packwiz.cmd");
     let script = format!(
-        "@echo off\r\nsetlocal EnableExtensions\r\nif /I \"%~3\"==\"mr\" if /I \"%~4\"==\"export\" goto restricted\r\nif /I \"%~3\"==\"refresh\" exit /b 0\r\nexit /b 0\r\n:restricted\r\necho Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\r\necho Bee Fix ^(BeeFix-1.20-1.0.7.jar^) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\r\n1>&2 echo Once you have done so, place these files in {} and re-run this command.\r\nexit /b 1\r\n",
+        "@echo off\r\nsetlocal EnableExtensions\r\nif /I \"%~1\"==\"--cache\" (shift & shift)\r\nif /I \"%~3\"==\"mr\" if /I \"%~4\"==\"export\" goto restricted\r\nif /I \"%~3\"==\"refresh\" exit /b 0\r\nexit /b 0\r\n:restricted\r\necho Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\r\necho Bee Fix ^(BeeFix-1.20-1.0.7.jar^) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\r\n1>&2 echo Once you have done so, place these files in {} and re-run this command.\r\nexit /b 1\r\n",
         import_dir.display()
     );
     write_executable(&path, &script);
@@ -34,7 +34,7 @@ fn write_fake_restricted_mrpack_packwiz_binary(workdir: &Path, import_dir: &Path
 fn write_fake_restricted_mrpack_packwiz_binary(workdir: &Path, import_dir: &Path) -> PathBuf {
     let path = workdir.join("fake-restricted-packwiz");
     let script = format!(
-        "#!/bin/sh\nset -eu\nif [ \"${{3-}}\" = \"mr\" ] && [ \"${{4-}}\" = \"export\" ]; then\n  printf 'Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\\n'\n  printf 'Bee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\\n'\n  printf 'Once you have done so, place these files in {} and re-run this command.\\n' >&2\n  exit 1\nfi\nif [ \"${{3-}}\" = \"refresh\" ]; then\n  exit 0\nfi\nexit 0\n",
+        "#!/bin/sh\nset -eu\nif [ \"${{1-}}\" = \"--cache\" ]; then shift 2; fi\nif [ \"${{3-}}\" = \"mr\" ] && [ \"${{4-}}\" = \"export\" ]; then\n  printf 'Found 1 manual downloads; these mods are unable to be downloaded by packwiz (due to API limitations) and must be manually downloaded:\\n'\n  printf 'Bee Fix (BeeFix-1.20-1.0.7.jar) from https://www.curseforge.com/minecraft/mc-mods/bee-fix/files/4618962\\n'\n  printf 'Once you have done so, place these files in {} and re-run this command.\\n' >&2\n  exit 1\nfi\nif [ \"${{3-}}\" = \"refresh\" ]; then\n  exit 0\nfi\nexit 0\n",
         import_dir.display()
     );
     write_executable(&path, &script);
@@ -56,7 +56,18 @@ fn combined_output(output: &std::process::Output) -> String {
 #[test]
 fn e2e_build_mrpack_restricted_records_pending_state() {
     let project = TestProject::workflow_fixture("restricted-mrpack", "fabric", "1.21.1");
-    let import_dir = project.dir().join("fake-packwiz-cache").join("import");
+    let import_dir = project
+        .dir()
+        .join(".empack-cache")
+        .join("packwiz")
+        .join(
+            empack_lib::empack::restricted_build::restricted_cache_dir(project.dir())
+                .unwrap()
+                .file_name()
+                .unwrap(),
+        )
+        .join("cache")
+        .join("import");
     let fake_packwiz = write_fake_restricted_mrpack_packwiz_binary(project.dir(), &import_dir);
 
     let mut cmd = project_assert_cmd(&project);
@@ -78,8 +89,8 @@ fn e2e_build_mrpack_restricted_records_pending_state() {
         "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
     );
     assert_eq!(
-        pending.entries[0].dest_path,
-        import_dir.join("BeeFix-1.20-1.0.7.jar").to_string_lossy()
+        Path::new(&pending.entries[0].dest_path),
+        import_dir.join("BeeFix-1.20-1.0.7.jar")
     );
 }
 
@@ -87,7 +98,18 @@ fn e2e_build_mrpack_restricted_records_pending_state() {
 fn e2e_build_all_restricted_at_mrpack_stops_before_later_targets() {
     let project = TestProject::workflow_fixture("restricted-all", "fabric", "1.21.1");
     seed_packwiz_installer_jars(project.dir());
-    let import_dir = project.dir().join("fake-packwiz-cache").join("import");
+    let import_dir = project
+        .dir()
+        .join(".empack-cache")
+        .join("packwiz")
+        .join(
+            empack_lib::empack::restricted_build::restricted_cache_dir(project.dir())
+                .unwrap()
+                .file_name()
+                .unwrap(),
+        )
+        .join("cache")
+        .join("import");
     let fake_packwiz = write_fake_restricted_mrpack_packwiz_binary(project.dir(), &import_dir);
 
     let mut cmd = project_assert_cmd(&project);
@@ -112,8 +134,8 @@ fn e2e_build_all_restricted_at_mrpack_stops_before_later_targets() {
         "https://www.curseforge.com/minecraft/mc-mods/bee-fix/download/4618962"
     );
     assert_eq!(
-        pending.entries[0].dest_path,
-        import_dir.join("BeeFix-1.20-1.0.7.jar").to_string_lossy()
+        Path::new(&pending.entries[0].dest_path),
+        import_dir.join("BeeFix-1.20-1.0.7.jar")
     );
     assert!(
         !project.dir().join("dist").join("client").exists(),

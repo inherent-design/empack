@@ -237,7 +237,7 @@ async fn test_lifecycle_forge_full() -> Result<()> {
             &dist
                 .join("client-full")
                 .join("mods")
-                .join("both-installed.txt")
+                .join("client-installed.txt")
         ),
         "Client-full build should include full install marker"
     );

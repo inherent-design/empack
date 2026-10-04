@@ -22,7 +22,8 @@ empack is a Rust CLI for Minecraft modpack lifecycle management. It wraps a pack
 
 | Subsystem | Primary files | Responsibility |
 | --- | --- | --- |
-| Application | `application/cli.rs`, `application/commands.rs`, `application/config.rs`, `application/session.rs`, `application/sync.rs` | CLI surface, command dispatch, session construction, sync and add contracts |
+| Application | `application/cli.rs`, `application/commands.rs`, `application/config.rs`, `application/session.rs`, `application/sync.rs` | CLI surface, command dispatch, session construction and command contracts |
+| Dependency contracts | `application/removal.rs`, `empack/installed.rs`, `empack/paths.rs`, `empack/url_file.rs` | Canonical installed identities, removal plans, confined local files and verified URL content |
 | empack domain | `empack/*.rs` | Search, import, config, state, build, templates, packwiz integration, archive handling |
 | Primitives | `primitives/empack.rs`, `primitives/project_platform.rs` | Shared enums, transition identities, platform types |
 | Display | `display/*.rs` | Status output, progress bars, structured tables |
@@ -40,6 +41,7 @@ empack is a Rust CLI for Minecraft modpack lifecycle management. It wraps a pack
 | `init` | `application/cli.rs`, `application/commands.rs`, `empack/state.rs`, `empack/templates.rs`, `empack/versions.rs`, `empack/packwiz.rs` | Creates project structure, initializes packwiz state, installs templates |
 | `init --from` | `application/commands.rs`, `empack/content.rs`, `empack/import.rs`, `empack/config.rs`, `empack/packwiz.rs` | Imports a Modrinth or CurseForge modpack into an empack project |
 | `add` | `application/commands.rs`, `application/sync.rs`, `empack/search.rs`, `empack/content.rs` | Resolves a query, URL, or direct download into packwiz add operations and manifest updates |
+| `remove` | `application/removal.rs`, `empack/installed.rs`, `empack/config.rs`, `empack/packwiz.rs` | Resolves labels to observed identities, validates targets and publishes exact intent removal |
 | `sync` | `application/sync.rs`, `empack/config.rs`, `empack/packwiz.rs` | Reconciles `empack.yml` intent with installed packwiz state |
 | `build` | `application/commands.rs`, `empack/state.rs`, `empack/builds.rs`, `empack/templates.rs`, `empack/archive.rs`, `empack/packwiz.rs` | Produces build artifacts under `dist/` |
 | `clean` | `application/commands.rs`, `empack/state.rs`, `empack/builds.rs`, `platform/cache.rs` | Removes build artifacts and, optionally, cache data |
@@ -63,6 +65,7 @@ empack is a Rust CLI for Minecraft modpack lifecycle management. It wraps a pack
 
 ## Cross References
 
+- [workflow-contracts.md](workflow-contracts.md)
 - [types.md](types.md)
 - [state-machine.md](state-machine.md)
 - [session-providers.md](session-providers.md)

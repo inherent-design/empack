@@ -9,6 +9,20 @@ use super::rate_budget::RateBudget;
 
 pub use crate::primitives::ProjectPlatform as Platform;
 
+/// Execute a provider request through the shared retry and reservation policy.
+pub async fn execute_api_request(
+    client: Client,
+    platform: Platform,
+    budget: Option<Arc<dyn RateBudget>>,
+    request: reqwest::RequestBuilder,
+) -> Result<Response, NetworkingError> {
+    let mut policy = RateLimitedClient::new(client, platform);
+    if let Some(budget) = budget {
+        policy.set_budget(budget);
+    }
+    policy.execute(request.build()?).await
+}
+
 /// Backoff strategy for rate limiting
 #[derive(Debug, Clone)]
 pub struct BackoffConfig {
@@ -83,10 +97,7 @@ impl RateLimitedClient {
 
         loop {
             if let Some(budget) = &self.budget {
-                let delay = budget.acquire();
-                if !delay.is_zero() {
-                    tokio::time::sleep(delay).await;
-                }
+                super::rate_budget::wait_for_budget(budget.as_ref()).await;
             }
 
             // Execute the request

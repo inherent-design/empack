@@ -36,10 +36,17 @@ fn configure_command_env(cmd: &mut Command, workdir: &Path) {
         std::fs::create_dir_all(&user_profile).expect("create USERPROFILE fallback");
         std::fs::create_dir_all(&temp_dir).expect("create TEMP fallback");
 
-        cmd.env("LOCALAPPDATA", local_app_data);
-        cmd.env("LocalAppData", workdir.join(".windows-localappdata"));
-        cmd.env("APPDATA", roaming_app_data);
-        cmd.env("USERPROFILE", user_profile);
+        // Known-folder APIs require the native profile layout when it is available.
+        for (key, fallback) in [
+            ("LOCALAPPDATA", local_app_data),
+            ("APPDATA", roaming_app_data),
+            ("USERPROFILE", user_profile),
+        ] {
+            cmd.env(
+                key,
+                std::env::var_os(key).unwrap_or_else(|| fallback.into_os_string()),
+            );
+        }
         cmd.env("TEMP", temp_dir.clone());
         cmd.env("TMP", temp_dir);
     }
@@ -97,7 +104,7 @@ fn write_failing_packwiz_binary(workdir: &Path) -> PathBuf {
 fn write_blocking_packwiz_binary(workdir: &Path, started_marker: &Path) -> PathBuf {
     let path = workdir.join("fake-packwiz-block");
     let script = format!(
-        "#!/bin/sh\nset -eu\nif [ \"${{3-}}\" = \"refresh\" ]; then\n  exit 0\nfi\nif [ \"${{3-}}\" = \"mr\" ] && [ \"${{4-}}\" = \"export\" ]; then\n  : > \"{}\"\n  sleep 20\n  exit 0\nfi\nexit 0\n",
+        "#!/bin/sh\nset -eu\nif [ \"${{1-}}\" = \"--cache\" ]; then shift 2; fi\nif [ \"${{3-}}\" = \"refresh\" ]; then\n  exit 0\nfi\nif [ \"${{3-}}\" = \"mr\" ] && [ \"${{4-}}\" = \"export\" ]; then\n  : > \"{}\"\n  sleep 20\n  exit 0\nfi\nexit 0\n",
         started_marker.display()
     );
     write_executable(&path, &script);
@@ -322,6 +329,12 @@ fn e2e_tracked_local_parent_dir_validation_exits_two() {
 #[test]
 fn e2e_packwiz_process_failure_exits_one() {
     let project = TestProject::workflow_fixture("exit-remove-fail", "fabric", "1.21.1");
+    std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
+    std::fs::write(
+        project.dir().join("pack/mods/sodium.pw.toml"),
+        "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'v1'\n",
+    )
+    .unwrap();
     let fake_packwiz = write_failing_packwiz_binary(project.dir());
 
     let output = binary_empack_cmd(project.dir())

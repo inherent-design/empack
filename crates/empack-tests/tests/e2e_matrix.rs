@@ -111,8 +111,8 @@ e2e_bad_flag_value!(
 
 e2e_bad_flag_value!(
     e2e_matrix_bad_project_type,
-    args: ["add", "--type", "world", "sodium"],
-    stderr_contains: "invalid value 'world'"
+    args: ["add", "--type", "invalid-content", "sodium"],
+    stderr_contains: "invalid value 'invalid-content'"
 );
 
 macro_rules! e2e_requires_modpack {

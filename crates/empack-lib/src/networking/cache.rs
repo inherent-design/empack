@@ -12,6 +12,31 @@ use super::NetworkingError;
 /// Default cache TTL (Time To Live) - 5 minutes
 const DEFAULT_CACHE_TTL_SECS: u64 = 300;
 
+// Compact JSON can expand raw bytes or escaped strings by at most six times.
+// Reserve metadata overhead per entry and keep the resulting snapshot below 64 MiB.
+const MAX_CACHE_BYTES: usize = 8 * 1024 * 1024;
+fn entry_bytes(url: &str, entry: &CachedResponse) -> usize {
+    url.len()
+        .saturating_add(entry.data.len())
+        .saturating_add(entry.etag.as_ref().map_or(0, String::len))
+        .saturating_add(256)
+}
+fn trim_cache(cache: &mut HashMap<String, CachedResponse>) {
+    let mut bytes: usize = cache
+        .iter()
+        .map(|(url, entry)| entry_bytes(url, entry))
+        .sum();
+    while cache.len() > 1024 || bytes > MAX_CACHE_BYTES {
+        let oldest = cache
+            .iter()
+            .min_by_key(|(_, entry)| entry.expires)
+            .map(|(url, _)| url.clone())
+            .expect("nonempty cache");
+        let removed = cache.remove(&oldest).expect("existing cache entry");
+        bytes -= entry_bytes(&oldest, &removed);
+    }
+}
+
 /// Cached HTTP response with ETag support
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedResponse {
@@ -83,6 +108,17 @@ impl HttpCache {
             return Ok(());
         }
 
+        let size = tokio::fs::metadata(&cache_file)
+            .await
+            .map_err(|e| NetworkingError::CacheError {
+                message: e.to_string(),
+            })?
+            .len();
+        if size > 64 * 1024 * 1024 {
+            return Err(NetworkingError::CacheError {
+                message: "HTTP cache exceeds 64 MiB load limit".into(),
+            });
+        }
         let data = tokio::fs::read_to_string(&cache_file).await.map_err(|e| {
             NetworkingError::CacheError {
                 message: format!("Failed to read cache file: {}", e),
@@ -100,7 +136,10 @@ impl HttpCache {
         let mut valid_count = 0;
         let mut expired_count = 0;
 
-        for (url, entry) in loaded_cache {
+        let mut loaded_entries = loaded_cache.into_iter().collect::<Vec<_>>();
+        loaded_entries.sort_unstable_by_key(|(_, entry)| std::cmp::Reverse(entry.expires));
+        loaded_entries.truncate(1024);
+        for (url, entry) in loaded_entries {
             if entry.expires > now {
                 cache.insert(url, entry);
                 valid_count += 1;
@@ -108,6 +147,8 @@ impl HttpCache {
                 expired_count += 1;
             }
         }
+
+        trim_cache(&mut cache);
 
         debug!(
             "Loaded cache from disk: {} valid entries, {} expired entries removed",
@@ -129,16 +170,25 @@ impl HttpCache {
             })?;
 
         let cache_file = self.cache_dir.join("http_cache.json");
-        let data =
-            serde_json::to_string_pretty(&*cache).map_err(|e| NetworkingError::CacheError {
-                message: format!("Failed to serialize cache: {}", e),
-            })?;
+        let data = serde_json::to_string(&*cache).map_err(|e| NetworkingError::CacheError {
+            message: format!("Failed to serialize cache: {}", e),
+        })?;
 
-        tokio::fs::write(&cache_file, data)
-            .await
-            .map_err(|e| NetworkingError::CacheError {
-                message: format!("Failed to write cache file: {}", e),
-            })?;
+        if data.len() > 64 * 1024 * 1024 {
+            return Err(NetworkingError::CacheError {
+                message: "HTTP cache exceeds 64 MiB persistence limit".into(),
+            });
+        }
+        tokio::task::spawn_blocking(move || {
+            crate::application::persistence::atomic_write(&cache_file, data.as_bytes())
+        })
+        .await
+        .map_err(|e| NetworkingError::CacheError {
+            message: format!("Cache writer failed: {e}"),
+        })?
+        .map_err(|e| NetworkingError::CacheError {
+            message: format!("Failed to publish cache: {e}"),
+        })?;
 
         debug!("Saved {} cache entries to disk", cache.len());
         Ok(())
@@ -154,7 +204,13 @@ impl HttpCache {
     pub async fn put(&self, url: String, response: CachedResponse) {
         {
             let mut cache = self.cache.write().await;
-            cache.insert(url, response);
+            if entry_bytes(&url, &response) <= MAX_CACHE_BYTES {
+                cache.insert(url, response);
+                trim_cache(&mut cache);
+            } else {
+                // A response that cannot be persisted must not evict unrelated entries.
+                cache.remove(&url);
+            }
         }
         self.persist_best_effort("put").await;
     }

@@ -223,6 +223,38 @@ fn create_7z_archive(source_dir: &Path, output_path: &Path) -> Result<(), Archiv
     Ok(())
 }
 
+/// Publish a ZIP with named file replacements, streaming the existing entries.
+/// Callers validate each source and destination against their workflow roots.
+pub fn overlay_zip(archive_path: &Path, additions: &[(PathBuf, String)]) -> anyhow::Result<()> {
+    let parent = archive_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Archive has no parent"))?;
+    let temporary = tempfile::NamedTempFile::new_in(parent)?;
+    let mut input = zip::ZipArchive::new(File::open(archive_path)?)?;
+    let mut output = zip::ZipWriter::new(temporary.reopen()?);
+    let names: std::collections::HashSet<_> =
+        additions.iter().map(|(_, name)| name.as_str()).collect();
+    anyhow::ensure!(
+        names.len() == additions.len(),
+        "Duplicate archive overlay destination"
+    );
+    for index in 0..input.len() {
+        let entry = input.by_index(index)?;
+        if !names.contains(entry.name()) {
+            output.raw_copy_file(entry)?;
+        }
+    }
+    for (source, name) in additions {
+        crate::empack::paths::validate_relative_destination(Path::new(""), Path::new(name))?;
+        output.start_file(name, zip::write::SimpleFileOptions::default())?;
+        std::io::copy(&mut File::open(source)?, &mut output)?;
+    }
+    output.finish()?.sync_all()?;
+    drop(input);
+    temporary.persist(archive_path).map_err(|e| e.error)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     include!("archive.test.rs");
