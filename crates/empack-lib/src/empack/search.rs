@@ -861,6 +861,7 @@ impl ProjectResolver {
             "resourcepack" => Some(ProjectType::ResourcePack),
             "shader" => Some(ProjectType::Shader),
             "datapack" => Some(ProjectType::Datapack),
+            "world" => Some(ProjectType::World),
             _ => None,
         }
     }
@@ -876,15 +877,13 @@ impl ProjectResolver {
 
     /// Get CurseForge class ID for project type.
     ///
-    /// Falls back to classId 6 (Mods) for unmapped types. This is intentional:
-    /// most CurseForge shader packs (e.g. Iris Shaders, Complementary) are
-    /// distributed as mods under classId 6. The CurseForge API does not expose
-    /// a confirmed shader-specific class ID via /v1/categories.
     fn curseforge_class_id(&self, project_type: &str) -> u32 {
         match project_type {
             "mod" => 6,
             "resourcepack" => 12,
-            "datapack" => 17,
+            "datapack" => 6945,
+            "shader" => 6552,
+            "world" => 17,
             other => {
                 debug!(
                     "No dedicated CurseForge classId for '{}', falling back to 6 (Mods)",
@@ -959,6 +958,7 @@ impl ProjectResolverTrait for ProjectResolver {
                     Some(12) => "resourcepack",
                     Some(6552) => "shader",
                     Some(6945) => "datapack",
+                    Some(17) => "world",
                     _ => "",
                 },
             };

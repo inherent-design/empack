@@ -2210,6 +2210,7 @@ fn content_folder_for_type(project_type: ProjectType) -> &'static str {
         ProjectType::ResourcePack => "resourcepacks",
         ProjectType::Shader => "shaderpacks",
         ProjectType::Datapack => "datapacks",
+        ProjectType::World => "saves",
     }
 }
 
@@ -2582,14 +2583,19 @@ async fn handle_direct_download_non_jar(
     }
 
     let project_type = explicit_project_type.ok_or_else(|| {
-        anyhow::anyhow!("Direct .zip URLs require --type resourcepack, shader, or datapack")
+        anyhow::anyhow!("Direct .zip URLs require --type resourcepack, shader, datapack, or world")
     })?;
 
     if !matches!(
         project_type,
-        ProjectType::ResourcePack | ProjectType::Shader | ProjectType::Datapack
+        ProjectType::ResourcePack
+            | ProjectType::Shader
+            | ProjectType::Datapack
+            | ProjectType::World
     ) {
-        anyhow::bail!("Direct .zip URLs support only --type resourcepack, shader, or datapack");
+        anyhow::bail!(
+            "Direct .zip URLs support only --type resourcepack, shader, datapack, or world"
+        );
     }
 
     let client = session.network().http_client()?;
@@ -2742,6 +2748,7 @@ fn tracked_local_dependency_relative_path(
         ProjectType::Mod => format!("pack/mods/{filename}"),
         ProjectType::ResourcePack => format!("pack/resourcepacks/{filename}"),
         ProjectType::Shader => format!("pack/shaderpacks/{filename}"),
+        ProjectType::World => format!("pack/saves/{filename}"),
         ProjectType::Datapack => format!(
             "pack/{}/{filename}",
             datapack_folder.unwrap_or(content_folder_for_type(ProjectType::Datapack))
@@ -4200,6 +4207,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                         "resourcepack" => ProjectType::ResourcePack,
                         "shader" => ProjectType::Shader,
                         "datapack" => ProjectType::Datapack,
+                        "world" => ProjectType::World,
                         _ => ProjectType::Mod,
                     };
 

@@ -181,7 +181,7 @@ pub async fn resolve_sync_action(
                 version_pin,
             } => {
                 if !project_id.is_empty() {
-                    let commands = build_packwiz_add_commands(
+                    let mut commands = build_packwiz_add_commands(
                         project_id,
                         *project_platform,
                         version_pin.as_deref(),
@@ -191,6 +191,13 @@ pub async fn resolve_sync_action(
                         platform: *project_platform,
                         source,
                     })?;
+                    for command in &mut commands {
+                        crate::empack::packwiz::append_content_type_override(
+                            command,
+                            *project_platform,
+                            dep.project_type,
+                        );
+                    }
                     return Ok(SyncExecutionAction::Add {
                         key: dep.key.clone(),
                         title: dep.search_query.clone(),
@@ -266,6 +273,7 @@ pub async fn resolve_add_contract(
         "resourcepack" => ProjectType::ResourcePack,
         "shader" => ProjectType::Shader,
         "datapack" => ProjectType::Datapack,
+        "world" => ProjectType::World,
         _ => ProjectType::Mod,
     };
     if project_type.is_some_and(|requested| requested != resolved) {
@@ -282,7 +290,7 @@ pub async fn resolve_add_contract(
     let confidence = (!direct).then_some(project.confidence);
     let resolved_type = Some(resolved);
 
-    let commands =
+    let mut commands =
         build_packwiz_add_commands(&project_id, platform, version_pin).map_err(|source| {
             AddContractError::PlanPackwizAdd {
                 project_id: project_id.clone(),
@@ -291,6 +299,9 @@ pub async fn resolve_add_contract(
             }
         })?;
 
+    for command in &mut commands {
+        crate::empack::packwiz::append_content_type_override(command, platform, resolved);
+    }
     Ok(AddResolution {
         requested_pin: version_pin.map(str::to_owned),
         title,
@@ -341,6 +352,7 @@ pub fn project_type_arg(project_type: ProjectType) -> &'static str {
     match project_type {
         ProjectType::Mod => "mod",
         ProjectType::Datapack => "datapack",
+        ProjectType::World => "world",
         ProjectType::ResourcePack => "resourcepack",
         ProjectType::Shader => "shader",
     }

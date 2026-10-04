@@ -1488,6 +1488,9 @@ def run_single_curated_pack(
             "warnings": init_result.warnings[:20],
         }
         if not init_result.success:
+            entry["import_result"]["output_tail"] = (
+                init_result.stdout + "\n" + init_result.stderr
+            )[-4000:]
             return entry, "init failed", False
 
         build_result = run_curated_build(

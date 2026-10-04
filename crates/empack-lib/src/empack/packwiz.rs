@@ -15,6 +15,25 @@ use crate::empack::state::StateError;
 use crate::empack::versions::{canonicalize_forge_loader_version, uses_legacy_forge_coordinate};
 use crate::primitives::ProjectPlatform;
 
+/// The pinned backend's online CurseForge routing does not recognize shaders.
+/// Use the resolved type consistently for direct add, sync and import.
+pub fn append_content_type_override(
+    args: &mut Vec<String>,
+    platform: crate::primitives::ProjectPlatform,
+    kind: crate::primitives::ProjectType,
+) {
+    if platform == crate::primitives::ProjectPlatform::CurseForge {
+        let folder = match kind {
+            crate::primitives::ProjectType::Shader => Some("shaderpacks"),
+            crate::primitives::ProjectType::World => Some("saves"),
+            _ => None,
+        };
+        if let Some(folder) = folder {
+            args.extend(["--meta-folder".into(), folder.into()]);
+        }
+    }
+}
+
 /// Binary name for packwiz CLI operations.
 ///
 /// Uses `packwiz-tx` fork (mannie-exe/packwiz-tx) which adds `--no-refresh`
@@ -203,6 +222,7 @@ impl<'a> LivePackwizOps<'a> {
             "resourcepacks".to_string(),
             "shaderpacks".to_string(),
             "datapacks".to_string(),
+            "saves".to_string(),
         ]);
         if self.filesystem.exists(&workdir.join("empack.yml"))
             && let Some(folder) = self
@@ -379,6 +399,8 @@ impl PackwizOps for LivePackwizOps<'_> {
                     crate::primitives::ProjectType::Mod
                 } else if path.starts_with(pack.join("resourcepacks")) {
                     crate::primitives::ProjectType::ResourcePack
+                } else if path.starts_with(pack.join("saves")) {
+                    crate::primitives::ProjectType::World
                 } else if path.starts_with(pack.join("shaderpacks")) {
                     crate::primitives::ProjectType::Shader
                 } else {

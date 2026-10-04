@@ -17,7 +17,7 @@ fn fixture(project: &TestProject, url: &str, hash: &str, optional: bool) -> std:
     let manifest = serde_json::json!({
         "formatVersion":1,"game":"minecraft","name":"verified-url","versionId":"1.0.0",
         "dependencies":{"minecraft":"1.21.1","fabric-loader":"0.15.11"},
-        "files":[{"path":"resourcepacks/declared.zip","downloads":[url],"fileSize":7,
+        "files":[{"path":"resourcepacks/declared.zip","downloads":[url,format!("{url}/fallback")],"fileSize":7,
             "hashes":{"sha256":hash},"env":{"client":if optional {"optional"} else {"required"},"server":"unsupported"}}]
     });
     std::fs::write(
@@ -76,6 +76,14 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
     assert!(!metadata.exists());
     run(&imported, &["sync"]);
     assert_eq!(std::fs::read_to_string(&metadata).unwrap(), original);
+    let _unavailable = server
+        .mock("GET", "/different-name.bin")
+        .with_status(503)
+        .create();
+    let _fallback = server
+        .mock("GET", "/different-name.bin/fallback")
+        .with_body("payload")
+        .create();
     run(&imported, &["build", "mrpack"]);
     let artifact = assert_dist_artifact_suffix(&imported, ".mrpack");
     let inspect = imported.join("inspect");
@@ -89,6 +97,17 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
     assert_eq!(manifest["files"][0]["env"]["client"], "optional");
     assert_eq!(manifest["files"][0]["env"]["server"], "unsupported");
     assert_eq!(manifest["files"][0]["fileSize"], 7);
+    assert_eq!(
+        manifest["files"][0]["downloads"].as_array().unwrap().len(),
+        2
+    );
+    assert!(
+        std::fs::read_to_string(&metadata)
+            .unwrap()
+            .contains("/different-name.bin/fallback")
+    );
+    run(&imported, &["sync"]);
+    run(&imported, &["sync"]);
     run(&imported, &["remove", "url:resourcepacks/declared.zip"]);
     run(&imported, &["sync"]);
     assert!(!metadata.exists());
@@ -230,4 +249,94 @@ async fn e2e_batched_provider_import_preserves_optional_requirements_through_exp
         .args(["build", "mrpack"])
         .assert()
         .failure();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn e2e_curseforge_import_places_each_content_type_in_its_own_directory() {
+    use empack_lib::application::{AppConfig, session::CommandSession};
+    use empack_lib::empack::parsing::ModLoader;
+    use empack_lib::empack::{
+        ContentEntry, ImportConfig, ModpackManifest, PackIdentity, PlatformRef, ResolvedManifest,
+        RuntimeTarget, SideEnv, SideRequirement, execute_import,
+    };
+    use empack_lib::primitives::{ProjectPlatform, ProjectType};
+    empack_tests::skip_if_no_packwiz!();
+    let project = TestProject::new();
+    let target = project.dir().join("imported");
+    let session = CommandSession::new(AppConfig {
+        workdir: Some(target.clone()),
+        ..Default::default()
+    });
+    let cases = [
+        ("shaderpacks", ProjectType::Shader, 6552),
+        ("resourcepacks", ProjectType::ResourcePack, 12),
+        ("mods", ProjectType::Mod, 6),
+        ("saves", ProjectType::World, 17),
+    ];
+    let content = cases
+        .iter()
+        .enumerate()
+        .map(|(i, (folder, kind, class))| {
+            ContentEntry::PlatformReferenced(PlatformRef {
+                destination_path: format!("{folder}/fixture.zip"),
+                platform: ProjectPlatform::CurseForge,
+                project_id: (100 + i).to_string(),
+                file_id: Some((200 + i).to_string()),
+                hashes: [("sha1".into(), "a".repeat(40))].into(),
+                download_urls: vec![],
+                env: SideEnv {
+                    client: SideRequirement::Required,
+                    server: SideRequirement::Required,
+                },
+                required: true,
+                resolved_name: Some(folder.to_string()),
+                resolved_slug: Some(folder.to_string()),
+                resolved_type: Some(*kind),
+                cf_class_id: Some(*class),
+            })
+        })
+        .collect();
+    execute_import(
+        ResolvedManifest {
+            manifest: ModpackManifest {
+                identity: PackIdentity {
+                    name: "types".into(),
+                    version: "1.0.0".into(),
+                    author: None,
+                    summary: None,
+                },
+                target: RuntimeTarget {
+                    minecraft_version: "1.21.1".into(),
+                    loader: ModLoader::Fabric,
+                    loader_version: "0.15.11".into(),
+                },
+                content,
+                overrides: vec![],
+                source_platform: ProjectPlatform::CurseForge,
+                archive_path: project.dir().join("unused.zip"),
+            },
+            warnings: vec![],
+        },
+        ImportConfig {
+            target_dir: target.clone(),
+            pack_name: "types".into(),
+            author: "Test".into(),
+            version: "1.0.0".into(),
+            datapack_folder: None,
+            acceptable_game_versions: None,
+        },
+        &session,
+    )
+    .await
+    .unwrap();
+    for (folder, _, _) in cases {
+        assert!(
+            target
+                .join(format!("pack/{folder}/{folder}.pw.toml"))
+                .is_file()
+        );
+        assert!(!target.join(format!("pack/{folder}.pw.toml")).exists());
+    }
+    run(&target, &["sync"]);
+    run(&target, &["sync"]);
 }

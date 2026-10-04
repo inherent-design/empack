@@ -72,7 +72,12 @@ fn test_curseforge_class_id() {
 
     assert_eq!(resolver.curseforge_class_id("mod"), 6);
     assert_eq!(resolver.curseforge_class_id("resourcepack"), 12);
-    assert_eq!(resolver.curseforge_class_id("datapack"), 17);
+    assert_eq!(resolver.curseforge_class_id("datapack"), 6945);
+    assert_eq!(resolver.curseforge_class_id("shader"), 6552);
+    assert_eq!(resolver.curseforge_class_id("world"), 17);
+    assert_eq!(ProjectType::Datapack.curseforge_class_id(), 6945);
+    assert_eq!(ProjectType::Shader.curseforge_class_id(), 6552);
+    assert_eq!(ProjectType::World.curseforge_class_id(), 17);
     assert_eq!(resolver.curseforge_class_id("unknown"), 6);
 }
 

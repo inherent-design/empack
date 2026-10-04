@@ -342,6 +342,7 @@ pub enum CliProjectType {
     #[value(name = "resourcepack")]
     ResourcePack,
     Shader,
+    World,
 }
 
 impl CliProjectType {
@@ -351,6 +352,7 @@ impl CliProjectType {
             CliProjectType::Datapack => crate::primitives::ProjectType::Datapack,
             CliProjectType::ResourcePack => crate::primitives::ProjectType::ResourcePack,
             CliProjectType::Shader => crate::primitives::ProjectType::Shader,
+            CliProjectType::World => crate::primitives::ProjectType::World,
         }
     }
 }

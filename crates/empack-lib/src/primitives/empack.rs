@@ -12,6 +12,8 @@ pub enum ProjectType {
     ResourcePack,
     /// Shader project
     Shader,
+    /// World archive project stored under saves
+    World,
 }
 
 impl ProjectType {
@@ -30,20 +32,19 @@ impl ProjectType {
             ProjectType::ResourcePack => "resourcepack",
             ProjectType::Shader => "shader",
             ProjectType::Datapack => "datapack",
+            ProjectType::World => "world",
         }
     }
 
     /// CurseForge classId for this project type.
     ///
-    /// Shaders fall back to classId 6 (Mods) because most CurseForge shader
-    /// packs are distributed as mods. CurseForge does have classId 6552 for
-    /// shaders but it is unverified against the live API.
     pub fn curseforge_class_id(&self) -> u32 {
         match self {
             ProjectType::Mod => 6,
             ProjectType::ResourcePack => 12,
-            ProjectType::Shader => 6,
-            ProjectType::Datapack => 17,
+            ProjectType::Shader => 6552,
+            ProjectType::Datapack => 6945,
+            ProjectType::World => 17,
         }
     }
 }

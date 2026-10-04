@@ -1102,7 +1102,7 @@ async fn resolve_curseforge_project_with_client(
         6 => crate::primitives::ProjectType::Mod,
         5 => crate::primitives::ProjectType::Mod,
         12 => crate::primitives::ProjectType::ResourcePack,
-        17 => crate::primitives::ProjectType::Datapack,
+        17 => crate::primitives::ProjectType::World,
         6945 => crate::primitives::ProjectType::Datapack,
         6552 => crate::primitives::ProjectType::Shader,
         _ => crate::primitives::ProjectType::Mod,
@@ -1335,7 +1335,8 @@ pub async fn execute_import(
         .filesystem()
         .config_manager(config.target_dir.clone());
 
-    let mut content_dirs: Vec<&str> = vec!["mods", "resourcepacks", "shaderpacks", "datapacks"];
+    let mut content_dirs: Vec<&str> =
+        vec!["mods", "resourcepacks", "shaderpacks", "datapacks", "saves"];
     if let Some(ref df) = datapack_folder
         && !content_dirs.contains(&df.as_str())
     {
@@ -1742,6 +1743,7 @@ async fn add_platform_ref(
                         crate::primitives::ProjectType::ResourcePack => "resourcepack",
                         crate::primitives::ProjectType::Shader => "shader",
                         crate::primitives::ProjectType::Datapack => "datapack",
+                        crate::primitives::ProjectType::World => "world",
                     };
                     args.push("--project-type".to_string());
                     args.push(pt_str.to_string());
@@ -1823,6 +1825,14 @@ async fn add_platform_ref(
                     args.push("--class-id".to_string());
                     args.push(class_id.to_string());
                 }
+            }
+
+            if let Some(kind) = pref.resolved_type {
+                crate::empack::packwiz::append_content_type_override(
+                    &mut args,
+                    pref.platform,
+                    kind,
+                );
             }
 
             if pref.cf_class_id == Some(6945)

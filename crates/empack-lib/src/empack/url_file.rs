@@ -54,6 +54,12 @@ pub fn requirements(env: &SideEnv) -> Result<(&'static str, bool)> {
     }
 }
 
+struct VerifiedDownload {
+    url: String,
+    hashes: BTreeMap<String, String>,
+    size: u64,
+}
+
 impl UrlDependencyRecord {
     pub fn metadata_relative_path(&self) -> PathBuf {
         let path = Path::new(&self.destination);
@@ -196,6 +202,10 @@ impl UrlDependencyRecord {
     }
 
     pub async fn verify_download(&self, session: &dyn Session) -> Result<String> {
+        Ok(self.verify_download_details(session).await?.url)
+    }
+
+    async fn verify_download_details(&self, session: &dyn Session) -> Result<VerifiedDownload> {
         self.validate()?;
         let client = session.network().http_client()?;
         let mut failures = Vec::new();
@@ -215,25 +225,32 @@ impl UrlDependencyRecord {
                         "Source file size mismatch"
                     );
                 }
-                for (algorithm, expected) in &self.hashes {
+                let mut hashes = BTreeMap::new();
+                for algorithm in ["sha1", "sha256", "sha512"] {
                     staged.as_file_mut().rewind()?;
-                    let actual = match algorithm.as_str() {
+                    let digest = match algorithm {
                         "sha1" => digest_reader::<sha1::Sha1>(staged.as_file_mut())?,
                         "sha256" => digest_reader::<sha2::Sha256>(staged.as_file_mut())?,
-                        "sha512" => digest_reader::<sha2::Sha512>(staged.as_file_mut())?,
-                        _ => continue,
+                        _ => digest_reader::<sha2::Sha512>(staged.as_file_mut())?,
                     };
-                    ensure!(
-                        actual.eq_ignore_ascii_case(expected),
-                        "Source {algorithm} digest mismatch for {}",
-                        self.destination
-                    );
+                    if let Some(expected) = self.hashes.get(algorithm) {
+                        ensure!(
+                            digest.eq_ignore_ascii_case(expected),
+                            "Source {algorithm} digest mismatch for {}",
+                            self.destination
+                        );
+                    }
+                    hashes.insert(algorithm.to_string(), digest);
                 }
-                Ok::<_, anyhow::Error>(())
+                Ok::<_, anyhow::Error>(VerifiedDownload {
+                    url: url.clone(),
+                    hashes,
+                    size: staged.as_file().metadata()?.len(),
+                })
             }
             .await;
             match result {
-                Ok(()) => return Ok(url.clone()),
+                Ok(verified) => return Ok(verified),
                 Err(error) => {
                     session.process().check_cancelled()?;
                     failures.push(format!("{error:#}"));
@@ -256,11 +273,49 @@ impl UrlDependencyRecord {
         let path = self.metadata_path(fs, workdir)?;
         if fs.exists(&path) {
             ensure!(self.is_installed(fs, workdir)?, "URL metadata collision");
-            return Ok(());
+            if toml::from_str::<toml::Value>(&fs.read_to_string(&path)?)?
+                == self.metadata(verified_url)?
+            {
+                return Ok(());
+            }
         }
         fs.create_dir_all(path.parent().unwrap())?;
         fs.write_atomic(&path, &toml::to_string(&self.metadata(verified_url)?)?)
     }
+}
+
+/// Verify alternatives for this invocation before switching any installed URL.
+/// Returned hashes are observations of bytes already checked against source intent.
+pub async fn prepare_build(
+    session: &dyn Session,
+    workdir: &Path,
+) -> Result<Vec<UrlDependencyRecord>> {
+    let config = session
+        .filesystem()
+        .config_manager(workdir.to_path_buf())
+        .load_empack_config()?;
+    let mut prepared = Vec::new();
+    for entry in config.empack.dependencies.values() {
+        if let super::config::DependencyEntry::Url(record) = entry {
+            ensure!(
+                record.is_installed(session.filesystem(), workdir)?,
+                "Missing URL metadata; run sync"
+            );
+            prepared.push((record, record.verify_download_details(session).await?));
+        }
+    }
+    let mut observed = Vec::new();
+    for (record, verified) in &prepared {
+        record.publish(session.filesystem(), workdir, &verified.url)?;
+        let mut export_record = (*record).clone();
+        export_record.hashes.extend(verified.hashes.clone());
+        export_record.size = Some(verified.size);
+        observed.push(export_record);
+    }
+    if !prepared.is_empty() {
+        session.packwiz().run_packwiz_refresh(workdir)?;
+    }
+    Ok(observed)
 }
 
 fn digest_reader<D: Digest + Default>(reader: &mut dyn Read) -> Result<String> {
@@ -306,28 +361,32 @@ pub fn verify_export(
     fs: &dyn FileSystemProvider,
     archive: &Path,
     records: &[&UrlDependencyRecord],
-) -> Result<()> {
+) -> Result<Vec<u8>> {
     let mut zip = zip::ZipArchive::new(fs.open_reader(archive)?)?;
     let entry = zip.by_name("modrinth.index.json")?;
     ensure!(
         entry.size() <= 16 * 1024 * 1024,
         "Export manifest exceeds size limit"
     );
-    let manifest: serde_json::Value = serde_json::from_reader(entry.take(16 * 1024 * 1024 + 1))?;
+    let mut manifest: serde_json::Value =
+        serde_json::from_reader(entry.take(16 * 1024 * 1024 + 1))?;
     let files = manifest["files"]
-        .as_array()
+        .as_array_mut()
         .context("Export has no file manifest")?;
     for record in records {
         let matches: Vec<_> = files
             .iter()
-            .filter(|entry| entry["path"].as_str() == Some(&record.destination))
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                (entry["path"].as_str() == Some(&record.destination)).then_some(index)
+            })
             .collect();
         ensure!(
             matches.len() == 1,
             "Export omitted or duplicated declared URL file: {}",
             record.destination
         );
-        let entry = matches[0];
+        let entry = &mut files[matches[0]];
         let (side, optional) = requirements(&record.env)?;
         let required = if optional { "optional" } else { "required" };
         ensure!(
@@ -352,6 +411,7 @@ pub fn verify_export(
                 "Export changed declared file size"
             );
         }
+        let mut matched = false;
         for (algorithm, digest) in &record.hashes {
             if let Some(exported) = entry["hashes"][algorithm].as_str() {
                 ensure!(
@@ -359,10 +419,27 @@ pub fn verify_export(
                     "Export changed source digest for {}",
                     record.destination
                 );
+                matched |= matches!(algorithm.as_str(), "sha1" | "sha256" | "sha512");
             }
         }
+        ensure!(
+            matched,
+            "Export lacks a matching source digest for {}",
+            record.destination
+        );
+        let downloads = entry["downloads"]
+            .as_array()
+            .context("Export lacks downloads")?;
+        ensure!(
+            !downloads.is_empty()
+                && downloads.iter().all(|url| url
+                    .as_str()
+                    .is_some_and(|url| record.downloads.iter().any(|declared| declared == url))),
+            "Export changed declared download URLs"
+        );
+        entry["downloads"] = serde_json::to_value(&record.downloads)?;
     }
-    Ok(())
+    Ok(serde_json::to_vec(&manifest)?)
 }
 
 #[cfg(test)]
@@ -433,6 +510,35 @@ mod tests {
             manager.find_dependency("resources").unwrap().unwrap().1,
             super::super::config::DependencyEntry::Url(record)
         );
+    }
+
+    #[test]
+    fn export_requires_a_matching_source_digest() {
+        use std::io::Write;
+        let root = tempfile::tempdir().unwrap();
+        let record = record("https://example.com/file.zip".into());
+        for hashes in [
+            serde_json::json!({}),
+            serde_json::json!({"md5":"anything"}),
+            serde_json::json!({"sha256":"0".repeat(64)}),
+        ] {
+            let path = root.path().join("export.mrpack");
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+            zip.start_file(
+                "modrinth.index.json",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            let manifest = serde_json::json!({"files":[{"path":record.destination,"fileSize":7,
+                "env":{"client":"optional","server":"unsupported"},"hashes":hashes}]});
+            zip.write_all(&serde_json::to_vec(&manifest).unwrap())
+                .unwrap();
+            zip.finish().unwrap();
+            assert!(
+                verify_export(&LiveFileSystemProvider, &path, &[&record]).is_err(),
+                "{hashes}"
+            );
+        }
     }
 
     #[test]

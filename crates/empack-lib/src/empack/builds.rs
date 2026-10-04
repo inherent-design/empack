@@ -107,6 +107,7 @@ pub struct BuildOrchestrator<'a> {
     pack_refreshed: bool,
     mrpack_extracted: bool,
     mrpack_built: bool,
+    verified_url_files: Vec<super::url_file::UrlDependencyRecord>,
 
     pack_info: Option<PackInfo>,
 
@@ -270,6 +271,7 @@ impl<'a> BuildOrchestrator<'a> {
             pack_refreshed: false,
             mrpack_extracted: false,
             mrpack_built: false,
+            verified_url_files: Vec::new(),
             pack_info: None,
             archive_format,
             continue_full_builds: false,
@@ -1234,22 +1236,33 @@ impl<'a> BuildOrchestrator<'a> {
             });
         }
 
-        let url_files: Vec<_> = manifest
-            .empack
-            .dependencies
-            .values()
-            .filter_map(|entry| match entry {
-                super::config::DependencyEntry::Url(record) => Some(record),
-                _ => None,
-            })
-            .collect();
+        let url_files: Vec<_> = self.verified_url_files.iter().collect();
+        let mut export_index = None;
         if !url_files.is_empty() {
-            super::url_file::verify_export(self.session.filesystem(), &output_file, &url_files)
+            use std::io::Write;
+            let updated =
+                super::url_file::verify_export(self.session.filesystem(), &output_file, &url_files)
+                    .map_err(|e| BuildError::ConfigError {
+                        reason: e.to_string(),
+                    })?;
+            let mut temporary =
+                tempfile::NamedTempFile::new().map_err(|e| BuildError::ConfigError {
+                    reason: e.to_string(),
+                })?;
+            temporary
+                .write_all(&updated)
                 .map_err(|e| BuildError::ConfigError {
                     reason: e.to_string(),
                 })?;
+            export_index = Some(temporary);
         }
         let mut additions = Vec::new();
+        if let Some(index) = &export_index {
+            additions.push((
+                index.path().to_path_buf(),
+                "modrinth.index.json".to_string(),
+            ));
+        }
         for side in [OverrideSide::ClientOnly, OverrideSide::ServerOnly] {
             let root = self.workdir.join(side.project_directory());
             if self.session.filesystem().exists(&root) {
@@ -1574,6 +1587,11 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: format!("Failed to begin build transition: {:?}", e),
             })?;
 
+        self.verified_url_files = super::url_file::prepare_build(self.session, &self.workdir)
+            .await
+            .map_err(|e| BuildError::ValidationError {
+                reason: e.to_string(),
+            })?;
         let result = self.execute_build_pipeline_inner(targets);
 
         let temp_extract = self.dist_dir.join("temp-mrpack-extract");

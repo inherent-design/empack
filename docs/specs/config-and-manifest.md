@@ -182,3 +182,5 @@ resolved record. Unpinned requests remain unpinned. Backend installation and
 manifest publication are separate steps: if publication fails, add and import
 return an incomplete-operation error naming the installed dependency and the
 manifest that needs repair. They do not report full success or imply rollback.
+
+World archives use `type: world` and live under `pack/saves/`. CurseForge class 17 identifies worlds; datapacks use class 6945. Import preserves the downloaded world archive without automatically extracting it. Direct local ZIP additions also accept `--type world`.
