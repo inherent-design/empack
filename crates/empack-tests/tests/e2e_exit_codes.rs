@@ -329,6 +329,12 @@ fn e2e_tracked_local_parent_dir_validation_exits_two() {
 #[test]
 fn e2e_packwiz_process_failure_exits_one() {
     let project = TestProject::workflow_fixture("exit-remove-fail", "fabric", "1.21.1");
+    std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
+    std::fs::write(
+        project.dir().join("pack/mods/sodium.pw.toml"),
+        "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'v1'\n",
+    )
+    .unwrap();
     let fake_packwiz = write_failing_packwiz_binary(project.dir());
 
     let output = binary_empack_cmd(project.dir())

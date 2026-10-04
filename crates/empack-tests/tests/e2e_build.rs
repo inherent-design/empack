@@ -187,5 +187,5 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
         .args(["--dry-run", "build", "client"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("must be stored under pack/"));
+        .stdout(predicates::str::contains("must be stored under pack/"));
 }

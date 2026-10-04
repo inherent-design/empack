@@ -34,6 +34,7 @@ async fn e2e_remove_single_mod() -> Result<()> {
     let workdir = mock_root().join("workdir");
     let session = MockSessionBuilder::new()
         .with_empack_project("remove-single", "1.21.1", "fabric")
+        .with_installed_mods(["sodium".to_string(), "fabric_api".to_string()].into())
         .with_yes_flag()
         .with_file(
             workdir.join("empack.yml"),
@@ -85,6 +86,7 @@ async fn e2e_remove_multiple_mods() -> Result<()> {
     let workdir = mock_root().join("workdir");
     let session = MockSessionBuilder::new()
         .with_empack_project("remove-multi", "1.21.1", "fabric")
+        .with_installed_mods(["sodium".to_string(), "fabric_api".to_string()].into())
         .with_yes_flag()
         .with_file(
             workdir.join("empack.yml"),
