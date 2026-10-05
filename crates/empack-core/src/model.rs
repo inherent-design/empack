@@ -538,6 +538,14 @@ impl ResolutionLock {
                         return Err(invalid("File selection differs from owning dependency"));
                     }
                 }
+                if let AcquisitionSpec::Manual { pin: Some(pin), .. } = &file.acquisition {
+                    pin.validate()?;
+                    if dependency.selected.as_ref() != Some(pin) {
+                        return Err(invalid(
+                            "Manual file selection differs from owning dependency",
+                        ));
+                    }
+                }
                 for placement in file.placements.as_slice() {
                     validate_placement(placement)?;
                     if !destinations

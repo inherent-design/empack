@@ -64,52 +64,15 @@ impl InstalledDependency {
         project_type: ProjectType,
         metadata: &toml::Value,
     ) -> anyhow::Result<Self> {
-        let mut result = Self {
+        let provider = crate::engine::backend::provider_observation(metadata, &key)?;
+        Ok(Self {
             key,
-            identity: None,
-            version: None,
-        };
-        for (platform, id_field, version_field) in [
-            (ProjectPlatform::Modrinth, "mod-id", "version"),
-            (ProjectPlatform::CurseForge, "project-id", "file-id"),
-        ] {
-            let Some(update) = metadata
-                .get("update")
-                .and_then(|v| v.get(platform.to_string()))
-            else {
-                continue;
-            };
-            anyhow::ensure!(
-                result.identity.is_none(),
-                "Ambiguous provider identity for {}",
-                result.key
-            );
-            let field = |key| {
-                update
-                    .get(key)
-                    .map(|v| match v {
-                        toml::Value::String(s) => Ok(s.clone()),
-                        toml::Value::Integer(n) => Ok(n.to_string()),
-                        _ => Err(anyhow::anyhow!(
-                            "Invalid provider field {key} in {}",
-                            result.key
-                        )),
-                    })
-                    .transpose()
-            };
-            let project_id = field(id_field)?
-                .filter(|id| !id.is_empty())
-                .ok_or_else(|| anyhow::anyhow!("Missing provider identity in {}", result.key))?;
-            result.identity = Some(DependencyIdentity::parse(
-                platform,
-                &project_id,
+            version: provider.as_ref().and_then(|value| value.selection.clone()),
+            identity: provider.map(|value| DependencyIdentity {
+                project: value.project,
                 project_type,
-            )?);
-            result.version = field(version_field)?
-                .map(|value| result.identity.as_ref().unwrap().project.parse_pin(&value))
-                .transpose()?;
-        }
-        Ok(result)
+            }),
+        })
     }
 }
 

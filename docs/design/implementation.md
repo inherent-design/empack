@@ -512,3 +512,18 @@ subprocess crash fixtures. Nextest reported a pipe-leak warning on an existing
 reader-only test; its isolated reader-suite repeat is checked separately. All-feature
 Clippy and Windows test cross-compilation passed before the final explicit-policy
 parameter adjustment. Native execution remains a CI gate.
+
+## Backend observations
+
+Commands and the normalized backend adapter now share canonical provider and pin
+decoding. Backend observations also preserve installed destination, source digest,
+environment and optional defaults/descriptions. Metadata filenames remain separate
+from provider identity. Malformed paths, fields and ambiguous providers fail.
+These observations describe installed state; they do not prove downloaded bytes.
+
+The wire interpretation follows the pinned
+[packwiz metadata model](https://github.com/mannie-exe/packwiz-tx/blob/v0.2.0/core/mod.go).
+The normalized lock also rejects a manual acquisition pin that differs from its
+owning exact selection. That regression failed before the correction. Sixteen
+affected backend/document tests pass; build enumeration and command cutover remain
+pending.

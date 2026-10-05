@@ -118,6 +118,27 @@ fn normalized_documents_round_trip_all_file_slots_and_weak_source_evidence() {
 }
 
 #[test]
+fn manual_file_selection_must_match_its_owning_exact_provider_pin() {
+    let source = decoded();
+    for matching in [true, false] {
+        let mut lock = resolution(&source);
+        let dependency = lock.dependencies.values_mut().next().unwrap();
+        let mut pin = dependency.selected.clone().unwrap();
+        if !matching {
+            pin.selection =
+                PinSelector::ModrinthVersion(ModrinthVersionId::parse("Version2").unwrap());
+        }
+        let mut files = dependency.files.as_slice().to_vec();
+        files[0].acquisition = AcquisitionSpec::Manual {
+            pin: Some(pin),
+            instructions: "Select the requested download".into(),
+        };
+        dependency.files = NonEmpty::new(files).unwrap();
+        assert_eq!(lock.validate_structure().is_ok(), matching);
+    }
+}
+
+#[test]
 fn comment_edits_have_same_semantics_but_distinct_raw_revisions() {
     let bytes = serde_saphyr::to_string(&source()).unwrap();
     let a = DocumentCodec.decode_intent(bytes.as_bytes(), "a").unwrap();
