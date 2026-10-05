@@ -135,3 +135,30 @@ fn stage_directory_is_private_even_with_a_permissive_process_umask() {
         0o700
     );
 }
+
+#[test]
+fn abandoned_writers_and_seekable_candidates_release_private_storage() {
+    let stage = MutableStage::empty().unwrap();
+    let location = stage.storage.path().to_owned();
+    drop(stage);
+    assert!(!location.exists());
+    let mut candidate = PrivateFile::new().unwrap();
+    let location = candidate._storage.storage.path().to_owned();
+    candidate.file().write_all(b"private bytes").unwrap();
+    candidate.file().rewind().unwrap();
+    let mut bytes = Vec::new();
+    candidate.file().read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"private bytes");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            candidate.file().metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    #[cfg(windows)]
+    crate::engine::windows_privacy::verify(&candidate._storage.root.directory).unwrap();
+    drop(candidate);
+    assert!(!location.exists());
+}

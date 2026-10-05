@@ -600,3 +600,16 @@ The optional-overlay finding describes a format limitation, not a lossless expor
 that the implementation can produce. A regression requires refusal of a selectable
 client replacement with a common fallback; the mrpack contract documents why
 metadata-loss acknowledgement cannot authorize that different conversion.
+
+Seekable archive candidates now use the same protected native storage as staging.
+The candidate file closes before its parent is released. Mutable-stage fields also
+close the retained root before temporary-directory cleanup, which matters for
+Windows handles without delete sharing. Eleven affected storage/reader/build tests,
+all-feature Clippy and Windows test cross-compilation pass; native Windows execution
+remains a CI gate.
+
+At `689c024`, the full default suite passed 1,480 tests and ten doctests. The next
+full run at `4be1023` passed 1,480 of 1,484 tests; four existing tool-probe tests
+timed out and selected fallback behavior. All four passed in isolation. A full
+rerun without concurrent compilation is required; the isolated pass does not
+establish a fix or a green full run.

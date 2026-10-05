@@ -23,10 +23,11 @@ static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 /// No live project path or writable file handle is exposed by the stage writer.
 pub struct MutableStage {
+    // Native handles must close before TempDir cleanup, especially without Windows delete sharing.
+    root: ProjectReadRoot,
     storage: TempDir,
     #[cfg(windows)]
     private_parent: TempDir,
-    root: ProjectReadRoot,
 }
 impl MutableStage {
     pub fn empty() -> Result<Self> {
@@ -325,6 +326,38 @@ pub(super) fn create_temporary(parent: &Dir) -> Result<(String, File)> {
         }
     }
     anyhow::bail!("Cannot allocate private candidate file")
+}
+
+/// Private seekable scratch storage for native archive adapters. The file closes before its
+/// protected parent is released. This is not a stage that can be frozen or published directly.
+pub(super) struct PrivateFile {
+    file: File,
+    _storage: MutableStage,
+}
+impl PrivateFile {
+    pub(super) fn new() -> Result<Self> {
+        let storage = MutableStage::empty()?;
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(true);
+        options.follow(FollowSymlinks::No);
+        #[cfg(unix)]
+        {
+            use cap_std::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = storage
+            .root
+            .directory
+            .open_with("candidate", &options)?
+            .into_std();
+        Ok(Self {
+            file,
+            _storage: storage,
+        })
+    }
+    pub(super) fn file(&mut self) -> &mut File {
+        &mut self.file
+    }
 }
 
 #[cfg(test)]

@@ -258,8 +258,8 @@ pub fn prepare_mrpack_build(
     let target = ManagedPath::Artifact(artifact);
     let observed = observed_artifacts_for(workspace.observations(), [target.clone()])?;
     let plan = prepare_mrpack(&workspace, external, evidence, optional, cancel)?;
-    let mut archive = tempfile::tempfile()?;
-    let verified = plan.write(&mut archive, cancel)?;
+    let mut archive = super::staging::PrivateFile::new()?;
+    let verified = plan.write(archive.file(), cancel)?;
     let desired = BTreeMap::from([(
         target.clone(),
         FileContent {
@@ -273,10 +273,10 @@ pub fn prepare_mrpack_build(
     )]);
     let file_plan = plan_files(&observed, &desired, &BTreeSet::new())?;
     let mut stage = MutableStage::empty()?;
-    archive.rewind()?;
+    archive.file().rewind()?;
     stage.write(
         &ProjectLayout::path(&target)?,
-        &mut archive,
+        archive.file(),
         verified.len(),
         cancel,
     )?;
