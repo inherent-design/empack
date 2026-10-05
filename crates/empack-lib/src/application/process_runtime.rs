@@ -15,14 +15,34 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 pub struct Interrupted;
 
 #[derive(Clone, Default)]
-pub struct Cancellation(Arc<AtomicBool>);
+pub struct Cancellation(Arc<CancellationState>);
+
+#[derive(Default)]
+struct CancellationState {
+    cancelled: AtomicBool,
+    parent: Option<Arc<CancellationState>>,
+}
 
 impl Cancellation {
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::SeqCst);
+        self.0.cancelled.store(true, Ordering::SeqCst);
     }
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        let mut current = Some(&*self.0);
+        while let Some(state) = current {
+            if state.cancelled.load(Ordering::SeqCst) {
+                return true;
+            }
+            current = state.parent.as_deref();
+        }
+        false
+    }
+    /// Child cancellation retires one phase without cancelling its parent operation.
+    pub fn child(&self) -> Self {
+        Self(Arc::new(CancellationState {
+            cancelled: AtomicBool::new(false),
+            parent: Some(self.0.clone()),
+        }))
     }
     pub fn check(&self) -> Result<()> {
         if self.is_cancelled() {
@@ -43,7 +63,7 @@ const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 async fn read_stream(
     mut pipe: impl AsyncRead + Unpin,
     stream: ProcessStream,
-    sender: mpsc::Sender<(ProcessStream, Vec<u8>)>,
+    sender: Option<mpsc::SyncSender<(ProcessStream, Vec<u8>)>>,
 ) -> Result<Vec<u8>> {
     let mut all = Vec::new();
     let mut pending = Vec::new();
@@ -60,16 +80,18 @@ async fn read_stream(
         pending.extend_from_slice(&buffer[..count]);
         if let Some(end) = pending.iter().rposition(|b| *b == b'\n') {
             let tail = pending.split_off(end + 1);
-            if sender
-                .send((stream, std::mem::replace(&mut pending, tail)))
-                .is_err()
-            {
-                anyhow::bail!("Process observer disconnected");
+            if let Some(sender) = &sender {
+                // Display hints may be dropped; complete bounded output is returned separately.
+                let _ = sender.try_send((stream, std::mem::replace(&mut pending, tail)));
+            } else {
+                pending = tail;
             }
         }
     }
-    if !pending.is_empty() {
-        let _ = sender.send((stream, pending));
+    if !pending.is_empty()
+        && let Some(sender) = sender
+    {
+        let _ = sender.try_send((stream, pending));
     }
     Ok(all)
 }
@@ -81,48 +103,12 @@ pub(crate) fn execute(
     observer: &dyn ProcessObserver,
 ) -> Result<ProcessOutput> {
     cancellation.check()?;
-    let program = command.get_program().to_string_lossy().into_owned();
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(32);
     let worker = std::thread::spawn(move || -> Result<ProcessOutput> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
-        runtime.block_on(async move {
-            let mut command = tokio::process::Command::from(command);
-            command.kill_on_drop(true).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
-            #[cfg(unix)]
-            command.process_group(0);
-            #[cfg(unix)]
-            let mut child = command.spawn().context("Failed to spawn command")?;
-            #[cfg(unix)]
-            let tree = ProcessTree::new(&child)?;
-            #[cfg(windows)]
-            let (mut child, tree) = spawn_windows_child(&mut command, ProcessTree::new)?;
-            let stdout = child.stdout.take().context("Failed to capture stdout")?;
-            let stderr = child.stderr.take().context("Failed to capture stderr")?;
-            let result = {
-                let collect = async {
-                    let (status, stdout, stderr) = tokio::try_join!(
-                        async { child.wait().await.map_err(anyhow::Error::from) },
-                        read_stream(stdout, ProcessStream::Stdout, sender.clone()),
-                        read_stream(stderr, ProcessStream::Stderr, sender),
-                    )?;
-                    Ok(ProcessOutput { success: status.success(), stdout: decode_process_output_chunk(&stdout), stderr: decode_process_output_chunk(&stderr) })
-                };
-                tokio::select! {
-                    result = collect => result,
-                    _ = cancellation.cancelled() => Err(Interrupted.into()),
-                    _ = tokio::time::sleep(timeout) => Err(anyhow::anyhow!("Command {program:?} timed out after {} seconds", timeout.as_secs())),
-                }
-            };
-            // Drop pipe futures before shutdown so descendants cannot keep readers blocked.
-            drop(tree);
-            if result.is_err() {
-                let _ = child.start_kill();
-                let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
-            }
-            result
-        })
+        runtime.block_on(execute_async(command, timeout, cancellation, Some(sender)))
     });
     for (stream, bytes) in receiver {
         for line in decode_process_output_chunk(&bytes).lines() {
@@ -132,6 +118,60 @@ pub(crate) fn execute(
     worker
         .join()
         .map_err(|_| anyhow::anyhow!("Process worker panicked"))?
+}
+
+/// Supervise an owned process on the host runtime. Progress is bounded and nonblocking.
+/// A disconnected observer does not affect process lifetime or the retained output.
+pub async fn execute_async(
+    command: std::process::Command,
+    timeout: Duration,
+    cancellation: Cancellation,
+    progress: Option<mpsc::SyncSender<(ProcessStream, Vec<u8>)>>,
+) -> Result<ProcessOutput> {
+    cancellation.check()?;
+    let program = command.get_program().to_string_lossy().into_owned();
+    let sender = progress;
+    let mut command = tokio::process::Command::from(command);
+    command
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    command.process_group(0);
+    #[cfg(unix)]
+    let mut child = command.spawn().context("Failed to spawn command")?;
+    #[cfg(unix)]
+    let tree = ProcessTree::new(&child)?;
+    #[cfg(windows)]
+    let (mut child, tree) = spawn_windows_child(&mut command, ProcessTree::new)?;
+    let stdout = child.stdout.take().context("Failed to capture stdout")?;
+    let stderr = child.stderr.take().context("Failed to capture stderr")?;
+    let result = {
+        let collect = async {
+            let (status, stdout, stderr) = tokio::try_join!(
+                async { child.wait().await.map_err(anyhow::Error::from) },
+                read_stream(stdout, ProcessStream::Stdout, sender.clone()),
+                read_stream(stderr, ProcessStream::Stderr, sender),
+            )?;
+            Ok(ProcessOutput {
+                success: status.success(),
+                stdout: decode_process_output_chunk(&stdout),
+                stderr: decode_process_output_chunk(&stderr),
+            })
+        };
+        tokio::select! {
+            result = collect => result,
+            _ = cancellation.cancelled() => Err(Interrupted.into()),
+            _ = tokio::time::sleep(timeout) => Err(anyhow::anyhow!("Command {program:?} timed out after {} seconds", timeout.as_secs())),
+        }
+    };
+    // Drop pipe futures before shutdown so descendants cannot keep readers blocked.
+    drop(tree);
+    if result.is_err() {
+        let _ = child.start_kill();
+        let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+    }
+    result
 }
 
 #[cfg(unix)]
@@ -217,17 +257,19 @@ fn resume_windows_child(child: &tokio::process::Child) -> Result<()> {
 }
 
 #[cfg(windows)]
-struct ProcessTree(windows_sys::Win32::Foundation::HANDLE);
+struct ProcessTree(std::os::windows::io::OwnedHandle);
 #[cfg(windows)]
 impl ProcessTree {
     fn new(child: &tokio::process::Child) -> Result<Self> {
+        use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
         use windows_sys::Win32::System::JobObjects::*;
         unsafe {
             let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if handle.is_null() {
                 return Err(std::io::Error::last_os_error().into());
             }
-            let guard = Self(handle);
+            let guard = Self(OwnedHandle::from_raw_handle(handle));
+            let handle = guard.0.as_raw_handle();
             let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
             info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
             if SetInformationJobObject(
@@ -247,15 +289,6 @@ impl ProcessTree {
         }
     }
 }
-#[cfg(windows)]
-impl Drop for ProcessTree {
-    fn drop(&mut self) {
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self.0);
-        }
-    }
-}
-
 #[cfg(all(test, windows))]
 mod windows_tests {
     use super::*;
@@ -340,5 +373,77 @@ mod windows_tests {
             .await
             .unwrap()
             .unwrap();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod async_tests {
+    use super::*;
+    fn shell(script: &str) -> std::process::Command {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", script]);
+        command
+    }
+    #[tokio::test]
+    async fn full_or_disconnected_progress_cannot_block_process_supervision() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let output = execute_async(
+            shell("i=0; while [ $i -lt 200 ]; do echo line; i=$((i+1)); done"),
+            Duration::from_secs(2),
+            Cancellation::default(),
+            Some(sender),
+        )
+        .await
+        .unwrap();
+        assert!(output.success);
+        assert_eq!(output.stdout.lines().count(), 200);
+        drop(receiver);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        drop(receiver);
+        let output = execute_async(
+            shell("echo retained"),
+            Duration::from_secs(2),
+            Cancellation::default(),
+            Some(sender),
+        )
+        .await
+        .unwrap();
+        assert_eq!(output.stdout, "retained\n");
+    }
+    #[tokio::test]
+    async fn host_runtime_remains_responsive_and_closed_pipes_do_not_remove_deadline() {
+        let began = std::time::Instant::now();
+        let process = execute_async(
+            shell("exec 1>&- 2>&-; sleep 30"),
+            Duration::from_millis(100),
+            Cancellation::default(),
+            None,
+        );
+        let heartbeat = async {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            assert!(began.elapsed() < Duration::from_secs(1));
+        };
+        let (output, ()) = tokio::join!(process, heartbeat);
+        assert!(output.unwrap_err().to_string().contains("timed out"));
+        assert!(began.elapsed() < Duration::from_secs(3));
+    }
+    #[tokio::test]
+    async fn inherited_descendant_pipes_and_parent_cancellation_retire() {
+        let cancel = Cancellation::default();
+        let child_cancel = cancel.child();
+        let process = execute_async(
+            shell("sleep 30 & exit 0"),
+            Duration::from_secs(20),
+            child_cancel,
+            None,
+        );
+        let interrupt = async {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            cancel.cancel();
+        };
+        let began = std::time::Instant::now();
+        let (output, ()) = tokio::join!(process, interrupt);
+        assert!(output.unwrap_err().is::<Interrupted>());
+        assert!(began.elapsed() < Duration::from_secs(3));
     }
 }

@@ -340,3 +340,31 @@ Verification for this correction: 46 engine tests and the core contract suite
 pass on macOS; all-target/all-feature Clippy passes. `cargo check -p empack-lib
 --all-features --tests --target x86_64-pc-windows-gnu` passes, including the Windows
 regressions. This compiles those regressions but does not execute them.
+
+## Owned operation drivers
+
+`engine::runtime::OperationRuntime` starts drivers on the existing Tokio runtime
+and serializes registration against shutdown. UI handles observe and cancel work;
+they do not own worker permits. A supervisor retains the task scope through driver
+failure, closes admission and waits for registered async and blocking workers.
+Unobserved worker panics cannot become successful completion. Preparation has a
+child cancellation scope, so retiring it does not cancel authorized publication.
+
+Owner-side acceptance checks operation, attempt and preparation state. Failed
+replacement admission leaves a usable prior result valid. Task outputs keep their
+memory, scratch and file reservations after releasing job capacity. Terminal
+outcomes are stored before notification and remain available until explicit
+completed-result eviction; the registry has a configured size bound.
+
+The shared process supervisor now has an async entry point on the host runtime.
+Bounded progress hints can be dropped when observers are slow or disconnected;
+captured output remains bounded and available in the result. The synchronous
+adapter still exists for commands awaiting cutover. It must be removed with those
+callers, not used by the engine to create another runtime per backend call.
+
+Nine operation tests and three async-process tests pass. The combined affected
+runtime/session run passed 41 tests, with one pipe-leak warning on an existing
+cancellation fixture; its isolated repeat passed without a warning. This remains
+an observation to check in broader runs. All-feature Clippy passes. These generic
+lifetime primitives do not yet constitute the semantic `Engine` public API or
+complete command integration.
