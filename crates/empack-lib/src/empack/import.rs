@@ -2324,6 +2324,7 @@ fn url_project_type(destination: &str) -> crate::primitives::ProjectType {
         Some("resourcepacks") => ProjectType::ResourcePack,
         Some("shaderpacks") => ProjectType::Shader,
         Some("datapacks") => ProjectType::Datapack,
+        Some("saves") => ProjectType::World,
         _ => ProjectType::Mod,
     }
 }

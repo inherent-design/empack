@@ -1545,3 +1545,20 @@ async fn exact_selector_canonicalizes_identity_and_rejects_foreign_pin() {
     let error = resolver.resolve_selector(selector, Some("wrong".into())).await.unwrap_err();
     assert!(error.to_string().contains("does not belong"));
 }
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn world_search_uses_curseforge_without_a_modrinth_request() {
+    let mut mr = mockito::Server::new_async().await;
+    let mut cf = mockito::Server::new_async().await;
+    let unused = mr.mock("GET", mockito::Matcher::Any).expect(0).create_async().await;
+    let worlds = cf.mock("GET", "/v1/mods/search")
+        .match_query(mockito::Matcher::UrlEncoded("classId".into(), "17".into()))
+        .with_body(curseforge_hit_json(17, "Fixture World", 1000)).create_async().await;
+    let resolver = ProjectResolver::new_with_base_urls(Client::new(), Some("test-key".into()), Some(mr.url()), Some(cf.url()));
+    let result = resolver.resolve_project("Fixture World", Some("world"), Some("1.21.1"), Some("fabric"), None).await.unwrap();
+    assert_eq!(result.project_id, "17");
+    assert_eq!(result.project_type, "world");
+    unused.assert_async().await;
+    worlds.assert_async().await;
+}

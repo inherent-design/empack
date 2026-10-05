@@ -288,29 +288,34 @@ fn probe_binary_runnable(path: &Path) -> Result<()> {
 }
 
 fn stage_binary_for_execution(path: &Path) -> Result<PathBuf> {
-    let staging_dir =
-        crate::platform::cache::staged_bin_dir().join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION));
-    std::fs::create_dir_all(&staging_dir).with_context(|| {
-        format!(
-            "failed to create temporary staging directory: {}",
-            staging_dir.display()
-        )
-    })?;
-
-    let staged_path = staging_dir.join(binary_name());
-    if staged_path != path {
-        std::fs::copy(path, &staged_path).with_context(|| {
-            format!(
-                "failed to copy managed packwiz-tx from '{}' to '{}'",
-                path.display(),
-                staged_path.display()
-            )
-        })?;
+    use sha2::{Digest, Sha256};
+    // A fixed shared filename lets concurrent sessions (or different cached
+    // tools) truncate an executable another session is about to spawn.
+    let bytes = std::fs::read(path).context("Failed to read managed tool for staging")?;
+    let digest: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let staging_dir = crate::platform::cache::staged_bin_dir()
+        .join(format!("packwiz-tx-{}", PACKWIZ_TX_VERSION))
+        .join(digest);
+    std::fs::create_dir_all(&staging_dir)?;
+    with_install_lock(&staging_dir, || {
+        let staged_path = staging_dir.join(binary_name());
+        if staged_path.exists() {
+            anyhow::ensure!(
+                std::fs::symlink_metadata(&staged_path)?.is_file(),
+                "Staged executable must be a regular file"
+            );
+        }
+        if std::fs::read(&staged_path).ok().as_deref() != Some(bytes.as_slice()) {
+            crate::application::persistence::atomic_write(&staged_path, &bytes)
+                .context("Failed to publish staged executable")?;
+        }
         #[cfg(unix)]
         set_executable(&staged_path)?;
-    }
-
-    Ok(staged_path)
+        Ok(staged_path)
+    })
 }
 
 /// Extract a `.tar.gz` tarball into the target directory.
@@ -545,6 +550,20 @@ mod tests {
             validate_or_stage_binary_with_probe(&original, |_| Ok(())).expect("resolution");
 
         assert_eq!(resolved, original);
+    }
+
+    #[test]
+    fn staged_tools_with_different_contents_cannot_overwrite_each_other() {
+        let temp = TempDir::new().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        std::fs::write(&first, b"first executable").unwrap();
+        std::fs::write(&second, b"second executable").unwrap();
+        let staged_first = stage_binary_for_execution(&first).unwrap();
+        let staged_second = stage_binary_for_execution(&second).unwrap();
+        assert_ne!(staged_first, staged_second);
+        assert_eq!(std::fs::read(staged_first).unwrap(), b"first executable");
+        assert_eq!(std::fs::read(staged_second).unwrap(), b"second executable");
     }
 
     #[test]

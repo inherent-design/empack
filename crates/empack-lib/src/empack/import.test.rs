@@ -2312,3 +2312,19 @@ async fn mixed_requirements_fail_before_project_initialization() {
     assert!(!session.filesystem().exists(&target_dir));
     assert!(session.process_provider.get_calls().is_empty());
 }
+
+#[test]
+fn downloadable_world_import_preserves_type_through_manifest_serialization() {
+    let mut input: serde_json::Value = serde_json::from_str(MR_MANIFEST_JSON).unwrap();
+    input["files"][0]["path"] = "saves/fixture-world.zip".into();
+    input["files"][0]["hashes"] = serde_json::json!({"sha1": "a".repeat(40)});
+    let archive = create_mr_zip(&input.to_string());
+    let imported = parse_modrinth_mrpack(archive.path()).unwrap();
+    let ContentEntry::UrlFile(record) = &imported.content[0] else { panic!("expected URL file") };
+    assert_eq!(record.project_type, crate::primitives::ProjectType::World);
+    let entry = crate::empack::config::DependencyEntry::Url(record.clone());
+    let yaml = serde_saphyr::to_string(&entry).unwrap();
+    let restored: crate::empack::config::DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
+    assert_eq!(restored, entry);
+    assert!(yaml.contains("type: world"));
+}

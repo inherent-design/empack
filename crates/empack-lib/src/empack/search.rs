@@ -244,7 +244,7 @@ impl ProjectResolver {
     /// Resolve project with platform priority: Modrinth first, then CurseForge
     ///
     /// When `project_type` is `Some`, searches only that type.
-    /// When `None`, tries each type in tier order (mod, resourcepack, shader, datapack)
+    /// When `None`, tries each type in tier order (mod, resourcepack, shader, datapack, world)
     /// and returns the first high-confidence match.
     ///
     /// When `preferred_platform` is `Some(CurseForge)`, tries CurseForge first.
@@ -270,7 +270,7 @@ impl ProjectResolver {
         }
 
         // No type specified: tiered search across all types
-        let type_tiers = ["mod", "resourcepack", "shader", "datapack"];
+        let type_tiers = ["mod", "resourcepack", "shader", "datapack", "world"];
 
         debug!(
             "Resolving project with tiered search: {} (trying {:?})",
@@ -602,6 +602,11 @@ impl ProjectResolver {
     ) -> Result<Vec<ProjectInfo>, SearchError> {
         let normalized_type = self.normalize_project_type(project_type);
         let parsed_type = Self::parse_project_type(&normalized_type);
+        if parsed_type == Some(ProjectType::World) {
+            return Err(SearchError::NoResults {
+                query: title.to_string(),
+            });
+        }
         let facet_name = parsed_type
             .map(|pt| pt.modrinth_facet_name())
             .unwrap_or(normalized_type.as_str());
