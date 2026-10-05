@@ -99,3 +99,21 @@ The current format adapter resolves unspecified sides to required before enterin
 the core. URL metadata and provider/embedded imports use the same projection;
 the competing import-side matcher is removed. The current wire format cannot
 express choice metadata yet, so full round trips depend on the new codec gate.
+
+## Source digest landing
+
+The core owns exact-width source digest values, nonempty digest sets, content
+addresses and evidence data. Unknown algorithms and conflicting duplicate values
+fail. Every declared digest must match; a matching stronger digest does not excuse
+a mismatched weaker declaration.
+
+URL acquisition and cached-byte verification use these values. They hash a bounded
+stream once, verify every declared algorithm, and keep source declarations separate
+from observed export hashes. MD5-only compatibility retains its original evidence
+and emits a diagnostic explaining its weaker assurance. Internal SHA-256 addressing
+does not change that evidence. Evidence data is not a publication capability.
+
+The unknown-algorithm regression failed before this change and passes afterward.
+Tests also cover digest widths, duplicate conflicts, mixed-digest mismatches and
+MD5 evidence preservation. The adapter uses RustCrypto's MD5 implementation solely
+for the accepted compatibility policy; the semantic core has no dependencies.

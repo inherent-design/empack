@@ -4,6 +4,9 @@ use super::content::SideEnv;
 use crate::application::session::{FileSystemProvider, Session};
 use crate::primitives::ProjectType;
 use anyhow::{Context, Result, ensure};
+use empack_core::digest::{
+    ContentId, DigestAlgorithm, DigestSet, ExpectedDigest, IntegrityEvidence,
+};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::BTreeMap;
@@ -50,6 +53,7 @@ struct VerifiedDownload {
     url: String,
     hashes: BTreeMap<String, String>,
     size: u64,
+    evidence: IntegrityEvidence,
 }
 
 impl UrlDependencyRecord {
@@ -82,26 +86,15 @@ impl UrlDependencyRecord {
                 "URL file requires HTTP or HTTPS"
             );
         }
-        let mut supported = false;
-        for (algorithm, digest) in &self.hashes {
-            let length = match algorithm.as_str() {
-                "sha1" => 40,
-                "sha256" => 64,
-                "sha512" => 128,
-                _ => continue,
-            };
-            ensure!(
-                digest.len() == length && digest.bytes().all(|b| b.is_ascii_hexdigit()),
-                "Invalid {algorithm} digest"
-            );
-            supported = true;
-        }
-        ensure!(
-            supported,
-            "URL file requires a SHA-1, SHA-256 or SHA-512 source digest"
-        );
+        self.expected_digests()?;
         requirements(&self.env)?;
         Ok(())
+    }
+
+    fn expected_digests(&self) -> Result<DigestSet> {
+        Ok(DigestSet::parse(self.hashes.iter().map(
+            |(algorithm, digest)| (algorithm.as_str(), digest.as_str()),
+        ))?)
     }
 
     pub fn metadata(&self, url: &str) -> Result<toml::Value> {
@@ -111,7 +104,7 @@ impl UrlDependencyRecord {
             "URL is not a declared alternative"
         );
         let (side, optional) = requirements(&self.env)?;
-        let algorithm = ["sha512", "sha256", "sha1"]
+        let algorithm = ["sha512", "sha256", "sha1", "md5"]
             .into_iter()
             .find(|key| self.hashes.contains_key(*key))
             .unwrap();
@@ -202,7 +195,10 @@ impl UrlDependencyRecord {
             }
             .await;
             match result {
-                Ok(verified) => return Ok(verified),
+                Ok(verified) => {
+                    report_integrity(session, &self.destination, &verified.evidence);
+                    return Ok(verified);
+                }
                 Err(error) => {
                     session.process().check_cancelled()?;
                     failures.push(format!("{error:#}"));
@@ -229,27 +225,59 @@ impl UrlDependencyRecord {
         if let Some(expected) = self.size {
             ensure!(size == expected, "Source file size mismatch");
         }
-        let mut hashes = BTreeMap::new();
-        for algorithm in ["sha1", "sha256", "sha512"] {
-            reader.rewind()?;
-            let digest = match algorithm {
-                "sha1" => digest_reader::<sha1::Sha1>(reader)?,
-                "sha256" => digest_reader::<sha2::Sha256>(reader)?,
-                _ => digest_reader::<sha2::Sha512>(reader)?,
-            };
-            if let Some(expected) = self.hashes.get(algorithm) {
-                ensure!(
-                    digest.eq_ignore_ascii_case(expected),
-                    "Source {algorithm} digest mismatch for {}",
-                    self.destination
-                );
+        let expected = self.expected_digests()?;
+        reader.rewind()?;
+        let mut sha1 = sha1::Sha1::new();
+        let mut sha256 = sha2::Sha256::new();
+        let mut sha512 = sha2::Sha512::new();
+        let mut md5 = self.hashes.contains_key("md5").then(md5::Md5::new);
+        let mut buffer = [0; 64 * 1024];
+        let mut observed_size = 0u64;
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 {
+                break;
             }
-            hashes.insert(algorithm.to_string(), digest);
+            observed_size += count as u64;
+            ensure!(
+                observed_size <= size,
+                "Source file grew during verification"
+            );
+            sha1.update(&buffer[..count]);
+            sha256.update(&buffer[..count]);
+            sha512.update(&buffer[..count]);
+            if let Some(md5) = &mut md5 {
+                md5.update(&buffer[..count]);
+            }
         }
+        ensure!(
+            observed_size == size,
+            "Source file changed size during verification"
+        );
+        let address: [u8; 32] = sha256.finalize().into();
+        let mut actual = vec![
+            ExpectedDigest::Sha1(sha1.finalize().into()),
+            ExpectedDigest::Sha256(address),
+            ExpectedDigest::Sha512(sha512.finalize().into()),
+        ];
+        if let Some(md5) = md5 {
+            actual.push(ExpectedDigest::Md5(md5.finalize().into()));
+        }
+        expected
+            .check(&actual)
+            .with_context(|| format!("Source integrity failed for {}", self.destination))?;
+        let hashes = actual
+            .iter()
+            .map(|value| (value.algorithm().name().to_string(), value.hex()))
+            .collect();
         Ok(VerifiedDownload {
             url: url.into(),
             hashes,
             size,
+            evidence: IntegrityEvidence::MatchedExpected {
+                expected,
+                actual: ContentId::from_sha256(address),
+            },
         })
     }
 
@@ -285,7 +313,7 @@ impl UrlDependencyRecord {
         let index: CacheIndex = serde_json::from_slice(&bytes)?;
         ensure!(index.version == 2, "Unsupported packwiz cache version");
         // Match the same strongest digest selected for backend metadata.
-        let algorithm = ["sha512", "sha256", "sha1"]
+        let algorithm = ["sha512", "sha256", "sha1", "md5"]
             .into_iter()
             .find(|key| self.hashes.contains_key(*key))
             .context("Missing source digest")?;
@@ -376,7 +404,10 @@ pub async fn prepare_build(
             let cache = crate::platform::cache::packwiz_download_cache_dir(workdir)?;
             session.process().check_cancelled()?;
             let verified = match record.verify_cached(fs, &cache, url)? {
-                Some(verified) => verified,
+                Some(verified) => {
+                    report_integrity(session, &record.destination, &verified.evidence);
+                    verified
+                }
                 None => record.verify_download_details(session).await?,
             };
             prepared.push((record, verified));
@@ -396,21 +427,13 @@ pub async fn prepare_build(
     Ok(observed)
 }
 
-fn digest_reader<D: Digest + Default>(reader: &mut dyn Read) -> Result<String> {
-    let mut hasher = D::default();
-    let mut buffer = [0; 64 * 1024];
-    loop {
-        let count = reader.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        hasher.update(&buffer[..count]);
+fn report_integrity(session: &dyn Session, destination: &str, evidence: &IntegrityEvidence) {
+    if matches!(evidence, IntegrityEvidence::MatchedExpected { expected, .. } if expected.strongest() == DigestAlgorithm::Md5)
+    {
+        session.display().status().warning(&format!(
+            "{destination}: accepted MD5-only source evidence in compatibility mode; the internal SHA-256 address does not strengthen it"
+        ));
     }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
 }
 
 /// Preserve backend download/update fields while setting physical-side requirements.
@@ -544,6 +567,48 @@ mod tests {
                 server: SideRequirement::Unsupported,
             },
         }
+    }
+
+    #[test]
+    fn weak_source_evidence_is_verified_without_promoting_its_assurance() {
+        let mut record = record("https://example.com/file.zip".into());
+        record.hashes = BTreeMap::from([("md5".into(), "321c3cf486ed509164edec1e1981fec8".into())]);
+        let source_hashes = record.hashes.clone();
+        let verified = record
+            .verify_reader(&mut std::io::Cursor::new(b"payload"), &record.downloads[0])
+            .unwrap();
+        let IntegrityEvidence::MatchedExpected { expected, actual } = verified.evidence else {
+            panic!("matched source evidence required")
+        };
+        assert_eq!(expected.strongest(), DigestAlgorithm::Md5);
+        assert_eq!(
+            ExpectedDigest::Sha256(*actual.bytes()).hex(),
+            verified.hashes["sha256"]
+        );
+        assert_eq!(record.hashes, source_hashes);
+        assert_eq!(
+            record.metadata(&record.downloads[0]).unwrap()["download"]["hash-format"].as_str(),
+            Some("md5")
+        );
+        record
+            .hashes
+            .insert("sha256".into(), verified.hashes["sha256"].clone());
+        record.hashes.insert("md5".into(), "0".repeat(32));
+        assert!(
+            record
+                .verify_reader(&mut std::io::Cursor::new(b"payload"), &record.downloads[0])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn declared_digest_algorithms_must_all_be_understood() {
+        let mut record = record("https://example.com/file.zip".into());
+        record.hashes.insert("sha257".into(), "a".repeat(64));
+        assert!(
+            record.validate().is_err(),
+            "unknown declarations must not be discarded"
+        );
     }
 
     #[test]
