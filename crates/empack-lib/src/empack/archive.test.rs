@@ -219,3 +219,24 @@ fn linked_input_is_rejected_without_reading_or_replacing_the_old_artifact() {
     assert_eq!(std::fs::read(&output).unwrap(), b"old");
     assert_eq!(std::fs::read(&outside).unwrap(), b"outside bytes");
 }
+
+#[cfg(unix)]
+#[test]
+fn published_archive_preserves_existing_mode_and_honors_umask_for_new_files() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempdir().unwrap();
+    let input = temp.path().join("source");
+    std::fs::create_dir(&input).unwrap();
+    std::fs::write(input.join("file"), b"content").unwrap();
+    let normal = temp.path().join("normal-file");
+    std::fs::write(&normal, b"").unwrap();
+    let expected = std::fs::metadata(normal).unwrap().permissions().mode() & 0o777;
+    for format in [ArchiveFormat::Zip, ArchiveFormat::TarGz, ArchiveFormat::SevenZ] {
+        let output = temp.path().join(format!("out.{}", format.extension()));
+        create_archive(&input, &output, format).unwrap();
+        assert_eq!(std::fs::metadata(&output).unwrap().permissions().mode() & 0o777, expected);
+        std::fs::set_permissions(&output, std::fs::Permissions::from_mode(0o640)).unwrap();
+        create_archive(&input, &output, format).unwrap();
+        assert_eq!(std::fs::metadata(&output).unwrap().permissions().mode() & 0o777, 0o640);
+    }
+}

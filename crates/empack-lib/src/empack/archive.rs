@@ -136,6 +136,14 @@ pub fn create_archive(
             ArchiveError::Verification(error)
         }
     })?;
+    #[cfg(unix)]
+    candidate
+        .as_file()
+        .set_permissions(publication_permissions(output_path, parent)?)
+        .map_err(|source| ArchiveError::Io {
+            path: output_path.to_owned(),
+            source,
+        })?;
     candidate
         .as_file()
         .sync_all()
@@ -150,6 +158,36 @@ pub fn create_archive(
             source: error.error,
         })?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn publication_permissions(
+    output: &Path,
+    parent: &Path,
+) -> Result<std::fs::Permissions, ArchiveError> {
+    use std::os::unix::fs::PermissionsExt;
+    let result = (|| -> std::io::Result<std::fs::Permissions> {
+        match std::fs::symlink_metadata(output) {
+            Ok(metadata) if metadata.is_file() => Ok(metadata.permissions()),
+            Ok(_) => Err(std::io::Error::other(
+                "Archive destination is not a regular file",
+            )),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // Observe normal creation permissions without changing the process-global umask.
+                // This probe stays empty: private candidate bytes never enter a readable probe.
+                let probe = tempfile::Builder::new()
+                    .prefix(".empack-mode-")
+                    .permissions(std::fs::Permissions::from_mode(0o666))
+                    .tempfile_in(parent)?;
+                Ok(probe.as_file().metadata()?.permissions())
+            }
+            Err(error) => Err(error),
+        }
+    })();
+    result.map_err(|source| ArchiveError::Io {
+        path: output.to_owned(),
+        source,
+    })
 }
 
 /// Publish a ZIP with named file replacements, streaming the existing entries.
