@@ -1,185 +1,64 @@
 # Contributing to empack
 
-## Prerequisites
+The [v0.5 design](docs/design/README.md) is the implementation target. Check the
+[ledger](docs/design/implementation.md) before assuming a proposed API exists.
+Keep compatibility fixtures until their replacement passes the same contracts.
 
-- [Rust toolchain](https://rustup.rs/) (1.99.0, pinned via `rust-toolchain.toml`)
-- [cargo-nextest](https://nexte.st/) (test runner; runs unit/integration tests; Cargo runs doctests)
-- [mise](https://mise.jdx.dev/) (task runner)
+## Development
 
-packwiz-tx is auto-managed by empack (downloaded on first use). Override: `EMPACK_PACKWIZ_BIN=/path/to/packwiz-tx` for development.
-
-For E2E tests (not required for unit tests or development):
-
-- [Java 21+](https://adoptium.net/) (server build E2E tests)
-- A valid CurseForge credential; the built-in default is used unless `EMPACK_KEY_CURSEFORGE` overrides it
-- Optional: `jq` (VCR cassette recording)
-
-## Getting Started
+Use the pinned Rust toolchain, cargo-nextest and mise. Strict live tests additionally
+require packwiz, Java, provider access and any documented credentials. Never commit
+credentials or include them in diagnostics.
 
 ```bash
-git clone https://github.com/inherent-design/empack.git
-cd empack
-cargo build --workspace
-cargo check --workspace --all-targets
-```
-
-## Testing
-
-empack uses two test tiers. See [docs/testing.md](docs/testing.md) for the full strategy, health inventory, and VCR fixture maintenance.
-
-### Unit tests (excludes E2E)
-
-Mock-based, cross-platform, fast. Run on every commit:
-
-```bash
+mise run check
+mise run clippy
 mise run test
+mise run smoke
+mise run e2e:strict
 ```
 
-### E2E tests
+Use a development branch and submit a PR to `main`. Commit coherent, reviewable
+landings. Record exact commands, outcomes and tested revisions; coverage is
+supplemental evidence rather than a substitute for contract tests.
 
-Run the compiled binary with real providers (real filesystem, real packwiz, real network). Self-skip when prerequisites (packwiz, java, CF key) are missing.
+## Boundaries
 
-```bash
-mise run e2e
-mise run e2e:strict        # fail on missing prerequisites; include telemetry/live tests
-mise run e2e:filter init    # filtered subset
-```
+`empack-core` contains pure values and planners with no runtime or I/O dependency.
+`empack-lib` composes narrow ports, adapters and the operation engine. `empack`
+owns CLI translation, presentation and the host runtime. Existing `empack-tests`
+fixtures remain during migration toward reusable adapter contract suites.
 
-### Coverage
+Do not introduce a broad session facade into the core, success-returning placeholder
+verifiers, deserializable approval proofs, or a second command-specific publication
+path. New features must contribute normalized intent, expected effects and verified
+postconditions. The [parity ledger](docs/design/parity.md) governs replacement of
+legacy paths.
 
-```bash
-mise run coverage
-```
+## Source and documentation
 
-## Development Workflow
+Run formatting and Clippy. Document exported contracts with inputs, outcomes and
+limitations. Prefer comments that explain an invariant over comments that restate
+code. Use structured, redacted diagnostics and remove temporary debugging output.
 
-1. Create a feature branch from `dev`
-2. Make changes
-3. Lint: `mise run clippy`
-4. Test: `mise run test && mise run e2e`
-5. Submit PR against `dev`
+Keep normative requirements in `docs/design/`. Old `docs/specs/` URLs point there.
+Current command compatibility and historical evidence are explicitly labeled and
+must not compete with the target. Convert public API sketches into compiled
+examples as those APIs land. Update the implementation ledger with each landing.
 
-## Project Structure
+Write complete, direct sentences. Avoid hype, em dashes and fragment-heavy prose.
+CLI flags and code retain their literal spelling. The brand reference is
+`inherent.design/packages/docs/knowledge/process-notes/prose-and-communication-reference.md`
+in the shared workspace.
 
-```
-empack/
-  crates/
-    empack/              CLI entry point (clap)
-    empack-lib/          Application logic, resolver, build system
-    empack-tests/        Workflow and integration tests
-  docs/
-    usage.md             Command reference
-    testing.md           Test strategy and verification
-    reference/           Provider API documentation (Modrinth, CurseForge)
-  scripts/               VCR recording and utility scripts
-  v1/, v2/               Historical Bash implementations (reference only)
-```
+## Fixture maintenance
 
-## Commits
+For recorded provider cassettes, preview with
+`./scripts/record-vcr-cassettes.sh --dry-run`, then record explicitly and run
+`cargo test -p empack-tests fixtures::tests::test_load_vcr_cassette -- --exact`.
+Live recording uses local credentials and requires `curl` and `jq`.
 
-Conventional-style prefixes: `feat:`, `fix:`, `chore:`, `ci:`, `docs:`, `test:`, `refactor:`
+Release builds derive their version from the release tag. `CHANGELOG.md` is
+historical, generated release evidence; do not rewrite it as target design.
 
-Scopes are optional; use when the change targets a specific module or subsystem:
-
-```
-feat(import): add modpack import pipeline
-fix(sync): handle local-only dependency sources
-test(add): URL classification coverage
-```
-
-Subject line in imperative mood, under 72 characters. Body explains why, not what. For contributor PRs, the maintainer squash-merges with a clean conventional subject line.
-
-## Code Style
-
-### General
-
-Run `cargo clippy` before submitting. Follow existing patterns in the codebase. When in doubt, match the surrounding code.
-
-### Logging
-
-Use structured logging at appropriate levels:
-- `error!` for failures that affect command outcome
-- `trace!` for operational detail during development
-- Remove temporary `debug!`/`println!` logging before finishing a change
-
-### Comments
-
-Default to no comments. Code should be self-explanatory through naming and structure. Comment when:
-- The "why" is non-obvious (a workaround, an API quirk)
-- The behavior has surprising side effects
-- A constant comes from an external specification
-
-Do not comment what the code already says.
-
-### Doc Comments
-
-Every exported type, function, and trait gets a `///` doc comment. Write with `cargo doc` and future doc-gen tooling in mind. The first line is a summary; subsequent lines cover inputs, side effects, and error conditions.
-
-```rust
-/// Classify a URL into a known platform or direct download target.
-///
-/// Returns `UrlClassifyError` for URLs that do not match any supported
-/// platform pattern or recognized file extension.
-pub fn classify_url(url: &str) -> Result<UrlKind, UrlClassifyError> { ... }
-```
-
-Internal helpers and private functions do not require doc comments unless the behavior is non-obvious.
-
-## Documentation
-
-### Where Things Live
-
-**README.md** is the hub document: project description, quick start, command table, and links to `docs/`. Keep it scannable.
-
-**docs/*.md** files are deep reference, one file per topic. These are the source of truth for user-facing documentation.
-
-**CONTRIBUTING.md** covers development workflow, code style, and conventions. Not user-facing.
-
-### When to Update Docs
-
-When behavior changes, update the affected docs in the same change. Treat it as part of the change, not a follow-up.
-
-### Writing Style
-
-Technical reference tone. Use complete sentences with natural compound structure.
-
-**Prohibited in prose:** em-dashes, en-dashes, double-hyphens. Use semicolons, commas, or colons instead. Double-hyphens in CLI flags and code are fine.
-
-**Avoid:** superlatives, fragment-sentence drama, marketing language. Always write `empack` in lowercase.
-
-## Changelog
-
-Release notes are generated from conventional commit history. Do not edit CHANGELOG.md manually; write good commit messages and the changelog follows.
-
-## Agent Guidelines
-
-These apply to LLM agents (Atlas sub-agents, Claude Code teammates) writing code, commits, or documentation for empack.
-
-**Code:** Follow all conventions in this file. Default to no comments. Write `///` doc comments on exports. Match surrounding style. Do not "improve" adjacent code, comments, or formatting that is not part of the task.
-
-**Commits:** Use conventional commits with scoped prefixes where applicable. Body explains why, not what.
-
-**Communication:** No preamble ("I aim to help"), no flattery ("Great question"), no superlatives. Direct answers. Use the standard status protocol (STATUS/PROGRESS/BLOCKERS/QUESTIONS/NEXT) for handoffs.
-
-**Errors:** State what happened, what was expected, and what to do about it. Do not apologize or catastrophize. Extract information from the error and move on.
-
-## VCR Fixture Maintenance
-
-If you touch recorded API fixtures or cassette helpers:
-
-1. Preview first: `./scripts/record-vcr-cassettes.sh --dry-run`
-2. Record: `./scripts/record-vcr-cassettes.sh`
-3. Verify: `cargo test -p empack-tests fixtures::tests::test_load_vcr_cassette -- --exact`
-
-Live recording requires `curl`, `jq`, and `.env.local` with `EMPACK_KEY_CURSEFORGE`. Copy `.env.local.template` as a starting point.
-
-## Pull Request Checklist
-
-- [ ] Scope is narrow and explicit
-- [ ] Docs match the current verified behavior
-- [ ] Verification commands are listed in the change summary
-- [ ] Tests pass: `mise run test && mise run e2e`
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the [Apache 2.0 License](LICENSE).
+Contributions use the [Apache 2.0 license](LICENSE).

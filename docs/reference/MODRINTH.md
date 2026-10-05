@@ -1,3 +1,6 @@
+> Provider protocol reference retained for adapter compatibility. Engine policy
+> is defined by [resolution and acquisition](../design/acquisition.md), not this reference.
+
 # Modrinth API Reference
 
 ## Status and navigation

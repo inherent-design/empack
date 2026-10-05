@@ -1,0 +1,37 @@
+# empack v0.5 target
+
+empack is becoming a typed pack engine with verified, recoverable publication.
+This design replaces the earlier session-centric specifications as the target for
+v0.5.0-alpha.1. It is an implementation contract, not a claim that the current CLI
+already provides every guarantee.
+
+The source is the user-supplied `empack.md`, prepared 2026-10-04 against empack
+`50c121f` and Playground `dc6846a`. Its SHA-256 is `bfccf5976bdc6848a5516a6c125c9d56f6c15aba1fcf9c355b762c374e444ffe`.
+The numbered sections retain that document's vocabulary and requirements. Original
+source references remain linked next to their claims. Reviewed clarifications and
+policy choices live in [decisions](decisions.md).
+
+| Contract | Scope |
+| --- | --- |
+| [Architecture](architecture.md) | Source sections 1, 2, 3 |
+| [Model](model.md) | Source sections 4, 5, 6 |
+| [Planning](planning.md) | Source sections 7, 8 |
+| [Acquisition](acquisition.md) | Source sections 9, 10 |
+| [Filesystem](filesystem.md) | Source sections 11 |
+| [Backend](backend.md) | Source sections 12 |
+| [Builds](builds.md) | Source sections 13 |
+| [Publication](publication.md) | Source sections 14 |
+| [Runtime](runtime.md) | Source sections 15, 16 |
+| [Api](api.md) | Source sections 17, 18 |
+| [Verification](verification.md) | Source sections 19, 20 |
+| [Migration](migration.md) | Source sections 21, 22, 23 |
+
+[Implementation status](implementation.md) and the [feature parity ledger](parity.md)
+separate current adapters from target guarantees. The [CLI compatibility guide](../compatibility/usage-0.4.md)
+records the existing surface while it is migrated. Old specifications are replaced
+by links to this target; historical validation remains evidence for its tested revision.
+
+The first landing establishes a pure semantic core and connects existing file
+workflows to it. Later landings add snapshots, resolution locks, staged execution,
+independent inventory verification and journaled publication. No compatibility
+adapter may claim those later guarantees before it passes their acceptance gates.
