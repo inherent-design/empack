@@ -117,7 +117,7 @@ crates/
     diagnostic.rs       # Domain errors with stable codes and locations
 
   empack-lib/
-    codec/              # YAML/TOML/JSON DTOs, loss-aware patches, migrations
+    codec/              # YAML/TOML/JSON DTOs, explicit schemas, loss-aware patches
     engine/
       prepare.rs        # Read-only orchestration
       driver.rs         # Owns one admitted operation

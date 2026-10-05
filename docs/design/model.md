@@ -330,7 +330,7 @@ Dependency graphs may contain legitimate mutually dependent groups. Analyze stro
 Removing an explicit root that remains required by another root may demote its explicit-root status while retaining installation. A request to uninstall it physically must identify dependent removals or report a conflict. Never silently expand one removal into removal of unrelated roots.
 
 
-## 6. Documents, lockfiles, and migrations
+## 6. Documents and lockfiles
 
 ### 6.1 DTOs are not domain values
 
@@ -361,7 +361,7 @@ pub struct DecodedIntent {
 
 Decode with an explicit schema/tag. Validate required fields before constructing domain types. Unknown intent fields fail unless contained in a documented extension namespace. A newer unsupported schema is read-only or rejected, never rewritten through an older partial model.
 
-Retain user comments and unrelated supported fields where the editing library can do so. If lossless editing is unavailable, make full reformatting an explicit migration outcome. Backend-owned TOML fields outside empack's semantic subset remain preserved opaque document nodes with their original revision; do not drop them during normalization.
+Retain user comments and unrelated supported fields where the editing library can do so. If lossless editing is unavailable, make full reformatting an explicit document-edit outcome. Backend-owned TOML fields outside empack's semantic subset remain preserved opaque document nodes with their original revision; do not drop them during normalization.
 
 `create_project_plan`-style parsing errors must stay parsing errors. Only an actual missing file can trigger an explicitly supported absent-project flow. An invalid existing manifest must never be treated as permission to install with defaults.
 

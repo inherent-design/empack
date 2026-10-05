@@ -66,3 +66,8 @@ This boundary is not `VerifiedChange`: provider/backend execution and multi-file
 publication still need staging and the journaled publisher. It does not establish
 all of C03 or make the old materializer transactional. The remaining engine work
 must replace that live materializer rather than adding a compatibility branch.
+
+At `52a4c53`, all-feature Clippy and the full default suite passed: 1,365 tests
+and ten doctests, including 23 offline smoke tests. The first core landing at
+`c1386d4` also passed all 100 strict E2E tests. The prepared-import landing is
+undergoing a separate strict rerun and Greptile review.

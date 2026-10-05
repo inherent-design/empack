@@ -14,7 +14,7 @@ applicable. Target-only requests become available when their implementations lan
 | Mods, resources, shaders, datapacks, worlds | Preserve | Content kind and placement | Type-specific folders and provider capability errors |
 | Aliases, title/stem removal, local file removal | Preserve | Shared identity planner | Collision, ambiguous selection, wrong-kind and link fixtures |
 | Membership-only sync and mutable build inputs | Bug to remove | Lock, snapshot and planner | Exact selection, preserved transitive content and source conflicts |
-| Unpinned installed-version retention | Preserve | Exact lock and explicit update | Migration does not upgrade content |
+| Unpinned installed-version retention | Preserve | Exact lock and explicit update | Sync does not upgrade content |
 | Common/client/server layers and optional files | Preserve | Requirements and projections | Explicit precedence; reject lossy conversion |
 | mrpack, client, server, full variants, all | Preserve | Build planner and inventory | Fresh shared prerequisites; complete semantic artifacts |
 | ZIP, TAR.GZ, 7z and binary templates | Preserve | Writers/readers and renderer | Byte inventory, escaped scripts and binary copying |
@@ -26,9 +26,9 @@ applicable. Target-only requests become available when their implementations lan
 | Workdir, CLI/env/dotenv, interactive/headless, logs/exits | Preserve | Host adapters | Current smoke fixtures and stable exit classes |
 | Default best-effort batch publication | Replace | AllRequested policy | No publication if any requested group fails |
 | Explicit independent partial progress | Preserve behind explicit policy | Group planner and partial receipt | Failed groups retain original intent/content |
-| Update/adopt/migrate engine requests | New target | Request planner and codec | No CLI support claim before implementation |
+| Update/adopt engine requests | New target | Request planner and codec | No CLI support claim before implementation |
 | Arbitrary tree deletion and automatic orphan inference | Bug to remove / remain refused | Managed change plan | Only justified managed changes; incomplete evidence retains content |
 
-Each migrated feature must name its contract tests in the implementation ledger.
+Each implemented feature must name its contract tests in the implementation ledger.
 CLI and document formats may change directly. Remove a feature only through an
 explicit design decision, not accidentally while replacing an implementation.

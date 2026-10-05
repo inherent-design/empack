@@ -76,7 +76,6 @@ pub enum Request {
     Build(BuildRequest),
     Clean(CleanRequest),
     AdoptObserved(AdoptObservedRequest),
-    Migrate(MigrationRequest),
 }
 
 pub struct AddRequest {
