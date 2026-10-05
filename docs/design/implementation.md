@@ -23,6 +23,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Private content | Bounded quarantine, every source digest/size/observation checked, retained independent readers, original weak evidence separate from computed hashes | [Content tests](../../crates/empack-lib/src/engine/content/tests.rs) |
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
 | Build acquisition | Read-only missing-content plan; references avoid unnecessary downloads; materialization/layer collisions require bytes; failed download batches return no successful subset; manual/provider/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
+| Templates | Captured common/side projection, nested paths, binary and explicit literal copying, strict expressions, format helpers, bounded outputs and preserved portable attributes | [Template tests](../../crates/empack-lib/src/engine/templates/tests.rs) |
 | Archive sources | Retained bounded ZIP reader; raw directory preflight; every member path/kind/collision checked; selected bytes, CRC and portable attributes verified; failed attempts consume extraction allowance | [Archive source tests](../../crates/empack-lib/src/engine/archive_source/tests.rs) |
 | Staging | Private native storage, copied inputs, no project/cache hardlinks, closed writers before freeze, retained file handles, safe cleanup order | [Staging tests](../../crates/empack-lib/src/engine/staging/tests.rs) |
 | File verification | Exact candidate inventory and portable attributes, explicit managed roles, collision checks, complete resulting read budgets | [Verification tests](../../crates/empack-lib/src/engine/verification/tests.rs) |
@@ -67,6 +68,14 @@ Mrpack cannot represent optional embedded content or a selectable replacement wi
 common fallback losslessly. Those cases require an explicit representable choice;
 acknowledging missing description/default fields does not make optional content mandatory.
 
+Template preparation selects common and target-side inputs before rendering. Exact
+side replacements retain their replaced source identity; same-layer duplicates,
+portable aliases and file/ancestor conflicts fail. `.template` files require UTF-8;
+other files preserve the text-or-binary convention, with an explicit `Copy` mode
+for literal UTF-8. Expressions use current bound metadata and exact runtime versions.
+Missing values and rendering/size failures return no partial set. Project templates
+remain untouched. The selected outputs still need standalone runtime/build composition.
+
 ## Existing command guarantees
 
 Earlier fixes remain in the live commands: canonical add/sync/remove identities and
@@ -90,7 +99,9 @@ Results describe the stated revision, not every later edit.
 | --- | --- |
 | `c7b1c64` | [Native PR CI 37387301198](https://github.com/inherent-design/empack/actions/runs/37387301198) passed Linux/macOS/Windows tests and import-smoke, lint and coverage |
 | `180c4c3` | `mise run test`: 1,498 tests and ten doctests passed |
-| `efb7799` | `mise run e2e:strict`: 101 tests passed |
+| `efb7799` | `mise run e2e:strict`: 101 tests passed; [native CI 37388992838](https://github.com/inherent-design/empack/actions/runs/37388992838) passed |
+| `1901434` | 17 template tests and all-feature Clippy passed; six generated configurations each round-tripped through Qt QSettings and Java Properties |
+| Captured template integration | 20 affected template tests passed, including all four standalone target selections, malformed inputs, output budgets, cancellation and source changes |
 | Archive and budget integration | 21 affected acquisition/archive/build/reader tests passed; the final five archive tests passed after tightening per-member reads. Three focused source-ownership/scratch tests and all-feature Clippy passed |
 
 The HTTP and build tests use deterministic local fixtures. They do not establish
