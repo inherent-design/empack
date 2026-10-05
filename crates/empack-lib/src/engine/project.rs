@@ -43,6 +43,35 @@ impl WorkspaceSnapshot {
             .context("Project has no exact resolution lock")?
             .bind(&self.intent)
     }
+    /// Decode backend metadata only from captured pack files, retaining native byte and object
+    /// checks. This is an observation of the tree, not proof that an index includes every record.
+    pub fn backend_files(&self, cancel: &Cancellation) -> Result<Vec<super::backend::BackendFile>> {
+        self.root.check_binding()?;
+        let mut result = Vec::new();
+        let mut destinations = super::layout::CollisionIndex::default();
+        for (path, observation) in self.native.entries() {
+            let Some(relative) = path.as_str().strip_prefix("pack/") else {
+                continue;
+            };
+            if !relative.ends_with(".pw.toml") {
+                continue;
+            }
+            ensure!(
+                matches!(observation, Observation::File(_)),
+                "Backend metadata is not a regular file"
+            );
+            let bytes = read_document(&self.root, &self.native, path.as_str(), cancel)?
+                .context("Captured backend metadata disappeared")?;
+            let file = super::backend::BackendFile::parse(
+                PortableRelPath::parse(relative, PathSyntax::ProjectContent)?,
+                &bytes,
+            )?;
+            destinations.insert_file(file.destination.relative())?;
+            result.push(file);
+        }
+        self.root.check_binding()?;
+        Ok(result)
+    }
     /// Copy one captured regular input into a verified private lease. This cannot read an
     /// uncaptured path or publish bytes, and every source declaration remains enforced.
     pub fn acquire_file(

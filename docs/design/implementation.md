@@ -544,3 +544,10 @@ budget. A retained archive larger than the input file budget no longer blocks an
 unrelated build, and edits to that unrelated output do not invalidate preparation.
 Both regressions failed before the fixes; the nine affected reader/mrpack tests
 pass afterward. These remain engine components awaiting complete CLI integration.
+
+Captured backend observation now reads through the retained project root and
+compares each document's native identity and raw bytes against preparation. It
+rejects portable destination aliases before consumers receive installed records.
+A real-filesystem fixture covers changed pins after capture and two metadata files
+that claim case-equivalent destinations. Seven affected reader/backend tests pass.
+Tree observation remains distinct from index membership and byte verification.

@@ -231,3 +231,62 @@ fn malformed_lock_is_an_error_and_comment_changes_invalidate_preparation() {
     );
     assert!(!temp.path().join("private-state").exists());
 }
+
+#[test]
+fn backend_observation_reads_captured_bytes_and_rejects_destination_aliases() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("empack.yml"), DOCUMENT).unwrap();
+    fs::create_dir_all(temp.path().join("pack/mods")).unwrap();
+    let metadata = r#"filename = "renderer.jar"
+side = "client"
+[download]
+url = "https://example.com/renderer.jar"
+hash-format = "sha256"
+hash = "0000000000000000000000000000000000000000000000000000000000000000"
+[update.modrinth]
+mod-id = "AANobbMI"
+version = "Version1"
+[option]
+optional = true
+default = false
+description = "Renderer"
+"#;
+    let path = temp.path().join("pack/mods/arbitrary-label.pw.toml");
+    fs::write(&path, metadata).unwrap();
+    let reader = ProjectReader::new(RecoveryReader::new(temp.path().join("unused-host")));
+    let cancel = Cancellation::default();
+    let capture = || {
+        reader
+            .capture(
+                temp.path(),
+                &[PortableRelPath::parse("pack", PathSyntax::ProjectContent).unwrap()],
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap()
+    };
+    let snapshot = capture();
+    let files = snapshot.backend_files(&cancel).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(
+        files[0].metadata_path.as_str(),
+        "mods/arbitrary-label.pw.toml"
+    );
+    assert_eq!(
+        files[0].destination.relative().as_str(),
+        "mods/renderer.jar"
+    );
+    assert_eq!(
+        files[0].provider.as_ref().unwrap().project.to_string(),
+        "AANobbMI"
+    );
+    assert!(!files[0].optional.as_ref().unwrap().default_enabled);
+    fs::write(&path, metadata.replace("Version1", "Version2")).unwrap();
+    assert!(snapshot.backend_files(&cancel).is_err());
+    fs::write(
+        temp.path().join("pack/mods/second.pw.toml"),
+        metadata.replace("renderer.jar", "Renderer.jar"),
+    )
+    .unwrap();
+    assert!(capture().backend_files(&cancel).is_err());
+}
