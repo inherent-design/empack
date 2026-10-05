@@ -7,7 +7,7 @@ moves through the gates below. The baseline is `50c121f`.
 | --- | --- | --- |
 | Target documentation and policy | Landed | C01 to C14, API sketches, implementation order and user decisions have one target |
 | Pure core and first consumers | Landed | Dependency-free core; portable paths and deterministic target prerequisites used by live adapters; negative cases and live workflow tests |
-| Semantic identity, requirements and codec | Pending | Typed canonical identities, multi-file placements, explicit DTO dispatch and validated schema |
+| Semantic identity, requirements and codec | In progress | Typed canonical identities, multi-file placements, explicit DTO dispatch and validated schema |
 | Snapshots, lock and pure plans | Pending | Raw read sets, absence checks, exact selections, convergence and alias tests |
 | Read-only preparation and acquisition | Pending | Every preview preserves durable project/cache/tool/state trees |
 | Native staging and publication | Pending | No live writer bypass; retained roots, freeze, private verification proof, crash/restart tests |
@@ -71,3 +71,19 @@ At `52a4c53`, all-feature Clippy and the full default suite passed: 1,365 tests
 and ten doctests, including 23 offline smoke tests. The first core landing at
 `c1386d4` also passed all 100 strict E2E tests. The prepared-import landing is
 undergoing a separate strict rerun and Greptile review.
+
+## Provider identity landing
+
+The pure core owns provider-qualified project IDs and distinct Modrinth version
+and CurseForge file IDs. Parsing preserves case and rejects whitespace, slugs,
+URLs, malformed base62 values, zero, decimal padding and overflow. Syntax does
+not establish existence or pin ownership; provider resolution still checks those.
+
+Sync and removal compare typed identities. Installed metadata decodes pins in
+its provider namespace, and command planning rejects invalid IDs before invoking
+the backend. Human labels and observed metadata keys remain separate. Existing
+wire structs still belong to the adapter; the normalized codec is not yet landed.
+
+The parser follows the [Modrinth identifier contract](https://docs.modrinth.com/api/)
+and [CurseForge ID fields](https://docs.curseforge.com/rest-api/). Test fixtures use
+provider-shaped IDs. Negative tests retain malformed selectors and pins.

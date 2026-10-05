@@ -1,5 +1,5 @@
 //! Resolve logical removal selectors before granting any mutation authority.
-use crate::empack::config::{Dependency, DependencyEntry, DependencyRecord};
+use crate::empack::config::{Dependency, DependencyEntry};
 use crate::empack::installed::{DependencyIdentity, InstalledDependency};
 use anyhow::{Result, ensure};
 use std::collections::{BTreeMap, HashSet};
@@ -12,19 +12,20 @@ pub struct RemovalPlan {
     pub installed: Option<InstalledDependency>,
 }
 
-fn identity(record: &DependencyRecord) -> DependencyIdentity {
-    DependencyIdentity {
-        platform: record.platform,
-        project_id: record.project_id.clone(),
-        project_type: record.project_type,
-    }
-}
-
 pub fn plan_removals(
     queries: &[String],
     manifest: &BTreeMap<String, DependencyEntry>,
     installed: &[InstalledDependency],
 ) -> Result<Vec<RemovalPlan>> {
+    let identities: BTreeMap<_, _> = manifest
+        .iter()
+        .filter_map(|(key, entry)| match entry {
+            DependencyEntry::Resolved(record) => Some(
+                DependencyIdentity::from_record(record).map(|identity| (key.clone(), identity)),
+            ),
+            _ => None,
+        })
+        .collect::<Result<_>>()?;
     let mut plans = Vec::new();
     let mut selected = HashSet::new();
     for query in queries {
@@ -42,11 +43,11 @@ pub fn plan_removals(
             .first()
             .into_iter()
             .flat_map(|observed| {
-                manifest.iter().filter(move |(_, entry)| match entry {
-                    DependencyEntry::Resolved(record) => {
-                        observed.identity.as_ref() == Some(&identity(record))
-                    }
-                    _ => false,
+                manifest.iter().filter(|(key, _)| {
+                    observed
+                        .identity
+                        .as_ref()
+                        .is_some_and(|id| identities.get(*key) == Some(id))
                 })
             })
             .collect();
@@ -70,12 +71,10 @@ pub fn plan_removals(
             candidates.into_iter().next()
         };
         if exact.is_none()
-            && let (Some((_, entry)), Some(stem)) = (chosen, stems.first())
+            && let (Some((key, entry)), Some(stem)) = (chosen, stems.first())
         {
             let same = match entry {
-                DependencyEntry::Resolved(record) => {
-                    stem.identity.as_ref() == Some(&identity(record))
-                }
+                DependencyEntry::Resolved(_) => stem.identity.as_ref() == identities.get(key),
                 DependencyEntry::Url(record) => {
                     stem.identity.is_none()
                         && record
@@ -93,13 +92,15 @@ pub fn plan_removals(
             );
         }
         let observed = match chosen.map(|(_, entry)| entry) {
-            Some(DependencyEntry::Resolved(record)) => {
-                let id = identity(record);
-                ensure!(manifest.values().filter(|entry| matches!(entry, DependencyEntry::Resolved(r) if identity(r) == id)).count() == 1,
-                    "Multiple manifest entries declare the selected identity: {query}");
+            Some(DependencyEntry::Resolved(_)) => {
+                let id = &identities[chosen.unwrap().0];
+                ensure!(
+                    identities.values().filter(|other| *other == id).count() == 1,
+                    "Multiple manifest entries declare the selected identity: {query}"
+                );
                 let matches: Vec<_> = installed
                     .iter()
-                    .filter(|entry| entry.identity.as_ref() == Some(&id))
+                    .filter(|entry| entry.identity.as_ref() == Some(id))
                     .collect();
                 ensure!(
                     matches.len() <= 1,
@@ -132,7 +133,7 @@ pub fn plan_removals(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::empack::config::DependencyStatus;
+    use crate::empack::config::{DependencyRecord, DependencyStatus};
     use crate::primitives::{ProjectPlatform, ProjectType};
 
     fn entry(id: &str) -> DependencyEntry {
@@ -148,7 +149,7 @@ mod tests {
     }
     #[test]
     fn absent_identity_only_removes_intent_even_when_label_collides() {
-        let manifest = BTreeMap::from([("alias".into(), entry("P"))]);
+        let manifest = BTreeMap::from([("alias".into(), entry("Project1"))]);
         let installed = vec![InstalledDependency {
             key: "alias".into(),
             identity: None,
@@ -166,14 +167,20 @@ mod tests {
     }
     #[test]
     fn ambiguity_and_unknown_names_fail_before_execution() {
-        let manifest = BTreeMap::from([("a".into(), entry("P")), ("b".into(), entry("Q"))]);
+        let manifest = BTreeMap::from([
+            ("a".into(), entry("Project1")),
+            ("b".into(), entry("Project2")),
+        ]);
         assert!(plan_removals(&["Shared title".into()], &manifest, &[]).is_err());
         assert!(plan_removals(&["a".into(), "unknown".into()], &manifest, &[]).is_err());
         assert!(plan_removals(&["a".into()], &manifest, &[]).is_ok());
     }
     #[test]
     fn duplicate_manifest_identity_fails_closed() {
-        let manifest = BTreeMap::from([("a".into(), entry("P")), ("b".into(), entry("P"))]);
+        let manifest = BTreeMap::from([
+            ("a".into(), entry("Project1")),
+            ("b".into(), entry("Project1")),
+        ]);
         assert!(plan_removals(&["a".into()], &manifest, &[]).is_err());
     }
 }

@@ -2301,7 +2301,7 @@ mod handle_direct_download_jar_tests {
         let commands = crate::application::sync::build_packwiz_add_commands(
             "AANobbMI",
             ProjectPlatform::Modrinth,
-            Some("version-123"),
+            Some("Vers0123"),
         )
         .expect("packwiz add commands");
         let session = configured_direct_download_session(&workdir).with_process(
@@ -2315,7 +2315,7 @@ mod handle_direct_download_jar_tests {
         let resolver = StubJarResolver {
             identity: crate::empack::content::JarIdentity::Modrinth {
                 project_id: "AANobbMI".to_string(),
-                version_id: "version-123".to_string(),
+                version_id: "Vers0123".to_string(),
                 title: "Sodium".to_string(),
             },
         };
@@ -2357,7 +2357,7 @@ mod handle_direct_download_jar_tests {
         let commands = crate::application::sync::build_packwiz_add_commands(
             "AANobbMI",
             ProjectPlatform::Modrinth,
-            Some("version-123"),
+            Some("Vers0123"),
         )
         .expect("packwiz add commands");
         let session = configured_direct_download_session(&workdir).with_process(
@@ -2371,7 +2371,7 @@ mod handle_direct_download_jar_tests {
         let resolver = StubJarResolver {
             identity: crate::empack::content::JarIdentity::Modrinth {
                 project_id: "AANobbMI".to_string(),
-                version_id: "version-123".to_string(),
+                version_id: "Vers0123".to_string(),
                 title: "Sodium".to_string(),
             },
         };
@@ -2829,7 +2829,7 @@ mod handle_add_tests {
     #[tokio::test]
     async fn added_pins_survive_manifest_publication() {
         for (platform, id, version, file) in [
-            (SearchPlatform::Modrinth, "AANobbMI", Some("pinned-mr".to_string()), None),
+            (SearchPlatform::Modrinth, "AANobbMI", Some("PinnedMr".to_string()), None),
             (SearchPlatform::Curseforge, "238222", None, Some("12345".to_string())),
         ] {
             let workdir = mock_root().join("add-pin-publication");
@@ -2860,7 +2860,7 @@ mod handle_add_tests {
         let workdir = mock_root().join("configured-project");
 
         // Create a mock project info for successful resolution
-        let mock_project = modrinth_project("test-mod-id", "Test Mod");
+        let mock_project = modrinth_project("TestMod1", "Test Mod");
 
         let session = configured_session(&workdir)
             .with_network(
@@ -2872,7 +2872,7 @@ mod handle_add_tests {
                     "modrinth".to_string(),
                     "add".to_string(),
                     "--project-id".to_string(),
-                    "test-mod-id".to_string(),
+                    "TestMod1".to_string(),
                     "-y".to_string(),
                 ],
                 Ok(ProcessOutput {
@@ -2899,7 +2899,7 @@ mod handle_add_tests {
         assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
-            &["modrinth", "add", "--project-id", "test-mod-id", "-y"],
+            &["modrinth", "add", "--project-id", "TestMod1", "-y"],
             &workdir.join("pack")
         ));
     }
@@ -2912,11 +2912,11 @@ mod handle_add_tests {
                 MockNetworkProvider::new()
                     .with_project_response(
                         "mod1".to_string(),
-                        modrinth_project("mod1-id", "Mod One"),
+                        modrinth_project("TestMod1", "Mod One"),
                     )
                     .with_project_response(
                         "mod2".to_string(),
-                        modrinth_project("mod2-id", "Mod Two"),
+                        modrinth_project("TestMod2", "Mod Two"),
                     ),
             )
             .with_process(
@@ -2926,7 +2926,7 @@ mod handle_add_tests {
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
-                            "mod1-id".to_string(),
+                            "TestMod1".to_string(),
                             "-y".to_string(),
                         ],
                         Ok(ProcessOutput {
@@ -2940,7 +2940,7 @@ mod handle_add_tests {
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
-                            "mod2-id".to_string(),
+                            "TestMod2".to_string(),
                             "-y".to_string(),
                         ],
                         Ok(ProcessOutput {
@@ -2968,12 +2968,12 @@ mod handle_add_tests {
         assert_eq!(calls.len(), 2);
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
-            &["modrinth", "add", "--project-id", "mod1-id", "-y"],
+            &["modrinth", "add", "--project-id", "TestMod1", "-y"],
             &workdir.join("pack")
         ));
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
-            &["modrinth", "add", "--project-id", "mod2-id", "-y"],
+            &["modrinth", "add", "--project-id", "TestMod2", "-y"],
             &workdir.join("pack")
         ));
     }
@@ -3170,14 +3170,14 @@ mod handle_add_tests {
         let session = configured_session(&workdir)
             .with_network(MockNetworkProvider::new().with_project_response(
                 "failing-mod".to_string(),
-                modrinth_project("failing-mod-id", "Failing Mod"),
+                modrinth_project("FailMod1", "Failing Mod"),
             ))
             .with_process(MockProcessProvider::new().with_packwiz_result(
                 vec![
                     "modrinth".to_string(),
                     "add".to_string(),
                     "--project-id".to_string(),
-                    "failing-mod-id".to_string(),
+                    "FailMod1".to_string(),
                     "-y".to_string(),
                 ],
                 Err("Mock packwiz error".to_string()),
@@ -3191,7 +3191,7 @@ mod handle_add_tests {
         assert_eq!(calls.len(), 1);
         assert!(session.process_provider.verify_call(
             crate::empack::packwiz::PACKWIZ_BIN,
-            &["modrinth", "add", "--project-id", "failing-mod-id", "-y"],
+            &["modrinth", "add", "--project-id", "FailMod1", "-y"],
             &workdir.join("pack")
         ));
     }
@@ -3252,7 +3252,7 @@ mod handle_add_tests {
     async fn it_falls_back_to_input_key_when_no_new_pw_toml_detected() {
         // When packwiz doesn't create a new .pw.toml (edge case), fall back to input-derived key.
         let workdir = mock_root().join("configured-project");
-        let mock_project = modrinth_project("test-mod-id", "Test Mod");
+        let mock_project = modrinth_project("TestMod1", "Test Mod");
 
         let session = configured_session(&workdir)
             .with_network(
@@ -3264,7 +3264,7 @@ mod handle_add_tests {
                     "modrinth".to_string(),
                     "add".to_string(),
                     "--project-id".to_string(),
-                    "test-mod-id".to_string(),
+                    "TestMod1".to_string(),
                     "-y".to_string(),
                 ],
                 Ok(ProcessOutput {
@@ -3294,7 +3294,7 @@ mod handle_add_tests {
     async fn it_handles_slug_discovery_with_pre_existing_pw_toml_files() {
         // When mods/ already has .pw.toml files, only the NEW file should be used as dep_key.
         let workdir = mock_root().join("configured-project");
-        let mock_project = modrinth_project("new-mod-id", "New Mod");
+        let mock_project = modrinth_project("NewMod01", "New Mod");
         let mods_dir = workdir.join("pack").join("mods");
 
         let session = MockCommandSession::new()
@@ -3319,7 +3319,7 @@ mod handle_add_tests {
                             "modrinth".to_string(),
                             "add".to_string(),
                             "--project-id".to_string(),
-                            "new-mod-id".to_string(),
+                            "NewMod01".to_string(),
                             "-y".to_string(),
                         ],
                         Ok(ProcessOutput {
@@ -3329,7 +3329,7 @@ mod handle_add_tests {
                         }),
                     )
                     // packwiz creates "new-mod.pw.toml"; different from "new_mod" (query normalized)
-                    .with_packwiz_add_slug("new-mod-id".to_string(), "new-mod".to_string()),
+                    .with_packwiz_add_slug("NewMod01".to_string(), "new-mod".to_string()),
             );
 
         let result = handle_add(&session, vec!["New Mod".to_string()], false, None, None, None, None).await;
@@ -3352,7 +3352,7 @@ mod handle_add_tests {
     #[tokio::test]
     async fn it_skips_side_effects_in_dry_run() {
         let workdir = mock_root().join("configured-project");
-        let mock_project = modrinth_project("test-mod-id", "Test Mod");
+        let mock_project = modrinth_project("TestMod1", "Test Mod");
 
         let mut session = configured_session(&workdir)
             .with_network(
@@ -3880,7 +3880,7 @@ forge = "47.3.0"
       platform: modrinth
       project_id: AANobbMI
       type: mod
-      version: good-version
+      version: GoodVers
   minecraft_version: "1.21.1"
   loader: fabric
   name: "Test Pack"
@@ -3915,7 +3915,7 @@ fabric = "0.16.0"
                     "--project-id".to_string(),
                     "AANobbMI".to_string(),
                     "--version-id".to_string(),
-                    "good-version".to_string(),
+                    "GoodVers".to_string(),
                     "-y".to_string(),
                 ],
                 Ok(ProcessOutput {
@@ -3938,7 +3938,7 @@ fabric = "0.16.0"
                 "--project-id",
                 "AANobbMI",
                 "--version-id",
-                "good-version",
+                "GoodVers",
                 "-y",
             ],
             &workdir.join("pack")
@@ -7501,7 +7501,7 @@ mod search_add_tests {
             .with_network(
                 MockNetworkProvider::new().with_project_response(
                     "faithful".to_string(),
-                    modrinth_project("faith-id", "Faithful"),
+                    modrinth_project("Faithful", "Faithful"),
                 ),
             )
             .with_process(MockProcessProvider::new().with_packwiz_result(
@@ -7509,7 +7509,7 @@ mod search_add_tests {
                     "modrinth".to_string(),
                     "add".to_string(),
                     "--project-id".to_string(),
-                    "faith-id".to_string(),
+                    "Faithful".to_string(),
                     "-y".to_string(),
                 ],
                 Ok(ProcessOutput {
@@ -7536,7 +7536,7 @@ mod search_add_tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(
             calls[0].args,
-            vec!["modrinth", "add", "--project-id", "faith-id", "-y"],
+            vec!["modrinth", "add", "--project-id", "Faithful", "-y"],
         );
     }
 
@@ -7612,7 +7612,7 @@ mod search_add_tests {
                     "--project-id".to_string(),
                     "AANobbMI".to_string(),
                     "--version-id".to_string(),
-                    "mc1.21-fabric-0.16".to_string(),
+                    "Version1".to_string(),
                     "-y".to_string(),
                 ],
                 Ok(ProcessOutput {
@@ -7628,7 +7628,7 @@ mod search_add_tests {
             false,
             Some(SearchPlatform::Modrinth),
             None,
-            Some("mc1.21-fabric-0.16".to_string()),
+            Some("Version1".to_string()),
             None,
         )
         .await;
@@ -7639,7 +7639,7 @@ mod search_add_tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(
             calls[0].args,
-            vec!["modrinth", "add", "--project-id", "AANobbMI", "--version-id", "mc1.21-fabric-0.16", "-y"],
+            vec!["modrinth", "add", "--project-id", "AANobbMI", "--version-id", "Version1", "-y"],
             "Packwiz command must include --version-id from CLI flag"
         );
     }
@@ -7912,7 +7912,7 @@ mod exit_code_tests {
     #[tokio::test]
     async fn test_handle_add_packwiz_failure_returns_error() {
         let workdir = mock_root().join("exit-code-packwiz-fail");
-        let mock_project = modrinth_project("fail-mod-id", "Fail Mod");
+        let mock_project = modrinth_project("FailMod2", "Fail Mod");
 
         let session = configured_session(&workdir)
             .with_network(
@@ -7924,7 +7924,7 @@ mod exit_code_tests {
                     "modrinth".to_string(),
                     "add".to_string(),
                     "--project-id".to_string(),
-                    "fail-mod-id".to_string(),
+                    "FailMod2".to_string(),
                     "-y".to_string(),
                 ],
                 Ok(ProcessOutput {
@@ -8055,7 +8055,7 @@ mod exit_code_tests {
     #[tokio::test]
     async fn test_handle_add_propagates_packwiz_stderr() {
         let workdir = mock_root().join("exit-code-stderr-prop");
-        let mock_project = modrinth_project("stderr-mod-id", "Stderr Mod");
+        let mock_project = modrinth_project("StderrM1", "Stderr Mod");
 
         let session = configured_session(&workdir)
             .with_network(
@@ -8067,7 +8067,7 @@ mod exit_code_tests {
                     "modrinth".to_string(),
                     "add".to_string(),
                     "--project-id".to_string(),
-                    "stderr-mod-id".to_string(),
+                    "StderrM1".to_string(),
                     "-y".to_string(),
                 ],
                 Ok(ProcessOutput {
@@ -8715,7 +8715,7 @@ mod derive_version_pin_tests {
 
     #[test]
     fn both_version_id_and_file_id_curseforge_prefers_file_id() {
-        let vid = Some("ver-123".to_string());
+        let vid = Some("Vers0123".to_string());
         let fid = Some("file-456".to_string());
         let result = derive_version_pin(&vid, &fid, Some(ProjectPlatform::CurseForge));
         assert_eq!(result, Some("file-456"));
@@ -8723,26 +8723,26 @@ mod derive_version_pin_tests {
 
     #[test]
     fn both_version_id_and_file_id_modrinth_prefers_version_id() {
-        let vid = Some("ver-123".to_string());
+        let vid = Some("Vers0123".to_string());
         let fid = Some("file-456".to_string());
         let result = derive_version_pin(&vid, &fid, Some(ProjectPlatform::Modrinth));
-        assert_eq!(result, Some("ver-123"));
+        assert_eq!(result, Some("Vers0123"));
     }
 
     #[test]
     fn both_version_id_and_file_id_no_platform_prefers_version_id() {
-        let vid = Some("ver-123".to_string());
+        let vid = Some("Vers0123".to_string());
         let fid = Some("file-456".to_string());
         let result = derive_version_pin(&vid, &fid, None);
-        assert_eq!(result, Some("ver-123"));
+        assert_eq!(result, Some("Vers0123"));
     }
 
     #[test]
     fn version_id_only() {
-        let vid = Some("ver-123".to_string());
+        let vid = Some("Vers0123".to_string());
         let fid = None;
         let result = derive_version_pin(&vid, &fid, None);
-        assert_eq!(result, Some("ver-123"));
+        assert_eq!(result, Some("Vers0123"));
     }
 
     #[test]

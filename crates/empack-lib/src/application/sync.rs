@@ -79,6 +79,8 @@ pub enum AddContractError {
 pub enum AddCommandPlanError {
     #[error("invalid packwiz add command plan")]
     InvalidPlan,
+    #[error("invalid provider identifier: {0}")]
+    InvalidIdentity(#[from] empack_core::identity::IdentityError),
 }
 
 pub fn build_sync_plan(
@@ -92,22 +94,18 @@ pub fn build_sync_plan(
     let mut actions = Vec::new();
     for spec in &project_plan.dependencies {
         expected_mods.insert(spec.key.clone());
-        let Some(identity) = DependencyIdentity::from_spec(spec) else {
+        let Some(identity) = DependencyIdentity::from_spec(spec)? else {
+            if matches!(spec.source, DependencySource::Platform { .. }) {
+                actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
+            }
             continue;
         };
-        if identity.project_id.is_empty() {
-            actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
-            continue;
-        }
         anyhow::ensure!(
-            !installed
-                .iter()
-                .any(|entry| entry
-                    .identity
-                    .as_ref()
-                    .is_some_and(|other| other.platform == identity.platform
-                        && other.project_id == identity.project_id
-                        && other.project_type != identity.project_type)),
+            !installed.iter().any(|entry| entry
+                .identity
+                .as_ref()
+                .is_some_and(|other| other.project == identity.project
+                    && other.project_type != identity.project_type)),
             "Installed dependency '{}' has a different content type. Automatic replacement is not supported",
             spec.key
         );
@@ -130,7 +128,11 @@ pub fn build_sync_plan(
             let DependencySource::Platform { version_pin, .. } = &spec.source else {
                 unreachable!()
             };
-            if version_pin.is_some() && entry.version.as_ref() != version_pin.as_ref() {
+            let requested_pin = version_pin
+                .as_deref()
+                .map(|pin| identity.project.parse_pin(pin))
+                .transpose()?;
+            if requested_pin.is_some() && entry.version != requested_pin {
                 // A pinned reinstall keeps provider identity; packwiz owns replacement
                 // of its metadata and required dependency resolution.
                 actions.push(SyncPlanAction::Add(SyncDependencyPlan::from_spec(spec)));
@@ -318,6 +320,23 @@ pub fn build_packwiz_add_commands(
     platform: ProjectPlatform,
     version_pin: Option<&str>,
 ) -> std::result::Result<Vec<Vec<String>>, AddCommandPlanError> {
+    use empack_core::identity::{
+        CurseForgeFileId, CurseForgeProjectId, ModrinthProjectId, ModrinthVersionId,
+    };
+    match platform {
+        ProjectPlatform::Modrinth => {
+            ModrinthProjectId::parse(project_id)?;
+            if let Some(pin) = version_pin {
+                ModrinthVersionId::parse(pin)?;
+            }
+        }
+        ProjectPlatform::CurseForge => {
+            CurseForgeProjectId::parse(project_id)?;
+            if let Some(pin) = version_pin {
+                CurseForgeFileId::parse(pin)?;
+            }
+        }
+    }
     let (platform_cmd, id_flag, version_flag) = match platform {
         ProjectPlatform::Modrinth => ("modrinth", "--project-id", "--version-id"),
         ProjectPlatform::CurseForge => ("curseforge", "--addon-id", "--file-id"),

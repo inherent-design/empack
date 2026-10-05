@@ -116,11 +116,12 @@ pub trait PackwizOps {
         workdir: &Path,
         record: &super::config::DependencyRecord,
     ) -> crate::Result<Option<String>> {
-        let identity = super::installed::DependencyIdentity {
-            platform: record.platform,
-            project_id: record.project_id.clone(),
-            project_type: record.project_type,
-        };
+        let identity = super::installed::DependencyIdentity::from_record(record)?;
+        let pin = record
+            .version
+            .as_deref()
+            .map(|value| identity.project.parse_pin(value))
+            .transpose()?;
         let observed = self.installed_snapshot(workdir)?;
         let matches: Vec<_> = observed
             .iter()
@@ -128,8 +129,7 @@ pub trait PackwizOps {
             .collect();
         anyhow::ensure!(
             matches.len() == 1
-                && record
-                    .version
+                && pin
                     .as_ref()
                     .is_none_or(|pin| matches[0].version.as_ref() == Some(pin)),
             "Backend reported success but installed metadata does not match requested identity or pin for '{}'; inspect pack metadata before retrying",
@@ -513,11 +513,7 @@ impl LivePackwizOps<'_> {
         workdir: &Path,
         record: &super::config::DependencyRecord,
     ) -> crate::Result<Option<(PathBuf, toml::Value)>> {
-        let identity = super::installed::DependencyIdentity {
-            platform: record.platform,
-            project_id: record.project_id.clone(),
-            project_type: record.project_type,
-        };
+        let identity = super::installed::DependencyIdentity::from_record(record)?;
         let matches: Vec<_> = self
             .installed_snapshot(workdir)?
             .into_iter()
@@ -821,12 +817,17 @@ minecraft = "{}"
                     });
                 super::installed::InstalledDependency {
                     key: key.clone(),
-                    identity: record.map(|r| super::installed::DependencyIdentity {
-                        platform: r.platform,
-                        project_id: r.project_id.clone(),
-                        project_type: r.project_type,
+                    identity: record
+                        .and_then(|r| super::installed::DependencyIdentity::from_record(r).ok()),
+                    version: record.and_then(|r| {
+                        r.version.as_deref().and_then(|pin| {
+                            super::installed::DependencyIdentity::from_record(r)
+                                .ok()?
+                                .project
+                                .parse_pin(pin)
+                                .ok()
+                        })
                     }),
-                    version: record.and_then(|r| r.version.clone()),
                 }
             })
             .collect())

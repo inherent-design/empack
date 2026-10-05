@@ -14,7 +14,7 @@ fn project_spec(key: &str) -> ProjectSpec {
         minecraft_version: "1.21.1".to_string(),
         loader: Some(ModLoader::Fabric),
         source: DependencySource::Platform {
-            project_id: format!("test-id-{key}"),
+            project_id: format!("{:08x}", key.bytes().fold(0u32, |sum, b| sum.wrapping_mul(31).wrapping_add(b as u32))),
             project_platform: ProjectPlatform::Modrinth,
             version_pin: None,
         },
@@ -247,7 +247,7 @@ async fn test_resolve_add_contract_matches_sync_modrinth_version_pin() {
         Some(ModLoader::Fabric),
         "AANobbMI",
         ProjectPlatform::Modrinth,
-        Some("good-version"),
+        Some("GoodVers"),
         None,
         &resolver,
     )
@@ -264,7 +264,7 @@ async fn test_resolve_add_contract_matches_sync_modrinth_version_pin() {
             source: DependencySource::Platform {
                 project_id: "AANobbMI".to_string(),
                 project_platform: ProjectPlatform::Modrinth,
-                version_pin: Some("good-version".to_string()),
+                version_pin: Some("GoodVers".to_string()),
             },
         }),
         &resolver,
@@ -511,10 +511,10 @@ fn test_build_packwiz_add_commands_modrinth_no_version() {
 #[test]
 fn test_build_packwiz_add_commands_modrinth_with_version() {
     let cmds =
-        build_packwiz_add_commands("AANobbMI", ProjectPlatform::Modrinth, Some("ver-123"))
+        build_packwiz_add_commands("AANobbMI", ProjectPlatform::Modrinth, Some("Vers0123"))
             .unwrap();
     assert_eq!(cmds, vec![vec![
-        "modrinth", "add", "--project-id", "AANobbMI", "--version-id", "ver-123", "-y",
+        "modrinth", "add", "--project-id", "AANobbMI", "--version-id", "Vers0123", "-y",
     ]]);
 }
 
@@ -620,7 +620,7 @@ async fn test_resolve_add_contract_modrinth_direct_id_with_version_pin() {
         Some(ModLoader::Fabric),
         "AANobbMI",
         ProjectPlatform::Modrinth,
-        Some("version-abc"),
+        Some("Vers0abc"),
         None,
         &resolver,
     )
@@ -632,7 +632,7 @@ async fn test_resolve_add_contract_modrinth_direct_id_with_version_pin() {
     assert_eq!(resolution.title, "Sodium");
     assert_eq!(resolution.confidence, None);
     assert_eq!(resolution.commands, vec![vec![
-        "modrinth", "add", "--project-id", "AANobbMI", "--version-id", "version-abc", "-y",
+        "modrinth", "add", "--project-id", "AANobbMI", "--version-id", "Vers0abc", "-y",
     ]]);
 }
 
@@ -664,7 +664,7 @@ async fn test_resolve_add_contract_search_failure() {
 
 fn plan_for_keys(plan: &ProjectPlan, keys: &HashSet<String>) -> SyncPlan {
     let installed: Vec<_> = keys.iter().map(|key| InstalledDependency {
-        key: key.clone(), identity: DependencyIdentity::from_spec(&project_spec(key)), version: None,
+        key: key.clone(), identity: DependencyIdentity::from_spec(&project_spec(key)).unwrap(), version: None,
     }).collect();
     build_sync_plan(plan, &installed).unwrap()
 }
@@ -674,8 +674,8 @@ fn identity_reconciliation_retains_required_content_across_repeated_sync() {
     let mut root = project_spec("renderer-alias");
     root.source = project_spec("canonical-renderer").source;
     let installed = vec![
-        InstalledDependency { key: "canonical-renderer".into(), identity: DependencyIdentity::from_spec(&root), version: Some("v1".into()) },
-        InstalledDependency { key: "required-library".into(), identity: DependencyIdentity::from_spec(&project_spec("required-library")), version: None },
+        InstalledDependency { key: "canonical-renderer".into(), identity: DependencyIdentity::from_spec(&root).unwrap(), version: Some(empack_core::identity::PinSelector::ModrinthVersion(empack_core::identity::ModrinthVersionId::parse("Version1").unwrap())) },
+        InstalledDependency { key: "required-library".into(), identity: DependencyIdentity::from_spec(&project_spec("required-library")).unwrap(), version: None },
     ];
     let plan = make_plan(vec![root]);
     for _ in 0..2 {
@@ -690,23 +690,35 @@ fn identity_reconciliation_retains_required_content_across_repeated_sync() {
 fn pin_changes_schedule_reinstallation_and_then_converge() {
     let mut root = project_spec("alias");
     let DependencySource::Platform { version_pin, .. } = &mut root.source else { unreachable!() };
-    *version_pin = Some("v2".into());
-    let mut installed = vec![InstalledDependency { key: "canonical".into(), identity: DependencyIdentity::from_spec(&root), version: Some("v1".into()) }];
+    *version_pin = Some("Version2".into());
+    let mut installed = vec![InstalledDependency { key: "canonical".into(), identity: DependencyIdentity::from_spec(&root).unwrap(), version: Some(empack_core::identity::PinSelector::ModrinthVersion(empack_core::identity::ModrinthVersionId::parse("Version1").unwrap())) }];
     let plan = make_plan(vec![root]);
     let sync = build_sync_plan(&plan, &installed).unwrap();
     assert_eq!(sync.actions.len(), 1);
     assert!(matches!(sync.actions[0], SyncPlanAction::Add(_)));
-    installed[0].version = Some("v2".into());
+    installed[0].version = Some(empack_core::identity::PinSelector::ModrinthVersion(empack_core::identity::ModrinthVersionId::parse("Version2").unwrap()));
     assert!(build_sync_plan(&plan, &installed).unwrap().actions.is_empty());
 }
 
 #[test]
 fn duplicate_identity_and_key_collisions_fail_before_execution() {
     let root = project_spec("root");
-    let installed = InstalledDependency { key: "root".into(), identity: DependencyIdentity::from_spec(&root), version: None };
+    let installed = InstalledDependency { key: "root".into(), identity: DependencyIdentity::from_spec(&root).unwrap(), version: None };
     assert!(build_sync_plan(&make_plan(vec![root.clone()]), &[installed.clone(), installed.clone()]).is_err());
     let mut alias = root.clone(); alias.key = "alias".into();
     assert!(build_sync_plan(&make_plan(vec![root, alias]), &[]).is_err());
-    let wrong_identity = InstalledDependency { key: "root".into(), identity: DependencyIdentity::from_spec(&project_spec("other")), version: None };
+    let wrong_identity = InstalledDependency { key: "root".into(), identity: DependencyIdentity::from_spec(&project_spec("other")).unwrap(), version: None };
     assert!(build_sync_plan(&make_plan(vec![project_spec("root")]), &[wrong_identity]).is_err());
+}
+
+#[test]
+fn malformed_provider_identifiers_never_produce_commands() {
+    for (platform, project, pin) in [
+        (ProjectPlatform::Modrinth, "sodium", None),
+        (ProjectPlatform::Modrinth, "AANobbMI", Some("latest")),
+        (ProjectPlatform::CurseForge, "0238222", None),
+        (ProjectPlatform::CurseForge, "238222", Some("-1")),
+    ] {
+        assert!(build_packwiz_add_commands(project, platform, pin).is_err());
+    }
 }

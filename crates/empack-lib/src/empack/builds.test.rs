@@ -3532,7 +3532,7 @@ impl crate::application::session::ProcessProvider for ContentLayerProcess {
             std::fs::write(cwd.join("index.toml"), "hash-format = 'sha256'\n")?;
         } else if args.contains(&"add") {
             std::fs::create_dir_all(cwd.join("mods"))?;
-            std::fs::write(cwd.join("mods/fixture.pw.toml"), "name = 'Fixture'\n[update.modrinth]\nmod-id = 'fixture'\nversion = 'v1'\n")?;
+            std::fs::write(cwd.join("mods/fixture.pw.toml"), "name = 'Fixture'\n[update.modrinth]\nmod-id = 'Fixture1'\nversion = 'Version1'\n")?;
             if self.fail_publication {
                 let manifest = cwd.parent().unwrap().join("empack.yml");
                 let mut permissions = std::fs::metadata(&manifest)?.permissions();
@@ -3659,7 +3659,7 @@ async fn import_reports_live_manifest_publication_failure_after_installation() {
     let archive_path = temp.path().join("input.mrpack");
     let mut archive = zip::ZipWriter::new(std::fs::File::create(&archive_path).unwrap());
     archive.start_file("modrinth.index.json", zip::write::SimpleFileOptions::default()).unwrap();
-    archive.write_all(br#"{"dependencies":{"minecraft":"1.21.1","fabric-loader":"0.16.0"},"files":[{"path":"mods/fixture.jar","hashes":{"sha512":"abc"},"downloads":["https://cdn.modrinth.com/data/fixture/versions/v1/fixture.jar"],"fileSize":3}]}"#).unwrap();
+    archive.write_all(br#"{"dependencies":{"minecraft":"1.21.1","fabric-loader":"0.16.0"},"files":[{"path":"mods/fixture.jar","hashes":{"sha512":"abc"},"downloads":["https://cdn.modrinth.com/data/Fixture1/versions/Version1/fixture.jar"],"fileSize":3}]}"#).unwrap();
     archive.finish().unwrap();
     let root = temp.path().join("project");
     let mut inner = MockCommandSession::new();
