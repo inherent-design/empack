@@ -84,6 +84,13 @@ its provider namespace, and command planning rejects invalid IDs before invoking
 the backend. Human labels and observed metadata keys remain separate. Existing
 wire structs still belong to the adapter; the normalized codec is not yet landed.
 
+Curated import smoke exposed another selector boundary: older Modrinth CDN paths
+contain version names. The importer now treats only canonical-shaped IDs from the
+provider's CDN host as identity hints. Version names remain unresolved until the
+[version-from-hash endpoint](https://docs.modrinth.com/api/operations/versionfromhash/)
+identifies the exact version. Tests reproduce the former name-as-pin failure and
+reject identity hints from unrelated hosts.
+
 The parser follows the [Modrinth identifier contract](https://docs.modrinth.com/api/)
 and [CurseForge ID fields](https://docs.curseforge.com/rest-api/). Test fixtures use
 provider-shaped IDs. Negative tests retain malformed selectors and pins.

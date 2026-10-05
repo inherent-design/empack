@@ -1450,6 +1450,10 @@ async fn test_resolve_modrinth_project_records_headers_and_metadata() {
         .await;
 
     let mut pref = modrinth_pref("AANobbMI");
+    // Older CDN paths contain version names. Resolve their canonical pin by hash.
+    pref.download_urls = vec![
+        "https://cdn.modrinth.com/data/AANobbMI/versions/1.1.1%2B1.17/sodium.jar".into(),
+    ];
     pref.hashes
         .insert("sha1".to_string(), "deadbeef".to_string());
 
@@ -1725,6 +1729,28 @@ async fn test_resolve_manifest_concurrent_modrinth_requests_share_budget_without
     for project_mock in project_mocks {
         project_mock.assert_async().await;
     }
+}
+
+#[test]
+fn modrinth_cdn_version_names_are_not_canonical_pins() {
+    assert_eq!(
+        extract_modrinth_version_id(
+            "https://cdn.modrinth.com/data/sGmHWmeL/versions/1.1.1%2B1.17/mixintrace.jar"
+        ),
+        None
+    );
+    assert_eq!(
+        extract_modrinth_project_id(
+            "https://example.com/data/AANobbMI/versions/Version1/file.jar"
+        ),
+        None
+    );
+    assert_eq!(
+        extract_modrinth_version_id(
+            "https://cdn.modrinth.com.example.com/data/AANobbMI/versions/Version1/file.jar"
+        ),
+        None
+    );
 }
 
 #[test]

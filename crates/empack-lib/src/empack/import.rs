@@ -256,36 +256,31 @@ struct MrEnv {
     server: Option<String>,
 }
 
-/// Extract a Modrinth project ID from a CDN download URL.
-///
-/// CDN URLs follow `https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/filename`.
-/// Returns `None` if the URL does not match the expected structure.
-fn extract_modrinth_project_id(url: &str) -> Option<String> {
-    let parts: Vec<&str> = url.split('/').collect();
-    let data_pos = parts.iter().position(|&s| s == "data")?;
-    let pid = parts.get(data_pos + 1)?;
-    if pid.is_empty() {
+/// Extract canonical identity hints only from the provider's CDN namespace.
+fn modrinth_cdn_identity_hints(url: &str) -> Option<(String, Option<String>)> {
+    let url = reqwest::Url::parse(url).ok()?;
+    if url.scheme() != "https" || url.host_str() != Some("cdn.modrinth.com") {
         return None;
     }
-    Some(pid.to_string())
+    let parts: Vec<_> = url.path_segments()?.collect();
+    if parts.len() != 5 || parts[0] != "data" || parts[2] != "versions" || parts[4].is_empty() {
+        return None;
+    }
+    let project = empack_core::identity::ModrinthProjectId::parse(parts[1]).ok()?;
+    // Older CDN paths use version names, which are selectors rather than IDs.
+    // Leave those unresolved so the source digest can identify the exact version.
+    let version = empack_core::identity::ModrinthVersionId::parse(parts[3])
+        .ok()
+        .map(|id| id.to_string());
+    Some((project.to_string(), version))
 }
 
-/// Extract a Modrinth version ID from a CDN download URL.
-///
-/// CDN URLs follow `https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/filename`.
-/// Returns `None` if the URL does not match the expected structure.
+fn extract_modrinth_project_id(url: &str) -> Option<String> {
+    modrinth_cdn_identity_hints(url).map(|(project, _)| project)
+}
+
 fn extract_modrinth_version_id(url: &str) -> Option<String> {
-    let parts: Vec<&str> = url.split('/').collect();
-    let data_pos = parts.iter().position(|&s| s == "data")?;
-    let versions_pos = parts.iter().position(|&s| s == "versions")?;
-    if versions_pos != data_pos + 2 {
-        return None;
-    }
-    let vid = parts.get(versions_pos + 1)?;
-    if vid.is_empty() {
-        return None;
-    }
-    Some(vid.to_string())
+    modrinth_cdn_identity_hints(url).and_then(|(_, version)| version)
 }
 
 /// Extract a CurseForge file ID from a ForgeCD CDN download URL.
@@ -529,8 +524,8 @@ pub fn parse_modrinth_mrpack_with_filesystem(
 
                 // Classify by download URL origin. CurseForge CDN URLs in a
                 // Modrinth mrpack are reclassified so the CurseForge add path
-                // handles them. Modrinth CDN and unknown URLs stay as Modrinth
-                // (unknown URLs fall through to the packwiz url add path).
+                // handles them. Modrinth CDN URLs provide identity hints;
+                // unknown URLs retain their verified URL-file contract.
                 let (platform, project_id, file_id) =
                     if let Some(cf_file_id) = extract_forgecdn_file_id(first_url) {
                         (ProjectPlatform::CurseForge, String::new(), Some(cf_file_id))
