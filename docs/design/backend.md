@@ -81,3 +81,12 @@ escape from the pack root, absolute/prefixed paths or invalid portable component
 It never silently strips `.index`. This follows
 [`GetDestFilePath`](https://github.com/mannie-exe/packwiz-tx/blob/v0.2.0/core/mod.go),
 which the pinned mrpack exporter uses.
+
+### Derivative digest observations
+
+A backend digest is compared with acquired bytes when available, or with an exact
+locked declaration using the same algorithm. A same-algorithm mismatch blocks the
+build. When the algorithms differ, a reference export may use sufficient independent
+locked evidence; it records that the backend digest was not compared. Backend URLs
+and unmatched digests do not replace locked reference assertions. Unlisted content
+still needs acquisition that verifies its own declaration.

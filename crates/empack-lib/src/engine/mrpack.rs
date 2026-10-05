@@ -62,6 +62,7 @@ pub enum OptionalConversion {
 /// Immutable format plan retains all embedded bytes until the candidate is written.
 pub struct MrpackPlan {
     resolution: ResolutionLock,
+    pub(super) backend_comparisons: Vec<super::backend::BackendDigestComparison>,
     observed: Vec<ObservedFileEvidence>,
     inventory: BuildInventory,
     index: Vec<u8>,
@@ -406,6 +407,7 @@ impl MrpackPlan {
         );
         Ok(Self {
             resolution: project.lock().clone(),
+            backend_comparisons: Vec::new(),
             observed: observed_evidence,
             inventory,
             index,
@@ -420,6 +422,9 @@ impl MrpackPlan {
     /// Original declarations and provenance remain distinct from hashes observed for export.
     pub fn resolution(&self) -> &ResolutionLock {
         &self.resolution
+    }
+    pub fn backend_comparisons(&self) -> &[super::backend::BackendDigestComparison] {
+        &self.backend_comparisons
     }
     pub fn observed(&self) -> &[ObservedFileEvidence] {
         &self.observed

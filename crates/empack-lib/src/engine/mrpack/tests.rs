@@ -492,3 +492,172 @@ fn optional_layered_fallback_requires_a_representable_conversion() {
         "{error}"
     );
 }
+
+#[test]
+fn independent_reference_digests_do_not_require_the_backends_algorithm() {
+    use crate::engine::{
+        build::{BuildAcquisitions, prepare_mrpack_build},
+        project::ProjectReader,
+        publication::RecoveryReader,
+    };
+    let initial = project(false, false);
+    let mut lock = initial.lock().clone();
+    let dependency = lock.dependencies.values_mut().next().unwrap();
+    dependency.files = NonEmpty::new(
+        dependency
+            .files
+            .as_slice()
+            .iter()
+            .cloned()
+            .map(|mut file| {
+                let digests = DigestSet::new(
+                    file.expected
+                        .digests
+                        .as_ref()
+                        .unwrap()
+                        .values()
+                        .iter()
+                        .filter(|digest| {
+                            matches!(
+                                digest.algorithm(),
+                                DigestAlgorithm::Sha1 | DigestAlgorithm::Sha512
+                            )
+                        })
+                        .cloned()
+                        .collect(),
+                )
+                .unwrap();
+                file.expected.digests = Some(digests.clone());
+                file.provenance.declared_digests = Some(digests);
+                file
+            })
+            .collect(),
+    )
+    .unwrap();
+    let resolved =
+        ResolvedProject::validate(initial.intent().clone(), lock.clone(), lock.intent_revision)
+            .unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("empack.yml"),
+        DocumentCodec.encode_intent(resolved.intent()).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("empack.lock"),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+    )
+    .unwrap();
+    std::fs::create_dir_all(project.path().join("pack/resourcepacks")).unwrap();
+    let metadata = project.path().join("pack/resourcepacks/assets.pw.toml");
+    std::fs::write(
+        &metadata,
+        r#"filename = "a.zip"
+side = "client"
+[download]
+url = "https://example.com/backend-only.zip"
+hash-format = "md5"
+hash = "321c3cf486ed509164edec1e1981fec8"
+"#,
+    )
+    .unwrap();
+    let artifact = PortableRelPath::parse("test.mrpack", PathSyntax::ArtifactName).unwrap();
+    let cancel = Cancellation::default();
+    let reader = ProjectReader::new(RecoveryReader::new(host.path().join("state")));
+    let prepare = |external: &BuildAcquisitions| {
+        let workspace = reader
+            .capture_build(
+                project.path(),
+                std::slice::from_ref(&artifact),
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+        prepare_mrpack_build(
+            workspace,
+            artifact.clone(),
+            external,
+            SourceEvidencePolicy::Compatibility,
+            OptionalConversion::RejectMetadataLoss,
+            &cancel,
+        )
+    };
+    use crate::engine::backend::DigestComparisonBasis;
+    let prepared = prepare(&BuildAcquisitions::default()).unwrap();
+    assert_eq!(
+        prepared.backend_comparisons()[0].basis,
+        DigestComparisonBasis::IndependentLockedReference
+    );
+    let publisher =
+        crate::engine::publication::Publisher::open(&host.path().join("state")).unwrap();
+    prepared.publish(&publisher, &cancel).unwrap();
+    let artifact_path = project.path().join("dist/test.mrpack");
+    let before = std::fs::read(&artifact_path).unwrap();
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&before)).unwrap();
+    let index: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(
+        index["files"][0]["downloads"][0],
+        "https://example.com/unrelated-name.jar"
+    );
+    assert!(index["files"][0]["hashes"]["sha512"].is_string());
+    let record = std::fs::read_to_string(&metadata).unwrap();
+    let digest = resolved
+        .lock()
+        .dependencies
+        .values()
+        .next()
+        .unwrap()
+        .files
+        .as_slice()[0]
+        .expected
+        .digests
+        .as_ref()
+        .unwrap()
+        .values()
+        .iter()
+        .find(|hash| hash.algorithm() == DigestAlgorithm::Sha1)
+        .unwrap();
+    let sha1 = digest
+        .bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let matching = record
+        .replace("md5", "sha1")
+        .replace("321c3cf486ed509164edec1e1981fec8", &sha1);
+    std::fs::write(&metadata, &matching).unwrap();
+    assert_eq!(
+        prepare(&BuildAcquisitions::default())
+            .unwrap()
+            .backend_comparisons()[0]
+            .basis,
+        DigestComparisonBasis::SameAlgorithmDeclaration
+    );
+    std::fs::write(&metadata, matching.replace(&sha1, &"00".repeat(20))).unwrap();
+    assert!(prepare(&BuildAcquisitions::default()).is_err());
+    assert_eq!(std::fs::read(&artifact_path).unwrap(), before);
+    std::fs::write(&metadata, &record).unwrap();
+    let external = BuildAcquisitions {
+        locked: BTreeMap::from([(
+            LockedFileKey {
+                dependency: DependencyKey::parse("assets").unwrap(),
+                slot: FileSlot::parse("first").unwrap(),
+            },
+            build_file(b"payload"),
+        )]),
+        ..BuildAcquisitions::default()
+    };
+    assert_eq!(
+        prepare(&external).unwrap().backend_comparisons()[0].basis,
+        DigestComparisonBasis::AcquiredBytes
+    );
+    std::fs::write(
+        &metadata,
+        record.replace("321c3cf486ed509164edec1e1981fec8", &"00".repeat(16)),
+    )
+    .unwrap();
+    assert!(prepare(&external).is_err());
+    assert_eq!(std::fs::read(&artifact_path).unwrap(), before);
+}

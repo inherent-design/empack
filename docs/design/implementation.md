@@ -646,3 +646,17 @@ now cover an existing output and a generated archive larger than the source-file
 limit, smaller explicit artifact limits, interrupted publication and recovery with
 an oversized source. Twenty-nine affected reader, snapshot, verifier and publication
 tests pass, including the subprocess crash fixtures.
+
+## Backend digest comparison
+
+Composed builds retain the basis of each backend digest comparison: acquired bytes,
+a same-algorithm declaration, or an independent locked reference with no comparable
+backend hash. This last case keeps valid reference-only exports usable while making
+the missing comparison visible. Format verification still requires exact reference
+hashes, size and stable download alternatives from the lock.
+
+Greptile review 31's cross-algorithm fixture failed before the correction. The
+regression inspects the published index, checks all three evidence cases, and proves
+that both a conflicting locked digest and conflicting acquired bytes preserve the
+previous artifact. Nineteen affected reader/backend/mrpack tests and all-feature
+Clippy pass. This does not claim remote acquisition or the CLI cutover is complete.

@@ -1,6 +1,6 @@
 //! Build preparation from one captured workspace, before any distribution write.
 use super::{
-    backend::BackendFile,
+    backend::{BackendDigestComparison, BackendFile, DigestComparisonBasis},
     content::SourceEvidencePolicy,
     layout::ProjectLayout,
     mrpack::{AcquiredBuildFile, LockedFileKey, MrpackPlan, OptionalConversion, SourceFile},
@@ -126,7 +126,8 @@ pub fn prepare_mrpack(
         .map(|(key, value)| (key.clone(), value))
         .chain(acquired.iter().map(|(key, value)| (key.clone(), value)))
         .collect();
-    let unlisted = check_backend(&project, &backend, &combined)?;
+    let backend_check = check_backend(&project, &backend, &combined)?;
+    let unlisted = backend_check.unlisted;
     let mut choices = BTreeSet::new();
     for dependency in project.lock().dependencies.values() {
         for file in dependency.files.as_slice() {
@@ -259,15 +260,29 @@ pub fn prepare_mrpack(
             )
         })
         .collect();
-    MrpackPlan::prepare_with_observed(&project, &owned, source_files, observed_files, optional)
+    let mut plan = MrpackPlan::prepare_with_observed(
+        &project,
+        &owned,
+        source_files,
+        observed_files,
+        optional,
+    )?;
+    plan.backend_comparisons = backend_check.comparisons;
+    Ok(plan)
+}
+
+struct BackendCheck {
+    unlisted: BTreeSet<empack_core::path::PortableRelPath>,
+    comparisons: Vec<BackendDigestComparison>,
 }
 
 fn check_backend(
     project: &ResolvedProject,
     observed: &[BackendFile],
     acquired: &BTreeMap<LockedFileKey, &AcquiredBuildFile>,
-) -> Result<BTreeSet<empack_core::path::PortableRelPath>> {
+) -> Result<BackendCheck> {
     let mut unlisted = BTreeSet::new();
+    let mut comparisons = Vec::new();
     for observed in observed {
         let mut matches = 0;
         let mut claimed = false;
@@ -293,14 +308,40 @@ fn check_backend(
                         dependency: key.clone(),
                         slot: file.slot.clone(),
                     });
-                    let digests = acquired
-                        .map(|file| file.content.observed_digests())
-                        .or(file.expected.digests.as_ref())
-                        .context("Backend content has no locked byte evidence")?;
-                    ensure!(
-                        digests.values().contains(&observed.digest),
-                        "Backend digest differs from locked or acquired bytes"
-                    );
+                    let basis = if let Some(acquired) = acquired {
+                        ensure!(
+                            acquired
+                                .content
+                                .observed_digests()
+                                .values()
+                                .contains(&observed.digest),
+                            "Backend digest differs from acquired bytes"
+                        );
+                        DigestComparisonBasis::AcquiredBytes
+                    } else if let Some(comparable) =
+                        file.expected.digests.as_ref().and_then(|set| {
+                            set.values()
+                                .iter()
+                                .find(|digest| digest.algorithm() == observed.digest.algorithm())
+                        })
+                    {
+                        ensure!(
+                            *comparable == observed.digest,
+                            "Backend digest differs from locked declaration"
+                        );
+                        DigestComparisonBasis::SameAlgorithmDeclaration
+                    } else {
+                        // The format planner still requires complete independent reference evidence.
+                        // Never use the unmatched backend URL/digest to manufacture a proof.
+                        DigestComparisonBasis::IndependentLockedReference
+                    };
+                    if !matched {
+                        comparisons.push(BackendDigestComparison {
+                            metadata_path: observed.metadata_path.clone(),
+                            declared: observed.digest.clone(),
+                            basis,
+                        });
+                    }
                     matched = true;
                 }
                 matches += usize::from(matched);
@@ -316,7 +357,10 @@ fn check_backend(
             observed.metadata_path.as_str()
         );
     }
-    Ok(unlisted)
+    Ok(BackendCheck {
+        unlisted,
+        comparisons,
+    })
 }
 
 /// One verified mrpack output and its complete captured read set. Publication cannot rerun build work.
@@ -324,10 +368,14 @@ pub struct PreparedMrpackBuild {
     root: super::snapshot::ProjectReadRoot,
     change: super::verification::VerifiedFileChange,
     conversions: Vec<String>,
+    backend_comparisons: Vec<BackendDigestComparison>,
     observed: Vec<super::mrpack::ObservedFileEvidence>,
     bytes: u64,
 }
 impl PreparedMrpackBuild {
+    pub fn backend_comparisons(&self) -> &[BackendDigestComparison] {
+        &self.backend_comparisons
+    }
     pub fn observed(&self) -> &[super::mrpack::ObservedFileEvidence] {
         &self.observed
     }
@@ -402,6 +450,7 @@ pub fn prepare_mrpack_build(
         root,
         change,
         conversions: plan.conversions().to_vec(),
+        backend_comparisons: plan.backend_comparisons().to_vec(),
         observed: plan.observed().to_vec(),
         bytes: verified.len(),
     })

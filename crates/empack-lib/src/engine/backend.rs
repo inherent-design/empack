@@ -62,6 +62,20 @@ pub struct BackendOptional {
     pub default_enabled: bool,
     pub description: Option<String>,
 }
+/// What established agreement with a derivative backend record. This is not source authenticity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DigestComparisonBasis {
+    AcquiredBytes,
+    SameAlgorithmDeclaration,
+    /// The lock has independent export evidence, but no comparable digest algorithm.
+    IndependentLockedReference,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendDigestComparison {
+    pub metadata_path: PortableRelPath,
+    pub declared: ExpectedDigest,
+    pub basis: DigestComparisonBasis,
+}
 pub struct BackendFile {
     pub metadata_path: PortableRelPath,
     pub destination: InstallDestination,
