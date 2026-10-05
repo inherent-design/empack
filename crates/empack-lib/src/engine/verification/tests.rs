@@ -138,3 +138,58 @@ fn candidate_cannot_exceed_the_read_budget_needed_for_postpublication_checks() {
     );
     assert_eq!(fs::read(project.path().join("empack.yml")).unwrap(), b"old");
 }
+
+#[test]
+fn artifact_only_publication_binds_read_only_sources_without_copying_or_replacing_them() {
+    use crate::engine::publication::Publisher;
+    for edit_source in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir(&project).unwrap();
+        fs::write(project.join("local-input.jar"), b"input").unwrap();
+        fs::write(project.join("empack.yml"), b"intent").unwrap();
+        let root = ProjectReadRoot::open(&project).unwrap();
+        let cancel = Cancellation::default();
+        let base = root
+            .capture(
+                &[path("local-input.jar"), path("empack.yml"), path("dist")],
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+        let target = ManagedPath::Artifact(path("pack.mrpack"));
+        let observed = observed_artifacts_for(&base, [target.clone()]).unwrap();
+        let plan = plan_files(
+            &observed,
+            &BTreeMap::from([(target, wanted(b"artifact"))]),
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        let mut stage = MutableStage::empty().unwrap();
+        stage
+            .write(&path("dist/pack.mrpack"), &mut &b"artifact"[..], 8, &cancel)
+            .unwrap();
+        let verified = VerifiedFileChange::verify_artifacts(
+            base,
+            plan,
+            stage.freeze(SnapshotLimits::default(), &cancel).unwrap(),
+        )
+        .unwrap();
+        if edit_source {
+            fs::write(project.join("local-input.jar"), b"changed").unwrap();
+        }
+        let publisher = Publisher::open(&temp.path().join("private-state")).unwrap();
+        let result = publisher.publish(&root, verified, &cancel);
+        assert_eq!(result.is_err(), edit_source, "{result:?}");
+        assert_eq!(fs::read(project.join("empack.yml")).unwrap(), b"intent");
+        if edit_source {
+            assert!(!project.join("dist/pack.mrpack").exists());
+        } else {
+            assert_eq!(
+                fs::read(project.join("dist/pack.mrpack")).unwrap(),
+                b"artifact"
+            );
+            assert_eq!(fs::read(project.join("local-input.jar")).unwrap(), b"input");
+        }
+    }
+}

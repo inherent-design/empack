@@ -492,3 +492,23 @@ evidence, executable metadata, ambiguous paths and explicit optional conversion.
 The combined mrpack/archive regression suite passes eleven tests with all-feature
 Clippy. This component has no network, cache or publisher capability. Workspace
 source enumeration, acquisition scheduling and CLI build cutover remain pending.
+
+## Build read sets and artifact publication
+
+Build capture includes declared local/archive sources outside managed namespaces,
+alongside standard source, template and artifact roots. Both document revisions and
+native root identity must survive scope discovery. Captured regular files can be
+copied into private leases with their original source assertions and explicit
+integrity policy. Uncaptured paths and changed bytes fail.
+
+Artifact-only verification now separates the write footprint from the broader read
+set. Its candidate contains only selected distribution files. The journal retains
+postconditions for unchanged inputs, including local sources outside `pack/`, but
+does not grant them replacement or removal actions. A concurrent source edit blocks
+publication before the artifact changes.
+
+The combined reader, verifier and recovery suite passed twenty tests, including the
+subprocess crash fixtures. Nextest reported a pipe-leak warning on an existing
+reader-only test; its isolated reader-suite repeat is checked separately. All-feature
+Clippy and Windows test cross-compilation passed before the final explicit-policy
+parameter adjustment. Native execution remains a CI gate.

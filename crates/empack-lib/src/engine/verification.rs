@@ -61,6 +61,32 @@ pub fn observed_files_for(
     targets: impl IntoIterator<Item = ManagedPath>,
 ) -> Result<BTreeMap<ManagedPath, ObservedPath>> {
     let mut observed = observed_files(snapshot)?;
+    extend_observations(snapshot, &mut observed, targets)?;
+    Ok(observed)
+}
+
+/// Read-only inputs outside the publication footprint remain in the native snapshot.
+/// Only explicitly selected artifact destinations participate in this file plan.
+pub fn observed_artifacts_for(
+    snapshot: &NativeSnapshot,
+    targets: impl IntoIterator<Item = ManagedPath>,
+) -> Result<BTreeMap<ManagedPath, ObservedPath>> {
+    let targets: Vec<_> = targets.into_iter().collect();
+    ensure!(
+        targets
+            .iter()
+            .all(|target| matches!(target, ManagedPath::Artifact(_))),
+        "Artifact plan contains another managed role"
+    );
+    let mut observed = BTreeMap::new();
+    extend_observations(snapshot, &mut observed, targets)?;
+    Ok(observed)
+}
+fn extend_observations(
+    snapshot: &NativeSnapshot,
+    observed: &mut BTreeMap<ManagedPath, ObservedPath>,
+    targets: impl IntoIterator<Item = ManagedPath>,
+) -> Result<()> {
     for target in targets {
         if observed.contains_key(&target) {
             continue;
@@ -70,6 +96,14 @@ pub fn observed_files_for(
             ProjectLayout::classify(&path)? == target,
             "Noncanonical managed target role"
         );
+        if let Some(Observation::File(file)) = snapshot.entries().get(&path) {
+            observed.insert(target, ObservedPath::File(content(file)));
+            continue;
+        }
+        if matches!(snapshot.entries().get(&path), Some(Observation::Absent)) {
+            observed.insert(target, ObservedPath::Absent);
+            continue;
+        }
         if matches!(
             snapshot.entries().get(&path),
             Some(Observation::Directory { .. } | Observation::Ancestor(_))
@@ -99,7 +133,7 @@ pub fn observed_files_for(
         );
         observed.insert(target, ObservedPath::Absent);
     }
-    Ok(observed)
+    Ok(())
 }
 
 /// A file-level proof only. A completed project still requires semantic and artifact verification.
@@ -121,10 +155,6 @@ impl VerifiedFileChange {
     }
     /// Consume a candidate only when its complete selected file inventory matches the pure plan.
     pub fn verify(base: NativeSnapshot, plan: FilePlan, stage: FrozenStage) -> Result<Self> {
-        ensure!(
-            plan.capabilities() == native_capabilities(),
-            "File plan uses different filesystem capabilities"
-        );
         let observed = observed_files_for(
             &base,
             plan.expected()
@@ -132,6 +162,33 @@ impl VerifiedFileChange {
                 .cloned()
                 .chain(plan.changes().iter().map(|change| change.target().clone())),
         )?;
+        Self::verify_observed(base, plan, stage, observed)
+    }
+    /// Verify an artifact-only candidate without copying or gaining write authority over source inputs.
+    pub fn verify_artifacts(
+        base: NativeSnapshot,
+        plan: FilePlan,
+        stage: FrozenStage,
+    ) -> Result<Self> {
+        let observed = observed_artifacts_for(
+            &base,
+            plan.expected()
+                .keys()
+                .cloned()
+                .chain(plan.changes().iter().map(|change| change.target().clone())),
+        )?;
+        Self::verify_observed(base, plan, stage, observed)
+    }
+    fn verify_observed(
+        base: NativeSnapshot,
+        plan: FilePlan,
+        stage: FrozenStage,
+        observed: BTreeMap<ManagedPath, ObservedPath>,
+    ) -> Result<Self> {
+        ensure!(
+            plan.capabilities() == native_capabilities(),
+            "File plan uses different filesystem capabilities"
+        );
         let removals: BTreeSet<_> = plan
             .changes()
             .iter()

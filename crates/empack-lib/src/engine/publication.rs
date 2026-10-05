@@ -341,6 +341,31 @@ impl Publisher {
         sync_directory(&retained)?;
         hook(PublicationPoint::RecoveryDataDurable)?;
         root.revalidate(&base, cancel)?;
+        // The read set can be broader than the write footprint (for example, local
+        // sources outside pack/ during an artifact-only build). Retain their postconditions
+        // in the journal without giving them a replacement or removal action.
+        let mut expected: BTreeMap<_, _> = base
+            .entries()
+            .iter()
+            .filter_map(|(path, observation)| {
+                if let Observation::File(file) = observation {
+                    Some((path.as_str().to_owned(), Fingerprint::from(&content(file))))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for change in plan.changes() {
+            if matches!(change, FileChange::Remove { .. }) {
+                expected.remove(ProjectLayout::path(change.target())?.as_str());
+            }
+        }
+        for (target, file) in plan.expected() {
+            expected.insert(
+                ProjectLayout::path(target)?.as_str().to_owned(),
+                Fingerprint::from(file),
+            );
+        }
         let mut journal = Journal {
             schema: JOURNAL_SCHEMA,
             root: root.binding.into(),
@@ -352,16 +377,7 @@ impl Publisher {
                 .map(|path| path.as_str().to_owned())
                 .collect(),
             limits: base.limits(),
-            expected: plan
-                .expected()
-                .iter()
-                .map(|(target, file)| {
-                    Ok((
-                        ProjectLayout::path(target)?.as_str().to_owned(),
-                        Fingerprint::from(file),
-                    ))
-                })
-                .collect::<Result<_>>()?,
+            expected,
             restoring: false,
             retained_files,
             committed: false,
@@ -903,7 +919,6 @@ fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
     let mut expected = CollisionIndex::default();
     for path in journal.expected.keys() {
         let path = PortableRelPath::parse(path, PathSyntax::ProjectContent)?;
-        ProjectLayout::classify(&path)?;
         expected.insert_file(&path)?;
     }
     for name in &journal.retained_files {

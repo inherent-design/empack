@@ -1,5 +1,6 @@
 //! Read-only normalized project preparation, gated by native publication recovery state.
 use super::{
+    content::{AcquiredContent, InitialObservation, SourceEvidencePolicy, verify_stream},
     documents::{DecodedIntent, DecodedLock, DocumentCodec, MAX_DOCUMENT_BYTES},
     io::copy_bounded,
     native,
@@ -9,7 +10,9 @@ use super::{
 use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
-    model::ResolvedProject,
+    digest::ContentId,
+    files::FilePermissions,
+    model::{AcquisitionSpec, ExpectedContent, ResolvedProject},
     path::{PathSyntax, PortableRelPath},
 };
 use std::path::Path;
@@ -40,6 +43,53 @@ impl WorkspaceSnapshot {
             .context("Project has no exact resolution lock")?
             .bind(&self.intent)
     }
+    /// Copy one captured regular input into a verified private lease. This cannot read an
+    /// uncaptured path or publish bytes, and every source declaration remains enforced.
+    pub fn acquire_file(
+        &self,
+        path: &PortableRelPath,
+        expected: Option<&ExpectedContent>,
+        policy: SourceEvidencePolicy,
+        cancel: &Cancellation,
+    ) -> Result<(AcquiredContent, FilePermissions)> {
+        let Some(Observation::File(observed)) = self.native.entries().get(path) else {
+            anyhow::bail!("Input is not a captured regular file: {}", path.as_str());
+        };
+        let content_id = ContentId::from_sha256(observed.content);
+        if let Some(expected) = expected {
+            ensure!(
+                expected.size.is_none_or(|size| size == observed.bytes),
+                "Source size differs from lock"
+            );
+            ensure!(
+                expected
+                    .accepted_observation
+                    .as_ref()
+                    .is_none_or(|id| id == &content_id),
+                "Source differs from accepted lock observation"
+            );
+        }
+        self.root.check_binding()?;
+        let (parent, leaf) = native::parent(&self.root.directory, path)?;
+        let mut file = native::open_file(&parent, &leaf)?;
+        ensure!(
+            native::identity(&file)? == observed.object,
+            "Source object changed before acquisition"
+        );
+        let acquired = verify_stream(
+            &mut file,
+            &ExpectedContent {
+                digests: expected.and_then(|value| value.digests.clone()),
+                size: Some(observed.bytes),
+                accepted_observation: Some(content_id),
+            },
+            self.native.limits().file_bytes,
+            policy,
+            InitialObservation::RequireEvidence,
+            cancel,
+        )?;
+        Ok((acquired, super::verification::content(observed).permissions))
+    }
 }
 /// Receives only read-only journal access. No cache, tool or publication capability is present.
 pub struct ProjectReader {
@@ -48,6 +98,59 @@ pub struct ProjectReader {
 impl ProjectReader {
     pub fn new(recovery: RecoveryReader) -> Self {
         Self { recovery }
+    }
+    /// Bind standard build inputs and each declared local/archive source, including files outside
+    /// managed namespaces. A second capture must retain the exact first document revisions.
+    pub fn capture_build(
+        &self,
+        selected: &Path,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<WorkspaceSnapshot> {
+        let documents = self.capture(selected, &[], limits, cancel)?;
+        let project = documents.require_resolved()?;
+        let mut scopes = [
+            "pack",
+            "overrides/client",
+            "overrides/server",
+            "templates",
+            "dist",
+        ]
+        .into_iter()
+        .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        for dependency in project.lock().dependencies.values() {
+            for file in dependency.files.as_slice() {
+                match &file.acquisition {
+                    AcquisitionSpec::Local(path) => scopes.push(path.clone()),
+                    AcquisitionSpec::Embedded { archive, .. } => scopes.push(archive.clone()),
+                    _ => {}
+                }
+            }
+        }
+        scopes.sort();
+        scopes.dedup();
+        let names: std::collections::BTreeSet<_> =
+            scopes.iter().map(PortableRelPath::as_str).collect();
+        let scopes: Vec<_> = scopes
+            .iter()
+            .filter(|path| {
+                !path
+                    .as_str()
+                    .match_indices('/')
+                    .any(|(index, _)| names.contains(&path.as_str()[..index]))
+            })
+            .cloned()
+            .collect();
+        let captured = self.capture(selected, &scopes, limits, cancel)?;
+        ensure!(
+            documents.root.binding == captured.root.binding
+                && documents.intent.raw_revision() == captured.intent.raw_revision()
+                && documents.prior_lock.as_ref().map(DecodedLock::raw_revision)
+                    == captured.prior_lock.as_ref().map(DecodedLock::raw_revision),
+            "Project documents changed while selecting build inputs"
+        );
+        Ok(captured)
     }
     /// Documents are always in the read set. Extra scopes bind this operation's source and output inputs.
     pub fn capture(
