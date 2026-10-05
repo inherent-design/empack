@@ -11,14 +11,20 @@ fn run(project: &Path, args: &[&str]) {
         .success();
 }
 
-fn fixture(project: &TestProject, url: &str, hash: &str, optional: bool) -> std::path::PathBuf {
+fn fixture(
+    project: &TestProject,
+    url: &str,
+    algorithm: &str,
+    hash: &str,
+    optional: bool,
+) -> std::path::PathBuf {
     let source = project.dir().join("source");
     std::fs::create_dir(&source).unwrap();
     let manifest = serde_json::json!({
         "formatVersion":1,"game":"minecraft","name":"verified-url","versionId":"1.0.0",
         "dependencies":{"minecraft":"1.21.1","fabric-loader":"0.15.11"},
         "files":[{"path":"resourcepacks/declared.zip","downloads":[url,format!("{url}/fallback")],"fileSize":7,
-            "hashes":{"sha256":hash},"env":{"client":if optional {"optional"} else {"required"},"server":"unsupported"}}]
+            "hashes":{(algorithm):hash},"env":{"client":if optional {"optional"} else {"required"},"server":"unsupported"}}]
     });
     std::fs::write(
         source.join("modrinth.index.json"),
@@ -34,6 +40,18 @@ fn fixture(project: &TestProject, url: &str, hash: &str, optional: bool) -> std:
 
 #[test]
 fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
+    verified_url_lifecycle(
+        "sha256",
+        "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+    );
+}
+
+#[test]
+fn e2e_md5_compatibility_preserves_source_evidence_through_export_and_cache_repair() {
+    verified_url_lifecycle("md5", "321c3cf486ed509164edec1e1981fec8");
+}
+
+fn verified_url_lifecycle(algorithm: &str, hash: &str) {
     empack_tests::skip_if_no_packwiz!();
     let mut server = mockito::Server::new();
     let _download = server
@@ -44,7 +62,8 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
     let archive = fixture(
         &project,
         &format!("{}/different-name.bin", server.url()),
-        "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+        algorithm,
+        hash,
         true,
     );
     run(
@@ -67,6 +86,7 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
     let intent = std::fs::read_to_string(imported.join("empack.yml")).unwrap();
     assert!(intent.contains("status: url"));
     assert!(!intent.contains("project_id:"));
+    assert!(intent.contains(&format!("{algorithm}: {hash}")));
     for _ in 0..2 {
         run(&imported, &["sync"]);
     }
@@ -98,6 +118,10 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
     assert_eq!(manifest["files"][0]["env"]["server"], "unsupported");
     assert_eq!(manifest["files"][0]["fileSize"], 7);
     assert_eq!(
+        manifest["files"][0]["hashes"]["sha512"],
+        "70b33ce9c9047e30f917e7ea13e42f7767008c3f4f9c9baf49e4390fc625549e9625eee39b94545074e8a1824cf3f238463b11bc03d97348e0fc2999ca1fff7f"
+    );
+    assert_eq!(
         manifest["files"][0]["downloads"].as_array().unwrap().len(),
         2
     );
@@ -117,10 +141,17 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
         .expect(0)
         .create();
     run(&imported, &["build", "mrpack"]);
+    std::fs::remove_file(&metadata).unwrap();
+    run(&imported, &["sync"]);
+    assert!(metadata.exists());
+    run(&imported, &["sync"]);
     offline_primary.assert();
     offline_fallback.assert();
-    run(&imported, &["sync"]);
-    run(&imported, &["sync"]);
+    // Export observations must not upgrade the persisted source evidence.
+    assert_eq!(
+        std::fs::read_to_string(imported.join("empack.yml")).unwrap(),
+        intent
+    );
     run(&imported, &["remove", "url:resourcepacks/declared.zip"]);
     run(&imported, &["sync"]);
     assert!(!metadata.exists());
@@ -137,6 +168,7 @@ fn e2e_url_import_rejects_changed_remote_bytes_before_initialization() {
     let archive = fixture(
         &project,
         &format!("{}/changed.bin", server.url()),
+        "sha256",
         "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
         false,
     );

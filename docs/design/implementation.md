@@ -118,6 +118,13 @@ Tests also cover digest widths, duplicate conflicts, mixed-digest mismatches and
 MD5 evidence preservation. The adapter uses RustCrypto's MD5 implementation solely
 for the accepted compatibility policy; the semantic core has no dependencies.
 
+A real-backend lifecycle fixture also covers MD5-only import, repeated sync,
+export, fallback downloads and offline metadata repair. It checks exported SHA-512
+observations while requiring the original source declarations to remain unchanged.
+The fixture exposed sync bypassing verified cache bytes during repair. Sync and
+build now share cache verification; cached bytes must still match every declared
+digest and their content address before reuse.
+
 ## Document value validation
 
 Dependency decoding and publication validate provider IDs and pins, environment

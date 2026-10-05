@@ -177,6 +177,37 @@ impl UrlDependencyRecord {
         Ok(self.verify_download_details(session).await?.url)
     }
 
+    /// Verify project cache bytes or acquire a declared alternative before repairing metadata.
+    pub async fn verify_for_project(
+        &self,
+        session: &dyn Session,
+        workdir: &Path,
+    ) -> Result<String> {
+        self.validate()?;
+        Ok(self
+            .verify_available(session, workdir, &self.downloads[0])
+            .await?
+            .url)
+    }
+
+    async fn verify_available(
+        &self,
+        session: &dyn Session,
+        workdir: &Path,
+        url: &str,
+    ) -> Result<VerifiedDownload> {
+        self.validate()?;
+        let cache = crate::platform::cache::packwiz_download_cache_dir(workdir)?;
+        session.process().check_cancelled()?;
+        match self.verify_cached(session.filesystem(), &cache, url)? {
+            Some(verified) => {
+                report_integrity(session, &self.destination, &verified.evidence);
+                Ok(verified)
+            }
+            None => self.verify_download_details(session).await,
+        }
+    }
+
     async fn verify_download_details(&self, session: &dyn Session) -> Result<VerifiedDownload> {
         self.validate()?;
         let client = session.network().http_client()?;
@@ -401,15 +432,7 @@ pub async fn prepare_build(
             let url = metadata["download"]["url"]
                 .as_str()
                 .context("Missing installed URL")?;
-            let cache = crate::platform::cache::packwiz_download_cache_dir(workdir)?;
-            session.process().check_cancelled()?;
-            let verified = match record.verify_cached(fs, &cache, url)? {
-                Some(verified) => {
-                    report_integrity(session, &record.destination, &verified.evidence);
-                    verified
-                }
-                None => record.verify_download_details(session).await?,
-            };
+            let verified = record.verify_available(session, workdir, url).await?;
             prepared.push((record, verified));
         }
     }

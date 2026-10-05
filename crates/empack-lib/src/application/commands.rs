@@ -4468,7 +4468,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
 
     let mut verified_urls = Vec::new();
     for record in &url_repairs {
-        verified_urls.push(record.verify_download(session).await?);
+        verified_urls.push(record.verify_for_project(session, &workdir).await?);
     }
 
     for (slug, _) in &search_entries {
