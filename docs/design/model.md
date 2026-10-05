@@ -397,10 +397,19 @@ This is a schema illustration, not a recommendation that the example runtime ver
 
 Human versions, schema versions, resolver versions, recipe versions, and artifact content hashes are separate fields. Do not make an archive contain a required hash of its own final bytes; put that digest in an external receipt or index.
 
-### 6.3 Migration contracts
+### 6.3 Document replacement and observed drift
 
-`MigrationPlan` is read-only. It names source schema, destination schema, field mappings, unsupported features, and the exact documents to replace. Migration is executed through the same stage/verify/publish lifecycle.
+Use one normalized, explicitly versioned authoring schema and one lock schema.
+Legacy schema conversion is not required. Unsupported schemas fail with a clear
+message; they are never partially rewritten. A future explicit import or migration
+can be added as a separate request if it becomes useful.
 
-Seed an initial lock from valid installed metadata where it satisfies existing intent. Do not upgrade unpinned content simply because migration introduces a lockfile. Preserve aliases and explicit pins. Incomplete provider evidence remains incomplete, rather than being marked resolved to ease migration.
+Preserve comments and unrelated valid fields during ordinary edits when the codec
+can do so. If an edit must reformat a document, report that fact as part of the
+planned document replacement. Unknown semantic fields remain errors outside the
+extension namespace.
 
-External packwiz edits are observed drift. `AdoptObservedRequest` incorporates selected drift into intent/lock after review; `SyncRequest` restores the recorded resolution. Neither silently deletes unrelated files. A compatibility metadata normalizer can retain existing precedence during migration, but every command must use that one normalizer and its field-provenance output.
+External packwiz edits are observed drift. Adoption incorporates selected drift
+into intent and lock after review; sync restores recorded resolution. Neither
+operation deletes unrelated files. Every document replacement binds to its raw
+revision, including comment-only edits.

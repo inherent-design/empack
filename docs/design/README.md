@@ -24,14 +24,12 @@ policy choices live in [decisions](decisions.md).
 | [Runtime](runtime.md) | Source sections 15, 16 |
 | [Api](api.md) | Source sections 17, 18 |
 | [Verification](verification.md) | Source sections 19, 20 |
-| [Migration](migration.md) | Source sections 21, 22, 23 |
+| [Implementation order](implementation-order.md) | Source sections 21, 22, 23 |
 
-[Implementation status](implementation.md) and the [feature parity ledger](parity.md)
-separate current adapters from target guarantees. The [CLI compatibility guide](../compatibility/usage-0.4.md)
-records the existing surface while it is migrated. Old specifications are replaced
-by links to this target; historical validation remains evidence for its tested revision.
+[Implementation status](implementation.md) tracks delivery of the target and the
+[feature requirements](parity.md) record useful capabilities. Old specifications
+and compatibility guides are removed; Git history retains their evidence.
 
 The first landing establishes a pure semantic core and connects existing file
 workflows to it. Later landings add snapshots, resolution locks, staged execution,
-independent inventory verification and journaled publication. No compatibility
-adapter may claim those later guarantees before it passes their acceptance gates.
+independent inventory verification and journaled publication. No implementation may claim a guarantee before it passes its acceptance gates.

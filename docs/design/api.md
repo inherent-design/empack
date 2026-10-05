@@ -201,7 +201,7 @@ The only CLI-specific dry-run branch chooses the preview API. There are no dry-r
 
 An embedding application creates one engine, prepares typed requests, answers structured decisions, starts operations, and consumes status/receipts. It may run preparation for several projects concurrently; publication is serialized per host-bound project instance.
 
-Configuration parsing produces `HostConfig` plus field provenance. Preserve the documented CLI/environment/dotenv precedence through one adapter. Help/version can use a minimal parsing path that does not bootstrap tools or unnecessarily read malformed project configuration. Workdir resolution has one invocation-root rule. [E3](https://github.com/inherent-design/empack/blob/50c121f/docs/usage.md)
+Configuration parsing produces `HostConfig` plus field provenance. Define CLI/environment/dotenv precedence through one adapter. Help/version can use a minimal parsing path that does not bootstrap tools or unnecessarily read malformed project configuration. Workdir resolution has one invocation-root rule. [E3](https://github.com/inherent-design/empack/blob/50c121f/docs/usage.md)
 
 No operation reads global CLI flags. Providers and planners receive explicit per-operation policy. Display/logging state is instance-owned or explicitly shared by the embedding host, not hidden mutable globals.
 

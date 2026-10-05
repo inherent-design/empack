@@ -105,7 +105,7 @@ pub enum BatchPolicy {
 
 `InitializeRequest` and `ImportRequest` include a `ReplacementPolicy`, metadata/runtime overrides, layout options, and conversion policy. `BuildRequest` includes exact targets, archive format, optional-file choices, and a build-input policy. `CleanRequest` selects managed build/cache categories, never accepts arbitrary recursive deletion paths.
 
-A legacy `--force` adapter maps to a specific replacement request. It does not turn off schema, hash, confinement, identity, or artifact checks. Accepted-version overrides change compatibility intent explicitly; they do not disable validation of unrelated properties.
+An explicit force option maps to a specific replacement request. It does not turn off schema, hash, confinement, identity, or artifact checks. Accepted-version overrides change compatibility intent explicitly; they do not disable validation of unrelated properties.
 
 ### 8.2 Pure plans
 

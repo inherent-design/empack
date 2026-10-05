@@ -2,7 +2,7 @@
 
 The [v0.5 design](docs/design/README.md) is the implementation target. Check the
 [ledger](docs/design/implementation.md) before assuming a proposed API exists.
-Keep compatibility fixtures until their replacement passes the same contracts.
+Keep useful behavioral fixtures and remove tests that require obsolete behavior.
 
 ## Development
 
@@ -32,8 +32,8 @@ fixtures remain during migration toward reusable adapter contract suites.
 Do not introduce a broad session facade into the core, success-returning placeholder
 verifiers, deserializable approval proofs, or a second command-specific publication
 path. New features must contribute normalized intent, expected effects and verified
-postconditions. The [parity ledger](docs/design/parity.md) governs replacement of
-legacy paths.
+postconditions. The [feature requirements](docs/design/parity.md) describe the useful capabilities
+the implementation must provide.
 
 ## Source and documentation
 
@@ -41,9 +41,8 @@ Run formatting and Clippy. Document exported contracts with inputs, outcomes and
 limitations. Prefer comments that explain an invariant over comments that restate
 code. Use structured, redacted diagnostics and remove temporary debugging output.
 
-Keep normative requirements in `docs/design/`. Old `docs/specs/` URLs point there.
-Current command compatibility and historical evidence are explicitly labeled and
-must not compete with the target. Convert public API sketches into compiled
+Keep normative requirements in `docs/design/`. Old specifications are removed. Git history retains historical behavior; it must
+not compete with the target. Convert public API sketches into compiled
 examples as those APIs land. Update the implementation ledger with each landing.
 
 Write complete, direct sentences. Avoid hype, em dashes and fragment-heavy prose.

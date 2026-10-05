@@ -9,8 +9,8 @@ The user selected the batch and digest policies below on that date.
 | Default batch | `AllRequested`; publish nothing unless every requested item verifies |
 | Partial batches | Explicit `ContinueIndependent` policy only; combined candidate and partial receipt |
 | Weak source hashes | Permit provider compatibility with explicit weaker-integrity evidence; internal SHA-256 never upgrades that evidence |
-| Manifest migration | Preserve current syntax through DTO compatibility initially; schema 2 in the model is illustrative |
-| Exact resolution | Introduce a separately versioned lock; seed from satisfying observed state without upgrades |
+| Documents | Use the normalized v0.5 schema; no automatic legacy-format compatibility requirement |
+| Exact resolution | A separately versioned lock records selections; sync preserves them and update refreshes them |
 | Backend | Keep the pinned packwiz adapter while restructuring ownership |
 | Build behavior | Require satisfied intent by default; never silently sync or upgrade |
 | Preview | No project, artifact, journal, tool-install or persistent-cache writes; owned temporary scratch is permitted |
@@ -46,8 +46,10 @@ Implementation qualifications:
   success-returning recovery stubs are prohibited.
 - The supplied API signatures remain sketches until compiled implementations land.
   Dependency IDs, files, placements and root ownership must retain distinct types.
-- Existing adapters remain explicitly transitional. Introducing a pure core does
-  not give legacy commands the new preview, batch, stage or journal guarantees.
+- Existing code is reusable only where it satisfies the target. Obsolete formats,
+  bypasses and broken workflows are removed rather than supported indefinitely.
+- There are no established-user compatibility obligations. The user explicitly
+  chose ideal-state replacement on 2026-10-05; migration machinery is not a goal.
 
 The current development version remains `0.0.0-dev`; release builds derive their
 version from a tag. This work sets a release target and does not publish a release.

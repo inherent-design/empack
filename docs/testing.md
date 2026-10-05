@@ -2,7 +2,8 @@
 
 Every target guarantee needs a test at the layer that owns it. The normative
 [contract suites and fault model](design/verification.md) replace test-count goals
-as the release gate. Passing legacy suites remains required during migration.
+as the release gate. Retain existing tests where they exercise intended behavior; replace tests that
+encode obsolete behavior.
 
 ```bash
 mise run check
@@ -30,6 +31,5 @@ process after every durable boundary listed in the fault model; require unchange
 verified committed, or explicitly recovery-required state. Preserve prior usable
 artifacts on preparation and verification failure.
 
-[Baseline verification](history/verification-0.4.md) records tests, coverage and
-curated fixtures by revision. Those counts do not establish coverage for the new
-engine. New evidence must identify the tested revision and actual commands.
+Historical test evidence remains in Git history. It does not establish coverage
+for the new engine. New evidence identifies the tested revision and actual commands.

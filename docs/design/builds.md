@@ -104,7 +104,7 @@ pub trait RuntimePreparer: Send + Sync {
 
 Preserve common/client/server template precedence, user-owned templates, binary-file copying, build-time metadata interpolation, loader-specific bootstrap/full behavior, and accepted historical runtime variants. Renderer selection is based on intended output language, not filename guesses alone.
 
-Embedded default templates remain templates until build time. A migration report identifies old already-rendered user templates; do not silently rewrite user-authored scripts. Runtime preparation uses exact resolved requirements and bounded tools, records its outputs, and never returns “complete” just because an installer process exited.
+Embedded default templates remain templates until build time. User-authored scripts are explicit inputs; do not silently rewrite them. Runtime preparation uses exact resolved requirements and bounded tools, records its outputs, and never returns “complete” just because an installer process exited.
 
 ### 13.5 Independent verification
 

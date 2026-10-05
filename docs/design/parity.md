@@ -1,8 +1,8 @@
-# Feature parity ledger
+# Feature requirements
 
-Baseline: `50c121f`. The [compatibility guide](../compatibility/usage-0.4.md) retains
-the existing CLI flags, environment settings, configuration precedence and format
-constraints. This ledger names migration obligations; it does not advertise new commands.
+The target retains useful pack-management capabilities, not old spellings,
+formats or broken semantics. Existing fixtures provide examples to verify where
+applicable. Target-only requests become available when their implementations land.
 
 | Baseline feature | Disposition | Target owner | Evidence to preserve |
 | --- | --- | --- | --- |
@@ -30,5 +30,5 @@ constraints. This ledger names migration obligations; it does not advertise new 
 | Arbitrary tree deletion and automatic orphan inference | Bug to remove / remain refused | Managed change plan | Only justified managed changes; incomplete evidence retains content |
 
 Each migrated feature must name its contract tests in the implementation ledger.
-Future CLI spelling changes need compatibility mappings; release numbering alone
-is not permission to drop an existing supported input.
+CLI and document formats may change directly. Remove a feature only through an
+explicit design decision, not accidentally while replacing an implementation.

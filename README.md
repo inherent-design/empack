@@ -11,33 +11,22 @@ publication. The [design](docs/design/README.md) is the target contract; the
 [implementation ledger](docs/design/implementation.md) records what has landed.
 The full engine is not implemented yet.
 
-## Existing CLI
+## Development status
 
-```bash
-empack requirements
-empack init my-pack
-cd my-pack
-empack add sodium
-empack build all
-```
+The target architecture replaces the experimental implementation. Old formats
+and flags are not compatibility obligations. The [command contract](docs/usage.md)
+describes the intended workflows; the implementation ledger identifies what is
+available. Useful provider integrations and pack fixtures remain inputs to the rewrite.
 
-Import with `empack init --from pack.mrpack my-pack`. Continue a restricted-download
-build with `empack build --continue`. The managed backend is resolved when needed;
-`EMPACK_PACKWIZ_BIN` selects an external binary.
-
-The [compatibility guide](docs/compatibility/usage-0.4.md) documents current commands,
-flags, configuration and prerequisites. Planned update/adopt/migrate requests and
-the public `Engine` sketches are not yet available commands or library APIs.
-
-## Design and migration
+## Design and implementation
 
 | Document | Purpose |
 | --- | --- |
 | [Target design](docs/design/README.md) | Guarantees, domain model, ports and publication lifecycle |
 | [Decisions](docs/design/decisions.md) | Accepted policy and verified implementation qualifications |
 | [Implementation ledger](docs/design/implementation.md) | Landed work and remaining gates |
-| [Feature parity](docs/design/parity.md) | Existing features the refactor must preserve |
-| [CLI migration](docs/usage.md) | Compatibility surface and target requests |
+| [Feature requirements](docs/design/parity.md) | Intended pack-management capabilities |
+| [CLI contract](docs/usage.md) | Target operations and outcomes |
 | [Verification](docs/testing.md) | Contract suites and native failure tests |
 | [Contributing](CONTRIBUTING.md) | Build and review workflow |
 
