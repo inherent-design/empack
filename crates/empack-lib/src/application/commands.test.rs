@@ -3631,6 +3631,35 @@ mod handle_sync_tests {
     use super::*;
 
     #[tokio::test]
+    async fn failed_url_verification_preserves_resolved_search_intent() {
+        let mut server = mockito::Server::new_async().await;
+        let request = server.mock("GET", "/file.jar").with_status(200).with_body("unexpected bytes").create_async().await;
+        let workdir = mock_root().join("sync-integrity-failure");
+        let session = configured_session(&workdir).with_network(MockNetworkProvider::new()
+            .with_project_response("Renderer".into(), modrinth_project("AANobbMI", "Sodium")));
+        let manager = session.filesystem().config_manager(workdir.clone());
+        let mut config = manager.load_empack_config().unwrap();
+        config.empack.dependencies.clear();
+        config.empack.dependencies.insert("renderer".into(), DependencyEntry::Search(crate::empack::config::DependencySearch {
+            title: "Renderer".into(), project_type: Some(ProjectType::Mod), platform: Some(ProjectPlatform::Modrinth),
+        }));
+        config.empack.dependencies.insert("file".into(), DependencyEntry::Url(crate::empack::url_file::UrlDependencyRecord {
+            status: DependencyStatus::Url, title: "File".into(), project_type: ProjectType::Mod,
+            destination: "mods/file.jar".into(), downloads: vec![format!("{}/file.jar", server.url())],
+            hashes: std::collections::BTreeMap::from([("sha256".into(), "0".repeat(64))]), size: None,
+            env: crate::empack::content::SideEnv { client: crate::empack::content::SideRequirement::Required, server: crate::empack::content::SideRequirement::Required },
+        }));
+        let before = serde_saphyr::to_string(&config).unwrap();
+        session.filesystem().write_file(&workdir.join("empack.yml"), &before).unwrap();
+        let error = handle_sync(&session).await.unwrap_err();
+        assert!(format!("{error:#}").contains("digest mismatch"), "{error:#}");
+        request.assert_async().await;
+        assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), before);
+        assert!(!session.filesystem().exists(&workdir.join("pack/mods/file.jar.pw.toml")));
+        assert!(session.process_provider.get_calls().is_empty());
+    }
+
+    #[tokio::test]
     async fn it_adds_missing_mod() {
         let installed_mods = HashSet::new();
 
@@ -4056,8 +4085,8 @@ fabric = "0.15.0"
     }
 
     #[tokio::test]
-    async fn it_applies_valid_actions_but_fails_when_some_planning_resolutions_fail() {
-        // mod_a has empty project_id (resolver fails), mod_b has real project_id (succeeds)
+    async fn it_preserves_project_when_any_planning_resolution_fails() {
+        // One explicit search fails while another provider identity is installable.
         let workdir = mock_root().join("partial-fail-sync");
         let empack_yml = r#"empack:
   dependencies:
@@ -4127,19 +4156,9 @@ fabric = "0.15.0"
         let result = handle_sync(&session).await;
 
         assert!(result.is_err(), "incomplete sync must report failure: {result:?}");
-        // Only the successful resolution should have been executed
-        let calls = session.process_provider.get_calls();
-        assert_eq!(
-            calls.len(),
-            1,
-            "Only the successfully resolved action should execute, got {} calls",
-            calls.len()
-        );
-        assert!(session.process_provider.verify_call(
-            crate::empack::packwiz::PACKWIZ_BIN,
-            &["modrinth", "add", "--project-id", "BBNobbMI", "-y"],
-            &workdir.join("pack")
-        ));
+        assert!(session.process_provider.get_calls().is_empty(), "planning failure must prevent every backend mutation");
+        assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), empack_yml);
+        assert_eq!(session.filesystem().read_to_string(&workdir.join("pack/pack.toml")).unwrap(), pack_toml);
     }
 
     #[tokio::test]

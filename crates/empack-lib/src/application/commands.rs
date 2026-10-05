@@ -4387,9 +4387,21 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         }
     }
 
+    // Failed preparation never authorizes a partially resolved batch.
+    if let Some(error) = resolution_error {
+        return Err(error.context(format!(
+            "{} action(s) failed during resolution; no changes applied",
+            planning_failure_count + unresolved_slugs.len()
+        )));
+    }
+
     // Show planned actions
     if planned_actions.is_empty() && url_repairs.is_empty() && requirement_repairs.is_empty() {
-        if resolution_error.is_none() && !session.config().app_config().dry_run {
+        if !session.config().app_config().dry_run {
+            let mut verified_urls = Vec::new();
+            for record in &url_repairs {
+                verified_urls.push(record.verify_download(session).await?);
+            }
             for (slug, _) in &search_entries {
                 if let Some(DependencyEntry::Resolved(record)) =
                     empack_config.empack.dependencies.get(slug)
@@ -4398,12 +4410,7 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 }
             }
         }
-        if let Some(error) = resolution_error {
-            return Err(error.context(format!(
-                "{} action(s) failed during resolution. Run sync again to retry.",
-                planning_failure_count + unresolved_slugs.len()
-            )));
-        } else if !local_dependency_issues.is_empty() {
+        if !local_dependency_issues.is_empty() {
             session
                 .display()
                 .status()
@@ -4415,13 +4422,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
                 .complete("No changes needed - empack.yml already in sync");
         }
         return Ok(());
-    }
-
-    if planning_failure_count > 0 {
-        session.display().status().warning(&format!(
-            "{} action(s) failed during resolution and will be skipped. Proceeding with {} resolved action(s).",
-            planning_failure_count, planned_actions.len()
-        ));
     }
 
     session.display().status().section("Planned Actions");
@@ -4463,12 +4463,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 
     if session.config().app_config().dry_run {
-        if let Some(error) = resolution_error {
-            return Err(error.context(format!(
-                "Dry run incomplete: {} action(s) failed during resolution; no changes applied",
-                planning_failure_count + unresolved_slugs.len()
-            )));
-        }
         session
             .display()
             .status()
@@ -4483,10 +4477,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
         }
     }
 
-    let mut verified_urls = Vec::new();
-    for record in &url_repairs {
-        verified_urls.push(record.verify_download(session).await?);
-    }
     for (record, url) in url_repairs.iter().zip(&verified_urls) {
         record.publish(session.filesystem(), &workdir, url)?;
     }
@@ -4624,7 +4614,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     }
 
     session.display().status().section("Sync Summary");
-    failure_count += planning_failure_count + unresolved_slugs.len();
     session
         .display()
         .status()

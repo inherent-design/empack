@@ -129,3 +129,16 @@ This hardens the existing wire adapter while it is replaced. It does not complet
 the normalized schema, exact lock or lossless document editing gates. Invalid
 manual-document tests bypass the writer deliberately and assert that command
 failure preserves the original document and outside files.
+
+## Sync preparation failure gate
+
+A sync batch with any resolution or command-planning failure returns before
+publishing resolved searches, URL metadata or backend changes. The regression
+first reproduced a backend installation despite another failed request; it now
+requires unchanged intent and pack metadata and zero backend calls. A second
+regression reproduces search-intent publication before a URL digest failure. URL
+verification now completes before those document writes.
+
+This gate implements the preparation part of `AllRequested`. Runtime failures
+still need the staged candidate and journaled publisher. It does not imply rollback
+or atomic publication for the current command executor.
