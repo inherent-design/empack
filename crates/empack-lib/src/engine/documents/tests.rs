@@ -1,0 +1,312 @@
+use super::*;
+
+fn source() -> Value {
+    json!({"schema":2,"pack":{"name":"Pack [日本語]\n$(display data)","version":"alpha"},
+        "runtime":{"minecraft":"1.20.1","loader":{"kind":"neoforge","version":"47.1.106"}},
+        "distribution":{"targets":["mrpack","client","server","client-full","server-full"],"archive":"7z"},
+        "layout":{"data-pack":"world/datapacks"},
+        "dependencies":{"renderer alias":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":"AANobbMI"}},"content":"mod","version":{"mode":"exact","pin":{"provider":"modrinth","id":"Version1"}},"placement":"automatic","environment":{"client":{"optional":"renderer","default-enabled":false,"description":"Rendering support"},"server":"unsupported"}}},
+        "extensions":{"authoring":{"note":"retain this","values":[1,true,null]}}})
+}
+fn decoded() -> DecodedIntent {
+    DocumentCodec
+        .decode_intent(&serde_json::to_vec(&source()).unwrap(), "test.yml")
+        .unwrap()
+}
+fn resolution(source: &DecodedIntent) -> ResolutionLock {
+    let (key, dep) = source.intent().roots.first_key_value().unwrap();
+    let SourceIntent::Provider(project) = &dep.source else {
+        unreachable!()
+    };
+    let pin = ResolvedPin {
+        project: project.clone(),
+        selection: PinSelector::ModrinthVersion(ModrinthVersionId::parse("Version1").unwrap()),
+    };
+    let expected = DigestSet::parse([("md5", "321c3cf486ed509164edec1e1981fec8")]).unwrap();
+    let files = [
+        ("main", "mods/renderer.jar"),
+        ("extra", "mods/renderer-helper.jar"),
+    ]
+    .into_iter()
+    .map(|(slot, destination)| ResolvedFile {
+        slot: FileSlot::parse(slot).unwrap(),
+        acquisition: AcquisitionSpec::Provider {
+            pin: pin.clone(),
+            slot: FileSlot::parse(slot).unwrap(),
+            alternatives: vec!["https://example.com/file.jar".into()],
+        },
+        expected: ExpectedContent {
+            digests: Some(expected.clone()),
+            size: Some(7),
+            accepted_observation: None,
+        },
+        provenance: Provenance {
+            source: "mrpack".into(),
+            location: Some("files[0]".into()),
+            declared_digests: Some(expected.clone()),
+            conversions: vec![],
+        },
+        placements: NonEmpty::new(vec![Placement {
+            destination: InstallDestination::parse(destination).unwrap(),
+            layer: ContentLayer::Common,
+            requirements: dep.requirements.clone(),
+        }])
+        .unwrap(),
+    })
+    .collect();
+    ResolutionLock {
+        intent_revision: source.semantic_revision(),
+        resolver: "test-resolver.v1".into(),
+        dependencies: BTreeMap::from([(
+            key.clone(),
+            LockedDependency {
+                title: "Sodium".into(),
+                kind: ContentKind::Mod,
+                identity: ResolvedIdentity::Provider(project.clone()),
+                selected: Some(pin),
+                files: NonEmpty::new(files).unwrap(),
+            },
+        )]),
+        required_edges: BTreeMap::new(),
+        coverage: BTreeMap::from([(key.clone(), Coverage::Unknown)]),
+        runtime: RuntimeResolution {
+            minecraft: source.intent.runtime.minecraft.clone(),
+            loader: LoaderKind::NeoForge,
+            loader_version: source.intent.runtime.loader_version.clone(),
+        },
+    }
+}
+fn validate(source: &DecodedIntent, lock: ResolutionLock) -> Result<ResolvedProject> {
+    Ok(ResolvedProject::validate(
+        source.intent().clone(),
+        lock,
+        source.semantic_revision(),
+    )?)
+}
+
+#[test]
+fn normalized_documents_round_trip_all_file_slots_and_weak_source_evidence() {
+    let source = decoded();
+    let reloaded = DocumentCodec
+        .decode_intent(
+            &DocumentCodec.encode_intent(source.intent()).unwrap(),
+            "round-trip.yml",
+        )
+        .unwrap();
+    assert_eq!(source.intent(), reloaded.intent());
+    assert_eq!(source.semantic_revision(), reloaded.semantic_revision());
+    let project = validate(&source, resolution(&source)).unwrap();
+    let locked = DocumentCodec
+        .decode_lock(
+            &DocumentCodec.encode_lock(&project).unwrap(),
+            &source,
+            "empack.lock",
+        )
+        .unwrap();
+    assert_eq!(project.lock(), locked.lock());
+    let dep = locked.lock().dependencies.values().next().unwrap();
+    assert_eq!(dep.files.as_slice().len(), 2);
+    assert_eq!(
+        dep.files.as_slice()[0]
+            .expected
+            .digests
+            .as_ref()
+            .unwrap()
+            .strongest(),
+        empack_core::digest::DigestAlgorithm::Md5
+    );
+}
+
+#[test]
+fn comment_edits_have_same_semantics_but_distinct_raw_revisions() {
+    let bytes = serde_saphyr::to_string(&source()).unwrap();
+    let a = DocumentCodec.decode_intent(bytes.as_bytes(), "a").unwrap();
+    let b = DocumentCodec
+        .decode_intent(format!("# user comment\n{bytes}").as_bytes(), "b")
+        .unwrap();
+    assert_eq!(a.semantic_revision(), b.semantic_revision());
+    assert_ne!(a.raw_revision(), b.raw_revision());
+    let noop = DocumentCodec.replace_intent(&b, b.intent()).unwrap();
+    assert_eq!(noop.edit, DocumentEdit::Unchanged);
+    assert_eq!(noop.bytes, b.original());
+    let mut next = b.intent().clone();
+    next.metadata.version = "next".into();
+    let edit = DocumentCodec.replace_intent(&b, &next).unwrap();
+    assert_eq!(edit.expected, b.raw_revision());
+    assert_eq!(edit.edit, DocumentEdit::Reformatted);
+    assert_eq!(
+        DocumentCodec
+            .decode_intent(&edit.bytes, "edit")
+            .unwrap()
+            .intent(),
+        &next
+    );
+}
+
+#[test]
+fn invalid_explicit_intent_never_becomes_a_search_or_default() {
+    let paths = [
+        ("/schema", json!(3)),
+        (
+            "/dependencies/renderer alias/source/identity/project",
+            json!("sodium"),
+        ),
+        (
+            "/dependencies/renderer alias/version/pin/id",
+            json!("latest"),
+        ),
+        ("/dependencies/renderer alias/source/kind", json!("unknown")),
+        ("/distribution/archive", json!("rar")),
+    ];
+    for (path, invalid) in paths {
+        let mut value = source();
+        *value.pointer_mut(path).unwrap() = invalid;
+        assert!(
+            DocumentCodec
+                .decode_intent(&serde_json::to_vec(&value).unwrap(), "invalid")
+                .is_err(),
+            "{path}"
+        );
+    }
+    let mut value = source();
+    value["runtime"]["surprise"] = json!(true);
+    assert!(
+        DocumentCodec
+            .decode_intent(&serde_json::to_vec(&value).unwrap(), "unknown")
+            .is_err()
+    );
+    let raw = serde_saphyr::to_string(&source()).unwrap();
+    assert!(
+        DocumentCodec
+            .decode_intent(format!("schema: 2\n{raw}").as_bytes(), "duplicate")
+            .is_err()
+    );
+    assert!(
+        DocumentCodec
+            .decode_intent(b"empack: {}", "legacy")
+            .is_err()
+    );
+}
+
+#[test]
+fn locks_reject_stale_intent_missing_roots_and_cross_project_selections() {
+    let source = decoded();
+    let mut lock = resolution(&source);
+    lock.intent_revision = SemanticRevision([1; 32]);
+    assert!(validate(&source, lock).is_err());
+    let mut lock = resolution(&source);
+    lock.dependencies.clear();
+    assert!(validate(&source, lock).is_err());
+    let mut lock = resolution(&source);
+    lock.dependencies
+        .values_mut()
+        .next()
+        .unwrap()
+        .selected
+        .as_mut()
+        .unwrap()
+        .project = ProviderProjectId::Modrinth(ModrinthProjectId::parse("OtherPrj").unwrap());
+    assert!(validate(&source, lock).is_err());
+    let mut lock = resolution(&source);
+    lock.dependencies.values_mut().next().unwrap().kind = ContentKind::ResourcePack;
+    assert!(validate(&source, lock).is_err());
+}
+
+#[test]
+fn duplicate_placements_fail_but_identical_bytes_at_distinct_paths_survive() {
+    let source = decoded();
+    let mut lock = resolution(&source);
+    let dep = lock.dependencies.values_mut().next().unwrap();
+    let mut files = dep.files.as_slice().to_vec();
+    files[1].placements = files[0].placements.clone();
+    dep.files = NonEmpty::new(files).unwrap();
+    assert!(validate(&source, lock).is_err());
+    assert_eq!(
+        validate(&source, resolution(&source))
+            .unwrap()
+            .lock()
+            .dependencies
+            .values()
+            .next()
+            .unwrap()
+            .files
+            .as_slice()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn resolution_preserves_requirements_provenance_and_coverage() {
+    let source = decoded();
+    let mut lock = resolution(&source);
+    lock.coverage.clear();
+    assert!(validate(&source, lock).is_err());
+    let mut lock = resolution(&source);
+    let dep = lock.dependencies.values_mut().next().unwrap();
+    let mut files = dep.files.as_slice().to_vec();
+    let mut places = files[0].placements.as_slice().to_vec();
+    places[0].requirements.client = Requirement::Required;
+    files[0].placements = NonEmpty::new(places).unwrap();
+    dep.files = NonEmpty::new(files).unwrap();
+    assert!(validate(&source, lock).is_err());
+    let mut lock = resolution(&source);
+    let dep = lock.dependencies.values_mut().next().unwrap();
+    let mut files = dep.files.as_slice().to_vec();
+    files[0].expected.digests =
+        Some(DigestSet::parse([("sha256", "a".repeat(64).as_str())]).unwrap());
+    dep.files = NonEmpty::new(files).unwrap();
+    assert!(validate(&source, lock).is_err());
+}
+
+#[test]
+fn url_order_changes_semantics_and_credentials_cannot_enter_documents() {
+    let mut value = source();
+    let dep = &mut value["dependencies"]["renderer alias"];
+    dep["source"] =
+        json!({"kind":"url","downloads":["https://example.com/one","https://example.com/two"]});
+    dep["version"] = json!({"mode":"content-pinned","digests":{"sha256":"a".repeat(64)}});
+    let a = DocumentCodec
+        .decode_intent(&serde_json::to_vec(&value).unwrap(), "a")
+        .unwrap();
+    value["dependencies"]["renderer alias"]["source"]["downloads"]
+        .as_array_mut()
+        .unwrap()
+        .reverse();
+    let b = DocumentCodec
+        .decode_intent(&serde_json::to_vec(&value).unwrap(), "b")
+        .unwrap();
+    assert_ne!(a.semantic_revision(), b.semantic_revision());
+    for url in [
+        "https://user:secret@example.com/file",
+        "https://example.com/file?token=secret",
+    ] {
+        value["dependencies"]["renderer alias"]["source"]["downloads"] = json!([url]);
+        assert!(
+            DocumentCodec
+                .decode_intent(&serde_json::to_vec(&value).unwrap(), "secret")
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn requirements_remain_lossless_even_when_a_backend_projection_cannot_express_them() {
+    let mut value = source();
+    value["dependencies"]["renderer alias"]["environment"]["server"] = json!("required");
+    let source = DocumentCodec
+        .decode_intent(&serde_json::to_vec(&value).unwrap(), "mixed")
+        .unwrap();
+    let requirements = &source.intent.roots.values().next().unwrap().requirements;
+    assert!(requirements.uniform().is_err());
+    assert_eq!(
+        source.intent(),
+        DocumentCodec
+            .decode_intent(
+                &DocumentCodec.encode_intent(source.intent()).unwrap(),
+                "roundtrip"
+            )
+            .unwrap()
+            .intent()
+    );
+}

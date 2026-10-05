@@ -367,7 +367,7 @@ Retain user comments and unrelated supported fields where the editing library ca
 
 ### 6.2 Illustrative authoring document
 
-The final serialized schema should be versioned separately from these APIs. A possible new authoring form is:
+Intent schema 2 and lock schema 1 are versioned separately from the program and APIs. The compiled codec accepts this authoring form:
 
 ```yaml
 schema: 2
@@ -379,18 +379,26 @@ runtime:
   loader:
     kind: fabric
     version: "0.16.0"
+distribution:
+  targets: [mrpack, client, server]
+  archive: zip
+layout:
+  data-pack: world/datapacks
 dependencies:
   renderer-alias:
     source:
       kind: provider
-      provider: modrinth
-      project: AANobbMI
+      identity:
+        provider: modrinth
+        project: AANobbMI
     content: mod
     version:
       mode: follow-compatible
+    placement: automatic
     environment:
       client: required
       server: unsupported
+extensions: {}
 ```
 
 This is a schema illustration, not a recommendation that the example runtime versions are current. The lock records the selected provider release/file IDs, destination, source hashes, expected size, and resolution evidence. Literal IDs are strings even where they look numeric in another provider.

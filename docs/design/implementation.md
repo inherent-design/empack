@@ -173,3 +173,26 @@ respective landings. The source core remains dependency-free and `no_std`.
 Final strict E2E, Clippy, CI and Greptile evidence is recorded on PR #82 for its
 reviewed head. These results cover the current adapters; they do not complete
 the pending engine publication and recovery gates.
+
+## Normalized model and codec
+
+The core now represents intent and exact resolution separately, including multiple
+file slots, repeated placement of identical bytes, source evidence, provenance,
+optional choices, loader variants, distribution targets and extensions. Checked
+resolution rejects stale intent, missing roots, mismatched provider pins, changed
+content kinds, lost requirements, discarded source declarations and duplicate
+same-layer destinations. Dependency coverage remains explicit; missing edges do
+not authorize removal.
+
+`engine::documents::DocumentCodec` implements intent schema 2 and lock schema 1.
+It rejects unknown fields and unsupported schemas rather than trying another
+interpretation. Semantic revisions use tagged, length-delimited canonical values;
+raw revisions protect comments and formatting separately. No-op edits return the
+original bytes. Changed documents explicitly report reformatting, which the
+operation plan must disclose. These codecs create data, not write authority.
+
+Eight contract tests cover round trips, multiple files with identical content,
+weak source evidence, mixed per-side requirements, raw-revision conflicts, URL
+ordering, credential rejection and invalid explicit intent. All-target/all-feature
+Clippy passes. Command cutover follows snapshot, staging and publication work;
+existing live command paths have not yet been replaced by these codecs.

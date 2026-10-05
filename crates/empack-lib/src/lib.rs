@@ -27,6 +27,7 @@ pub mod api;
 pub mod application;
 pub mod display;
 pub mod empack;
+pub mod engine;
 pub mod logger;
 pub mod networking;
 pub mod platform;
