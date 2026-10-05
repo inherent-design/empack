@@ -4398,10 +4398,6 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
     // Show planned actions
     if planned_actions.is_empty() && url_repairs.is_empty() && requirement_repairs.is_empty() {
         if !session.config().app_config().dry_run {
-            let mut verified_urls = Vec::new();
-            for record in &url_repairs {
-                verified_urls.push(record.verify_download(session).await?);
-            }
             for (slug, _) in &search_entries {
                 if let Some(DependencyEntry::Resolved(record)) =
                     empack_config.empack.dependencies.get(slug)
@@ -4468,6 +4464,11 @@ async fn handle_sync(session: &dyn Session) -> Result<()> {
             .status()
             .complete("Dry run complete - no changes applied");
         return Ok(());
+    }
+
+    let mut verified_urls = Vec::new();
+    for record in &url_repairs {
+        verified_urls.push(record.verify_download(session).await?);
     }
 
     for (slug, _) in &search_entries {
