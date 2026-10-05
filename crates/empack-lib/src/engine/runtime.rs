@@ -318,6 +318,15 @@ pub struct WorkScope {
     inner: Arc<ScopeInner>,
 }
 impl WorkScope {
+    /// An admission estimate only; registering work atomically reserves capacity afterward.
+    pub(super) fn available_scratch_bytes(&self) -> u64 {
+        let status = self.inner.governor.status();
+        status
+            .limits
+            .scratch_bytes
+            .saturating_sub(status.reserved.scratch_bytes)
+    }
+
     pub fn cancellation(&self) -> Cancellation {
         self.inner.operation_cancel.clone()
     }

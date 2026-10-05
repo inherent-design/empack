@@ -332,3 +332,52 @@ async fn dropping_acquisition_future_closes_and_retires_its_verifier() {
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     assert_eq!(worker.join().unwrap(), 0);
 }
+
+#[tokio::test]
+async fn small_files_share_a_tight_scratch_budget_with_or_without_declared_sizes() {
+    for declared_size in [true, false] {
+        let mut server = mockito::Server::new_async().await;
+        let response = server
+            .mock("GET", "/file")
+            .with_body("payload")
+            .expect(2)
+            .create_async()
+            .await;
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            scratch_bytes: 16,
+            memory_bytes: 1 << 20,
+            open_files: 10,
+        });
+        let runtime = OperationRuntime::new(governor.clone(), 1);
+        let url = format!("{}/file", server.url());
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                let transport = transport();
+                let result: Result<Vec<AcquiredContent>> = async {
+                    let mut content = Vec::new();
+                    for _ in 0..2 {
+                        let mut request = request(vec![url.clone()], 16);
+                        if !declared_size {
+                            request.expected.size = None;
+                        }
+                        content.push(transport.acquire(&mut scope, request).await?);
+                    }
+                    Ok(content)
+                }
+                .await;
+                Ok(result)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        assert!(matches!(&*outcome,OperationOutcome::Completed(Ok(content)) if content.len()==2));
+        assert_eq!(governor.status().reserved.scratch_bytes, 14);
+        assert_eq!(governor.status().reserved.jobs, 0);
+        runtime.release_completed(handle.id());
+        drop(handle);
+        drop(outcome);
+        runtime.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        response.assert_async().await;
+    }
+}

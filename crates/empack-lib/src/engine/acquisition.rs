@@ -158,9 +158,18 @@ impl HttpAcquisition {
             let cancel = operation_cancel.child();
             let worker_cancel = cancel.clone();
             let expected = expected.clone();
+            // Declared sizes are exact upper bounds. Unknown transfers use only currently
+            // available scratch, with the same reduced cap enforced while receiving/writing.
+            let maximum = expected
+                .size
+                .unwrap_or_else(|| limits.file_bytes.min(scope.available_scratch_bytes()));
+            let attempt_limits = TransferLimits {
+                file_bytes: maximum,
+                ..limits
+            };
             let (sender, receiver) = mpsc::channel(2);
             let retained = ResourceRequest {
-                scratch_bytes: limits.file_bytes,
+                scratch_bytes: maximum,
                 open_files: 3,
                 ..ResourceRequest::default()
             };
@@ -178,7 +187,7 @@ impl HttpAcquisition {
                             current: io::Cursor::new(Vec::new()),
                         },
                         &expected,
-                        limits.file_bytes,
+                        maximum,
                         evidence,
                         initial,
                         &worker_cancel,
@@ -186,7 +195,14 @@ impl HttpAcquisition {
                 },
             )?;
             let transfer = self
-                .pump(url, sender, limits, deadline, &mut received, &cancel)
+                .pump(
+                    url,
+                    sender,
+                    attempt_limits,
+                    deadline,
+                    &mut received,
+                    &cancel,
+                )
                 .await;
             // Pump owns the only sender. It is now closed on success or failure, unblocking reads.
             if transfer.is_err() {

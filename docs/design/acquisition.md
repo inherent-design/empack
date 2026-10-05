@@ -202,3 +202,12 @@ Reject archive-provided symlinks, hardlinks, device entries, and unsupported spe
 Open an archive once where possible and retain its reader. Avoid rereading the whole compressed file for every entry. Nested archive processing has a separately bounded policy; do not recursively expand arbitrary nested files merely because they look like ZIPs.
 
 A transferred archive's digest and the digests of its content entries are separate. Successful ZIP parsing does not establish that its file semantics are supported.
+
+### Transfer reservations
+
+Known file sizes reserve their validated byte length rather than the entire configured
+per-file ceiling. Unknown sizes use the smaller of that ceiling and currently
+available scratch capacity; admission then reserves it atomically, and the same cap
+applies to the receive stream and quarantine writer. Verified leases retain only
+actual bytes and their open file. Retained content therefore cannot block a later
+small file solely because its configured maximum is larger than the remaining budget.
