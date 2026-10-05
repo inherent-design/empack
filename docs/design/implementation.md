@@ -11,7 +11,7 @@ moves through the gates below. The baseline is `50c121f`.
 | Snapshots, lock and pure plans | In progress | Raw read sets, absence checks, exact selections, convergence and alias tests |
 | Read-only preparation and acquisition | Pending | Every preview preserves durable project/cache/tool/state trees |
 | Native staging and publication | In progress | No live writer bypass; retained roots, freeze, private verification proof, crash/restart tests |
-| Build inventories | Pending | Every source kind contributes expected representation; omission fails while prior artifacts survive |
+| Build inventories | In progress | Every source kind contributes expected representation; omission fails while prior artifacts survive |
 | Engine runtime and public API | In progress | One runtime, bounded admission, late-result rejection, retained terminal results, compiled usage examples |
 | Command implementation | Pending | Build, then add/sync/remove, then init/import, then continuation/clean use shared lifecycle |
 | Alpha release gate | Pending | Parity ledger, native platform suites and fault injection pass; no success stubs |
@@ -415,3 +415,24 @@ errors. No legacy-schema fallback is added.
 Thirteen affected reader, codec and journal tests pass locally. They verify preview
 state isolation, raw comment conflicts, stale-lock separation and shared-lock/hot-
 journal behavior. Native Windows execution remains part of the CI gate.
+
+## Expected build content
+
+The core inventory planner projects independently enumerated input obligations
+into each build target. It retains semantic owners, exact embedded content or
+download references, side requirements and portable permissions. Side layers
+replace common content explicitly. Optional choices retain their descriptions
+and defaults; full distributions require resolved choices and acquired bytes.
+An optional side override with a common fallback requires a selection before
+flattening, because a single selectable file cannot preserve both alternatives.
+
+Five new core tests cover layer precedence, deterministic ordering, optional
+fallbacks, conflicting choices, duplicate destinations and full-materialization
+requirements. Core tests, the dependency boundary check and all-feature Clippy
+pass. Provider/source enumeration and format-specific semantic verification still
+need to consume these projections; this landing alone does not complete builds.
+
+At `f7ad34b`, the default suite passed 1,453 tests and ten doctests without a
+pipe-leak warning. The 101 strict E2E tests also passed with the new pure inventory
+module present but no command changes. Native CI tests passed on Linux, macOS and
+Windows for `f7ad34b`; import-smoke results are tracked separately on PR #82.
