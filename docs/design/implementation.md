@@ -660,3 +660,12 @@ regression inspects the published index, checks all three evidence cases, and pr
 that both a conflicting locked digest and conflicting acquired bytes preserve the
 previous artifact. Nineteen affected reader/backend/mrpack tests and all-feature
 Clippy pass. This does not claim remote acquisition or the CLI cutover is complete.
+
+## Retained content with transient locators
+
+A verified observed file whose URL cannot be persisted is embedded from its retained
+bytes. The URL never enters the archive. Optional files still need a representable
+reference or explicit selection; a transient URL does not authorize making them
+mandatory. Greptile review 32's signed-URL fixture failed before this correction.
+The regression now reads the embedded client-only bytes from the actual archive
+and separately checks refusal of unrepresentable optional content.

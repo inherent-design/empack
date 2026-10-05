@@ -70,9 +70,10 @@ impl ObservedFile {
         let lease = acquired.content.lease();
         let representation = match record.download {
             BackendDownload::Url(url)
-                if !acquired.permissions.readonly && !acquired.permissions.executable =>
+                if !acquired.permissions.readonly
+                    && !acquired.permissions.executable
+                    && crate::engine::documents::validate_download_url(&url).is_ok() =>
             {
-                crate::engine::documents::validate_download_url(&url)?;
                 Representation::Download {
                     digests: acquired.content.observed_digests().clone(),
                     bytes: lease.len(),
@@ -167,7 +168,7 @@ description = "Observed option"
         assert_eq!(plan.conversions().len(), 1);
     }
     #[test]
-    fn observed_content_rejects_mismatches_strong_policy_bypass_and_secret_references() {
+    fn observed_content_rejects_mismatches_and_strong_policy_bypass() {
         for (bytes, url, policy) in [
             (
                 &b"changed"[..],
@@ -178,11 +179,6 @@ description = "Observed option"
                 &b"payload"[..],
                 "https://example.com/asset.zip",
                 SourceEvidencePolicy::StrongSourceRequired,
-            ),
-            (
-                &b"payload"[..],
-                "https://example.com/asset.zip?token=do-not-log",
-                SourceEvidencePolicy::Compatibility,
             ),
         ] {
             let error = ObservedFile::verify(
@@ -195,5 +191,60 @@ description = "Observed option"
             .unwrap();
             assert!(!format!("{error:#}").contains("do-not-log"));
         }
+    }
+    #[test]
+    fn an_unpublishable_optional_reference_cannot_become_required_content() {
+        let observed = ObservedFile::verify(
+            record("https://example.com/asset.zip?token=do-not-log"),
+            build_file(b"payload"),
+            ChoiceKey::parse("observed-extra").unwrap(),
+            SourceEvidencePolicy::Compatibility,
+        )
+        .unwrap();
+        let error = MrpackPlan::prepare_with_observed(
+            &project(false, false),
+            &BTreeMap::new(),
+            vec![],
+            vec![observed],
+            OptionalConversion::AcknowledgedMetadataLoss,
+        )
+        .err()
+        .unwrap();
+        assert!(!format!("{error:#}").contains("do-not-log"));
+        assert!(error.to_string().contains("optional"));
+    }
+    #[test]
+    fn verified_observed_bytes_embed_when_the_locator_cannot_be_persisted() {
+        let mut record = record("https://example.com/asset.zip?token=do-not-export");
+        record.optional = None;
+        let observed = ObservedFile::verify(
+            record,
+            build_file(b"payload"),
+            ChoiceKey::parse("observed-extra").unwrap(),
+            SourceEvidencePolicy::Compatibility,
+        )
+        .unwrap();
+        let plan = MrpackPlan::prepare_with_observed(
+            &project(false, false),
+            &BTreeMap::new(),
+            vec![],
+            vec![observed],
+            OptionalConversion::RejectMetadataLoss,
+        )
+        .unwrap();
+        assert!(!String::from_utf8_lossy(&plan.index).contains("do-not-export"));
+        let mut candidate = tempfile::tempfile().unwrap();
+        plan.write(&mut candidate, &Cancellation::default())
+            .unwrap();
+        use std::io::{Read, Seek};
+        candidate.rewind().unwrap();
+        let mut archive = zip::ZipArchive::new(candidate).unwrap();
+        let mut bytes = Vec::new();
+        archive
+            .by_name("client-overrides/extras/asset.zip")
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert_eq!(bytes, b"payload");
     }
 }
