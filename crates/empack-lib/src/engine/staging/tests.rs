@@ -120,3 +120,18 @@ fn stage_writer_rejects_links_without_touching_outside_bytes() {
     );
     assert_eq!(fs::read(outside.path().join("file")).unwrap(), b"safe");
 }
+
+#[cfg(unix)]
+#[test]
+fn stage_directory_is_private_even_with_a_permissive_process_umask() {
+    use std::os::unix::fs::PermissionsExt;
+    let stage = MutableStage::empty().unwrap();
+    assert_eq!(
+        fs::metadata(stage.storage.path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+}

@@ -13,7 +13,8 @@ use std::{
 };
 
 /// Limits apply while reading, including files that grow after metadata inspection.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SnapshotLimits {
     pub entries: usize,
     pub depth: usize,
@@ -35,7 +36,7 @@ impl Default for SnapshotLimits {
 pub struct ProjectReadRoot {
     pub(super) directory: Dir,
     location: PathBuf,
-    binding: ObjectIdentity,
+    pub(super) binding: ObjectIdentity,
 }
 impl ProjectReadRoot {
     /// Ambient authority is used only for the explicitly selected project root.
@@ -151,6 +152,12 @@ pub struct NativeSnapshot {
     limits: SnapshotLimits,
 }
 impl NativeSnapshot {
+    pub(super) fn scopes(&self) -> &[PortableRelPath] {
+        &self.scopes
+    }
+    pub(super) fn limits(&self) -> SnapshotLimits {
+        self.limits
+    }
     pub fn entries(&self) -> &BTreeMap<PortableRelPath, Observation> {
         &self.entries
     }

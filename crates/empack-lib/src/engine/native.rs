@@ -11,9 +11,16 @@ use std::io;
 pub(super) struct ObjectIdentity {
     pub volume: u64,
     pub object: u128,
+    pub created: Option<(u64, u32)>,
 }
 
 pub(super) fn identity(file: &File) -> Result<ObjectIdentity> {
+    let created = file
+        .metadata()?
+        .created()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|value| (value.as_secs(), value.subsec_nanos()));
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -21,6 +28,7 @@ pub(super) fn identity(file: &File) -> Result<ObjectIdentity> {
         Ok(ObjectIdentity {
             volume: metadata.dev(),
             object: metadata.ino() as u128,
+            created,
         })
     }
     #[cfg(windows)]
@@ -47,6 +55,7 @@ pub(super) fn identity(file: &File) -> Result<ObjectIdentity> {
         Ok(ObjectIdentity {
             volume: info.VolumeSerialNumber,
             object: u128::from_le_bytes(info.FileId.Identifier),
+            created,
         })
     }
 }

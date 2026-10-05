@@ -2,6 +2,9 @@
 pub mod documents;
 
 mod io;
+pub mod layout;
 mod native;
+pub mod publication;
 pub mod snapshot;
 pub mod staging;
+pub mod verification;

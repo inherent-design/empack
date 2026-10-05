@@ -20,6 +20,8 @@ empack-lib = { path = "crates/empack-lib", default-features = true }
 anyhow = "1.0.102"
 cap-std = "4.0.3"
 cap-fs-ext = "4.0.3"
+caseless = "0.2.2"
+unicode-normalization = "0.1"
 clap = { version = "4.6.0", features = [
     "derive",
     "env",

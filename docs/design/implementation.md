@@ -8,9 +8,9 @@ moves through the gates below. The baseline is `50c121f`.
 | Target documentation and policy | Landed | C01 to C14, API sketches, implementation order and user decisions have one target |
 | Pure core and first consumers | Landed | Dependency-free core; portable paths and deterministic target prerequisites used by live adapters; negative cases and live workflow tests |
 | Semantic identity, requirements and codec | In progress | Typed canonical identities, multi-file placements, explicit DTO dispatch and validated schema |
-| Snapshots, lock and pure plans | Pending | Raw read sets, absence checks, exact selections, convergence and alias tests |
+| Snapshots, lock and pure plans | In progress | Raw read sets, absence checks, exact selections, convergence and alias tests |
 | Read-only preparation and acquisition | Pending | Every preview preserves durable project/cache/tool/state trees |
-| Native staging and publication | Pending | No live writer bypass; retained roots, freeze, private verification proof, crash/restart tests |
+| Native staging and publication | In progress | No live writer bypass; retained roots, freeze, private verification proof, crash/restart tests |
 | Build inventories | Pending | Every source kind contributes expected representation; omission fails while prior artifacts survive |
 | Engine runtime and public API | Pending | One runtime, bounded admission, late-result rejection, retained terminal results, compiled usage examples |
 | Command implementation | Pending | Build, then add/sync/remove, then init/import, then continuation/clean use shared lifecycle |
@@ -82,7 +82,8 @@ not establish existence or pin ownership; provider resolution still checks those
 Sync and removal compare typed identities. Installed metadata decodes pins in
 its provider namespace, and command planning rejects invalid IDs before invoking
 the backend. Human labels and observed metadata keys remain separate. Existing
-wire structs still belong to the adapter; the normalized codec is not yet landed.
+wire structs still belong to the command adapter; the normalized codec now exists
+and command integration remains pending.
 
 Curated import smoke exposed another selector boundary: older Modrinth CDN paths
 contain version names. The importer now treats only canonical-shaped IDs from the
@@ -222,3 +223,46 @@ These adapters do not yet admit backend processes. Project coordination and the
 hot-journal gate belong to their engine caller, and frozen inventory alone does
 not authorize publication. The durable publisher, independent semantic verifier
 and command cutover remain required before claiming the complete staging gate.
+
+
+## File plans, inventory proofs and journaled publication
+
+`empack-core::files::FilePlan` plans explicit file replacements and removals from
+observed states. It retains unlisted files, requires observations for new targets,
+rejects directory-valued file operations and converges after applying a valid
+plan. This is the file-level planner; semantic request planning remains separate.
+
+`ProjectLayout` maps logical destinations into managed namespaces. Collision
+checks preserve spelling and reject canonical Unicode caseless aliases, including
+file/directory prefix conflicts. `VerifiedFileChange` checks the complete selected
+candidate inventory against its plan and native base. Missing, additional or
+changed files, inappropriate roles and over-budget candidates fail verification.
+This proof does not replace provider, normalized-document or artifact verification.
+
+The native publisher owns a project-specific OS lock and host-private journal.
+It retains synchronized before-images and verified candidates before recording
+publication intent. Each replacement uses a journal-owned sibling on the target
+filesystem. Recovery checks before/after content and native identities, verifies
+all pending candidates and retained inputs, and rolls forward without invoking
+an installer. Unknown schemas, corrupted data and external edits block recovery.
+Successful publication verifies the final selected inventory and persists its
+receipt. Cancellation is deferred once durable publication starts.
+
+Root bindings include native identity and creation time to distinguish reused
+object numbers after deletion. The publisher refuses filesystems that cannot
+supply a durable directory creation identity. Unix receipts record directory
+synchronization; Windows receipts explicitly report file synchronization only.
+Those platform limits are not claims of hardware-independent power-loss safety.
+
+Thirty-six engine tests and the core contract suite pass locally, with
+all-feature Clippy. The subprocess fixture exits at nine durable boundaries,
+including sibling write/sync, and repeats four boundaries during the second file
+change. A fresh process recovers each recorded operation. Other fixtures check
+unchanged-input conflicts, corrupt later candidates, busy locks, file-only
+removal, missing/extra candidate output and preview state isolation.
+
+This remains an engine foundation. Backend task retirement, semantic/artifact
+proofs, before-image restoration, committed-data reclamation, admission ownership
+and command integration are still pending. Old command paths have not acquired
+these guarantees merely because the publisher compiles. Cross-platform checks
+and full-suite evidence are recorded per commit on PR #82.

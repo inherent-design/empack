@@ -28,7 +28,14 @@ pub struct MutableStage {
 }
 impl MutableStage {
     pub fn empty() -> Result<Self> {
-        let storage = tempfile::Builder::new().prefix("empack-stage-").tempdir()?;
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("empack-stage-");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            builder.permissions(std::fs::Permissions::from_mode(0o700));
+        }
+        let storage = builder.tempdir()?;
         let root = ProjectReadRoot::open(storage.path())?;
         Ok(Self { storage, root })
     }
@@ -123,6 +130,15 @@ impl MutableStage {
             let _ = parent.remove_file(&temporary);
         }
         result
+    }
+
+    /// Delete one private-stage file. Directories and links cannot become recursive removals.
+    pub fn remove(&mut self, path: &PortableRelPath) -> Result<()> {
+        self.root.check_binding()?;
+        let (parent, leaf) = native::parent(&self.root.directory, path)?;
+        let _file = native::open_file(&parent, &leaf)?;
+        parent.remove_file(&leaf)?;
+        Ok(())
     }
 
     fn directory(&self, path: &PortableRelPath) -> Result<()> {
