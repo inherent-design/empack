@@ -85,6 +85,12 @@ pub(super) struct CollisionIndex {
 }
 impl CollisionIndex {
     pub fn insert_file(&mut self, path: &PortableRelPath) -> Result<()> {
+        self.insert(path, true)
+    }
+    pub fn insert_directory(&mut self, path: &PortableRelPath) -> Result<()> {
+        self.insert(path, false)
+    }
+    fn insert(&mut self, path: &PortableRelPath, file: bool) -> Result<()> {
         let mut prefix = String::new();
         let mut parts = path.components().peekable();
         while let Some(part) = parts.next() {
@@ -103,12 +109,12 @@ impl CollisionIndex {
                     "Portable filename collision: {previous} and {prefix}"
                 );
                 ensure!(
-                    parts.peek().is_some(),
+                    !file || parts.peek().is_some(),
                     "File destination replaces an ancestor directory: {prefix}"
                 );
             }
             self.spelling.insert(key.clone(), prefix.clone());
-            if parts.peek().is_none() {
+            if file && parts.peek().is_none() {
                 self.files.insert(key);
             }
         }

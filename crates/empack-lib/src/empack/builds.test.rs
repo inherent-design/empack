@@ -2173,6 +2173,29 @@ fn test_zip_distribution_requires_target_content() {
 }
 
 #[test]
+fn build_preparation_retains_archives_while_explicit_clean_removes_them() {
+    let mock = MockBuildOrchestrator::new();
+    mock.setup_basic_pack_structure().unwrap();
+    let mut orchestrator = mock.orchestrator();
+    let info = orchestrator.load_pack_info().unwrap().clone();
+    let mut artifacts = Vec::new();
+    for extension in ["zip", "tar.gz", "7z"] {
+        let path = orchestrator.artifact_path(&info, Some(BuildTarget::Client), extension).unwrap();
+        mock.session.filesystem().create_dir_all(path.parent().unwrap()).unwrap();
+        mock.session.filesystem().write_file(&path, "old artifact").unwrap();
+        artifacts.push(path);
+    }
+    orchestrator.reset_target_worktree(BuildTarget::Client).unwrap();
+    for path in &artifacts {
+        assert_eq!(mock.session.filesystem().read_to_string(path).unwrap(), "old artifact");
+    }
+    orchestrator.clean_target(BuildTarget::Client).unwrap();
+    for path in &artifacts {
+        assert!(!mock.session.filesystem().exists(path));
+    }
+}
+
+#[test]
 fn test_build_mrpack_returns_restricted_mods_on_export_failure() {
     let workdir = mock_root().join("mrpack-manual-download");
     let pack_file = workdir.join("pack").join("pack.toml");

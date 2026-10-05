@@ -189,3 +189,33 @@ fn test_archive_format_display() {
     assert_eq!(format!("{}", ArchiveFormat::TarGz), "tar.gz");
     assert_eq!(format!("{}", ArchiveFormat::SevenZ), "7z");
 }
+
+#[test]
+fn rejected_archive_input_preserves_existing_artifacts_for_every_format() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("source");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::create_dir(source.join("empty")).unwrap();
+    for format in [ArchiveFormat::Zip, ArchiveFormat::TarGz, ArchiveFormat::SevenZ] {
+        let artifact = temp.path().join(format!("old.{}", format.extension()));
+        std::fs::write(&artifact, b"prior artifact").unwrap();
+        assert!(create_archive(&source, &artifact, format).is_err());
+        assert_eq!(std::fs::read(&artifact).unwrap(), b"prior artifact");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn linked_input_is_rejected_without_reading_or_replacing_the_old_artifact() {
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("source");
+    std::fs::create_dir(&source).unwrap();
+    let outside = temp.path().join("outside");
+    std::fs::write(&outside, b"outside bytes").unwrap();
+    std::os::unix::fs::symlink(&outside, source.join("linked")).unwrap();
+    let output = temp.path().join("old.zip");
+    std::fs::write(&output, b"old").unwrap();
+    assert!(create_archive(&source, &output, ArchiveFormat::Zip).is_err());
+    assert_eq!(std::fs::read(&output).unwrap(), b"old");
+    assert_eq!(std::fs::read(&outside).unwrap(), b"outside bytes");
+}

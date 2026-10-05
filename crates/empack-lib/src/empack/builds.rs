@@ -1096,15 +1096,6 @@ impl<'a> BuildOrchestrator<'a> {
         let format = self.archive_format;
         let archive_path = self.artifact_path(pack_info, Some(target), format.extension())?;
 
-        if self.session.filesystem().exists(&archive_path) {
-            self.session
-                .filesystem()
-                .remove_file(&archive_path)
-                .map_err(|e| BuildError::ConfigError {
-                    reason: e.to_string(),
-                })?;
-        }
-
         self.session
             .archive()
             .create_archive(&dist_dir, &archive_path, format)
@@ -1292,7 +1283,7 @@ impl<'a> BuildOrchestrator<'a> {
 
     /// Build client implementation
     fn build_client_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
-        self.clean_target(BuildTarget::Client)?;
+        self.reset_target_worktree(BuildTarget::Client)?;
 
         self.refresh_pack()?;
 
@@ -1359,7 +1350,7 @@ impl<'a> BuildOrchestrator<'a> {
 
     /// Build server implementation
     fn build_server_impl(&mut self, bootstrap_jar_path: &Path) -> Result<BuildResult, BuildError> {
-        self.clean_target(BuildTarget::Server)?;
+        self.reset_target_worktree(BuildTarget::Server)?;
         self.refresh_pack()?;
 
         let dist_dir = self.dist_dir.join("server");
@@ -1435,7 +1426,7 @@ impl<'a> BuildOrchestrator<'a> {
         installer_jar_path: &Path,
     ) -> Result<BuildResult, BuildError> {
         if !self.continue_full_builds {
-            self.clean_target(BuildTarget::ClientFull)?;
+            self.reset_target_worktree(BuildTarget::ClientFull)?;
         }
         self.refresh_pack()?;
         self.load_pack_info()?;
@@ -1498,7 +1489,7 @@ impl<'a> BuildOrchestrator<'a> {
         installer_jar_path: &Path,
     ) -> Result<BuildResult, BuildError> {
         if !self.continue_full_builds {
-            self.clean_target(BuildTarget::ServerFull)?;
+            self.reset_target_worktree(BuildTarget::ServerFull)?;
         }
         self.refresh_pack()?;
 
@@ -1734,15 +1725,13 @@ impl<'a> BuildOrchestrator<'a> {
         Ok(())
     }
 
-    fn clean_target(&mut self, target: BuildTarget) -> Result<(), BuildError> {
+    fn reset_target_worktree(&mut self, target: BuildTarget) -> Result<(), BuildError> {
         if self.pack_info.is_none() {
             let _ = self.load_pack_info();
         }
         if let Some(info) = &self.pack_info {
             self.artifact_path(info, Some(target), "zip")?;
         }
-        let pack_info = self.pack_info.as_ref();
-
         let dist_dir = self.dist_dir.join(target.to_string());
 
         if self.session.filesystem().exists(&dist_dir) {
@@ -1776,7 +1765,12 @@ impl<'a> BuildOrchestrator<'a> {
             }
         }
 
-        if let Some(info) = pack_info {
+        Ok(())
+    }
+
+    fn clean_target(&mut self, target: BuildTarget) -> Result<(), BuildError> {
+        self.reset_target_worktree(target)?;
+        if let Some(info) = self.pack_info.as_ref() {
             for ext in ["zip", "tar.gz", "7z"] {
                 let archive_file = self.artifact_path(info, Some(target), ext)?;
                 if self.session.filesystem().exists(&archive_file) {

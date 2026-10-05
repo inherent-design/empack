@@ -48,6 +48,9 @@ pub enum ArchiveError {
     #[error("7z compression error: {0}")]
     SevenZ(String),
 
+    #[error("archive verification failed: {0:#}")]
+    Verification(#[from] anyhow::Error),
+
     #[error("source directory is empty: {0}")]
     EmptySource(PathBuf),
 
@@ -91,135 +94,61 @@ pub fn create_archive(
         return Err(ArchiveError::SourceNotFound(source_dir.to_path_buf()));
     }
 
-    if is_dir_empty(source_dir)? {
-        return Err(ArchiveError::EmptySource(source_dir.to_path_buf()));
-    }
-
-    match format {
-        ArchiveFormat::Zip => create_zip_archive(source_dir, output_path),
-        ArchiveFormat::TarGz => create_tar_gz_archive(source_dir, output_path),
-        ArchiveFormat::SevenZ => create_7z_archive(source_dir, output_path),
-    }
-}
-
-fn is_dir_empty(dir: &Path) -> Result<bool, ArchiveError> {
-    for entry in std::fs::read_dir(dir).map_err(|e| ArchiveError::Io {
-        path: dir.to_path_buf(),
-        source: e,
-    })? {
-        let entry = entry.map_err(|e| ArchiveError::Io {
-            path: dir.to_path_buf(),
-            source: e,
+    let parent = output_path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let source = source_dir
+        .canonicalize()
+        .map_err(|source| ArchiveError::Io {
+            path: source_dir.to_owned(),
+            source,
         })?;
-        if entry.path().is_file() {
-            return Ok(false);
-        }
-        if entry.path().is_dir() && !is_dir_empty(&entry.path())? {
-            return Ok(false);
-        }
+    let destination = parent.canonicalize().map_err(|source| ArchiveError::Io {
+        path: parent.to_owned(),
+        source,
+    })?;
+    if destination.starts_with(&source) {
+        return Err(ArchiveError::Verification(anyhow::anyhow!(
+            "Archive output must be outside its input tree"
+        )));
     }
-    Ok(true)
-}
-
-fn create_zip_archive(source_dir: &Path, output_path: &Path) -> Result<(), ArchiveError> {
-    use std::io::{Read, Write};
-    use zip::CompressionMethod;
-    use zip::write::SimpleFileOptions;
-
-    let file = File::create(output_path).map_err(|e| ArchiveError::Io {
-        path: output_path.to_path_buf(),
-        source: e,
-    })?;
-    let mut zip_writer = zip::ZipWriter::new(file);
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-
-    fn walk_dir(
-        base: &Path,
-        current: &Path,
-        writer: &mut zip::ZipWriter<File>,
-        options: SimpleFileOptions,
-    ) -> Result<(), ArchiveError> {
-        let entries = std::fs::read_dir(current).map_err(|e| ArchiveError::Io {
-            path: current.to_path_buf(),
-            source: e,
+    let mut candidate =
+        tempfile::NamedTempFile::new_in(parent).map_err(|source| ArchiveError::Io {
+            path: output_path.to_owned(),
+            source,
         })?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| ArchiveError::Io {
-                path: current.to_path_buf(),
-                source: e,
-            })?;
-            let path = entry.path();
-            let relative = path.strip_prefix(base).expect("path must be under base");
-            let name = relative.to_string_lossy().replace('\\', "/");
-
-            let metadata = path.symlink_metadata().map_err(|e| ArchiveError::Io {
-                path: path.clone(),
-                source: e,
-            })?;
-            if metadata.file_type().is_dir() {
-                writer
-                    .add_directory(format!("{}/", name), options)
-                    .map_err(ArchiveError::Zip)?;
-                walk_dir(base, &path, writer, options)?;
-            } else {
-                writer
-                    .start_file(name.to_string(), options)
-                    .map_err(ArchiveError::Zip)?;
-                let mut f = File::open(&path).map_err(|e| ArchiveError::Io {
-                    path: path.clone(),
-                    source: e,
-                })?;
-                let mut buffer = Vec::new();
-                f.read_to_end(&mut buffer).map_err(|e| ArchiveError::Io {
-                    path: path.clone(),
-                    source: e,
-                })?;
-                writer.write_all(&buffer).map_err(|e| ArchiveError::Io {
-                    path: path.clone(),
-                    source: e,
-                })?;
-            }
+    let format = match format {
+        ArchiveFormat::Zip => empack_core::model::DistributionArchive::Zip,
+        ArchiveFormat::TarGz => empack_core::model::DistributionArchive::TarGz,
+        ArchiveFormat::SevenZ => empack_core::model::DistributionArchive::SevenZip,
+    };
+    crate::engine::artifacts::package_directory(
+        source_dir,
+        candidate.as_file_mut(),
+        format,
+        &crate::application::process_runtime::Cancellation::default(),
+    )
+    .map_err(|error| {
+        if error.is::<crate::engine::artifacts::EmptyArchiveSource>() {
+            ArchiveError::EmptySource(source_dir.to_owned())
+        } else {
+            ArchiveError::Verification(error)
         }
-        Ok(())
-    }
-
-    walk_dir(source_dir, source_dir, &mut zip_writer, options)?;
-
-    zip_writer.finish().map_err(ArchiveError::Zip)?;
-    Ok(())
-}
-
-fn create_tar_gz_archive(source_dir: &Path, output_path: &Path) -> Result<(), ArchiveError> {
-    use flate2::Compression;
-    use flate2::write::GzEncoder;
-
-    let file = File::create(output_path).map_err(|e| ArchiveError::Io {
-        path: output_path.to_path_buf(),
-        source: e,
     })?;
-    let enc = GzEncoder::new(file, Compression::default());
-    let mut tar_builder = tar::Builder::new(enc);
-    tar_builder
-        .append_dir_all(".", source_dir)
-        .map_err(|e| ArchiveError::Io {
-            path: source_dir.to_path_buf(),
-            source: e,
+    candidate
+        .as_file()
+        .sync_all()
+        .map_err(|source| ArchiveError::Io {
+            path: output_path.to_owned(),
+            source,
         })?;
-    let enc = tar_builder.into_inner().map_err(|e| ArchiveError::Io {
-        path: output_path.to_path_buf(),
-        source: e,
-    })?;
-    enc.finish().map_err(|e| ArchiveError::Io {
-        path: output_path.to_path_buf(),
-        source: e,
-    })?;
-    Ok(())
-}
-
-fn create_7z_archive(source_dir: &Path, output_path: &Path) -> Result<(), ArchiveError> {
-    sevenz_rust2::compress_to_path(source_dir, output_path)
-        .map_err(|e| ArchiveError::SevenZ(e.to_string()))?;
+    candidate
+        .persist(output_path)
+        .map_err(|error| ArchiveError::Io {
+            path: output_path.to_owned(),
+            source: error.error,
+        })?;
     Ok(())
 }
 

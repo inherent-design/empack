@@ -436,3 +436,27 @@ At `f7ad34b`, the default suite passed 1,453 tests and ten doctests without a
 pipe-leak warning. The 101 strict E2E tests also passed with the new pure inventory
 module present but no command changes. Native CI tests passed on Linux, macOS and
 Windows for `f7ad34b`; import-smoke results are tracked separately on PR #82.
+
+## Distribution containers
+
+ZIP, TAR.GZ and 7z now share frozen-input packaging and independent file-inventory
+verification. The writer streams binary inputs, preserves portable executable and
+read-only intent, retains empty directories and enforces encoded-byte limits while
+writing. Verification checks actual hashes, sizes, permissions, directory/file
+collisions and missing or unexpected files. ZIP central-directory records are
+checked before the library builds its name index, which can hide duplicate names.
+
+Existing distribution packaging calls this implementation; the three old writers
+are removed. A private sibling replaces the previous archive only after verification
+and file synchronization. Build preparation no longer deletes published archives;
+explicit clean still removes them. The current preparation tree is not yet an
+isolated operation candidate, and mrpack export still needs semantic verification
+and the shared publisher. Container verification cannot establish that its input
+tree contains every required dependency or runtime output.
+
+The affected archive/build/provider suite passes 112 tests. New cases cover binary
+round trips, cross-host executable intent, empty directories, encoded limits,
+duplicate ZIP records, unsafe inputs and preservation of previous artifacts.
+The 7z decoder has no configurable allocation ceiling; member limits are not a
+process memory guarantee. This adapter verifies privately generated containers,
+not arbitrary downloaded 7z input. Untrusted acquisition keeps its separate limits.

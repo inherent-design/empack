@@ -224,6 +224,12 @@ pub struct FrozenStage {
     _private_parent: TempDir,
 }
 impl FrozenStage {
+    /// Borrow a retained input for a bounded streaming encoder. No path or writer escapes.
+    pub(super) fn reader(&mut self, path: &PortableRelPath) -> Result<impl Read + '_> {
+        let retained = self.files.get_mut(path).context("Missing frozen input")?;
+        retained.file.rewind()?;
+        Ok((&mut retained.file).take(retained.observation.bytes.saturating_add(1)))
+    }
     /// Independent lease cursors serialize native seeking; no pathname or writable handle escapes.
     pub(super) fn read_at(
         &mut self,
