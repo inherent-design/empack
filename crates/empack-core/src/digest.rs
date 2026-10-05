@@ -98,9 +98,17 @@ impl DigestSet {
     pub fn parse<'a>(
         values: impl IntoIterator<Item = (&'a str, &'a str)>,
     ) -> Result<Self, DigestError> {
+        Self::new(
+            values
+                .into_iter()
+                .map(|(algorithm, hex)| ExpectedDigest::parse(algorithm, hex))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    }
+    /// Check already typed declarations; conflicting duplicates still fail.
+    pub fn new(values: Vec<ExpectedDigest>) -> Result<Self, DigestError> {
         let mut result: Vec<ExpectedDigest> = Vec::new();
-        for (algorithm, hex) in values {
-            let digest = ExpectedDigest::parse(algorithm, hex)?;
+        for digest in values {
             if let Some(previous) = result
                 .iter()
                 .find(|value| value.algorithm() == digest.algorithm())

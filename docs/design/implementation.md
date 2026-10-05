@@ -376,3 +376,23 @@ The platform-specific fixture now checks that live retention blocks the rename,
 then releases the handle, replaces the root and rejects the original snapshot.
 Linux and macOS tests and Linux lint/coverage passed for that head. Import-smoke
 was skipped because of the Windows fixture failure and still requires a fresh run.
+
+## Verified content leases
+
+`engine::content::verify_stream` copies bounded input into private quarantine and
+checks every declared digest, expected length and accepted prior observation.
+The frozen object must still match those verified bytes. Its lease retains the
+private storage, exposes independent seekable read cursors and rechecks content
+when copying into another candidate. Readers do not reopen the original source.
+
+Compatibility mode preserves MD5/SHA-1 source assertions as weak evidence.
+Internally computed SHA-256/SHA-512 values support addressing and export, but never
+upgrade that source assurance. Strong-source policy requires an independent strong
+declaration. A source without declarations requires an explicit initial-observation
+choice; recorded observations are enforced on subsequent acquisition.
+
+Three native content tests cover independent cursors, lease retention, all-digest
+matching, weak-evidence policy, size limits, cancellation and initial-observation
+checks. They pass with the snapshot suite, core contracts and all-feature Clippy.
+Transport policy, durable cache lookup/insertion and command integration remain
+separate work; this component has no cache or project write capability.

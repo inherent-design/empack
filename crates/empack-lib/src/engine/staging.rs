@@ -224,6 +224,23 @@ pub struct FrozenStage {
     _private_parent: TempDir,
 }
 impl FrozenStage {
+    /// Independent lease cursors serialize native seeking; no pathname or writable handle escapes.
+    pub(super) fn read_at(
+        &mut self,
+        path: &PortableRelPath,
+        offset: u64,
+        buffer: &mut [u8],
+    ) -> std::io::Result<usize> {
+        let retained = self.files.get_mut(path).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Retained content is unavailable",
+            )
+        })?;
+        retained.file.seek(SeekFrom::Start(offset))?;
+        retained.file.read(buffer)
+    }
+
     pub fn inventory(&self) -> &BTreeMap<PortableRelPath, Observation> {
         self.snapshot.entries()
     }
