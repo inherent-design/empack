@@ -5,6 +5,7 @@ mod io;
 pub mod layout;
 mod native;
 pub mod publication;
+pub mod resources;
 pub mod snapshot;
 pub mod staging;
 pub mod verification;

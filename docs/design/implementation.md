@@ -274,3 +274,17 @@ read access relative to the retained directory, checks its identity and uses tha
 handle for these operations. The added native regression and all 37 engine tests
 pass locally, with all-feature Clippy. Linux confirmation belongs to the next CI
 run; the earlier local pass did not establish that platform guarantee.
+
+## Resource admission
+
+`engine::resources::ResourceGovernor` reserves job, memory, scratch and open-file
+estimates under one lock. Oversized requests fail immediately; busy requests can
+wait with cancellation on the host runtime. Closing admission wakes waiters.
+A unique `AdmissionPermit` remains charged until retirement, and splitting a
+permit transfers a retained output's share without releasing it globally.
+
+Five tests cover multidimensional and maximum-value arithmetic, failed transfers,
+blocking-worker cancellation, wakeups and concurrent close/admission. They pass
+with all-feature Clippy. This is scheduling accounting, not a physical-memory
+ceiling. Operation-driver registration, result ownership and command integration
+still must use these reservations.
