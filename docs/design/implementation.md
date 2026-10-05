@@ -589,3 +589,14 @@ after a source edit, successful publication, fresh source inclusion without a
 version bump, preservation of unrelated archives, and refusal to omit an unlisted
 backend record. The combined reader/mrpack/publication suite passes 24 tests,
 including subprocess crash recovery; all-feature Clippy passes.
+
+Greptile review 30's proposed implicit `.index` stripping was checked against the
+pinned backend source and an executed local HTTP/export fixture. Packwiz-tx v0.2.0
+exported `mods/.index/renderer.jar`, matching the observer. The adapter now also
+accepts safe relative filenames such as `../renderer.jar` while rejecting pack-root
+escapes. A contract test covers both forms.
+
+The optional-overlay finding describes a format limitation, not a lossless export
+that the implementation can produce. A regression requires refusal of a selectable
+client replacement with a common fallback; the mrpack contract documents why
+metadata-loss acknowledgement cannot authorize that different conversion.

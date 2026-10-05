@@ -448,3 +448,47 @@ fn layered_downloads_preserve_common_and_side_bytes_without_duplicate_references
         assert_eq!(bytes, expected);
     }
 }
+
+#[test]
+fn optional_layered_fallback_requires_a_representable_conversion() {
+    let original = project(false, true);
+    let mut lock = original.lock().clone();
+    let key = DependencyKey::parse("assets").unwrap();
+    let dependency = lock.dependencies.get_mut(&key).unwrap();
+    let mut files = dependency.files.as_slice().to_vec();
+    let mut placements = files[0].placements.as_slice().to_vec();
+    for placement in &mut placements {
+        placement.layer = ContentLayer::Client;
+    }
+    files[0].placements = NonEmpty::new(placements).unwrap();
+    dependency.files = NonEmpty::new(files).unwrap();
+    let project = ResolvedProject::validate(
+        original.intent().clone(),
+        lock.clone(),
+        lock.intent_revision,
+    )
+    .unwrap();
+    let mut common = source(ContentLayer::Common, b"fallback");
+    common.destination = InstallDestination::parse("resourcepacks/a.zip").unwrap();
+    let files = BTreeMap::from([(
+        LockedFileKey {
+            dependency: key,
+            slot: FileSlot::parse("first").unwrap(),
+        },
+        build_file(b"payload"),
+    )]);
+    let error = MrpackPlan::prepare(
+        &project,
+        &files,
+        vec![common],
+        OptionalConversion::AcknowledgedMetadataLoss,
+    )
+    .err()
+    .unwrap();
+    assert!(
+        error
+            .to_string()
+            .contains("Optional side override needs a selection"),
+        "{error}"
+    );
+}

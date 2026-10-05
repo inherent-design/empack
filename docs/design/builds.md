@@ -133,3 +133,16 @@ Parse the actual candidate archive/index and compare it against the expected inv
 Archive integrity is an additional check, not a completeness proof. A successful ZIP CRC says nothing about a required item that was never written.
 
 Store a verification summary in the receipt, including inventory digest and artifact byte length from metadata. Distinguish pack semantics, byte integrity, and distribution-permission policy; successful byte verification alone is not evidence that redistribution is authorized.
+
+### Optional replacement with a fallback
+
+An optional client file replacing common bytes at the same path needs conditional
+fallback semantics: declining the optional file must retain common bytes, while
+accepting it must install the replacement. Mrpack has optional download entries
+and unconditional override directories, but no conditional override/fallback
+relationship in its [format](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack).
+Do not emit conflicting paths and assume installer ordering implements that choice.
+Require an explicit representable conversion or selected variant. Acknowledging
+loss of optional descriptions/defaults alone does not authorize making an optional
+file mandatory or deleting its fallback. Ordinary optional references remain
+supported.

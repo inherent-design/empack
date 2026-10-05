@@ -63,7 +63,15 @@ fn backend_observation_keeps_alias_destination_pin_and_optional_metadata_distinc
 }
 #[test]
 fn backend_records_cannot_hide_unsafe_paths_or_malformed_semantic_fields() {
-    for name in ["../outside.jar", "dir/file.jar", "CON", "", r"dir\file.jar"] {
+    for name in [
+        "../../outside.jar",
+        "/outside.jar",
+        "C:/outside.jar",
+        "dir/..",
+        "CON",
+        "",
+        r"dir\file.jar",
+    ] {
         assert!(
             parse(&DOCUMENT.replace("renderer.jar", name)).is_err(),
             "{name}"
@@ -93,4 +101,26 @@ fn restricted_download_mode_requires_the_corresponding_provider() {
         parse(&valid).unwrap().download,
         BackendDownload::CurseForgeMetadata
     ));
+}
+
+#[test]
+fn metadata_parent_controls_destination_without_implicit_index_directory_stripping() {
+    for (filename, expected) in [
+        ("renderer.jar", "mods/.index/renderer.jar"),
+        ("../renderer.jar", "mods/renderer.jar"),
+        ("nested/renderer.jar", "mods/.index/nested/renderer.jar"),
+    ] {
+        let file = BackendFile::parse(
+            PortableRelPath::parse("mods/.index/renderer.pw.toml", PathSyntax::ProjectContent)
+                .unwrap(),
+            DOCUMENT
+                .replace(
+                    r#"filename = "renderer.jar""#,
+                    &format!("filename = {filename:?}"),
+                )
+                .as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(file.destination.relative().as_str(), expected);
+    }
 }

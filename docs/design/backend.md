@@ -69,3 +69,15 @@ Capture bounds and streaming display are independent. A slow progress observer c
 External tooling remains supported through explicit configuration. Record the actual version/capability identity; report when exact provenance cannot be established. A version label alone is not equivalent to a digest of the executable used.
 
 Do not bootstrap tools for help, version, unrelated inspection, or pure preview. A preview that cannot fully resolve without executing a tool reports that limitation.
+
+### Installed payload paths
+
+The pinned packwiz backend resolves `filename` relative to the metadata file's
+parent. A `.index` component has no implicit meaning. For example, metadata at
+`mods/.index/renderer.pw.toml` with `filename = "renderer.jar"` resolves to
+`mods/.index/renderer.jar`; `filename = "../renderer.jar"` resolves to
+`mods/renderer.jar`. The adapter normalizes relative components and rejects any
+escape from the pack root, absolute/prefixed paths or invalid portable components.
+It never silently strips `.index`. This follows
+[`GetDestFilePath`](https://github.com/mannie-exe/packwiz-tx/blob/v0.2.0/core/mod.go),
+which the pinned mrpack exporter uses.

@@ -4,7 +4,7 @@ use empack_core::{
     digest::ExpectedDigest,
     identity::{CurseForgeProjectId, ModrinthProjectId, PinSelector, ProviderProjectId},
     model::ResolvedPin,
-    path::{ArtifactStem, InstallDestination, PortableRelPath},
+    path::{InstallDestination, PortableRelPath},
     requirements::{Environments, Requirements},
 };
 
@@ -84,13 +84,7 @@ impl BackendFile {
             "Not a backend metadata filename"
         );
         let metadata: toml::Value = toml::from_str(std::str::from_utf8(bytes)?)?;
-        let filename = ArtifactStem::parse(required_text(&metadata, "filename")?)?;
-        let destination = match metadata_path.as_str().rsplit_once('/') {
-            Some((parent, _)) => {
-                InstallDestination::parse(&format!("{parent}/{}", filename.as_str()))?
-            }
-            None => InstallDestination::parse(filename.as_str())?,
-        };
+        let destination = destination(&metadata_path, required_text(&metadata, "filename")?)?;
         let provider = provider_observation(&metadata, metadata_path.as_str())?;
         let download = metadata
             .get("download")
@@ -172,6 +166,37 @@ impl BackendFile {
         };
         Ok(selection_matches && self.environments == expected.environments && choice_matches)
     }
+}
+/// Packwiz resolves filenames against the metadata parent; `.index` is not magic.
+/// Relative subpaths are supported only while the normalized result stays inside the pack root.
+fn destination(metadata: &PortableRelPath, filename: &str) -> Result<InstallDestination> {
+    ensure!(
+        !filename.is_empty() && !filename.contains('\\') && !filename.starts_with('/'),
+        "Backend filename is not a portable relative file"
+    );
+    ensure!(
+        !matches!(filename.rsplit('/').next(), Some("" | "." | "..")),
+        "Backend filename must identify a file"
+    );
+    let mut components: Vec<_> = metadata.as_str().split('/').collect();
+    components.pop();
+    for component in filename.split('/') {
+        match component {
+            "" => anyhow::bail!("Backend filename has an empty component"),
+            "." => {}
+            ".." => {
+                ensure!(
+                    components.pop().is_some(),
+                    "Backend filename escapes pack root"
+                );
+            }
+            value => {
+                PortableRelPath::parse(value, empack_core::path::PathSyntax::ArtifactName)?;
+                components.push(value);
+            }
+        }
+    }
+    Ok(InstallDestination::parse(&components.join("/"))?)
 }
 fn optional_text<'a>(table: &'a toml::Value, name: &str) -> Result<Option<&'a str>> {
     table
