@@ -69,8 +69,8 @@ must replace that live materializer rather than adding a compatibility branch.
 
 At `52a4c53`, all-feature Clippy and the full default suite passed: 1,365 tests
 and ten doctests, including 23 offline smoke tests. The first core landing at
-`c1386d4` also passed all 100 strict E2E tests. The prepared-import landing is
-undergoing a separate strict rerun and Greptile review.
+`c1386d4` also passed all 100 strict E2E tests. The prepared-import landing also passed all 100 strict E2E tests. Greptile
+reviewed the subsequent documentation head `f0f3dd4` at 5/5 with no findings.
 
 ## Provider identity landing
 
@@ -142,3 +142,17 @@ verification now completes before those document writes.
 This gate implements the preparation part of `AllRequested`. Runtime failures
 still need the staged candidate and journaled publisher. It does not imply rollback
 or atomic publication for the current command executor.
+
+## Continuation verification
+
+At source revision `9623a9c`, `mise run test` passed 1,381 tests and ten doctests,
+including all 23 offline CLI smoke tests. The fixtures exercise alias removal,
+provider-qualified pins, repeated reconciliation and native deletion confinement.
+Invalid document fixtures are seeded directly, so validation in the authoring
+writer does not hide command-boundary safety checks.
+
+Focused identity, requirements, digest, codec and sync checks passed during their
+respective landings. The source core remains dependency-free and `no_std`.
+Final strict E2E, Clippy, CI and Greptile evidence is recorded on PR #82 for its
+reviewed head. These results cover the current adapters; they do not complete
+the pending engine publication and recovery gates.
