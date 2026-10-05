@@ -266,3 +266,11 @@ proofs, before-image restoration, committed-data reclamation, admission ownershi
 and command integration are still pending. Old command paths have not acquired
 these guarantees merely because the publisher compiles. Cross-platform checks
 and full-suite evidence are recorded per commit on PR #82.
+
+At `cd2e1b6`, the local default suite passed 1,423 tests and ten doctests; strict
+E2E passed all 101 tests. Linux CI then exposed `EBADF` from trying to synchronize
+or change permissions through an `O_PATH` directory handle. The adapter now opens
+read access relative to the retained directory, checks its identity and uses that
+handle for these operations. The added native regression and all 37 engine tests
+pass locally, with all-feature Clippy. Linux confirmation belongs to the next CI
+run; the earlier local pass did not establish that platform guarantee.

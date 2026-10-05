@@ -554,7 +554,8 @@ fn private_directory(directory: &Dir) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(std::fs::Permissions::from_mode(0o700))?;
+        native::readable_directory(directory)?
+            .set_permissions(std::fs::Permissions::from_mode(0o700))?;
     }
     Ok(())
 }
@@ -586,7 +587,7 @@ fn new_retained_file(directory: &Dir, name: &str) -> Result<File> {
 }
 fn sync_directory(directory: &Dir) -> Result<()> {
     #[cfg(unix)]
-    directory.try_clone()?.into_std_file().sync_all()?;
+    native::readable_directory(directory)?.sync_all()?;
     #[cfg(not(unix))]
     let _ = directory;
     Ok(())

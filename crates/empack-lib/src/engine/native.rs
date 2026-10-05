@@ -110,3 +110,38 @@ pub(super) fn reject_reparse(file: &File) -> Result<()> {
     let _ = file;
     Ok(())
 }
+
+/// Linux capability directories may use O_PATH descriptors, which cannot be fsynced or chmodded.
+/// Reopen the retained directory itself with read access, without recovering an ambient pathname.
+#[cfg(unix)]
+pub(super) fn readable_directory(directory: &Dir) -> Result<File> {
+    use cap_std::fs::OpenOptionsExt;
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY)
+        .follow(FollowSymlinks::No);
+    let file = directory.open_with(".", &options)?.into_std();
+    ensure!(
+        file.metadata()?.is_dir() && identity(&file)? == directory_identity(directory)?,
+        "Retained directory identity changed"
+    );
+    Ok(file)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    #[test]
+    fn readable_directory_supports_durability_and_permissions_on_capability_handles() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let directory = Dir::open_ambient_dir(temp.path(), cap_std::ambient_authority()).unwrap();
+        let identity_before = directory_identity(&directory).unwrap();
+        let file = readable_directory(&directory).unwrap();
+        file.set_permissions(std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+        file.sync_all().unwrap();
+        assert_eq!(identity(&file).unwrap(), identity_before);
+    }
+}
