@@ -952,9 +952,11 @@ async fn resolve_modrinth_project_with_client(
     }
 
     if pref.file_id.is_none()
-        && let Some(sha1) = pref.hashes.get("sha1")
+        && let Some((algorithm, hash)) = ["sha512", "sha1"]
+            .into_iter()
+            .find_map(|algorithm| pref.hashes.get(algorithm).map(|hash| (algorithm, hash)))
     {
-        let url = api_bases.modrinth_url(&format!("v2/version_file/{}?algorithm=sha1", sha1));
+        let url = api_bases.modrinth_url(&format!("v2/version_file/{hash}?algorithm={algorithm}"));
         if let Ok(resp) = crate::networking::rate_limit::execute_api_request(
             client.clone(),
             ProjectPlatform::Modrinth,
@@ -1208,8 +1210,9 @@ pub async fn prepare_import(
 ) -> Result<PreparedImport> {
     let mut resolved = resolved;
     for entry in &mut resolved.manifest.content {
+        // Missing exact selection must not become an unpinned provider install.
+        // Preserve source bytes and requirements through the verified URL path.
         if let ContentEntry::PlatformReferenced(pref) = entry
-            && pref.project_id.is_empty()
             && pref.file_id.is_none()
             && !pref.download_urls.is_empty()
         {

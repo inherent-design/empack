@@ -2397,3 +2397,49 @@ async fn malformed_provider_identity_is_rejected_before_import_mutation() {
         assert!(session.process_provider.get_calls().is_empty());
     }
 }
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn modrinth_version_names_resolve_sha512_only_pins() {
+    let mut server = mockito::Server::new_async().await;
+    let version = server.mock("GET", "/v2/version_file/sourcehash")
+        .match_query(mockito::Matcher::UrlEncoded("algorithm".into(), "sha512".into()))
+        .with_body(r#"{"id":"Version1"}"#).create_async().await;
+    let project = server.mock("GET", "/v2/project/AANobbMI")
+        .with_body(r#"{"title":"Sodium","slug":"sodium","project_type":"mod"}"#).create_async().await;
+    let mut pref = modrinth_pref("AANobbMI");
+    pref.download_urls = vec!["https://cdn.modrinth.com/data/AANobbMI/versions/1.0.0/sodium.jar".into()];
+    pref.hashes.insert("sha512".into(), "sourcehash".into());
+    resolve_modrinth_project_with_client(&mut pref, &reqwest::Client::new(),
+        &test_api_bases(&server.url(), &server.url()), &mut vec![], None).await;
+    assert_eq!(pref.file_id.as_deref(), Some("Version1"));
+    version.assert_async().await;
+    project.assert_async().await;
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn unresolved_downloaded_version_preserves_verified_url_intent() {
+    use crate::application::session_mocks::MockCommandSession;
+    for payload in ["payload", "changed"] {
+        let mut server = mockito::Server::new_async().await;
+        let download = server.mock("GET", "/source.jar").with_body(payload).create_async().await;
+        let session = MockCommandSession::new();
+        let root = mock_root().join("unresolved-version");
+        let mut pref = modrinth_pref("AANobbMI");
+        pref.download_urls = vec![format!("{}/source.jar", server.url())];
+        pref.hashes.insert("sha512".into(), "70b33ce9c9047e30f917e7ea13e42f7767008c3f4f9c9baf49e4390fc625549e9625eee39b94545074e8a1824cf3f238463b11bc03d97348e0fc2999ca1fff7f".into());
+        let result = prepare_import(ResolvedManifest { manifest: manifest_with_content(vec![ContentEntry::PlatformReferenced(pref)]), warnings: vec![] },
+            ImportConfig { target_dir: root.clone(), pack_name: "new".into(), author: "author".into(), version: "1".into(), datapack_folder: None, acceptable_game_versions: None }, &session).await;
+        if payload == "payload" {
+            let prepared = result.unwrap();
+            assert!(matches!(&prepared.resolved.manifest.content[0], ContentEntry::UrlFile(_)));
+            assert_eq!(prepared.verified_urls.len(), 1);
+        } else {
+            assert!(result.is_err());
+        }
+        download.assert_async().await;
+        assert!(!session.filesystem_provider.exists(&root.join("empack.yml")));
+        assert!(session.process_provider.get_calls().is_empty());
+    }
+}

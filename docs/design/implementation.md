@@ -88,8 +88,11 @@ Curated import smoke exposed another selector boundary: older Modrinth CDN paths
 contain version names. The importer now treats only canonical-shaped IDs from the
 provider's CDN host as identity hints. Version names remain unresolved until the
 [version-from-hash endpoint](https://docs.modrinth.com/api/operations/versionfromhash/)
-identifies the exact version. Tests reproduce the former name-as-pin failure and
-reject identity hints from unrelated hosts.
+identifies the exact version using SHA-512 or SHA-1. If no exact provider selection
+can be resolved for a downloaded file, preparation retains a verified URL dependency
+with the original destination, requirements and digest declarations. It never
+substitutes an unpinned provider installation. Tests reproduce both pin-loss paths,
+reject changed fallback bytes and reject identity hints from unrelated hosts.
 
 The parser follows the [Modrinth identifier contract](https://docs.modrinth.com/api/)
 and [CurseForge ID fields](https://docs.curseforge.com/rest-api/). Test fixtures use
