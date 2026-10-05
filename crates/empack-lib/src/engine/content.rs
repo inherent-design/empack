@@ -97,6 +97,7 @@ impl Seek for ContentReader {
     }
 }
 /// Constructible only after every expected digest, size and accepted observation matches.
+#[derive(Clone)]
 pub struct AcquiredContent {
     lease: ContentLease,
     evidence: IntegrityEvidence,

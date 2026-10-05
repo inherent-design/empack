@@ -109,7 +109,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
     let captured = reader
         .capture_build(
             &project,
-            &[PortableRelPath::parse("new.zip", PathSyntax::ArtifactName).unwrap()],
+            &[PortableRelPath::parse("new.mrpack", PathSyntax::ArtifactName).unwrap()],
             SnapshotLimits {
                 file_bytes: 4096,
                 ..SnapshotLimits::default()
@@ -121,7 +121,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
         captured
             .observations()
             .entries()
-            .get(&PortableRelPath::parse("dist/new.zip", PathSyntax::ProjectContent).unwrap()),
+            .get(&PortableRelPath::parse("dist/new.mrpack", PathSyntax::ProjectContent).unwrap()),
         Some(Observation::Absent)
     ));
     fs::write(project.join("dist/old.zip"), b"unrelated replacement").unwrap();
@@ -147,6 +147,28 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
             .keys()
             .any(|path| path.as_str() == "dist/old.zip")
     );
+    let prepare = || {
+        let workspace = reader
+            .capture_build(
+                &project,
+                &[PortableRelPath::parse("new.mrpack", PathSyntax::ArtifactName).unwrap()],
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+        crate::engine::build::prepare_mrpack_build(
+            workspace,
+            PortableRelPath::parse("new.mrpack", PathSyntax::ArtifactName).unwrap(),
+            &BTreeMap::new(),
+            SourceEvidencePolicy::Compatibility,
+            crate::engine::mrpack::OptionalConversion::RejectMetadataLoss,
+            &cancel,
+        )
+    };
+    let prepared = prepare().unwrap();
+    assert!(prepared.bytes() > 0);
+    assert!(prepared.conversions().is_empty());
+    assert!(!project.join("dist/new.mrpack").exists());
     fs::write(project.join("input.jar"), b"other").unwrap();
     assert!(
         captured
@@ -168,6 +190,57 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
             )
             .is_err()
     );
+    let publisher = crate::engine::publication::Publisher::open(&host).unwrap();
+    assert!(prepared.publish(&publisher, &cancel).is_err());
+    assert!(!project.join("dist/new.mrpack").exists());
+    fs::write(project.join("input.jar"), b"input").unwrap();
+    let receipt = prepare().unwrap().publish(&publisher, &cancel).unwrap();
+    assert_eq!(receipt.changed_files, 1);
+    let mut archive =
+        zip::ZipArchive::new(fs::File::open(project.join("dist/new.mrpack")).unwrap()).unwrap();
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut archive.by_name("overrides/mods/local.jar").unwrap(),
+        &mut bytes,
+    )
+    .unwrap();
+    assert_eq!(bytes, b"input");
+    assert_eq!(fs::read(project.join("empack.yml")).unwrap(), document);
+    assert_eq!(
+        fs::read(project.join("dist/old.zip")).unwrap(),
+        b"unrelated replacement"
+    );
+    drop(archive);
+    fs::create_dir_all(project.join("pack/config")).unwrap();
+    fs::write(project.join("pack/config/fresh.txt"), b"fresh source").unwrap();
+    prepare().unwrap().publish(&publisher, &cancel).unwrap();
+    let mut fresh =
+        zip::ZipArchive::new(fs::File::open(project.join("dist/new.mrpack")).unwrap()).unwrap();
+    let mut source = Vec::new();
+    std::io::Read::read_to_end(
+        &mut fresh.by_name("overrides/config/fresh.txt").unwrap(),
+        &mut source,
+    )
+    .unwrap();
+    assert_eq!(source, b"fresh source");
+    drop(fresh);
+    let artifact = fs::read(project.join("dist/new.mrpack")).unwrap();
+    fs::create_dir_all(project.join("pack/mods")).unwrap();
+    fs::write(
+        project.join("pack/mods/unaccounted.pw.toml"),
+        r#"filename = "other.jar"
+[download]
+url = "https://example.com/other.jar"
+hash-format = "md5"
+hash = "00000000000000000000000000000000"
+[update.modrinth]
+mod-id = "AANobbMI"
+version = "Version1"
+"#,
+    )
+    .unwrap();
+    assert!(prepare().is_err());
+    assert_eq!(fs::read(project.join("dist/new.mrpack")).unwrap(), artifact);
 }
 #[test]
 fn capture_is_read_only_and_missing_lock_is_distinct_from_current_resolution() {

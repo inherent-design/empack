@@ -24,6 +24,9 @@ pub struct WorkspaceSnapshot {
     prior_lock: Option<DecodedLock>,
 }
 impl WorkspaceSnapshot {
+    pub(super) fn into_native(self) -> (ProjectReadRoot, NativeSnapshot) {
+        (self.root, self.native)
+    }
     pub fn intent(&self) -> &DecodedIntent {
         &self.intent
     }

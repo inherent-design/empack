@@ -568,3 +568,24 @@ matcher/traversal difference; checking ignored ancestors fixes it. Six affected
 tests pass. Enumeration currently follows a complete bounded snapshot, so ignored
 file bytes still count toward capture limits. Filtered native traversal and final
 locked-placement ownership reconciliation remain integration work.
+
+## Composed mrpack preparation
+
+`engine::build::prepare_mrpack_build` connects one captured normalized workspace
+to source acquisition, semantic mrpack planning, container verification, artifact
+file proof and recoverable publication. It retains the snapshot until publication
+and never reruns build work during recovery. Preparation writes only private
+candidates. Local sources and existing placements must agree on bytes and output
+attributes; supplied acquisitions cannot replace conflicting captured content.
+
+Backend records must match exact locked ownership, pins, requirements and byte
+evidence. Unaccounted records currently stop this entry point instead of being
+omitted. Adoption and explicit observed-snapshot planning must land before the CLI
+can switch without losing conservative retention. Remote acquisition scheduling,
+other targets and a combined multi-target publication remain pending.
+
+The composed filesystem regression checks no artifact before publication, rejection
+after a source edit, successful publication, fresh source inclusion without a
+version bump, preservation of unrelated archives, and refusal to omit an unlisted
+backend record. The combined reader/mrpack/publication suite passes 24 tests,
+including subprocess crash recovery; all-feature Clippy passes.
