@@ -13,6 +13,7 @@ pub mod publication;
 pub mod resources;
 pub mod runtime;
 pub mod snapshot;
+pub mod source;
 pub mod staging;
 pub mod verification;
 

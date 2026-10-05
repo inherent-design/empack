@@ -551,3 +551,20 @@ rejects portable destination aliases before consumers receive installed records.
 A real-filesystem fixture covers changed pins after capture and two metadata files
 that claim case-equivalent destinations. Seven affected reader/backend tests pass.
 Tree observation remains distinct from index membership and byte verification.
+
+## Source inclusion
+
+Captured source enumeration includes fresh files independently of backend index
+output. It preserves all three environment roots and applies captured
+`.packwizignore` rules only to common pack content. The default exclusions follow
+[packwiz's index rules](https://github.com/mannie-exe/packwiz-tx/blob/v0.2.0/core/index.go).
+The matcher uses [ignore's Git rule parser](https://docs.rs/ignore/0.4.33/ignore/gitignore/index.html)
+without reading host or global Git configuration. Rules and control documents are
+not distributed as game content. Backend records are observed separately.
+
+Tests cover default exclusions, negation, ignored-parent traversal, changed rules,
+unindexed files and separate side overrides. A negated child initially exposed a
+matcher/traversal difference; checking ignored ancestors fixes it. Six affected
+tests pass. Enumeration currently follows a complete bounded snapshot, so ignored
+file bytes still count toward capture limits. Filtered native traversal and final
+locked-placement ownership reconciliation remain integration work.

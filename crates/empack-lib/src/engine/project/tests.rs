@@ -290,3 +290,49 @@ description = "Renderer"
     .unwrap();
     assert!(capture().backend_files(&cancel).is_err());
 }
+
+#[test]
+fn source_enumeration_includes_new_content_preserves_sides_and_honors_captured_rules() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("empack.yml"), DOCUMENT).unwrap();
+    for name in [
+        "pack/config/new.toml",
+        "pack/config/private.toml",
+        "pack/mods/ignored.pw.toml",
+        "pack/index.toml",
+        "overrides/client/config/new.toml",
+        "overrides/server/config/private.toml",
+    ] {
+        let path = temp.path().join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"payload").unwrap();
+    }
+    let ignore = temp.path().join("pack/.packwizignore");
+    fs::write(&ignore, b"config/private.toml\nmods/ignored.pw.toml\n").unwrap();
+    let reader = ProjectReader::new(RecoveryReader::new(temp.path().join("unused-host")));
+    let cancel = Cancellation::default();
+    let scopes: Vec<_> = ["pack", "overrides/client", "overrides/server"]
+        .into_iter()
+        .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent).unwrap())
+        .collect();
+    let snapshot = reader
+        .capture(temp.path(), &scopes, SnapshotLimits::default(), &cancel)
+        .unwrap();
+    let entries = snapshot.source_entries(&cancel).unwrap();
+    let paths: Vec<_> = entries.iter().map(|entry| entry.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        vec![
+            "overrides/client/config/new.toml",
+            "overrides/server/config/private.toml",
+            "pack/config/new.toml"
+        ]
+    );
+    assert!(snapshot.backend_files(&cancel).unwrap().is_empty());
+    fs::write(&ignore, b"").unwrap();
+    assert!(snapshot.source_entries(&cancel).is_err());
+    let documents_only = reader
+        .capture(temp.path(), &[], SnapshotLimits::default(), &cancel)
+        .unwrap();
+    assert!(documents_only.source_entries(&cancel).is_err());
+}

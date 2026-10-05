@@ -43,17 +43,81 @@ impl WorkspaceSnapshot {
             .context("Project has no exact resolution lock")?
             .bind(&self.intent)
     }
+    fn source_filter(&self, cancel: &Cancellation) -> Result<super::source::SourceFilter> {
+        let path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
+        let bytes = if self.native.entries().contains_key(&path) {
+            read_document(&self.root, &self.native, path.as_str(), cancel)?.unwrap_or_default()
+        } else {
+            // A complete pack directory observation proves the rule file was absent.
+            ensure!(
+                matches!(
+                    self.native
+                        .entries()
+                        .get(&PortableRelPath::parse("pack", PathSyntax::ProjectContent)?),
+                    Some(Observation::Directory { .. } | Observation::Absent)
+                ),
+                "Source rules were not captured"
+            );
+            Vec::new()
+        };
+        super::source::SourceFilter::parse(&bytes)
+    }
+    /// Enumerate game content independently of the backend's index. Fresh configuration files
+    /// participate, ignore rules remain inputs, and all three environment roots must be captured.
+    pub fn source_entries(&self, cancel: &Cancellation) -> Result<Vec<super::source::SourceEntry>> {
+        use empack_core::{files::ManagedPath, model::ContentLayer, path::InstallDestination};
+        for name in ["pack", "overrides/client", "overrides/server"] {
+            let path = PortableRelPath::parse(name, PathSyntax::ProjectContent)?;
+            ensure!(
+                matches!(
+                    self.native.entries().get(&path),
+                    Some(Observation::Directory { .. } | Observation::Absent)
+                ),
+                "Source root was not captured: {name}"
+            );
+        }
+        let filter = self.source_filter(cancel)?;
+        let mut result = Vec::new();
+        for (path, observation) in self.native.entries() {
+            cancel.check()?;
+            if !matches!(observation, Observation::File(_)) {
+                continue;
+            }
+            let Ok(ManagedPath::Content {
+                layer,
+                path: relative,
+            }) = super::layout::ProjectLayout::classify(path)
+            else {
+                continue;
+            };
+            if layer == ContentLayer::Common && !filter.includes(&relative, false) {
+                continue;
+            }
+            result.push(super::source::SourceEntry {
+                path: path.clone(),
+                destination: InstallDestination::parse(relative.as_str())?,
+                layer,
+            });
+        }
+        Ok(result)
+    }
     /// Decode backend metadata only from captured pack files, retaining native byte and object
     /// checks. This is an observation of the tree, not proof that an index includes every record.
     pub fn backend_files(&self, cancel: &Cancellation) -> Result<Vec<super::backend::BackendFile>> {
         self.root.check_binding()?;
+        let filter = self.source_filter(cancel)?;
         let mut result = Vec::new();
         let mut destinations = super::layout::CollisionIndex::default();
         for (path, observation) in self.native.entries() {
             let Some(relative) = path.as_str().strip_prefix("pack/") else {
                 continue;
             };
-            if !relative.ends_with(".pw.toml") {
+            if !relative.ends_with(".pw.toml")
+                || !filter.includes(
+                    &PortableRelPath::parse(relative, PathSyntax::ProjectContent)?,
+                    matches!(observation, Observation::Directory { .. }),
+                )
+            {
                 continue;
             }
             ensure!(
