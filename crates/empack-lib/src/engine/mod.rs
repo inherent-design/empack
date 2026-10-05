@@ -5,6 +5,7 @@ pub mod documents;
 
 mod io;
 pub mod layout;
+pub mod mrpack;
 mod native;
 pub mod project;
 pub mod publication;

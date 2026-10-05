@@ -460,3 +460,35 @@ duplicate ZIP records, unsafe inputs and preservation of previous artifacts.
 The 7z decoder has no configurable allocation ceiling; member limits are not a
 process memory guarantee. This adapter verifies privately generated containers,
 not arbitrary downloaded 7z input. Untrusted acquisition keeps its separate limits.
+
+Greptile review 27 found that the private candidate's Unix mode became the
+published archive's mode. The regression reproduced `0600` instead of ordinary
+creation permissions. Publication now preserves an existing artifact's mode and
+uses an empty creation probe to honor the process umask for new artifacts, without
+exposing candidate bytes or changing the process-global umask. The test passes for
+all three formats. At `8b6a87b`, the full default suite passed 1,466 tests and ten
+doctests; strict E2E passed 101 tests. Native CI for the permission correction is
+tracked separately from those results.
+
+## Normalized mrpack planning
+
+The mrpack planner enumerates every exact locked file slot and placement before
+writing. It builds the index from normalized intent and runtime selections, retains
+all three override layers, and uses verified leases for embedded inputs. References
+require SHA-1, SHA-512, exact size and stable allowed download alternatives. Missing
+export evidence requires acquisition; changed acquired bytes and unrelated file
+associations fail preparation. Original source declarations and provenance remain
+in the retained resolution, separate from hashes computed for export.
+
+Mrpack optional participation survives export. Choice keys, descriptions and
+defaults have no native fields, so that conversion requires explicit acknowledgement
+and produces a conversion record. Embedded optional files need a representable
+conversion or a verified reference. Files with portable executable/read-only
+attributes are embedded because download references cannot express those attributes.
+
+Five planner/format tests inspect real output archives. They cover multi-file and
+multi-placement dependencies, different common/client/server bytes, weak-source
+evidence, executable metadata, ambiguous paths and explicit optional conversion.
+The combined mrpack/archive regression suite passes eleven tests with all-feature
+Clippy. This component has no network, cache or publisher capability. Workspace
+source enumeration, acquisition scheduling and CLI build cutover remain pending.
