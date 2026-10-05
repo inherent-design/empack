@@ -48,10 +48,7 @@ impl TemplateEngine {
 
         handlebars.set_strict_mode(false);
         handlebars.register_escape_fn(handlebars::no_escape);
-        handlebars::handlebars_helper!(shell_quote: |value: str| {
-            format!("'{}'", value.replace('\'', "'\"'\"'"))
-        });
-        handlebars.register_helper("shell_quote", Box::new(shell_quote));
+        crate::engine::templates::register_helpers(&mut handlebars);
 
         let _ = handlebars.register_template_string(
             "gitignore",

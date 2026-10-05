@@ -20,8 +20,8 @@ fn test_template_variable_substitution() {
     engine.set_pack_variables("Test Pack", "TestAuthor", "1.21.1", "1.0.0");
 
     let result = engine.render_template("instance.cfg").unwrap();
-    assert!(result.contains("name=Test Pack"));
-    assert!(result.contains("ExportAuthor=TestAuthor"));
+    assert!(result.contains("name=\"Test Pack\""));
+    assert!(result.contains("ExportAuthor=\"TestAuthor\""));
 }
 
 #[test]
@@ -62,8 +62,8 @@ fn test_template_installer_full_install() {
     assert!(gitignore_content.contains("dist/"));
 
     let instance_content = std::fs::read_to_string(temp_dir.path().join("templates").join("client").join("instance.cfg.template")).unwrap();
-    assert!(instance_content.contains("name={{NAME}}"));
-    assert!(instance_content.contains("ExportAuthor={{AUTHOR}}"));
+    assert!(instance_content.contains("name={{ini_quote NAME}}"));
+    assert!(instance_content.contains("ExportAuthor={{ini_quote AUTHOR}}"));
 }
 
 #[test]
@@ -307,7 +307,7 @@ fn installed_templates_retain_build_time_placeholders() {
     installer.install_client_templates(dir.path()).unwrap();
     installer.install_server_templates(dir.path()).unwrap();
     let template = std::fs::read_to_string(dir.path().join("templates/client/instance.cfg.template")).unwrap();
-    assert!(template.contains("{{NAME}}"));
+    assert!(template.contains("{{ini_quote NAME}}"));
     installer.configure("New Name", "Author", "1.21.1", "new");
     assert!(installer.engine.render_string(&template).unwrap().contains("New Name"));
 }
@@ -327,4 +327,15 @@ fn generated_installer_treats_shell_metadata_as_data() {
     for file in ["injected", "injected2", "injected3", "injected4"] {
         assert!(!dir.path().join(file).exists(), "shell executed metadata: {file}");
     }
+}
+
+#[test]
+fn generated_configuration_keeps_metadata_on_one_physical_line() {
+    let mut engine = TemplateEngine::new();
+    engine.set_pack_variables("name\nPreLaunchCommand=unexpected\r\n[Other]", "author\nonline-mode=false", "1.21.1", "1\rserver-port=1");
+    let client = engine.render_template("instance.cfg").unwrap();
+    assert_eq!(client.lines().filter(|line| line.starts_with("PreLaunchCommand=")).count(), 1);
+    assert!(!client.lines().any(|line| line == "[Other]"));
+    let server = engine.render_template("server.properties").unwrap();
+    assert!(!server.lines().any(|line| line == "online-mode=false" || line == "server-port=1"));
 }

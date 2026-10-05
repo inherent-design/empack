@@ -104,6 +104,19 @@ pub trait RuntimePreparer: Send + Sync {
 
 Preserve common/client/server template precedence, user-owned templates, binary-file copying, build-time metadata interpolation, loader-specific bootstrap/full behavior, and accepted historical runtime variants. Renderer selection is based on intended output language, not filename guesses alone.
 
+Template expressions choose their value syntax explicitly: `shell_quote` emits a
+POSIX shell literal, `ini_quote` emits a scalar QSettings string, and
+`properties_value` emits a Java properties value or value fragment. Raw text
+substitution remains available for user-authored text. Do not infer shell quoting
+from a filename or use HTML escaping for configuration files. The generated launcher
+command must retain its argument quotes after INI parsing.
+
+The launcher defaults follow [Prism's QSettings reader](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/settings/INIFile.cpp)
+and [Qt's scalar encoding](https://github.com/qt/qtbase/blob/dev/src/corelib/io/qsettings.cpp).
+Server values follow [Java Properties parsing](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/Properties.html#load(java.io.Reader)),
+including UTF-16 escapes for non-ASCII characters. Dynamic metadata belongs in
+encoded values, not unescaped generated comments.
+
 Embedded default templates remain templates until build time. User-authored scripts are explicit inputs; do not silently rewrite them. Runtime preparation uses exact resolved requirements and bounded tools, records its outputs, and never returns “complete” just because an installer process exited.
 
 ### 13.5 Independent verification

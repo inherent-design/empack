@@ -18,6 +18,7 @@ pub mod runtime;
 pub mod snapshot;
 pub mod source;
 pub mod staging;
+pub mod templates;
 pub mod verification;
 
 #[cfg(windows)]
