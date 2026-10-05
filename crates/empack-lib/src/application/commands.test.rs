@@ -8250,8 +8250,13 @@ mod tracked_local_dependency_tests {
             .await
             .expect_err("absolute tracked local paths should be rejected");
 
+        let expected_path_error = if cfg!(windows) {
+            "nonportable character"
+        } else {
+            "traversal component"
+        };
         assert!(
-            format!("{error:#}").contains("traversal component"),
+            format!("{error:#}").contains(expected_path_error),
             "expected relative-path guard error, got: {error:#}"
         );
         assert!(
