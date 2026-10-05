@@ -130,3 +130,10 @@ Before publication starts, cancellation can discard candidate work. During a bou
 Dropping a caller future must not drop the sole owner of an in-progress publication protocol. The engine-owned operation driver survives handle cancellation long enough to retire safely or leave a durable recoverable journal. A hard process exit remains a crash path, not an orderly cancel.
 
 Previous successful artifacts remain until replacement is verified and ready for publication. Predictable preflight failures must not delete them. Build cleanup operates on staging by default; explicit user cleanup is a separate planned change.
+
+### Read budgets
+
+Source and artifact read sets retain separate limits. Verification checks the
+resulting files against every applicable capture group's budget before publication.
+The journal records those groups so recovery applies the same limits to prior and
+replacement bytes. A larger artifact allowance cannot widen source-file limits.

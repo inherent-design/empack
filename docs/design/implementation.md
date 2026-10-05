@@ -539,8 +539,7 @@ make optional content mandatory.
 
 Build capture now receives exact artifact destinations. It observes their existing
 bytes or absence without recursively reading unrelated retained distributions.
-Selected output before-images remain subject to the caller's configured snapshot
-budget. A retained archive larger than the input file budget no longer blocks an
+Selected output before-images use a separate artifact capture budget. A retained archive larger than the input file budget no longer blocks an
 unrelated build, and edits to that unrelated output do not invalidate preparation.
 Both regressions failed before the fixes; the nine affected reader/mrpack tests
 pass afterward. These remain engine components awaiting complete CLI integration.
@@ -609,11 +608,10 @@ Windows handles without delete sharing. Eleven affected storage/reader/build tes
 all-feature Clippy and Windows test cross-compilation pass; native Windows execution
 remains a CI gate.
 
-At `689c024`, the full default suite passed 1,480 tests and ten doctests. The next
-full run at `4be1023` passed 1,480 of 1,484 tests; four existing tool-probe tests
-timed out and selected fallback behavior. All four passed in isolation. A full
-rerun without concurrent compilation is required; the isolated pass does not
-establish a fix or a green full run.
+At `0455614`, the full default suite passed 1,485 tests and ten doctests; strict
+E2E passed 101 tests. Native CI run `37384663249` passed. A preceding full run
+had four tool-probe deadline failures; their isolated repeat and the quiet full
+rerun passed without changing their timeouts or assertions.
 
 ## Retained backend content
 
@@ -635,3 +633,16 @@ mrpack reference and original MD5 declaration, and leaves both manifest and back
 record unchanged. Additional tests cover optional participation, digest mismatches,
 strong-policy bypass and secret-bearing references. Twenty-five affected tests and
 all-feature Clippy pass before the final explicit wrong-kind guard.
+
+## Source and artifact budgets
+
+Capture groups retain their own file, total-byte, depth and entry budgets through
+verification, journal persistence and recovery. Build outputs default to the archive
+budget; increasing that allowance does not permit larger project source files.
+Candidate verification checks the complete resulting read set before publication.
+
+Greptile review 31's large-output regression failed before the correction. Tests
+now cover an existing output and a generated archive larger than the source-file
+limit, smaller explicit artifact limits, interrupted publication and recovery with
+an oversized source. Twenty-nine affected reader, snapshot, verifier and publication
+tests pass, including the subprocess crash fixtures.

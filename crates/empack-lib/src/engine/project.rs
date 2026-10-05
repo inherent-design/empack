@@ -179,7 +179,7 @@ impl WorkspaceSnapshot {
                 size: Some(observed.bytes),
                 accepted_observation: Some(content_id),
             },
-            self.native.limits().file_bytes,
+            observed.bytes,
             policy,
             InitialObservation::RequireEvidence,
             cancel,
@@ -197,13 +197,35 @@ impl ProjectReader {
     }
     /// Bind standard build inputs and each declared local/archive source, including files outside
     /// managed namespaces. Only requested artifact destinations enter the read set, not retained
-    /// unrelated distributions. Limits also apply to selected existing outputs; callers must budget
-    /// their before-images. A second capture retains the exact first document revisions.
+    /// unrelated distributions. Artifact budgets are separate from source-file limits.
+    /// A second capture retains the exact first document revisions.
     pub fn capture_build(
         &self,
         selected: &Path,
         artifacts: &[PortableRelPath],
         limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<WorkspaceSnapshot> {
+        let archive = super::artifacts::ArchiveLimits::default();
+        self.capture_build_with_limits(
+            selected,
+            artifacts,
+            limits,
+            SnapshotLimits {
+                file_bytes: archive.compressed_bytes,
+                total_bytes: archive.compressed_bytes,
+                entries: limits.entries,
+                depth: limits.depth,
+            },
+            cancel,
+        )
+    }
+    pub fn capture_build_with_limits(
+        &self,
+        selected: &Path,
+        artifacts: &[PortableRelPath],
+        limits: SnapshotLimits,
+        artifact_limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<WorkspaceSnapshot> {
         let documents = self.capture(selected, &[], limits, cancel)?;
@@ -212,11 +234,6 @@ impl ProjectReader {
             .into_iter()
             .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        for artifact in artifacts {
-            scopes.push(super::layout::ProjectLayout::path(
-                &empack_core::files::ManagedPath::Artifact(artifact.clone()),
-            )?);
-        }
         for dependency in project.lock().dependencies.values() {
             for file in dependency.files.as_slice() {
                 match &file.acquisition {
@@ -240,7 +257,21 @@ impl ProjectReader {
             })
             .cloned()
             .collect();
-        let captured = self.capture(selected, &scopes, limits, cancel)?;
+        let mut captured = self.capture(selected, &scopes, limits, cancel)?;
+        if !artifacts.is_empty() {
+            let scopes = artifacts
+                .iter()
+                .map(|artifact| {
+                    super::layout::ProjectLayout::path(&empack_core::files::ManagedPath::Artifact(
+                        artifact.clone(),
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let _guard = self.recovery.enter(&captured.root)?;
+            let outputs = captured.root.capture(&scopes, artifact_limits, cancel)?;
+            captured.native = captured.native.merge(outputs)?;
+            captured.root.revalidate(&captured.native, cancel)?;
+        }
         ensure!(
             documents.root.binding == captured.root.binding
                 && documents.intent.raw_revision() == captured.intent.raw_revision()

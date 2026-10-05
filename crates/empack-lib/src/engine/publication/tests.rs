@@ -601,3 +601,82 @@ fn read_only_coordination_refuses_hot_journals_and_never_creates_state() {
     drop(guard);
     assert!(lock(&state).is_ok());
 }
+
+#[test]
+fn separate_source_and_artifact_budgets_survive_interrupted_publication() {
+    use crate::engine::verification::observed_artifacts_for;
+    for artifact_limit in [16, 128] {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(project.path().join("input"), b"input").unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let publisher = Publisher::open(&state.path().join("private")).unwrap();
+        let root = ProjectReadRoot::open(project.path()).unwrap();
+        let cancel = Cancellation::default();
+        let source_limits = SnapshotLimits {
+            file_bytes: 32,
+            total_bytes: 32,
+            ..SnapshotLimits::default()
+        };
+        let artifact_limits = SnapshotLimits {
+            file_bytes: artifact_limit,
+            total_bytes: artifact_limit,
+            ..SnapshotLimits::default()
+        };
+        let base = root
+            .capture(&[path("input")], source_limits, &cancel)
+            .unwrap()
+            .merge(
+                root.capture(&[path("dist/result.zip")], artifact_limits, &cancel)
+                    .unwrap(),
+            )
+            .unwrap();
+        let target = ManagedPath::Artifact(path("result.zip"));
+        let bytes = vec![0xab; 64];
+        let desired = BTreeMap::from([(target.clone(), expected(&bytes))]);
+        let plan = plan_files(
+            &observed_artifacts_for(&base, [target]).unwrap(),
+            &desired,
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        let mut stage = MutableStage::empty().unwrap();
+        stage
+            .write(&path("dist/result.zip"), &mut bytes.as_slice(), 64, &cancel)
+            .unwrap();
+        let proof = VerifiedFileChange::verify_artifacts(
+            base,
+            plan,
+            stage.freeze(SnapshotLimits::default(), &cancel).unwrap(),
+        );
+        if artifact_limit == 16 {
+            assert!(
+                proof.is_err(),
+                "source budget must not widen artifact limits"
+            );
+            assert!(!project.path().join("dist").exists());
+            continue;
+        }
+        assert!(
+            publisher
+                .publish_with_hook(&root, proof.unwrap(), &cancel, &mut |point| {
+                    if point == PublicationPoint::TargetChanged {
+                        anyhow::bail!("simulate interruption");
+                    }
+                    Ok(())
+                })
+                .is_err()
+        );
+        assert!(publisher.recovery_required(&root).unwrap());
+        fs::write(project.path().join("input"), vec![0; 33]).unwrap();
+        assert!(
+            publisher.recover(&root).is_err(),
+            "artifact budget must not widen source limits"
+        );
+        fs::write(project.path().join("input"), b"input").unwrap();
+        publisher.recover(&root).unwrap();
+        assert_eq!(
+            fs::read(project.path().join("dist/result.zip")).unwrap(),
+            bytes
+        );
+    }
+}

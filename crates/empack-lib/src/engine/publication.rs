@@ -25,7 +25,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const JOURNAL_SCHEMA: u32 = 2;
+const JOURNAL_SCHEMA: u32 = 3;
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -171,12 +171,18 @@ struct Journal {
     root: Binding,
     operation: String,
     changes: Vec<Change>,
-    scopes: Vec<String>,
-    limits: SnapshotLimits,
+    groups: Vec<JournalCapture>,
     expected: BTreeMap<String, Fingerprint>,
     restoring: bool,
     retained_files: BTreeSet<String>,
     committed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JournalCapture {
+    scopes: Vec<String>,
+    limits: SnapshotLimits,
 }
 
 impl Publisher {
@@ -371,12 +377,13 @@ impl Publisher {
             root: root.binding.into(),
             operation,
             changes,
-            scopes: base
-                .scopes()
-                .iter()
-                .map(|path| path.as_str().to_owned())
+            groups: base
+                .groups()
+                .map(|(scopes, limits)| JournalCapture {
+                    scopes: scopes.iter().map(|path| path.as_str().to_owned()).collect(),
+                    limits,
+                })
                 .collect(),
-            limits: base.limits(),
             expected,
             restoring: false,
             retained_files,
@@ -407,7 +414,7 @@ impl Publisher {
         hook(PublicationPoint::IntentDurable).with_context(|| RecoveryRequired {
             operation: journal.operation.clone(),
         })?;
-        self.finish(root, &state, &retained, &mut journal, base.limits(), hook)
+        self.finish(root, &state, &retained, &mut journal, hook)
             .with_context(|| RecoveryRequired {
                 operation: journal.operation.clone(),
             })
@@ -424,13 +431,10 @@ impl Publisher {
         }
         let retained = state.open_dir_nofollow(&journal.operation)?;
         native::reject_reparse(&retained.try_clone()?.into_std_file())?;
-        let limits = journal.limits;
-        self.finish(root, &state, &retained, &mut journal, limits, &mut |_| {
-            Ok(())
-        })
-        .with_context(|| RecoveryRequired {
-            operation: journal.operation.clone(),
-        })
+        self.finish(root, &state, &retained, &mut journal, &mut |_| Ok(()))
+            .with_context(|| RecoveryRequired {
+                operation: journal.operation.clone(),
+            })
     }
 
     /// Restore only the journal's own applied files; unrelated edits remain conflicts.
@@ -457,10 +461,9 @@ impl Publisher {
         }
         let retained = state.open_dir_nofollow(&journal.operation)?;
         native::reject_reparse(&retained.try_clone()?.into_std_file())?;
-        let limits = journal.limits;
         if !journal.restoring {
             // Restoring a corrupt pending candidate needs before-images, not valid after-images.
-            preflight_recovery(root, &retained, &journal, limits, false)?;
+            preflight_recovery(root, &retained, &journal, false)?;
             let mut inverse = Vec::new();
             let mut expected = journal.expected.clone();
             for (index, change) in journal.changes.iter().enumerate() {
@@ -526,7 +529,7 @@ impl Publisher {
             write_journal(&state, &journal)?;
             hook(PublicationPoint::IntentDurable)?;
         }
-        self.finish(root, &state, &retained, &mut journal, limits, hook)
+        self.finish(root, &state, &retained, &mut journal, hook)
             .with_context(|| RecoveryRequired {
                 operation: journal.operation.clone(),
             })
@@ -579,10 +582,9 @@ impl Publisher {
         state: &Dir,
         retained: &Dir,
         journal: &mut Journal,
-        limits: SnapshotLimits,
         hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
     ) -> Result<PublicationReceipt> {
-        preflight_recovery(root, retained, journal, limits, true)?;
+        preflight_recovery(root, retained, journal, true)?;
         for index in 0..journal.changes.len() {
             root.check_binding()?;
             let change = &journal.changes[index];
@@ -649,7 +651,7 @@ impl Publisher {
             write_journal(state, journal)?;
             hook(PublicationPoint::ProgressDurable)?;
         }
-        verify_after(root, journal, limits)?;
+        verify_after(root, journal)?;
         hook(PublicationPoint::Verified)?;
         journal.committed = true;
         write_journal(state, journal)?;
@@ -711,7 +713,6 @@ fn preflight_recovery(
     root: &ProjectReadRoot,
     retained: &Dir,
     journal: &Journal,
-    limits: SnapshotLimits,
     verify_candidates: bool,
 ) -> Result<()> {
     for (index, change) in journal.changes.iter().enumerate() {
@@ -755,12 +756,7 @@ fn preflight_recovery(
             }
         }
     }
-    let scopes = journal
-        .scopes
-        .iter()
-        .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    let snapshot = root.capture(&scopes, limits, &Cancellation::default())?;
+    let snapshot = capture_journal(root, journal)?;
     let changing: BTreeSet<_> = journal
         .changes
         .iter()
@@ -941,7 +937,8 @@ fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
             );
         }
     }
-    for path in &journal.scopes {
+    ensure!(!journal.groups.is_empty(), "Journal lacks capture groups");
+    for path in journal.groups.iter().flat_map(|group| &group.scopes) {
         PortableRelPath::parse(path, PathSyntax::ProjectContent)?;
     }
     Ok(())
@@ -1051,13 +1048,27 @@ fn set_permissions(file: &File, desired: &Fingerprint, previous_mode: Option<u32
     }
     Ok(())
 }
-fn verify_after(root: &ProjectReadRoot, journal: &Journal, limits: SnapshotLimits) -> Result<()> {
-    let scopes = journal
-        .scopes
-        .iter()
-        .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    let snapshot = root.capture(&scopes, limits, &Cancellation::default())?;
+fn capture_journal(
+    root: &ProjectReadRoot,
+    journal: &Journal,
+) -> Result<super::snapshot::NativeSnapshot> {
+    let mut captured = None;
+    for group in &journal.groups {
+        let scopes = group
+            .scopes
+            .iter()
+            .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let next = root.capture(&scopes, group.limits, &Cancellation::default())?;
+        captured = Some(match captured {
+            None => next,
+            Some(previous) => super::snapshot::NativeSnapshot::merge(previous, next)?,
+        });
+    }
+    captured.context("Journal lacks capture groups")
+}
+fn verify_after(root: &ProjectReadRoot, journal: &Journal) -> Result<()> {
+    let snapshot = capture_journal(root, journal)?;
     let actual: BTreeMap<_, _> = snapshot
         .entries()
         .iter()

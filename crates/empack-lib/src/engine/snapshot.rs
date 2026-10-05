@@ -96,9 +96,8 @@ impl ProjectReadRoot {
         self.check_binding()?;
         Ok(NativeSnapshot {
             root: self.binding,
-            scopes: scopes.to_vec(),
+            groups: vec![(scopes.to_vec(), limits)],
             entries: capture.entries,
-            limits,
         })
     }
 
@@ -108,7 +107,15 @@ impl ProjectReadRoot {
             snapshot.root == self.binding,
             "Snapshot belongs to another project root"
         );
-        let current = self.capture(&snapshot.scopes, snapshot.limits, cancel)?;
+        let mut current = None;
+        for (scopes, limits) in &snapshot.groups {
+            let group = self.capture(scopes, *limits, cancel)?;
+            current = Some(match current {
+                None => group,
+                Some(previous) => NativeSnapshot::merge(previous, group)?,
+            });
+        }
+        let current = current.context("Snapshot has no capture groups")?;
         ensure!(
             current.entries == snapshot.entries,
             "Project inputs changed since preparation"
@@ -147,16 +154,39 @@ pub struct DirectoryBinding(ObjectIdentity);
 #[derive(Debug)]
 pub struct NativeSnapshot {
     root: ObjectIdentity,
-    scopes: Vec<PortableRelPath>,
+    groups: Vec<(Vec<PortableRelPath>, SnapshotLimits)>,
     entries: BTreeMap<PortableRelPath, Observation>,
-    limits: SnapshotLimits,
 }
 impl NativeSnapshot {
-    pub(super) fn scopes(&self) -> &[PortableRelPath] {
-        &self.scopes
+    pub(super) fn groups(&self) -> impl Iterator<Item = (&[PortableRelPath], SnapshotLimits)> {
+        self.groups
+            .iter()
+            .map(|(scopes, limits)| (scopes.as_slice(), *limits))
     }
-    pub(super) fn limits(&self) -> SnapshotLimits {
-        self.limits
+    /// Preserve each read group's own budget while combining evidence for one publication.
+    pub(super) fn merge(mut self, other: Self) -> Result<Self> {
+        ensure!(
+            self.root == other.root,
+            "Cannot combine different project roots"
+        );
+        for (path, observed) in other.entries {
+            if let Some(previous) = self.entries.get(&path) {
+                match (previous, &observed) {
+                    (a, b) if a == b => continue,
+                    (Observation::Directory { binding, .. }, Observation::Ancestor(other))
+                        if binding == other =>
+                    {
+                        continue;
+                    }
+                    (Observation::Ancestor(previous), Observation::Directory { binding, .. })
+                        if previous == binding => {}
+                    _ => anyhow::bail!("Input changed between capture groups: {}", path.as_str()),
+                }
+            }
+            self.entries.insert(path, observed);
+        }
+        self.groups.extend(other.groups);
+        Ok(self)
     }
     pub fn entries(&self) -> &BTreeMap<PortableRelPath, Observation> {
         &self.entries

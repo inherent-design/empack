@@ -152,7 +152,10 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
             .capture_build(
                 &project,
                 &[PortableRelPath::parse("new.mrpack", PathSyntax::ArtifactName).unwrap()],
-                SnapshotLimits::default(),
+                SnapshotLimits {
+                    file_bytes: 4096,
+                    ..SnapshotLimits::default()
+                },
                 &cancel,
             )
             .unwrap();
@@ -165,10 +168,29 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
             &cancel,
         )
     };
+    // Each source fits its own limit, while their compressed output exceeds that limit.
+    fs::create_dir_all(project.join("pack/data")).unwrap();
+    let mut seed = 123456789_u64;
+    for index in 0..4 {
+        let bytes: Vec<u8> = (0..2048)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                seed as u8
+            })
+            .collect();
+        fs::write(project.join(format!("pack/data/{index}.bin")), bytes).unwrap();
+    }
+    let previous_artifact = vec![0xff; 8192];
+    fs::write(project.join("dist/new.mrpack"), &previous_artifact).unwrap();
     let prepared = prepare().unwrap();
-    assert!(prepared.bytes() > 0);
+    assert!(prepared.bytes() > 4096);
     assert!(prepared.conversions().is_empty());
-    assert!(!project.join("dist/new.mrpack").exists());
+    assert_eq!(
+        fs::read(project.join("dist/new.mrpack")).unwrap(),
+        previous_artifact
+    );
     fs::write(project.join("input.jar"), b"other").unwrap();
     assert!(
         captured
@@ -192,7 +214,10 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
     );
     let publisher = crate::engine::publication::Publisher::open(&host).unwrap();
     assert!(prepared.publish(&publisher, &cancel).is_err());
-    assert!(!project.join("dist/new.mrpack").exists());
+    assert_eq!(
+        fs::read(project.join("dist/new.mrpack")).unwrap(),
+        previous_artifact
+    );
     fs::write(project.join("input.jar"), b"input").unwrap();
     let receipt = prepare().unwrap().publish(&publisher, &cancel).unwrap();
     assert_eq!(receipt.changed_files, 1);
@@ -265,6 +290,20 @@ version = "Version1"
     assert!(retained.by_name("overrides/mods/other.jar").is_err());
     assert_eq!(fs::read_to_string(metadata).unwrap(), record);
     assert_eq!(fs::read(project.join("empack.yml")).unwrap(), document);
+    fs::write(project.join("pack/data/oversize.bin"), vec![0; 4097]).unwrap();
+    assert!(
+        reader
+            .capture_build(
+                &project,
+                &[PortableRelPath::parse("new.mrpack", PathSyntax::ArtifactName).unwrap()],
+                SnapshotLimits {
+                    file_bytes: 4096,
+                    ..SnapshotLimits::default()
+                },
+                &cancel,
+            )
+            .is_err()
+    );
 }
 #[test]
 fn capture_is_read_only_and_missing_lock_is_distinct_from_current_resolution() {
