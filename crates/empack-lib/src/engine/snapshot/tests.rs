@@ -42,6 +42,7 @@ fn raw_edits_absence_and_membership_invalidate_snapshots() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn replaced_roots_cannot_reuse_original_observations() {
     let temp = tempdir().unwrap();
@@ -193,6 +194,33 @@ fn absence_binds_missing_ancestors_without_reading_unrelated_siblings() {
     fs::create_dir(temp.path().join("pack")).unwrap();
     assert!(
         root.revalidate(&snapshot, &Cancellation::default())
+            .is_err()
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn retained_windows_roots_prevent_replacement_and_reopened_roots_reject_old_snapshots() {
+    let temp = tempdir().unwrap();
+    let selected = temp.path().join("selected");
+    fs::create_dir(&selected).unwrap();
+    fs::write(selected.join("empack.yml"), "original").unwrap();
+    let root = ProjectReadRoot::open(&selected).unwrap();
+    let snapshot = capture(&root, &["empack.yml"]);
+    let moved = temp.path().join("moved");
+    // cap-std omits FILE_SHARE_DELETE for directory capabilities on Windows.
+    let error = fs::rename(&selected, &moved).unwrap_err();
+    assert_eq!(error.raw_os_error(), Some(32));
+    root.revalidate(&snapshot, &Cancellation::default())
+        .unwrap();
+    drop(root);
+    fs::rename(&selected, &moved).unwrap();
+    fs::create_dir(&selected).unwrap();
+    fs::write(selected.join("empack.yml"), "original").unwrap();
+    let replacement = ProjectReadRoot::open(&selected).unwrap();
+    assert!(
+        replacement
+            .revalidate(&snapshot, &Cancellation::default())
             .is_err()
     );
 }

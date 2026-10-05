@@ -368,3 +368,11 @@ cancellation fixture; its isolated repeat passed without a warning. This remains
 an observation to check in broader runs. All-feature Clippy passes. These generic
 lifetime primitives do not yet constitute the semantic `Engine` public API or
 complete command integration.
+
+At `8353752`, native Windows CI passed the new private-ACL and executable-file
+regressions. The sole Windows test failure was a Unix-assuming root-rename fixture:
+cap-std deliberately opens Windows directories without `FILE_SHARE_DELETE`.
+The platform-specific fixture now checks that live retention blocks the rename,
+then releases the handle, replaces the root and rejects the original snapshot.
+Linux and macOS tests and Linux lint/coverage passed for that head. Import-smoke
+was skipped because of the Windows fixture failure and still requires a fresh run.
