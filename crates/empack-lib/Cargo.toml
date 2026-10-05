@@ -20,6 +20,8 @@ telemetry = [
 [dependencies]
 empack-core = { workspace = true }
 anyhow = { workspace = true }
+cap-std = { workspace = true }
+cap-fs-ext = { workspace = true }
 clap = { workspace = true }
 dialoguer = { workspace = true }
 directories = { workspace = true }

@@ -196,3 +196,29 @@ weak source evidence, mixed per-side requirements, raw-revision conflicts, URL
 ordering, credential rejection and invalid explicit intent. All-target/all-feature
 Clippy passes. Command cutover follows snapshot, staging and publication work;
 existing live command paths have not yet been replaced by these codecs.
+
+## Native observations and private candidates
+
+`engine::snapshot::ProjectReadRoot` retains a directory handle. Scoped capture
+walks each component without following links, rejects special files and binds
+native object identities. Windows bindings use the full 128-bit file ID. File
+hashes protect raw documents, directory membership protects selected trees, and
+absence observations include missing ancestors. Entry, depth and byte limits
+apply during capture; cancellation is checked between bounded reads.
+
+`engine::staging::MutableStage` copies observed files into new private objects.
+It does not copy unrelated root files or use writable hardlinks to project/cache
+content. Failed writes retain the preceding candidate. Consuming the writer
+freezes an inventory with retained read handles; copying a frozen candidate
+rechecks its bytes without reopening its former pathname.
+
+Thirteen native and streaming tests pass on macOS, alongside the eight codec
+contracts and all-feature Clippy. They cover replaced roots, raw edits, changed
+membership, absent ancestors, unsafe links, special files, bounded reads,
+interrupted reads, short writes, hardlink isolation and post-freeze tampering.
+Cross-platform CI still must verify the native implementations.
+
+These adapters do not yet admit backend processes. Project coordination and the
+hot-journal gate belong to their engine caller, and frozen inventory alone does
+not authorize publication. The durable publisher, independent semantic verifier
+and command cutover remain required before claiming the complete staging gate.
