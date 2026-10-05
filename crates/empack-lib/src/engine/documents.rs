@@ -437,55 +437,60 @@ fn placement_value(value: &Placement) -> Value {
 fn urls(value: &Value) -> Result<Vec<String>> {
     let urls = string_list(value)?;
     for value in &urls {
-        let url = reqwest::Url::parse(value)?;
-        ensure!(
-            url.scheme() == "https"
-                && url.host_str().is_some()
-                && url.username().is_empty()
-                && url.password().is_none()
-                && url.fragment().is_none(),
-            "Persistent download alternatives require credential-free HTTPS locators"
-        );
-        // Signed locators are supplied by the execution context, not a durable lock.
-        ensure!(
-            !url.query_pairs().any(|(key, _)| {
-                // URL parsing percent-decodes keys; normalize common separator/case variants too.
-                let key: String = key
-                    .chars()
-                    .filter(char::is_ascii_alphanumeric)
-                    .flat_map(char::to_lowercase)
-                    .collect();
-                matches!(
-                    key.as_str(),
-                    "key"
-                        | "auth"
-                        | "sig"
-                        | "pwd"
-                        | "jwt"
-                        | "code"
-                        | "ticket"
-                        | "session"
-                        | "sessionid"
-                        | "awsaccesskeyid"
-                        | "googleaccessid"
-                ) || [
-                    "token",
-                    "credential",
-                    "secret",
-                    "signature",
-                    "authorization",
-                    "password",
-                    "passwd",
-                    "apikey",
-                ]
-                .iter()
-                .any(|part| key.contains(part))
-            }),
-            "Ephemeral credentials cannot be persisted in download alternatives"
-        );
+        validate_download_url(value)?;
     }
     Ok(urls)
 }
+pub(super) fn validate_download_url(value: &str) -> Result<()> {
+    let url = reqwest::Url::parse(value)?;
+    ensure!(
+        url.scheme() == "https"
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.fragment().is_none(),
+        "Persistent download alternatives require credential-free HTTPS locators"
+    );
+    // Signed locators are supplied by the execution context, not a durable lock.
+    ensure!(
+        !url.query_pairs().any(|(key, _)| {
+            // URL parsing percent-decodes keys; normalize common separator/case variants too.
+            let key: String = key
+                .chars()
+                .filter(char::is_ascii_alphanumeric)
+                .flat_map(char::to_lowercase)
+                .collect();
+            matches!(
+                key.as_str(),
+                "key"
+                    | "auth"
+                    | "sig"
+                    | "pwd"
+                    | "jwt"
+                    | "code"
+                    | "ticket"
+                    | "session"
+                    | "sessionid"
+                    | "awsaccesskeyid"
+                    | "googleaccessid"
+            ) || [
+                "token",
+                "credential",
+                "secret",
+                "signature",
+                "authorization",
+                "password",
+                "passwd",
+                "apikey",
+            ]
+            .iter()
+            .any(|part| key.contains(part))
+        }),
+        "Ephemeral credentials cannot be persisted in download alternatives"
+    );
+    Ok(())
+}
+
 fn extension(value: &Value) -> ExtensionValue {
     match value {
         Value::Null => ExtensionValue::Null,

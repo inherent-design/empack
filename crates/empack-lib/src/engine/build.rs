@@ -16,12 +16,19 @@ use empack_core::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Exact logical requests and retained metadata records occupy distinct acquisition namespaces.
+#[derive(Default)]
+pub struct BuildAcquisitions {
+    pub locked: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    pub observed: BTreeMap<empack_core::path::PortableRelPath, AcquiredBuildFile>,
+}
+
 /// Prepare a reference export using captured local bytes and exact locked download evidence.
 /// Remote acquisition is a separate operation; missing reference evidence remains an error.
-/// Unlisted backend files need adoption or an explicit observed-snapshot plan before export.
+/// Unlisted backend content remains an observed obligation; it never becomes invented intent.
 pub fn prepare_mrpack(
     workspace: &WorkspaceSnapshot,
-    external: &BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    external: &BuildAcquisitions,
     evidence: SourceEvidencePolicy,
     optional: OptionalConversion,
     cancel: &Cancellation,
@@ -98,7 +105,7 @@ pub fn prepare_mrpack(
                 }
             }
             if let Some(local) = local {
-                if let Some(external) = external.get(&file_key) {
+                if let Some(external) = external.locked.get(&file_key) {
                     ensure!(
                         local.content.lease().id() == external.content.lease().id(),
                         "Acquired content differs from captured installation"
@@ -114,11 +121,100 @@ pub fn prepare_mrpack(
     }
     // Borrow retained acquisitions without copying bytes or accepting duplicate ownership.
     let combined: BTreeMap<_, _> = external
+        .locked
         .iter()
         .map(|(key, value)| (key.clone(), value))
         .chain(acquired.iter().map(|(key, value)| (key.clone(), value)))
         .collect();
-    check_backend(&project, &backend, &combined)?;
+    let unlisted = check_backend(&project, &backend, &combined)?;
+    let mut choices = BTreeSet::new();
+    for dependency in project.lock().dependencies.values() {
+        for file in dependency.files.as_slice() {
+            for placement in file.placements.as_slice() {
+                for requirement in [
+                    &placement.requirements.client,
+                    &placement.requirements.server,
+                ] {
+                    if let Requirement::Optional(choice) = requirement {
+                        choices.insert(choice.key.as_str().to_owned());
+                    }
+                }
+            }
+        }
+    }
+    let mut observed_files = Vec::new();
+    let mut used_observed = BTreeSet::new();
+    for record in backend {
+        if !unlisted.contains(&record.metadata_path) {
+            continue;
+        }
+        let expected = empack_core::model::ExpectedContent {
+            digests: Some(empack_core::digest::DigestSet::new(vec![
+                record.digest.clone(),
+            ])?),
+            size: None,
+            accepted_observation: None,
+        };
+        let path = ProjectLayout::path(&ManagedPath::Content {
+            layer: ContentLayer::Common,
+            path: record.destination.relative().clone(),
+        })?;
+        occupied.insert(path.clone());
+        ensure!(
+            !matches!(
+                workspace.observations().entries().get(&path),
+                Some(Observation::Directory { .. } | Observation::Ancestor(_))
+            ),
+            "Observed backend payload destination is a directory"
+        );
+        let mut file = external.observed.get(&record.metadata_path).cloned();
+        if file.is_some() {
+            used_observed.insert(record.metadata_path.clone());
+        }
+        if matches!(
+            workspace.observations().entries().get(&path),
+            Some(Observation::File(_))
+        ) {
+            let (content, permissions) =
+                workspace.acquire_file(&path, Some(&expected), evidence, cancel)?;
+            if let Some(previous) = &file {
+                ensure!(
+                    previous.content.lease().id() == content.lease().id()
+                        && previous.permissions == permissions,
+                    "Acquired observed file differs from captured content"
+                );
+            }
+            file = Some(AcquiredBuildFile {
+                content,
+                permissions,
+            });
+        }
+        let file = file.with_context(|| {
+            format!(
+                "Acquire retained backend file before export: {}",
+                record.metadata_path.as_str()
+            )
+        })?;
+        let base = format!("observed:{}", record.metadata_path.as_str());
+        let mut choice = base.clone();
+        let mut sequence = 0u64;
+        while !choices.insert(choice.clone()) {
+            sequence = sequence
+                .checked_add(1)
+                .context("Observed choice identifier exhausted")?;
+            choice = format!("{base}#{sequence}");
+        }
+        observed_files.push(super::mrpack::ObservedFile::verify(
+            record,
+            file,
+            empack_core::requirements::ChoiceKey::parse(&choice)?,
+            evidence,
+        )?);
+    }
+    ensure!(
+        used_observed.len() == external.observed.len(),
+        "Acquisition contains an unrelated observed file"
+    );
     let mut source_files = Vec::new();
     for source in sources {
         if occupied.contains(&source.path) {
@@ -163,23 +259,30 @@ pub fn prepare_mrpack(
             )
         })
         .collect();
-    MrpackPlan::prepare(&project, &owned, source_files, optional)
+    MrpackPlan::prepare_with_observed(&project, &owned, source_files, observed_files, optional)
 }
 
 fn check_backend(
     project: &ResolvedProject,
     observed: &[BackendFile],
     acquired: &BTreeMap<LockedFileKey, &AcquiredBuildFile>,
-) -> Result<()> {
+) -> Result<BTreeSet<empack_core::path::PortableRelPath>> {
+    let mut unlisted = BTreeSet::new();
     for observed in observed {
         let mut matches = 0;
+        let mut claimed = false;
         for (key, dependency) in &project.lock().dependencies {
+            if observed.provider.as_ref().is_some_and(|provider| matches!(&dependency.identity,
+                empack_core::model::ResolvedIdentity::Provider(project) if project == &provider.project)) {
+                claimed = true;
+            }
             for file in dependency.files.as_slice() {
                 let mut matched = false;
                 for placement in file.placements.as_slice() {
                     if placement.destination != observed.destination {
                         continue;
                     }
+                    claimed = true;
                     if !observed.matches_selection_and_requirements(
                         dependency.selected.as_ref(),
                         &placement.requirements,
@@ -203,13 +306,17 @@ fn check_backend(
                 matches += usize::from(matched);
             }
         }
+        if matches == 0 && !claimed {
+            unlisted.insert(observed.metadata_path.clone());
+            continue;
+        }
         ensure!(
             matches == 1,
             "Backend file is unaccounted or ambiguous in exact lock: {}",
             observed.metadata_path.as_str()
         );
     }
-    Ok(())
+    Ok(unlisted)
 }
 
 /// One verified mrpack output and its complete captured read set. Publication cannot rerun build work.
@@ -217,9 +324,13 @@ pub struct PreparedMrpackBuild {
     root: super::snapshot::ProjectReadRoot,
     change: super::verification::VerifiedFileChange,
     conversions: Vec<String>,
+    observed: Vec<super::mrpack::ObservedFileEvidence>,
     bytes: u64,
 }
 impl PreparedMrpackBuild {
+    pub fn observed(&self) -> &[super::mrpack::ObservedFileEvidence] {
+        &self.observed
+    }
     pub fn conversions(&self) -> &[String] {
         &self.conversions
     }
@@ -240,7 +351,7 @@ impl PreparedMrpackBuild {
 pub fn prepare_mrpack_build(
     workspace: WorkspaceSnapshot,
     artifact: empack_core::path::PortableRelPath,
-    external: &BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    external: &BuildAcquisitions,
     evidence: SourceEvidencePolicy,
     optional: OptionalConversion,
     cancel: &Cancellation,
@@ -291,6 +402,7 @@ pub fn prepare_mrpack_build(
         root,
         change,
         conversions: plan.conversions().to_vec(),
+        observed: plan.observed().to_vec(),
         bytes: verified.len(),
     })
 }

@@ -159,7 +159,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
         crate::engine::build::prepare_mrpack_build(
             workspace,
             PortableRelPath::parse("new.mrpack", PathSyntax::ArtifactName).unwrap(),
-            &BTreeMap::new(),
+            &crate::engine::build::BuildAcquisitions::default(),
             SourceEvidencePolicy::Compatibility,
             crate::engine::mrpack::OptionalConversion::RejectMetadataLoss,
             &cancel,
@@ -241,6 +241,30 @@ version = "Version1"
     .unwrap();
     assert!(prepare().is_err());
     assert_eq!(fs::read(project.join("dist/new.mrpack")).unwrap(), artifact);
+    let metadata = project.join("pack/mods/unaccounted.pw.toml");
+    let record = fs::read_to_string(&metadata).unwrap().replace(
+        "00000000000000000000000000000000",
+        "321c3cf486ed509164edec1e1981fec8",
+    );
+    fs::write(&metadata, &record).unwrap();
+    fs::write(project.join("pack/mods/other.jar"), b"payload").unwrap();
+    let prepared = prepare().unwrap();
+    assert_eq!(prepared.observed().len(), 1);
+    assert_eq!(
+        prepared.observed()[0].declared.algorithm(),
+        empack_core::digest::DigestAlgorithm::Md5
+    );
+    prepared.publish(&publisher, &cancel).unwrap();
+    let mut retained =
+        zip::ZipArchive::new(fs::File::open(project.join("dist/new.mrpack")).unwrap()).unwrap();
+    let index: serde_json::Value =
+        serde_json::from_reader(retained.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(index["files"][0]["path"], "mods/other.jar");
+    assert_eq!(index["files"][0]["fileSize"], 7);
+    assert!(index["files"][0]["hashes"]["sha512"].is_string());
+    assert!(retained.by_name("overrides/mods/other.jar").is_err());
+    assert_eq!(fs::read_to_string(metadata).unwrap(), record);
+    assert_eq!(fs::read(project.join("empack.yml")).unwrap(), document);
 }
 #[test]
 fn capture_is_read_only_and_missing_lock_is_distinct_from_current_resolution() {

@@ -579,9 +579,10 @@ candidates. Local sources and existing placements must agree on bytes and output
 attributes; supplied acquisitions cannot replace conflicting captured content.
 
 Backend records must match exact locked ownership, pins, requirements and byte
-evidence. Unaccounted records currently stop this entry point instead of being
-omitted. Adoption and explicit observed-snapshot planning must land before the CLI
-can switch without losing conservative retention. Remote acquisition scheduling,
+evidence. Unaccounted records initially stopped this entry point instead of being
+omitted. The retained-observation composition below now preserves verified
+unlisted content; acquisition scheduling and explicit observed-snapshot planning
+remain separate work. Remote acquisition scheduling,
 other targets and a combined multi-target publication remain pending.
 
 The composed filesystem regression checks no artifact before publication, rejection
@@ -613,3 +614,24 @@ full run at `4be1023` passed 1,480 of 1,484 tests; four existing tool-probe test
 timed out and selected fallback behavior. All four passed in isolation. A full
 rerun without concurrent compilation is required; the isolated pass does not
 establish a fix or a green full run.
+
+## Retained backend content
+
+Build acquisitions now distinguish exact locked files from observed metadata paths.
+Unlisted backend content is retained as an observed inventory obligation rather
+than inserted into authoring intent or assigned an invented provider content type.
+Its declared bytes must verify before export; missing acquisition stops preparation.
+Claims that conflict with a locked identity or destination remain errors.
+
+Observed requirements and portable attributes select references or embedded bytes.
+Optional choice metadata still requires the existing explicit format conversion.
+Original MD5 evidence remains separate from computed export hashes, and strong-source
+policy rejects weaker declarations. Persisted reference URLs share the document
+validator, including credential rejection. Captured materialized files cannot be
+replaced by conflicting supplied acquisitions or emitted twice as loose overrides.
+
+The composed fixture now retains a previously unlisted installation, checks its
+mrpack reference and original MD5 declaration, and leaves both manifest and backend
+record unchanged. Additional tests cover optional participation, digest mismatches,
+strong-policy bypass and secret-bearing references. Twenty-five affected tests and
+all-feature Clippy pass before the final explicit wrong-kind guard.

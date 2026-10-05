@@ -28,6 +28,9 @@ use std::{
     fs::File,
 };
 
+mod observed;
+pub use observed::{ObservedFile, ObservedFileEvidence};
+
 /// Acquisition is associated with an exact logical file, never a guessed filename.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LockedFileKey {
@@ -35,6 +38,7 @@ pub struct LockedFileKey {
     pub slot: FileSlot,
 }
 /// Verified bytes plus the source's portable output attributes.
+#[derive(Clone)]
 pub struct AcquiredBuildFile {
     pub content: AcquiredContent,
     pub permissions: FilePermissions,
@@ -58,6 +62,7 @@ pub enum OptionalConversion {
 /// Immutable format plan retains all embedded bytes until the candidate is written.
 pub struct MrpackPlan {
     resolution: ResolutionLock,
+    observed: Vec<ObservedFileEvidence>,
     inventory: BuildInventory,
     index: Vec<u8>,
     embedded: BTreeMap<PortableRelPath, ContentLease>,
@@ -70,6 +75,16 @@ impl MrpackPlan {
         project: &ResolvedProject,
         acquired: &BTreeMap<LockedFileKey, AcquiredBuildFile>,
         sources: Vec<SourceFile>,
+        optional: OptionalConversion,
+    ) -> Result<Self> {
+        Self::prepare_with_observed(project, acquired, sources, Vec::new(), optional)
+    }
+    /// Include verified observed content without manufacturing roots or replacing locked intent.
+    pub fn prepare_with_observed(
+        project: &ResolvedProject,
+        acquired: &BTreeMap<LockedFileKey, AcquiredBuildFile>,
+        sources: Vec<SourceFile>,
+        observed: Vec<ObservedFile>,
         optional: OptionalConversion,
     ) -> Result<Self> {
         // Apply the wire boundary's stable-locator rules even for programmatically built values.
@@ -203,6 +218,24 @@ impl MrpackPlan {
                 },
             });
         }
+        let mut observed_acquired = BTreeMap::new();
+        let mut observed_evidence = Vec::new();
+        for file in observed {
+            let ContentOwner::Source(label) = &file.input.owner else {
+                unreachable!("observed constructor assigns source ownership");
+            };
+            ensure!(
+                observed_acquired
+                    .insert(label.clone(), file.acquired)
+                    .is_none(),
+                "Duplicate observed backend record"
+            );
+            inputs.push(file.input);
+            observed_evidence.push(file.evidence);
+        }
+        for file in observed_acquired.values() {
+            leases.insert(file.content.lease().id(), file.content.lease().clone());
+        }
         // The index has one path namespace and no overlay precedence. Materialize downloads
         // that share a destination across layers, then project the effective bytes for each side.
         // A duplicate reference must never be delegated to installer-specific overwrite ordering.
@@ -230,21 +263,15 @@ impl MrpackPlan {
             if layered.contains(input.destination.relative())
                 && matches!(input.representation, Representation::Download { .. })
             {
-                let ContentOwner::Dependency { key, slot } = &input.owner else {
-                    anyhow::bail!("Download has no exact dependency owner");
-                };
-                let file = acquired
-                    .get(&LockedFileKey {
+                let file = match &input.owner {
+                    ContentOwner::Dependency { key, slot } => acquired.get(&LockedFileKey {
                         dependency: key.clone(),
                         slot: slot.clone(),
-                    })
-                    .with_context(|| {
-                        format!(
-                            "Acquire {} / {} to preserve layered mrpack content",
-                            key.as_str(),
-                            slot.as_str()
-                        )
-                    })?;
+                    }),
+                    ContentOwner::Source(label) => observed_acquired.get(label),
+                    ContentOwner::Runtime(_) => None,
+                }
+                .context("Acquire exact bytes to preserve layered mrpack content")?;
                 let lease = file.content.lease();
                 leases.insert(lease.id(), lease.clone());
                 input.representation = Representation::Embedded {
@@ -379,6 +406,7 @@ impl MrpackPlan {
         );
         Ok(Self {
             resolution: project.lock().clone(),
+            observed: observed_evidence,
             inventory,
             index,
             embedded,
@@ -392,6 +420,9 @@ impl MrpackPlan {
     /// Original declarations and provenance remain distinct from hashes observed for export.
     pub fn resolution(&self) -> &ResolutionLock {
         &self.resolution
+    }
+    pub fn observed(&self) -> &[ObservedFileEvidence] {
+        &self.observed
     }
     pub fn conversions(&self) -> &[String] {
         &self.conversions
