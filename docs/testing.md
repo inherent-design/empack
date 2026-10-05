@@ -405,3 +405,63 @@ The fresh LCOV report covered 15,313 of 16,857 production-source lines (90.84%),
 counting `empack-lib/src` and `empack/src` and excluding `.test.rs` files. Inline
 tests in production files remain included in that measure. This is a line metric,
 not a claim of complete path or platform coverage.
+
+## Identity and file-contract verification, 2026-10-04
+
+The third audit began at `1d4234e`. Its fixes separate user selectors from
+canonical provider IDs, plan removals against observed identities, confine tracked
+local deletions to regular files, and preserve URL-file digests and requirements.
+Remote acquisition now streams through a bounded temporary file. Imported optional
+requirements either survive publication and export or fail as an unsupported
+conversion before initialization. World archives retain their own content type.
+
+At `2e3a49c`, `mise run test` passed 1,358 tests and eight doctests, including
+21 offline CLI smoke tests. `mise run e2e:strict` passed all 100 active tests.
+All-feature Clippy passed. A seven-test run covered verified URL downloads, cached
+rebuilds, corrupt cached bytes and unsafe cache paths. A preceding 58-test run at
+`eb52cd0` covered selector lookup, world round trips and managed-tool staging.
+
+The added CLI sequences cover alias/title/installed-name removal, collisions
+between labels and backend names, slug/ID/URL additions across content types,
+repeated sync, directory-valued local records and symlinked ancestors. Real packwiz
+fixtures verify URL import, missing-metadata repair, optional-file metadata,
+export hashes, fallback URL selection, retained alternatives and removal. A
+rebuild with both URL alternatives unavailable succeeds from verified cache bytes
+and makes no HTTP requests.
+Missing export hashes, failed-primary URL exports and shared tool-staging paths
+were reproduced before their fixes. The cached rebuild also failed with HTTP 503
+before its correction.
+
+These checks establish workflow contracts, not complete alpha coverage. Automatic
+orphan deletion still requires dependency-closure evidence; multi-file rollback
+and universal cancellation of synchronous work remain unimplemented. Mixed
+required/optional sides and optional embedded files are rejected when the backend
+cannot preserve them. World archives are not automatically expanded into playable
+worlds. No test in this sweep starts Minecraft.
+
+Fresh instrumented validation at `2e3a49c` passed all 1,458 active tests; one
+manual rendering test remains ignored. The LCOV report covers 16,668 of 18,291
+production-source lines (91.13%), excluding `.test.rs` files under
+`empack-lib/src` and `empack/src`. Inline tests remain included. Coverage used a
+fresh isolated instrumented target and `EMPACK_E2E_BIN`; the percentage does not
+measure complete runtime paths.
+
+For reproducibility, the coverage run used these commands with
+`CARGO_LLVM_COV_TARGET_DIR=target/llvm-cov-wave`, the corresponding absolute
+`EMPACK_E2E_BIN`, `EMPACK_E2E_STRICT=1` and `EMPACK_RUN_LIVE_TESTS=1`:
+
+```bash
+cargo llvm-cov clean --workspace
+cargo llvm-cov --no-report run -p empack --features telemetry -- version
+cargo llvm-cov --no-clean nextest --workspace --features test-utils,telemetry --lcov --output-path /tmp/empack-final-coverage.lcov
+```
+
+The preceding instrumented run at `eb52cd0` passed 1,451 of 1,456 tests initially.
+Five failed while launching managed packwiz; a diagnostic rerun of those cases
+plus the adjacent NeoForge case passed all six without code changes. The clean
+final run does not establish the cause of those intermittent launch failures.
+
+All seven curated imports and client-full builds passed with an isolated
+`eb52cd0` binary, including one restricted-download continuation. Every output ZIP
+passed `zipfile.ZipFile.testzip()`. The later runtime change is verified cache reuse
+for URL records, covered separately by the real-backend offline rebuild test.
