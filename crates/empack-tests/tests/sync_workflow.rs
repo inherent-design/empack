@@ -104,7 +104,7 @@ async fn test_sync_resolution_write_failure_preserves_manifest_and_installed_dep
             .with_installed_mods(HashSet::from(["sodium".to_string()]))
             .with_file(
                 workdir.join("pack/mods/sodium.pw.toml"),
-                "[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'installed'\n".to_string(),
+                "[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'Install1'\n".to_string(),
             )
             .with_file(
                 workdir.join("empack.yml"),
@@ -170,7 +170,7 @@ async fn test_sync_search_applies_resolution_and_adds_dependency() -> Result<()>
 }
 
 #[tokio::test]
-async fn test_sync_partial_resolution_reports_failure_with_valid_actions() -> Result<()> {
+async fn test_sync_preparation_failure_preserves_all_requested_items() -> Result<()> {
     let workdir = mock_root().join("workdir");
     for dry_run in [false, true] {
         for unresolved in [
@@ -193,22 +193,16 @@ async fn test_sync_partial_resolution_reports_failure_with_valid_actions() -> Re
                 "partial resolution must fail; dry_run={dry_run}"
             );
             let calls = session.process_provider.get_calls();
-            if dry_run {
-                assert!(calls.is_empty());
-                assert_eq!(
-                    session
-                        .filesystem()
-                        .read_to_string(&workdir.join("empack.yml"))?,
-                    manifest
-                );
-            } else {
-                assert_eq!(calls.len(), 1, "only Sodium should be added: {calls:?}");
-                assert!(session.process_provider.verify_call(
-                    empack_lib::empack::packwiz::PACKWIZ_BIN,
-                    &["modrinth", "add", "--project-id", "AANobbMI", "-y"],
-                    &workdir.join("pack")
-                ));
-            }
+            assert!(
+                calls.is_empty(),
+                "preparation failure must not execute a partial batch"
+            );
+            assert_eq!(
+                session
+                    .filesystem()
+                    .read_to_string(&workdir.join("empack.yml"))?,
+                manifest
+            );
         }
     }
     Ok(())

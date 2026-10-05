@@ -85,13 +85,19 @@ impl InstalledDependency {
                 result.key
             );
             let field = |key| {
-                update.get(key).and_then(|v| match v {
-                    toml::Value::String(s) => Some(s.clone()),
-                    toml::Value::Integer(n) => Some(n.to_string()),
-                    _ => None,
-                })
+                update
+                    .get(key)
+                    .map(|v| match v {
+                        toml::Value::String(s) => Ok(s.clone()),
+                        toml::Value::Integer(n) => Ok(n.to_string()),
+                        _ => Err(anyhow::anyhow!(
+                            "Invalid provider field {key} in {}",
+                            result.key
+                        )),
+                    })
+                    .transpose()
             };
-            let project_id = field(id_field)
+            let project_id = field(id_field)?
                 .filter(|id| !id.is_empty())
                 .ok_or_else(|| anyhow::anyhow!("Missing provider identity in {}", result.key))?;
             result.identity = Some(DependencyIdentity::parse(
@@ -99,7 +105,7 @@ impl InstalledDependency {
                 &project_id,
                 project_type,
             )?);
-            result.version = field(version_field)
+            result.version = field(version_field)?
                 .map(|value| result.identity.as_ref().unwrap().project.parse_pin(&value))
                 .transpose()?;
         }
@@ -116,6 +122,8 @@ mod tests {
         for update in [
             "[update.modrinth]\nmod-id = 'sodium'",
             "[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'latest'",
+            "[update.modrinth]\nmod-id = 'AANobbMI'\nversion = true",
+            "[update.curseforge]\nproject-id = 238222\nfile-id = []",
             "[update.curseforge]\nproject-id = -1",
             "[update.curseforge]\nproject-id = '0238222'",
             "[update.curseforge]\nproject-id = 238222\nfile-id = 0",

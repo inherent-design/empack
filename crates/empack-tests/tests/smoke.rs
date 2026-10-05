@@ -190,7 +190,11 @@ fn smoke_sync_recognizes_installed_datapacks() {
         }
         let dir = project.dir().join("pack").join(folder);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("sodium.pw.toml"), "name = \"Sodium\"\n[update.modrinth]\nmod-id = \"AANobbMI\"\nversion = \"installed\"\n").unwrap();
+        std::fs::write(
+            dir.join("sodium.pw.toml"),
+            "name = \"Sodium\"\n[update.modrinth]\nmod-id = \"AANobbMI\"\nversion = \"Install1\"\n",
+        )
+        .unwrap();
         let before = snapshot(&project);
         command(&project)
             .args(["sync", "--dry-run"])
@@ -266,9 +270,9 @@ fn smoke_sync_rejects_non_string_datapack_option_without_changes() {
 fn smoke_sync_rejects_identity_drift_without_mutation() {
     for (platform, id, version, success) in [
         ("modrinth", "AANobbMI", None, true),
-        ("modrinth", "AANobbMI", Some("installed"), true),
-        ("modrinth", "different-project", None, false),
-        ("curseforge", "12345", None, false),
+        ("modrinth", "AANobbMI", Some("Install1"), true),
+        ("modrinth", "Other001", None, false),
+        ("curseforge", "12345678", None, false),
     ] {
         for dry_run in [true, false] {
             let project = TestProject::workflow_fixture("drift", "fabric", "1.21.1");
@@ -282,7 +286,7 @@ fn smoke_sync_rejects_identity_drift_without_mutation() {
             let mods = project.dir().join("pack/mods");
             std::fs::create_dir_all(&mods).unwrap();
             let metadata =
-                "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'installed'\n";
+                "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'Install1'\n";
             std::fs::write(mods.join("sodium.pw.toml"), metadata).unwrap();
             let before = snapshot(&project);
             let mut cmd = command(&project);
@@ -389,8 +393,9 @@ fn smoke_sync_matches_aliases_and_retains_transitive_metadata() {
     std::fs::write(project.dir().join("empack.yml"), "empack:\n  minecraft_version: '1.21.1'\n  loader: fabric\n  dependencies:\n    renderer-alias:\n      status: resolved\n      title: Renderer\n      platform: modrinth\n      project_id: AANobbMI\n").unwrap();
     let mods = project.dir().join("pack/mods");
     std::fs::create_dir_all(&mods).unwrap();
-    let root = "name = 'Renderer'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'v1'\n";
-    let dependency = "name = 'Library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'v2'\n";
+    let root = "name = 'Renderer'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'Version1'\n";
+    let dependency =
+        "name = 'Library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'Version2'\n";
     std::fs::write(mods.join("canonical.pw.toml"), root).unwrap();
     std::fs::write(mods.join("required.pw.toml"), dependency).unwrap();
     let before = snapshot(&project);
@@ -427,30 +432,30 @@ fn smoke_sync_detects_backend_success_without_reconciliation() {
 fn smoke_pinned_add_then_sync_preserves_required_content_and_updates_pin() {
     use std::os::unix::fs::PermissionsExt;
     for (platform, pin_flag, first, second) in [
-        ("modrinth", "--version-id", "v1", "v2"),
+        ("modrinth", "--version-id", "Version1", "Version2"),
         ("curseforge", "--file-id", "101", "102"),
     ] {
         let project = TestProject::workflow_fixture("root-closure", "fabric", "1.21.1");
         let responses = if platform == "modrinth" {
             vec![
                 (
-                    "https://api.modrinth.com/v2/project/12345".into(),
-                    serde_json::json!({"id":"12345","title":"Root","project_type":"mod"}),
+                    "https://api.modrinth.com/v2/project/12345678".into(),
+                    serde_json::json!({"id":"12345678","title":"Root","project_type":"mod"}),
                 ),
                 (
                     format!("https://api.modrinth.com/v2/version/{first}"),
-                    serde_json::json!({"id":first,"project_id":"12345"}),
+                    serde_json::json!({"id":first,"project_id":"12345678"}),
                 ),
             ]
         } else {
             vec![
                 (
-                    "https://api.curseforge.com/v1/mods/12345".into(),
-                    serde_json::json!({"data":{"id":12345,"name":"Root","classId":6}}),
+                    "https://api.curseforge.com/v1/mods/12345678".into(),
+                    serde_json::json!({"data":{"id":12345678,"name":"Root","classId":6}}),
                 ),
                 (
-                    format!("https://api.curseforge.com/v1/mods/12345/files/{first}"),
-                    serde_json::json!({"data":{"id":first.parse::<u64>().unwrap(),"modId":12345}}),
+                    format!("https://api.curseforge.com/v1/mods/12345678/files/{first}"),
+                    serde_json::json!({"data":{"id":first.parse::<u64>().unwrap(),"modId":12345678}}),
                 ),
             ]
         };
@@ -475,12 +480,12 @@ if [ "$provider" = modrinth ]; then
 else
   printf "name = 'Root'\n[update.curseforge]\nproject-id = '%s'\nfile-id = '%s'\n" "$id" "$pin" > mods/canonical-root.pw.toml
 fi
-printf "name = 'Required library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'r1'\n" > mods/required.pw.toml
+printf "name = 'Required library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'Required'\n" > mods/required.pw.toml
 "#).unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         command(&project)
             .env("EMPACK_PACKWIZ_BIN", &tool)
-            .args(["add", "12345", "--platform", platform, pin_flag, first])
+            .args(["add", "12345678", "--platform", platform, pin_flag, first])
             .assert()
             .success();
         let manifest = project.dir().join("empack.yml");
@@ -525,20 +530,24 @@ printf "name = 'Required library'\n[update.modrinth]\nmod-id = 'required'\nversi
 fn record_local_removal_fixture(project: &TestProject, path: &str) {
     use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
     use empack_lib::empack::config::{DependencyEntry, DependencyStatus, LocalDependencyRecord};
-    LiveFileSystemProvider
-        .config_manager(project.dir().to_path_buf())
-        .add_dependency_entry(
-            "local",
-            DependencyEntry::Local(LocalDependencyRecord {
-                status: DependencyStatus::Local,
-                title: "Local".into(),
-                project_type: empack_lib::primitives::ProjectType::Mod,
-                path: path.into(),
-                source_url: None,
-                sha256: "unused-for-removal".into(),
-            }),
-        )
-        .unwrap();
+    let manager = LiveFileSystemProvider.config_manager(project.dir().to_path_buf());
+    let mut config = manager.load_empack_config().unwrap();
+    config.empack.dependencies.insert(
+        "local".into(),
+        DependencyEntry::Local(LocalDependencyRecord {
+            status: DependencyStatus::Local,
+            title: "Local".into(),
+            project_type: empack_lib::primitives::ProjectType::Mod,
+            path: path.into(),
+            source_url: None,
+            sha256: "0".repeat(64),
+        }),
+    );
+    std::fs::write(
+        project.dir().join("empack.yml"),
+        serde_saphyr::to_string(&config).unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -597,7 +606,7 @@ fn smoke_remove_resolves_alias_title_and_stem_without_wrong_target_deletion() {
                     status: DependencyStatus::Resolved,
                     title: "Renderer title".into(),
                     platform: ProjectPlatform::Modrinth,
-                    project_id: "project-P".into(),
+                    project_id: "ProjectP".into(),
                     project_type: ProjectType::Mod,
                     version: None,
                 }),
@@ -605,12 +614,14 @@ fn smoke_remove_resolves_alias_title_and_stem_without_wrong_target_deletion() {
             .unwrap();
         std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
         for (stem, id) in [
-            ("actual-renderer", "project-P"),
-            ("renderer-alias", "project-Q"),
+            ("actual-renderer", "ProjectP"),
+            ("renderer-alias", "ProjectQ"),
         ] {
             std::fs::write(
                 project.dir().join(format!("pack/mods/{stem}.pw.toml")),
-                format!("name = '{stem}'\n[update.modrinth]\nmod-id = '{id}'\nversion = 'v1'\n"),
+                format!(
+                    "name = '{stem}'\n[update.modrinth]\nmod-id = '{id}'\nversion = 'Version1'\n"
+                ),
             )
             .unwrap();
         }
@@ -673,7 +684,7 @@ fn smoke_remove_backend_noop_retains_manifest_intent() {
                 status: DependencyStatus::Resolved,
                 title: "Renderer".into(),
                 platform: ProjectPlatform::Modrinth,
-                project_id: "P".into(),
+                project_id: "ProjectP".into(),
                 project_type: ProjectType::Mod,
                 version: None,
             }),
@@ -682,7 +693,7 @@ fn smoke_remove_backend_noop_retains_manifest_intent() {
     std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
     std::fs::write(
         project.dir().join("pack/mods/actual.pw.toml"),
-        "name = 'Renderer'\n[update.modrinth]\nmod-id = 'P'\nversion = 'v1'\n",
+        "name = 'Renderer'\n[update.modrinth]\nmod-id = 'ProjectP'\nversion = 'Version1'\n",
     )
     .unwrap();
     let tool = project.dir().join("noop-tool");
@@ -735,16 +746,16 @@ fn smoke_add_slug_id_and_url_persist_one_identity_and_type() {
     ] {
         for selector in [
             "pretty".to_string(),
-            "CANONICAL".to_string(),
+            "Canon001".to_string(),
             format!("https://modrinth.com/{project_type}/pretty"),
         ] {
             let project = TestProject::workflow_fixture("canonical-add", "fabric", "1.21.1");
-            cache_responses(&project, ["pretty", "CANONICAL"].into_iter().map(|selector| (
+            cache_responses(&project, ["pretty", "Canon001"].into_iter().map(|selector| (
                 format!("https://api.modrinth.com/v2/project/{selector}"),
-                serde_json::json!({"id":"CANONICAL", "title":"Pretty", "project_type":project_type}),
+                serde_json::json!({"id":"Canon001", "title":"Pretty", "project_type":project_type}),
             )).collect());
             let tool = project.dir().join("add-fixture");
-            std::fs::write(&tool, format!("#!/bin/sh\n[ \"$2\" = add ] || exit 0\nprintf 'add\\n' >> ../calls\nmkdir -p {folder}\nprintf \"name = 'Pretty'\\n[update.modrinth]\\nmod-id = 'CANONICAL'\\nversion = 'v1'\\n\" > {folder}/pretty.pw.toml\n")).unwrap();
+            std::fs::write(&tool, format!("#!/bin/sh\n[ \"$2\" = add ] || exit 0\nprintf 'add\\n' >> ../calls\nmkdir -p {folder}\nprintf \"name = 'Pretty'\\n[update.modrinth]\\nmod-id = 'Canon001'\\nversion = 'Version1'\\n\" > {folder}/pretty.pw.toml\n")).unwrap();
             std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
             command(&project)
                 .env("EMPACK_PACKWIZ_BIN", &tool)
@@ -756,7 +767,7 @@ fn smoke_add_slug_id_and_url_persist_one_identity_and_type() {
             let DependencyEntry::Resolved(record) = entry else {
                 panic!("resolved record required")
             };
-            assert_eq!(record.project_id, "CANONICAL");
+            assert_eq!(record.project_id, "Canon001");
             assert_eq!(
                 empack_lib::application::sync::project_type_arg(record.project_type),
                 project_type
@@ -782,7 +793,7 @@ fn smoke_platform_removal_rejects_symlinked_metadata_ancestors() {
     let project = TestProject::workflow_fixture("confined-metadata", "fabric", "1.21.1");
     let outside = tempfile::tempdir().unwrap();
     let metadata = outside.path().join("target.pw.toml");
-    let bytes = "name = 'Target'\n[update.modrinth]\nmod-id = 'P'\nversion = 'v1'\n";
+    let bytes = "name = 'Target'\n[update.modrinth]\nmod-id = 'ProjectP'\nversion = 'Version1'\n";
     std::fs::write(&metadata, bytes).unwrap();
     std::os::unix::fs::symlink(outside.path(), project.dir().join("pack/mods")).unwrap();
     let before = snapshot(&project);

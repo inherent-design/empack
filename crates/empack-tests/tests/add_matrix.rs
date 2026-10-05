@@ -78,7 +78,7 @@ async fn test_add_type_resourcepack() -> Result<()> {
         "faithless".to_string(),
         ProjectInfo {
             platform: ProjectPlatform::Modrinth,
-            project_id: "faithless".to_string(),
+            project_id: "Faith001".to_string(),
             title: "Faithless".to_string(),
             downloads: 5000,
             confidence: 100,
@@ -91,7 +91,7 @@ async fn test_add_type_resourcepack() -> Result<()> {
             "modrinth".to_string(),
             "add".to_string(),
             "--project-id".to_string(),
-            "faithless".to_string(),
+            "Faith001".to_string(),
             "-y".to_string(),
         ],
         Ok(ProcessOutput {
@@ -105,7 +105,7 @@ async fn test_add_type_resourcepack() -> Result<()> {
     std::fs::create_dir_all(workdir.join("pack/resourcepacks"))?;
     std::fs::write(
         workdir.join("pack/resourcepacks/faithless.pw.toml"),
-        "name = 'Fixture'\n[update.modrinth]\nmod-id = 'faithless'\nversion = 'v1'\n",
+        "name = 'Fixture'\n[update.modrinth]\nmod-id = 'Faith001'\nversion = 'Version1'\n",
     )?;
 
     let session = CommandSession::new_with_providers(
@@ -157,7 +157,7 @@ async fn test_add_type_shader() -> Result<()> {
         "complementary-shaders".to_string(),
         ProjectInfo {
             platform: ProjectPlatform::Modrinth,
-            project_id: "complementary".to_string(),
+            project_id: "Shader01".to_string(),
             title: "Complementary Shaders".to_string(),
             downloads: 8000,
             confidence: 100,
@@ -170,7 +170,7 @@ async fn test_add_type_shader() -> Result<()> {
             "modrinth".to_string(),
             "add".to_string(),
             "--project-id".to_string(),
-            "complementary".to_string(),
+            "Shader01".to_string(),
             "-y".to_string(),
         ],
         Ok(ProcessOutput {
@@ -184,7 +184,7 @@ async fn test_add_type_shader() -> Result<()> {
     std::fs::create_dir_all(workdir.join("pack/shaderpacks"))?;
     std::fs::write(
         workdir.join("pack/shaderpacks/complementary.pw.toml"),
-        "name = 'Fixture'\n[update.modrinth]\nmod-id = 'complementary'\nversion = 'v1'\n",
+        "name = 'Fixture'\n[update.modrinth]\nmod-id = 'Shader01'\nversion = 'Version1'\n",
     )?;
 
     let session = CommandSession::new_with_providers(
