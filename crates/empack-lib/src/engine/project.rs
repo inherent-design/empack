@@ -259,7 +259,13 @@ impl ProjectReader {
             .collect();
         let mut captured = self.capture(selected, &scopes, limits, cancel)?;
         if !artifacts.is_empty() {
-            let scopes = artifacts
+            // A build may observe old outputs, but cannot replace an input under another role.
+            // Use portable collision rules too: case aliases must not bypass this on Windows.
+            let mut ownership = super::layout::CollisionIndex::default();
+            for input in &scopes {
+                ownership.insert_file(input)?;
+            }
+            let output_scopes = artifacts
                 .iter()
                 .map(|artifact| {
                     super::layout::ProjectLayout::path(&empack_core::files::ManagedPath::Artifact(
@@ -267,8 +273,15 @@ impl ProjectReader {
                     ))
                 })
                 .collect::<Result<Vec<_>>>()?;
+            for output in &output_scopes {
+                ownership
+                    .insert_file(output)
+                    .context("Build output overlaps a captured source scope")?;
+            }
             let _guard = self.recovery.enter(&captured.root)?;
-            let outputs = captured.root.capture(&scopes, artifact_limits, cancel)?;
+            let outputs = captured
+                .root
+                .capture(&output_scopes, artifact_limits, cancel)?;
             captured.native = captured.native.merge(outputs)?;
             captured.root.revalidate(&captured.native, cancel)?;
         }

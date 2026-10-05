@@ -22,7 +22,8 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Backend observations | Shared canonical provider/pin decoding; safe relative payload paths; requirements, optional defaults and digest declarations; captured metadata revisions | [Backend tests](../../crates/empack-lib/src/engine/backend/tests.rs) |
 | Private content | Bounded quarantine, every source digest/size/observation checked, retained independent readers, original weak evidence separate from computed hashes | [Content tests](../../crates/empack-lib/src/engine/content/tests.rs) |
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
-| Build acquisition | Read-only missing-content plan; references avoid unnecessary downloads; materialization/layer collisions require bytes; failed download batches return no successful subset; manual/provider/archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
+| Build acquisition | Read-only missing-content plan; references avoid unnecessary downloads; materialization/layer collisions require bytes; failed download batches return no successful subset; manual/provider/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
+| Archive sources | Retained bounded ZIP reader; raw directory preflight; every member path/kind/collision checked; selected bytes, CRC and portable attributes verified; failed attempts consume extraction allowance | [Archive source tests](../../crates/empack-lib/src/engine/archive_source/tests.rs) |
 | Staging | Private native storage, copied inputs, no project/cache hardlinks, closed writers before freeze, retained file handles, safe cleanup order | [Staging tests](../../crates/empack-lib/src/engine/staging/tests.rs) |
 | File verification | Exact candidate inventory and portable attributes, explicit managed roles, collision checks, complete resulting read budgets | [Verification tests](../../crates/empack-lib/src/engine/verification/tests.rs) |
 | Publication | Project lock, synchronized before/after images, durable intent, recorded sibling replacement, final inventory, retained receipt; recovery without replaying tools | [Publication and crash tests](../../crates/empack-lib/src/engine/publication/tests.rs) |
@@ -47,7 +48,10 @@ limits. Recovery persists and reuses each capture group's limits.
 `plan_build_acquisitions` distinguishes sufficient reference evidence from required
 materialization. It accounts for layered replacements and unlisted backend files.
 `acquire_http` verifies every requested download before returning a batch; unresolved
-manual, provider-locator and embedded-archive work remains pending. Neither step can
+manual, provider-locator and missing-archive work remains pending. Captured ZIP
+members are acquired through one retained reader per archive, and the source archive
+is not silently included as game content. Outputs cannot overlap source scopes,
+including portable case aliases. Neither step can
 publish. Final build verification still checks supplied content against its exact
 logical file and captured installation.
 
@@ -86,8 +90,8 @@ Results describe the stated revision, not every later edit.
 | --- | --- |
 | `c7b1c64` | [Native PR CI 37387301198](https://github.com/inherent-design/empack/actions/runs/37387301198) passed Linux/macOS/Windows tests and import-smoke, lint and coverage |
 | `180c4c3` | `mise run test`: 1,498 tests and ten doctests passed |
-| `0455614` | `mise run e2e:strict`: 101 tests passed; [native CI](https://github.com/inherent-design/empack/actions/runs/37384663249) passed |
-| Build acquisition integration | All three integration tests passed, plus the dropped-caller retirement regression; all-feature Clippy and Windows test cross-compilation passed before the final fixture source correction |
+| `efb7799` | `mise run e2e:strict`: 101 tests passed |
+| Archive and budget integration | 21 affected acquisition/archive/build/reader tests passed; the final five archive tests passed after tightening per-member reads. Three focused source-ownership/scratch tests and all-feature Clippy passed |
 
 The HTTP and build tests use deterministic local fixtures. They do not establish
 live provider authorization or catalog behavior. Windows cross-compilation checks
@@ -104,7 +108,7 @@ repeat passed without a leak. These observations do not establish a production f
   Engine usage examples. Connect provider catalogs, import normalization, all five
   build targets, runtime/template preparation and combined publication.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
-  provider-locator refresh, retained archive extraction, continuation and scoped
+  provider-locator refresh, continuation and scoped
   clean through the same verified obligations.
 - Add persistent content lookup/store capabilities with read-only preview authority.
   Coordinate provider authentication, retry and rate policy; the new content HTTP

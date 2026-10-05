@@ -161,7 +161,7 @@ impl Check<'_> {
         Ok(())
     }
 }
-fn modes(mode: u32) -> Result<FilePermissions> {
+pub(super) fn modes(mode: u32) -> Result<FilePermissions> {
     ensure!(
         mode & 0o170000 == 0 || mode & 0o170000 == 0o100000,
         "Archive contains a non-regular file"
@@ -323,7 +323,7 @@ pub fn verify_archive(
     })
 }
 // zip's name index collapses duplicate central-directory names. Inspect bounded raw records first.
-fn preflight_zip(
+pub(super) fn preflight_zip(
     source: &mut dyn ArchiveRead,
     size: u64,
     limits: ArchiveLimits,

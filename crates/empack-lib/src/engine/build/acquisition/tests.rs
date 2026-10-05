@@ -124,7 +124,7 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
         let governor = ResourceGovernor::new(ResourceRequest {
             jobs: 1,
             memory_bytes: 1 << 20,
-            scratch_bytes: 64,
+            scratch_bytes: 16,
             open_files: 10,
         });
         let runtime = OperationRuntime::new(governor.clone(), 2);
@@ -194,8 +194,7 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
         second.assert_async().await;
     }
 }
-#[tokio::test]
-async fn unresolved_manual_and_archive_sources_remain_explicit_pending_obligations() {
+fn manual_embedded_project() -> ResolvedProject {
     let initial = project(true, false);
     let mut intent = initial.intent().clone();
     let id = empack_core::identity::ProviderProjectId::Modrinth(
@@ -221,11 +220,16 @@ async fn unresolved_manual_and_archive_sources_remain_explicit_pending_obligatio
         instructions: "select the exact file".into(),
     };
     files[1].acquisition = AcquisitionSpec::Embedded {
-        archive: path("source.zip"),
+        archive: path("pack/sources/source.zip"),
         member: path("assets/item.zip"),
     };
     dependency.files = NonEmpty::new(files).unwrap();
-    let resolved = ResolvedProject::validate(intent, lock.clone(), lock.intent_revision).unwrap();
+    ResolvedProject::validate(intent, lock.clone(), lock.intent_revision).unwrap()
+}
+
+#[tokio::test]
+async fn unresolved_manual_and_archive_sources_remain_explicit_pending_obligations() {
+    let resolved = manual_embedded_project();
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     write_project(root.path(), &resolved);
@@ -268,4 +272,148 @@ async fn unresolved_manual_and_archive_sources_remain_explicit_pending_obligatio
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     assert!(!host.path().join("private").exists());
     assert!(!root.path().join("dist").exists());
+}
+
+#[test]
+fn captured_embedded_members_feed_verified_publication_without_distributing_the_source_archive() {
+    use std::io::{Cursor, Read, Write};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    write_project(root.path(), &manual_embedded_project());
+    fs::create_dir_all(root.path().join("pack/resourcepacks")).unwrap();
+    fs::write(root.path().join("pack/resourcepacks/a.zip"), b"payload").unwrap();
+    fs::create_dir_all(root.path().join("pack/sources")).unwrap();
+    let archive_path = root.path().join("pack/sources/source.zip");
+    let write_source = |bytes: &[u8]| {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        zip.start_file(
+            "assets/item.zip",
+            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+        )
+        .unwrap();
+        zip.write_all(bytes).unwrap();
+        fs::write(&archive_path, zip.finish().unwrap().into_inner()).unwrap();
+    };
+    write_source(b"payload");
+    let cancel = Cancellation::default();
+    let workspace = capture(root.path(), host.path());
+    let plan = plan_build_acquisitions(
+        &workspace,
+        &BuildAcquisitions::default(),
+        BuildMaterialization::ReferenceArchive,
+        &cancel,
+    )
+    .unwrap();
+    assert_eq!(plan.needs().len(), 1);
+    let acquired = plan
+        .begin()
+        .acquire_embedded(
+            &workspace,
+            crate::engine::artifacts::ArchiveLimits::default(),
+            SourceEvidencePolicy::Compatibility,
+            &cancel,
+        )
+        .unwrap();
+    assert!(acquired.pending.is_empty());
+    assert_eq!(acquired.acquired.locked.len(), 1);
+    let prepared = prepare_mrpack_build(
+        workspace,
+        path("result.mrpack"),
+        &acquired.acquired,
+        SourceEvidencePolicy::Compatibility,
+        OptionalConversion::RejectMetadataLoss,
+        &cancel,
+    )
+    .unwrap();
+    assert!(!root.path().join("dist").exists());
+    prepared
+        .publish(
+            &Publisher::open(&host.path().join("private")).unwrap(),
+            &cancel,
+        )
+        .unwrap();
+    let previous = fs::read(root.path().join("dist/result.mrpack")).unwrap();
+    let mut zip = zip::ZipArchive::new(Cursor::new(&previous)).unwrap();
+    assert!(zip.by_name("overrides/sources/source.zip").is_err());
+    let mut entry = zip.by_name("client-overrides/resourcepacks/b.zip").unwrap();
+    assert_ne!(entry.unix_mode().unwrap() & 0o100, 0);
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"payload");
+    write_source(b"changed");
+    let workspace = capture(root.path(), host.path());
+    let plan = plan_build_acquisitions(
+        &workspace,
+        &BuildAcquisitions::default(),
+        BuildMaterialization::ReferenceArchive,
+        &cancel,
+    )
+    .unwrap();
+    assert!(
+        plan.begin()
+            .acquire_embedded(
+                &workspace,
+                crate::engine::artifacts::ArchiveLimits::default(),
+                SourceEvidencePolicy::Compatibility,
+                &cancel
+            )
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(root.path().join("dist/result.mrpack")).unwrap(),
+        previous
+    );
+}
+
+#[test]
+fn selected_artifact_cannot_overwrite_a_declared_local_source() {
+    let initial = project(true, false);
+    let mut intent = initial.intent().clone();
+    let source = path("dist/result.mrpack");
+    intent.roots.values_mut().next().unwrap().source =
+        empack_core::model::SourceIntent::Local(source.clone());
+    let decoded = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "fixture")
+        .unwrap();
+    let mut lock = initial.lock().clone();
+    lock.intent_revision = decoded.semantic_revision();
+    let (key, dependency) = lock.dependencies.iter_mut().next().unwrap();
+    dependency.identity = empack_core::model::ResolvedIdentity::Local(key.clone());
+    dependency.files = NonEmpty::new(
+        dependency
+            .files
+            .as_slice()
+            .iter()
+            .cloned()
+            .map(|mut file| {
+                file.acquisition = AcquisitionSpec::Local(source.clone());
+                file
+            })
+            .collect(),
+    )
+    .unwrap();
+    let project = ResolvedProject::validate(intent, lock.clone(), lock.intent_revision).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    write_project(root.path(), &project);
+    fs::create_dir(root.path().join("dist")).unwrap();
+    fs::write(root.path().join(source.as_str()), b"payload").unwrap();
+    let reader = ProjectReader::new(RecoveryReader::new(host.path().join("private")));
+    for output in ["result.mrpack", "RESULT.mrpack"] {
+        assert!(
+            reader
+                .capture_build(
+                    root.path(),
+                    &[path(output)],
+                    SnapshotLimits::default(),
+                    &Cancellation::default()
+                )
+                .is_err()
+        );
+    }
+    assert_eq!(
+        fs::read(root.path().join(source.as_str())).unwrap(),
+        b"payload"
+    );
+    assert!(!host.path().join("private").exists());
 }

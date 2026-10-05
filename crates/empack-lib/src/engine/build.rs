@@ -60,6 +60,9 @@ pub fn prepare_mrpack(
                 dependency: key.clone(),
                 slot: file.slot.clone(),
             };
+            if let AcquisitionSpec::Embedded { archive, .. } = &file.acquisition {
+                occupied.insert(archive.clone());
+            }
             let mut local = None;
             if let AcquisitionSpec::Local(path) = &file.acquisition {
                 occupied.insert(path.clone());

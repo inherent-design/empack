@@ -64,6 +64,81 @@ impl BuildAcquisitionPlan {
     pub fn needs(&self) -> &[AcquisitionNeed] {
         &self.needs
     }
+    pub fn begin(self) -> BuildAcquisitionResult {
+        BuildAcquisitionResult {
+            acquired: BuildAcquisitions::default(),
+            pending: self.needs,
+        }
+    }
+    pub async fn acquire_http(
+        self,
+        transport: &HttpAcquisition,
+        scope: &mut WorkScope,
+        evidence: SourceEvidencePolicy,
+        limits: TransferLimits,
+    ) -> Result<BuildAcquisitionResult> {
+        self.begin()
+            .acquire_http(transport, scope, evidence, limits)
+            .await
+    }
+}
+impl BuildAcquisitionResult {
+    /// Process every captured archive once. Missing source archives remain pending for a new
+    /// preparation; changed, malformed or mismatched members fail the whole unpublished batch.
+    /// Run this synchronous phase in an admitted blocking worker.
+    pub fn acquire_embedded(
+        self,
+        workspace: &WorkspaceSnapshot,
+        limits: crate::engine::artifacts::ArchiveLimits,
+        evidence: SourceEvidencePolicy,
+        cancel: &Cancellation,
+    ) -> Result<Self> {
+        let Self {
+            mut acquired,
+            pending: needs,
+        } = self;
+        let mut pending = Vec::new();
+        let mut archives = BTreeMap::new();
+        for need in needs {
+            cancel.check()?;
+            let BuildContentSource::Embedded { archive, member } = &need.source else {
+                pending.push(need);
+                continue;
+            };
+            if !captured_file(workspace, archive)? {
+                pending.push(need);
+                continue;
+            }
+            if !archives.contains_key(archive) {
+                let (source, _) = workspace.acquire_file(
+                    archive,
+                    None,
+                    SourceEvidencePolicy::Compatibility,
+                    cancel,
+                )?;
+                archives.insert(
+                    archive.clone(),
+                    crate::engine::archive_source::ZipContentSource::open(&source, limits, cancel)?,
+                );
+            }
+            let (content, permissions) = archives.get_mut(archive).unwrap().acquire(
+                member,
+                &need.expected,
+                evidence,
+                InitialObservation::RequireEvidence,
+                cancel,
+            )?;
+            insert_acquired(
+                &mut acquired,
+                need.key,
+                AcquiredBuildFile {
+                    content,
+                    permissions,
+                },
+            )?;
+        }
+        Ok(Self { acquired, pending })
+    }
     /// Every download must verify. A failure drops this batch's private leases and returns no
     /// successful subset. Pending manual/embedded work remains explicit for the owning driver.
     pub async fn acquire_http(
@@ -73,9 +148,12 @@ impl BuildAcquisitionPlan {
         evidence: SourceEvidencePolicy,
         limits: TransferLimits,
     ) -> Result<BuildAcquisitionResult> {
-        let mut acquired = BuildAcquisitions::default();
+        let Self {
+            mut acquired,
+            pending: needs,
+        } = self;
         let mut pending = Vec::new();
-        for need in self.needs {
+        for need in needs {
             match need.source {
                 BuildContentSource::Download(alternatives) => {
                     let content = transport
@@ -97,20 +175,26 @@ impl BuildAcquisitionPlan {
                             executable: false,
                         },
                     };
-                    match need.key {
-                        AcquisitionKey::Locked(key) => {
-                            acquired.locked.insert(key, file);
-                        }
-                        AcquisitionKey::Observed(path) => {
-                            acquired.observed.insert(path, file);
-                        }
-                    }
+                    insert_acquired(&mut acquired, need.key, file)?;
                 }
                 _ => pending.push(need),
             }
         }
         Ok(BuildAcquisitionResult { acquired, pending })
     }
+}
+
+fn insert_acquired(
+    acquired: &mut BuildAcquisitions,
+    key: AcquisitionKey,
+    file: AcquiredBuildFile,
+) -> Result<()> {
+    let previous = match key {
+        AcquisitionKey::Locked(key) => acquired.locked.insert(key, file),
+        AcquisitionKey::Observed(path) => acquired.observed.insert(path, file),
+    };
+    ensure!(previous.is_none(), "Duplicate acquisition obligation");
+    Ok(())
 }
 
 /// Enumerate obligations from the same captured workspace used for final verification. This
@@ -133,8 +217,11 @@ pub fn plan_build_acquisitions(
     let mut destinations = BTreeMap::<PortableRelPath, usize>::new();
     for dependency in project.lock().dependencies.values() {
         for file in dependency.files.as_slice() {
-            if let AcquisitionSpec::Local(path) = &file.acquisition {
-                occupied.insert(path.clone());
+            match &file.acquisition {
+                AcquisitionSpec::Local(path) | AcquisitionSpec::Embedded { archive: path, .. } => {
+                    occupied.insert(path.clone());
+                }
+                _ => {}
             }
             for placement in file.placements.as_slice() {
                 *destinations
