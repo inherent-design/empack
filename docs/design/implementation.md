@@ -309,3 +309,34 @@ fixture interrupts restoration at seven durable boundaries, resumes in a fresh
 process and checks original bytes, removed additions, retained receipts and
 idempotent reclamation. Windows privacy and permission-capability findings from
 Greptile review 25 are being addressed before the next review.
+
+## Review corrections: persisted URLs and native permissions
+
+The document codec rejects recognized credential-bearing query fields in both
+intent and lock URLs, including percent-encoded `access_token`, cloud signatures
+and client secrets. Public locators remain supported. Arbitrary opaque path/query
+values cannot be classified as credentials from their spelling alone; credential
+acquisition remains a separate host capability.
+
+Native file planning carries explicit filesystem capabilities. Windows does not
+observe Unix execute bits, so that unobservable bit does not prevent publication
+or cause repeated changes. Desired executable intent remains in the plan and
+artifact model. Native receipts state whether execute bits were verified; archive
+writers and readers must still preserve and verify their format's mode metadata.
+Unix continues to compare and enforce executable permissions.
+
+Windows recovery storage validates the owner and DACL through a retained native
+handle. Only the current user, SYSTEM and Administrators may receive access;
+unknown grant forms and unrestricted DACLs are rejected. New roots receive a
+protected inheritable DACL during creation. Existing shared roots are refused
+without altering their permissions. Staging uses a private parent and an inner
+private directory before copying project data. This protects against other local
+principals; administrators and processes running as the same user are outside
+that boundary. Native Windows tests cover shared-parent inheritance, refusal and
+executable publication. Their execution evidence belongs to the Windows CI head,
+not a macOS test run or cross-compilation.
+
+Verification for this correction: 46 engine tests and the core contract suite
+pass on macOS; all-target/all-feature Clippy passes. `cargo check -p empack-lib
+--all-features --tests --target x86_64-pc-windows-gnu` passes, including the Windows
+regressions. This compiles those regressions but does not execute them.

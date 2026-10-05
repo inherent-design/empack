@@ -9,3 +9,6 @@ pub mod resources;
 pub mod snapshot;
 pub mod staging;
 pub mod verification;
+
+#[cfg(windows)]
+mod windows_privacy;

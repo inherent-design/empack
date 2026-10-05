@@ -1,11 +1,11 @@
 use super::*;
 use crate::engine::{
     staging::MutableStage,
-    verification::{VerifiedFileChange, observed_files_for},
+    verification::{VerifiedFileChange, observed_files_for, plan_files},
 };
 use empack_core::{
     digest::ContentId,
-    files::{FilePermissions, FilePlan, ManagedPath},
+    files::{FilePermissions, ManagedPath},
     model::ContentLayer,
 };
 use sha2::{Digest, Sha256};
@@ -41,7 +41,7 @@ fn prepare(root: &ProjectReadRoot) -> VerifiedFileChange {
         (added, expected(b"new content")),
     ]);
     let observed = observed_files_for(&snapshot, desired.keys().cloned()).unwrap();
-    let plan = FilePlan::prepare(&observed, &desired, &BTreeSet::new()).unwrap();
+    let plan = plan_files(&observed, &desired, &BTreeSet::new()).unwrap();
     let mut stage = MutableStage::from_snapshot(root, &snapshot, &cancel).unwrap();
     stage
         .write(&path("empack.yml"), &mut &b"new intent"[..], 10, &cancel)
@@ -299,7 +299,7 @@ fn explicit_removal_is_one_file_and_a_busy_project_cannot_publish() {
         .unwrap();
     let selected = ProjectLayout::classify(&path("pack/selected")).unwrap();
     let observed = observed_files_for(&snapshot, [selected.clone()]).unwrap();
-    let plan = FilePlan::prepare(&observed, &BTreeMap::new(), &BTreeSet::from([selected])).unwrap();
+    let plan = plan_files(&observed, &BTreeMap::new(), &BTreeSet::from([selected])).unwrap();
     let mut stage = MutableStage::from_snapshot(&root, &snapshot, &cancel).unwrap();
     stage.remove(&path("pack/selected")).unwrap();
     let proof = VerifiedFileChange::verify(
@@ -522,4 +522,47 @@ fn restoration_preserves_conflicting_user_edits_and_corrupt_before_images() {
         );
         assert!(publisher.recovery_required(&root).unwrap());
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn executable_output_intent_publishes_and_converges_on_windows_without_claiming_native_mode_verification()
+ {
+    let project = tempfile::tempdir().unwrap();
+    fixture(project.path());
+    let state = tempfile::tempdir().unwrap();
+    let publisher = Publisher::open(&state.path().join("private")).unwrap();
+    let root = ProjectReadRoot::open(project.path()).unwrap();
+    let cancel = Cancellation::default();
+    let snapshot = root
+        .capture(&[path("empack.yml")], SnapshotLimits::default(), &cancel)
+        .unwrap();
+    let mut output = expected(b"new script");
+    output.permissions.executable = true;
+    let desired = BTreeMap::from([(ManagedPath::IntentDocument, output)]);
+    let observed = observed_files_for(&snapshot, desired.keys().cloned()).unwrap();
+    let plan = plan_files(&observed, &desired, &BTreeSet::new()).unwrap();
+    let mut stage = MutableStage::empty().unwrap();
+    stage
+        .write(&path("empack.yml"), &mut &b"new script"[..], 10, &cancel)
+        .unwrap();
+    let proof = VerifiedFileChange::verify(
+        snapshot,
+        plan,
+        stage.freeze(SnapshotLimits::default(), &cancel).unwrap(),
+    )
+    .unwrap();
+    let receipt = publisher.publish(&root, proof, &cancel).unwrap();
+    assert!(!receipt.executable_bits_verified);
+    let snapshot = root
+        .capture(&[path("empack.yml")], SnapshotLimits::default(), &cancel)
+        .unwrap();
+    let observed = observed_files_for(&snapshot, desired.keys().cloned()).unwrap();
+    let repeated = plan_files(&observed, &desired, &BTreeSet::new()).unwrap();
+    assert!(repeated.changes().is_empty());
+    assert!(
+        repeated.expected()[&ManagedPath::IntentDocument]
+            .permissions
+            .executable
+    );
 }

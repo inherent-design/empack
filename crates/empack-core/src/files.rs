@@ -35,6 +35,13 @@ pub struct FilePermissions {
     /// Executable by its owner on systems with executable permission bits.
     pub executable: bool,
 }
+/// Permission capabilities of the representation being planned or verified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileCapabilities {
+    /// POSIX executable bits can be observed and enforced in this representation.
+    pub executable_bits: bool,
+}
+
 /// A byte-level postcondition, not source-authentication or artifact-structure evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileContent {
@@ -44,6 +51,16 @@ pub struct FileContent {
     pub bytes: u64,
     /// Required portable permissions.
     pub permissions: FilePermissions,
+}
+impl FileContent {
+    /// Compare content and supported attributes without discarding declared output intent.
+    pub fn equivalent(&self, other: &Self, capabilities: FileCapabilities) -> bool {
+        self.content == other.content
+            && self.bytes == other.bytes
+            && self.permissions.readonly == other.permissions.readonly
+            && (!capabilities.executable_bits
+                || self.permissions.executable == other.permissions.executable)
+    }
 }
 /// Native observations are converted to these values for pure planning.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +103,7 @@ impl FileChange {
 /// An immutable, deterministic file plan. It grants no native write authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilePlan {
+    capabilities: FileCapabilities,
     changes: Vec<FileChange>,
     expected: BTreeMap<ManagedPath, FileContent>,
 }
@@ -96,6 +114,23 @@ impl FilePlan {
         observed: &BTreeMap<ManagedPath, ObservedPath>,
         desired: &BTreeMap<ManagedPath, FileContent>,
         removals: &BTreeSet<ManagedPath>,
+    ) -> Result<Self, FilePlanError> {
+        Self::prepare_for(
+            observed,
+            desired,
+            removals,
+            FileCapabilities {
+                executable_bits: true,
+            },
+        )
+    }
+
+    /// Plan for explicit representation capabilities. Unsupported native bits remain in expected intent.
+    pub fn prepare_for(
+        observed: &BTreeMap<ManagedPath, ObservedPath>,
+        desired: &BTreeMap<ManagedPath, FileContent>,
+        removals: &BTreeSet<ManagedPath>,
+        capabilities: FileCapabilities,
     ) -> Result<Self, FilePlanError> {
         let mut expected: BTreeMap<_, _> = observed
             .iter()
@@ -119,7 +154,7 @@ impl FilePlan {
                 ObservedPath::Directory => {
                     return Err(FilePlanError::DirectoryTarget(target.clone()));
                 }
-                ObservedPath::File(content) if content == after => {}
+                ObservedPath::File(content) if content.equivalent(after, capabilities) => {}
                 _ => changes.push(FileChange::Replace {
                     target: target.clone(),
                     before: before.clone(),
@@ -145,7 +180,15 @@ impl FilePlan {
             expected.remove(target);
         }
         changes.sort_by(|left, right| left.target().cmp(right.target()));
-        Ok(Self { changes, expected })
+        Ok(Self {
+            capabilities,
+            changes,
+            expected,
+        })
+    }
+    /// The representation capabilities used for attribute comparisons.
+    pub fn capabilities(&self) -> FileCapabilities {
+        self.capabilities
     }
     /// Deterministic explicit changes.
     pub fn changes(&self) -> &[FileChange] {

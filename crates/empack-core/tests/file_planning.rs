@@ -99,3 +99,28 @@ fn absence_and_permissions_are_part_of_the_plan() {
         1
     );
 }
+
+#[test]
+fn unobservable_native_execute_bits_do_not_erase_output_intent_or_break_convergence() {
+    let target = ManagedPath::IntentDocument;
+    let observed = BTreeMap::from([(target.clone(), ObservedPath::File(content(1)))]);
+    let mut executable = content(1);
+    executable.permissions.executable = true;
+    let desired = BTreeMap::from([(target.clone(), executable.clone())]);
+    let capabilities = FileCapabilities {
+        executable_bits: false,
+    };
+    let plan = FilePlan::prepare_for(&observed, &desired, &BTreeSet::new(), capabilities).unwrap();
+    assert!(plan.changes().is_empty());
+    assert!(plan.expected()[&target].permissions.executable);
+    assert_eq!(
+        FilePlan::prepare_for(&observed, &desired, &BTreeSet::new(), capabilities).unwrap(),
+        plan
+    );
+    assert!(
+        !FilePlan::prepare(&observed, &desired, &BTreeSet::new())
+            .unwrap()
+            .changes()
+            .is_empty()
+    );
+}

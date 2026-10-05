@@ -57,6 +57,8 @@ pub struct PublicationReceipt {
     pub changed_files: usize,
     /// Unix directory synchronization was performed. Windows reports file synchronization only.
     pub directory_synced: bool,
+    /// Native POSIX executable bits were observable and checked on this platform.
+    pub executable_bits_verified: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PublicationPoint {
@@ -146,8 +148,8 @@ impl Publisher {
                     .mode(0o700)
                     .create(host_state)?;
             }
-            #[cfg(not(unix))]
-            std::fs::create_dir_all(host_state)?;
+            #[cfg(windows)]
+            super::windows_privacy::create(host_state)?;
         }
         let metadata = std::fs::symlink_metadata(host_state)?;
         ensure!(
@@ -165,6 +167,8 @@ impl Publisher {
         }
         let host = Dir::open_ambient_dir(host_state, cap_std::ambient_authority())?;
         native::reject_reparse(&host.try_clone()?.into_std_file())?;
+        #[cfg(windows)]
+        super::windows_privacy::verify(&host)?;
         Ok(Self { host })
     }
 
@@ -410,11 +414,11 @@ impl Publisher {
                 let fingerprint = actual
                     .as_ref()
                     .map(|file| Fingerprint::from(&content(file)));
-                if fingerprint == change.before {
+                if fingerprints_match(fingerprint.as_ref(), change.before.as_ref()) {
                     continue;
                 }
                 ensure!(
-                    fingerprint == change.after,
+                    fingerprints_match(fingerprint.as_ref(), change.after.as_ref()),
                     "Restoration conflict at {}",
                     change.target
                 );
@@ -524,9 +528,9 @@ impl Publisher {
             let fingerprint = current
                 .as_ref()
                 .map(|value| Fingerprint::from(&content(value)));
-            if fingerprint != change.after {
+            if !fingerprints_match(fingerprint.as_ref(), change.after.as_ref()) {
                 ensure!(
-                    fingerprint == change.before
+                    fingerprints_match(fingerprint.as_ref(), change.before.as_ref())
                         && current.as_ref().map(|file| Binding::from(file.object))
                             == change.before_object,
                     "Publication conflict at {}",
@@ -653,7 +657,7 @@ fn preflight_recovery(
         let fingerprint = actual
             .as_ref()
             .map(|file| Fingerprint::from(&content(file)));
-        if fingerprint == change.after {
+        if fingerprints_match(fingerprint.as_ref(), change.after.as_ref()) {
             continue;
         }
         check_pending(root, &path, change)?;
@@ -715,13 +719,15 @@ fn preflight_recovery(
         .map(|(path, file)| (path.clone(), file.clone()))
         .collect();
     ensure!(
-        unchanged == expected,
+        inventories_match(&unchanged, &expected),
         "Unchanged project inputs conflict with publication recovery"
     );
     Ok(())
 }
 
 fn private_directory(directory: &Dir) -> Result<()> {
+    #[cfg(windows)]
+    super::windows_privacy::verify(directory)?;
     let file = directory.try_clone()?.into_std_file();
     native::reject_reparse(&file)?;
     #[cfg(unix)]
@@ -839,7 +845,7 @@ fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
             "Invalid prior object binding"
         );
         ensure!(
-            change.before != change.after,
+            !fingerprints_match(change.before.as_ref(), change.after.as_ref()),
             "Journal contains a no-op change"
         );
         ensure!(
@@ -923,11 +929,13 @@ fn check_pending(root: &ProjectReadRoot, path: &PortableRelPath, change: &Change
     root.check_binding()?;
     let current = current_file(root, path, change)?;
     ensure!(
-        current
-            .as_ref()
-            .map(|value| Fingerprint::from(&content(value)))
-            == change.before
-            && current.as_ref().map(|value| Binding::from(value.object)) == change.before_object,
+        fingerprints_match(
+            current
+                .as_ref()
+                .map(|value| Fingerprint::from(&content(value)))
+                .as_ref(),
+            change.before.as_ref()
+        ) && current.as_ref().map(|value| Binding::from(value.object)) == change.before_object,
         "Publication conflict at {}",
         change.target
     );
@@ -1000,11 +1008,33 @@ fn verify_after(root: &ProjectReadRoot, journal: &Journal, limits: SnapshotLimit
         })
         .collect();
     ensure!(
-        actual == journal.expected,
+        inventories_match(&actual, &journal.expected),
         "Published inventory differs from planned postconditions"
     );
     Ok(())
 }
+fn fingerprints_match(actual: Option<&Fingerprint>, expected: Option<&Fingerprint>) -> bool {
+    match (actual, expected) {
+        (Some(actual), Some(expected)) => {
+            actual.sha256 == expected.sha256
+                && actual.bytes == expected.bytes
+                && actual.readonly == expected.readonly
+                && (!cfg!(unix) || actual.executable == expected.executable)
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+fn inventories_match(
+    actual: &BTreeMap<String, Fingerprint>,
+    expected: &BTreeMap<String, Fingerprint>,
+) -> bool {
+    actual.len() == expected.len()
+        && actual
+            .iter()
+            .all(|(path, file)| fingerprints_match(Some(file), expected.get(path)))
+}
+
 fn receipt(journal: &Journal) -> PublicationReceipt {
     PublicationReceipt {
         disposition: if journal.restoring {
@@ -1015,6 +1045,7 @@ fn receipt(journal: &Journal) -> PublicationReceipt {
         operation: journal.operation.clone(),
         changed_files: journal.changes.len(),
         directory_synced: cfg!(unix),
+        executable_bits_verified: cfg!(unix),
     }
 }
 

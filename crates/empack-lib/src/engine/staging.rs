@@ -24,6 +24,8 @@ static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 /// No live project path or writable file handle is exposed by the stage writer.
 pub struct MutableStage {
     storage: TempDir,
+    #[cfg(windows)]
+    private_parent: TempDir,
     root: ProjectReadRoot,
 }
 impl MutableStage {
@@ -35,9 +37,26 @@ impl MutableStage {
             use std::os::unix::fs::PermissionsExt;
             builder.permissions(std::fs::Permissions::from_mode(0o700));
         }
+        #[cfg(windows)]
+        let private_parent = {
+            let parent = builder.tempdir()?;
+            let directory = Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())?;
+            super::windows_privacy::protect_empty_temporary(&directory)?;
+            parent
+        };
+        #[cfg(windows)]
+        let storage = builder.tempdir_in(private_parent.path())?;
+        #[cfg(not(windows))]
         let storage = builder.tempdir()?;
         let root = ProjectReadRoot::open(storage.path())?;
-        Ok(Self { storage, root })
+        #[cfg(windows)]
+        super::windows_privacy::verify(&root.directory)?;
+        Ok(Self {
+            storage,
+            root,
+            #[cfg(windows)]
+            private_parent,
+        })
     }
 
     /// Copy retained observations, never hardlink them into a writable backend tree.
@@ -184,6 +203,8 @@ impl MutableStage {
         self.root.revalidate(&snapshot, cancel)?;
         Ok(FrozenStage {
             _storage: self.storage,
+            #[cfg(windows)]
+            _private_parent: self.private_parent,
             files,
             snapshot,
         })
@@ -199,6 +220,8 @@ pub struct FrozenStage {
     files: BTreeMap<PortableRelPath, RetainedFile>,
     snapshot: NativeSnapshot,
     _storage: TempDir,
+    #[cfg(windows)]
+    _private_parent: TempDir,
 }
 impl FrozenStage {
     pub fn inventory(&self) -> &BTreeMap<PortableRelPath, Observation> {

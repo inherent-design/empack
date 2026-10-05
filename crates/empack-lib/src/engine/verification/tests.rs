@@ -32,7 +32,7 @@ fn missing_extra_and_corrupt_candidate_files_cannot_produce_a_proof() {
         let base = root
             .capture(&[path("empack.yml")], SnapshotLimits::default(), &cancel)
             .unwrap();
-        let plan = FilePlan::prepare(
+        let plan = plan_files(
             &observed_files(&base).unwrap(),
             &BTreeMap::from([(ManagedPath::IntentDocument, wanted(b"after"))]),
             &BTreeSet::new(),
@@ -86,7 +86,7 @@ fn a_plan_from_another_observation_set_is_rejected_even_if_its_stage_matches() {
         ManagedPath::IntentDocument,
         ObservedPath::File(wanted(b"fake")),
     )]);
-    let plan = FilePlan::prepare(&fake_observation, &BTreeMap::new(), &BTreeSet::new()).unwrap();
+    let plan = plan_files(&fake_observation, &BTreeMap::new(), &BTreeSet::new()).unwrap();
     assert!(plan.changes().is_empty());
     let mut stage = MutableStage::empty().unwrap();
     stage
@@ -118,7 +118,7 @@ fn candidate_cannot_exceed_the_read_budget_needed_for_postpublication_checks() {
             &cancel,
         )
         .unwrap();
-    let plan = FilePlan::prepare(
+    let plan = plan_files(
         &observed_files(&base).unwrap(),
         &BTreeMap::from([(ManagedPath::IntentDocument, wanted(b"larger"))]),
         &BTreeSet::new(),

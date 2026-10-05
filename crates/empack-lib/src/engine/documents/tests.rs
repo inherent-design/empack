@@ -280,6 +280,12 @@ fn url_order_changes_semantics_and_credentials_cannot_enter_documents() {
     for url in [
         "https://user:secret@example.com/file",
         "https://example.com/file?token=secret",
+        "https://example.com/file?access_token=secret",
+        "https://example.com/file?ACCESS%5FTOKEN=secret",
+        "https://example.com/file?refresh-token=secret",
+        "https://example.com/file?client_secret=secret",
+        "https://example.com/file?X-Goog-Credential=secret",
+        "https://example.com/file?AWSAccessKeyId=secret",
     ] {
         value["dependencies"]["renderer alias"]["source"]["downloads"] = json!([url]);
         assert!(
@@ -309,4 +315,19 @@ fn requirements_remain_lossless_even_when_a_backend_projection_cannot_express_th
             .unwrap()
             .intent()
     );
+}
+
+#[test]
+fn lock_encoder_rejects_ephemeral_credentials_before_serialization() {
+    let source = decoded();
+    let mut lock = resolution(&source);
+    let dependency = lock.dependencies.values_mut().next().unwrap();
+    let mut files = dependency.files.as_slice().to_vec();
+    if let AcquisitionSpec::Provider { alternatives, .. } = &mut files[0].acquisition {
+        *alternatives = vec!["https://example.com/file?access_token=not-for-storage".into()];
+    }
+    dependency.files = NonEmpty::new(files).unwrap();
+    let project = validate(&source, lock).unwrap();
+    let error = DocumentCodec.encode_lock(&project).unwrap_err();
+    assert!(!format!("{error:#}").contains("not-for-storage"));
 }

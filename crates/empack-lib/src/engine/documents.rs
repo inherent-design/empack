@@ -419,18 +419,39 @@ fn urls(value: &Value) -> Result<Vec<String>> {
         );
         // Signed locators are supplied by the execution context, not a durable lock.
         ensure!(
-            !url.query_pairs().any(|(key, _)| matches!(
-                key.to_ascii_lowercase().as_str(),
-                "token"
-                    | "key"
-                    | "api_key"
-                    | "api-key"
-                    | "signature"
-                    | "sig"
-                    | "x-amz-signature"
-                    | "x-amz-credential"
-                    | "x-goog-signature"
-            )),
+            !url.query_pairs().any(|(key, _)| {
+                // URL parsing percent-decodes keys; normalize common separator/case variants too.
+                let key: String = key
+                    .chars()
+                    .filter(char::is_ascii_alphanumeric)
+                    .flat_map(char::to_lowercase)
+                    .collect();
+                matches!(
+                    key.as_str(),
+                    "key"
+                        | "auth"
+                        | "sig"
+                        | "pwd"
+                        | "jwt"
+                        | "code"
+                        | "ticket"
+                        | "session"
+                        | "sessionid"
+                        | "awsaccesskeyid"
+                        | "googleaccessid"
+                ) || [
+                    "token",
+                    "credential",
+                    "secret",
+                    "signature",
+                    "authorization",
+                    "password",
+                    "passwd",
+                    "apikey",
+                ]
+                .iter()
+                .any(|part| key.contains(part))
+            }),
             "Ephemeral credentials cannot be persisted in download alternatives"
         );
     }

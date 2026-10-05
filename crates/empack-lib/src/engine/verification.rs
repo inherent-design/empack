@@ -7,9 +7,33 @@ use super::{
 use anyhow::{Result, ensure};
 use empack_core::{
     digest::ContentId,
-    files::{FileChange, FileContent, FilePermissions, FilePlan, ManagedPath, ObservedPath},
+    files::{
+        FileCapabilities, FileChange, FileContent, FilePermissions, FilePlan, ManagedPath,
+        ObservedPath,
+    },
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Native storage capabilities are independent of archive-format permission support.
+pub fn native_capabilities() -> FileCapabilities {
+    FileCapabilities {
+        executable_bits: cfg!(unix),
+    }
+}
+
+/// Construct a pure file plan using the capabilities of the native publication target.
+pub fn plan_files(
+    observed: &BTreeMap<ManagedPath, ObservedPath>,
+    desired: &BTreeMap<ManagedPath, FileContent>,
+    removals: &BTreeSet<ManagedPath>,
+) -> Result<FilePlan> {
+    Ok(FilePlan::prepare_for(
+        observed,
+        desired,
+        removals,
+        native_capabilities(),
+    )?)
+}
 
 /// Convert native observations into pure planner data, preserving each raw content revision.
 pub fn observed_files(snapshot: &NativeSnapshot) -> Result<BTreeMap<ManagedPath, ObservedPath>> {
@@ -97,6 +121,10 @@ impl VerifiedFileChange {
     }
     /// Consume a candidate only when its complete selected file inventory matches the pure plan.
     pub fn verify(base: NativeSnapshot, plan: FilePlan, stage: FrozenStage) -> Result<Self> {
+        ensure!(
+            plan.capabilities() == native_capabilities(),
+            "File plan uses different filesystem capabilities"
+        );
         let observed = observed_files_for(
             &base,
             plan.expected()
@@ -116,7 +144,7 @@ impl VerifiedFileChange {
             })
             .collect();
         ensure!(
-            FilePlan::prepare(&observed, plan.expected(), &removals)? == plan,
+            plan_files(&observed, plan.expected(), &removals)? == plan,
             "File plan was prepared against different observations"
         );
         for change in plan.changes() {
@@ -175,7 +203,10 @@ impl VerifiedFileChange {
             })
             .collect();
         ensure!(
-            actual == expected,
+            actual.len() == expected.len()
+                && actual.iter().all(|(path, file)| expected
+                    .get(path)
+                    .is_some_and(|expected| file.equivalent(expected, native_capabilities()))),
             "Candidate inventory differs from planned files, bytes or permissions"
         );
         // A caller cannot omit observed files by constructing a plan against another observation set.
