@@ -489,4 +489,4 @@ fn override_prefix(requirements: &Requirements) -> Result<&'static str> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

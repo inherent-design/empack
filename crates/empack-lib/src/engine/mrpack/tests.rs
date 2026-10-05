@@ -31,7 +31,7 @@ pub(super) fn build_file(bytes: &[u8]) -> AcquiredBuildFile {
         },
     }
 }
-pub(super) fn project(weak: bool, optional: bool) -> ResolvedProject {
+pub(in crate::engine) fn project(weak: bool, optional: bool) -> ResolvedProject {
     let url = "https://example.com/unrelated-name.jar";
     let environment = if optional {
         json!({"client":{"optional":"extra","default-enabled":false,"description":"Extra content"},"server":"unsupported"})

@@ -84,6 +84,17 @@ impl HttpAcquisition {
             allow_loopback_http: false,
         })
     }
+    #[cfg(test)]
+    pub(super) fn for_loopback_tests() -> Self {
+        Self {
+            client: Self::client_builder()
+                .no_proxy()
+                .tls_certs_only([])
+                .build()
+                .unwrap(),
+            allow_loopback_http: true,
+        }
+    }
     fn client_builder() -> reqwest::ClientBuilder {
         Client::builder()
             .redirect(reqwest::redirect::Policy::none())

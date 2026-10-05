@@ -16,6 +16,8 @@ use empack_core::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod acquisition;
+
 /// Exact logical requests and retained metadata records occupy distinct acquisition namespaces.
 #[derive(Default)]
 pub struct BuildAcquisitions {

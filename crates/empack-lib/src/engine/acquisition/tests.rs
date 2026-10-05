@@ -31,14 +31,7 @@ fn request(urls: Vec<String>, maximum: u64) -> DownloadRequest {
 }
 fn transport() -> HttpAcquisition {
     // Local HTTP fixtures need neither ambient proxy configuration nor OS TLS root discovery.
-    HttpAcquisition {
-        client: HttpAcquisition::client_builder()
-            .no_proxy()
-            .tls_certs_only([])
-            .build()
-            .unwrap(),
-        allow_loopback_http: true,
-    }
+    HttpAcquisition::for_loopback_tests()
 }
 fn runtime() -> (OperationRuntime<Result<AcquiredContent>>, ResourceGovernor) {
     let governor = ResourceGovernor::new(ResourceRequest {
