@@ -203,8 +203,75 @@ impl MrpackPlan {
                 },
             });
         }
+        // The index has one path namespace and no overlay precedence. Materialize downloads
+        // that share a destination across layers, then project the effective bytes for each side.
+        // A duplicate reference must never be delegated to installer-specific overwrite ordering.
+        let mut destinations: BTreeMap<_, Vec<usize>> = BTreeMap::new();
+        for (index, input) in inputs.iter().enumerate() {
+            destinations
+                .entry(input.destination.relative().clone())
+                .or_default()
+                .push(index);
+        }
+        let layered: BTreeSet<_> = destinations
+            .iter()
+            .filter_map(|(path, indices)| {
+                (indices.len() > 1
+                    && indices.iter().any(|index| {
+                        matches!(
+                            inputs[*index].representation,
+                            Representation::Download { .. }
+                        )
+                    }))
+                .then_some(path.clone())
+            })
+            .collect();
+        for input in &mut inputs {
+            if layered.contains(input.destination.relative())
+                && matches!(input.representation, Representation::Download { .. })
+            {
+                let ContentOwner::Dependency { key, slot } = &input.owner else {
+                    anyhow::bail!("Download has no exact dependency owner");
+                };
+                let file = acquired
+                    .get(&LockedFileKey {
+                        dependency: key.clone(),
+                        slot: slot.clone(),
+                    })
+                    .with_context(|| {
+                        format!(
+                            "Acquire {} / {} to preserve layered mrpack content",
+                            key.as_str(),
+                            slot.as_str()
+                        )
+                    })?;
+                let lease = file.content.lease();
+                leases.insert(lease.id(), lease.clone());
+                input.representation = Representation::Embedded {
+                    content: lease.id(),
+                    bytes: lease.len(),
+                    permissions: file.permissions,
+                };
+            }
+        }
         let inventory =
             BuildInventory::project(&inputs, BuildTarget::Mrpack, &OptionalPolicy::Preserve)?;
+        let mut archive_entries: Vec<_> = inventory
+            .entries()
+            .iter()
+            .filter(|entry| !layered.contains(entry.destination.relative()))
+            .cloned()
+            .collect();
+        for path in &layered {
+            let group: Vec<_> = destinations[path]
+                .iter()
+                .map(|index| inputs[*index].clone())
+                .collect();
+            for target in [BuildTarget::Client, BuildTarget::Server] {
+                let view = BuildInventory::project(&group, target, &OptionalPolicy::Preserve)?;
+                archive_entries.extend_from_slice(view.entries());
+            }
+        }
         let mut embedded = BTreeMap::new();
         let mut expected = BTreeMap::new();
         let mut references = Vec::new();
@@ -213,7 +280,7 @@ impl MrpackPlan {
         let mut installation_paths = CollisionIndex::default();
         let mut spelled_destinations = BTreeSet::new();
         let mut conversions = BTreeSet::new();
-        for entry in inventory.entries() {
+        for entry in &archive_entries {
             // Exact spellings may intentionally appear in multiple layers, but portable aliases
             // and file/ancestor collisions cannot depend on the installer's host filesystem.
             if spelled_destinations.insert(entry.destination.relative().clone()) {

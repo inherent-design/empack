@@ -346,3 +346,105 @@ fn acquired_executable_is_embedded_with_portable_mode_instead_of_a_lossy_referen
         assert_eq!(file.unix_mode().unwrap() & 0o111, 0o111);
     }
 }
+
+#[test]
+fn layered_downloads_preserve_common_and_side_bytes_without_duplicate_references() {
+    let original = project(false, false);
+    let mut lock = original.lock().clone();
+    let key = DependencyKey::parse("assets").unwrap();
+    let dependency = lock.dependencies.get_mut(&key).unwrap();
+    let mut files = dependency.files.as_slice().to_vec();
+    for (index, file) in files.iter_mut().enumerate() {
+        let layer = if index == 0 {
+            ContentLayer::Common
+        } else {
+            ContentLayer::Client
+        };
+        let bytes: &[u8] = if index == 0 { b"common" } else { b"client" };
+        file.expected.digests = Some(acquired(bytes).observed_digests().clone());
+        file.expected.size = Some(bytes.len() as u64);
+        file.provenance.declared_digests = file.expected.digests.clone();
+        file.placements = NonEmpty::new(vec![Placement {
+            destination: InstallDestination::parse("resourcepacks/layered.zip").unwrap(),
+            layer,
+            requirements: Requirements {
+                client: Requirement::Required,
+                server: if index == 0 {
+                    Requirement::Required
+                } else {
+                    Requirement::Unsupported
+                },
+            },
+        }])
+        .unwrap();
+    }
+    dependency.files = NonEmpty::new(files).unwrap();
+    let mut intent = original.intent().clone();
+    intent.roots.get_mut(&key).unwrap().placement = PlacementIntent::Explicit(
+        NonEmpty::new(
+            dependency
+                .files
+                .as_slice()
+                .iter()
+                .flat_map(|file| file.placements.as_slice().iter().cloned())
+                .collect(),
+        )
+        .unwrap(),
+    );
+    let decoded = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "fixture")
+        .unwrap();
+    lock.intent_revision = decoded.semantic_revision();
+    let project = ResolvedProject::validate(intent, lock.clone(), lock.intent_revision).unwrap();
+    assert!(
+        MrpackPlan::prepare(
+            &project,
+            &BTreeMap::new(),
+            vec![],
+            OptionalConversion::RejectMetadataLoss
+        )
+        .is_err()
+    );
+    let files = BTreeMap::from([
+        (
+            LockedFileKey {
+                dependency: key.clone(),
+                slot: FileSlot::parse("first").unwrap(),
+            },
+            build_file(b"common"),
+        ),
+        (
+            LockedFileKey {
+                dependency: key,
+                slot: FileSlot::parse("second").unwrap(),
+            },
+            build_file(b"client"),
+        ),
+    ]);
+    let plan = MrpackPlan::prepare(
+        &project,
+        &files,
+        vec![],
+        OptionalConversion::RejectMetadataLoss,
+    )
+    .unwrap();
+    let mut output = tempfile::tempfile().unwrap();
+    plan.write(&mut output, &Cancellation::default()).unwrap();
+    output.rewind().unwrap();
+    let mut archive = zip::ZipArchive::new(output).unwrap();
+    let index: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert!(index["files"].as_array().unwrap().is_empty());
+    for (prefix, expected) in [
+        ("server-overrides", "common"),
+        ("client-overrides", "client"),
+    ] {
+        let mut bytes = String::new();
+        archive
+            .by_name(&format!("{prefix}/resourcepacks/layered.zip"))
+            .unwrap()
+            .read_to_string(&mut bytes)
+            .unwrap();
+        assert_eq!(bytes, expected);
+    }
+}

@@ -100,25 +100,27 @@ impl ProjectReader {
         Self { recovery }
     }
     /// Bind standard build inputs and each declared local/archive source, including files outside
-    /// managed namespaces. A second capture must retain the exact first document revisions.
+    /// managed namespaces. Only requested artifact destinations enter the read set, not retained
+    /// unrelated distributions. Limits also apply to selected existing outputs; callers must budget
+    /// their before-images. A second capture retains the exact first document revisions.
     pub fn capture_build(
         &self,
         selected: &Path,
+        artifacts: &[PortableRelPath],
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<WorkspaceSnapshot> {
         let documents = self.capture(selected, &[], limits, cancel)?;
         let project = documents.require_resolved()?;
-        let mut scopes = [
-            "pack",
-            "overrides/client",
-            "overrides/server",
-            "templates",
-            "dist",
-        ]
-        .into_iter()
-        .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut scopes = ["pack", "overrides/client", "overrides/server", "templates"]
+            .into_iter()
+            .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for artifact in artifacts {
+            scopes.push(super::layout::ProjectLayout::path(
+                &empack_core::files::ManagedPath::Artifact(artifact.clone()),
+            )?);
+        }
         for dependency in project.lock().dependencies.values() {
             for file in dependency.files.as_slice() {
                 match &file.acquisition {

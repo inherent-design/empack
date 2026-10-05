@@ -496,7 +496,7 @@ source enumeration, acquisition scheduling and CLI build cutover remain pending.
 ## Build read sets and artifact publication
 
 Build capture includes declared local/archive sources outside managed namespaces,
-alongside standard source, template and artifact roots. Both document revisions and
+alongside standard source/template roots and selected artifact destinations. Both document revisions and
 native root identity must survive scope discovery. Captured regular files can be
 copied into private leases with their original source assertions and explicit
 integrity policy. Uncaptured paths and changed bytes fail.
@@ -527,3 +527,20 @@ The normalized lock also rejects a manual acquisition pin that differs from its
 owning exact selection. That regression failed before the correction. Sixteen
 affected backend/document tests pass; build enumeration and command cutover remain
 pending.
+
+## Layered export and selected outputs
+
+Greptile review 29 identified two reproduced preparation failures. Downloads with
+the same destination in different layers now require verified acquisition and
+materialize the effective client/server bytes into separate override locations.
+The mrpack index never contains competing references for one path. Optional
+fallbacks still require an explicit representable choice; embedding cannot silently
+make optional content mandatory.
+
+Build capture now receives exact artifact destinations. It observes their existing
+bytes or absence without recursively reading unrelated retained distributions.
+Selected output before-images remain subject to the caller's configured snapshot
+budget. A retained archive larger than the input file budget no longer blocks an
+unrelated build, and edits to that unrelated output do not invalidate preparation.
+Both regressions failed before the fixes; the nine affected reader/mrpack tests
+pass afterward. These remain engine components awaiting complete CLI integration.

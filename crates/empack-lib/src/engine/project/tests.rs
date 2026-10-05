@@ -104,8 +104,30 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
     let host = temp.path().join("uncreated-state");
     let reader = ProjectReader::new(RecoveryReader::new(host.clone()));
     let cancel = Cancellation::default();
+    fs::create_dir(project.join("dist")).unwrap();
+    fs::write(project.join("dist/old.zip"), vec![0; 8192]).unwrap();
     let captured = reader
-        .capture_build(&project, SnapshotLimits::default(), &cancel)
+        .capture_build(
+            &project,
+            &[PortableRelPath::parse("new.zip", PathSyntax::ArtifactName).unwrap()],
+            SnapshotLimits {
+                file_bytes: 4096,
+                ..SnapshotLimits::default()
+            },
+            &cancel,
+        )
+        .unwrap();
+    assert!(matches!(
+        captured
+            .observations()
+            .entries()
+            .get(&PortableRelPath::parse("dist/new.zip", PathSyntax::ProjectContent).unwrap()),
+        Some(Observation::Absent)
+    ));
+    fs::write(project.join("dist/old.zip"), b"unrelated replacement").unwrap();
+    captured
+        .root()
+        .revalidate(captured.observations(), &cancel)
         .unwrap();
     let (content, _) = captured
         .acquire_file(
@@ -117,7 +139,14 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
         .unwrap();
     assert_eq!(content.lease().len(), 5);
     assert!(!host.exists());
-    assert_eq!(fs::read_dir(&project).unwrap().count(), 3);
+    assert_eq!(fs::read_dir(&project).unwrap().count(), 4);
+    assert!(
+        !captured
+            .observations()
+            .entries()
+            .keys()
+            .any(|path| path.as_str() == "dist/old.zip")
+    );
     fs::write(project.join("input.jar"), b"other").unwrap();
     assert!(
         captured
