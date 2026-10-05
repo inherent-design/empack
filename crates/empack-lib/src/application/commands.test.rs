@@ -2644,7 +2644,7 @@ mod handle_direct_download_jar_tests {
                     project_type: ProjectType::ResourcePack,
                     path: "pack/resourcepacks/my-mod.zip".to_string(),
                     source_url: Some("https://example.com/my-mod.zip".to_string()),
-                    sha256: "deadbeef".to_string(),
+                    sha256: "deadbeef".repeat(8),
                 }),
             )
             .expect("add existing local dependency");
@@ -2785,7 +2785,7 @@ mod handle_direct_download_jar_tests {
                     project_type: ProjectType::ResourcePack,
                     path: "pack/resourcepacks/pack.zip".to_string(),
                     source_url: Some("https://example.com/pack.zip".to_string()),
-                    sha256: "deadbeef".to_string(),
+                    sha256: "deadbeef".repeat(8),
                 }),
             )
             .expect("add existing local dependency");
@@ -3992,16 +3992,12 @@ fabric = "0.16.0"
         let empack_yml = r#"empack:
   dependencies:
     mod_a:
-      status: resolved
       title: Mod A
       platform: modrinth
-      project_id: ""
       type: mod
     mod_b:
-      status: resolved
       title: Mod B
       platform: modrinth
-      project_id: ""
       type: mod
   minecraft_version: "1.21.1"
   loader: fabric
@@ -4066,10 +4062,8 @@ fabric = "0.15.0"
         let empack_yml = r#"empack:
   dependencies:
     mod_a:
-      status: resolved
       title: Mod A
       platform: modrinth
-      project_id: ""
       type: mod
     mod_b:
       status: resolved
@@ -8182,7 +8176,7 @@ mod tracked_local_dependency_tests {
                     project_type: ProjectType::ResourcePack,
                     path: "pack/resourcepacks/example-pack.zip".to_string(),
                     source_url: Some("https://example.com/example-pack.zip".to_string()),
-                    sha256: "deadbeef".to_string(),
+                    sha256: "deadbeef".repeat(8),
                 }),
             )
             .expect("add local dependency");
@@ -8220,43 +8214,32 @@ mod tracked_local_dependency_tests {
                 .with_binary_file(outside_path.clone(), b"outside-bytes".to_vec()),
         );
 
-        session
-            .filesystem()
-            .config_manager(workdir.clone())
-            .add_dependency_entry(
-                "example-pack",
-                DependencyEntry::Local(LocalDependencyRecord {
+        let manager = session.filesystem().config_manager(workdir.clone());
+        let mut config = manager.load_empack_config().unwrap();
+        config.empack.dependencies.insert("example-pack".into(), DependencyEntry::Local(LocalDependencyRecord {
                     status: DependencyStatus::Local,
                     title: "Example Pack".to_string(),
                     project_type: ProjectType::ResourcePack,
                     path: outside_path.to_string_lossy().to_string(),
                     source_url: Some("https://example.com/example-pack.zip".to_string()),
-                    sha256: "deadbeef".to_string(),
-                }),
-            )
-            .expect("add local dependency");
+                    sha256: "deadbeef".repeat(8),
+                }));
+        let before = serde_saphyr::to_string(&config).unwrap();
+        session.filesystem().write_file(&workdir.join("empack.yml"), &before).unwrap();
 
         let error = handle_remove(&session, vec!["example-pack".to_string()], false)
             .await
             .expect_err("absolute tracked local paths should be rejected");
 
         assert!(
-            error.to_string().contains("must be relative"),
+            format!("{error:#}").contains("traversal component"),
             "expected relative-path guard error, got: {error:#}"
         );
         assert!(
             session.filesystem().exists(&outside_path),
             "absolute tracked local path should not be removed"
         );
-        assert!(
-            session
-                .filesystem()
-                .config_manager(workdir.clone())
-                .find_dependency("example-pack")
-                .expect("read config after rejected removal")
-                .is_some(),
-            "local dependency should remain in empack.yml when the path is rejected"
-        );
+        assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), before);
         assert!(
             session
                 .process_provider
@@ -8277,43 +8260,32 @@ mod tracked_local_dependency_tests {
                 .with_binary_file(outside_path.clone(), b"outside-bytes".to_vec()),
         );
 
-        session
-            .filesystem()
-            .config_manager(workdir.clone())
-            .add_dependency_entry(
-                "example-pack",
-                DependencyEntry::Local(LocalDependencyRecord {
+        let manager = session.filesystem().config_manager(workdir.clone());
+        let mut config = manager.load_empack_config().unwrap();
+        config.empack.dependencies.insert("example-pack".into(), DependencyEntry::Local(LocalDependencyRecord {
                     status: DependencyStatus::Local,
                     title: "Example Pack".to_string(),
                     project_type: ProjectType::ResourcePack,
                     path: "../outside-parent-dir-tracked-local.zip".to_string(),
                     source_url: Some("https://example.com/example-pack.zip".to_string()),
-                    sha256: "deadbeef".to_string(),
-                }),
-            )
-            .expect("add local dependency");
+                    sha256: "deadbeef".repeat(8),
+                }));
+        let before = serde_saphyr::to_string(&config).unwrap();
+        session.filesystem().write_file(&workdir.join("empack.yml"), &before).unwrap();
 
         let error = handle_remove(&session, vec!["example-pack".to_string()], false)
             .await
             .expect_err("parent-dir tracked local paths should be rejected");
 
         assert!(
-            error.to_string().contains("escapes the project directory"),
+            format!("{error:#}").contains("traversal component"),
             "expected project-confinement error, got: {error:#}"
         );
         assert!(
             session.filesystem().exists(&outside_path),
             "parent-dir tracked local path should not be removed"
         );
-        assert!(
-            session
-                .filesystem()
-                .config_manager(workdir.clone())
-                .find_dependency("example-pack")
-                .expect("read config after rejected removal")
-                .is_some(),
-            "local dependency should remain in empack.yml when the path is rejected"
-        );
+        assert_eq!(session.filesystem().read_to_string(&workdir.join("empack.yml")).unwrap(), before);
         assert!(
             session
                 .process_provider
@@ -8413,7 +8385,7 @@ mod tracked_local_dependency_tests {
                     project_type: ProjectType::ResourcePack,
                     path: "pack/resourcepacks/example-pack.zip".to_string(),
                     source_url: Some("https://example.com/example-pack.zip".to_string()),
-                    sha256: "deadbeef".to_string(),
+                    sha256: "deadbeef".repeat(8),
                 }),
             )
             .expect("add local dependency");
@@ -8451,7 +8423,7 @@ mod tracked_local_dependency_tests {
                     project_type: ProjectType::ResourcePack,
                     path: "pack/resourcepacks/example-pack.zip".to_string(),
                     source_url: Some("https://example.com/example-pack.zip".to_string()),
-                    sha256: "deadbeef".to_string(),
+                    sha256: "deadbeef".repeat(8),
                 }),
             )
             .expect("add local dependency");
@@ -8482,27 +8454,14 @@ mod tracked_local_dependency_tests {
             .with_binary_file(outside_path.clone(), outside_bytes);
         let session = MockCommandSession::new().with_filesystem(filesystem);
 
-        session
-            .filesystem()
-            .config_manager(workdir.clone())
-            .add_dependency_entry(
-                "example-pack",
-                DependencyEntry::Local(LocalDependencyRecord {
-                    status: DependencyStatus::Local,
-                    title: "Example Pack".to_string(),
-                    project_type: ProjectType::ResourcePack,
-                    path: outside_path.to_string_lossy().to_string(),
-                    source_url: Some("https://example.com/example-pack.zip".to_string()),
-                    sha256: outside_sha256,
-                }),
-            )
-            .expect("add local dependency");
-
-        let project_plan = session
-            .filesystem()
-            .config_manager(workdir.clone())
-            .create_project_plan()
-            .expect("create project plan");
+        let mut project_plan = session.filesystem().config_manager(workdir.clone()).create_project_plan().unwrap();
+        project_plan.dependencies.push(crate::empack::config::ProjectSpec {
+            key: "example-pack".into(), search_query: "Example Pack".into(),
+            project_type: ProjectType::ResourcePack, minecraft_version: "1.21.1".into(), loader: None,
+            source: crate::empack::config::DependencySource::Local {
+                path: outside_path.to_string_lossy().to_string(), source_url: None, sha256: outside_sha256,
+            },
+        });
         let issues = validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
 
         assert_eq!(issues.len(), 1, "absolute path should produce one validation issue");
@@ -8524,27 +8483,14 @@ mod tracked_local_dependency_tests {
             .with_binary_file(outside_path, outside_bytes);
         let session = MockCommandSession::new().with_filesystem(filesystem);
 
-        session
-            .filesystem()
-            .config_manager(workdir.clone())
-            .add_dependency_entry(
-                "example-pack",
-                DependencyEntry::Local(LocalDependencyRecord {
-                    status: DependencyStatus::Local,
-                    title: "Example Pack".to_string(),
-                    project_type: ProjectType::ResourcePack,
-                    path: "../outside-parent-dir-validate-local-dependency.zip".to_string(),
-                    source_url: Some("https://example.com/example-pack.zip".to_string()),
-                    sha256: outside_sha256,
-                }),
-            )
-            .expect("add local dependency");
-
-        let project_plan = session
-            .filesystem()
-            .config_manager(workdir.clone())
-            .create_project_plan()
-            .expect("create project plan");
+        let mut project_plan = session.filesystem().config_manager(workdir.clone()).create_project_plan().unwrap();
+        project_plan.dependencies.push(crate::empack::config::ProjectSpec {
+            key: "example-pack".into(), search_query: "Example Pack".into(),
+            project_type: ProjectType::ResourcePack, minecraft_version: "1.21.1".into(), loader: None,
+            source: crate::empack::config::DependencySource::Local {
+                path: "../outside-parent-dir-validate-local-dependency.zip".to_string(), source_url: None, sha256: outside_sha256,
+            },
+        });
         let issues = validate_local_dependencies(session.filesystem(), &workdir, &project_plan);
 
         assert_eq!(issues.len(), 1, "parent-dir path should produce one validation issue");

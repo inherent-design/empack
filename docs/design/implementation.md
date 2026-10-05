@@ -117,3 +117,15 @@ The unknown-algorithm regression failed before this change and passes afterward.
 Tests also cover digest widths, duplicate conflicts, mixed-digest mismatches and
 MD5 evidence preservation. The adapter uses RustCrypto's MD5 implementation solely
 for the accepted compatibility policy; the semantic core has no dependencies.
+
+## Document value validation
+
+Dependency decoding and publication validate provider IDs and pins, environment
+representability, local file paths and SHA-256 declarations. Import preparation
+also validates provider IDs, pins and destinations before forced replacement.
+Malformed explicit intent cannot enter execution as an implicit search.
+
+This hardens the existing wire adapter while it is replaced. It does not complete
+the normalized schema, exact lock or lossless document editing gates. Invalid
+manual-document tests bypass the writer deliberately and assert that command
+failure preserves the original document and outside files.

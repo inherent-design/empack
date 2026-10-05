@@ -176,8 +176,8 @@ fn manifest_with_content(content: Vec<ContentEntry>) -> ModpackManifest {
 fn offline_modrinth_pref(destination_path: &str) -> PlatformRef {
     let mut pref = modrinth_pref("AANobbMI");
     pref.destination_path = destination_path.to_string();
-    pref.file_id = Some("version-123".to_string());
-    pref.download_urls = vec!["https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar".to_string()];
+    pref.file_id = Some("Version1".to_string());
+    pref.download_urls = vec!["https://cdn.modrinth.com/data/AANobbMI/versions/Version1/sodium.jar".to_string()];
     pref.hashes
         .insert("sha512".to_string(), "deadbeef".to_string());
     pref.resolved_name = Some("Sodium".to_string());
@@ -1436,7 +1436,7 @@ async fn test_resolve_modrinth_project_records_headers_and_metadata() {
         .with_header("x-ratelimit-remaining", "5")
         .with_header("x-ratelimit-limit", "300")
         .with_header("x-ratelimit-reset", "1")
-        .with_body(r#"{"id":"version-123"}"#)
+        .with_body(r#"{"id":"Version1"}"#)
         .create_async()
         .await;
     let project_mock = server
@@ -1468,7 +1468,7 @@ async fn test_resolve_modrinth_project_records_headers_and_metadata() {
     )
     .await;
 
-    assert_eq!(pref.file_id.as_deref(), Some("version-123"));
+    assert_eq!(pref.file_id.as_deref(), Some("Version1"));
     assert_eq!(pref.resolved_name.as_deref(), Some("Sodium"));
     assert_eq!(pref.resolved_slug.as_deref(), Some("sodium"));
     assert_eq!(pref.resolved_type, Some(crate::primitives::ProjectType::Mod));
@@ -1498,7 +1498,7 @@ async fn test_resolve_modrinth_project_uses_cdn_version_id_without_hash_lookup()
 
     let mut pref = modrinth_pref("AANobbMI");
     pref.download_urls =
-        vec!["https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar".to_string()];
+        vec!["https://cdn.modrinth.com/data/AANobbMI/versions/Version1/sodium.jar".to_string()];
     pref.hashes
         .insert("sha1".to_string(), "deadbeef".to_string());
 
@@ -1517,7 +1517,7 @@ async fn test_resolve_modrinth_project_uses_cdn_version_id_without_hash_lookup()
     )
     .await;
 
-    assert_eq!(pref.file_id.as_deref(), Some("version-123"));
+    assert_eq!(pref.file_id.as_deref(), Some("Version1"));
     assert_eq!(pref.resolved_name.as_deref(), Some("Sodium"));
     assert_eq!(pref.resolved_slug.as_deref(), Some("sodium"));
     assert_eq!(pref.resolved_type, Some(crate::primitives::ProjectType::Mod));
@@ -1731,19 +1731,19 @@ async fn test_resolve_manifest_concurrent_modrinth_requests_share_budget_without
 fn test_extract_modrinth_and_forgecdn_helper_edges() {
     assert_eq!(
         extract_modrinth_project_id(
-            "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar",
+            "https://cdn.modrinth.com/data/AANobbMI/versions/Version1/sodium.jar",
         ),
         Some("AANobbMI".to_string())
     );
     assert_eq!(
-        extract_modrinth_project_id("https://cdn.modrinth.com/data//versions/version-123/sodium.jar"),
+        extract_modrinth_project_id("https://cdn.modrinth.com/data//versions/Version1/sodium.jar"),
         None
     );
     assert_eq!(
         extract_modrinth_version_id(
-            "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar",
+            "https://cdn.modrinth.com/data/AANobbMI/versions/Version1/sodium.jar",
         ),
-        Some("version-123".to_string())
+        Some("Version1".to_string())
     );
     assert_eq!(
         extract_modrinth_version_id("https://cdn.modrinth.com/data/AANobbMI/versions//sodium.jar"),
@@ -1991,13 +1991,13 @@ async fn test_add_platform_ref_modrinth_offline_args() {
             "--project-id",
             "AANobbMI",
             "--version-id",
-            "version-123",
+            "Version1",
             "--name",
             "Sodium",
             "--filename",
             "sodium.jar",
             "--url",
-            "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar",
+            "https://cdn.modrinth.com/data/AANobbMI/versions/Version1/sodium.jar",
             "--hash",
             "deadbeef",
             "--hash-format",
@@ -2039,10 +2039,10 @@ async fn test_execute_import_uses_url_derived_modrinth_version_id_for_packwiz_ad
                 destination_path: "mods/sodium.jar".to_string(),
                 platform: ProjectPlatform::Modrinth,
                 project_id: "AANobbMI".to_string(),
-                file_id: Some("version-123".to_string()),
+                file_id: Some("Version1".to_string()),
                 hashes: HashMap::from([("sha512".to_string(), "deadbeef".to_string())]),
                 download_urls: vec![
-                    "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar"
+                    "https://cdn.modrinth.com/data/AANobbMI/versions/Version1/sodium.jar"
                         .to_string(),
                 ],
                 env: SideEnv {
@@ -2092,7 +2092,7 @@ async fn test_execute_import_uses_url_derived_modrinth_version_id_for_packwiz_ad
                 && call
                     .args
                     .windows(2)
-                    .any(|pair| pair[0] == "--version-id" && pair[1] == "version-123")
+                    .any(|pair| pair[0] == "--version-id" && pair[1] == "Version1")
         }),
         "expected packwiz add call with --project-id and --version-id: {packwiz_calls:?}"
     );
@@ -2112,7 +2112,7 @@ async fn test_execute_import_uses_url_derived_modrinth_version_id_for_packwiz_ad
     match dependency.1 {
         DependencyEntry::Resolved(record) => {
             assert_eq!(record.project_id, "AANobbMI");
-            assert_eq!(record.version.as_deref(), Some("version-123"));
+            assert_eq!(record.version.as_deref(), Some("Version1"));
             assert_eq!(record.title, "Sodium");
         }
         other => panic!("expected resolved dependency entry, got {other:?}"),
@@ -2207,13 +2207,13 @@ async fn test_add_platform_ref_retry_exhaustion() {
         "--project-id".to_string(),
         "AANobbMI".to_string(),
         "--version-id".to_string(),
-        "version-123".to_string(),
+        "Version1".to_string(),
         "--name".to_string(),
         "Sodium".to_string(),
         "--filename".to_string(),
         "sodium.jar".to_string(),
         "--url".to_string(),
-        "https://cdn.modrinth.com/data/AANobbMI/versions/version-123/sodium.jar".to_string(),
+        "https://cdn.modrinth.com/data/AANobbMI/versions/Version1/sodium.jar".to_string(),
         "--hash".to_string(),
         "deadbeef".to_string(),
         "--hash-format".to_string(),
@@ -2302,7 +2302,7 @@ fn override_fallback_requires_destination_and_environment_coverage() {
 async fn mixed_requirements_fail_before_project_initialization() {
     let session = crate::application::session_mocks::MockCommandSession::new();
     let target_dir = mock_root().join("mixed-requirements");
-    let mut pref = modrinth_pref("P");
+    let mut pref = modrinth_pref("Project1");
     pref.env = SideEnv { client: SideRequirement::Required, server: SideRequirement::Optional };
     let result = execute_import(ResolvedManifest {
         manifest: manifest_with_content(vec![ContentEntry::PlatformReferenced(pref)]), warnings: vec![],
@@ -2351,4 +2351,23 @@ async fn nonportable_override_is_rejected_before_project_or_backend_changes() {
     assert!(result.to_string().contains("reserved device name"), "{result}");
     assert_eq!(session.filesystem_provider.read_to_string(&root.join("empack.yml")).unwrap(), "original intent");
     assert!(session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN).is_empty());
+}
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn malformed_provider_identity_is_rejected_before_import_mutation() {
+    use crate::application::session_mocks::MockCommandSession;
+    for (project, pin) in [("sodium", None), ("AANobbMI", Some("latest"))] {
+        let session = MockCommandSession::new();
+        let root = mock_root().join("invalid-provider-import");
+        session.filesystem_provider.create_dir_all(&root).unwrap();
+        session.filesystem_provider.write_file(&root.join("empack.yml"), "original intent").unwrap();
+        let mut pref = modrinth_pref(project);
+        pref.file_id = pin.map(str::to_owned);
+        let result = prepare_import(ResolvedManifest { manifest: manifest_with_content(vec![ContentEntry::PlatformReferenced(pref)]), warnings: vec![] },
+            ImportConfig { target_dir: root.clone(), pack_name: "new".into(), author: "author".into(), version: "1".into(), datapack_folder: None, acceptable_game_versions: None }, &session).await;
+        assert!(result.is_err());
+        assert_eq!(session.filesystem_provider.read_to_string(&root.join("empack.yml")).unwrap(), "original intent");
+        assert!(session.process_provider.get_calls().is_empty());
+    }
 }

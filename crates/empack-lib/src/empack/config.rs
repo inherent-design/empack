@@ -145,7 +145,7 @@ pub enum DependencyEntry {
 impl<'de> Deserialize<'de> for DependencyEntry {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = serde_json::Value::deserialize(deserializer)?;
-        match value.get("status") {
+        let entry = match value.get("status") {
             Some(serde_json::Value::String(status)) if status == "resolved" => {
                 serde_json::from_value(value)
                     .map(Self::Resolved)
@@ -168,7 +168,46 @@ impl<'de> Deserialize<'de> for DependencyEntry {
             None => serde_json::from_value(value)
                 .map(Self::Search)
                 .map_err(serde::de::Error::custom),
+        }?;
+        entry.validate().map_err(serde::de::Error::custom)?;
+        Ok(entry)
+    }
+}
+
+impl DependencyEntry {
+    /// Validate semantic intent before an adapter constructs plans or publishes it.
+    /// This checks values only; native file authority remains a workflow concern.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        match self {
+            Self::Resolved(record) => {
+                anyhow::ensure!(
+                    record.status == DependencyStatus::Resolved,
+                    "Provider record must declare status: resolved"
+                );
+                let identity = super::installed::DependencyIdentity::from_record(record)?;
+                if let Some(pin) = &record.version {
+                    identity.project.parse_pin(pin)?;
+                }
+                if let Some(env) = &record.environment {
+                    super::url_file::requirements(env)?;
+                }
+            }
+            Self::Local(record) => {
+                anyhow::ensure!(
+                    record.status == DependencyStatus::Local,
+                    "Local record must declare status: local"
+                );
+                empack_core::path::InstallDestination::parse(&record.path)?;
+                anyhow::ensure!(
+                    record.path.starts_with("pack/") && record.path.len() > 5,
+                    "Tracked local dependency must name a file under pack/"
+                );
+                empack_core::digest::ExpectedDigest::parse("sha256", &record.sha256)?;
+            }
+            Self::Url(record) => record.validate()?,
+            Self::Search(_) => {}
         }
+        Ok(())
     }
 }
 
@@ -723,6 +762,11 @@ impl<'a> ConfigManager<'a> {
         slug: &str,
         entry: DependencyEntry,
     ) -> Result<(), ConfigError> {
+        entry
+            .validate()
+            .map_err(|error| ConfigError::ValidationError {
+                reason: error.to_string(),
+            })?;
         let empack_path = self.workdir.join("empack.yml");
 
         // Load existing config or create new one

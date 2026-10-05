@@ -1246,6 +1246,16 @@ pub async fn prepare_import(
                 verified_urls.insert(index, file.verify_download(session).await?);
             }
             ContentEntry::PlatformReferenced(pref) => {
+                let identity = super::installed::DependencyIdentity::parse(
+                    pref.platform,
+                    &pref.project_id,
+                    pref.resolved_type
+                        .unwrap_or(crate::primitives::ProjectType::Mod),
+                )?;
+                if let Some(pin) = &pref.file_id {
+                    identity.project.parse_pin(pin)?;
+                }
+                empack_core::path::InstallDestination::parse(&pref.destination_path)?;
                 super::url_file::requirements(&imported_requirements(pref))?;
             }
             ContentEntry::EmbeddedJar(embed) => {

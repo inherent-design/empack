@@ -526,7 +526,7 @@ empack:
       status: resolved
       title: Some Mod
       platform: modrinth
-      project_id: test-id
+      project_id: TestMod1
       type: mod
   minecraft_version: "1.21"
 "#;
@@ -628,13 +628,13 @@ empack:
       status: resolved
       title: "Xaero's Minimap"
       platform: modrinth
-      project_id: test-id-minimap
+      project_id: Minimap1
       type: mod
     vanilla_tweaks:
       status: resolved
       title: Vanilla Tweaks
       platform: modrinth
-      project_id: test-id-tweaks
+      project_id: Tweaks01
       type: datapack
   minecraft_version: "1.21"
   loader: fabric
@@ -737,7 +737,7 @@ empack:
       platform: modrinth
       project_id: P7dR8mSH
       type: mod
-      version: "0.92.0"
+      version: "Version1"
   minecraft_version: "1.21"
   loader: fabric
 "#;
@@ -756,7 +756,7 @@ empack:
         DependencySource::Platform {
             project_id: "P7dR8mSH".to_string(),
             project_platform: ProjectPlatform::Modrinth,
-            version_pin: Some("0.92.0".to_string()),
+            version_pin: Some("Version1".to_string()),
         }
     );
 }
@@ -1333,7 +1333,7 @@ empack:
       status: resolved
       title: "Xaero's Minimap"
       platform: modrinth
-      project_id: test-id-minimap
+      project_id: Minimap1
       type: mod
   minecraft_version: "1.21"
   loader: fabric
@@ -1423,7 +1423,7 @@ fn test_serde_round_trip_resolved_curseforge_with_version() {
         platform: ProjectPlatform::CurseForge,
         project_id: "238222".to_string(),
         project_type: ProjectType::Mod,
-        version: Some("4.7.0".to_string()),
+        version: Some("4700001".to_string()),
     });
 
     let yaml = serde_saphyr::to_string(&entry).unwrap();
@@ -1438,7 +1438,7 @@ fn test_serde_round_trip_resolved_curseforge_with_version() {
             platform: ProjectPlatform::CurseForge,
             project_id: "238222".to_string(),
             project_type: ProjectType::Mod,
-            version: Some("4.7.0".to_string()),
+            version: Some("4700001".to_string()),
         })
     );
 }
@@ -1450,7 +1450,7 @@ fn test_serde_round_trip_resolved_project_type_datapack() {
         status: DependencyStatus::Resolved,
         title: "Vanilla Tweaks".to_string(),
         platform: ProjectPlatform::Modrinth,
-        project_id: "test-dp".to_string(),
+        project_id: "DataPack".to_string(),
         project_type: ProjectType::Datapack,
         version: None,
     });
@@ -1465,7 +1465,7 @@ fn test_serde_round_trip_resolved_project_type_datapack() {
             status: DependencyStatus::Resolved,
             title: "Vanilla Tweaks".to_string(),
             platform: ProjectPlatform::Modrinth,
-            project_id: "test-dp".to_string(),
+            project_id: "DataPack".to_string(),
             project_type: ProjectType::Datapack,
             version: None,
         })
@@ -1479,7 +1479,7 @@ fn test_serde_round_trip_resolved_project_type_resourcepack() {
         status: DependencyStatus::Resolved,
         title: "Faithful".to_string(),
         platform: ProjectPlatform::CurseForge,
-        project_id: "test-rp".to_string(),
+        project_id: "123456".to_string(),
         project_type: ProjectType::ResourcePack,
         version: None,
     });
@@ -1494,7 +1494,7 @@ fn test_serde_round_trip_resolved_project_type_resourcepack() {
             status: DependencyStatus::Resolved,
             title: "Faithful".to_string(),
             platform: ProjectPlatform::CurseForge,
-            project_id: "test-rp".to_string(),
+            project_id: "123456".to_string(),
             project_type: ProjectType::ResourcePack,
             version: None,
         })
@@ -1508,7 +1508,7 @@ fn test_serde_round_trip_resolved_project_type_shader() {
         status: DependencyStatus::Resolved,
         title: "Complementary Shaders".to_string(),
         platform: ProjectPlatform::Modrinth,
-        project_id: "test-sh".to_string(),
+        project_id: "Shaders1".to_string(),
         project_type: ProjectType::Shader,
         version: None,
     });
@@ -1523,7 +1523,7 @@ fn test_serde_round_trip_resolved_project_type_shader() {
             status: DependencyStatus::Resolved,
             title: "Complementary Shaders".to_string(),
             platform: ProjectPlatform::Modrinth,
-            project_id: "test-sh".to_string(),
+            project_id: "Shaders1".to_string(),
             project_type: ProjectType::Shader,
             version: None,
         })
@@ -1560,32 +1560,17 @@ fn test_serde_round_trip_resolved_unicode_title() {
 }
 
 #[test]
-fn test_serde_round_trip_resolved_special_chars_project_id() {
-    let entry = DependencyEntry::Resolved(DependencyRecord {
-                        environment: None,
-        status: DependencyStatus::Resolved,
-        title: "Test Mod".to_string(),
-        platform: ProjectPlatform::Modrinth,
-        project_id: "A-B_c.123".to_string(),
-        project_type: ProjectType::Mod,
-        version: None,
-    });
-
-    let yaml = serde_saphyr::to_string(&entry).unwrap();
-    let deserialized: DependencyEntry = serde_saphyr::from_str(&yaml).unwrap();
-
-    assert_eq!(
-        deserialized,
-        DependencyEntry::Resolved(DependencyRecord {
-                        environment: None,
-            status: DependencyStatus::Resolved,
-            title: "Test Mod".to_string(),
-            platform: ProjectPlatform::Modrinth,
-            project_id: "A-B_c.123".to_string(),
-            project_type: ProjectType::Mod,
-            version: None,
-        })
-    );
+fn test_explicit_provider_ids_reject_selector_syntax() {
+    for (platform, project_id, version) in [
+        ("modrinth", "A-B_c.123", None),
+        ("modrinth", "sodium", None),
+        ("modrinth", "AANobbMI", Some("latest")),
+        ("curseforge", "0238222", None),
+        ("curseforge", "238222", Some("0")),
+    ] {
+        let value = serde_json::json!({"status":"resolved", "title":"Test", "platform":platform, "project_id":project_id, "version":version});
+        assert!(serde_json::from_value::<DependencyEntry>(value).is_err());
+    }
 }
 
 // ─── DependencySearch serde round-trip tests ──────────────────────────────
@@ -1722,7 +1707,7 @@ title: Unresolved Mod
 
 #[test]
 fn test_untagged_yaml_resolved_missing_platform_fails() {
-    let yaml = "status: resolved\ntitle: Broken Mod\nproject_id: test-id\ntype: mod\n";
+    let yaml = "status: resolved\ntitle: Broken Mod\nproject_id: TestMod1\ntype: mod\n";
     let error = serde_saphyr::from_str::<DependencyEntry>(yaml).unwrap_err();
     assert!(error.to_string().contains("missing field `platform`"));
 }
@@ -1735,7 +1720,7 @@ fn test_local_dependency_entry_round_trips_with_exact_fields() {
         project_type: ProjectType::ResourcePack,
         path: "pack/resourcepacks/example-pack.zip".to_string(),
         source_url: Some("https://example.com/example-pack.zip".to_string()),
-        sha256: "deadbeefcafebabe".to_string(),
+        sha256: "deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe".to_string(),
     });
 
     let serialized = serde_saphyr::to_string(&entry).expect("serialize local dependency");
@@ -1744,7 +1729,7 @@ fn test_local_dependency_entry_round_trips_with_exact_fields() {
     assert!(serialized.contains("type: resourcepack"));
     assert!(serialized.contains("path: pack/resourcepacks/example-pack.zip"));
     assert!(serialized.contains("source_url: https://example.com/example-pack.zip"));
-    assert!(serialized.contains("sha256: deadbeefcafebabe"));
+    assert!(serialized.contains("sha256: deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe"));
 
     let reparsed: DependencyEntry =
         serde_saphyr::from_str(&serialized).expect("parse serialized local dependency");
@@ -1763,7 +1748,7 @@ fn test_config_manager_find_and_remove_local_dependency_entries() {
         project_type: ProjectType::ResourcePack,
         path: "pack/resourcepacks/example-pack.zip".to_string(),
         source_url: Some("https://example.com/example-pack.zip".to_string()),
-        sha256: "deadbeefcafebabe".to_string(),
+        sha256: "deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe".to_string(),
     });
 
     config_manager
@@ -1778,7 +1763,7 @@ fn test_config_manager_find_and_remove_local_dependency_entries() {
     assert!(persisted.contains("type: resourcepack"));
     assert!(persisted.contains("path: pack/resourcepacks/example-pack.zip"));
     assert!(persisted.contains("source_url: https://example.com/example-pack.zip"));
-    assert!(persisted.contains("sha256: deadbeefcafebabe"));
+    assert!(persisted.contains("sha256: deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe"));
 
     let found = config_manager
         .find_dependency("Example Pack")
@@ -1907,7 +1892,7 @@ fn test_empack_config_round_trip_multiple_dependencies() {
                         platform: ProjectPlatform::CurseForge,
                         project_id: "431203".to_string(),
                         project_type: ProjectType::Shader,
-                        version: Some("4.7.2".to_string()),
+                        version: Some("4700002".to_string()),
                     }),
                 );
                 deps
@@ -2275,7 +2260,7 @@ fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
             status: DependencyStatus::Resolved,
             title: "Zebra Mod".to_string(),
             platform: ProjectPlatform::Modrinth,
-            project_id: "zebra-id".to_string(),
+            project_id: "Zebra001".to_string(),
             project_type: ProjectType::Mod,
             version: None,
         }),
@@ -2287,7 +2272,7 @@ fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
             status: DependencyStatus::Resolved,
             title: "Alpha Mod".to_string(),
             platform: ProjectPlatform::Modrinth,
-            project_id: "alpha-id".to_string(),
+            project_id: "Alpha001".to_string(),
             project_type: ProjectType::Mod,
             version: None,
         }),
@@ -2299,7 +2284,7 @@ fn test_btreemap_dependencies_serialize_in_alphabetical_order() {
             status: DependencyStatus::Resolved,
             title: "Middle Mod".to_string(),
             platform: ProjectPlatform::Modrinth,
-            project_id: "middle-id".to_string(),
+            project_id: "Middle01".to_string(),
             project_type: ProjectType::Mod,
             version: None,
         }),
@@ -2548,4 +2533,21 @@ fn explicit_dependency_intent_never_falls_back_to_search() {
     }
     let search: DependencyEntry = serde_saphyr::from_str("title: Sodium\nplatform: modrinth\n").unwrap();
     assert!(matches!(search, DependencyEntry::Search(_)));
+}
+
+#[test]
+fn invalid_local_intent_never_reaches_publication() {
+    let workdir = mock_root().join("invalid-local-publication");
+    let provider = create_mock_config_provider(workdir.clone());
+    let manager = provider.config_manager(workdir.clone());
+    for (path, digest) in [("pack", "a".repeat(64)), ("pack/../outside.jar", "a".repeat(64)), ("pack/mods/file.jar", "short".into())] {
+        let entry = DependencyEntry::Local(LocalDependencyRecord {
+            status: DependencyStatus::Local, title: "Fixture".into(), project_type: ProjectType::Mod,
+            path: path.into(), source_url: None, sha256: digest,
+        });
+        assert!(manager.add_dependency_entry("fixture", entry.clone()).is_err());
+        assert!(!provider.exists(&workdir.join("empack.yml")));
+        let yaml = serde_saphyr::to_string(&entry).unwrap();
+        assert!(serde_saphyr::from_str::<DependencyEntry>(&yaml).is_err());
+    }
 }
