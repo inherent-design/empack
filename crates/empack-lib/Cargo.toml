@@ -18,6 +18,7 @@ telemetry = [
 ]
 
 [dependencies]
+empack-core = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 dialoguer = { workspace = true }

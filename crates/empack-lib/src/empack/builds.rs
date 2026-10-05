@@ -2031,18 +2031,11 @@ impl<'a> BuildOrchestrator<'a> {
 
 /// Expand actual production prerequisites in dependency order, once per invocation.
 pub fn plan_build_targets(targets: &[BuildTarget]) -> Vec<BuildTarget> {
-    let mut ordered = Vec::new();
-    for target in targets {
-        if matches!(target, BuildTarget::Client | BuildTarget::Server)
-            && !ordered.contains(&BuildTarget::Mrpack)
-        {
-            ordered.push(BuildTarget::Mrpack);
-        }
-        if !ordered.contains(target) {
-            ordered.push(*target);
-        }
-    }
-    ordered
+    let requested: Vec<_> = targets.iter().copied().map(Into::into).collect();
+    empack_core::projection::plan_build_targets(&requested)
+        .into_iter()
+        .map(Into::into)
+        .collect()
 }
 
 #[cfg(test)]

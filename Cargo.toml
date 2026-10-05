@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/empack-lib", "crates/empack", "crates/empack-tests"]
+members = ["crates/empack-core", "crates/empack-lib", "crates/empack", "crates/empack-tests"]
 
 [workspace.package]
 authors = ["mannie.exe <mannie@inherent.design>"]
@@ -9,7 +9,11 @@ license = "Apache-2.0"
 repository = "https://github.com/inherent-design/empack"
 version = "0.0.0-dev"
 
+[workspace.metadata.empack]
+release-target = "0.5.0-alpha.1"
+
 [workspace.dependencies]
+empack-core = { path = "crates/empack-core" }
 empack-lib = { path = "crates/empack-lib", default-features = true }
 
 # External dependencies (versions shared across workspace)

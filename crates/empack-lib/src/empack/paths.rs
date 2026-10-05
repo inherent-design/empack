@@ -1,19 +1,12 @@
 //! Workflow checks for generated files. The filesystem provider remains path-transparent.
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::path::{Component, Path};
 
 /// Reject metadata that cannot form a portable, single filename component.
 pub fn validate_filename(value: &str) -> Result<()> {
-    if value.is_empty()
-        || matches!(value, "." | "..")
-        || value.ends_with(['.', ' '])
-        || value
-            .chars()
-            .any(|c| c.is_control() || "/\\:<>\"|?*".contains(c))
-    {
-        bail!("Invalid artifact filename component: {value:?}");
-    }
+    empack_core::path::ArtifactStem::parse(value)
+        .with_context(|| format!("Invalid artifact filename component: {value:?}"))?;
     Ok(())
 }
 
@@ -47,6 +40,7 @@ impl TrackedProjectFile {
         root: &Path,
         relative: &str,
     ) -> Result<Self> {
+        let spelling = relative;
         let relative = Path::new(relative);
         anyhow::ensure!(
             relative.is_relative(),
@@ -65,6 +59,7 @@ impl TrackedProjectFile {
             !inside.as_os_str().is_empty(),
             "Tracked local dependency must name a file under pack/"
         );
+        empack_core::path::InstallDestination::parse(spelling)?;
         let path = root.join(relative);
         fs.validate_output_path(root, &path)?;
         anyhow::ensure!(
@@ -99,6 +94,13 @@ mod tests {
             assert!(validate_filename(value).is_err(), "{value:?}");
         }
         assert!(validate_filename("A Pack $(literal)").is_ok());
+    }
+
+    #[test]
+    fn reserved_device_names_are_rejected_on_every_host() {
+        for name in ["CON", "nul.jar", "COM1.zip", "lpt9", "CONIN$", "LPT².txt"] {
+            assert!(validate_filename(name).is_err(), "{name}");
+        }
     }
 
     #[test]

@@ -65,6 +65,31 @@ pub enum BuildTarget {
     ServerFull,
 }
 
+impl From<BuildTarget> for empack_core::projection::BuildTarget {
+    fn from(value: BuildTarget) -> Self {
+        match value {
+            BuildTarget::Mrpack => Self::Mrpack,
+            BuildTarget::Client => Self::Client,
+            BuildTarget::Server => Self::Server,
+            BuildTarget::ClientFull => Self::ClientFull,
+            BuildTarget::ServerFull => Self::ServerFull,
+        }
+    }
+}
+
+impl From<empack_core::projection::BuildTarget> for BuildTarget {
+    fn from(value: empack_core::projection::BuildTarget) -> Self {
+        use empack_core::projection::BuildTarget as Target;
+        match value {
+            Target::Mrpack => Self::Mrpack,
+            Target::Client => Self::Client,
+            Target::Server => Self::Server,
+            Target::ClientFull => Self::ClientFull,
+            Target::ServerFull => Self::ServerFull,
+        }
+    }
+}
+
 impl fmt::Display for BuildTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

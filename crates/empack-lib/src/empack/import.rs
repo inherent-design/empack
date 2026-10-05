@@ -1219,6 +1219,10 @@ pub async fn execute_import(
             });
         }
     }
+    for entry in &resolved.manifest.overrides {
+        let root = config.target_dir.join(entry.side.project_directory());
+        sanitize_archive_path(&root, &entry.destination_path, session.filesystem())?;
+    }
     // Validate all semantic conversions, and verify provider-free bytes, before initialization.
     let mut verified_urls = HashMap::new();
     for (index, entry) in resolved.manifest.content.iter().enumerate() {
@@ -1231,6 +1235,8 @@ pub async fn execute_import(
                 super::url_file::requirements(&imported_requirements(pref))?;
             }
             ContentEntry::EmbeddedJar(embed) => {
+                empack_core::path::InstallDestination::parse(&embed.destination_path)?;
+
                 let (_, optional) = super::url_file::requirements(&embed.env)?;
                 anyhow::ensure!(
                     !optional,
@@ -1870,10 +1876,10 @@ fn sanitize_archive_path(
     relative: &str,
     fs: &dyn crate::application::session::FileSystemProvider,
 ) -> Result<PathBuf> {
-    anyhow::ensure!(
-        !relative.contains('\\'),
-        "Archive paths must use forward slashes"
-    );
+    empack_core::path::PortableRelPath::parse(
+        relative,
+        empack_core::path::PathSyntax::ArchiveMember,
+    )?;
     let destination = base.join(relative);
     fs.validate_output_path(base, &destination)?;
     Ok(destination)

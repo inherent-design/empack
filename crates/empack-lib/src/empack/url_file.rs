@@ -74,20 +74,7 @@ impl UrlDependencyRecord {
             self.status == DependencyStatus::Url,
             "URL record must declare status: url"
         );
-        ensure!(
-            !self.destination.contains('\\'),
-            "URL destinations must use forward slashes"
-        );
-        let root = Path::new("pack");
-        super::paths::validate_relative_destination(root, &root.join(&self.destination))?;
-        for component in Path::new(&self.destination).components() {
-            super::paths::validate_filename(
-                component
-                    .as_os_str()
-                    .to_str()
-                    .context("Non-UTF8 URL file path")?,
-            )?;
-        }
+        empack_core::path::InstallDestination::parse(&self.destination)?;
         ensure!(
             !self.destination.ends_with(".pw.toml"),
             "URL content cannot replace packwiz metadata"

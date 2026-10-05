@@ -2328,3 +2328,27 @@ fn downloadable_world_import_preserves_type_through_manifest_serialization() {
     assert_eq!(restored, entry);
     assert!(yaml.contains("type: world"));
 }
+
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn nonportable_override_is_rejected_before_project_or_backend_changes() {
+    use crate::application::session_mocks::MockCommandSession;
+    let session = MockCommandSession::new();
+    let root = mock_root().join("invalid-import");
+    session.filesystem_provider.create_dir_all(&root).unwrap();
+    session.filesystem_provider.write_file(&root.join("empack.yml"), "original intent").unwrap();
+    let result = execute_import(
+        ResolvedManifest {
+            manifest: make_test_manifest(vec![], vec![make_override("config/CON.txt")]),
+            warnings: vec![],
+        },
+        ImportConfig {
+            target_dir: root.clone(), pack_name: "new".into(), author: "author".into(),
+            version: "1".into(), datapack_folder: None, acceptable_game_versions: None,
+        },
+        &session,
+    ).await.unwrap_err();
+    assert!(result.to_string().contains("reserved device name"), "{result}");
+    assert_eq!(session.filesystem_provider.read_to_string(&root.join("empack.yml")).unwrap(), "original intent");
+    assert!(session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN).is_empty());
+}
