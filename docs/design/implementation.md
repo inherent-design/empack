@@ -87,3 +87,15 @@ wire structs still belong to the adapter; the normalized codec is not yet landed
 The parser follows the [Modrinth identifier contract](https://docs.modrinth.com/api/)
 and [CurseForge ID fields](https://docs.curseforge.com/rest-api/). Test fixtures use
 provider-shaped IDs. Negative tests retain malformed selectors and pins.
+
+## Requirement projection landing
+
+The core represents required, unsupported and optional participation separately
+for client and server. Optional choices retain a logical key, default and
+description. A uniform-format projection refuses mixed required/optional sides
+and distinct choices, rather than collapsing them.
+
+The current format adapter resolves unspecified sides to required before entering
+the core. URL metadata and provider/embedded imports use the same projection;
+the competing import-side matcher is removed. The current wire format cannot
+express choice metadata yet, so full round trips depend on the new codec gate.

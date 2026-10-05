@@ -846,3 +846,12 @@ fn identification_only_treats_not_found_as_absence() {
         assert!(identification_response_found(reqwest::StatusCode::from_u16(status).unwrap()).is_err());
     }
 }
+
+#[test]
+fn missing_format_side_is_decoded_before_semantic_projection() {
+    use empack_core::requirements::{ChoiceKey, Environments, OptionalChoice};
+    let env = SideEnv { client: SideRequirement::Required, server: SideRequirement::Unknown };
+    let semantic = env.to_requirements(OptionalChoice { key: ChoiceKey::parse("file").unwrap(), default_enabled: true, description: None });
+    assert_eq!(semantic.uniform().unwrap().environments, Environments::Both);
+    assert_eq!(crate::empack::url_file::requirements(&env).unwrap(), ("both", false));
+}

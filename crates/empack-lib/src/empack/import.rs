@@ -1526,7 +1526,7 @@ impl PreparedImport {
                     }
                 }
                 ContentEntry::EmbeddedJar(embed) => {
-                    let directory = match side_from_env(&embed.env) {
+                    let directory = match super::url_file::requirements(&embed.env)?.0 {
                         "client" => OverrideSide::ClientOnly.project_directory(),
                         "server" => OverrideSide::ServerOnly.project_directory(),
                         _ => OverrideSide::Both.project_directory(),
@@ -1740,15 +1740,6 @@ async fn add_platform_ref_with_retry(
     unreachable!()
 }
 
-fn side_from_env(env: &crate::empack::content::SideEnv) -> &'static str {
-    use crate::empack::content::SideRequirement::*;
-    match (&env.client, &env.server) {
-        (Required, Unsupported) | (Required, Unknown) | (Optional, Unsupported) => "client",
-        (Unsupported, Required) | (Unknown, Required) | (Unsupported, Optional) => "server",
-        _ => "both",
-    }
-}
-
 fn filename_from_path(dest: &str) -> String {
     std::path::Path::new(dest)
         .file_name()
@@ -1825,7 +1816,11 @@ async fn add_platform_ref(
                 }
 
                 args.push("--side".to_string());
-                args.push(side_from_env(&pref.env).to_string());
+                args.push(
+                    super::url_file::requirements(&imported_requirements(pref))?
+                        .0
+                        .to_string(),
+                );
 
                 if let Some(slug) = &pref.resolved_slug {
                     args.push("--slug".to_string());

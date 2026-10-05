@@ -386,6 +386,25 @@ pub struct SideEnv {
     pub server: SideRequirement,
 }
 
+impl SideEnv {
+    /// Decode format-specific unknown sides as required. Unknown is not a core state.
+    pub fn to_requirements(
+        &self,
+        choice: empack_core::requirements::OptionalChoice,
+    ) -> empack_core::requirements::Requirements {
+        use empack_core::requirements::{Requirement, Requirements};
+        let decode = |side: &SideRequirement| match side {
+            SideRequirement::Required | SideRequirement::Unknown => Requirement::Required,
+            SideRequirement::Unsupported => Requirement::Unsupported,
+            SideRequirement::Optional => Requirement::Optional(choice.clone()),
+        };
+        Requirements {
+            client: decode(&self.client),
+            server: decode(&self.server),
+        }
+    }
+}
+
 /// Which side an override directory targets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverrideSide {

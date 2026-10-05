@@ -1,6 +1,6 @@
 //! Provider-free files retain their source integrity and environment contracts.
 use super::config::DependencyStatus;
-use super::content::{SideEnv, SideRequirement};
+use super::content::SideEnv;
 use crate::application::session::{FileSystemProvider, Session};
 use crate::primitives::ProjectType;
 use anyhow::{Context, Result, ensure};
@@ -29,29 +29,21 @@ pub struct UrlDependencyRecord {
 /// Packwiz supports one requirement for every supported side.
 /// Mixed required/optional sides have no lossless representation.
 pub fn requirements(env: &SideEnv) -> Result<(&'static str, bool)> {
-    use SideRequirement::*;
-    let client = if env.client == Unknown {
-        Required
-    } else {
-        env.client.clone()
+    use empack_core::requirements::{ChoiceKey, Environments, OptionalChoice};
+    // This DTO has no explicit choice field. Its imported per-file choice is enabled
+    // by default. The new codec supplies real choice identities and metadata.
+    let semantic = env.to_requirements(OptionalChoice {
+        key: ChoiceKey::parse("imported-file")?,
+        default_enabled: true,
+        description: None,
+    });
+    let uniform = semantic.uniform()?;
+    let side = match uniform.environments {
+        Environments::Client => "client",
+        Environments::Server => "server",
+        Environments::Both => "both",
     };
-    let server = if env.server == Unknown {
-        Required
-    } else {
-        env.server.clone()
-    };
-    match (client, server) {
-        (Unsupported, Unsupported) => anyhow::bail!("File is unsupported on both environments"),
-        (Required, Optional) | (Optional, Required) => {
-            anyhow::bail!("Mixed required/optional environments cannot be represented by packwiz")
-        }
-        (Optional, Unsupported) => Ok(("client", true)),
-        (Unsupported, Optional) => Ok(("server", true)),
-        (Required, Unsupported) => Ok(("client", false)),
-        (Unsupported, Required) => Ok(("server", false)),
-        (Optional, Optional) => Ok(("both", true)),
-        _ => Ok(("both", false)),
-    }
+    Ok((side, uniform.choice.is_some()))
 }
 
 struct VerifiedDownload {
@@ -533,6 +525,7 @@ mod tests {
     use super::*;
     use crate::application::session::{FileSystemProvider, LiveFileSystemProvider};
     use crate::application::session_mocks::MockCommandSession;
+    use crate::empack::content::SideRequirement;
 
     fn record(url: String) -> UrlDependencyRecord {
         UrlDependencyRecord {
