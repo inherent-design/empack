@@ -7,7 +7,7 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::BTreeMap;
-use std::io::{Read, Seek};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,34 +219,7 @@ impl UrlDependencyRecord {
                 let mut staged =
                     crate::networking::download::acquire(&client, session.process(), url, limit)
                         .await?;
-                if let Some(size) = self.size {
-                    ensure!(
-                        staged.as_file().metadata()?.len() == size,
-                        "Source file size mismatch"
-                    );
-                }
-                let mut hashes = BTreeMap::new();
-                for algorithm in ["sha1", "sha256", "sha512"] {
-                    staged.as_file_mut().rewind()?;
-                    let digest = match algorithm {
-                        "sha1" => digest_reader::<sha1::Sha1>(staged.as_file_mut())?,
-                        "sha256" => digest_reader::<sha2::Sha256>(staged.as_file_mut())?,
-                        _ => digest_reader::<sha2::Sha512>(staged.as_file_mut())?,
-                    };
-                    if let Some(expected) = self.hashes.get(algorithm) {
-                        ensure!(
-                            digest.eq_ignore_ascii_case(expected),
-                            "Source {algorithm} digest mismatch for {}",
-                            self.destination
-                        );
-                    }
-                    hashes.insert(algorithm.to_string(), digest);
-                }
-                Ok::<_, anyhow::Error>(VerifiedDownload {
-                    url: url.clone(),
-                    hashes,
-                    size: staged.as_file().metadata()?.len(),
-                })
+                self.verify_reader(staged.as_file_mut(), url)
             }
             .await;
             match result {
@@ -262,6 +235,120 @@ impl UrlDependencyRecord {
             self.destination,
             failures.join("; ")
         )
+    }
+
+    fn verify_reader(
+        &self,
+        reader: &mut dyn crate::application::session::ReadSeek,
+        url: &str,
+    ) -> Result<VerifiedDownload> {
+        let size = reader.seek(std::io::SeekFrom::End(0))?;
+        ensure!(
+            size <= super::import::MAX_IMPORT_ARCHIVE_BYTES,
+            "Source file exceeds size limit"
+        );
+        if let Some(expected) = self.size {
+            ensure!(size == expected, "Source file size mismatch");
+        }
+        let mut hashes = BTreeMap::new();
+        for algorithm in ["sha1", "sha256", "sha512"] {
+            reader.rewind()?;
+            let digest = match algorithm {
+                "sha1" => digest_reader::<sha1::Sha1>(reader)?,
+                "sha256" => digest_reader::<sha2::Sha256>(reader)?,
+                _ => digest_reader::<sha2::Sha512>(reader)?,
+            };
+            if let Some(expected) = self.hashes.get(algorithm) {
+                ensure!(
+                    digest.eq_ignore_ascii_case(expected),
+                    "Source {algorithm} digest mismatch for {}",
+                    self.destination
+                );
+            }
+            hashes.insert(algorithm.to_string(), digest);
+        }
+        Ok(VerifiedDownload {
+            url: url.into(),
+            hashes,
+            size,
+        })
+    }
+
+    /// Read the pinned backend's v2 cache as a lookup hint, never as integrity evidence.
+    fn verify_cached(
+        &self,
+        fs: &dyn FileSystemProvider,
+        cache: &Path,
+        url: &str,
+    ) -> Result<Option<VerifiedDownload>> {
+        let index_path = cache.join("index.json");
+        fs.validate_output_path(cache, &index_path)?;
+        if !fs.exists(&index_path) {
+            return Ok(None);
+        }
+        ensure!(
+            fs.is_regular_file(&index_path),
+            "Cache index must be a regular file"
+        );
+        let reader = fs.open_reader(&index_path)?;
+        let mut bytes = Vec::new();
+        reader.take(16 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+        ensure!(
+            bytes.len() <= 16 * 1024 * 1024,
+            "Cache index exceeds size limit"
+        );
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct CacheIndex {
+            version: u32,
+            hashes: BTreeMap<String, Vec<String>>,
+        }
+        let index: CacheIndex = serde_json::from_slice(&bytes)?;
+        ensure!(index.version == 2, "Unsupported packwiz cache version");
+        // Match the same strongest digest selected for backend metadata.
+        let algorithm = ["sha512", "sha256", "sha1"]
+            .into_iter()
+            .find(|key| self.hashes.contains_key(*key))
+            .context("Missing source digest")?;
+        let Some(position) = index.hashes.get(algorithm).and_then(|hashes| {
+            hashes
+                .iter()
+                .position(|hash| hash.eq_ignore_ascii_case(&self.hashes[algorithm]))
+        }) else {
+            return Ok(None);
+        };
+        let digest = index
+            .hashes
+            .get("sha256")
+            .and_then(|hashes| hashes.get(position))
+            .context("Cache entry has no content address")?;
+        ensure!(
+            digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "Invalid cache content address"
+        );
+        let path = cache.join(&digest[..2]).join(&digest[2..]);
+        fs.validate_output_path(cache, &path)?;
+        if !fs.exists(&path) {
+            return Ok(None);
+        }
+        ensure!(
+            fs.is_regular_file(&path),
+            "Cached content must be a regular file"
+        );
+        let verified = self
+            .verify_reader(&mut *fs.open_reader(&path)?, url)
+            .with_context(|| {
+                format!(
+                    "Invalid cached content; remove {} and rebuild",
+                    path.display()
+                )
+            })?;
+        ensure!(
+            verified.hashes["sha256"].eq_ignore_ascii_case(digest),
+            "Cache content address mismatch; remove {} and rebuild",
+            path.display()
+        );
+        Ok(Some(verified))
     }
 
     pub fn publish(
@@ -284,7 +371,7 @@ impl UrlDependencyRecord {
     }
 }
 
-/// Verify alternatives for this invocation before switching any installed URL.
+/// Verify cached bytes or download alternatives before switching any installed URL.
 /// Returned hashes are observations of bytes already checked against source intent.
 pub async fn prepare_build(
     session: &dyn Session,
@@ -301,7 +388,19 @@ pub async fn prepare_build(
                 record.is_installed(session.filesystem(), workdir)?,
                 "Missing URL metadata; run sync"
             );
-            prepared.push((record, record.verify_download_details(session).await?));
+            let fs = session.filesystem();
+            let metadata: toml::Value =
+                toml::from_str(&fs.read_to_string(&record.metadata_path(fs, workdir)?)?)?;
+            let url = metadata["download"]["url"]
+                .as_str()
+                .context("Missing installed URL")?;
+            let cache = crate::platform::cache::packwiz_download_cache_dir(workdir)?;
+            session.process().check_cancelled()?;
+            let verified = match record.verify_cached(fs, &cache, url)? {
+                Some(verified) => verified,
+                None => record.verify_download_details(session).await?,
+            };
+            prepared.push((record, verified));
         }
     }
     let mut observed = Vec::new();
@@ -464,6 +563,70 @@ mod tests {
                 client: SideRequirement::Optional,
                 server: SideRequirement::Unsupported,
             },
+        }
+    }
+
+    #[test]
+    fn cached_bytes_are_verified_and_missing_content_is_a_miss() {
+        let root = tempfile::tempdir().unwrap();
+        let record = record("https://example.com/file.zip".into());
+        let digest = &record.hashes["sha256"];
+        let index = serde_json::json!({"Version":2,"Hashes":{"sha256":[digest]}});
+        std::fs::write(root.path().join("index.json"), index.to_string()).unwrap();
+        assert!(
+            record
+                .verify_cached(&LiveFileSystemProvider, root.path(), &record.downloads[0])
+                .unwrap()
+                .is_none()
+        );
+        let path = root.path().join(&digest[..2]).join(&digest[2..]);
+        std::fs::create_dir(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"payload").unwrap();
+        let verified = record
+            .verify_cached(&LiveFileSystemProvider, root.path(), &record.downloads[0])
+            .unwrap()
+            .unwrap();
+        assert_eq!(verified.size, 7);
+        assert_eq!(verified.hashes.len(), 3);
+        // Same length, different bytes: the cache index cannot authorize these bytes.
+        std::fs::write(&path, b"changed").unwrap();
+        let error = record
+            .verify_cached(&LiveFileSystemProvider, root.path(), &record.downloads[0])
+            .err()
+            .unwrap();
+        assert!(format!("{error:#}").contains("digest mismatch"));
+        assert!(error.to_string().contains("remove"));
+    }
+
+    #[test]
+    fn cached_lookup_rejects_untrusted_addresses_and_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let record = record("https://example.com/file.zip".into());
+        let mut sha1_record = record.clone();
+        sha1_record.hashes = BTreeMap::from([("sha1".into(), "a".repeat(40))]);
+        let index = serde_json::json!({"Version":2,"Hashes":{"sha1":["a".repeat(40)],"sha256":["../outside"]}});
+        std::fs::write(root.path().join("index.json"), index.to_string()).unwrap();
+        assert!(
+            sha1_record
+                .verify_cached(&LiveFileSystemProvider, root.path(), &record.downloads[0])
+                .is_err()
+        );
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().unwrap();
+            let digest = &record.hashes["sha256"];
+            std::fs::write(
+                root.path().join("index.json"),
+                serde_json::json!({"Version":2,"Hashes":{"sha256":[digest]}}).to_string(),
+            )
+            .unwrap();
+            std::fs::write(outside.path().join(&digest[2..]), b"payload").unwrap();
+            std::os::unix::fs::symlink(outside.path(), root.path().join(&digest[..2])).unwrap();
+            assert!(
+                record
+                    .verify_cached(&LiveFileSystemProvider, root.path(), &record.downloads[0])
+                    .is_err()
+            );
         }
     }
 

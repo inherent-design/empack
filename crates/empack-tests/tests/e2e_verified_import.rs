@@ -106,6 +106,19 @@ fn e2e_verified_url_import_sync_export_and_remove_preserve_contract() {
             .unwrap()
             .contains("/different-name.bin/fallback")
     );
+    let offline_primary = server
+        .mock("GET", "/different-name.bin")
+        .with_status(503)
+        .expect(0)
+        .create();
+    let offline_fallback = server
+        .mock("GET", "/different-name.bin/fallback")
+        .with_status(503)
+        .expect(0)
+        .create();
+    run(&imported, &["build", "mrpack"]);
+    offline_primary.assert();
+    offline_fallback.assert();
     run(&imported, &["sync"]);
     run(&imported, &["sync"]);
     run(&imported, &["remove", "url:resourcepacks/declared.zip"]);
