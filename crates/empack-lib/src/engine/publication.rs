@@ -25,6 +25,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+const JOURNAL_SCHEMA: u32 = 2;
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -39,10 +40,19 @@ pub struct RecoveryRequired {
     pub operation: String,
 }
 
+/// Whether the receipt describes publication or restoration of an interrupted operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PublicationDisposition {
+    Published,
+    Restored,
+}
+
 /// Durable state reached by a publication attempt. Errors after intent persistence require recovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PublicationReceipt {
+    pub disposition: PublicationDisposition,
     pub operation: String,
     pub changed_files: usize,
     /// Unix directory synchronization was performed. Windows reports file synchronization only.
@@ -115,6 +125,8 @@ struct Journal {
     scopes: Vec<String>,
     limits: SnapshotLimits,
     expected: BTreeMap<String, Fingerprint>,
+    restoring: bool,
+    retained_files: BTreeSet<String>,
     committed: bool,
 }
 
@@ -223,6 +235,7 @@ impl Publisher {
         private_directory(&retained)?;
         sync_directory(&state)?;
         let mut changes = Vec::new();
+        let mut retained_files = BTreeSet::new();
         for (index, change) in plan.changes().iter().enumerate() {
             cancel.check()?;
             let path = ProjectLayout::path(change.target())?;
@@ -244,6 +257,7 @@ impl Publisher {
                     "Original changed while retaining recovery data"
                 );
                 before.sync_all()?;
+                retained_files.insert(format!("before-{index}"));
             }
             let after = match change {
                 FileChange::Replace { after, .. } => Some(Fingerprint::from(after)),
@@ -253,6 +267,7 @@ impl Publisher {
                 let mut file = new_retained_file(&retained, &format!("after-{index}"))?;
                 stage.copy_verified(&path, &mut file, cancel)?;
                 file.sync_all()?;
+                retained_files.insert(format!("after-{index}"));
             }
             changes.push(Change {
                 target: path.as_str().to_owned(),
@@ -269,11 +284,14 @@ impl Publisher {
                 applied: false,
             });
         }
+        for index in 0..changes.len() {
+            retained_files.insert(format!("restore-{index}"));
+        }
         sync_directory(&retained)?;
         hook(PublicationPoint::RecoveryDataDurable)?;
         root.revalidate(&base, cancel)?;
         let mut journal = Journal {
-            schema: 1,
+            schema: JOURNAL_SCHEMA,
             root: root.binding.into(),
             operation,
             changes,
@@ -293,6 +311,8 @@ impl Publisher {
                     ))
                 })
                 .collect::<Result<_>>()?,
+            restoring: false,
+            retained_files,
             committed: false,
         };
         validate_journal(&journal, root)?;
@@ -346,6 +366,146 @@ impl Publisher {
         })
     }
 
+    /// Restore only the journal's own applied files; unrelated edits remain conflicts.
+    /// The inverse operation is persisted before its first replacement and can itself resume.
+    pub fn restore_before_images(&self, root: &ProjectReadRoot) -> Result<PublicationReceipt> {
+        self.restore_with_hook(root, &mut |_| Ok(()))
+    }
+
+    fn restore_with_hook(
+        &self,
+        root: &ProjectReadRoot,
+        hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
+    ) -> Result<PublicationReceipt> {
+        let state = self.project_state(root)?;
+        let _lock = lock(&state)?;
+        let mut journal = load_journal(&state)?.context("No publication journal exists")?;
+        validate_journal(&journal, root)?;
+        if journal.committed {
+            ensure!(
+                journal.restoring,
+                "A committed publication requires a newly planned rollback"
+            );
+            return Ok(receipt(&journal));
+        }
+        let retained = state.open_dir_nofollow(&journal.operation)?;
+        native::reject_reparse(&retained.try_clone()?.into_std_file())?;
+        let limits = journal.limits;
+        if !journal.restoring {
+            // Restoring a corrupt pending candidate needs before-images, not valid after-images.
+            preflight_recovery(root, &retained, &journal, limits, false)?;
+            let mut inverse = Vec::new();
+            let mut expected = journal.expected.clone();
+            for (index, change) in journal.changes.iter().enumerate() {
+                match &change.before {
+                    Some(before) => {
+                        expected.insert(change.target.clone(), before.clone());
+                    }
+                    None => {
+                        expected.remove(&change.target);
+                    }
+                }
+                let path = PortableRelPath::parse(&change.target, PathSyntax::ProjectContent)?;
+                let actual = current_file(root, &path, change)?;
+                let fingerprint = actual
+                    .as_ref()
+                    .map(|file| Fingerprint::from(&content(file)));
+                if fingerprint == change.before {
+                    continue;
+                }
+                ensure!(
+                    fingerprint == change.after,
+                    "Restoration conflict at {}",
+                    change.target
+                );
+                let inverse_index = inverse.len();
+                if let Some(before) = &change.before {
+                    let name = format!("restore-{inverse_index}");
+                    let mut source = native::open_file(&retained, &format!("before-{index}"))?;
+                    // An earlier preparation may have stopped before changing journal direction.
+                    discard_sibling(&retained, &name)?;
+                    let mut candidate = new_retained_file(&retained, &name)?;
+                    let (digest, bytes) = copy_bounded(
+                        &mut source,
+                        &mut candidate,
+                        before.bytes,
+                        &Cancellation::default(),
+                    )?;
+                    ensure!(
+                        digest == before.sha256 && bytes == before.bytes,
+                        "Before-image is corrupt"
+                    );
+                    candidate.sync_all()?;
+                    journal.retained_files.insert(name);
+                }
+                inverse.push(Change {
+                    target: change.target.clone(),
+                    before: fingerprint,
+                    before_object: actual.as_ref().map(|file| file.object.into()),
+                    after: change.before.clone(),
+                    sibling: change
+                        .before
+                        .as_ref()
+                        .map(|_| format!(".empack-publish-{}-{inverse_index}", journal.operation)),
+                    unix_mode: change.unix_mode,
+                    applied: false,
+                });
+            }
+            sync_directory(&retained)?;
+            journal.changes = inverse;
+            journal.expected = expected;
+            journal.restoring = true;
+            validate_journal(&journal, root)?;
+            write_journal(&state, &journal)?;
+            hook(PublicationPoint::IntentDurable)?;
+        }
+        self.finish(root, &state, &retained, &mut journal, limits, hook)
+            .with_context(|| RecoveryRequired {
+                operation: journal.operation.clone(),
+            })
+    }
+
+    /// Reclaim only files named by a committed host journal; the durable receipt remains.
+    pub fn reclaim_committed(&self, root: &ProjectReadRoot) -> Result<u64> {
+        let state = self.project_state(root)?;
+        let _lock = lock(&state)?;
+        let journal = load_journal(&state)?.context("No publication journal exists")?;
+        validate_journal(&journal, root)?;
+        ensure!(
+            journal.committed,
+            "Active recovery data cannot be reclaimed"
+        );
+        let retained = match state.open_dir_nofollow(&journal.operation) {
+            Ok(directory) => directory,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(error.into()),
+        };
+        native::reject_reparse(&retained.try_clone()?.into_std_file())?;
+        let mut bytes = 0u64;
+        for name in &journal.retained_files {
+            match retained.symlink_metadata(name) {
+                Ok(metadata) => {
+                    ensure!(
+                        metadata.is_file() && !metadata.file_type().is_symlink(),
+                        "Retained journal object is not a file"
+                    );
+                    retained.remove_file(name)?;
+                    bytes = bytes
+                        .checked_add(metadata.len())
+                        .context("Reclaimed byte count overflow")?;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        sync_directory(&retained)?;
+        drop(retained);
+        // Unexpected objects prevent directory removal; never recursively delete them.
+        state.remove_dir(&journal.operation)?;
+        sync_directory(&state)?;
+        Ok(bytes)
+    }
+
     fn finish(
         &self,
         root: &ProjectReadRoot,
@@ -355,7 +515,7 @@ impl Publisher {
         limits: SnapshotLimits,
         hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
     ) -> Result<PublicationReceipt> {
-        preflight_recovery(root, retained, journal, limits)?;
+        preflight_recovery(root, retained, journal, limits, true)?;
         for index in 0..journal.changes.len() {
             root.check_binding()?;
             let change = &journal.changes[index];
@@ -375,7 +535,8 @@ impl Publisher {
                 let (parent, leaf) = publication_parent(&root.directory, &path)?;
                 match &change.after {
                     Some(after) => {
-                        let mut source = native::open_file(retained, &format!("after-{index}"))?;
+                        let mut source =
+                            native::open_file(retained, &candidate_name(journal, index))?;
                         let temporary = change
                             .sibling
                             .as_ref()
@@ -443,6 +604,17 @@ impl Publisher {
     }
 }
 
+fn candidate_name(journal: &Journal, index: usize) -> String {
+    format!(
+        "{}-{index}",
+        if journal.restoring {
+            "restore"
+        } else {
+            "after"
+        }
+    )
+}
+
 fn root_key(root: &ProjectReadRoot) -> Result<String> {
     let (seconds, nanos) = root.binding.created.context(
         "Filesystem lacks durable directory creation identity; publication is unsupported",
@@ -473,6 +645,7 @@ fn preflight_recovery(
     retained: &Dir,
     journal: &Journal,
     limits: SnapshotLimits,
+    verify_candidates: bool,
 ) -> Result<()> {
     for (index, change) in journal.changes.iter().enumerate() {
         let path = PortableRelPath::parse(&change.target, PathSyntax::ProjectContent)?;
@@ -484,8 +657,8 @@ fn preflight_recovery(
             continue;
         }
         check_pending(root, &path, change)?;
-        if let Some(after) = &change.after {
-            let mut candidate = native::open_file(retained, &format!("after-{index}"))?;
+        if verify_candidates && let Some(after) = &change.after {
+            let mut candidate = native::open_file(retained, &candidate_name(journal, index))?;
             let (hash, bytes) = copy_bounded(
                 &mut candidate,
                 &mut std::io::sink(),
@@ -633,14 +806,14 @@ fn load_journal(directory: &Dir) -> Result<Option<Journal>> {
     )?;
     let journal: Journal = serde_json::from_slice(&bytes).context("Corrupt publication journal")?;
     ensure!(
-        journal.schema == 1,
+        journal.schema == JOURNAL_SCHEMA,
         "Unsupported publication journal schema"
     );
     Ok(Some(journal))
 }
 fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
     ensure!(
-        journal.schema == 1 && journal.root == Binding::from(root.binding),
+        journal.schema == JOURNAL_SCHEMA && journal.root == Binding::from(root.binding),
         "Journal root or schema mismatch"
     );
     PortableRelPath::parse(&journal.operation, PathSyntax::ArtifactName)?;
@@ -679,6 +852,26 @@ fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
         let path = PortableRelPath::parse(path, PathSyntax::ProjectContent)?;
         ProjectLayout::classify(&path)?;
         expected.insert_file(&path)?;
+    }
+    for name in &journal.retained_files {
+        PortableRelPath::parse(name, PathSyntax::ArtifactName)?;
+        let (kind, index) = name
+            .split_once('-')
+            .context("Invalid retained object name")?;
+        ensure!(
+            matches!(kind, "before" | "after" | "restore") && index.parse::<usize>().is_ok(),
+            "Invalid retained object name"
+        );
+    }
+    for (index, change) in journal.changes.iter().enumerate() {
+        if change.after.is_some() {
+            ensure!(
+                journal
+                    .retained_files
+                    .contains(&candidate_name(journal, index)),
+                "Journal candidate lacks a retention record"
+            );
+        }
     }
     for path in &journal.scopes {
         PortableRelPath::parse(path, PathSyntax::ProjectContent)?;
@@ -814,6 +1007,11 @@ fn verify_after(root: &ProjectReadRoot, journal: &Journal, limits: SnapshotLimit
 }
 fn receipt(journal: &Journal) -> PublicationReceipt {
     PublicationReceipt {
+        disposition: if journal.restoring {
+            PublicationDisposition::Restored
+        } else {
+            PublicationDisposition::Published
+        },
         operation: journal.operation.clone(),
         changed_files: journal.changes.len(),
         directory_synced: cfg!(unix),

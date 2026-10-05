@@ -288,3 +288,24 @@ blocking-worker cancellation, wakeups and concurrent close/admission. They pass
 with all-feature Clippy. This is scheduling accounting, not a physical-memory
 ceiling. Operation-driver registration, result ownership and command integration
 still must use these reservations.
+
+## Before-image restoration and committed retention
+
+The publisher can restore the files applied by an interrupted operation. It
+persists the inverse change list before restoration starts, so a second crash
+resumes that direction. Restoration refuses conflicting user edits and corrupt
+before-images; it can recover when an unused forward candidate is corrupt.
+Receipts distinguish published and restored outcomes. File restoration can leave
+new empty managed directories; it does not claim recursive tree rollback.
+
+Journal schema 2 records retained filenames and restoration direction. Committed
+recovery files can be explicitly reclaimed without deleting the receipt. Active
+records refuse reclamation, and unexpected directory members are not recursively
+deleted. Retention of older operations and abandoned preparations still requires
+the engine's cleanup policy.
+
+All 45 engine tests and all-feature Clippy pass locally. A separate subprocess
+fixture interrupts restoration at seven durable boundaries, resumes in a fresh
+process and checks original bytes, removed additions, retained receipts and
+idempotent reclamation. Windows privacy and permission-capability findings from
+Greptile review 25 are being addressed before the next review.

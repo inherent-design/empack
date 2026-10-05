@@ -223,22 +223,22 @@ fn crash_worker() {
     let mut seen = 0;
     let publisher = Publisher::open(Path::new(&state)).unwrap();
     let root = ProjectReadRoot::open(Path::new(&project)).unwrap();
-    publisher
-        .publish_with_hook(
-            &root,
-            prepare(&root),
-            &Cancellation::default(),
-            &mut |actual| {
-                if format!("{actual:?}") == point {
-                    seen += 1;
-                    if seen == occurrence {
-                        std::process::exit(86);
-                    }
-                }
-                Ok(())
-            },
-        )
-        .unwrap();
+    let mut hook = |actual| {
+        if format!("{actual:?}") == point {
+            seen += 1;
+            if seen == occurrence {
+                std::process::exit(86);
+            }
+        }
+        Ok(())
+    };
+    if std::env::var_os("EMPACK_PUBLICATION_RESTORE").is_some() {
+        publisher.restore_with_hook(&root, &mut hook).unwrap();
+    } else {
+        publisher
+            .publish_with_hook(&root, prepare(&root), &Cancellation::default(), &mut hook)
+            .unwrap();
+    }
     panic!("crash point not reached");
 }
 
@@ -367,4 +367,159 @@ fn unchanged_input_conflicts_are_detected_before_resuming_any_replacement() {
         b"useredit"
     );
     assert!(!project.path().join("pack/config/new.txt").exists());
+}
+
+#[test]
+fn interrupted_restoration_itself_recovers_and_reclamation_preserves_receipt() {
+    for point in [
+        PublicationPoint::IntentDurable,
+        PublicationPoint::SiblingWritten,
+        PublicationPoint::SiblingSynced,
+        PublicationPoint::TargetChanged,
+        PublicationPoint::ProgressDurable,
+        PublicationPoint::Verified,
+        PublicationPoint::Committed,
+    ] {
+        let project = tempfile::tempdir().unwrap();
+        fixture(project.path());
+        let state = tempfile::tempdir().unwrap();
+        let publisher = Publisher::open(&state.path().join("private")).unwrap();
+        let root = ProjectReadRoot::open(project.path()).unwrap();
+        let mut changes = 0;
+        assert!(
+            publisher
+                .publish_with_hook(
+                    &root,
+                    prepare(&root),
+                    &Cancellation::default(),
+                    &mut |actual| {
+                        if actual == PublicationPoint::TargetChanged {
+                            changes += 1;
+                            if changes == 2 {
+                                anyhow::bail!("crash");
+                            }
+                        }
+                        Ok(())
+                    }
+                )
+                .is_err()
+        );
+        assert!(publisher.reclaim_committed(&root).is_err());
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "engine::publication::tests::crash_worker",
+                "--nocapture",
+            ])
+            .env("EMPACK_PUBLICATION_CRASH_PROJECT", project.path())
+            .env(
+                "EMPACK_PUBLICATION_CRASH_STATE",
+                state.path().join("private"),
+            )
+            .env("EMPACK_PUBLICATION_CRASH_POINT", format!("{point:?}"))
+            .env("EMPACK_PUBLICATION_CRASH_OCCURRENCE", "1")
+            .env("EMPACK_PUBLICATION_RESTORE", "1")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::inherit())
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(86), "{point:?}");
+        let receipt = publisher.recover(&root).unwrap();
+        assert_eq!(receipt.disposition, PublicationDisposition::Restored);
+        assert_eq!(publisher.restore_before_images(&root).unwrap(), receipt);
+        assert_eq!(
+            fs::read(project.path().join("empack.yml")).unwrap(),
+            b"old intent"
+        );
+        assert!(!project.path().join("pack/config/new.txt").exists());
+        assert!(publisher.reclaim_committed(&root).unwrap() > 0);
+        assert_eq!(publisher.reclaim_committed(&root).unwrap(), 0);
+        assert_eq!(publisher.recover(&root).unwrap(), receipt);
+    }
+}
+
+#[test]
+fn restoration_can_recover_from_a_corrupt_pending_after_image() {
+    let project = tempfile::tempdir().unwrap();
+    fixture(project.path());
+    let state = tempfile::tempdir().unwrap();
+    let publisher = Publisher::open(&state.path().join("private")).unwrap();
+    let root = ProjectReadRoot::open(project.path()).unwrap();
+    assert!(
+        publisher
+            .publish_with_hook(
+                &root,
+                prepare(&root),
+                &Cancellation::default(),
+                &mut |point| {
+                    if point == PublicationPoint::TargetChanged {
+                        anyhow::bail!("crash");
+                    }
+                    Ok(())
+                }
+            )
+            .is_err()
+    );
+    let state = publisher.project_state(&root).unwrap();
+    let journal = load_journal(&state).unwrap().unwrap();
+    state
+        .open_dir_nofollow(&journal.operation)
+        .unwrap()
+        .write("after-1", b"bad pending")
+        .unwrap();
+    assert!(publisher.recover(&root).is_err());
+    let receipt = publisher.restore_before_images(&root).unwrap();
+    assert_eq!(receipt.disposition, PublicationDisposition::Restored);
+    assert_eq!(
+        fs::read(project.path().join("empack.yml")).unwrap(),
+        b"old intent"
+    );
+    assert!(!project.path().join("pack/config/new.txt").exists());
+}
+
+#[test]
+fn restoration_preserves_conflicting_user_edits_and_corrupt_before_images() {
+    for external_edit in [false, true] {
+        let project = tempfile::tempdir().unwrap();
+        fixture(project.path());
+        let state = tempfile::tempdir().unwrap();
+        let publisher = Publisher::open(&state.path().join("private")).unwrap();
+        let root = ProjectReadRoot::open(project.path()).unwrap();
+        assert!(
+            publisher
+                .publish_with_hook(
+                    &root,
+                    prepare(&root),
+                    &Cancellation::default(),
+                    &mut |point| {
+                        if point == PublicationPoint::TargetChanged {
+                            anyhow::bail!("crash");
+                        }
+                        Ok(())
+                    }
+                )
+                .is_err()
+        );
+        if external_edit {
+            fs::write(project.path().join("empack.yml"), b"useredit!!").unwrap();
+        } else {
+            let state = publisher.project_state(&root).unwrap();
+            let journal = load_journal(&state).unwrap().unwrap();
+            state
+                .open_dir_nofollow(&journal.operation)
+                .unwrap()
+                .write("before-0", b"corrupted!")
+                .unwrap();
+        }
+        assert!(publisher.restore_before_images(&root).is_err());
+        assert_eq!(
+            fs::read(project.path().join("empack.yml")).unwrap(),
+            if external_edit {
+                b"useredit!!"
+            } else {
+                b"new intent"
+            }
+        );
+        assert!(publisher.recovery_required(&root).unwrap());
+    }
 }
