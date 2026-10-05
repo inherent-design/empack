@@ -239,7 +239,7 @@ fn e2e_missing_tracked_local_dependency_validation_exits_two() {
       type: resourcepack
       path: pack/resourcepacks/example-pack.zip
       source_url: https://example.com/example-pack.zip
-      sha256: deadbeefcafebabe
+      sha256: deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe
   minecraft_version: "1.21.1"
   loader: fabric
   name: "exit-local-validation"
@@ -272,12 +272,10 @@ fn e2e_missing_tracked_local_dependency_validation_exits_two() {
 fn e2e_tracked_local_parent_dir_validation_exits_two() {
     let project =
         TestProject::workflow_fixture("exit-local-parent-dir-validation", "fabric", "1.21.1");
-    let outside_path = project
-        .dir()
-        .parent()
-        .expect("fixture project should have a parent directory")
-        .join("outside-pack.zip");
-    std::fs::write(&outside_path, b"outside-bytes").expect("write outside tracked local file");
+    let outside = tempfile::NamedTempFile::new_in(project.dir().parent().unwrap()).unwrap();
+    let outside_path = outside.path();
+    std::fs::write(outside_path, b"outside-bytes").expect("write outside tracked local file");
+    let relative = format!("../{}", outside_path.file_name().unwrap().to_str().unwrap());
 
     std::fs::write(
         project.dir().join("empack.yml"),
@@ -289,13 +287,14 @@ fn e2e_tracked_local_parent_dir_validation_exits_two() {
       type: resourcepack
       path: ../outside-pack.zip
       source_url: https://example.com/example-pack.zip
-      sha256: deadbeefcafebabe
+      sha256: deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe
   minecraft_version: "1.21.1"
   loader: fabric
   name: "exit-local-parent-dir-validation"
   author: "Workflow Test"
   version: "1.0.0"
-"#,
+"#
+        .replace("../outside-pack.zip", &relative),
     )
     .expect("write empack.yml with parent-dir tracked local dependency");
 
@@ -313,12 +312,8 @@ fn e2e_tracked_local_parent_dir_validation_exits_two() {
 
     let combined = combined_output(&output);
     assert!(
-        combined.contains("tracked local dependenc") && combined.contains("failed validation"),
-        "expected tracked local dependency validation failure in output:\n{combined}"
-    );
-    assert!(
-        combined.contains("escapes the project directory"),
-        "expected parent-dir confinement error in output:\n{combined}"
+        combined.contains("traversal component"),
+        "expected parent-dir validation error: {combined}"
     );
     assert!(
         outside_path.exists(),
@@ -332,7 +327,7 @@ fn e2e_packwiz_process_failure_exits_one() {
     std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
     std::fs::write(
         project.dir().join("pack/mods/sodium.pw.toml"),
-        "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'v1'\n",
+        "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'Version1'\n",
     )
     .unwrap();
     let fake_packwiz = write_failing_packwiz_binary(project.dir());

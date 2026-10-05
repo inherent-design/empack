@@ -179,9 +179,9 @@ async fn e2e_batched_provider_import_preserves_optional_requirements_through_exp
         workdir: Some(target.clone()),
         ..Default::default()
     });
-    let content = ["first", "second"].into_iter().map(|name| ContentEntry::PlatformReferenced(PlatformRef {
+    let content = [("Project1", "first"), ("Project2", "second")].into_iter().map(|(id, name)| ContentEntry::PlatformReferenced(PlatformRef {
         destination_path: format!("mods/{name}.jar"), platform: ProjectPlatform::Modrinth,
-        project_id: name.into(), file_id: Some("v1".into()),
+        project_id: id.into(), file_id: Some("Version1".into()),
         hashes: HashMap::from([("sha512".into(), "70b33ce9c9047e30f917e7ea13e42f7767008c3f4f9c9baf49e4390fc625549e9625eee39b94545074e8a1824cf3f238463b11bc03d97348e0fc2999ca1fff7f".into())]),
         download_urls: vec![format!("{}/content.jar", server.url())],
         env: SideEnv { client: SideRequirement::Optional, server: SideRequirement::Unsupported }, required: true,
