@@ -471,6 +471,10 @@ impl<T> Deref for RetainedOutput<T> {
     }
 }
 impl<T> RetainedOutput<T> {
+    pub(super) fn into_parts(self) -> (T, AdmissionPermit) {
+        (self.value, self._permit)
+    }
+
     pub fn map<U>(self, convert: impl FnOnce(T) -> U) -> RetainedOutput<U> {
         RetainedOutput {
             value: convert(self.value),
@@ -481,3 +485,12 @@ impl<T> RetainedOutput<T> {
 
 #[cfg(test)]
 mod tests;
+
+impl<T, E> RetainedOutput<Result<T, E>> {
+    pub fn transpose(self) -> Result<RetainedOutput<T>, E> {
+        Ok(RetainedOutput {
+            value: self.value?,
+            _permit: self._permit,
+        })
+    }
+}

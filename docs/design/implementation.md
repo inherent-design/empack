@@ -669,3 +669,25 @@ reference or explicit selection; a transient URL does not authorize making them
 mandatory. Greptile review 32's signed-URL fixture failed before this correction.
 The regression now reads the embedded client-only bytes from the actual archive
 and separately checks refusal of unrepresentable optional content.
+
+## Governed HTTP acquisition
+
+`HttpAcquisition` streams HTTPS responses through a bounded channel into the existing
+private content verifier. Status, redirect policy, expected size, actual byte counts,
+source hashes and one deadline gate the result. Mirror retries retain their cumulative
+byte allowance. Authentication, quota, policy and integrity failures cannot silently
+become another successful request. Transient locators and network error URLs do not
+enter diagnostics or persisted content evidence.
+
+The operation scope owns the blocking verifier through retirement. Lease clones and
+independent readers keep the verified content's scratch/file reservation alive; the
+last reader releases it. Preparation has no cache or project writer. Persistent cache,
+provider API authentication/rate coordination and build acquisition planning remain
+integration work.
+
+Thirty-one affected acquisition/content/runtime/mrpack tests pass. Local HTTP fixtures
+exercise partial mirrors, chunked overflow, stalled deadlines, cancellation, dropped
+caller futures, digest mismatches, redirect policy and retained reservations. Fixture
+clients use explicit local proxy/trust configuration so host discovery is outside
+transfer timing; production retains ordinary TLS verification. All-feature Clippy
+passed before the final transient-locator export correction.

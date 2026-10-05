@@ -4,7 +4,7 @@ use super::{
     staging::{FrozenStage, MutableStage},
 };
 use crate::application::process_runtime::Cancellation;
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::{ContentId, DigestAlgorithm, DigestSet, ExpectedDigest, IntegrityEvidence},
     model::ExpectedContent,
@@ -35,6 +35,7 @@ struct ContentObject {
     path: PortableRelPath,
     id: ContentId,
     bytes: u64,
+    _reservation: Option<super::resources::AdmissionPermit>,
 }
 /// Retains an owned private copy. Reader positions are independent even on Windows.
 #[derive(Clone)]
@@ -104,6 +105,19 @@ pub struct AcquiredContent {
     observed: DigestSet,
 }
 impl AcquiredContent {
+    /// Attach admission to the lease itself so clones/readers keep retained bytes charged.
+    pub(super) fn retain_resources(value: super::runtime::RetainedOutput<Self>) -> Result<Self> {
+        let (mut content, mut permit) = value.into_parts();
+        let object = Arc::get_mut(&mut content.lease.0)
+            .context("Acquisition must attach resources before sharing its lease")?;
+        object._reservation = Some(permit.split(super::resources::ResourceRequest {
+            scratch_bytes: object.bytes,
+            open_files: 1,
+            ..super::resources::ResourceRequest::default()
+        })?);
+        Ok(content)
+    }
+
     pub fn lease(&self) -> &ContentLease {
         &self.lease
     }
@@ -125,28 +139,7 @@ pub fn verify_stream(
     initial: InitialObservation,
     cancel: &Cancellation,
 ) -> Result<AcquiredContent> {
-    ensure!(
-        expected.size.is_none_or(|size| size <= maximum),
-        "Expected content exceeds acquisition limit"
-    );
-    if policy == SourceEvidencePolicy::StrongSourceRequired {
-        ensure!(
-            expected
-                .digests
-                .as_ref()
-                .is_some_and(|set| set.values().iter().any(|digest| matches!(
-                    digest.algorithm(),
-                    DigestAlgorithm::Sha256 | DigestAlgorithm::Sha512
-                ))),
-            "Strong source evidence is required; an observed content address is insufficient"
-        );
-    }
-    ensure!(
-        expected.digests.is_some()
-            || expected.accepted_observation.is_some()
-            || initial == InitialObservation::Accepted,
-        "Initial content requires an explicit observation decision"
-    );
+    validate_expectation(expected, maximum, policy, initial)?;
     let path = PortableRelPath::parse("content", PathSyntax::ProjectContent)?;
     let mut stage = MutableStage::empty()?;
     let mut reader = HashingReader {
@@ -209,10 +202,41 @@ pub fn verify_stream(
             path,
             id: address,
             bytes,
+            _reservation: None,
         })),
         evidence,
         observed,
     })
+}
+pub(super) fn validate_expectation(
+    expected: &ExpectedContent,
+    maximum: u64,
+    policy: SourceEvidencePolicy,
+    initial: InitialObservation,
+) -> Result<()> {
+    ensure!(
+        expected.size.is_none_or(|size| size <= maximum),
+        "Expected content exceeds acquisition limit"
+    );
+    if policy == SourceEvidencePolicy::StrongSourceRequired {
+        ensure!(
+            expected
+                .digests
+                .as_ref()
+                .is_some_and(|set| set.values().iter().any(|digest| matches!(
+                    digest.algorithm(),
+                    DigestAlgorithm::Sha256 | DigestAlgorithm::Sha512
+                ))),
+            "Strong source evidence is required; an observed content address is insufficient"
+        );
+    }
+    ensure!(
+        expected.digests.is_some()
+            || expected.accepted_observation.is_some()
+            || initial == InitialObservation::Accepted,
+        "Initial content requires an explicit observation decision"
+    );
+    Ok(())
 }
 struct HashingReader<'a> {
     input: &'a mut dyn Read,
