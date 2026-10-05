@@ -1190,13 +1190,27 @@ async fn resolve_curseforge_file_ids(
 // Executor
 // ---------------------------------------------------------------------------
 
-/// Transform a resolved manifest into an empack project on disk.
+/// Validated import inputs retained independently of the source archive path.
+/// Preparation is not publication approval or a verified project candidate.
+///
+/// ```compile_fail
+/// use empack_lib::empack::PreparedImport;
+/// let unchecked = PreparedImport {};
+/// ```
+pub struct PreparedImport {
+    resolved: ResolvedManifest,
+    config: ImportConfig,
+    verified_urls: HashMap<usize, String>,
+    archive: Option<zip::ZipArchive<tempfile::NamedTempFile>>,
+}
+
+/// Normalize and validate import inputs before any existing project is reset.
 #[instrument(skip_all, fields(content_count = resolved.manifest.content.len()))]
-pub async fn execute_import(
+pub async fn prepare_import(
     resolved: ResolvedManifest,
     config: ImportConfig,
     session: &dyn Session,
-) -> Result<ImportResult> {
+) -> Result<PreparedImport> {
     let mut resolved = resolved;
     for entry in &mut resolved.manifest.content {
         if let ContentEntry::PlatformReferenced(pref) = entry
@@ -1251,348 +1265,423 @@ pub async fn execute_import(
             .content
             .iter()
             .any(|entry| matches!(entry, ContentEntry::EmbeddedJar(_)));
-    let mut archive = if needs_archive {
-        Some(open_zip_archive(
-            session
-                .filesystem()
-                .open_reader(&resolved.manifest.archive_path)?,
-        )?)
+    let archive = if needs_archive {
+        let reader = session
+            .filesystem()
+            .open_reader(&resolved.manifest.archive_path)?;
+        let mut retained = tempfile::NamedTempFile::new()?;
+        let copied = std::io::copy(
+            &mut reader.take(MAX_IMPORT_ARCHIVE_BYTES + 1),
+            &mut retained,
+        )?;
+        anyhow::ensure!(
+            copied <= MAX_IMPORT_ARCHIVE_BYTES,
+            "Import exceeds compressed input limit"
+        );
+        std::io::Seek::rewind(&mut retained)?;
+        let mut archive = open_zip_archive(retained)?;
+        // Validate actual entry bytes and CRCs while the original project is intact.
+        let mut expanded = 0u64;
+        for index in 0..archive.len() {
+            session.process().check_cancelled()?;
+            let entry = archive.by_index(index)?;
+            let count = std::io::copy(
+                &mut entry.take(MAX_IMPORT_ENTRY_BYTES + 1),
+                &mut std::io::sink(),
+            )?;
+            anyhow::ensure!(
+                count <= MAX_IMPORT_ENTRY_BYTES,
+                "Import entry exceeds expanded byte limit"
+            );
+            expanded = expanded
+                .checked_add(count)
+                .context("Expanded archive size overflow")?;
+            anyhow::ensure!(
+                expanded <= MAX_IMPORT_TOTAL_BYTES,
+                "Import exceeds expanded byte limit"
+            );
+        }
+        for entry in &resolved.manifest.overrides {
+            archive
+                .by_name(&entry.source_path)
+                .with_context(|| format!("Missing override entry: {}", entry.source_path))?;
+        }
+        for entry in &resolved.manifest.content {
+            if let ContentEntry::EmbeddedJar(entry) = entry {
+                archive
+                    .by_name(&entry.source_path)
+                    .with_context(|| format!("Missing embedded entry: {}", entry.source_path))?;
+            }
+        }
+        Some(archive)
     } else {
         None
     };
+    Ok(PreparedImport {
+        resolved,
+        config,
+        verified_urls,
+        archive,
+    })
+}
 
-    let mut stats = ImportStats {
-        platform_referenced: 0,
-        platform_failed: 0,
-        platform_skipped: 0,
-        embedded_jars_identified: 0,
-        embedded_jars_unidentified: 0,
-        overrides_copied: 0,
-        warnings: resolved.warnings.clone(),
-    };
+impl PreparedImport {
+    /// Consume validated inputs to materialize an import. Staged publication is a later gate.
+    pub async fn execute(self, session: &dyn Session) -> Result<ImportResult> {
+        let Self {
+            resolved,
+            config,
+            verified_urls,
+            mut archive,
+        } = self;
+        let mut stats = ImportStats {
+            platform_referenced: 0,
+            platform_failed: 0,
+            platform_skipped: 0,
+            embedded_jars_identified: 0,
+            embedded_jars_unidentified: 0,
+            overrides_copied: 0,
+            warnings: resolved.warnings.clone(),
+        };
 
-    session.filesystem().create_dir_all(&config.target_dir)?;
+        session.filesystem().create_dir_all(&config.target_dir)?;
 
-    let init_config = crate::primitives::InitializationConfig {
-        name: &config.pack_name,
-        author: &config.author,
-        version: &config.version,
-        modloader: resolved.manifest.target.loader.as_str(),
-        mc_version: &resolved.manifest.target.minecraft_version,
-        loader_version: &resolved.manifest.target.loader_version,
-    };
+        let init_config = crate::primitives::InitializationConfig {
+            name: &config.pack_name,
+            author: &config.author,
+            version: &config.version,
+            modloader: resolved.manifest.target.loader.as_str(),
+            mc_version: &resolved.manifest.target.minecraft_version,
+            loader_version: &resolved.manifest.target.loader_version,
+        };
 
-    let datapack_folder = config
-        .datapack_folder
-        .clone()
-        .or_else(|| detect_datapack_folder(&resolved.manifest));
+        let datapack_folder = config
+            .datapack_folder
+            .clone()
+            .or_else(|| detect_datapack_folder(&resolved.manifest));
 
-    let empack_yml_content = format_empack_yml(
-        &config.pack_name,
-        &config.author,
-        &config.version,
-        &resolved.manifest.target.minecraft_version,
-        resolved.manifest.target.loader.as_str(),
-        &resolved.manifest.target.loader_version,
-        datapack_folder.as_deref(),
-        config.acceptable_game_versions.as_deref(),
-    );
-
-    session
-        .filesystem()
-        .write_file(&config.target_dir.join("empack.yml"), &empack_yml_content)?;
-
-    let manager = crate::empack::state::PackStateManager::new(
-        config.target_dir.clone(),
-        session.filesystem(),
-    );
-
-    let transition_result = manager
-        .execute_transition(
-            session.process(),
-            &*session.packwiz(),
-            crate::primitives::StateTransition::Initialize(init_config),
-        )
-        .await
-        .context("failed to initialize modpack project during import")?;
-
-    for w in &transition_result.warnings {
-        session.display().status().warning(w);
-    }
-
-    if datapack_folder.is_some() || config.acceptable_game_versions.is_some() {
-        let pack_toml_path = config.target_dir.join("pack").join("pack.toml");
-        crate::empack::packwiz::write_pack_toml_options(
-            &pack_toml_path,
+        let empack_yml_content = format_empack_yml(
+            &config.pack_name,
+            &config.author,
+            &config.version,
+            &resolved.manifest.target.minecraft_version,
+            resolved.manifest.target.loader.as_str(),
+            &resolved.manifest.target.loader_version,
             datapack_folder.as_deref(),
             config.acceptable_game_versions.as_deref(),
-            session.filesystem(),
-        )
-        .map_err(|e| anyhow::anyhow!("failed to write pack.toml options: {}", e))?;
+        );
 
         session
-            .packwiz()
-            .run_packwiz_refresh(&config.target_dir)
-            .map_err(|e| anyhow::anyhow!("failed to refresh index after writing options: {}", e))?;
-    }
+            .filesystem()
+            .write_file(&config.target_dir.join("empack.yml"), &empack_yml_content)?;
 
-    let pack_dir = config.target_dir.join("pack");
-    let config_manager = session
-        .filesystem()
-        .config_manager(config.target_dir.clone());
+        let manager = crate::empack::state::PackStateManager::new(
+            config.target_dir.clone(),
+            session.filesystem(),
+        );
 
-    let mut content_dirs: Vec<&str> =
-        vec!["mods", "resourcepacks", "shaderpacks", "datapacks", "saves"];
-    if let Some(ref df) = datapack_folder
-        && !content_dirs.contains(&df.as_str())
-    {
-        content_dirs.push(df);
-    }
+        let transition_result = manager
+            .execute_transition(
+                session.process(),
+                &*session.packwiz(),
+                crate::primitives::StateTransition::Initialize(init_config),
+            )
+            .await
+            .context("failed to initialize modpack project during import")?;
 
-    let content_total = resolved.manifest.content.len();
-    let use_no_refresh = content_total > 1;
-    let content_progress = session.display().progress().bar(content_total as u64);
-    content_progress.set_message("Adding mods");
+        for w in &transition_result.warnings {
+            session.display().status().warning(w);
+        }
 
-    let mut add_durations: Vec<std::time::Duration> = Vec::with_capacity(content_total);
+        if datapack_folder.is_some() || config.acceptable_game_versions.is_some() {
+            let pack_toml_path = config.target_dir.join("pack").join("pack.toml");
+            crate::empack::packwiz::write_pack_toml_options(
+                &pack_toml_path,
+                datapack_folder.as_deref(),
+                config.acceptable_game_versions.as_deref(),
+                session.filesystem(),
+            )
+            .map_err(|e| anyhow::anyhow!("failed to write pack.toml options: {}", e))?;
 
-    let scan_start = std::time::Instant::now();
-    let pre_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
-    let pre_scan_ms = scan_start.elapsed().as_millis() as u64;
+            session
+                .packwiz()
+                .run_packwiz_refresh(&config.target_dir)
+                .map_err(|e| {
+                    anyhow::anyhow!("failed to refresh index after writing options: {}", e)
+                })?;
+        }
 
-    struct PendingDep {
-        derived_key: String,
-        title: String,
-        platform: ProjectPlatform,
-        project_id: String,
-        project_type: crate::primitives::ProjectType,
-        version: Option<String>,
-        environment: SideEnv,
-    }
-    let mut pending_deps: Vec<PendingDep> = Vec::new();
+        let pack_dir = config.target_dir.join("pack");
+        let config_manager = session
+            .filesystem()
+            .config_manager(config.target_dir.clone());
 
-    for (entry_index, entry) in resolved.manifest.content.iter().enumerate() {
-        match entry {
-            ContentEntry::UrlFile(file) => {
-                file.publish(
-                    session.filesystem(),
-                    &config.target_dir,
-                    &verified_urls[&entry_index],
-                )?;
-                let key = format!("url:{}", file.destination);
-                config_manager.record_installed_dependency(
-                    &key,
-                    crate::empack::config::DependencyEntry::Url(file.clone()),
-                )?;
-                stats.platform_referenced += 1;
-            }
-            ContentEntry::PlatformReferenced(pref) => {
-                content_progress.tick(&pref.destination_path);
+        let mut content_dirs: Vec<&str> =
+            vec!["mods", "resourcepacks", "shaderpacks", "datapacks", "saves"];
+        if let Some(ref df) = datapack_folder
+            && !content_dirs.contains(&df.as_str())
+        {
+            content_dirs.push(df);
+        }
 
-                let add_start = std::time::Instant::now();
-                let result = add_platform_ref_with_retry(
-                    pref,
-                    &pack_dir,
-                    session,
-                    datapack_folder.as_deref(),
-                    use_no_refresh,
-                )
-                .await?;
-                add_durations.push(add_start.elapsed());
+        let content_total = resolved.manifest.content.len();
+        let use_no_refresh = content_total > 1;
+        let content_progress = session.display().progress().bar(content_total as u64);
+        content_progress.set_message("Adding mods");
 
-                match result {
-                    AddRefResult::Skipped => {
-                        stats.platform_skipped += 1;
-                        session.display().status().warning(&format!(
-                            "no project ID or download URL for '{}'; skipping",
-                            pref.destination_path
-                        ));
-                    }
-                    AddRefResult::Failed(detail) => {
-                        if overrides_cover_reference(
-                            &resolved.manifest.overrides,
-                            pref,
-                            datapack_folder.as_deref(),
-                        ) {
-                            session.display().status().info(&format!(
-                                "skipped packwiz add for '{}' (already in overrides)",
+        let mut add_durations: Vec<std::time::Duration> = Vec::with_capacity(content_total);
+
+        let scan_start = std::time::Instant::now();
+        let pre_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
+        let pre_scan_ms = scan_start.elapsed().as_millis() as u64;
+
+        struct PendingDep {
+            derived_key: String,
+            title: String,
+            platform: ProjectPlatform,
+            project_id: String,
+            project_type: crate::primitives::ProjectType,
+            version: Option<String>,
+            environment: SideEnv,
+        }
+        let mut pending_deps: Vec<PendingDep> = Vec::new();
+
+        for (entry_index, entry) in resolved.manifest.content.iter().enumerate() {
+            match entry {
+                ContentEntry::UrlFile(file) => {
+                    file.publish(
+                        session.filesystem(),
+                        &config.target_dir,
+                        &verified_urls[&entry_index],
+                    )?;
+                    let key = format!("url:{}", file.destination);
+                    config_manager.record_installed_dependency(
+                        &key,
+                        crate::empack::config::DependencyEntry::Url(file.clone()),
+                    )?;
+                    stats.platform_referenced += 1;
+                }
+                ContentEntry::PlatformReferenced(pref) => {
+                    content_progress.tick(&pref.destination_path);
+
+                    let add_start = std::time::Instant::now();
+                    let result = add_platform_ref_with_retry(
+                        pref,
+                        &pack_dir,
+                        session,
+                        datapack_folder.as_deref(),
+                        use_no_refresh,
+                    )
+                    .await?;
+                    add_durations.push(add_start.elapsed());
+
+                    match result {
+                        AddRefResult::Skipped => {
+                            stats.platform_skipped += 1;
+                            session.display().status().warning(&format!(
+                                "no project ID or download URL for '{}'; skipping",
                                 pref.destination_path
                             ));
-                        } else {
-                            stats.platform_failed += 1;
-                            session.display().status().warning(&detail);
+                        }
+                        AddRefResult::Failed(detail) => {
+                            if overrides_cover_reference(
+                                &resolved.manifest.overrides,
+                                pref,
+                                datapack_folder.as_deref(),
+                            ) {
+                                session.display().status().info(&format!(
+                                    "skipped packwiz add for '{}' (already in overrides)",
+                                    pref.destination_path
+                                ));
+                            } else {
+                                stats.platform_failed += 1;
+                                session.display().status().warning(&detail);
+                            }
+                        }
+                        AddRefResult::Added => {
+                            stats.platform_referenced += 1;
+
+                            let derived_key = derive_dep_key(
+                                pref.resolved_slug.as_deref(),
+                                pref.resolved_name.as_deref(),
+                                &pref.destination_path,
+                            );
+                            let title = pref
+                                .resolved_name
+                                .clone()
+                                .unwrap_or_else(|| derived_key.clone());
+
+                            pending_deps.push(PendingDep {
+                                derived_key,
+                                title,
+                                platform: pref.platform,
+                                project_id: pref.project_id.clone(),
+                                project_type: pref
+                                    .resolved_type
+                                    .unwrap_or(crate::primitives::ProjectType::Mod),
+                                version: pref.file_id.clone(),
+                                environment: imported_requirements(pref),
+                            });
                         }
                     }
-                    AddRefResult::Added => {
-                        stats.platform_referenced += 1;
-
-                        let derived_key = derive_dep_key(
-                            pref.resolved_slug.as_deref(),
-                            pref.resolved_name.as_deref(),
-                            &pref.destination_path,
-                        );
-                        let title = pref
-                            .resolved_name
-                            .clone()
-                            .unwrap_or_else(|| derived_key.clone());
-
-                        pending_deps.push(PendingDep {
-                            derived_key,
-                            title,
-                            platform: pref.platform,
-                            project_id: pref.project_id.clone(),
-                            project_type: pref
-                                .resolved_type
-                                .unwrap_or(crate::primitives::ProjectType::Mod),
-                            version: pref.file_id.clone(),
-                            environment: imported_requirements(pref),
-                        });
-                    }
+                }
+                ContentEntry::EmbeddedJar(embed) => {
+                    let directory = match side_from_env(&embed.env) {
+                        "client" => OverrideSide::ClientOnly.project_directory(),
+                        "server" => OverrideSide::ServerOnly.project_directory(),
+                        _ => OverrideSide::Both.project_directory(),
+                    };
+                    let dest = sanitize_archive_path(
+                        &config.target_dir,
+                        &format!("{directory}/{}", embed.destination_path),
+                        session.filesystem(),
+                    )?;
+                    extract_embedded_from_archive(
+                        archive
+                            .as_mut()
+                            .context("Embedded archive was not opened")?,
+                        &embed.source_path,
+                        &dest,
+                        session.filesystem(),
+                    )?;
+                    stats.embedded_jars_unidentified += 1;
                 }
             }
-            ContentEntry::EmbeddedJar(embed) => {
-                let directory = match side_from_env(&embed.env) {
-                    "client" => OverrideSide::ClientOnly.project_directory(),
-                    "server" => OverrideSide::ServerOnly.project_directory(),
-                    _ => OverrideSide::Both.project_directory(),
-                };
-                let dest = sanitize_archive_path(
-                    &config.target_dir,
-                    &format!("{directory}/{}", embed.destination_path),
-                    session.filesystem(),
-                )?;
-                extract_embedded_from_archive(
-                    archive
-                        .as_mut()
-                        .context("Embedded archive was not opened")?,
-                    &embed.source_path,
-                    &dest,
-                    session.filesystem(),
-                )?;
-                stats.embedded_jars_unidentified += 1;
+            content_progress.inc();
+        }
+        content_progress.finish(&format!("{} platform references processed", content_total));
+
+        let scan_start = std::time::Instant::now();
+        let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
+        let post_scan_ms = scan_start.elapsed().as_millis() as u64;
+
+        let new_stems: std::collections::HashSet<_> =
+            post_stems.difference(&pre_stems).cloned().collect();
+
+        for dep in &pending_deps {
+            let record = DependencyRecord {
+                environment: Some(dep.environment.clone()),
+                status: DependencyStatus::Resolved,
+                title: dep.title.clone(),
+                platform: dep.platform,
+                project_id: dep.project_id.clone(),
+                project_type: dep.project_type,
+                version: dep.version.clone(),
+            };
+            session
+                .packwiz()
+                .apply_requirements(&config.target_dir, &record)?;
+            config_manager.record_installed_dependency(
+                &dep.derived_key,
+                crate::empack::config::DependencyEntry::Resolved(record),
+            )?;
+        }
+
+        if use_no_refresh || !verified_urls.is_empty() || !pending_deps.is_empty() {
+            let pack_toml = pack_dir.join("pack.toml");
+            let pack_toml_str = pack_toml
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in pack.toml path"))?;
+            let refresh_output = execute_process_with_live_issues(
+                session,
+                session.packwiz_bin(),
+                &["--pack-file", pack_toml_str, "refresh"],
+                &pack_dir,
+            )?;
+            if !refresh_output.success {
+                anyhow::bail!(
+                    "packwiz refresh failed after batch import: {}",
+                    refresh_output.error_output()
+                );
             }
         }
-        content_progress.inc();
-    }
-    content_progress.finish(&format!("{} platform references processed", content_total));
 
-    let scan_start = std::time::Instant::now();
-    let post_stems = scan_pw_toml_stems(&pack_dir, &content_dirs, session.filesystem());
-    let post_scan_ms = scan_start.elapsed().as_millis() as u64;
-
-    let new_stems: std::collections::HashSet<_> =
-        post_stems.difference(&pre_stems).cloned().collect();
-
-    for dep in &pending_deps {
-        let record = DependencyRecord {
-            environment: Some(dep.environment.clone()),
-            status: DependencyStatus::Resolved,
-            title: dep.title.clone(),
-            platform: dep.platform,
-            project_id: dep.project_id.clone(),
-            project_type: dep.project_type,
-            version: dep.version.clone(),
-        };
-        session
-            .packwiz()
-            .apply_requirements(&config.target_dir, &record)?;
-        config_manager.record_installed_dependency(
-            &dep.derived_key,
-            crate::empack::config::DependencyEntry::Resolved(record),
-        )?;
-    }
-
-    if use_no_refresh || !verified_urls.is_empty() || !pending_deps.is_empty() {
-        let pack_toml = pack_dir.join("pack.toml");
-        let pack_toml_str = pack_toml
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 in pack.toml path"))?;
-        let refresh_output = execute_process_with_live_issues(
-            session,
-            session.packwiz_bin(),
-            &["--pack-file", pack_toml_str, "refresh"],
-            &pack_dir,
-        )?;
-        if !refresh_output.success {
-            anyhow::bail!(
-                "packwiz refresh failed after batch import: {}",
-                refresh_output.error_output()
+        if !add_durations.is_empty() {
+            let total: std::time::Duration = add_durations.iter().sum();
+            let min = add_durations.iter().min().unwrap();
+            let max = add_durations.iter().max().unwrap();
+            tracing::info!(
+                phase = "content_loop",
+                total_ms = total.as_millis() as u64,
+                count = add_durations.len(),
+                min_ms = min.as_millis() as u64,
+                max_ms = max.as_millis() as u64,
+                avg_ms = (total.as_millis() as u64) / (add_durations.len() as u64),
+                "content loop complete"
             );
         }
-    }
 
-    if !add_durations.is_empty() {
-        let total: std::time::Duration = add_durations.iter().sum();
-        let min = add_durations.iter().min().unwrap();
-        let max = add_durations.iter().max().unwrap();
         tracing::info!(
-            phase = "content_loop",
-            total_ms = total.as_millis() as u64,
-            count = add_durations.len(),
-            min_ms = min.as_millis() as u64,
-            max_ms = max.as_millis() as u64,
-            avg_ms = (total.as_millis() as u64) / (add_durations.len() as u64),
-            "content loop complete"
+            phase = "scan_pw_toml",
+            pre_scan_ms,
+            post_scan_ms,
+            new_stems = new_stems.len(),
+            pending_deps = pending_deps.len(),
+            "batched scan_pw_toml_stems (2 scans total)"
         );
-    }
 
-    tracing::info!(
-        phase = "scan_pw_toml",
-        pre_scan_ms,
-        post_scan_ms,
-        new_stems = new_stems.len(),
-        pending_deps = pending_deps.len(),
-        "batched scan_pw_toml_stems (2 scans total)"
-    );
-
-    for dep in &pending_deps {
-        if !new_stems.contains(&dep.derived_key) {
+        for dep in &pending_deps {
+            if !new_stems.contains(&dep.derived_key) {
+                tracing::warn!(
+                    key = %dep.derived_key,
+                    title = %dep.title,
+                    "dep key does not match any .pw.toml stem; empack.yml may diverge from packwiz state"
+                );
+            }
+        }
+        if new_stems.len() != pending_deps.len() {
             tracing::warn!(
-                key = %dep.derived_key,
-                title = %dep.title,
-                "dep key does not match any .pw.toml stem; empack.yml may diverge from packwiz state"
+                expected = pending_deps.len(),
+                actual = new_stems.len(),
+                "pw.toml count mismatch"
             );
         }
-    }
-    if new_stems.len() != pending_deps.len() {
-        tracing::warn!(
-            expected = pending_deps.len(),
-            actual = new_stems.len(),
-            "pw.toml count mismatch"
-        );
-    }
 
-    let override_total = resolved.manifest.overrides.len();
-    let override_progress = session.display().progress().bar(override_total as u64);
-    override_progress.set_message("Copying overrides");
+        let override_total = resolved.manifest.overrides.len();
+        let override_progress = session.display().progress().bar(override_total as u64);
+        override_progress.set_message("Copying overrides");
 
-    for override_entry in &resolved.manifest.overrides {
-        let dest = sanitize_archive_path(
-            &config.target_dir,
-            &format!(
-                "{}/{}",
-                override_entry.side.project_directory(),
-                override_entry.destination_path
-            ),
-            session.filesystem(),
-        )?;
-        extract_embedded_from_archive(
-            archive
-                .as_mut()
-                .context("Override archive was not opened")?,
-            &override_entry.source_path,
-            &dest,
-            session.filesystem(),
-        )?;
-        stats.overrides_copied += 1;
-        override_progress.inc();
+        for override_entry in &resolved.manifest.overrides {
+            let dest = sanitize_archive_path(
+                &config.target_dir,
+                &format!(
+                    "{}/{}",
+                    override_entry.side.project_directory(),
+                    override_entry.destination_path
+                ),
+                session.filesystem(),
+            )?;
+            extract_embedded_from_archive(
+                archive
+                    .as_mut()
+                    .context("Override archive was not opened")?,
+                &override_entry.source_path,
+                &dest,
+                session.filesystem(),
+            )?;
+            stats.overrides_copied += 1;
+            override_progress.inc();
+        }
+        override_progress.finish(&format!("{} overrides copied", override_total));
+
+        Ok(ImportResult {
+            project_dir: config.target_dir,
+            stats,
+        })
     }
-    override_progress.finish(&format!("{} overrides copied", override_total));
+}
 
-    Ok(ImportResult {
-        project_dir: config.target_dir,
-        stats,
-    })
+/// Test fixture convenience; production callers must prepare before execution.
+#[cfg(any(test, feature = "test-utils"))]
+pub async fn execute_import(
+    resolved: ResolvedManifest,
+    config: ImportConfig,
+    session: &dyn Session,
+) -> Result<ImportResult> {
+    prepare_import(resolved, config, session)
+        .await?
+        .execute(session)
+        .await
 }
 
 /// Outcome of attempting to add a platform reference via packwiz.

@@ -793,3 +793,104 @@ fn smoke_platform_removal_rejects_symlinked_metadata_ancestors() {
     assert_eq!(snapshot(&project), before);
     assert_eq!(std::fs::read_to_string(metadata).unwrap(), bytes);
 }
+
+#[test]
+fn smoke_forced_import_invalid_destination_preserves_existing_project() {
+    assert_forced_import_rejects_invalid_input(false);
+}
+
+#[test]
+fn smoke_forced_import_bad_crc_preserves_existing_project() {
+    assert_forced_import_rejects_invalid_input(true);
+}
+
+fn assert_forced_import_rejects_invalid_input(corrupt_crc: bool) {
+    use empack_lib::application::session::{ArchiveProvider, LiveArchiveProvider};
+    use empack_lib::empack::archive::ArchiveFormat;
+    let project = TestProject::workflow_fixture("original", "fabric", "1.21.1");
+    for (path, bytes) in [
+        ("pack/config/existing.toml", "original config"),
+        ("overrides/client/options.txt", "original options"),
+        ("dist/prior.zip", "prior artifact"),
+        ("templates/user.template", "user template"),
+    ] {
+        let path = project.dir().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    }
+    let source = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(source.path().join("overrides/config")).unwrap();
+    std::fs::write(
+        source.path().join("overrides/config/MOD.txt"),
+        b"replacement",
+    )
+    .unwrap();
+    std::fs::write(
+        source.path().join("modrinth.index.json"),
+        serde_json::json!({
+            "formatVersion":1,"game":"minecraft","name":"replacement","versionId":"1",
+            "dependencies":{"minecraft":"1.21.1","fabric-loader":"0.15.11"},"files":[]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let archive = output.path().join("invalid-replacement.mrpack");
+    LiveArchiveProvider
+        .create_archive(source.path(), &archive, ArchiveFormat::Zip)
+        .unwrap();
+    let mut bytes = std::fs::read(&archive).unwrap();
+    if corrupt_crc {
+        let central = bytes
+            .windows(4)
+            .enumerate()
+            .find_map(|(offset, signature)| {
+                (signature == b"PK\x01\x02"
+                    && bytes.get(offset + 46..offset + 46 + b"overrides/config/MOD.txt".len())
+                        == Some(b"overrides/config/MOD.txt".as_slice()))
+                .then_some(offset)
+            })
+            .unwrap();
+        bytes[central + 16] ^= 1;
+    } else {
+        let positions: Vec<_> = bytes
+            .windows(7)
+            .enumerate()
+            .filter_map(|(i, value)| (value == b"MOD.txt").then_some(i))
+            .collect();
+        assert_eq!(positions.len(), 2);
+        for position in positions {
+            bytes[position..position + 7].copy_from_slice(b"CON.txt");
+        }
+    }
+    std::fs::write(&archive, bytes).unwrap();
+    let before = snapshot(&project);
+    command(&project)
+        .args([
+            "init",
+            "--from",
+            archive.to_str().unwrap(),
+            "--force",
+            "--yes",
+            ".",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(if corrupt_crc {
+            "Invalid checksum"
+        } else {
+            "reserved device name"
+        }));
+    assert_eq!(snapshot(&project), before);
+    for (path, bytes) in [
+        ("pack/config/existing.toml", "original config"),
+        ("overrides/client/options.txt", "original options"),
+        ("dist/prior.zip", "prior artifact"),
+        ("templates/user.template", "user template"),
+    ] {
+        assert_eq!(
+            std::fs::read_to_string(project.dir().join(path)).unwrap(),
+            bytes
+        );
+    }
+}

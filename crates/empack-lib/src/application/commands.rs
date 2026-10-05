@@ -18,8 +18,8 @@ use crate::empack::config::{
 };
 use crate::empack::content::{JarResolver, UrlKind};
 use crate::empack::import::{
-    ImportConfig, ModpackManifest, SourceKind, execute_import,
-    parse_curseforge_zip_with_filesystem, parse_modrinth_mrpack_with_filesystem, resolve_manifest,
+    ImportConfig, ModpackManifest, SourceKind, parse_curseforge_zip_with_filesystem,
+    parse_modrinth_mrpack_with_filesystem, prepare_import, resolve_manifest,
 };
 use crate::empack::parsing::ModLoader;
 use crate::empack::search::SearchError;
@@ -1086,10 +1086,6 @@ async fn handle_init_from_source(
         return Ok(());
     }
 
-    if reset_existing {
-        reset_project_for_force_init(session, &target_dir)?;
-    }
-
     // Phase C: Execute
     let config = ImportConfig {
         target_dir: target_dir.clone(),
@@ -1100,7 +1096,12 @@ async fn handle_init_from_source(
         acceptable_game_versions: cli_game_versions,
     };
 
-    let result = execute_import(resolved, config, session).await?;
+    let prepared = prepare_import(resolved, config, session).await?;
+    session.process().check_cancelled()?;
+    if reset_existing {
+        reset_project_for_force_init(session, &target_dir)?;
+    }
+    let result = prepared.execute(session).await?;
 
     session.display().status().section("Import Summary");
     session.display().status().success(

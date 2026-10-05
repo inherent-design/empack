@@ -23,11 +23,13 @@ pub use content::{
     ApiJarResolver, JarIdentifyRequest, JarIdentity, JarResolver, OverrideCategory, OverrideSide,
     SideEnv, SideRequirement, UrlClassifyError, UrlKind,
 };
+#[cfg(any(test, feature = "test-utils"))]
+pub use import::execute_import;
 pub use import::{
     ContentEntry, EmbeddedJar, ImportConfig, ImportError, ImportResult, ImportStats,
-    ModpackManifest, OverrideEntry, PackIdentity, PlatformRef, ResolvedManifest, RuntimeTarget,
-    SourceKind, classify_override, detect_local_source, execute_import, parse_curseforge_zip,
-    parse_modrinth_mrpack, resolve_manifest,
+    ModpackManifest, OverrideEntry, PackIdentity, PlatformRef, PreparedImport, ResolvedManifest,
+    RuntimeTarget, SourceKind, classify_override, detect_local_source, parse_curseforge_zip,
+    parse_modrinth_mrpack, prepare_import, resolve_manifest,
 };
 #[cfg(feature = "test-utils")]
 pub use packwiz::MockPackwizOps;

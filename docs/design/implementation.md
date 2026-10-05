@@ -46,3 +46,23 @@ rejects it on every host. The affected import/build/path/URL suite passed 178 te
 default suite passed 1,363 tests and nine doctests, including offline CLI smoke.
 The expanded import preflight regression preserves original intent and makes no
 backend call on a reserved destination.
+
+## Import preparation boundary
+
+`prepare_import` now returns a private-field `PreparedImport` consumed by its
+execution method. Production command code prepares before forced reset. The old
+combined helper is available only to test fixtures. Preparation checks override
+and embedded destinations, environment representability and provider-free source
+bytes. An owned, bounded temporary copy retains the archive independently of the
+original path; actual entry limits, CRCs and referenced entry existence are checked
+before replacement starts.
+
+The command-level regression reproduced removal of the original manifest after
+an invalid override was rejected. It now preserves intent, pack configuration,
+side overrides, previous artifacts and user templates. A second regression checks
+corrupt ZIP content. Both pass, alongside the 108 affected command/import tests.
+
+This boundary is not `VerifiedChange`: provider/backend execution and multi-file
+publication still need staging and the journaled publisher. It does not establish
+all of C03 or make the old materializer transactional. The remaining engine work
+must replace that live materializer rather than adding a compatibility branch.
