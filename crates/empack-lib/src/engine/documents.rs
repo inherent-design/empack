@@ -48,6 +48,28 @@ impl DecodedIntent {
         &self.original
     }
 }
+/// A structurally checked prior lock can be inspected even after authoring intent changes.
+#[derive(Debug, Clone)]
+pub struct DecodedLock {
+    lock: ResolutionLock,
+    raw_revision: DocumentRevision,
+}
+impl DecodedLock {
+    pub fn lock(&self) -> &ResolutionLock {
+        &self.lock
+    }
+    pub fn raw_revision(&self) -> DocumentRevision {
+        self.raw_revision
+    }
+    /// Only binding to current intent establishes a coherent resolved project.
+    pub fn bind(&self, source: &DecodedIntent) -> Result<ResolvedProject> {
+        Ok(ResolvedProject::validate(
+            source.intent.clone(),
+            self.lock.clone(),
+            source.semantic_revision,
+        )?)
+    }
+}
 /// Whether a prepared edit preserves the original syntax or explicitly reformats it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentEdit {
@@ -122,11 +144,18 @@ impl DocumentCodec {
         source: &DecodedIntent,
         origin: &str,
     ) -> Result<ResolvedProject> {
+        self.decode_prior_lock(bytes, origin)?.bind(source)
+    }
+    /// Preserve exact previous selections for planning after an authoring edit; never call them current.
+    pub fn decode_prior_lock(&self, bytes: &[u8], origin: &str) -> Result<DecodedLock> {
         let value = parse(bytes).with_context(|| format!("Invalid lock document: {origin}"))?;
         let lock =
             lock::decode(&value).with_context(|| format!("Invalid lock document: {origin}"))?;
-        ResolvedProject::validate(source.intent.clone(), lock, source.semantic_revision)
-            .map_err(Into::into)
+        lock.validate_structure()?;
+        Ok(DecodedLock {
+            lock,
+            raw_revision: DocumentRevision(Sha256::digest(bytes).into()),
+        })
     }
     /// Serialize only an internally validated exact resolution.
     pub fn encode_lock(&self, project: &ResolvedProject) -> Result<Vec<u8>> {

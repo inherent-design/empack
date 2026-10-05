@@ -566,3 +566,38 @@ fn executable_output_intent_publishes_and_converges_on_windows_without_claiming_
             .executable
     );
 }
+
+#[test]
+fn read_only_coordination_refuses_hot_journals_and_never_creates_state() {
+    let project = tempfile::tempdir().unwrap();
+    fixture(project.path());
+    let host = tempfile::tempdir().unwrap();
+    let path = host.path().join("private");
+    let root = ProjectReadRoot::open(project.path()).unwrap();
+    let reader = RecoveryReader::new(path.clone());
+    drop(reader.enter(&root).unwrap());
+    assert!(!path.exists());
+    let publisher = Publisher::open(&path).unwrap();
+    let result = publisher.publish_with_hook(
+        &root,
+        prepare(&root),
+        &Cancellation::default(),
+        &mut |point| {
+            if point == PublicationPoint::IntentDurable {
+                anyhow::bail!("interrupt fixture");
+            }
+            Ok(())
+        },
+    );
+    assert!(result.is_err());
+    assert!(reader.enter(&root).is_err());
+    publisher.recover(&root).unwrap();
+    let guard = reader.enter(&root).unwrap();
+    let state = publisher.project_state(&root).unwrap();
+    assert!(
+        lock(&state).is_err(),
+        "snapshot read coordination must exclude publication"
+    );
+    drop(guard);
+    assert!(lock(&state).is_ok());
+}

@@ -33,6 +33,53 @@ static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 pub struct Publisher {
     host: Dir,
 }
+/// Read-only journal access for snapshot preparation. It cannot create or recover state.
+pub struct RecoveryReader {
+    host_state: std::path::PathBuf,
+}
+/// A shared OS lock when an existing publication coordination file is present.
+pub(super) struct ProjectReadGuard {
+    _lock: Option<File>,
+}
+impl RecoveryReader {
+    pub fn new(host_state: std::path::PathBuf) -> Self {
+        Self { host_state }
+    }
+    pub(super) fn enter(&self, root: &ProjectReadRoot) -> Result<ProjectReadGuard> {
+        let Some(publisher) = Publisher::open_existing(&self.host_state)? else {
+            return Ok(ProjectReadGuard { _lock: None });
+        };
+        root.check_binding()?;
+        let state = match publisher.host.open_dir_nofollow(root_key(root)?) {
+            Ok(value) => value,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ProjectReadGuard { _lock: None });
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let file = match native::open_file(&state, "operation.lock") {
+            Ok(value) => Some(value),
+            Err(error)
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        if let Some(file) = &file {
+            file.try_lock_shared()
+                .context("Project publication is busy")?;
+        }
+        // Inspect after acquiring coordination; corrupt and hot journals both prevent ordinary reads.
+        ensure!(
+            !publisher.recovery_required(root)?,
+            "Project requires publication recovery before ordinary reads"
+        );
+        Ok(ProjectReadGuard { _lock: file })
+    }
+}
 /// Structured error context: durable publication may have started for this operation.
 #[derive(Debug, thiserror::Error)]
 #[error("Publication recovery required for {operation}")]

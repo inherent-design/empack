@@ -5,6 +5,7 @@ pub mod documents;
 mod io;
 pub mod layout;
 mod native;
+pub mod project;
 pub mod publication;
 pub mod resources;
 pub mod runtime;

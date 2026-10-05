@@ -331,3 +331,31 @@ fn lock_encoder_rejects_ephemeral_credentials_before_serialization() {
     let error = DocumentCodec.encode_lock(&project).unwrap_err();
     assert!(!format!("{error:#}").contains("not-for-storage"));
 }
+
+#[test]
+fn prior_lock_preserves_exact_selections_without_claiming_changed_intent_is_resolved() {
+    let original = decoded();
+    let project = validate(&original, resolution(&original)).unwrap();
+    let bytes = DocumentCodec.encode_lock(&project).unwrap();
+    let prior = DocumentCodec
+        .decode_prior_lock(&bytes, "empack.lock")
+        .unwrap();
+    let mut changed = original.intent().clone();
+    changed.metadata.version = "next".into();
+    let changed = DocumentCodec
+        .decode_intent(
+            &DocumentCodec.encode_intent(&changed).unwrap(),
+            "empack.yml",
+        )
+        .unwrap();
+    assert!(prior.bind(&changed).is_err());
+    assert_eq!(prior.lock().dependencies, project.lock().dependencies);
+    assert!(prior.bind(&original).is_ok());
+    let mut corrupt: Value = serde_saphyr::from_str(std::str::from_utf8(&bytes).unwrap()).unwrap();
+    corrupt["resolver"] = json!("");
+    assert!(
+        DocumentCodec
+            .decode_prior_lock(&serde_json::to_vec(&corrupt).unwrap(), "empack.lock")
+            .is_err()
+    );
+}

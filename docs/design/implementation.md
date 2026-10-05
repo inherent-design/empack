@@ -7,12 +7,12 @@ moves through the gates below. The baseline is `50c121f`.
 | --- | --- | --- |
 | Target documentation and policy | Landed | C01 to C14, API sketches, implementation order and user decisions have one target |
 | Pure core and first consumers | Landed | Dependency-free core; portable paths and deterministic target prerequisites used by live adapters; negative cases and live workflow tests |
-| Semantic identity, requirements and codec | In progress | Typed canonical identities, multi-file placements, explicit DTO dispatch and validated schema |
+| Semantic identity, requirements and codec | Landed | Typed canonical identities, multi-file placements, explicit DTO dispatch and validated schema |
 | Snapshots, lock and pure plans | In progress | Raw read sets, absence checks, exact selections, convergence and alias tests |
 | Read-only preparation and acquisition | Pending | Every preview preserves durable project/cache/tool/state trees |
 | Native staging and publication | In progress | No live writer bypass; retained roots, freeze, private verification proof, crash/restart tests |
 | Build inventories | Pending | Every source kind contributes expected representation; omission fails while prior artifacts survive |
-| Engine runtime and public API | Pending | One runtime, bounded admission, late-result rejection, retained terminal results, compiled usage examples |
+| Engine runtime and public API | In progress | One runtime, bounded admission, late-result rejection, retained terminal results, compiled usage examples |
 | Command implementation | Pending | Build, then add/sync/remove, then init/import, then continuation/clean use shared lifecycle |
 | Alpha release gate | Pending | Parity ledger, native platform suites and fault injection pass; no success stubs |
 
@@ -396,3 +396,22 @@ matching, weak-evidence policy, size limits, cancellation and initial-observatio
 checks. They pass with the snapshot suite, core contracts and all-feature Clippy.
 Transport policy, durable cache lookup/insertion and command integration remain
 separate work; this component has no cache or project write capability.
+
+
+## Read-only workspace preparation
+
+`engine::project::ProjectReader` binds normalized documents to retained native
+observations. It checks publication recovery before ordinary reads, takes an
+existing shared coordination lock when available, and rechecks coordination and
+raw inputs before returning. It creates no host directory, lock file, cache entry
+or continuation record. Missing and malformed documents remain distinct outcomes.
+
+A decoded prior lock now has a separate structurally validated type. Editing
+intent does not discard prior exact selections needed by sync, but the prior lock
+cannot become a resolved build input until it binds successfully to current
+intent. Unknown schemas, malformed records and inconsistent lock structure remain
+errors. No legacy-schema fallback is added.
+
+Thirteen affected reader, codec and journal tests pass locally. They verify preview
+state isolation, raw comment conflicts, stale-lock separation and shared-lock/hot-
+journal behavior. Native Windows execution remains part of the CI gate.

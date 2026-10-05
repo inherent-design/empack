@@ -478,6 +478,97 @@ fn validate_placement(value: &Placement) -> Result<(), ModelError> {
     Ok(())
 }
 
+impl ResolutionLock {
+    /// Validate an exact lock independently of current authoring intent.
+    /// A valid prior lock is evidence for reconciliation, not proof of current satisfaction.
+    pub fn validate_structure(&self) -> Result<(), ModelError> {
+        if self.resolver.trim().is_empty() {
+            return Err(invalid("Lock requires a resolver identity"));
+        }
+        if (self.runtime.loader == LoaderKind::Vanilla) != self.runtime.loader_version.is_none() {
+            return Err(invalid(
+                "Non-vanilla runtime requires an exact loader version",
+            ));
+        }
+        let mut identities = BTreeSet::new();
+        let mut destinations = BTreeSet::new();
+        for (key, dependency) in &self.dependencies {
+            if let ResolvedIdentity::Provider(project) = &dependency.identity {
+                if !identities.insert(project) {
+                    return Err(invalid(
+                        "Multiple logical dependencies share one provider identity",
+                    ));
+                }
+                let selected = dependency
+                    .selected
+                    .as_ref()
+                    .ok_or_else(|| invalid("Provider dependency lacks exact selection"))?;
+                selected.validate()?;
+                if &selected.project != project {
+                    return Err(invalid("Selected pin belongs to another project"));
+                }
+            } else if dependency.selected.is_some() {
+                return Err(invalid(
+                    "A URL or local identity cannot claim a provider selection",
+                ));
+            }
+            let mut slots = BTreeSet::new();
+            for file in dependency.files.as_slice() {
+                if !slots.insert(&file.slot) {
+                    return Err(invalid("Duplicate file slot"));
+                }
+                if file.provenance.source.trim().is_empty() {
+                    return Err(invalid("File provenance source is empty"));
+                }
+                if let Some(declared) = &file.provenance.declared_digests {
+                    let expected =
+                        file.expected.digests.as_ref().ok_or_else(|| {
+                            invalid("Original source declarations were discarded")
+                        })?;
+                    declared.check(expected.values()).map_err(|_| {
+                        invalid("Expected content changed original source declarations")
+                    })?;
+                }
+                if file.expected.digests.is_none() && file.expected.accepted_observation.is_none() {
+                    return Err(invalid("Selected file lacks expected content evidence"));
+                }
+                if let AcquisitionSpec::Provider { pin, slot, .. } = &file.acquisition {
+                    pin.validate()?;
+                    if dependency.selected.as_ref() != Some(pin) || slot != &file.slot {
+                        return Err(invalid("File selection differs from owning dependency"));
+                    }
+                }
+                for placement in file.placements.as_slice() {
+                    validate_placement(placement)?;
+                    if !destinations
+                        .insert((placement.layer, placement.destination.relative().clone()))
+                    {
+                        return Err(invalid("Two placements occupy one layer destination"));
+                    }
+                }
+            }
+            if !self.coverage.contains_key(key) {
+                return Err(invalid("Dependency coverage must be explicit"));
+            }
+        }
+        if self
+            .coverage
+            .keys()
+            .any(|key| !self.dependencies.contains_key(key))
+        {
+            return Err(invalid("Coverage references an unknown dependency"));
+        }
+        for (from, edges) in &self.required_edges {
+            if !self.dependencies.contains_key(from)
+                || edges.iter().any(|to| !self.dependencies.contains_key(to))
+            {
+                return Err(invalid("Dependency edge references an unknown selection"));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Internally coherent resolution. It does not prove installed bytes or authorize publication.
 #[derive(Debug, Clone)]
 pub struct ResolvedProject {
@@ -496,20 +587,12 @@ impl ResolvedProject {
         if lock.intent_revision != revision {
             return Err(invalid("Lock resolves a different intent revision"));
         }
-        if lock.resolver.trim().is_empty() {
-            return Err(invalid("Lock requires a resolver identity"));
-        }
         if lock.runtime.minecraft != intent.runtime.minecraft
             || lock.runtime.loader != intent.runtime.loader
             || (intent.runtime.loader_version.is_some()
                 && lock.runtime.loader_version != intent.runtime.loader_version)
         {
             return Err(invalid("Locked runtime differs from intent"));
-        }
-        if (lock.runtime.loader == LoaderKind::Vanilla) != lock.runtime.loader_version.is_none() {
-            return Err(invalid(
-                "Non-vanilla runtime requires an exact loader version",
-            ));
         }
         for (key, dep) in &intent.roots {
             let selected = lock
@@ -574,81 +657,7 @@ impl ResolvedProject {
                 return Err(invalid("Lock changed root requirements"));
             }
         }
-        let mut identities = BTreeSet::new();
-        let mut destinations = BTreeSet::new();
-        for (key, dependency) in &lock.dependencies {
-            if let ResolvedIdentity::Provider(project) = &dependency.identity {
-                if !identities.insert(project) {
-                    return Err(invalid(
-                        "Multiple logical dependencies share one provider identity",
-                    ));
-                }
-                let selected = dependency
-                    .selected
-                    .as_ref()
-                    .ok_or_else(|| invalid("Provider dependency lacks exact selection"))?;
-                selected.validate()?;
-                if &selected.project != project {
-                    return Err(invalid("Selected pin belongs to another project"));
-                }
-            } else if dependency.selected.is_some() {
-                return Err(invalid(
-                    "A URL or local identity cannot claim a provider selection",
-                ));
-            }
-            let mut slots = BTreeSet::new();
-            for file in dependency.files.as_slice() {
-                if !slots.insert(&file.slot) {
-                    return Err(invalid("Duplicate file slot"));
-                }
-                if file.provenance.source.trim().is_empty() {
-                    return Err(invalid("File provenance source is empty"));
-                }
-                if let Some(declared) = &file.provenance.declared_digests {
-                    let expected =
-                        file.expected.digests.as_ref().ok_or_else(|| {
-                            invalid("Original source declarations were discarded")
-                        })?;
-                    declared.check(expected.values()).map_err(|_| {
-                        invalid("Expected content changed original source declarations")
-                    })?;
-                }
-                if file.expected.digests.is_none() && file.expected.accepted_observation.is_none() {
-                    return Err(invalid("Selected file lacks expected content evidence"));
-                }
-                if let AcquisitionSpec::Provider { pin, slot, .. } = &file.acquisition {
-                    pin.validate()?;
-                    if dependency.selected.as_ref() != Some(pin) || slot != &file.slot {
-                        return Err(invalid("File selection differs from owning dependency"));
-                    }
-                }
-                for placement in file.placements.as_slice() {
-                    validate_placement(placement)?;
-                    if !destinations
-                        .insert((placement.layer, placement.destination.relative().clone()))
-                    {
-                        return Err(invalid("Two placements occupy one layer destination"));
-                    }
-                }
-            }
-            if !lock.coverage.contains_key(key) {
-                return Err(invalid("Dependency coverage must be explicit"));
-            }
-        }
-        if lock
-            .coverage
-            .keys()
-            .any(|key| !lock.dependencies.contains_key(key))
-        {
-            return Err(invalid("Coverage references an unknown dependency"));
-        }
-        for (from, edges) in &lock.required_edges {
-            if !lock.dependencies.contains_key(from)
-                || edges.iter().any(|to| !lock.dependencies.contains_key(to))
-            {
-                return Err(invalid("Dependency edge references an unknown selection"));
-            }
-        }
+        lock.validate_structure()?;
         Ok(Self { intent, lock })
     }
     /// Validated user intent.
