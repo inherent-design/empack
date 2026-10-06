@@ -86,7 +86,7 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
                     ImportContentOutcome::Ready(content) => {
                         let options = fixture_decisions(&content)?;
                         let candidate = content.into_candidate(&mut scope, options)?;
-                        Ok((publish_fixture(&mut scope, candidate).await?, supplied))
+                        Ok((candidate, supplied))
                     },
                     ImportContentOutcome::NeedsInput { pending, .. } => anyhow::bail!("{} import obligations remain", pending.len()),
                 }
@@ -96,8 +96,11 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
         })?;
         let outcome = handle.wait().await;
         runtime.shutdown().await;
-        match &*outcome {
-            OperationOutcome::Completed(Ok((published, supplied))) => {
+        drop(handle);
+        drop(runtime);
+        match Arc::into_inner(outcome) {
+            Some(OperationOutcome::Completed(Ok((candidate, supplied)))) => {
+                let published = publish_fixture(candidate, governor.clone()).await?;
                 let bytes: u64 = published
                     .files
                     .iter()
@@ -120,7 +123,7 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
                     }
                 }
             }
-            OperationOutcome::Completed(Err(error)) => {
+            Some(OperationOutcome::Completed(Err(error))) => {
                 anyhow::bail!("{}: {error:#}", path.display())
             }
             _ => anyhow::bail!("Import content operation failed"),
@@ -252,83 +255,126 @@ struct PublishedProbe {
     roots: usize,
 }
 async fn publish_fixture(
-    scope: &mut empack_lib::engine::runtime::WorkScope,
     candidate: empack_lib::engine::import::ImportCandidate,
-) -> anyhow::Result<empack_lib::engine::runtime::RetainedOutput<PublishedProbe>> {
+    governor: ResourceGovernor,
+) -> anyhow::Result<PublishedProbe> {
     use empack_core::files::ManagedPath;
     use empack_lib::engine::{
-        import::{ImportReplacementPolicy, prepare_import_replacement},
+        acquisition::TransferLimits,
+        api::{
+            Engine, EngineConfig, ExecutionGrant, ExecutionOutcome, ExecutionReceipt,
+            ImportRequest, NetworkPermission, OperationResources, Preparation,
+        },
+        artifacts::ArchiveLimits,
+        import::ImportReplacementPolicy,
         layout::ProjectLayout,
         project::ProjectReader,
-        publication::{Publisher, RecoveryReader},
+        publication::RecoveryReader,
+        server_runtime::installer::InstallerExecution,
         snapshot::SnapshotLimits,
     };
-    let bytes: u64 = candidate
-        .source()
-        .content()
-        .values()
-        .map(|value| value.lease().len())
-        .sum();
-    let work = scope.spawn_blocking(
-        ResourceRequest {
-            jobs: 1,
-            memory_bytes: 32 << 20,
-            scratch_bytes: bytes * 3 + (8 << 20),
-            open_files: 16,
+    let bytes = candidate.publication_bytes();
+    let work = ResourceRequest {
+        jobs: 1,
+        memory_bytes: 64 << 20,
+        scratch_bytes: bytes * 3 + (8 << 20),
+        open_files: 16,
+    };
+    let retained = ResourceRequest {
+        memory_bytes: 8 << 20,
+        ..Default::default()
+    };
+    let temp = tempfile::tempdir()?;
+    let project = temp.path().join("project");
+    let host = temp.path().join("state");
+    std::fs::create_dir(&project)?;
+    let format = candidate.source().plan().imported().format;
+    let files = candidate.source().content().values().cloned().collect();
+    let engine = Engine::new(
+        EngineConfig {
+            state_root: host.clone(),
+            retained_operations: 1,
+            resources: OperationResources {
+                capture: work,
+                prepared: retained,
+                local_acquisition: work,
+                acquired: retained,
+                assembly: work,
+                receipt: retained,
+            },
+            snapshot: SnapshotLimits::default(),
+            archive: ArchiveLimits::default(),
+            transfer: TransferLimits::default(),
+            installer: InstallerExecution {
+                java: "must-not-run".into(),
+                deadline: std::time::Duration::from_secs(1),
+                heap_megabytes: 64,
+                output: SnapshotLimits::default(),
+            },
         },
-        ResourceRequest {
-            memory_bytes: 8 << 20,
-            ..Default::default()
-        },
-        move |cancel| {
-            let temp = tempfile::tempdir()?;
-            let project = temp.path().join("project");
-            let host = temp.path().join("state");
-            std::fs::create_dir(&project)?;
-            let reader = ProjectReader::new(RecoveryReader::new(host.clone()));
-            let captured =
-                reader.capture_replacement(&project, SnapshotLimits::default(), &cancel)?;
-            let format = candidate.source().plan().imported().format;
-            let files = candidate.source().content().values().cloned().collect();
-            let prepared = prepare_import_replacement(
-                captured,
-                candidate,
-                ImportReplacementPolicy::RejectExisting,
-                &cancel,
-            )?;
-            anyhow::ensure!(
-                std::fs::read_dir(&project)?.count() == 0 && !host.exists(),
-                "Preparation changed the project or host state"
-            );
-            let receipt = prepared.publish(&Publisher::open(&host)?, &cancel)?;
-            let snapshot =
-                reader.capture_build(&project, &[], SnapshotLimits::default(), &cancel)?;
-            anyhow::ensure!(
-                snapshot.require_resolved()?.lock() == receipt.project.lock(),
-                "Published resolution differs from candidate"
-            );
-            for dependency in receipt.project.lock().dependencies.values() {
-                for file in dependency.files.as_slice() {
-                    for placement in file.placements.as_slice() {
-                        let path = ProjectLayout::path(&ManagedPath::Content {
-                            layer: placement.layer,
-                            path: placement.destination.relative().clone(),
-                        })?;
-                        snapshot.acquire_file(
-                            &path,
-                            Some(&file.expected),
-                            SourceEvidencePolicy::Compatibility,
-                            &cancel,
-                        )?;
-                    }
-                }
-            }
-            Ok(PublishedProbe {
-                format,
-                files,
-                roots: receipt.project.intent().roots.len(),
-            })
-        },
+        governor,
     )?;
-    scope.accept(work.wait().await?)?.transpose()
+    let prepared = match engine
+        .prepare(
+            project.clone(),
+            ImportRequest {
+                candidate,
+                replacement: ImportReplacementPolicy::RejectExisting,
+            },
+        )
+        .await?
+    {
+        Preparation::Ready(prepared) => prepared,
+        Preparation::NeedsInput(_) => anyhow::bail!("Verified import unexpectedly needs input"),
+    };
+    anyhow::ensure!(
+        std::fs::read_dir(&project)?.count() == 0 && !host.exists(),
+        "Preparation changed the project or host state"
+    );
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        replacement: prepared.view().import().and_then(|view| view.replacement),
+    };
+    let mut handle = engine.start(prepared.authorize(grant)?)?;
+    let outcome = handle.wait().await;
+    engine.shutdown().await;
+    let receipt = match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Import(
+            receipt,
+        ))) => receipt,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            anyhow::bail!("{error:#}")
+        }
+        _ => anyhow::bail!("Import publication did not complete"),
+    };
+    let cancel = Cancellation::default();
+    let reader = ProjectReader::new(RecoveryReader::new(host));
+    let snapshot = reader.capture_build(&project, &[], SnapshotLimits::default(), &cancel)?;
+    anyhow::ensure!(
+        snapshot.require_resolved()?.lock() == receipt.project.lock(),
+        "Published resolution differs from candidate"
+    );
+    for dependency in receipt.project.lock().dependencies.values() {
+        for file in dependency.files.as_slice() {
+            for placement in file.placements.as_slice() {
+                let path = ProjectLayout::path(&ManagedPath::Content {
+                    layer: placement.layer,
+                    path: placement.destination.relative().clone(),
+                })?;
+                snapshot.acquire_file(
+                    &path,
+                    Some(&file.expected),
+                    SourceEvidencePolicy::Compatibility,
+                    &cancel,
+                )?;
+            }
+        }
+    }
+    Ok(PublishedProbe {
+        format,
+        files,
+        roots: receipt.project.intent().roots.len(),
+    })
 }

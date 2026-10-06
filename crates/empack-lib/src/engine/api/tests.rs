@@ -20,7 +20,7 @@ fn engine(state: PathBuf) -> (Engine, ResourceGovernor) {
     let config = EngineConfig {
         state_root: state,
         retained_operations: 4,
-        resources: BuildResources {
+        resources: OperationResources {
             capture: work,
             prepared: ResourceRequest {
                 jobs: 0,
@@ -124,9 +124,10 @@ async fn ready(engine: &Engine, root: &Path, request: BuildRequest) -> PreparedO
 }
 fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
     ExecutionGrant {
-        plan: prepared.view().plan,
+        plan: prepared.view().plan(),
         network: NetworkPermission::Offline,
         run_installer: false,
+        replacement: None,
     }
 }
 fn inventory(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
@@ -159,9 +160,9 @@ async fn preview_and_rejected_authorization_preserve_project_and_host_state() {
             .preview(root.path().to_owned(), request())
             .await
             .unwrap();
-        assert!(!view.needs_network);
-        assert!(!view.runs_installer);
-        assert!(view.content.is_empty());
+        assert!(!view.build().unwrap().needs_network);
+        assert!(!view.build().unwrap().runs_installer);
+        assert!(view.build().unwrap().content.is_empty());
     }
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     let first = ready(&engine, root.path(), request()).await;
@@ -187,8 +188,10 @@ async fn owned_build_publishes_all_outputs_and_retains_receipt_resources() {
     let id = handle.id();
     let outcome = handle.wait().await;
     let receipt = match &*outcome {
-        OperationOutcome::Completed(BuildOutcome::Completed(receipt)) => receipt,
-        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(
+            receipt,
+        ))) => receipt,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
             panic!("{error:#}")
         }
         _ => panic!("build did not complete"),
@@ -239,7 +242,7 @@ async fn source_conflicts_cancellation_and_late_failure_preserve_every_artifact(
         let outcome = handle.wait().await;
         assert!(!matches!(
             &*outcome,
-            OperationOutcome::Completed(BuildOutcome::Completed(_))
+            OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(_)))
         ));
         assert_eq!(
             fs::read(root.path().join("dist/result.mrpack")).unwrap(),
@@ -274,7 +277,7 @@ async fn cross_engine_and_missing_network_grants_are_rejected_before_effects() {
     }])
     .unwrap();
     let prepared = ready(&first, root.path(), server).await;
-    assert!(prepared.view().needs_network);
+    assert!(prepared.view().build().unwrap().needs_network);
     let permission = grant(&prepared);
     assert!(prepared.authorize(permission).is_err());
     assert!(!host.path().join("first").exists());
@@ -341,6 +344,7 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
         .unwrap()
     {
         Preparation::NeedsInput(report) => {
+            let report = report.build().unwrap();
             assert_eq!(report.unresolved.len(), 2);
             assert!(
                 report
@@ -358,12 +362,13 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
     }])
     .unwrap();
     let prepared = ready(&engine, root.path(), server).await;
-    assert!(prepared.view().runs_installer);
-    assert!(prepared.view().unresolved.is_empty());
+    assert!(prepared.view().build().unwrap().runs_installer);
+    assert!(prepared.view().build().unwrap().unresolved.is_empty());
     let permission = ExecutionGrant {
-        plan: prepared.view().plan,
+        plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: false,
+        replacement: None,
     };
     assert!(prepared.authorize(permission).is_err());
     assert!(!host.path().join("state").exists());
@@ -459,8 +464,8 @@ async fn provider_build_case(changed_digest: bool, unavailable: bool) {
         .preview(root.path().to_owned(), request.clone())
         .await
         .unwrap();
-    assert!(view.needs_network);
-    assert!(view.unresolved.is_empty());
+    assert!(view.build().unwrap().needs_network);
+    assert!(view.build().unwrap().unresolved.is_empty());
     assert_eq!(before, inventory(root.path()));
     assert!(!host.path().join("state").exists());
     // Install mocks after preview: any accidental request during preview cannot succeed.
@@ -504,7 +509,7 @@ async fn provider_build_case(changed_digest: bool, unavailable: bool) {
     let mut handle = engine.start(prepared.authorize(approval).unwrap()).unwrap();
     let outcome = handle.wait().await;
     match &*outcome {
-        OperationOutcome::Completed(BuildOutcome::Completed(_))
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(_)))
             if !changed_digest && !unavailable =>
         {
             let mut archive =
@@ -524,13 +529,13 @@ async fn provider_build_case(changed_digest: bool, unavailable: bool) {
                 );
             }
         }
-        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(_))
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
             if changed_digest || unavailable =>
         {
             assert_eq!(before, inventory(root.path()));
             assert!(!host.path().join("state").exists());
         }
-        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
             panic!("provider build failed: {error:#}")
         }
         _ => panic!("unexpected provider build outcome"),
@@ -612,7 +617,9 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
         .prepare(root.path().to_owned(), request.clone())
         .await
         .unwrap();
-    assert!(matches!(preparation, Preparation::NeedsInput(view) if view.unresolved.len() == 1));
+    assert!(
+        matches!(preparation, Preparation::NeedsInput(view) if view.build().unwrap().unresolved.len() == 1)
+    );
     let engine = engine.with_provider_catalog(
         ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
         CatalogLimits::default(),
@@ -650,12 +657,12 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     let mut handle = engine.start(prepared.authorize(approval).unwrap()).unwrap();
     let outcome = handle.wait().await;
     match &*outcome {
-        OperationOutcome::Completed(BuildOutcome::NeedsInput(needs)) => {
+        OperationOutcome::Completed(ExecutionOutcome::NeedsInput(needs)) => {
             assert_eq!(needs.len(), 1);
             assert_eq!(needs[0].kind, ContentRequirementKind::Manual);
             assert_eq!(needs[0].expected, expected);
         }
-        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
             panic!("restricted file became a failure: {error:#}")
         }
         _ => panic!("restricted file did not report missing input"),
@@ -717,10 +724,12 @@ async fn large_local_build_publishes_under_a_normal_descriptor_limit() {
         .unwrap();
     let outcome = handle.wait().await;
     match &*outcome {
-        OperationOutcome::Completed(BuildOutcome::Completed(receipt)) => {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(
+            receipt,
+        ))) => {
             assert_eq!(receipt.artifacts.len(), 2)
         }
-        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
             panic!("{error:#}")
         }
         _ => panic!("large build did not complete"),
@@ -745,5 +754,312 @@ async fn large_local_build_publishes_under_a_normal_descriptor_limit() {
     drop(outcome);
     drop(handle);
     engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+async fn imported(governor: ResourceGovernor) -> crate::engine::import::ImportCandidate {
+    use crate::engine::{
+        content::{InitialObservation, verify_stream},
+        import::{
+            ImportCandidateOptions, ImportContentKey, ImportContentLimits, ImportContentOutcome,
+            ImportContentPlan, ImportFileDecision, ImportLimits, ImportPersistence, inspect_import,
+        },
+    };
+    use empack_core::{
+        model::*,
+        requirements::{Requirement, Requirements},
+    };
+    use std::{
+        collections::BTreeMap,
+        io::{Cursor, Write},
+    };
+    let mut zip = zip::ZipWriter::new(Cursor::new(vec![]));
+    zip.start_file(
+        "modrinth.index.json",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    zip.write_all(br#"{"formatVersion":1,"game":"minecraft","name":"Imported","versionId":"1","files":[],"dependencies":{"minecraft":"1.21.1"}}"#).unwrap();
+    zip.start_file(
+        "overrides/config/value",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    zip.write_all(b"new config").unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    let source = verify_stream(
+        &mut bytes.as_slice(),
+        &ExpectedContent {
+            digests: None,
+            size: Some(bytes.len() as u64),
+            accepted_observation: None,
+        },
+        bytes.len() as u64,
+        SourceEvidencePolicy::Compatibility,
+        InitialObservation::Accepted,
+        &crate::application::process_runtime::Cancellation::default(),
+    )
+    .unwrap();
+    let runtime = OperationRuntime::new(governor, 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let result = async {
+                let input = inspect_import(
+                    &mut scope,
+                    source,
+                    ImportLimits {
+                        manifest_bytes: 4096,
+                        records: 16,
+                        archive: ArchiveLimits {
+                            entries: 32,
+                            compressed_bytes: 1 << 20,
+                            total_bytes: 1 << 20,
+                            file_bytes: 1 << 20,
+                            depth: 16,
+                        },
+                    },
+                )
+                .await?;
+                let catalog = ProviderCatalog::for_loopback_tests("http://127.0.0.1:1", None);
+                let plan = ImportContentPlan::resolve(
+                    &mut scope,
+                    input,
+                    &catalog,
+                    ImportContentLimits {
+                        catalog: crate::engine::providers::CatalogLimits {
+                            response_bytes: 4096,
+                            transfer_bytes: 8192,
+                            ..Default::default()
+                        },
+                        archive: ArchiveLimits {
+                            entries: 32,
+                            compressed_bytes: 1 << 20,
+                            total_bytes: 1 << 20,
+                            file_bytes: 1 << 20,
+                            depth: 16,
+                        },
+                        records: 16,
+                        total_bytes: 1 << 20,
+                        transfer: crate::engine::acquisition::TransferLimits {
+                            file_bytes: 1 << 20,
+                            transfer_bytes: 1 << 20,
+                            ..Default::default()
+                        },
+                    },
+                )
+                .await?;
+                let outcome = plan
+                    .acquire(
+                        &mut scope,
+                        &HttpAcquisition::for_loopback_tests(),
+                        BTreeMap::new(),
+                        SourceEvidencePolicy::Compatibility,
+                    )
+                    .await?;
+                let ImportContentOutcome::Ready(content) = outcome else {
+                    anyhow::bail!("fixture needs input");
+                };
+                content.into_candidate(
+                    &mut scope,
+                    ImportCandidateOptions {
+                        metadata: PackMetadata {
+                            name: "Imported".into(),
+                            version: "1".into(),
+                            author: None,
+                            description: None,
+                        },
+                        loader: None,
+                        layout: BTreeMap::new(),
+                        exclude_auxiliary_members: false,
+                        distribution: DistributionIntent {
+                            targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                            archive: DistributionArchive::Zip,
+                        },
+                        files: BTreeMap::from([(
+                            ImportContentKey::Override(0),
+                            ImportFileDecision {
+                                key: DependencyKey::parse("config")?,
+                                kind: ContentKind::Config,
+                                requirements: Requirements {
+                                    client: Requirement::Required,
+                                    server: Requirement::Required,
+                                },
+                                persistence: ImportPersistence::Local,
+                                provider_destination: None,
+                            },
+                        )]),
+                    },
+                )
+            }
+            .await;
+            Ok(result)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    drop(handle);
+    drop(runtime);
+    match Arc::into_inner(outcome) {
+        Some(OperationOutcome::Completed(Ok(candidate))) => candidate,
+        Some(OperationOutcome::Completed(Err(error))) => panic!("{error:#}"),
+        _ => panic!("import fixture failed"),
+    }
+}
+async fn ready_import(
+    engine: &Engine,
+    governor: &ResourceGovernor,
+    root: &Path,
+) -> PreparedOperation {
+    let request = ImportRequest {
+        candidate: imported(governor.clone()).await,
+        replacement: crate::engine::import::ImportReplacementPolicy::ReplaceManagedContent,
+    };
+    match engine.prepare(root.to_path_buf(), request).await.unwrap() {
+        Preparation::Ready(prepared) => prepared,
+        Preparation::NeedsInput(_) => panic!("fully acquired import cannot need content"),
+    }
+}
+fn import_grant(prepared: &PreparedOperation) -> ExecutionGrant {
+    ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        replacement: prepared.view().import().unwrap().replacement,
+    }
+}
+#[tokio::test]
+async fn import_preview_and_replacement_acknowledgement_preserve_unapproved_files() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    put(root.path(), "empack.yml", b"broken");
+    put(root.path(), "pack/old.jar", b"old bytes");
+    let before = inventory(root.path());
+    let (engine, governor) = engine(host.path().join("state"));
+    let view = engine
+        .preview(
+            root.path().to_path_buf(),
+            ImportRequest {
+                candidate: imported(governor.clone()).await,
+                replacement: crate::engine::import::ImportReplacementPolicy::ReplaceManagedContent,
+            },
+        )
+        .await
+        .unwrap();
+    let old_ack = view.import().unwrap().replacement.unwrap();
+    assert!(!view.needs_network() && !view.runs_installer());
+    assert_eq!(before, inventory(root.path()));
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    let prepared = ready_import(&engine, &governor, root.path()).await;
+    assert!(governor.status().reserved.scratch_bytes > 0);
+    let mut permission = import_grant(&prepared);
+    permission.replacement = None;
+    assert!(prepared.authorize(permission).is_err());
+    assert_eq!(before, inventory(root.path()));
+    put(root.path(), "pack/old.jar", b"edited original");
+    let prepared = ready_import(&engine, &governor, root.path()).await;
+    assert_ne!(prepared.view().import().unwrap().replacement, Some(old_ack));
+    let mut permission = import_grant(&prepared);
+    permission.replacement = Some(old_ack);
+    assert!(prepared.authorize(permission).is_err());
+    assert_eq!(
+        fs::read(root.path().join("pack/old.jar")).unwrap(),
+        b"edited original"
+    );
+    assert!(!host.path().join("state").exists());
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}
+#[tokio::test]
+async fn owned_import_publishes_complete_content_and_retains_a_typed_receipt() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, governor) = engine(host.path().join("state"));
+    put(root.path(), "README", b"unrelated");
+    put(root.path(), "pack/backup.zip", b"private");
+    put(root.path(), "pack/.packwizignore", b"private/\n");
+    let prepared = ready_import(&engine, &governor, root.path()).await;
+    assert!(prepared.view().import().unwrap().replacement.is_none());
+    let expected_bytes: u64 = prepared
+        .view()
+        .import()
+        .unwrap()
+        .files
+        .expected()
+        .values()
+        .map(|file| file.bytes)
+        .sum();
+    assert_eq!(governor.status().reserved.scratch_bytes, expected_bytes);
+    let permission = import_grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Import(
+            receipt,
+        ))) => {
+            assert_eq!(receipt.plan, permission.plan);
+            assert_eq!(receipt.project.intent().roots.len(), 1);
+        }
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("import did not complete"),
+    }
+    assert_eq!(
+        fs::read(root.path().join("overrides/common/config/value")).unwrap(),
+        b"new config"
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/backup.zip")).unwrap(),
+        b"private"
+    );
+    assert_eq!(fs::read(root.path().join("README")).unwrap(), b"unrelated");
+    assert_eq!(governor.status().reserved, engine.config.resources.receipt);
+    assert!(engine.observe(handle.id()).is_some());
+    assert!(engine.release_completed(handle.id()));
+    drop(outcome);
+    drop(handle);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+#[tokio::test]
+async fn import_rejects_cross_engine_grants_and_preserves_conflicting_or_cancelled_projects() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, governor) = engine(host.path().join("state"));
+    let (other, _) = self::engine(host.path().join("other"));
+    let prepared = ready_import(&engine, &governor, root.path()).await;
+    let permission = import_grant(&prepared);
+    assert!(
+        other
+            .start(prepared.authorize(permission).unwrap())
+            .is_err()
+    );
+    for cancel in [false, true] {
+        let prepared = ready_import(&engine, &governor, root.path()).await;
+        let permission = import_grant(&prepared);
+        if !cancel {
+            put(root.path(), "empack.yml", b"concurrent edit");
+        }
+        let before = inventory(root.path());
+        let mut handle = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        if cancel {
+            handle.cancel();
+        }
+        let outcome = handle.wait().await;
+        assert!(!matches!(
+            &*outcome,
+            OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+        ));
+        assert_eq!(before, inventory(root.path()));
+        assert!(engine.release_completed(handle.id()));
+        drop(outcome);
+        drop(handle);
+    }
+    engine.shutdown().await;
+    other.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }

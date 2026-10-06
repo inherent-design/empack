@@ -244,7 +244,7 @@ async fn publish_with_refreshed_locator(
         EngineConfig {
             state_root: host.path().join("state"),
             retained_operations: 1,
-            resources: BuildResources {
+            resources: OperationResources {
                 capture: work,
                 prepared: retained,
                 local_acquisition: work,
@@ -290,16 +290,17 @@ async fn publish_with_refreshed_locator(
         "Preparation wrote host state"
     );
     let grant = ExecutionGrant {
-        plan: prepared.view().plan,
+        plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: false,
+        replacement: None,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
     let outcome = handle.wait().await;
     engine.shutdown().await;
     match &*outcome {
-        OperationOutcome::Completed(BuildOutcome::Completed(_)) => {}
-        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(_))) => {}
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
             anyhow::bail!("Provider-backed build failed: {error:#}")
         }
         _ => anyhow::bail!("Provider-backed build did not publish"),

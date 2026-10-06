@@ -3,9 +3,10 @@
 Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
 [implementation ledger](implementation.md) identifies a compiled API.
 
-The compiled build entry point is `empack_lib::engine::api::Engine`. Its `preview`
-and `prepare` accept an absolute existing-project selection and a `BuildRequest`.
-Both only capture and plan. The preview includes exact artifact destinations,
+The compiled entry point is `empack_lib::engine::api::Engine`. Its `preview`
+and `prepare` accept an absolute existing-project selection and a `Request`: either
+`BuildRequest` or `ImportRequest`. Both capture and plan without live-project writes.
+`OperationPreview` carries the operation-specific view. A build view includes exact artifact destinations,
 runtime, missing content, network/tool requirements and the complete requested
 options. It has no conversion into an executable operation. A ready preparation
 can be consumed with an `ExecutionGrant` naming its opaque in-process `PlanId`;
@@ -84,8 +85,21 @@ directory without requiring a valid old manifest. `prepare_import_replacement` c
 that snapshot and an `ImportCandidate`, returning a `PreparedImportReplacement` only
 when its complete frozen file inventory verifies. Its plan names every replacement
 and removal; publication revalidates the captured source. This lower-level composition
-requires a trusted host to approve the exact plan. Engine-bound import authorization
-and nonexistent-root creation remain unfinished.
+requires a trusted host to approve the exact plan.
+
+`ImportRequest` consumes the candidate and replacement policy. Engine preparation
+captures the existing destination and verifies privately staged content. `ImportPreview`
+exposes the complete file plan, metadata and runtime. Replacing existing managed files
+requires an `ExecutionGrant` carrying the exact `ReplacementSummary` from that view;
+missing or stale acknowledgements fail before publication. New-file-only plans need no
+replacement acknowledgement. The engine also checks the originating instance and plan.
+
+Build and import share the owned operation registry and `ExecutionOutcome`. Completed
+operations retain a typed `ExecutionReceipt::Build` or `ExecutionReceipt::Import`;
+interruption and recovery outcomes are shared. Preparation reserves the candidate and
+its staging copy, then retains the actual staged byte allowance until publication retires.
+Import source resolution/acquisition remains an explicit earlier read-only composition.
+Creating a nonexistent project root and CLI cutover remain unfinished.
 
 ## 17. Public engine API and application wiring
 

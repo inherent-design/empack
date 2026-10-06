@@ -1,8 +1,4 @@
 use super::*;
-#[derive(Debug, thiserror::Error)]
-#[error("Publication worker failed; inspect recovery before retrying")]
-struct PublicationWorkerFailed(#[source] RuntimeError);
-
 use crate::engine::{
     bootstrap_tools::InstallerAssets,
     build::{
@@ -24,23 +20,23 @@ pub(super) async fn run(
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
     mut scope: WorkScope,
-) -> Result<BuildOutcome, RuntimeError> {
+) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
     let result = execute(prepared, config, transport, catalog, &mut scope).await;
     Ok(match result {
         Ok(outcome) => outcome,
         Err(error) => {
             if let Some(recovery) = error.downcast_ref::<RecoveryRequired>() {
-                BuildOutcome::RecoveryRequired {
+                ExecutionOutcome::RecoveryRequired {
                     operation: recovery.operation.clone(),
                     cause: error,
                 }
             } else if error.downcast_ref::<PublicationWorkerFailed>().is_some() {
-                BuildOutcome::ExecutionUncertain(error)
+                ExecutionOutcome::ExecutionUncertain(error)
             } else if cancel.is_cancelled() {
-                BuildOutcome::InterruptedBeforePublication
+                ExecutionOutcome::InterruptedBeforePublication
             } else {
-                BuildOutcome::FailedBeforePublication(error)
+                ExecutionOutcome::FailedBeforePublication(error)
             }
         }
     })
@@ -51,7 +47,7 @@ async fn execute(
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
     scope: &mut WorkScope,
-) -> Result<BuildOutcome> {
+) -> Result<ExecutionOutcome> {
     let (prepared, prepared_permit) = prepared.into_parts();
     let PreparedBuild {
         view,
@@ -90,13 +86,13 @@ async fn execute(
         .map(describe)
         .collect();
     if !missing.is_empty() {
-        return Ok(BuildOutcome::NeedsInput(missing));
+        return Ok(ExecutionOutcome::NeedsInput(missing));
     }
     let acquired = acquired
         .acquire_http(&transport, scope, evidence, config.transfer)
         .await?;
     if !acquired.pending.is_empty() {
-        return Ok(BuildOutcome::NeedsInput(
+        return Ok(ExecutionOutcome::NeedsInput(
             acquired.pending.iter().map(describe).collect(),
         ));
     }
@@ -205,9 +201,9 @@ async fn execute(
     )?;
     let result = work.wait().await.map_err(PublicationWorkerFailed)?;
     // Cancellation after a completed publication must preserve its committed receipt.
-    Ok(BuildOutcome::Completed(
-        scope.accept_publication(result)?.transpose()?,
-    ))
+    Ok(ExecutionOutcome::Completed(ExecutionReceipt::Build(
+        Box::new(scope.accept_publication(result)?.transpose()?),
+    )))
 }
 async fn prepare_runtime(
     transport: &HttpAcquisition,

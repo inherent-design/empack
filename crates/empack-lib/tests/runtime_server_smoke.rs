@@ -106,8 +106,8 @@ async fn package_runtime(
     use empack_core::{model::NonEmpty, projection::BuildTarget};
     use empack_lib::engine::{
         api::{
-            BuildOutcome, BuildOutput, BuildRequest, BuildResources, Engine, EngineConfig,
-            ExecutionGrant, NetworkPermission, Preparation,
+            BuildOutput, BuildRequest, Engine, EngineConfig, ExecutionGrant, ExecutionOutcome,
+            ExecutionReceipt, NetworkPermission, OperationResources, Preparation,
         },
         documents::DocumentCodec,
         mrpack::OptionalConversion,
@@ -158,7 +158,7 @@ async fn package_runtime(
         EngineConfig {
             state_root: host.path().join("state"),
             retained_operations: 2,
-            resources: BuildResources {
+            resources: OperationResources {
                 capture: work,
                 prepared: ResourceRequest {
                     jobs: 0,
@@ -241,24 +241,28 @@ async fn package_runtime(
         "Preparation created host state"
     );
     let grant = ExecutionGrant {
-        plan: prepared.view().plan,
+        plan: prepared.view().plan(),
         network: NetworkPermission::Allow,
         run_installer: true,
+        replacement: None,
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
     let result = handle.wait().await;
     engine.shutdown().await;
     match &*result {
-        OperationOutcome::Completed(BuildOutcome::Completed(receipt)) => {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(
+            receipt,
+        ))) => {
             anyhow::ensure!(
                 receipt.artifacts.len() == 1 && receipt.artifacts[0].server_runtime.is_some(),
                 "Published archive lacks runtime evidence"
             );
         }
         OperationOutcome::Completed(
-            BuildOutcome::FailedBeforePublication(error) | BuildOutcome::ExecutionUncertain(error),
+            ExecutionOutcome::FailedBeforePublication(error)
+            | ExecutionOutcome::ExecutionUncertain(error),
         ) => anyhow::bail!("Runtime build failed: {error:#}"),
-        OperationOutcome::Completed(BuildOutcome::RecoveryRequired { cause, .. }) => {
+        OperationOutcome::Completed(ExecutionOutcome::RecoveryRequired { cause, .. }) => {
             anyhow::bail!("Runtime publication requires recovery: {cause:#}")
         }
         _ => anyhow::bail!("Runtime build did not complete"),

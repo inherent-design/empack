@@ -8,11 +8,10 @@ The normalized engine can prepare and recoverably publish all five distribution
 shapes from a captured workspace. Server recipes have verified vanilla,
 Fabric, Quilt, Forge and NeoForge runtime preparation. HTTP acquisition and
 explicit build-content obligations feed these paths. The compiled `Engine` now owns
-build preview, preparation, exact-plan authorization, acquisition, runtime assembly
-and publication. The read-only provider catalog resolves canonical selectors and
+build/import preview, preparation, exact-plan authorization and publication.
+Build execution also owns acquisition and runtime assembly. The read-only provider catalog resolves canonical selectors and
 exact and compatible Modrinth/CurseForge selections, offers bounded search choices,
-and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. Import/operation
-composition, the remaining operation APIs,
+and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. New-root creation, the remaining operation APIs,
 continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
 checks. There will be one implementation per operation, not a permanent legacy engine.
@@ -21,7 +20,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 
 | Boundary | Current behavior | Contract evidence |
 | --- | --- | --- |
-| Build lifecycle | Read-only preview/preparation; engine-bound consumed grants; shared target acquisition; owned runtime/tool work; all-requested publication and retained receipts; abandoned preparation retirement | [Engine tests](../../crates/empack-lib/src/engine/api/tests.rs), [runtime tests](../../crates/empack-lib/src/engine/runtime/tests.rs) |
+| Build and import lifecycle | Read-only preview/preparation; engine-bound consumed grants; exact replacement acknowledgement; shared build acquisition; owned runtime/tool work; all-requested publication and typed retained receipts; abandoned preparation retirement | [Engine tests](../../crates/empack-lib/src/engine/api/tests.rs), [runtime tests](../../crates/empack-lib/src/engine/runtime/tests.rs) |
 | Provider catalog | Canonical slug/ID/URL resolution, exact project-owned selections, bounded compatible-version selection and content identification; all file assertions, roles, environment facts and dependency relations retained; fixed-origin authenticated API requests, shared rate budgets, bounded bytes/deadline/retries and owned parsing | [Catalog tests](../../crates/empack-lib/src/engine/providers/tests.rs), [official API smoke](../../crates/empack-lib/tests/provider_catalog_smoke.rs) |
 | Import inspection | Owned bounded mrpack/CurseForge parsing with original archive retention; exact provider references, URL declarations, embedded members, independent environment requirements, override layers and source locations; no project/backend authority | [Adapter tests](../../crates/empack-lib/src/engine/import/tests.rs), [archive smoke](../../crates/empack-lib/tests/import_archive_smoke.rs) |
 | Semantic core | Dependency-free identities, pins, paths, requirements, digests, exact multi-file resolution, file plans, target prerequisites and inventory projection | [Core suites](../../crates/empack-core/tests/) |
@@ -297,8 +296,12 @@ The trusted host can publish the verified plan through the journaled publisher.
 Concurrent source edits, added files and cancellation before publication prevent the
 whole replacement. Tests publish into an empty existing directory and replace a
 broken project, preserve unrelated files, and re-export the correct layered bytes.
-Creating a nonexistent root and binding import preparation to the Engine's approval
-and operation lifecycle remain required before CLI cutover.
+The shared Engine now accepts build and import requests. Import preparation stages
+the full candidate under admission, exposes its file plan and requires an exact
+replacement-summary acknowledgement before existing managed files can change.
+Both operation kinds use the same engine-bound approval, owned runtime, cancellation
+and retained terminal outcomes. Import receipts retain the published semantic project.
+Creating a nonexistent root remains required before CLI cutover.
 
 ## Composed build behavior
 
@@ -392,6 +395,8 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Shared build/import Engine | 1,685 tests and eleven doctests passed before the final control-root guard. The final 302 core/engine checks and all-feature Clippy pass; one nextest pipe-leak warning passed cleanly in isolation. Both real import formats published 78 roots through Engine approval and verified every placed file. All seven live provider probes pass; the eleven-runtime sweep is still running |
+| Native-name review 68 | The original ignored `backup?.zip` failure reproduced. Exclusion now precedes portable validation; included invalid names still fail. A broad-ignore control-root regression also reproduced and is covered by the final core/engine checks. Linux-only invalid-Unicode coverage is compiled for native CI; APFS rejects those names at creation |
 | Replacement review 67 | Ignored-file deletion and ignored-link traversal both reproduced. The ownership fix passes 26 replacement/project/publication checks; all-feature Clippy passed on the combined Engine working tree. Explicit incoming destinations need real absence evidence; existing unowned files and source rules remain untouched |
 | Native import replacement | 1,678 tests and eleven doctests passed, along with 58 affected import/project/staging/publication checks and all-feature Clippy. Both real Fabulously Optimized formats published 78 roots into temporary projects; every placed file was reread against original evidence. This remains lower-level publication evidence, not Engine approval or CLI parity |
 | Import candidate interpretation | 1,673 tests and eleven doctests passed before the final provenance/index refinement. The final 50 core/import checks and all-feature Clippy cover that refinement. Both real formats produced 78 coherent roots, including explicit restricted-file association and exclusion of the known generated `modlist.html` report. The first CurseForge candidate probe correctly refused that unacknowledged auxiliary member. Publication and CLI parity remain unfinished |
@@ -451,9 +456,9 @@ files before publication.
 
 ## Remaining integration and limits
 
-- Extend the compiled build `Engine` lifecycle to semantic project mutations,
-  provider catalogs and import normalization. All five build recipes and all loader
-  runtime families now enter the same approved build driver.
+- Extend the compiled build/import `Engine` lifecycle to the remaining semantic
+  project mutations and nonexistent-root creation. All five build recipes and all
+  loader runtime families enter the same approved build driver.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
   provider-locator refresh, continuation and scoped
   clean through the same verified obligations.

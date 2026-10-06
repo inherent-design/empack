@@ -45,8 +45,13 @@ pub struct ImportCandidate {
     content: VerifiedImportContent,
     bindings: BTreeMap<(DependencyKey, FileSlot), ImportContentKey>,
     _index: AdmissionPermit,
+    publication_bytes: u64,
 }
 impl ImportCandidate {
+    /// Exact document and placed-payload bytes needed by native preparation.
+    pub fn publication_bytes(&self) -> u64 {
+        self.publication_bytes
+    }
     pub fn project(&self) -> &ResolvedProject {
         &self.project
     }
@@ -388,7 +393,8 @@ impl VerifiedImportContent {
         }
         cancel.check()?;
         let codec = DocumentCodec;
-        let decoded = codec.decode_intent(&codec.encode_intent(&intent)?, "import candidate")?;
+        let intent_bytes = codec.encode_intent(&intent)?;
+        let decoded = codec.decode_intent(&intent_bytes, "import candidate")?;
         let lock = ResolutionLock {
             intent_revision: decoded.semantic_revision(),
             resolver: "empack-import-v0.5".into(),
@@ -402,12 +408,32 @@ impl VerifiedImportContent {
         };
         let project = ResolvedProject::validate(intent, lock, decoded.semantic_revision())?;
         // Exercise the durable boundary now, rather than discovering a lossy representation at publication.
-        codec.encode_lock(&project)?;
+        let document_bytes = intent_bytes.len() as u64 + codec.encode_lock(&project)?.len() as u64;
+        let publication_bytes =
+            bindings
+                .iter()
+                .try_fold(document_bytes, |sum, ((key, slot), source)| {
+                    let file = project.lock().dependencies[key]
+                        .files
+                        .as_slice()
+                        .iter()
+                        .find(|file| &file.slot == slot)
+                        .context("Import binding has no locked file")?;
+                    sum.checked_add(
+                        self.content()[source]
+                            .lease()
+                            .len()
+                            .checked_mul(file.placements.as_slice().len() as u64)
+                            .context("Import staging size overflow")?,
+                    )
+                    .context("Import staging size overflow")
+                })?;
         Ok(ImportCandidate {
             project,
             content: self,
             bindings,
             _index: index,
+            publication_bytes,
         })
     }
 }

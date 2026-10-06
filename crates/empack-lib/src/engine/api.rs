@@ -1,4 +1,4 @@
-//! Semantic build lifecycle. Preparation has read-only project authority; only an approved,
+//! Semantic operation lifecycle. Preparation has read-only project authority; only an approved,
 //! engine-bound plan can admit acquisition, trusted tools and verified publication.
 use super::{
     acquisition::{HttpAcquisition, TransferLimits},
@@ -42,7 +42,12 @@ use std::{
 };
 use tokio::sync::oneshot;
 
+#[derive(Debug, thiserror::Error)]
+#[error("Publication worker failed; inspect recovery before retrying")]
+struct PublicationWorkerFailed(#[source] RuntimeError);
 mod execution;
+mod import;
+pub use import::{ImportPreview, ImportReceipt, ImportRequest, ReplacementSummary};
 static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 
 /// In-process identity for one immutable captured plan; deliberately not deserializable.
@@ -65,7 +70,7 @@ pub struct BuildRequest {
 }
 /// Host estimates used for admission, separate from actual stream and snapshot limits.
 #[derive(Clone, Copy)]
-pub struct BuildResources {
+pub struct OperationResources {
     pub capture: ResourceRequest,
     pub prepared: ResourceRequest,
     pub local_acquisition: ResourceRequest,
@@ -76,7 +81,7 @@ pub struct BuildResources {
 #[derive(Clone)]
 pub struct EngineConfig {
     pub state_root: PathBuf,
-    pub resources: BuildResources,
+    pub resources: OperationResources,
     pub snapshot: SnapshotLimits,
     pub archive: ArchiveLimits,
     pub transfer: TransferLimits,
@@ -126,46 +131,115 @@ struct PreparedBuild {
     request: BuildRequest,
     acquisition: BuildAcquisitionPlan,
 }
+pub enum Request {
+    Build(BuildRequest),
+    Import(Box<ImportRequest>),
+}
+impl From<BuildRequest> for Request {
+    fn from(request: BuildRequest) -> Self {
+        Self::Build(request)
+    }
+}
+impl From<ImportRequest> for Request {
+    fn from(request: ImportRequest) -> Self {
+        Self::Import(Box::new(request))
+    }
+}
+#[derive(Clone)]
+pub enum OperationPreview {
+    Build(BuildPreview),
+    Import(ImportPreview),
+}
+impl OperationPreview {
+    pub fn plan(&self) -> PlanId {
+        match self {
+            Self::Build(view) => view.plan,
+            Self::Import(view) => view.plan,
+        }
+    }
+    pub fn build(&self) -> Option<&BuildPreview> {
+        match self {
+            Self::Build(view) => Some(view),
+            _ => None,
+        }
+    }
+    pub fn import(&self) -> Option<&ImportPreview> {
+        match self {
+            Self::Import(view) => Some(view),
+            _ => None,
+        }
+    }
+    pub fn needs_network(&self) -> bool {
+        self.build().is_some_and(|view| view.needs_network)
+    }
+    pub fn runs_installer(&self) -> bool {
+        self.build().is_some_and(|view| view.runs_installer)
+    }
+}
+enum PreparedKind {
+    Build(Box<PreparedBuild>),
+    Import(Box<import::PreparedImport>),
+}
+impl PreparedKind {
+    fn view(&self) -> OperationPreview {
+        match self {
+            Self::Build(value) => OperationPreview::Build(value.view.clone()),
+            Self::Import(value) => OperationPreview::Import(value.view.clone()),
+        }
+    }
+}
 pub struct PreparedOperation {
     owner: Arc<()>,
-    data: Box<RetainedOutput<PreparedBuild>>,
+    view: Box<OperationPreview>,
+    data: Box<RetainedOutput<PreparedKind>>,
 }
 pub struct ApprovedOperation {
     prepared: PreparedOperation,
 }
 pub enum Preparation {
     Ready(PreparedOperation),
-    NeedsInput(Box<BuildPreview>),
+    NeedsInput(Box<OperationPreview>),
 }
 #[derive(Debug, Clone, Copy)]
 pub struct ExecutionGrant {
     pub plan: PlanId,
     pub network: NetworkPermission,
     pub run_installer: bool,
+    /// Exact managed replacement footprint displayed by an import preview.
+    pub replacement: Option<ReplacementSummary>,
 }
 impl PreparedOperation {
-    pub fn view(&self) -> &BuildPreview {
-        &self.data.view
+    pub fn view(&self) -> &OperationPreview {
+        &self.view
     }
     pub fn authorize(self, grant: ExecutionGrant) -> Result<ApprovedOperation> {
         ensure!(
-            grant.plan == self.data.view.plan,
+            grant.plan == self.view.plan(),
             "Execution grant belongs to another plan"
         );
         ensure!(
-            !self.data.view.needs_network || grant.network == NetworkPermission::Allow,
-            "Build requires network authorization"
+            !self.view.needs_network() || grant.network == NetworkPermission::Allow,
+            "Operation requires network authorization"
         );
         ensure!(
-            !self.data.view.runs_installer || grant.run_installer,
-            "Build requires trusted installer authorization"
+            !self.view.runs_installer() || grant.run_installer,
+            "Operation requires trusted installer authorization"
+        );
+        let replacement = self.view.import().and_then(|view| view.replacement);
+        ensure!(
+            grant.replacement == replacement,
+            "Execution grant must acknowledge the exact replacement footprint"
         );
         Ok(ApprovedOperation { prepared: self })
     }
 }
+pub enum ExecutionReceipt {
+    Build(Box<RetainedOutput<BuildReceipt>>),
+    Import(Box<RetainedOutput<ImportReceipt>>),
+}
 /// Accurate publication outcome: a failed preparation and a hot durable journal are distinct.
-pub enum BuildOutcome {
-    Completed(RetainedOutput<BuildReceipt>),
+pub enum ExecutionOutcome {
+    Completed(ExecutionReceipt),
     NeedsInput(Vec<ContentRequirement>),
     FailedBeforePublication(anyhow::Error),
     InterruptedBeforePublication,
@@ -182,7 +256,7 @@ pub struct BuildReceipt {
     pub publication: PublicationReceipt,
     pub artifacts: Vec<super::build::batch::BuiltDistribution>,
 }
-/// Owned build operations over captured projects. The host authorizes the displayed plan.
+/// Owned operations over captured projects. The host authorizes the displayed plan.
 ///
 /// ```no_run
 /// # use empack_lib::engine::api::*;
@@ -194,9 +268,10 @@ pub struct BuildReceipt {
 /// };
 /// // The host presents prepared.view() and explicitly permits these effects.
 /// let grant = ExecutionGrant {
-///     plan: prepared.view().plan,
+///     plan: prepared.view().plan(),
 ///     network: NetworkPermission::Allow,
 ///     run_installer: true,
+///     replacement: None,
 /// };
 /// let mut operation = engine.start(prepared.authorize(grant)?)?;
 /// let outcome = operation.wait().await;
@@ -211,7 +286,7 @@ pub struct Engine {
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
     preparations: OperationRuntime<()>,
-    operations: OperationRuntime<BuildOutcome>,
+    operations: OperationRuntime<ExecutionOutcome>,
 }
 impl Engine {
     /// Construction neither creates host state nor bootstraps tooling.
@@ -241,7 +316,12 @@ impl Engine {
     }
     /// Capture and plan only. No persistent cache writer, downloader or process runner enters
     /// this worker. Dropping the future cancels its engine-owned preparation.
-    pub async fn prepare(&self, project: PathBuf, request: BuildRequest) -> Result<Preparation> {
+    pub async fn prepare(
+        &self,
+        project: PathBuf,
+        request: impl Into<Request>,
+    ) -> Result<Preparation> {
+        let request = request.into();
         let config = self.config.clone();
         let provider_access = self
             .catalog
@@ -250,23 +330,40 @@ impl Engine {
             .unwrap_or_default();
         let owner = self.owner.clone();
         let (sender, receiver) = oneshot::channel();
-        let mut handle =
-            self.preparations
-                .start_ephemeral(move |mut scope| async move {
-                    let work = scope.spawn_blocking(
-                        config.resources.capture,
-                        config.resources.prepared,
-                        move |cancel| capture(project, request, &config, provider_access, &cancel),
-                    )?;
-                    let prepared = scope.accept(work.wait().await?)?.transpose().map(|data| {
-                        PreparedOperation {
-                            owner,
-                            data: Box::new(data),
+        let mut handle = self
+            .preparations
+            .start_ephemeral(move |mut scope| async move {
+                let prepared: Result<RetainedOutput<PreparedKind>> = async {
+                    match request {
+                        Request::Build(request) => {
+                            let work = scope.spawn_blocking(
+                                config.resources.capture,
+                                config.resources.prepared,
+                                move |cancel| {
+                                    capture(project, request, &config, provider_access, &cancel)
+                                },
+                            )?;
+                            Ok(scope
+                                .accept(work.wait().await?)?
+                                .transpose()?
+                                .map(|value| PreparedKind::Build(Box::new(value))))
                         }
-                    });
-                    let _ = sender.send(prepared);
-                    Ok(())
-                })?;
+                        Request::Import(request) => {
+                            Ok(import::prepare(project, *request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Import(Box::new(value))))
+                        }
+                    }
+                }
+                .await;
+                let prepared = prepared.map(|data| PreparedOperation {
+                    owner,
+                    view: Box::new(data.view()),
+                    data: Box::new(data),
+                });
+                let _ = sender.send(prepared);
+                Ok(())
+            })?;
         let outcome = handle.wait().await;
         if let OperationOutcome::Failed(error) = &*outcome {
             return Err(error.clone().into());
@@ -274,20 +371,28 @@ impl Engine {
         let prepared = receiver
             .await
             .context("Preparation result was not retained")??;
-        if prepared.view().unresolved.is_empty() {
+        if prepared
+            .view()
+            .build()
+            .is_none_or(|view| view.unresolved.is_empty())
+        {
             Ok(Preparation::Ready(prepared))
         } else {
             Ok(Preparation::NeedsInput(Box::new(prepared.view().clone())))
         }
     }
     /// Preview has no authority-bearing output even when its plan requires no additional input.
-    pub async fn preview(&self, project: PathBuf, request: BuildRequest) -> Result<BuildPreview> {
+    pub async fn preview(
+        &self,
+        project: PathBuf,
+        request: impl Into<Request>,
+    ) -> Result<OperationPreview> {
         Ok(match self.prepare(project, request).await? {
             Preparation::Ready(prepared) => prepared.view().clone(),
             Preparation::NeedsInput(report) => *report,
         })
     }
-    pub fn start(&self, approved: ApprovedOperation) -> Result<OperationHandle<BuildOutcome>> {
+    pub fn start(&self, approved: ApprovedOperation) -> Result<OperationHandle<ExecutionOutcome>> {
         ensure!(
             Arc::ptr_eq(&self.owner, &approved.prepared.owner),
             "Prepared operation belongs to another engine"
@@ -296,10 +401,23 @@ impl Engine {
         let transport = self.transport.clone();
         let catalog = self.catalog.clone();
         Ok(self.operations.start(move |scope| async move {
-            execution::run(*approved.prepared.data, config, transport, catalog, scope).await
+            let data = *approved.prepared.data;
+            if matches!(&*data, PreparedKind::Build(_)) {
+                let prepared = data.map(|kind| match kind {
+                    PreparedKind::Build(value) => *value,
+                    _ => unreachable!(),
+                });
+                execution::run(prepared, config, transport, catalog, scope).await
+            } else {
+                let prepared = data.map(|kind| match kind {
+                    PreparedKind::Import(value) => *value,
+                    _ => unreachable!(),
+                });
+                import::run(prepared, config, scope).await
+            }
         })?)
     }
-    pub fn observe(&self, id: OperationId) -> Option<OperationHandle<BuildOutcome>> {
+    pub fn observe(&self, id: OperationId) -> Option<OperationHandle<ExecutionOutcome>> {
         self.operations.observe(id)
     }
     pub fn release_completed(&self, id: OperationId) -> bool {
