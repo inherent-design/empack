@@ -258,10 +258,11 @@ impl MrpackPlan {
             .filter_map(|(path, indices)| {
                 (indices.len() > 1
                     && indices.iter().any(|index| {
-                        matches!(
-                            inputs[*index].representation,
-                            Representation::Download { .. }
-                        )
+                        inputs[*index].layer == ContentLayer::CommonOverride
+                            || matches!(
+                                inputs[*index].representation,
+                                Representation::Download { .. }
+                            )
                     }))
                 .then_some(path.clone())
             })

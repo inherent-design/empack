@@ -467,6 +467,7 @@ fn source_enumeration_includes_new_content_preserves_sides_and_honors_captured_r
         "pack/config/private.toml",
         "pack/mods/ignored.pw.toml",
         "pack/index.toml",
+        "overrides/common/config/new.toml",
         "overrides/client/config/new.toml",
         "overrides/server/config/private.toml",
     ] {
@@ -478,10 +479,15 @@ fn source_enumeration_includes_new_content_preserves_sides_and_honors_captured_r
     fs::write(&ignore, b"config/private.toml\nmods/ignored.pw.toml\n").unwrap();
     let reader = ProjectReader::new(RecoveryReader::new(temp.path().join("unused-host")));
     let cancel = Cancellation::default();
-    let scopes: Vec<_> = ["pack", "overrides/client", "overrides/server"]
-        .into_iter()
-        .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent).unwrap())
-        .collect();
+    let scopes: Vec<_> = [
+        "pack",
+        "overrides/common",
+        "overrides/client",
+        "overrides/server",
+    ]
+    .into_iter()
+    .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent).unwrap())
+    .collect();
     let snapshot = reader
         .capture(temp.path(), &scopes, SnapshotLimits::default(), &cancel)
         .unwrap();
@@ -491,6 +497,7 @@ fn source_enumeration_includes_new_content_preserves_sides_and_honors_captured_r
         paths,
         vec![
             "overrides/client/config/new.toml",
+            "overrides/common/config/new.toml",
             "overrides/server/config/private.toml",
             "pack/config/new.toml"
         ]

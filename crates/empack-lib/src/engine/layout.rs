@@ -20,6 +20,7 @@ impl ProjectLayout {
                 "{}/{}",
                 match layer {
                     ContentLayer::Common => "pack",
+                    ContentLayer::CommonOverride => "overrides/common",
                     ContentLayer::Client => "overrides/client",
                     ContentLayer::Server => "overrides/server",
                 },
@@ -56,6 +57,7 @@ impl ProjectLayout {
             );
         }
         for (prefix, layer) in [
+            ("overrides/common/", ContentLayer::CommonOverride),
             ("overrides/client/", ContentLayer::Client),
             ("overrides/server/", ContentLayer::Server),
         ] {
@@ -157,6 +159,7 @@ mod tests {
             "pack/pack.toml",
             "pack/mods/a.pw.toml",
             "pack/mods/a.jar",
+            "overrides/common/config/a",
             "overrides/client/config/a",
             "overrides/server/config/a",
             "templates/server/start.sh",

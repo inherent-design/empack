@@ -661,3 +661,38 @@ hash = "321c3cf486ed509164edec1e1981fec8"
     assert!(prepare(&external).is_err());
     assert_eq!(std::fs::read(&artifact_path).unwrap(), before);
 }
+
+#[test]
+fn common_override_and_side_replacements_reexport_the_effective_bytes() {
+    let project = project(false, false);
+    let plan = MrpackPlan::prepare(
+        &project,
+        &BTreeMap::new(),
+        vec![
+            source(ContentLayer::Common, b"base"),
+            source(ContentLayer::CommonOverride, b"shared"),
+            source(ContentLayer::Client, b"client"),
+        ],
+        OptionalConversion::RejectMetadataLoss,
+    )
+    .unwrap();
+    assert_eq!(plan.inventory().entries().len(), 6);
+    let mut candidate = tempfile::tempfile().unwrap();
+    plan.write(&mut candidate, &Cancellation::default())
+        .unwrap();
+    candidate.rewind().unwrap();
+    let mut archive = zip::ZipArchive::new(candidate).unwrap();
+    for (name, expected) in [
+        ("client-overrides/config/value.bin", "client"),
+        ("server-overrides/config/value.bin", "shared"),
+    ] {
+        let mut actual = String::new();
+        archive
+            .by_name(name)
+            .unwrap()
+            .read_to_string(&mut actual)
+            .unwrap();
+        assert_eq!(actual, expected);
+    }
+    assert!(archive.by_name("overrides/config/value.bin").is_err());
+}

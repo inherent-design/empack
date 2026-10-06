@@ -27,7 +27,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Semantic core | Dependency-free identities, pins, paths, requirements, digests, exact multi-file resolution, file plans, target prerequisites and inventory projection | [Core suites](../../crates/empack-core/tests/) |
 | Documents | Intent schema 2 and lock schema 1; raw and semantic revisions; strict source/selection validation; original-byte no-op writes; stable credential-free persisted locators | [Codec tests](../../crates/empack-lib/src/engine/documents/tests.rs) |
 | Project capture | Read-only recovery gate; retained native root; bounded bytes, identities, membership and absence; explicit local/archive sources; exact artifact destinations | [Reader tests](../../crates/empack-lib/src/engine/project/tests.rs), [snapshot tests](../../crates/empack-lib/src/engine/snapshot/tests.rs) |
-| Source enumeration | Native traversal applies captured pack ignore rules before opening ignored bytes; explicit local/archive inputs remain captured; recovery retains the same filter; common/client/server layers remain separate | [Source matcher](../../crates/empack-lib/src/engine/source.rs), reader tests |
+| Source enumeration | Native traversal applies captured pack ignore rules before opening ignored bytes; explicit local/archive inputs remain captured; recovery retains the same filter; base/common-override/client/server layers remain separate | [Source matcher](../../crates/empack-lib/src/engine/source.rs), reader tests |
 | Backend observations | Shared canonical provider/pin decoding; safe relative payload paths; requirements, optional defaults and digest declarations; captured metadata revisions | [Backend tests](../../crates/empack-lib/src/engine/backend/tests.rs) |
 | Private content | Bounded quarantine, every source digest/size/observation checked, retained independent readers, original weak evidence separate from computed hashes | [Content tests](../../crates/empack-lib/src/engine/content/tests.rs) |
 | Shared content storage | Downloaded build inputs, captured local/embedded content and downloaded runtime libraries share bounded private backing; source evidence remains per logical file; failed appends retain charges and cannot resume writing | [Pool tests](../../crates/empack-lib/src/engine/content/pool/tests.rs), [large build regression](../../crates/empack-lib/src/engine/api/tests.rs) |
@@ -204,6 +204,28 @@ This is the inspection boundary. The acquisition composition below adds verified
 semantic interpretation, conversion decisions and project publication still need
 composition before the CLI import path can be replaced. The existing importer remains
 available until that complete replacement passes the feature requirements.
+
+## Shared override precedence
+
+The compiled model now distinguishes base content from a common override.
+`ContentLayer::CommonOverride` occupies `overrides/common/` and uses
+`common-override` in both normalized documents. Archive adapters map their shared
+`overrides/` tree to this layer; declared files remain base content. The project
+reader captures both roots independently.
+
+Projection follows base, shared override, then selected side. Optional replacements
+retain fallback bytes and require a selection when a flat format cannot preserve
+the choice. Same-layer collisions still fail. Mrpack re-export materializes an
+otherwise ambiguous overlap into the effective client/server views, retaining the
+source inventory rather than relying on archive insertion order. This fills the
+explicit source-ordering provision in the target model.
+
+This wave passed 1,667 tests and eleven doctests, 283 core/engine checks and
+all-feature Clippy. Both real Fabulously Optimized 1.20.1 archives passed content
+verification: 78 files per format, with two CurseForge files explicitly supplied
+and reverified. This does not establish import publication or CLI parity.
+Greptile review 64's mixed-mirror failure reproduced before correction: acquisition
+now selects permitted alternatives while retaining every original declaration.
 
 ## Verified import content
 

@@ -380,3 +380,40 @@ fn prior_lock_preserves_exact_selections_without_claiming_changed_intent_is_reso
             .is_err()
     );
 }
+
+#[test]
+fn shared_override_placements_survive_both_wire_documents() {
+    let mut source = decoded().intent().clone();
+    let dep = source.roots.values_mut().next().unwrap();
+    let placements = NonEmpty::new(vec![
+        Placement {
+            destination: InstallDestination::parse("mods/renderer.jar").unwrap(),
+            layer: ContentLayer::CommonOverride,
+            requirements: dep.requirements.clone(),
+        },
+        Placement {
+            destination: InstallDestination::parse("mods/renderer-helper.jar").unwrap(),
+            layer: ContentLayer::CommonOverride,
+            requirements: dep.requirements.clone(),
+        },
+    ])
+    .unwrap();
+    dep.placement = PlacementIntent::Explicit(placements.clone());
+    let encoded = DocumentCodec.encode_intent(&source).unwrap();
+    let decoded = DocumentCodec
+        .decode_intent(&encoded, "override.yml")
+        .unwrap();
+    let mut lock = resolution(&decoded);
+    let dep = lock.dependencies.values_mut().next().unwrap();
+    let mut files = dep.files.as_slice().to_vec();
+    for (file, placement) in files.iter_mut().zip(placements.as_slice()) {
+        file.placements = NonEmpty::new(vec![placement.clone()]).unwrap();
+    }
+    dep.files = NonEmpty::new(files).unwrap();
+    let project = validate(&decoded, lock).unwrap();
+    let bytes = DocumentCodec.encode_lock(&project).unwrap();
+    let locked = DocumentCodec
+        .decode_lock(&bytes, &decoded, "override.lock")
+        .unwrap();
+    assert_eq!(locked.lock(), project.lock());
+}

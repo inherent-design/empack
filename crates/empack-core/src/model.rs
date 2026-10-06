@@ -112,6 +112,8 @@ pub enum ContentKind {
 pub enum ContentLayer {
     /// Shared base.
     Common,
+    /// Shared replacement applied after base content and before either side layer.
+    CommonOverride,
     /// Client replacement or addition.
     Client,
     /// Server replacement or addition.

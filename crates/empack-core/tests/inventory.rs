@@ -317,3 +317,70 @@ fn provider_references_preserve_unknown_size_and_require_real_byte_evidence() {
         Err(InventoryError::InvalidReference(_))
     ));
 }
+
+#[test]
+fn common_overrides_have_explicit_precedence_between_base_and_side() {
+    let entries = vec![
+        input(ContentLayer::Common, "config/a", 1),
+        input(ContentLayer::CommonOverride, "config/a", 2),
+        input(ContentLayer::Client, "config/a", 3),
+    ];
+    for (target, byte, replaced) in [
+        (BuildTarget::ClientFull, 3, 2),
+        (BuildTarget::ServerFull, 2, 1),
+    ] {
+        let inventory =
+            BuildInventory::project(&entries, target, &OptionalPolicy::Preserve).unwrap();
+        assert_eq!(inventory.entries().len(), 1);
+        assert!(
+            matches!(&inventory.entries()[0].representation, Representation::Embedded { content, .. } if content.bytes() == &[byte;32])
+        );
+        assert_eq!(inventory.precedence().len(), replaced);
+        let mut reverse = entries.clone();
+        reverse.reverse();
+        assert_eq!(
+            inventory,
+            BuildInventory::project(&reverse, target, &OptionalPolicy::Preserve).unwrap()
+        );
+    }
+    assert_eq!(
+        BuildInventory::project(&entries, BuildTarget::Mrpack, &OptionalPolicy::Preserve)
+            .unwrap()
+            .entries()
+            .len(),
+        3
+    );
+}
+#[test]
+fn optional_common_override_requires_a_choice_and_preserves_disabled_fallback() {
+    let base = input(ContentLayer::Common, "config/a", 1);
+    let mut overlay = input(ContentLayer::CommonOverride, "config/a", 2);
+    overlay.requirements.client = Requirement::Optional(choice());
+    overlay.requirements.server = Requirement::Unsupported;
+    let inputs = [base, overlay];
+    assert!(matches!(
+        BuildInventory::project(&inputs, BuildTarget::Client, &OptionalPolicy::Preserve),
+        Err(InventoryError::OptionalOverlayNeedsSelection(_))
+    ));
+    for (enabled, byte) in [(false, 1), (true, 2)] {
+        let inventory = BuildInventory::project(
+            &inputs,
+            BuildTarget::ClientFull,
+            &OptionalPolicy::Resolve {
+                choices: BTreeMap::from([("extra".into(), enabled)]),
+                use_defaults: false,
+            },
+        )
+        .unwrap();
+        assert!(
+            matches!(&inventory.entries()[0].representation, Representation::Embedded { content, .. } if content.bytes() == &[byte;32])
+        );
+        assert_eq!(inventory.choices()[0].enabled, enabled);
+    }
+    let inventory =
+        BuildInventory::project(&inputs, BuildTarget::ServerFull, &OptionalPolicy::Preserve)
+            .unwrap();
+    assert!(
+        matches!(&inventory.entries()[0].representation, Representation::Embedded { content, .. } if content.bytes() == &[1;32])
+    );
+}

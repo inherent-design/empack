@@ -334,3 +334,38 @@ hash = "321c3cf486ed509164edec1e1981fec8"
         .is_err()
     );
 }
+
+#[test]
+fn native_shared_override_is_preserved_and_selected_before_side_content() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let project = project(false, false);
+    write_project(root.path(), &project);
+    put(root.path(), "pack/config/options", b"base");
+    put(root.path(), "overrides/common/config/options", b"shared");
+    put(root.path(), "overrides/client/config/options", b"client");
+    let workspace = capture(root.path(), host.path());
+    for (target, expected) in [
+        (BuildTarget::ClientFull, b"client"),
+        (BuildTarget::ServerFull, b"shared"),
+    ] {
+        let view = prepare_game_content(
+            &workspace,
+            &acquired(&project, b"payload"),
+            target,
+            &OptionalPolicy::Preserve,
+            SourceEvidencePolicy::Compatibility,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        assert_eq!(bytes(&view.files()[&path("config/options")]), expected);
+    }
+    assert_eq!(
+        fs::read(root.path().join("pack/config/options")).unwrap(),
+        b"base"
+    );
+    assert_eq!(
+        fs::read(root.path().join("overrides/common/config/options")).unwrap(),
+        b"shared"
+    );
+}

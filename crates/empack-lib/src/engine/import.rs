@@ -289,7 +289,9 @@ fn inspect(
             );
             let destination = InstallDestination::parse(destination)?;
             let requirements = match layer {
-                ContentLayer::Common => ImportedRequirements::required(),
+                ContentLayer::Common | ContentLayer::CommonOverride => {
+                    ImportedRequirements::required()
+                }
                 ContentLayer::Client => ImportedRequirements {
                     client: ImportedRequirement::Required,
                     server: ImportedRequirement::Unsupported,

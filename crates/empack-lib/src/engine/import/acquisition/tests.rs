@@ -199,7 +199,8 @@ async fn imported_bytes_preserve_declared_names_optional_sides_and_all_layers() 
         assert_eq!(
             bytes(&result.content()[&key]),
             match file.layer {
-                ContentLayer::Common => b"common",
+                ContentLayer::Common => panic!("override was flattened into the base layer"),
+                ContentLayer::CommonOverride => b"common",
                 ContentLayer::Client => b"client",
                 ContentLayer::Server => b"server",
             }
@@ -494,5 +495,56 @@ async fn explicitly_supplied_wrong_bytes_fail_before_unrelated_downloads() {
     let outcome = handle.wait().await;
     runtime.shutdown().await;
     assert!(matches!(&*outcome, OperationOutcome::Completed(Err(_))));
+    payload.assert_async().await;
+}
+
+#[tokio::test]
+async fn an_allowed_mirror_remains_usable_without_losing_source_alternatives() {
+    let mut server = Server::new_async().await;
+    let payload = server
+        .mock("GET", "/permitted")
+        .with_body("payload")
+        .create_async()
+        .await;
+    let mut declaration = remote(
+        format!("{}/permitted", server.url()),
+        "config/a",
+        b"payload",
+    );
+    declaration["downloads"] = json!([
+        "http://example.com/disallowed",
+        format!("{}/permitted", server.url())
+    ]);
+    let (outcome, _) = run(
+        source(
+            "modrinth.index.json",
+            mr(vec![declaration]),
+            &[("overrides/config/a", b"shared")],
+        ),
+        server.url(),
+        limits(),
+    )
+    .await;
+    let result = ready(&outcome);
+    assert_eq!(result.content().len(), 2);
+    assert_eq!(
+        bytes(&result.content()[&ImportContentKey::Declared(0)]),
+        b"payload"
+    );
+    assert_eq!(
+        bytes(&result.content()[&ImportContentKey::Override(0)]),
+        b"shared"
+    );
+    assert!(
+        matches!(&result.plan().imported().files[0].acquisition, ImportedAcquisition::Downloads(urls) if urls.len()==2)
+    );
+    assert_eq!(
+        result.plan().imported().files[0].layer,
+        ContentLayer::Common
+    );
+    assert_eq!(
+        result.plan().imported().overrides[0].layer,
+        ContentLayer::CommonOverride
+    );
     payload.assert_async().await;
 }

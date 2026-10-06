@@ -66,10 +66,15 @@ impl WorkspaceSnapshot {
         super::source::SourceFilter::parse(&bytes)
     }
     /// Enumerate game content independently of the backend's index. Fresh configuration files
-    /// participate, ignore rules remain inputs, and all three environment roots must be captured.
+    /// participate, ignore rules remain inputs, and all content roots must be captured.
     pub fn source_entries(&self, cancel: &Cancellation) -> Result<Vec<super::source::SourceEntry>> {
         use empack_core::{files::ManagedPath, model::ContentLayer, path::InstallDestination};
-        for name in ["pack", "overrides/client", "overrides/server"] {
+        for name in [
+            "pack",
+            "overrides/common",
+            "overrides/client",
+            "overrides/server",
+        ] {
             let path = PortableRelPath::parse(name, PathSyntax::ProjectContent)?;
             ensure!(
                 matches!(
@@ -239,10 +244,16 @@ impl ProjectReader {
         .unwrap_or_default();
         let project = documents.require_resolved()?;
         let mut required_sources = Vec::new();
-        let mut scopes = ["pack", "overrides/client", "overrides/server", "templates"]
-            .into_iter()
-            .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut scopes = [
+            "pack",
+            "overrides/common",
+            "overrides/client",
+            "overrides/server",
+            "templates",
+        ]
+        .into_iter()
+        .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
         for dependency in project.lock().dependencies.values() {
             for file in dependency.files.as_slice() {
                 match &file.acquisition {

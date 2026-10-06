@@ -296,10 +296,13 @@ pub struct OptionalChoice {
     pub description: Option<String>,
 }
 
-pub enum ContentLayer { Common, Client, Server }
+pub enum ContentLayer { Common, CommonOverride, Client, Server }
 ```
 
-For a selected environment, common content is the base and the matching side layer may deliberately replace it. Same-layer destination collisions fail unless the source format explicitly defines an ordering that is represented in the model. Case-collision checks run on the final projected namespace as well as each layer.
+For a selected environment, common content is the base, common overrides replace that
+base, and the matching side layer takes precedence over both. Common overrides live
+under `overrides/common/`; this retains a declared download and an overriding file
+without flattening either into the other's source identity. Same-layer destination collisions fail unless the source format explicitly defines an ordering that is represented in the model. Case-collision checks run on the final projected namespace as well as each layer.
 
 A file being client-only does not say whether it is optional. The internal model retains both dimensions. Mrpack and packwiz encode these dimensions differently; adapters must establish representability before execution. [F1](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack), [F2](https://packwiz.infra.link/reference/pack-format/mod-toml/)
 

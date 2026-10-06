@@ -109,14 +109,14 @@ pub struct ProjectedEntry {
     /// Required target representation.
     pub representation: Representation,
 }
-/// Deliberate side-layer replacement, recorded instead of silently discarding an input.
+/// Deliberate overlay replacement, recorded instead of silently discarding an input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Precedence {
     /// Final installation destination.
     pub destination: InstallDestination,
-    /// Common-layer owner replaced for this target.
+    /// Lower-layer owner replaced for this target.
     pub replaced: ContentOwner,
-    /// Selected side-layer owner.
+    /// Selected higher-layer owner.
     pub replacement: ContentOwner,
 }
 /// Chosen optional participation with its original choice description.
@@ -277,56 +277,52 @@ impl BuildSelection {
         let mut choices: BTreeMap<String, ChoiceDecision> = BTreeMap::new();
         let paths: BTreeSet<_> = by_layer.keys().map(|(_, path)| path.clone()).collect();
         for path in paths {
-            let common = by_layer.get(&(ContentLayer::Common, path.clone())).copied();
-            let specific = by_layer.get(&(side, path.clone())).copied();
-            let side_requirement = specific.map(|input| {
+            // Visit explicit precedence from highest to lowest; never evaluate an optional
+            // fallback that a required higher layer already replaces.
+            let layers: Vec<_> = [side, ContentLayer::CommonOverride, ContentLayer::Common]
+                .into_iter()
+                .filter_map(|layer| by_layer.get(&(layer, path.clone())).copied())
+                .collect();
+            let requirement_for = |input: &InventoryInput| {
                 if client {
-                    &input.requirements.client
+                    input.requirements.client.clone()
                 } else {
-                    &input.requirements.server
+                    input.requirements.server.clone()
                 }
-            });
-            let common_requirement = common.map(|input| {
-                if client {
-                    &input.requirements.client
-                } else {
-                    &input.requirements.server
-                }
-            });
-            if matches!(side_requirement, Some(Requirement::Optional(_)))
-                && matches!(policy, OptionalPolicy::Preserve)
-                && common_requirement.is_some_and(|value| *value != Requirement::Unsupported)
-            {
-                return Err(InventoryError::OptionalOverlayNeedsSelection(
-                    path.as_str().into(),
-                ));
-            }
-            let selected_side = side_requirement
-                .map(|requirement| select_requirement(requirement, policy, full, &mut choices))
-                .transpose()?
-                .flatten();
-            let (input, requirement) = if let Some(requirement) = selected_side {
-                let input = specific.unwrap();
-                if let Some(previous) = common
-                    && common_requirement != Some(&Requirement::Unsupported)
+            };
+            let mut chosen = None;
+            for (index, input) in layers.iter().enumerate() {
+                let requirement = requirement_for(input);
+                let lower = &layers[index + 1..];
+                if matches!(requirement, Requirement::Optional(_))
+                    && matches!(policy, OptionalPolicy::Preserve)
+                    && lower
+                        .iter()
+                        .any(|input| requirement_for(input) != Requirement::Unsupported)
                 {
-                    precedence.push(Precedence {
-                        destination: input.destination.clone(),
-                        replaced: previous.owner.clone(),
-                        replacement: input.owner.clone(),
-                    });
+                    return Err(InventoryError::OptionalOverlayNeedsSelection(
+                        path.as_str().into(),
+                    ));
                 }
-                (input, requirement)
-            } else {
-                let Some(input) = common else {
-                    continue;
-                };
-                let Some(requirement) =
-                    select_requirement(common_requirement.unwrap(), policy, full, &mut choices)?
-                else {
-                    continue;
-                };
-                (input, requirement)
+                if let Some(requirement) =
+                    select_requirement(&requirement, policy, full, &mut choices)?
+                {
+                    for previous in lower
+                        .iter()
+                        .filter(|input| requirement_for(input) != Requirement::Unsupported)
+                    {
+                        precedence.push(Precedence {
+                            destination: input.destination.clone(),
+                            replaced: previous.owner.clone(),
+                            replacement: input.owner.clone(),
+                        });
+                    }
+                    chosen = Some((*input, requirement));
+                    break;
+                }
+            }
+            let Some((input, requirement)) = chosen else {
+                continue;
             };
             selected.insert(
                 path,

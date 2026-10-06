@@ -202,7 +202,10 @@ fn mrpack(
         });
     }
     let roots = vec![
-        (root(value.overrides, "overrides")?, ContentLayer::Common),
+        (
+            root(value.overrides, "overrides")?,
+            ContentLayer::CommonOverride,
+        ),
         (
             root(value.client_overrides, "client-overrides")?,
             ContentLayer::Client,
@@ -343,7 +346,10 @@ fn curseforge(
         minecraft: GameVersion::parse(&value.minecraft.version)?,
         loaders,
     };
-    let roots = vec![(root(value.overrides, "overrides")?, ContentLayer::Common)];
+    let roots = vec![(
+        root(value.overrides, "overrides")?,
+        ContentLayer::CommonOverride,
+    )];
     let mut result = blank(
         ImportFormat::CurseForge,
         ImportedMetadata {

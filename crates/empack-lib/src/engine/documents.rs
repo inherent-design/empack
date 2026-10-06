@@ -424,6 +424,7 @@ fn placement(value: &Value) -> Result<Placement> {
         destination: InstallDestination::parse(text(required(value, "destination")?)?)?,
         layer: match text(required(value, "layer")?)? {
             "common" => ContentLayer::Common,
+            "common-override" => ContentLayer::CommonOverride,
             "client" => ContentLayer::Client,
             "server" => ContentLayer::Server,
             _ => bail!("Unknown content layer"),
@@ -432,7 +433,7 @@ fn placement(value: &Value) -> Result<Placement> {
     })
 }
 fn placement_value(value: &Placement) -> Value {
-    json!({"destination":value.destination.relative().as_str(),"layer": match value.layer { ContentLayer::Common => "common", ContentLayer::Client => "client", ContentLayer::Server => "server" }, "environment": requirements_value(&value.requirements)})
+    json!({"destination":value.destination.relative().as_str(),"layer": match value.layer { ContentLayer::Common => "common", ContentLayer::CommonOverride => "common-override", ContentLayer::Client => "client", ContentLayer::Server => "server" }, "environment": requirements_value(&value.requirements)})
 }
 fn urls(value: &Value) -> Result<Vec<String>> {
     let urls = string_list(value)?;

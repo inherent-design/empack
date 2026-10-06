@@ -239,7 +239,7 @@ impl ImportContentPlan {
                     Some(ImportInputReason::RestrictedDownload)
                 } else if urls
                     .iter()
-                    .any(|url| transport.validate_locator(url).is_err())
+                    .all(|url| transport.validate_locator(url).is_err())
                 {
                     Some(ImportInputReason::UnsupportedTransport)
                 } else {
@@ -367,7 +367,12 @@ impl ImportContentPlan {
             } else if let ImportedAcquisition::Downloads(urls) = &need.source {
                 download_keys.push(need.key.clone());
                 downloads.push(DownloadRequest {
-                    alternatives: NonEmpty::new(urls.clone())?,
+                    alternatives: NonEmpty::new(
+                        urls.iter()
+                            .filter(|url| transport.validate_locator(url).is_ok())
+                            .cloned()
+                            .collect(),
+                    )?,
                     expected,
                     limits: self.limits.transfer,
                     evidence,

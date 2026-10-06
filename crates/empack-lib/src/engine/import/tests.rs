@@ -114,7 +114,8 @@ fn imports_keep_exact_declarations_layers_and_unknown_optional_defaults() {
         assert_eq!(
             bytes,
             match record.layer {
-                ContentLayer::Common => b"common",
+                ContentLayer::Common => panic!("override was flattened into the base layer"),
+                ContentLayer::CommonOverride => b"common",
                 ContentLayer::Client => b"client",
                 ContentLayer::Server => b"server",
             }
