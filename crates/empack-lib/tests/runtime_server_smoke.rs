@@ -46,7 +46,8 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
             jobs: 2,
             memory_bytes: if installer { 2 << 30 } else { 128 << 20 },
             scratch_bytes: if installer { 2 << 30 } else { 512 << 20 },
-            open_files: if installer { 1100 } else { 64 },
+            // Remote input leases coexist briefly with the reserved output allowance.
+            open_files: if installer { 2200 } else { 64 },
         }),
         1,
     );

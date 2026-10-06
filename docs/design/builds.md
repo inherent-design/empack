@@ -339,3 +339,11 @@ Live smoke verifies actual launch behavior for historical and modern Forge and b
 NeoForge artifact families. It checks Minecraft help where supported and the EULA
 refusal on old releases. It does not accept the EULA, start a playable world or
 establish that every loader release has an identical profile format.
+
+Declared downloadable installer libraries pass through empack's acquisition port
+before the tool starts. Source digests, alternative checksum sets and cumulative
+input limits are enforced there, then verified again against installed output.
+A later download failure returns no prepared subset. Input leases remain charged
+until their staging copies complete; host admission must allow those leases to
+coexist with the execution reservation. The installer may still acquire undeclared
+internal inputs, so this does not claim offline or fully mediated tool execution.

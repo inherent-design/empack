@@ -350,3 +350,108 @@ fn historical_checksum_alternatives_remain_an_explicit_disjunction() {
         assert!(parse_library(&wrong).is_err());
     }
 }
+
+#[tokio::test]
+async fn remote_installer_inputs_verify_before_tools_and_retain_no_failed_subset() {
+    use crate::engine::{
+        resources::ResourceGovernor,
+        runtime::{OperationOutcome, OperationRuntime},
+        snapshot::SnapshotLimits,
+    };
+    let mut server = mockito::Server::new_async().await;
+    let response = server
+        .mock("GET", "/library")
+        .with_body("payload")
+        .expect(8)
+        .create_async()
+        .await;
+    for case in [
+        "valid",
+        "wrong digest",
+        "alternative",
+        "wrong alternative",
+        "size limit",
+    ] {
+        let (profile, version) = fixture();
+        let installer = content(&profile, &version, &[]);
+        let mut contract = parse(&profile, &version).unwrap();
+        let library = &mut contract.libraries[0];
+        library.download = Some(format!("{}/library", server.url()));
+        library.expected.size = Some(7);
+        library.expected.digests = Some(
+            DigestSet::new(vec![ExpectedDigest::Sha256(
+                Sha256::digest(b"payload").into(),
+            )])
+            .unwrap(),
+        );
+        let mut first = library.clone();
+        first.path = path("libraries/first.jar").unwrap();
+        if case == "wrong digest" {
+            library.expected.digests =
+                Some(DigestSet::new(vec![ExpectedDigest::Sha256([0; 32])]).unwrap());
+        }
+        if case.contains("alternative") {
+            library.expected.digests = None;
+            library.acceptable_sha1 = vec![ExpectedDigest::Sha1([0; 20])];
+            if case == "alternative" {
+                library
+                    .acceptable_sha1
+                    .push(ExpectedDigest::Sha1(sha1::Sha1::digest(b"payload").into()));
+            }
+        }
+        contract.libraries.insert(0, first);
+        let plan = InstallerServerPlan {
+            contract,
+            expected: ExpectedContent {
+                digests: None,
+                size: None,
+                accepted_observation: None,
+            },
+            checksum_document: installer.lease().id(),
+            installer,
+        };
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            memory_bytes: 1 << 20,
+            scratch_bytes: 1024,
+            open_files: 10,
+        });
+        let owner = OperationRuntime::new(governor.clone(), 1);
+        let mut handle = owner
+            .start(move |mut scope| async move {
+                Ok(plan
+                    .acquire_libraries(
+                        &HttpAcquisition::for_loopback_tests(),
+                        &mut scope,
+                        TransferLimits::default(),
+                        SourceEvidencePolicy::Compatibility,
+                        SnapshotLimits {
+                            total_bytes: if case == "size limit" { 6 } else { 16 },
+                            ..SnapshotLimits::default()
+                        },
+                    )
+                    .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        owner.release_completed(handle.id());
+        owner.shutdown().await;
+        match &*outcome {
+            OperationOutcome::Completed(result) => {
+                assert_eq!(
+                    result.is_ok(),
+                    matches!(case, "valid" | "alternative"),
+                    "{case}"
+                );
+                if let Ok(files) = result {
+                    assert_eq!(files.len(), 2);
+                }
+            }
+            _ => panic!("unexpected operation failure"),
+        }
+        drop(outcome);
+        drop(handle);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+    response.assert_async().await;
+}

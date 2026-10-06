@@ -70,6 +70,11 @@ impl InstallerServerPlan {
         .await?
         .acquire(transport, scope, transfer, archive, policy)
         .await?;
+        // Acquire declared remote inputs through the same bounded transport as other content.
+        // The installer still validates these copies and owns embedded/generated inputs.
+        let libraries = self
+            .acquire_libraries(transport, scope, transfer, policy, execution.output)
+            .await?;
         let retained = ResourceRequest {
             scratch_bytes: execution.output.total_bytes,
             open_files: execution.output.entries as u64,
@@ -110,6 +115,15 @@ impl InstallerServerPlan {
                     base.content.lease().len(),
                     &stage_cancel,
                 )?;
+                for (relative, content) in libraries {
+                    stage.write(
+                        &relative,
+                        &mut content.lease().open(),
+                        content.lease().len(),
+                        &stage_cancel,
+                    )?;
+                    // Each acquisition lease retires before the installer/output capture starts.
+                }
                 Ok((self, vanilla, stage))
             })
             .await
@@ -147,6 +161,56 @@ impl InstallerServerPlan {
             file.content.retain_reservation(&mut permit)?;
         }
         Ok(prepared)
+    }
+
+    pub(super) async fn acquire_libraries(
+        &self,
+        transport: &HttpAcquisition,
+        scope: &mut WorkScope,
+        transfer: TransferLimits,
+        policy: SourceEvidencePolicy,
+        output: SnapshotLimits,
+    ) -> Result<Vec<(PortableRelPath, AcquiredContent)>> {
+        let mut acquired = Vec::new();
+        let mut remaining = output.total_bytes;
+        for library in &self.contract.libraries {
+            let Some(url) = &library.download else {
+                continue;
+            };
+            ensure!(
+                acquired.len() < output.entries,
+                "Installer inputs exceed entry allowance"
+            );
+            let content = transport
+                .acquire(
+                    scope,
+                    DownloadRequest {
+                        alternatives: NonEmpty::new(vec![url.clone()])?,
+                        expected: library.expected.clone(),
+                        limits: TransferLimits {
+                            file_bytes: transfer.file_bytes.min(output.file_bytes).min(remaining),
+                            ..transfer
+                        },
+                        evidence: policy,
+                        // Alternative digests are checked below before this private lease is used.
+                        initial: if library.acceptable_sha1.is_empty() {
+                            InitialObservation::RequireEvidence
+                        } else {
+                            InitialObservation::Accepted
+                        },
+                    },
+                )
+                .await
+                .with_context(|| {
+                    format!("Cannot acquire installer library {}", library.coordinate)
+                })?;
+            verify_library_alternatives(library, &content)?;
+            remaining = remaining
+                .checked_sub(content.lease().len())
+                .context("Installer inputs exceed byte allowance")?;
+            acquired.push((library.path.clone(), content));
+        }
+        Ok(acquired)
     }
 
     pub(super) fn verify_outputs(
@@ -261,12 +325,9 @@ impl InstallerServerPlan {
                 .iter()
                 .find(|library| library.path == relative && !library.acceptable_sha1.is_empty())
             {
-                let matched = library
-                    .acceptable_sha1
-                    .iter()
-                    .find(|expected| content.observed_digests().values().contains(expected))
-                    .context("Installed library matches no accepted checksum")?;
-                alternative_matches.insert(relative.clone(), matched.clone());
+                let matched = verify_library_alternatives(library, &content)?
+                    .context("Missing alternative digest evidence")?;
+                alternative_matches.insert(relative.clone(), matched);
             }
             stage.retire_input(&relative)?;
             files.insert(
@@ -304,6 +365,22 @@ impl InstallerServerPlan {
         Ok(vanilla)
     }
 }
+fn verify_library_alternatives(
+    library: &InstallerLibrary,
+    content: &AcquiredContent,
+) -> Result<Option<ExpectedDigest>> {
+    if library.acceptable_sha1.is_empty() {
+        return Ok(None);
+    }
+    library
+        .acceptable_sha1
+        .iter()
+        .find(|expected| content.observed_digests().values().contains(expected))
+        .cloned()
+        .map(Some)
+        .context("Installer library matches no accepted checksum")
+}
+
 struct FrozenReader<'a> {
     stage: &'a mut FrozenStage,
     path: &'a PortableRelPath,
