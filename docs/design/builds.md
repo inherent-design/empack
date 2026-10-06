@@ -88,6 +88,12 @@ A small deterministic planner expands target prerequisites and deduplicates shar
 
 `RecipeId` is a canonical digest over schema version, semantic resolution, relevant source/template content, selected runtime/tool identities, target, and meaningful options. Exclude machine-specific absolute paths and secret tokens. Include intentional output-affecting platform distinctions.
 
+Requested artifacts form one publication group by default. Prepare and verify all
+candidates before publishing their combined file plan. Duplicate or portable-alias
+output paths fail before recipes run. If a later recipe fails, retain every previous
+artifact. Carry each target's source assurance, conversion choices and expected
+member inventory into the result; concatenating archives is not a completion proof.
+
 Initially, run every build from fresh staging. Add reuse only behind a verified recipe/content cache. Byte reproducibility additionally requires deterministic archive ordering, timestamps, permissions, and installer behavior; a correct recipe key alone does not guarantee it.
 
 ### 13.4 Templates and runtime preparation

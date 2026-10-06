@@ -24,6 +24,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
 | Build acquisition | Read-only missing-content plan; references avoid unnecessary downloads; materialization/layer collisions require bytes; failed download batches return no successful subset; manual/provider/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
 | Materialized game content | Shared captured identity/content checks; side and optional selection before missing-byte requirements; exact retained leases and source evidence; no unresolved entries in completed inventory | [Materialization tests](../../crates/empack-lib/src/engine/build/materialized/tests.rs), [core inventory tests](../../crates/empack-core/tests/inventory.rs) |
+| Build batches | Mrpack and full-client recipes prepare privately; duplicate outputs fail preflight; every candidate verifies before one journal publishes their union; original resolution and conversion evidence remain available | [Batch tests](../../crates/empack-lib/src/engine/build/batch/tests.rs) |
 | Full client distribution | `.minecraft` game view, captured templates, exact launcher components, generated defaults, all three archive formats and verified publication | [Client build tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
 | Templates | Captured common/side projection, nested paths, binary and explicit literal copying, strict expressions, format helpers, bounded outputs and preserved portable attributes | [Template tests](../../crates/empack-lib/src/engine/templates/tests.rs) |
 | Archive sources | Retained bounded ZIP reader; raw directory preflight; every member path/kind/collision checked; selected bytes, CRC and portable attributes verified; failed attempts consume extraction allowance | [Archive source tests](../../crates/empack-lib/src/engine/archive_source/tests.rs) |
@@ -94,6 +95,14 @@ Full client archives materialize pack content, not Minecraft binaries and assets
 the launcher still resolves its normal game/runtime components. ZIP supports direct
 launcher import; TAR.GZ and 7z contain the same instance tree for explicit extraction.
 
+`prepare_build_batch` currently composes mrpack and full-client recipes under the
+AllRequested rule. A later failed recipe drops earlier private candidates. Source
+changes block the whole publication, and output collisions fail preflight. One
+recoverable journal owns the combined artifact changes; this does not claim an
+atomic filesystem-wide visibility switch. Each result retains exact resolution,
+original backend evidence, conversions and expected archive members. Remaining
+recipes must join this boundary before CLI `all` can cut over.
+
 ## Existing command guarantees
 
 Earlier fixes remain in the live commands: canonical add/sync/remove identities and
@@ -121,6 +130,7 @@ Results describe the stated revision, not every later edit.
 | `1901434` | 17 template tests and all-feature Clippy passed; six generated configurations each round-tripped through Qt QSettings and Java Properties |
 | `3733d71` | 1,514 default tests passed; the subsequent doctest compile overlapped a source edit and required a repeat |
 | `c5cd762` | 1,517 default tests and ten doctests passed; Greptile review 35 reported no new blocking findings |
+| Build batch integration | 13 composed build tests and all-feature Clippy passed |
 | Full client assembly | 138 affected build/template/core tests passed; the final rebuild regression and all-feature Clippy passed. Archives were published and independently read in ZIP, TAR.GZ and 7z |
 | Materialization integration | 30 affected core inventory, build, mrpack and reader tests passed |
 | Captured template integration | 20 affected template tests passed, including all four standalone target selections, malformed inputs, output budgets, cancellation and source changes |

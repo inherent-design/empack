@@ -17,6 +17,7 @@ use empack_core::{
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod acquisition;
+pub mod batch;
 pub mod client;
 pub mod materialized;
 
@@ -482,8 +483,28 @@ impl PreparedArtifact {
 fn prepare_archive_publication(
     workspace: WorkspaceSnapshot,
     artifact: empack_core::path::PortableRelPath,
-    mut archive: super::staging::PrivateFile,
+    archive: super::staging::PrivateFile,
     verified: &super::artifacts::VerifiedArchive,
+    cancel: &Cancellation,
+) -> Result<PreparedArtifact> {
+    prepare_archives_publication(
+        workspace,
+        vec![ArchiveCandidate {
+            artifact,
+            archive,
+            verified: verified.clone(),
+        }],
+        cancel,
+    )
+}
+struct ArchiveCandidate {
+    artifact: empack_core::path::PortableRelPath,
+    archive: super::staging::PrivateFile,
+    verified: super::artifacts::VerifiedArchive,
+}
+fn prepare_archives_publication(
+    workspace: WorkspaceSnapshot,
+    mut candidates: Vec<ArchiveCandidate>,
     cancel: &Cancellation,
 ) -> Result<PreparedArtifact> {
     use super::{
@@ -492,38 +513,58 @@ fn prepare_archive_publication(
     };
     use empack_core::files::{FileContent, FilePermissions};
     use std::io::Seek;
-    let target = ManagedPath::Artifact(artifact);
-    let observed = observed_artifacts_for(workspace.observations(), [target.clone()])?;
-    let desired = BTreeMap::from([(
-        target.clone(),
-        FileContent {
-            content: verified.content().clone(),
-            bytes: verified.len(),
-            permissions: FilePermissions {
-                readonly: false,
-                executable: false,
-            },
-        },
-    )]);
-    let file_plan = plan_files(&observed, &desired, &BTreeSet::new())?;
-    let mut stage = MutableStage::empty()?;
-    archive.file().rewind()?;
-    stage.write(
-        &ProjectLayout::path(&target)?,
-        archive.file(),
-        verified.len(),
-        cancel,
-    )?;
+    ensure!(!candidates.is_empty(), "Build publication has no artifacts");
+    let mut collisions = super::layout::CollisionIndex::default();
+    let mut desired = BTreeMap::new();
+    let mut bytes = 0u64;
     let limits = super::snapshot::SnapshotLimits {
         file_bytes: super::artifacts::ArchiveLimits::default().compressed_bytes,
         ..super::snapshot::SnapshotLimits::default()
     };
+    for candidate in &candidates {
+        cancel.check()?;
+        collisions.insert_file(&candidate.artifact)?;
+        ensure!(
+            candidate.verified.len() <= limits.file_bytes,
+            "Artifact exceeds publication byte limit"
+        );
+        bytes = bytes
+            .checked_add(candidate.verified.len())
+            .context("Artifact size total overflow")?;
+        ensure!(
+            bytes <= limits.total_bytes,
+            "Artifacts exceed publication byte limit"
+        );
+        desired.insert(
+            ManagedPath::Artifact(candidate.artifact.clone()),
+            FileContent {
+                content: candidate.verified.content().clone(),
+                bytes: candidate.verified.len(),
+                permissions: FilePermissions {
+                    readonly: false,
+                    executable: false,
+                },
+            },
+        );
+    }
+    let observed = observed_artifacts_for(workspace.observations(), desired.keys().cloned())?;
+    let file_plan = plan_files(&observed, &desired, &BTreeSet::new())?;
+    let mut stage = MutableStage::empty()?;
+    for candidate in &mut candidates {
+        candidate.archive.file().rewind()?;
+        stage.write(
+            &ProjectLayout::path(&ManagedPath::Artifact(candidate.artifact.clone()))?,
+            candidate.archive.file(),
+            candidate.verified.len(),
+            cancel,
+        )?;
+    }
     let frozen = stage.freeze(limits, cancel)?;
     let (root, snapshot) = workspace.into_native();
     let change = VerifiedFileChange::verify_artifacts(snapshot, file_plan, frozen)?;
     Ok(PreparedArtifact {
         root,
         change,
-        bytes: verified.len(),
+        bytes,
     })
 }

@@ -37,7 +37,7 @@ pub trait ArchiveRead: Read + Seek {}
 impl<T: Read + Seek> ArchiveRead for T {}
 /// Container bytes and exact file inventory checked. Empty directories are allowed.
 /// This is not pack semantic or redistribution proof.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VerifiedArchive {
     content: ContentId,
     bytes: u64,

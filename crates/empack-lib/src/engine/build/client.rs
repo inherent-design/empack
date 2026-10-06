@@ -2,7 +2,6 @@
 use super::{
     BuildAcquisitions, PreparedArtifact,
     materialized::{MaterializedGame, prepare_game_content},
-    prepare_archive_publication,
 };
 use crate::{
     application::process_runtime::Cancellation,
@@ -187,6 +186,29 @@ pub fn prepare_client_full_build(
     options: &ClientFullOptions,
     cancel: &Cancellation,
 ) -> Result<PreparedClientBuild> {
+    let candidate = prepare_client_full_archive(&workspace, artifact, external, options, cancel)?;
+    let publication =
+        super::prepare_archives_publication(workspace, vec![candidate.archive], cancel)?;
+    Ok(PreparedClientBuild {
+        publication,
+        game: candidate.game,
+        inventory: candidate.inventory,
+        user_configuration: candidate.user_configuration,
+    })
+}
+pub(super) struct ClientCandidate {
+    pub(super) archive: super::ArchiveCandidate,
+    pub(super) game: MaterializedGame,
+    pub(super) inventory: BTreeMap<PortableRelPath, FileContent>,
+    pub(super) user_configuration: bool,
+}
+pub(super) fn prepare_client_full_archive(
+    workspace: &WorkspaceSnapshot,
+    artifact: PortableRelPath,
+    external: &BuildAcquisitions,
+    options: &ClientFullOptions,
+    cancel: &Cancellation,
+) -> Result<ClientCandidate> {
     let suffix = match options.archive {
         DistributionArchive::Zip => ".zip",
         DistributionArchive::TarGz => ".tar.gz",
@@ -197,7 +219,7 @@ pub fn prepare_client_full_build(
         "Client artifact extension differs from selected format"
     );
     let game = prepare_game_content(
-        &workspace,
+        workspace,
         external,
         BuildTarget::ClientFull,
         &options.optional,
@@ -205,7 +227,7 @@ pub fn prepare_client_full_build(
         cancel,
     )?;
     let templates = prepare_templates(
-        &workspace,
+        workspace,
         BuildTarget::ClientFull,
         &options.templates,
         cancel,
@@ -308,9 +330,12 @@ pub fn prepare_client_full_build(
         options.limits,
         cancel,
     )?;
-    let publication = prepare_archive_publication(workspace, artifact, archive, &verified, cancel)?;
-    Ok(PreparedClientBuild {
-        publication,
+    Ok(ClientCandidate {
+        archive: super::ArchiveCandidate {
+            artifact,
+            archive,
+            verified,
+        },
         game,
         inventory,
         user_configuration,

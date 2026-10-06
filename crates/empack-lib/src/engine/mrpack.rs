@@ -419,6 +419,9 @@ impl MrpackPlan {
             conversions: conversions.into_iter().collect(),
         })
     }
+    pub fn archive_inventory(&self) -> &BTreeMap<PortableRelPath, FileContent> {
+        &self.expected
+    }
     pub fn inventory(&self) -> &BuildInventory {
         &self.inventory
     }
