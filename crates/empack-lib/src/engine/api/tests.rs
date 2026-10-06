@@ -76,7 +76,7 @@ pub(super) fn put(root: &Path, name: &str, bytes: &[u8]) {
     fs::create_dir_all(destination.parent().unwrap()).unwrap();
     fs::write(destination, bytes).unwrap();
 }
-fn fixture(root: &Path) {
+pub(super) fn fixture(root: &Path) {
     let resolved = project(false, false);
     put(
         root,

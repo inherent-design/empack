@@ -1,0 +1,228 @@
+use super::tests::{engine, fixture, path, put};
+use super::*;
+use empack_core::{model::DependencyKey, removal::RemovalMode};
+use std::{fs, path::Path};
+fn request(mode: RemovalMode) -> RemoveRequest {
+    RemoveRequest {
+        selections: NonEmpty::new(vec![DependencyKey::parse("assets").unwrap()]).unwrap(),
+        mode,
+    }
+}
+fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
+    ExecutionGrant {
+        plan: prepared.view().plan(),
+        network: NetworkPermission::Offline,
+        run_installer: false,
+        replacement: prepared.view().replacement(),
+    }
+}
+async fn ready(engine: &Engine, root: &Path, mode: RemovalMode) -> PreparedOperation {
+    match engine
+        .prepare(root.to_path_buf(), request(mode))
+        .await
+        .unwrap()
+    {
+        Preparation::Ready(value) => value,
+        _ => panic!("removal cannot require a download"),
+    }
+}
+#[tokio::test]
+async fn removal_preview_is_read_only_and_requires_exact_grant_and_engine() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let before = fs::read(root.path().join("empack.yml")).unwrap();
+    let (engine, governor) = engine(state.path().join("state"));
+    let preview = engine
+        .preview(
+            root.path().to_path_buf(),
+            request(RemovalMode::RemoveContent),
+        )
+        .await
+        .unwrap();
+    assert_eq!(preview.remove().unwrap().selected[0].title, "Assets");
+    assert!(!preview.needs_network());
+    assert!(!preview.runs_installer());
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    let prepared = ready(&engine, root.path(), RemovalMode::RemoveContent).await;
+    assert!(governor.status().reserved.scratch_bytes > 0);
+    let mut permission = grant(&prepared);
+    permission.replacement = None;
+    assert!(prepared.authorize(permission).is_err());
+    let first = ready(&engine, root.path(), RemovalMode::RemoveContent).await;
+    let second = ready(&engine, root.path(), RemovalMode::RemoveContent).await;
+    assert!(first.authorize(grant(&second)).is_err());
+    drop(second);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    let prepared = ready(&engine, root.path(), RemovalMode::RemoveContent).await;
+    let permission = grant(&prepared);
+    let other = Engine::new(engine.config.clone(), governor.clone()).unwrap();
+    assert!(
+        other
+            .start(prepared.authorize(permission).unwrap())
+            .is_err()
+    );
+    assert!(
+        engine
+            .prepare(
+                ProjectTarget::New(root.path().join("new")),
+                request(RemovalMode::RemoveContent)
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), before);
+    assert!(!state.path().join("state").exists());
+    other.shutdown().await;
+    engine.shutdown().await;
+}
+#[tokio::test]
+async fn remove_and_demote_have_distinct_receipts_and_subsequent_build_content() {
+    for mode in [RemovalMode::RemoveContent, RemovalMode::ForgetRoots] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        let (engine, governor) = engine(state.path().join("state"));
+        let prepared = ready(&engine, root.path(), mode).await;
+        let permission = grant(&prepared);
+        let mut handle = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        let outcome = handle.wait().await;
+        match &*outcome {
+            OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Remove(
+                receipt,
+            ))) => {
+                assert_eq!(receipt.mode, mode);
+                assert!(receipt.project.intent().roots.is_empty());
+                assert_eq!(
+                    receipt.project.lock().dependencies.len(),
+                    usize::from(mode == RemovalMode::ForgetRoots)
+                );
+                assert_eq!(receipt.selected.len(), 1);
+            }
+            OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+                panic!("{error:#}")
+            }
+            _ => panic!("removal failed"),
+        }
+        assert_eq!(governor.status().reserved, engine.config.resources.receipt);
+        assert!(engine.release_completed(handle.id()));
+        drop(outcome);
+        drop(handle);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        assert_eq!(
+            fs::read(root.path().join("pack/config/value")).unwrap(),
+            b"current config"
+        );
+        assert_eq!(
+            fs::read(root.path().join("dist/client.zip")).unwrap(),
+            b"previous client"
+        );
+        let mut build = super::tests::request();
+        build.outputs = NonEmpty::new(vec![BuildOutput {
+            target: BuildTarget::Mrpack,
+            artifact: path("after.mrpack"),
+        }])
+        .unwrap();
+        let prepared = match engine
+            .prepare(root.path().to_path_buf(), build)
+            .await
+            .unwrap()
+        {
+            Preparation::Ready(value) => value,
+            _ => panic!("retained inputs require no acquisition"),
+        };
+        let permission = grant(&prepared);
+        let mut handle = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        assert!(matches!(
+            &*handle.wait().await,
+            OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(_)))
+        ));
+        let mut zip =
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist/after.mrpack")).unwrap())
+                .unwrap();
+        let index: serde_json::Value =
+            serde_json::from_reader(zip.by_name("modrinth.index.json").unwrap()).unwrap();
+        assert_eq!(
+            index["files"].as_array().unwrap().len(),
+            if mode == RemovalMode::ForgetRoots {
+                3
+            } else {
+                0
+            }
+        );
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(
+            &mut zip.by_name("overrides/config/value").unwrap(),
+            &mut bytes,
+        )
+        .unwrap();
+        assert_eq!(bytes, b"current config");
+        engine.shutdown().await;
+    }
+}
+#[tokio::test]
+async fn removal_conflicts_fail_before_any_live_file_is_removed() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let (engine, _) = engine(state.path().join("state"));
+    let before = fs::read(root.path().join("empack.yml")).unwrap();
+    let prepared = ready(&engine, root.path(), RemovalMode::RemoveContent).await;
+    put(
+        root.path(),
+        "pack/resourcepacks/a.zip",
+        b"user changed this",
+    );
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    assert!(matches!(
+        &*handle.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+    ));
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), before);
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/b.zip")).unwrap(),
+        b"payload"
+    );
+    engine.shutdown().await;
+}
+#[tokio::test]
+async fn removal_admission_failure_preserves_all_files_and_releases_reservations() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let (original, _) = engine(state.path().join("state"));
+    let mut config = original.config.clone();
+    original.shutdown().await;
+    config.resources.capture.scratch_bytes = 0;
+    config.resources.assembly.scratch_bytes = 0;
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 128 << 20,
+        scratch_bytes: 1,
+        open_files: 128,
+    });
+    let engine = Engine::new(config, governor.clone()).unwrap();
+    assert!(
+        engine
+            .prepare(
+                root.path().to_path_buf(),
+                request(RemovalMode::RemoveContent)
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+        b"payload"
+    );
+    assert!(!state.path().join("state").exists());
+    engine.shutdown().await;
+}

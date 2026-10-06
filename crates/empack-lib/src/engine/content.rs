@@ -170,47 +170,14 @@ pub fn verify_stream(
     validate_expectation(expected, maximum, policy, initial)?;
     let path = PortableRelPath::parse("content", PathSyntax::ProjectContent)?;
     let mut stage = MutableStage::empty()?;
-    let mut reader = HashingReader {
-        input,
-        count: 0,
-        sha256: sha2::Sha256::new(),
-        sha512: sha2::Sha512::new(),
-        sha1: sha1::Sha1::new(),
-        md5: md5::Md5::new(),
-    };
+    let mut reader = HashingReader::new(input);
     stage.write(&path, &mut reader, maximum, cancel)?;
-    ensure!(
-        expected.size.is_none_or(|size| size == reader.count),
-        "Source size differs from expected content"
-    );
-    let bytes = reader.count;
-    let address = ContentId::from_sha256(reader.sha256.finalize().into());
-    let hashes = vec![
-        ExpectedDigest::Md5(reader.md5.finalize().into()),
-        ExpectedDigest::Sha1(reader.sha1.finalize().into()),
-        ExpectedDigest::Sha256(*address.bytes()),
-        ExpectedDigest::Sha512(reader.sha512.finalize().into()),
-    ];
-    if let Some(digests) = &expected.digests {
-        digests.check(&hashes)?;
-    }
-    ensure!(
-        expected
-            .accepted_observation
-            .as_ref()
-            .is_none_or(|prior| prior == &address),
-        "Content differs from the accepted observation"
-    );
-    let observed = DigestSet::new(hashes)?;
-    let evidence = match &expected.digests {
-        Some(digests) => IntegrityEvidence::MatchedExpected {
-            expected: digests.clone(),
-            actual: address.clone(),
-        },
-        None => IntegrityEvidence::ObservedOnly {
-            actual: address.clone(),
-        },
-    };
+    let ContentObservation {
+        address,
+        bytes,
+        observed,
+        evidence,
+    } = reader.finish(expected)?;
     let frozen = stage.freeze(
         SnapshotLimits {
             entries: 1,
@@ -238,6 +205,27 @@ pub fn verify_stream(
         observed,
     })
 }
+/// Verified observation has no retained bytes and cannot satisfy acquisition or publication.
+pub(super) struct ContentObservation {
+    address: ContentId,
+    bytes: u64,
+    evidence: IntegrityEvidence,
+    pub(super) observed: DigestSet,
+}
+pub(super) fn verify_observation(
+    input: &mut dyn Read,
+    expected: &ExpectedContent,
+    maximum: u64,
+    policy: SourceEvidencePolicy,
+    initial: InitialObservation,
+    cancel: &Cancellation,
+) -> Result<ContentObservation> {
+    validate_expectation(expected, maximum, policy, initial)?;
+    let mut reader = HashingReader::new(input);
+    super::io::copy_bounded(&mut reader, &mut io::sink(), maximum, cancel)?;
+    reader.finish(expected)
+}
+
 pub(super) fn validate_expectation(
     expected: &ExpectedContent,
     maximum: u64,
@@ -275,6 +263,58 @@ struct HashingReader<'a> {
     sha512: sha2::Sha512,
     sha1: sha1::Sha1,
     md5: md5::Md5,
+}
+impl<'a> HashingReader<'a> {
+    fn new(input: &'a mut dyn Read) -> Self {
+        Self {
+            input,
+            count: 0,
+            sha256: sha2::Sha256::new(),
+            sha512: sha2::Sha512::new(),
+            sha1: sha1::Sha1::new(),
+            md5: md5::Md5::new(),
+        }
+    }
+    fn finish(self, expected: &ExpectedContent) -> Result<ContentObservation> {
+        ensure!(
+            expected.size.is_none_or(|size| size == self.count),
+            "Source size differs from expected content"
+        );
+        let bytes = self.count;
+        let address = ContentId::from_sha256(self.sha256.finalize().into());
+        let hashes = vec![
+            ExpectedDigest::Md5(self.md5.finalize().into()),
+            ExpectedDigest::Sha1(self.sha1.finalize().into()),
+            ExpectedDigest::Sha256(*address.bytes()),
+            ExpectedDigest::Sha512(self.sha512.finalize().into()),
+        ];
+        if let Some(digests) = &expected.digests {
+            digests.check(&hashes)?;
+        }
+        ensure!(
+            expected
+                .accepted_observation
+                .as_ref()
+                .is_none_or(|prior| prior == &address),
+            "Content differs from the accepted observation"
+        );
+        let observed = DigestSet::new(hashes)?;
+        let evidence = match &expected.digests {
+            Some(digests) => IntegrityEvidence::MatchedExpected {
+                expected: digests.clone(),
+                actual: address.clone(),
+            },
+            None => IntegrityEvidence::ObservedOnly {
+                actual: address.clone(),
+            },
+        };
+        Ok(ContentObservation {
+            address,
+            bytes,
+            evidence,
+            observed,
+        })
+    }
 }
 impl Read for HashingReader<'_> {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {

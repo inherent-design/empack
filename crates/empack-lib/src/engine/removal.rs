@@ -7,6 +7,7 @@ use empack_core::{
 };
 
 mod native;
+pub(super) use native::plan_removal;
 pub use native::{PreparedRemoval, RemovalReceipt, prepare_removal};
 
 /// Coherent next documents and explicit exact selections. This is not permission to delete files.

@@ -310,6 +310,42 @@ impl WorkspaceSnapshot {
         policy: SourceEvidencePolicy,
         cancel: &Cancellation,
     ) -> Result<(AcquiredContent, FilePermissions)> {
+        let (mut file, effective, permissions) = self.open_observed_input(path, expected)?;
+        let maximum = effective.size.expect("captured size");
+        let acquired = verify_stream(
+            &mut file,
+            &effective,
+            maximum,
+            policy,
+            InitialObservation::RequireEvidence,
+            cancel,
+        )?;
+        Ok((acquired, permissions))
+    }
+    /// Check captured bytes without retaining another copy merely to authorize their removal.
+    pub(super) fn verify_file(
+        &self,
+        path: &PortableRelPath,
+        expected: &ExpectedContent,
+        cancel: &Cancellation,
+    ) -> Result<empack_core::digest::DigestSet> {
+        let (mut file, effective, _) = self.open_observed_input(path, Some(expected))?;
+        let maximum = effective.size.expect("captured size");
+        Ok(super::content::verify_observation(
+            &mut file,
+            &effective,
+            maximum,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::RequireEvidence,
+            cancel,
+        )?
+        .observed)
+    }
+    fn open_observed_input(
+        &self,
+        path: &PortableRelPath,
+        expected: Option<&ExpectedContent>,
+    ) -> Result<(std::fs::File, ExpectedContent, FilePermissions)> {
         let Some(Observation::File(observed)) = self.native.entries().get(path) else {
             anyhow::bail!("Input is not a captured regular file: {}", path.as_str());
         };
@@ -329,24 +365,21 @@ impl WorkspaceSnapshot {
         }
         self.root.check_binding()?;
         let (parent, leaf) = native::parent(&self.root.directory, path)?;
-        let mut file = native::open_file(&parent, &leaf)?;
+        let file = native::open_file(&parent, &leaf)?;
         ensure!(
             native::identity(&file)? == observed.object,
             "Source object changed before acquisition"
         );
-        let acquired = verify_stream(
-            &mut file,
-            &ExpectedContent {
-                digests: expected.and_then(|value| value.digests.clone()),
-                size: Some(observed.bytes),
-                accepted_observation: Some(content_id),
-            },
-            observed.bytes,
-            policy,
-            InitialObservation::RequireEvidence,
-            cancel,
-        )?;
-        Ok((acquired, super::verification::content(observed).permissions))
+        let effective = ExpectedContent {
+            digests: expected.and_then(|value| value.digests.clone()),
+            size: Some(observed.bytes),
+            accepted_observation: Some(content_id),
+        };
+        Ok((
+            file,
+            effective,
+            super::verification::content(observed).permissions,
+        ))
     }
 }
 /// Receives only read-only journal access. No cache, tool or publication capability is present.

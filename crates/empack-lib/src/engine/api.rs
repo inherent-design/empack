@@ -47,10 +47,12 @@ use tokio::sync::oneshot;
 struct PublicationWorkerFailed(#[source] RuntimeError);
 mod execution;
 mod project_change;
+mod removal;
 pub use project_change::{
     ImportRequest, InitializeRequest, ProjectChangePreview, ProjectChangeReceipt,
     ReplacementSummary,
 };
+pub use removal::{RemovalSelection, RemovePreview, RemoveReceipt, RemoveRequest};
 static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 
 /// In-process identity for one immutable captured plan; deliberately not deserializable.
@@ -138,6 +140,7 @@ pub enum Request {
     Build(BuildRequest),
     Import(Box<ImportRequest>),
     Initialize(Box<InitializeRequest>),
+    Remove(RemoveRequest),
 }
 /// A selected existing root or one absent child of an existing selected parent.
 #[derive(Clone)]
@@ -160,6 +163,11 @@ impl From<InitializeRequest> for Request {
         Self::Initialize(Box::new(request))
     }
 }
+impl From<RemoveRequest> for Request {
+    fn from(request: RemoveRequest) -> Self {
+        Self::Remove(request)
+    }
+}
 impl From<ImportRequest> for Request {
     fn from(request: ImportRequest) -> Self {
         Self::Import(Box::new(request))
@@ -170,11 +178,13 @@ pub enum OperationPreview {
     Build(BuildPreview),
     Import(ProjectChangePreview),
     Initialize(ProjectChangePreview),
+    Remove(RemovePreview),
 }
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
             Self::Build(view) => view.plan,
+            Self::Remove(view) => view.plan,
             Self::Import(view) | Self::Initialize(view) => view.plan,
         }
     }
@@ -196,9 +206,16 @@ impl OperationPreview {
             _ => None,
         }
     }
+    pub fn remove(&self) -> Option<&RemovePreview> {
+        match self {
+            Self::Remove(view) => Some(view),
+            _ => None,
+        }
+    }
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
+            Self::Remove(view) => Some(view.replacement),
             _ => None,
         }
     }
@@ -212,11 +229,13 @@ impl OperationPreview {
 enum PreparedKind {
     Build(Box<PreparedBuild>),
     ProjectChange(Box<project_change::PreparedProjectChange>),
+    Remove(Box<removal::PreparedRemovalOperation>),
 }
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
             Self::Build(value) => OperationPreview::Build(value.view.clone()),
+            Self::Remove(value) => OperationPreview::Remove(value.view.clone()),
             Self::ProjectChange(value) => {
                 if value.initialize {
                     OperationPreview::Initialize(value.view.clone())
@@ -276,6 +295,7 @@ pub enum ExecutionReceipt {
     Build(Box<RetainedOutput<BuildReceipt>>),
     Import(Box<RetainedOutput<ProjectChangeReceipt>>),
     Initialize(Box<RetainedOutput<ProjectChangeReceipt>>),
+    Remove(Box<RetainedOutput<RemoveReceipt>>),
 }
 /// Accurate publication outcome: a failed preparation and a hot durable journal are distinct.
 pub enum ExecutionOutcome {
@@ -392,6 +412,11 @@ impl Engine {
                                 .transpose()?
                                 .map(|value| PreparedKind::Build(Box::new(value))))
                         }
+                        Request::Remove(request) => {
+                            Ok(removal::prepare(project, request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Remove(Box::new(value))))
+                        }
                         Request::Initialize(request) => Ok(project_change::prepare(
                             project,
                             request.candidate.into(),
@@ -459,18 +484,28 @@ impl Engine {
         let catalog = self.catalog.clone();
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
-            if matches!(&*data, PreparedKind::Build(_)) {
-                let prepared = data.map(|kind| match kind {
-                    PreparedKind::Build(value) => *value,
-                    _ => unreachable!(),
-                });
-                execution::run(prepared, config, transport, catalog, scope).await
-            } else {
-                let prepared = data.map(|kind| match kind {
-                    PreparedKind::ProjectChange(value) => *value,
-                    _ => unreachable!(),
-                });
-                project_change::run(prepared, config, scope).await
+            match &*data {
+                PreparedKind::Build(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::Build(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    execution::run(prepared, config, transport, catalog, scope).await
+                }
+                PreparedKind::ProjectChange(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::ProjectChange(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    project_change::run(prepared, config, scope).await
+                }
+                PreparedKind::Remove(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::Remove(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    removal::run(prepared, config, scope).await
+                }
             }
         })?)
     }
@@ -600,3 +635,6 @@ mod tests;
 
 #[cfg(test)]
 mod initialize_tests;
+
+#[cfg(test)]
+mod removal_tests;

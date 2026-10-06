@@ -94,8 +94,9 @@ requires an `ExecutionGrant` carrying the exact `ReplacementSummary` from that v
 missing or stale acknowledgements fail before publication. New-file-only plans need no
 replacement acknowledgement. The engine also checks the originating instance and plan.
 
-Build, import and initialization share the owned operation registry and `ExecutionOutcome`. Completed
-operations retain a typed `ExecutionReceipt::Build` `ExecutionReceipt::Import` or `ExecutionReceipt::Initialize`;
+Build, import, initialization and removal share the owned operation registry and
+`ExecutionOutcome`. Completed operations retain typed build, import, initialization
+or removal receipts;
 interruption and recovery outcomes are shared. Preparation reserves the candidate and
 its staging copy, then retains the actual staged byte allowance until publication retires.
 Import source resolution/acquisition remains an explicit earlier read-only composition.
@@ -134,8 +135,14 @@ Engine recovery/continuation composition and CLI cutover remain unfinished.
 with `RemovalMode::ForgetRoots` or `RemoveContent`. Its read-only file plan precedes
 any publication. `PreparedRemoval::publish` consumes verified documents and file
 changes through the common publisher, returning the selected keys, actual removal
-mode, resulting project and publication receipt. This is lower-level host composition;
-the shared `Engine` removal request and selector interface are still being wired.
+mode, resulting project and publication receipt. The shared `Engine` accepts `RemoveRequest` with exact logical keys and an explicit
+mode. `RemovePreview` lists canonical selections and the exact file footprint;
+authorization requires its plan and replacement digest. `RemoveReceipt` distinguishes
+demotion from physical removal. Source verification streams without retaining payload
+copies, then staging reserves the actual candidate-document bytes. Publication reserves
+its before-images separately. Missing selections, stale inputs or failed admission
+cannot produce a successful subset. Alias/title/stem selection and CLI wiring remain
+host integration work.
 
 ## 17. Public engine API and application wiring
 

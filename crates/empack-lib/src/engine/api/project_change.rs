@@ -77,7 +77,10 @@ enum CapturedProjectChange {
     Existing(crate::engine::project::ReplacementSnapshot),
     New(crate::engine::project::NewProjectSnapshot),
 }
-fn resources(bytes: u64, config: &EngineConfig) -> Result<(ResourceRequest, ResourceRequest)> {
+pub(super) fn resources(
+    bytes: u64,
+    config: &EngineConfig,
+) -> Result<(ResourceRequest, ResourceRequest)> {
     let mut retained = config.resources.prepared;
     retained.scratch_bytes = bytes;
     let mut resources = config.resources.assembly;
@@ -175,7 +178,7 @@ fn describe(replacement: NativeProjectChange, initialize: bool) -> Result<Prepar
         initialize,
     })
 }
-fn summary(plan: &FilePlan) -> Result<ReplacementSummary> {
+pub(super) fn summary(plan: &FilePlan) -> Result<ReplacementSummary> {
     fn content(hash: &mut Sha256, value: &FileContent) {
         hash.update(value.content.bytes());
         hash.update(value.bytes.to_le_bytes());

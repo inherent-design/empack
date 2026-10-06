@@ -339,3 +339,73 @@ fn index_aliases_cannot_leave_a_stale_reference_to_removed_content() {
         b"payload"
     );
 }
+
+#[test]
+fn removal_accepts_empty_indexes_and_preserves_disabled_internal_hashes() {
+    for (empty, hash) in [(true, true), (false, false), (true, false)] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        backend(root.path(), false);
+        let mut index: toml::Value =
+            toml::from_str(&fs::read_to_string(root.path().join("pack/index.toml")).unwrap())
+                .unwrap();
+        if empty {
+            index.as_table_mut().unwrap().remove("files");
+        }
+        let index = toml::to_string(&index).unwrap();
+        put(root.path(), "pack/index.toml", index.as_bytes());
+        let mut pack: toml::Value =
+            toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap())
+                .unwrap();
+        if hash {
+            pack["index"]["hash"] = toml::Value::String(
+                ExpectedDigest::Sha256(Sha256::digest(index.as_bytes()).into()).hex(),
+            );
+        } else {
+            pack["index"].as_table_mut().unwrap().remove("hash");
+            pack["index"].as_table_mut().unwrap().remove("file");
+            pack.as_table_mut().unwrap().insert(
+                "options".into(),
+                toml::Value::Table(toml::Table::from_iter([(
+                    "no-internal-hashes".into(),
+                    toml::Value::Boolean(true),
+                )])),
+            );
+        }
+        put(
+            root.path(),
+            "pack/pack.toml",
+            toml::to_string(&pack).unwrap().as_bytes(),
+        );
+        let prepared = prepare(root.path(), state.path(), RemovalMode::RemoveContent).unwrap();
+        prepared
+            .publish(
+                &Publisher::open(&state.path().join("state")).unwrap(),
+                &Cancellation::default(),
+            )
+            .unwrap();
+        assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
+        assert!(
+            root.path()
+                .join("pack/resourcepacks/assets.pw.toml")
+                .exists()
+        );
+        let result: toml::Value =
+            toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap())
+                .unwrap();
+        assert_eq!(
+            result["index"]
+                .get("hash")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|value| !value.is_empty()),
+            hash
+        );
+        if !hash {
+            assert_eq!(
+                result["options"]["no-internal-hashes"].as_bool(),
+                Some(true)
+            );
+        }
+    }
+}

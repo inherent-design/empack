@@ -297,7 +297,7 @@ The trusted host can publish the verified plan through the journaled publisher.
 Concurrent source edits, added files and cancellation before publication prevent the
 whole replacement. Tests publish into an empty existing directory and replace a
 broken project, preserve unrelated files, and re-export the correct layered bytes.
-The shared Engine now accepts build, import and initialization requests. Import preparation stages
+The shared Engine accepts build, import, initialization and removal requests. Import preparation stages
 the full candidate under admission, exposes its file plan and requires an exact
 replacement-summary acknowledgement before existing managed files can change.
 All three operation kinds use the same engine-bound approval, owned runtime, cancellation
@@ -440,12 +440,22 @@ Manifest labels never become backend filenames. Unlisted files remain untouched.
 
 The candidate contains updated intent/lock documents, exact file removals and, when
 present, an updated backend index and its pack-document digest. Existing index
-content must match its declaration; portable aliases cannot leave a stale reference
-to removed content. Private staging and scoped file verification feed the shared
+content must match its digest when one is declared; portable aliases cannot leave a stale reference
+to removed content. An omitted empty file list and disabled internal index hashes
+remain valid, following the pinned [index reader](https://raw.githubusercontent.com/mannie-exe/packwiz-tx/v0.2.0/core/index.go)
+and [pack options](https://raw.githubusercontent.com/mannie-exe/packwiz-tx/v0.2.0/core/pack.go).
+This does not relax source-content assertions. Private staging and scoped file verification feed the shared
 recoverable publisher. Root demotion publishes documents only. Concurrent document
 or payload edits invalidate the entire plan. This lower-level composition is tested
-on real filesystems; shared Engine request/admission wiring and user selector
-resolution remain implementation work.
+on real filesystems. Shared Engine removal now carries exact logical keys and an
+explicit mode through preparation, footprint acknowledgement, execution and retained
+receipts. Failed admission and stale inputs return failure before publication.
+
+Removal observations share digest validation with acquired content but retain no
+payload copy. A bounded planning worker determines exact document staging bytes;
+separate admission covers staging and publication before-images. Root demotion and
+physical removal feed subsequent builds with distinct preserved inventories. The
+user-facing alias/title/stem selector and CLI integration remain implementation work.
 
 ## Existing command guarantees
 
@@ -468,6 +478,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Shared Engine removal | 1,735 tests and eleven doctests pass before the final backend-option case. The final 37 affected tests pass, covering streamed evidence, native removal, grants, resource failure and removal/demotion followed by builds. The empty-index failure reproduced before correction; omitted file lists and disabled internal hashes now verify. Final all-feature Clippy and Windows cross-compilation pass; real Modrinth and CurseForge imports each publish and reverify 78 roots |
 | Creation review 73 | The unrelated-template byte-limit regression reproduced before correction. All 45 affected initialization, snapshot, source and publication checks pass, including real process-crash recovery. Filtering is retained in recovery observations. Native CI at `bcbd8e5` passed Linux/macOS/Windows default and strict E2E suites, all three import-smoke jobs, lint and coverage |
 | Creation review 72 | 1,712 tests and eleven doctests pass; all-feature Clippy and Windows cross-compilation pass. The template collision reproduced before correction. New cases cover literal/template aliases, common-layer precedence, portable case collisions and additions after preparation. Native Windows execution remains required for the relative rename correction |
 | Semantic initialization | 1,709 tests and eleven doctests pass. Both real import formats publish and reverify 78 roots through the shared project-change implementation. All-feature Clippy and Windows cross-compilation pass. Seven initialization regressions cover loader intent, approval, user templates, conflicts, directory/link rejection and a subsequent mrpack build. Native CI remains required |

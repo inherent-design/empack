@@ -12,7 +12,7 @@ applicable. Target-only requests become available when their implementations lan
 | Provider search, order, exact ID, slug, URL, pin | Preserve | Selector/catalog and typed resolution | Equivalent identity; pin ownership; resource/shader/world types |
 | Direct JAR, typed ZIP, recognized/unidentified local content | Preserve | Probe and normalized add | Bounded acquisition, provenance, safe placement and repeated sync |
 | Mods, resources, shaders, datapacks, worlds | Preserve | Content kind and placement | Type-specific folders and provider capability errors |
-| Aliases, title/stem removal, local file removal | Preserve | Shared identity planner | Collision, ambiguous selection, wrong-kind and link fixtures |
+| Aliases, title/stem removal, local files and untracked installed metadata | Preserve | Shared identity planner | Collision, ambiguous selection, observed-only ownership, wrong-kind and link fixtures |
 | Membership-only sync and mutable build inputs | Bug to remove | Lock, snapshot and planner | Exact selection, preserved transitive content and source conflicts |
 | Unpinned installed-version retention | Preserve | Exact lock and explicit update | Sync does not upgrade content |
 | Common/client/server layers and optional files | Preserve | Requirements and projections | Explicit precedence; reject lossy conversion |

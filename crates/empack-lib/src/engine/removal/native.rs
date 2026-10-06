@@ -61,6 +61,59 @@ pub fn prepare_removal(
     mode: RemovalMode,
     cancel: &Cancellation,
 ) -> Result<PreparedRemoval> {
+    plan_removal(workspace, selections, mode, cancel)?.stage(cancel)
+}
+
+pub(in crate::engine) struct RemovalPreparation {
+    workspace: WorkspaceSnapshot,
+    candidate: RemovalCandidate,
+    plan: FilePlan,
+    documents: BTreeMap<ManagedPath, Vec<u8>>,
+}
+impl RemovalPreparation {
+    pub(in crate::engine) fn bytes(&self) -> Result<u64> {
+        self.plan.expected().values().try_fold(0u64, |total, file| {
+            total
+                .checked_add(file.bytes)
+                .context("Removal staging size overflow")
+        })
+    }
+    pub(in crate::engine) fn stage(self, cancel: &Cancellation) -> Result<PreparedRemoval> {
+        let Self {
+            workspace,
+            candidate,
+            plan,
+            documents,
+        } = self;
+        let limits = verification::candidate_stage_limits(workspace.observations(), &plan)?;
+        let mut stage = MutableStage::empty()?;
+        for (target, bytes) in &documents {
+            let native = ProjectLayout::path(target)?;
+            stage.write_attributed(
+                &native,
+                &mut bytes.as_slice(),
+                bytes.len() as u64,
+                plan.expected()[target].permissions,
+                cancel,
+            )?;
+        }
+        let stage = stage.freeze(limits, cancel)?;
+        let (root, base) = workspace.into_native();
+        let change = VerifiedFileChange::verify_mutation(base, plan, stage)?;
+        Ok(PreparedRemoval {
+            root,
+            change,
+            candidate,
+        })
+    }
+}
+/// Read and verify observations without retaining payload copies; staging admission follows sizing.
+pub(in crate::engine) fn plan_removal(
+    workspace: MutationSnapshot,
+    selections: &NonEmpty<DependencyKey>,
+    mode: RemovalMode,
+    cancel: &Cancellation,
+) -> Result<RemovalPreparation> {
     cancel.check()?;
     let workspace = workspace.into_workspace();
     let candidate = RemovalCandidate::prepare(
@@ -93,12 +146,7 @@ pub fn prepare_removal(
                     match &observed[&target] {
                         ObservedPath::File(_) => {
                             // Recheck original declarations; an edited file is not disposable content.
-                            workspace.acquire_file(
-                                &native,
-                                Some(&file.expected),
-                                SourceEvidencePolicy::Compatibility,
-                                cancel,
-                            )?;
+                            workspace.verify_file(&native, &file.expected, cancel)?;
                             removals.insert(target);
                         }
                         ObservedPath::Absent => {}
@@ -162,16 +210,11 @@ pub fn prepare_removal(
                     layer: ContentLayer::Common,
                     path: record.destination.relative().clone(),
                 })?;
-                let (content, _) = workspace
-                    .acquire_file(
-                        &native,
-                        Some(&file.expected),
-                        SourceEvidencePolicy::Compatibility,
-                        cancel,
-                    )
+                let observed = workspace
+                    .verify_file(&native, &file.expected, cancel)
                     .context("Cannot verify derivative metadata against selected content")?;
                 ensure!(
-                    content.observed_digests().values().contains(&record.digest),
+                    observed.values().contains(&record.digest),
                     "Backend digest differs from selected bytes"
                 );
             }
@@ -204,25 +247,12 @@ pub fn prepare_removal(
         );
     }
     let plan = verification::plan_files(&observed, &desired, &removals)?;
-    let limits = verification::candidate_stage_limits(workspace.observations(), &plan)?;
-    let mut stage = MutableStage::empty()?;
-    for (target, bytes) in &documents {
-        let native = ProjectLayout::path(target)?;
-        stage.write_attributed(
-            &native,
-            &mut bytes.as_slice(),
-            bytes.len() as u64,
-            desired[target].permissions,
-            cancel,
-        )?;
-    }
-    let stage = stage.freeze(limits, cancel)?;
-    let (root, base) = workspace.into_native();
-    let change = VerifiedFileChange::verify_mutation(base, plan, stage)?;
-    Ok(PreparedRemoval {
-        root,
-        change,
+    verification::candidate_stage_limits(workspace.observations(), &plan)?;
+    Ok(RemovalPreparation {
+        workspace,
         candidate,
+        plan,
+        documents,
     })
 }
 
@@ -270,40 +300,63 @@ fn refresh_index(
     let index_bytes = index;
     let mut index: toml::Value = toml::from_str(std::str::from_utf8(index_bytes)?)?;
     let mut pack: toml::Value = toml::from_str(std::str::from_utf8(pack)?)?;
+    let no_hashes = pack
+        .get("options")
+        .and_then(|options| options.get("no-internal-hashes"))
+        .map(|value| value.as_bool().context("Invalid internal-hash option"))
+        .transpose()?
+        .unwrap_or(false);
     let reference = pack
-        .get_mut("index")
-        .and_then(toml::Value::as_table_mut)
-        .context("Pack lacks an index reference")?;
+        .as_table_mut()
+        .context("Pack document must be a table")?
+        .entry("index")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .context("Pack index reference must be a table")?;
+    let selected = reference
+        .get("file")
+        .map(|value| value.as_str().context("Index path must be text"))
+        .transpose()?
+        .unwrap_or("index.toml");
     ensure!(
-        reference.get("file").and_then(toml::Value::as_str) == Some("index.toml"),
+        selected.is_empty() || selected == "index.toml",
         "Unexpected backend index path"
     );
-    let declaration = ExpectedDigest::parse(
-        reference
-            .get("hash-format")
-            .and_then(toml::Value::as_str)
-            .context("Index digest has no algorithm")?,
-        reference
-            .get("hash")
-            .and_then(toml::Value::as_str)
-            .context("Index digest is absent")?,
-    )?;
-    crate::engine::content::verify_stream(
-        &mut index_bytes.as_slice(),
-        &empack_core::model::ExpectedContent {
-            digests: Some(empack_core::digest::DigestSet::new(vec![declaration])?),
-            size: Some(index_bytes.len() as u64),
-            accepted_observation: None,
-        },
-        index_bytes.len() as u64,
-        SourceEvidencePolicy::Compatibility,
-        crate::engine::content::InitialObservation::RequireEvidence,
-        cancel,
-    )?;
+    reference.insert("file".into(), toml::Value::String("index.toml".into()));
+    let hash = reference
+        .get("hash")
+        .map(|value| value.as_str().context("Index digest must be text"))
+        .transpose()?
+        .filter(|value| !value.is_empty());
+    let publish_hash = hash.is_some() && !no_hashes;
+    if let Some(hash) = hash {
+        let declaration = ExpectedDigest::parse(
+            reference
+                .get("hash-format")
+                .and_then(toml::Value::as_str)
+                .context("Index digest has no algorithm")?,
+            hash,
+        )?;
+        crate::engine::content::verify_observation(
+            &mut index_bytes.as_slice(),
+            &empack_core::model::ExpectedContent {
+                digests: Some(empack_core::digest::DigestSet::new(vec![declaration])?),
+                size: Some(index_bytes.len() as u64),
+                accepted_observation: None,
+            },
+            index_bytes.len() as u64,
+            SourceEvidencePolicy::Compatibility,
+            crate::engine::content::InitialObservation::RequireEvidence,
+            cancel,
+        )?;
+    }
     let files = index
-        .get_mut("files")
-        .and_then(toml::Value::as_array_mut)
-        .context("Backend index lacks file entries")?;
+        .as_table_mut()
+        .context("Index must be a table")?
+        .entry("files")
+        .or_insert_with(|| toml::Value::Array(vec![]))
+        .as_array_mut()
+        .context("Index file entries must be an array")?;
     let mut paths = crate::engine::layout::CollisionIndex::default();
     let mut retained = Vec::new();
     for entry in files.drain(..) {
@@ -327,11 +380,15 @@ fn refresh_index(
     }
     *files = retained;
     let index = toml::to_string(&index)?.into_bytes();
-    reference.insert("hash-format".into(), toml::Value::String("sha256".into()));
-    reference.insert(
-        "hash".into(),
-        toml::Value::String(ExpectedDigest::Sha256(Sha256::digest(&index).into()).hex()),
-    );
+    if publish_hash {
+        reference.insert("hash-format".into(), toml::Value::String("sha256".into()));
+        reference.insert(
+            "hash".into(),
+            toml::Value::String(ExpectedDigest::Sha256(Sha256::digest(&index).into()).hex()),
+        );
+    } else {
+        reference.remove("hash");
+    }
     documents.insert(ManagedPath::BackendDocument(path("index.toml")?), index);
     documents.insert(
         ManagedPath::BackendDocument(path("pack.toml")?),

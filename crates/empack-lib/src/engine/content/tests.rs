@@ -192,3 +192,50 @@ fn hundreds_of_independent_files_fit_a_normal_descriptor_limit() {
         assert_eq!(output, format!("independent payload {index}").as_bytes());
     }
 }
+
+#[test]
+fn observations_match_leases_without_upgrading_weaker_source_evidence() {
+    let lease = acquire(b"payload", &expected()).unwrap();
+    let observed = verify_observation(
+        &mut b"payload".as_slice(),
+        &expected(),
+        7,
+        SourceEvidencePolicy::Compatibility,
+        InitialObservation::RequireEvidence,
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert_eq!(observed.address, lease.lease().id());
+    assert_eq!(observed.bytes, 7);
+    assert_eq!(observed.observed, *lease.observed_digests());
+    assert!(
+        matches!(observed.evidence, IntegrityEvidence::MatchedExpected { expected, .. } if expected.strongest() == DigestAlgorithm::Md5)
+    );
+    for (bytes, maximum, strong, cancelled) in [
+        (b"changed".as_slice(), 7, false, false),
+        (b"payload".as_slice(), 6, false, false),
+        (b"payload".as_slice(), 7, true, false),
+        (b"payload".as_slice(), 7, false, true),
+    ] {
+        let cancel = Cancellation::default();
+        if cancelled {
+            cancel.cancel();
+        }
+        let mut input = bytes;
+        assert!(
+            verify_observation(
+                &mut input,
+                &expected(),
+                maximum,
+                if strong {
+                    SourceEvidencePolicy::StrongSourceRequired
+                } else {
+                    SourceEvidencePolicy::Compatibility
+                },
+                InitialObservation::RequireEvidence,
+                &cancel
+            )
+            .is_err()
+        );
+    }
+}
