@@ -252,7 +252,9 @@ installer command disables tool updates and selects `-s server` explicitly.
 
 Default `start.sh` and `start.bat` invoke the prepared launcher from the distribution
 root, preserving separate user arguments. `JAVA_HOME` selects Java; lightweight
-`install_pack.sh` also accepts a Java executable argument. Full installation performs
+`install_pack.sh` and `install_pack.bat` also accept a Java executable argument.
+Lightweight startup runs the corresponding installer first on both platforms and
+stops when installation fails. Windows installation does not require Bash. Full installation performs
 no download step. No recipe writes an accepted EULA. Captured user scripts and server
 properties remain user input and are reported as such; the verifier does not claim
 arbitrary user-authored commands are correct.

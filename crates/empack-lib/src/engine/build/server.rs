@@ -130,6 +130,36 @@ JAVA_PATH="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 exec "$JAVA_PATH" -jar server.jar "$@"
 "#;
 const START_BAT: &str = "@echo off\r\ncd /d \"%~dp0\"\r\nif defined JAVA_HOME (\r\n  \"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar %*\r\n) else (\r\n  java -jar server.jar %*\r\n)\r\n";
+fn start_script(bootstrap: bool) -> String {
+    if bootstrap {
+        START_SH.replace(
+            "exec \"$JAVA_PATH\"",
+            "bash ./install_pack.sh \"$JAVA_PATH\"\nexec \"$JAVA_PATH\"",
+        )
+    } else {
+        START_SH.into()
+    }
+}
+fn start_batch(bootstrap: bool) -> String {
+    let command = if bootstrap {
+        "call install_pack.bat\r\nif errorlevel 1 exit /b %errorlevel%\r\n"
+    } else {
+        ""
+    };
+    START_BAT.replace(
+        "if defined JAVA_HOME",
+        &format!("{command}if defined JAVA_HOME"),
+    )
+}
+fn install_batch(bootstrap: Option<&ServerBootstrap>) -> String {
+    let command=bootstrap.map(|bootstrap| {
+        let headless=if bootstrap.interaction==InstallerInteraction::Headless { " --no-gui" } else { "" };
+        format!("set \"JAVA_PATH=java\"\r\nif defined JAVA_HOME set \"JAVA_PATH=%JAVA_HOME%\\bin\\java.exe\"\r\nif not \"%~1\"==\"\" set \"JAVA_PATH=%~1\"\r\n\"%JAVA_PATH%\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar{headless} -s server pack/pack.toml\r\nif errorlevel 1 exit /b %errorlevel%\r\n")
+    }).unwrap_or_default();
+    format!(
+        "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\" || exit /b 1\r\n{command}echo Server pack ready. Run start.bat to start it.\r\necho Review and accept the Minecraft EULA yourself before playing.\r\nexit /b 0\r\n"
+    )
+}
 fn install_script(bootstrap: Option<&ServerBootstrap>) -> String {
     let command = bootstrap.map(|bootstrap| {
         let headless = if bootstrap.interaction == InstallerInteraction::Headless {
@@ -258,13 +288,27 @@ pub(super) fn prepare_server_archive(
         "start.sh",
         "start.bat",
         "install_pack.sh",
+        "install_pack.bat",
         "server.properties",
     ]
     .into_iter()
     .any(|name| files.contains_key(&path(name).expect("static path")));
     for (name, bytes, executable) in [
-        ("start.sh", START_SH.as_bytes().to_vec(), true),
-        ("start.bat", START_BAT.as_bytes().to_vec(), false),
+        (
+            "start.sh",
+            start_script(bootstrap.is_some()).into_bytes(),
+            true,
+        ),
+        (
+            "start.bat",
+            start_batch(bootstrap.is_some()).into_bytes(),
+            false,
+        ),
+        (
+            "install_pack.bat",
+            install_batch(bootstrap).into_bytes(),
+            false,
+        ),
         (
             "install_pack.sh",
             install_script(bootstrap).into_bytes(),

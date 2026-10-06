@@ -115,6 +115,7 @@ fn both_server_recipes_publish_exact_side_content_and_runtime_in_all_formats() {
             assert!(!build.uses_user_configuration());
             let expected = build.inventory().clone();
             assert!(expected.contains_key(&path("server.jar").unwrap()));
+            assert!(expected.contains_key(&path("install_pack.bat").unwrap()));
             assert!(!expected.contains_key(&path("eula.txt").unwrap()));
             assert!(!expected.contains_key(&path("excluded").unwrap()));
             assert_eq!(
@@ -333,4 +334,82 @@ fn computed_runtime_hash_does_not_upgrade_original_source_assurance() {
             .contains("strong runtime declaration")
     );
     assert!(!root.path().join("dist").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn lightweight_start_installs_first_and_failure_blocks_the_server() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    put(root.path(), "start.sh", start_script(true).as_bytes());
+    put(
+        root.path(),
+        "install_pack.sh",
+        install_script(Some(&ServerBootstrap {
+            assets: InstallerAssets::fixture(),
+            interaction: InstallerInteraction::Headless,
+        }))
+        .as_bytes(),
+    );
+    let java = root.path().join("java space");
+    put(root.path(),"java space/bin/java",b"#!/bin/sh\nprintf '%s\n' \"$*\" >> arguments\nif [ \"$2\" = packwiz-installer-bootstrap.jar ]; then exit \"$EMPACK_TEST_INSTALL_STATUS\"; fi\n");
+    fs::set_permissions(java.join("bin/java"), fs::Permissions::from_mode(0o700)).unwrap();
+    for (failure, count) in [(false, 2), (true, 1)] {
+        put(root.path(), "arguments", b"");
+        let status = std::process::Command::new("bash")
+            .arg(root.path().join("start.sh"))
+            .arg("nogui")
+            .env("JAVA_HOME", &java)
+            .env(
+                "EMPACK_TEST_INSTALL_STATUS",
+                if failure { "7" } else { "0" },
+            )
+            .status()
+            .unwrap();
+        assert_eq!(status.success(), !failure);
+        let arguments = fs::read_to_string(root.path().join("arguments")).unwrap();
+        let lines: Vec<_> = arguments.lines().collect();
+        assert_eq!(lines.len(), count);
+        assert!(lines[0].contains("--bootstrap-main-jar packwiz-installer.jar --no-gui -s server"));
+        if !failure {
+            assert_eq!(lines[1], "-jar server.jar nogui");
+        }
+    }
+}
+#[cfg(windows)]
+#[test]
+fn native_windows_start_installs_first_and_propagates_failure_without_bash() {
+    let root = tempfile::tempdir().unwrap();
+    put(root.path(), "start.bat", start_batch(true).as_bytes());
+    put(
+        root.path(),
+        "install_pack.bat",
+        install_batch(Some(&ServerBootstrap {
+            assets: InstallerAssets::fixture(),
+            interaction: InstallerInteraction::Headless,
+        }))
+        .as_bytes(),
+    );
+    put(root.path(),"java.cmd",b"@echo off\r\necho %*>>arguments\r\nif \"%~2\"==\"packwiz-installer-bootstrap.jar\" exit /b %EMPACK_TEST_INSTALL_STATUS%\r\nexit /b 0\r\n");
+    for (failure, count) in [(false, 2), (true, 1)] {
+        put(root.path(), "arguments", b"");
+        let status = std::process::Command::new("cmd")
+            .args(["/d", "/c", "start.bat", "nogui"])
+            .current_dir(root.path())
+            .env_remove("JAVA_HOME")
+            .env(
+                "EMPACK_TEST_INSTALL_STATUS",
+                if failure { "7" } else { "0" },
+            )
+            .status()
+            .unwrap();
+        assert_eq!(status.success(), !failure);
+        let arguments = fs::read_to_string(root.path().join("arguments")).unwrap();
+        let lines: Vec<_> = arguments.lines().collect();
+        assert_eq!(lines.len(), count);
+        assert!(lines[0].contains("--bootstrap-main-jar packwiz-installer.jar --no-gui -s server"));
+        if !failure {
+            assert_eq!(lines[1], "-jar server.jar nogui");
+        }
+    }
 }
