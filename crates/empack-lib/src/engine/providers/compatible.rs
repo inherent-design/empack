@@ -390,6 +390,21 @@ fn parse_page(
             OffsetDateTime::parse(&published, &Rfc3339).map_err(|_| CatalogError::InvalidRecord)?;
         let fingerprint = fingerprint(&project.id, &value)?;
         seen.push((pin.clone(), fingerprint));
+        // Unavailable records remain identity observations, not downloadable selections.
+        // Providers may omit their payload evidence; that cannot poison an eligible sibling.
+        let owned = match &project.id {
+            ProviderProjectId::Modrinth(id) => {
+                value.get("project_id").and_then(Value::as_str) == Some(id.as_str())
+            }
+            ProviderProjectId::CurseForge(id) => {
+                value.get("modId").and_then(Value::as_u64) == Some(id.get())
+                    && value.get("gameId").and_then(Value::as_u64) == Some(432)
+            }
+        };
+        ensure!(owned, CatalogError::Identity);
+        if !available {
+            continue;
+        }
         let resolution = match &project.id {
             ProviderProjectId::Modrinth(_) => {
                 modrinth::selection(project.clone(), &pin, &serde_json::to_vec(&value)?)?
@@ -413,7 +428,7 @@ fn parse_page(
         else {
             continue;
         };
-        if !available || !loader_matches(&resolution, request) {
+        if !loader_matches(&resolution, request) {
             continue;
         }
         let candidate = Candidate {

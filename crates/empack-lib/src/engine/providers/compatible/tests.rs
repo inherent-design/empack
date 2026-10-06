@@ -466,3 +466,73 @@ async fn alternate_game_queries_share_identity_evidence_and_never_guess_from_a_p
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
 }
+
+#[test]
+fn unavailable_records_need_identity_but_not_downloadable_file_evidence() {
+    let mr = mr_project();
+    let cf = curseforge::project(&serde_json::to_vec(&cf_project()).unwrap(), false).unwrap();
+    for project in [mr, cf] {
+        let (eligible, mut unavailable) = match &project.id {
+            ProviderProjectId::Modrinth(_) => {
+                let eligible = version(
+                    "valid001",
+                    "release",
+                    "2025-01-01T00:00:00Z",
+                    "1.20.1",
+                    "fabric",
+                );
+                let mut unavailable = version(
+                    "hidden01",
+                    "release",
+                    "2026-01-01T00:00:00Z",
+                    "1.20.1",
+                    "fabric",
+                );
+                unavailable["status"] = json!("archived");
+                unavailable["files"] = json!([]);
+                (eligible, unavailable)
+            }
+            ProviderProjectId::CurseForge(_) => {
+                let eligible = cf_file(10, 1, "2025-01-01T00:00:00Z");
+                let mut unavailable = cf_file(11, 1, "2026-01-01T00:00:00Z");
+                unavailable["isAvailable"] = json!(false);
+                unavailable["hashes"] = json!([]);
+                (eligible, unavailable)
+            }
+        };
+        let encode = |rows: Vec<Value>| {
+            match &project.id {
+            ProviderProjectId::Modrinth(_) => serde_json::to_vec(&rows).unwrap(),
+            ProviderProjectId::CurseForge(_) => serde_json::to_vec(&json!({"pagination":{"index":0,"pageSize":50,"resultCount":rows.len(),"totalCount":rows.len()},"data":rows})).unwrap(),
+        }
+        };
+        let request = request(&project, ReleasePolicy::Any);
+        let parsed = parse_page(
+            &project,
+            &request,
+            &encode(vec![unavailable.clone(), eligible.clone()]),
+            0,
+            2,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        assert_eq!(parsed.candidates.len(), 1);
+        assert_eq!(parsed.count, 2);
+        assert_eq!(parsed.seen.len(), 2);
+        match &project.id {
+            ProviderProjectId::Modrinth(_) => unavailable["project_id"] = json!("BADOWNER"),
+            ProviderProjectId::CurseForge(_) => unavailable["modId"] = json!(999),
+        }
+        assert!(
+            parse_page(
+                &project,
+                &request,
+                &encode(vec![unavailable, eligible]),
+                0,
+                2,
+                &Cancellation::default()
+            )
+            .is_err()
+        );
+    }
+}
