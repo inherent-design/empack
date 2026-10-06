@@ -414,6 +414,22 @@ atomic filesystem-wide visibility switch. Each result retains exact resolution,
 original backend evidence, conversions and expected archive members. Remaining
 loader runtime contracts must join this boundary before CLI `all` can cut over.
 
+## Semantic removal planning
+
+`RemovalPlan` in the pure core selects exact logical keys from a coherent resolution.
+`RemoveContent` rejects retained required dependents and incomplete retained dependency
+evidence. Selecting an entire required cycle is valid; no unrequested selection is
+collected. `ForgetRoots` removes explicit authoring roots while retaining exact files,
+pins and graph evidence. It is a distinct outcome, not successful content deletion.
+
+`RemovalCandidate` binds the source documents, computes the next semantic revision and
+encodes coherent intent/lock documents. Unknown or repeated selections fail the entire
+request. A stale lock cannot establish removability, and the original raw intent
+revision remains a publication precondition. These values establish semantic coherence;
+native ownership, staging, publication and Engine request wiring remain to be composed.
+Seven regressions cover batch errors, cycles, evidence gaps, demotion, unrequested
+retention and stale documents.
+
 ## Existing command guarantees
 
 Earlier fixes remain in the live commands: canonical add/sync/remove identities and

@@ -20,6 +20,7 @@ pub mod project;
 pub mod project_change;
 pub mod providers;
 pub mod publication;
+pub mod removal;
 pub mod resources;
 pub mod runtime;
 pub mod server_runtime;

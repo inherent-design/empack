@@ -12,5 +12,6 @@ pub mod inventory;
 pub mod model;
 pub mod path;
 pub mod projection;
+pub mod removal;
 
 pub mod requirements;

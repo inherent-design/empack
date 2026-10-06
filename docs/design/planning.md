@@ -147,6 +147,12 @@ pub enum PlannedAction {
 
 `RemovalSelection` contains the selected logical key, canonical identity, observed metadata key, expected version/content, and exact managed destinations. A user string is not a backend removal target.
 
+Removal distinguishes dropping an explicit root from deleting content. Root demotion
+retains its exact selection and dependency evidence. Content removal requires complete
+retained dependency evidence and no incoming required edge from a retained selection.
+A whole cycle can be selected explicitly; unrequested content is never inferred to be
+removable. Unknown, duplicate or blocked selections reject an AllRequested batch.
+
 `IntentDelta` identifies exact logical records to insert/update/rename/delete. Adding the same canonical identity under an alias updates that existing record or asks for an explicit rename. Publication never chooses its manifest key by looking only at the new backend filename.
 
 `EffectFootprint` describes permitted managed writes/deletes, tools, acquisition origins, and the declared backend closure policy. If a backend discovers additional required dependencies, they must fit verified closure rules and permitted managed namespaces. A new destructive target, incompatible selection, unknown acquisition origin, or broader tool authority requires re-planning and renewed authorization. Unexpected installed dependencies are proposals, not permission to redefine expected results from whatever the backend happened to write: independently resolve their identity/evidence and amend the plan before publication. A policy may auto-authorize a verified non-destructive dependency-closure amendment, but that amendment still gets a new plan digest and recorded grant.
