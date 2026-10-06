@@ -1,10 +1,10 @@
 use super::*;
 use crate::engine::{documents::DocumentCodec, mrpack::tests::project};
 use std::{fs, path::Path, time::Duration};
-fn path(value: &str) -> PortableRelPath {
+pub(super) fn path(value: &str) -> PortableRelPath {
     PortableRelPath::parse(value, PathSyntax::ProjectContent).unwrap()
 }
-fn engine(state: PathBuf) -> (Engine, ResourceGovernor) {
+pub(super) fn engine(state: PathBuf) -> (Engine, ResourceGovernor) {
     let work = ResourceRequest {
         jobs: 1,
         memory_bytes: 16 << 20,
@@ -71,7 +71,7 @@ fn engine(state: PathBuf) -> (Engine, ResourceGovernor) {
     };
     (Engine::new(config, governor.clone()).unwrap(), governor)
 }
-fn put(root: &Path, name: &str, bytes: &[u8]) {
+pub(super) fn put(root: &Path, name: &str, bytes: &[u8]) {
     let destination = root.join(name);
     fs::create_dir_all(destination.parent().unwrap()).unwrap();
     fs::write(destination, bytes).unwrap();
@@ -95,7 +95,7 @@ fn fixture(root: &Path) {
     put(root, "dist/result.mrpack", b"previous mrpack");
     put(root, "dist/client.zip", b"previous client");
 }
-fn request() -> BuildRequest {
+pub(super) fn request() -> BuildRequest {
     BuildRequest {
         outputs: NonEmpty::new(vec![
             BuildOutput {
@@ -912,7 +912,7 @@ async fn ready_import(
 ) -> PreparedOperation {
     let request = ImportRequest {
         candidate: imported(governor.clone()).await,
-        replacement: crate::engine::import::ImportReplacementPolicy::ReplaceManagedContent,
+        replacement: crate::engine::project_change::ProjectReplacementPolicy::ReplaceManagedContent,
     };
     match engine.prepare(root.to_path_buf(), request).await.unwrap() {
         Preparation::Ready(prepared) => prepared,
@@ -940,7 +940,8 @@ async fn import_preview_and_replacement_acknowledgement_preserve_unapproved_file
             root.path().to_path_buf(),
             ImportRequest {
                 candidate: imported(governor.clone()).await,
-                replacement: crate::engine::import::ImportReplacementPolicy::ReplaceManagedContent,
+                replacement:
+                    crate::engine::project_change::ProjectReplacementPolicy::ReplaceManagedContent,
             },
         )
         .await
@@ -1076,7 +1077,8 @@ async fn new_import_preview_preserves_absence_and_approved_execution_publishes_o
             ProjectTarget::New(selected.clone()),
             ImportRequest {
                 candidate: imported(governor.clone()).await,
-                replacement: crate::engine::import::ImportReplacementPolicy::RejectExisting,
+                replacement:
+                    crate::engine::project_change::ProjectReplacementPolicy::RejectExisting,
             },
         )
         .await
@@ -1144,7 +1146,8 @@ async fn new_import_refuses_racing_destinations_and_build_requires_an_existing_r
             ProjectTarget::New(selected.clone()),
             ImportRequest {
                 candidate: imported(governor.clone()).await,
-                replacement: crate::engine::import::ImportReplacementPolicy::ReplaceManagedContent,
+                replacement:
+                    crate::engine::project_change::ProjectReplacementPolicy::ReplaceManagedContent,
             },
         )
         .await

@@ -1,5 +1,5 @@
-//! A complete file candidate precedes any live managed replacement.
-use super::ImportCandidate;
+//! Initialization and import share one complete, verified project replacement footprint.
+use super::{import::ImportCandidate, initialize::InitializeCandidate};
 use crate::{
     application::process_runtime::Cancellation,
     engine::{
@@ -23,27 +23,67 @@ use empack_core::{
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Complete semantic candidates share publication, without treating initialization as an archive.
+pub enum ProjectCandidate {
+    Import(Box<ImportCandidate>),
+    Initialize(Box<InitializeCandidate>),
+}
+impl From<ImportCandidate> for ProjectCandidate {
+    fn from(value: ImportCandidate) -> Self {
+        Self::Import(Box::new(value))
+    }
+}
+impl From<InitializeCandidate> for ProjectCandidate {
+    fn from(value: InitializeCandidate) -> Self {
+        Self::Initialize(Box::new(value))
+    }
+}
+impl ProjectCandidate {
+    pub fn project(&self) -> &ResolvedProject {
+        match self {
+            Self::Import(value) => value.project(),
+            Self::Initialize(value) => value.project(),
+        }
+    }
+    pub fn publication_bytes(&self) -> u64 {
+        match self {
+            Self::Import(value) => value.publication_bytes(),
+            Self::Initialize(value) => value.publication_bytes(),
+        }
+    }
+    pub(super) fn template_paths(&self) -> Result<Vec<empack_core::path::PortableRelPath>> {
+        match self {
+            Self::Import(_) => Ok(vec![]),
+            Self::Initialize(value) => value
+                .templates()
+                .keys()
+                .map(|path| ProjectLayout::path(&ManagedPath::UserTemplate(path.clone())))
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImportReplacementPolicy {
+pub enum ProjectReplacementPolicy {
     RejectExisting,
     /// Replace only the captured authoring documents and managed content roots.
     /// The host must present and authorize the exact returned file plan before publication.
     ReplaceManagedContent,
 }
-pub struct PreparedImportReplacement {
+pub struct PreparedProjectReplacement {
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     project: ResolvedProject,
 }
-pub struct ImportReplacementReceipt {
+pub struct ProjectReplacementReceipt {
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
 }
-pub struct PreparedImportCreation {
+pub struct PreparedProjectCreation {
     change: crate::engine::publication::PreparedRootCreation,
     project: ResolvedProject,
 }
-impl PreparedImportCreation {
+impl PreparedProjectCreation {
     pub fn plan(&self) -> &FilePlan {
         self.change.plan()
     }
@@ -54,42 +94,44 @@ impl PreparedImportCreation {
         self,
         publisher: &Publisher,
         cancel: &Cancellation,
-    ) -> Result<ImportReplacementReceipt> {
-        Ok(ImportReplacementReceipt {
+    ) -> Result<ProjectReplacementReceipt> {
+        Ok(ProjectReplacementReceipt {
             publication: publisher.publish_new(self.change, cancel)?,
             project: self.project,
         })
     }
 }
-/// Reuse complete import staging against an empty private workspace. The live destination remains
+/// Reuse complete project staging against an empty private workspace. The live destination remains
 /// absent; its parent/child binding is carried separately into no-replace publication.
-pub fn prepare_import_creation(
+pub fn prepare_project_creation(
     target: crate::engine::project::NewProjectSnapshot,
-    candidate: ImportCandidate,
+    candidate: impl Into<ProjectCandidate>,
     limits: crate::engine::snapshot::SnapshotLimits,
     cancel: &Cancellation,
-) -> Result<PreparedImportCreation> {
+) -> Result<PreparedProjectCreation> {
     target.revalidate(cancel)?;
     let scratch = tempfile::tempdir()?;
+    let candidate = candidate.into();
     let workspace = crate::engine::project::ProjectReader::new(
         crate::engine::publication::RecoveryReader::new(scratch.path().join("unused-host-state")),
     )
-    .capture_replacement(scratch.path(), limits, cancel)?;
-    let prepared = prepare_import_replacement(
+    .capture_replacement(scratch.path(), limits, cancel)?
+    .capture_seed_templates(&candidate.template_paths()?, cancel)?;
+    let prepared = prepare_project_replacement(
         workspace,
         candidate,
-        ImportReplacementPolicy::RejectExisting,
+        ProjectReplacementPolicy::RejectExisting,
         cancel,
     )?;
     target.revalidate(cancel)?;
     let change =
         crate::engine::publication::PreparedRootCreation::from_verified(target, prepared.change)?;
-    Ok(PreparedImportCreation {
+    Ok(PreparedProjectCreation {
         change,
         project: prepared.project,
     })
 }
-impl PreparedImportReplacement {
+impl PreparedProjectReplacement {
     pub fn plan(&self) -> &FilePlan {
         self.change.plan()
     }
@@ -101,9 +143,9 @@ impl PreparedImportReplacement {
         self,
         publisher: &Publisher,
         cancel: &Cancellation,
-    ) -> Result<ImportReplacementReceipt> {
+    ) -> Result<ProjectReplacementReceipt> {
         let publication = publisher.publish(&self.root, self.change, cancel)?;
-        Ok(ImportReplacementReceipt {
+        Ok(ProjectReplacementReceipt {
             publication,
             project: self.project,
         })
@@ -111,13 +153,15 @@ impl PreparedImportReplacement {
 }
 /// Synchronous private staging, intended for an admitted owned worker just like build preparation.
 /// No live file is changed. A later source edit invalidates the complete publication plan.
-pub fn prepare_import_replacement(
+pub fn prepare_project_replacement(
     workspace: ReplacementSnapshot,
-    candidate: ImportCandidate,
-    policy: ImportReplacementPolicy,
+    candidate: impl Into<ProjectCandidate>,
+    policy: ProjectReplacementPolicy,
     cancel: &Cancellation,
-) -> Result<PreparedImportReplacement> {
+) -> Result<PreparedProjectReplacement> {
     cancel.check()?;
+    let candidate = candidate.into();
+    let workspace = workspace.capture_seed_templates(&candidate.template_paths()?, cancel)?;
     let project = candidate.project();
     let default_permissions = FilePermissions {
         readonly: false,
@@ -133,6 +177,15 @@ pub fn prepare_import_replacement(
             DocumentCodec.encode_lock(project)?,
         ),
     ]);
+    if let ProjectCandidate::Initialize(value) = &candidate {
+        for (path, bytes) in value.templates() {
+            documents.insert(ManagedPath::UserTemplate(path.clone()), bytes.clone());
+        }
+    }
+    // Seed only missing templates. Captured user versions remain exact inputs and are never reset.
+    for (path, (bytes, _)) in workspace.preserved_templates() {
+        documents.insert(ManagedPath::UserTemplate(path.clone()), bytes.clone());
+    }
     let mut desired = BTreeMap::new();
     let mut payloads = BTreeMap::new();
     for (target, bytes) in &documents {
@@ -141,44 +194,53 @@ pub fn prepare_import_replacement(
             FileContent {
                 content: ContentId::from_sha256(Sha256::digest(bytes).into()),
                 bytes: bytes.len() as u64,
-                permissions: default_permissions,
+                permissions: match target {
+                    ManagedPath::UserTemplate(path) => workspace
+                        .preserved_templates()
+                        .get(path)
+                        .map(|(_, permissions)| *permissions)
+                        .unwrap_or(default_permissions),
+                    _ => default_permissions,
+                },
             },
         );
     }
-    for ((key, slot), content_key) in candidate.bindings() {
-        cancel.check()?;
-        let file = project.lock().dependencies[key]
-            .files
-            .as_slice()
-            .iter()
-            .find(|file| &file.slot == slot)
-            .context("Import candidate binding has no locked file")?;
-        let acquired = &candidate.source().content()[content_key];
-        let permissions = candidate
-            .source()
-            .permissions()
-            .get(content_key)
-            .copied()
-            .unwrap_or(default_permissions);
-        for placement in file.placements.as_slice() {
-            let target = ManagedPath::Content {
-                layer: placement.layer,
-                path: placement.destination.relative().clone(),
-            };
-            ensure!(
-                desired
-                    .insert(
-                        target.clone(),
-                        FileContent {
-                            content: acquired.lease().id(),
-                            bytes: acquired.lease().len(),
-                            permissions,
-                        }
-                    )
-                    .is_none(),
-                "Import repeats a native destination"
-            );
-            payloads.insert(target, acquired.lease().clone());
+    if let ProjectCandidate::Import(candidate) = &candidate {
+        for ((key, slot), content_key) in candidate.bindings() {
+            cancel.check()?;
+            let file = project.lock().dependencies[key]
+                .files
+                .as_slice()
+                .iter()
+                .find(|file| &file.slot == slot)
+                .context("Import candidate binding has no locked file")?;
+            let acquired = &candidate.source().content()[content_key];
+            let permissions = candidate
+                .source()
+                .permissions()
+                .get(content_key)
+                .copied()
+                .unwrap_or(default_permissions);
+            for placement in file.placements.as_slice() {
+                let target = ManagedPath::Content {
+                    layer: placement.layer,
+                    path: placement.destination.relative().clone(),
+                };
+                ensure!(
+                    desired
+                        .insert(
+                            target.clone(),
+                            FileContent {
+                                content: acquired.lease().id(),
+                                bytes: acquired.lease().len(),
+                                permissions,
+                            }
+                        )
+                        .is_none(),
+                    "Import repeats a native destination"
+                );
+                payloads.insert(target, acquired.lease().clone());
+            }
         }
     }
     let targets = desired
@@ -212,12 +274,14 @@ pub fn prepare_import_replacement(
     let existing: BTreeSet<_> = observed
         .iter()
         .filter_map(|(target, value)| {
-            (matches!(value, ObservedPath::File(_)) && *target != policy_path)
-                .then_some(target.clone())
+            (matches!(value, ObservedPath::File(_))
+                && *target != policy_path
+                && !matches!(target, ManagedPath::UserTemplate(_)))
+            .then_some(target.clone())
         })
         .collect();
     ensure!(
-        policy == ImportReplacementPolicy::ReplaceManagedContent || existing.is_empty(),
+        policy == ProjectReplacementPolicy::ReplaceManagedContent || existing.is_empty(),
         "Managed project content exists; replacement requires an explicit decision"
     );
     let removals = existing
@@ -252,7 +316,7 @@ pub fn prepare_import_replacement(
     let frozen = stage.freeze(limits, cancel)?;
     let (root, native) = workspace.into_native();
     let change = VerifiedFileChange::verify(native, plan, frozen)?;
-    Ok(PreparedImportReplacement {
+    Ok(PreparedProjectReplacement {
         root,
         change,
         project,

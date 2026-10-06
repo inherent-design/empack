@@ -1,9 +1,10 @@
-//! Import uses the same engine ownership, grants and retained terminal outcomes as builds.
+//! Project creation and replacement use the same engine ownership, grants and retained terminal outcomes as builds.
 use super::*;
 use crate::engine::{
-    import::{
-        ImportCandidate, ImportReplacementPolicy, PreparedImportCreation,
-        PreparedImportReplacement, prepare_import_creation, prepare_import_replacement,
+    import::ImportCandidate,
+    project_change::{
+        PreparedProjectCreation, PreparedProjectReplacement, ProjectCandidate,
+        ProjectReplacementPolicy, prepare_project_creation, prepare_project_replacement,
     },
     publication::{Publisher, RecoveryRequired},
     runtime::WorkScope,
@@ -14,36 +15,41 @@ use empack_core::{
 };
 use sha2::{Digest, Sha256};
 
+pub struct InitializeRequest {
+    pub candidate: crate::engine::initialize::InitializeCandidate,
+    pub replacement: ProjectReplacementPolicy,
+}
 pub struct ImportRequest {
     /// Acquired, interpreted bytes; source resolution itself has no project write authority.
     pub candidate: ImportCandidate,
-    pub replacement: ImportReplacementPolicy,
+    pub replacement: ProjectReplacementPolicy,
 }
 /// A stable digest of this exact native file-change summary, not a reusable deletion capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReplacementSummary([u8; 32]);
 #[derive(Clone)]
-pub struct ImportPreview {
+pub struct ProjectChangePreview {
     pub plan: PlanId,
     pub metadata: PackMetadata,
     pub runtime: RuntimeResolution,
     pub files: FilePlan,
     pub replacement: Option<ReplacementSummary>,
 }
-pub struct ImportReceipt {
+pub struct ProjectChangeReceipt {
     pub plan: PlanId,
     pub publication: PublicationReceipt,
     pub project: empack_core::model::ResolvedProject,
 }
-pub(super) struct PreparedImport {
-    pub(super) view: ImportPreview,
-    replacement: NativeImport,
+pub(super) struct PreparedProjectChange {
+    pub(super) view: ProjectChangePreview,
+    pub(super) initialize: bool,
+    replacement: NativeProjectChange,
 }
-enum NativeImport {
-    Existing(PreparedImportReplacement),
-    New(PreparedImportCreation),
+enum NativeProjectChange {
+    Existing(PreparedProjectReplacement),
+    New(PreparedProjectCreation),
 }
-impl NativeImport {
+impl NativeProjectChange {
     fn plan(&self) -> &FilePlan {
         match self {
             Self::Existing(value) => value.plan(),
@@ -60,14 +66,14 @@ impl NativeImport {
         self,
         publisher: &Publisher,
         cancel: &crate::application::process_runtime::Cancellation,
-    ) -> Result<crate::engine::import::ImportReplacementReceipt> {
+    ) -> Result<crate::engine::project_change::ProjectReplacementReceipt> {
         match self {
             Self::Existing(value) => value.publish(publisher, cancel),
             Self::New(value) => value.publish(publisher, cancel),
         }
     }
 }
-enum CapturedImport {
+enum CapturedProjectChange {
     Existing(crate::engine::project::ReplacementSnapshot),
     New(crate::engine::project::NewProjectSnapshot),
 }
@@ -78,7 +84,7 @@ fn resources(bytes: u64, config: &EngineConfig) -> Result<(ResourceRequest, Reso
     resources.scratch_bytes = resources.scratch_bytes.max(
         bytes
             .checked_mul(2)
-            .ok_or_else(|| anyhow::anyhow!("Import staging size overflow"))?,
+            .ok_or_else(|| anyhow::anyhow!("Project staging size overflow"))?,
     );
     // Frozen packed storage retains one descriptor plus the captured root handle.
     retained.open_files = retained.open_files.max(2);
@@ -86,10 +92,13 @@ fn resources(bytes: u64, config: &EngineConfig) -> Result<(ResourceRequest, Reso
 }
 pub(super) async fn prepare(
     project: ProjectTarget,
-    request: ImportRequest,
+    candidate: ProjectCandidate,
+    policy: ProjectReplacementPolicy,
     config: &EngineConfig,
     scope: &mut WorkScope,
-) -> Result<RetainedOutput<PreparedImport>> {
+) -> Result<RetainedOutput<PreparedProjectChange>> {
+    let initialize = matches!(&candidate, ProjectCandidate::Initialize(_));
+    let templates = candidate.template_paths()?;
     let host_state = config.state_root.clone();
     let limits = config.snapshot;
     let work = scope.spawn_blocking(
@@ -102,50 +111,48 @@ pub(super) async fn prepare(
                     ensure!(project.is_absolute(), "Project selection must be absolute");
                     reader
                         .capture_replacement(&project, limits, &cancel)
-                        .map(CapturedImport::Existing)
+                        .and_then(|snapshot| snapshot.capture_seed_templates(&templates, &cancel))
+                        .map(CapturedProjectChange::Existing)
                 }
                 ProjectTarget::New(project) => reader
                     .capture_new(&project, &cancel)
-                    .map(CapturedImport::New),
+                    .map(CapturedProjectChange::New),
             }
         },
     )?;
     let snapshot = scope.accept(work.wait().await?)?.transpose()?;
     let policy_bytes = match &*snapshot {
-        CapturedImport::Existing(value) => value
-            .preserved_policy()
-            .map_or(0, |(bytes, _)| bytes.len() as u64),
-        CapturedImport::New(_) => 0,
+        CapturedProjectChange::Existing(value) => value.preserved_templates().values().try_fold(
+            value
+                .preserved_policy()
+                .map_or(0, |(bytes, _)| bytes.len() as u64),
+            |sum, (bytes, _)| {
+                sum.checked_add(bytes.len() as u64)
+                    .context("Template staging size overflow")
+            },
+        )?,
+        CapturedProjectChange::New(_) => 0,
     };
-    let bytes = request
-        .candidate
+    let bytes = candidate
         .publication_bytes()
         .checked_add(policy_bytes)
-        .context("Import staging size overflow")?;
+        .context("Project staging size overflow")?;
     let (resources, retained) = resources(bytes, config)?;
     let work = scope.spawn_blocking(resources, retained, move |cancel| {
         let (snapshot, _reservation) = snapshot.into_parts();
         let replacement = match snapshot {
-            CapturedImport::Existing(snapshot) => {
-                NativeImport::Existing(prepare_import_replacement(
-                    snapshot,
-                    request.candidate,
-                    request.replacement,
-                    &cancel,
-                )?)
-            }
-            CapturedImport::New(snapshot) => NativeImport::New(prepare_import_creation(
-                snapshot,
-                request.candidate,
-                limits,
-                &cancel,
-            )?),
+            CapturedProjectChange::Existing(snapshot) => NativeProjectChange::Existing(
+                prepare_project_replacement(snapshot, candidate, policy, &cancel)?,
+            ),
+            CapturedProjectChange::New(snapshot) => NativeProjectChange::New(
+                prepare_project_creation(snapshot, candidate, limits, &cancel)?,
+            ),
         };
-        describe(replacement)
+        describe(replacement, initialize)
     })?;
     scope.accept(work.wait().await?)?.transpose()
 }
-fn describe(replacement: NativeImport) -> Result<PreparedImport> {
+fn describe(replacement: NativeProjectChange, initialize: bool) -> Result<PreparedProjectChange> {
     let files = replacement.plan().clone();
     let replaces = files.changes().iter().any(|change| {
         matches!(
@@ -157,7 +164,7 @@ fn describe(replacement: NativeImport) -> Result<PreparedImport> {
                 }
         )
     });
-    let view = ImportPreview {
+    let view = ProjectChangePreview {
         plan: PlanId(
             NEXT_PLAN
                 .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
@@ -168,7 +175,11 @@ fn describe(replacement: NativeImport) -> Result<PreparedImport> {
         replacement: replaces.then(|| summary(&files)).transpose()?,
         files,
     };
-    Ok(PreparedImport { view, replacement })
+    Ok(PreparedProjectChange {
+        view,
+        replacement,
+        initialize,
+    })
 }
 fn summary(plan: &FilePlan) -> Result<ReplacementSummary> {
     fn content(hash: &mut Sha256, value: &FileContent) {
@@ -180,7 +191,7 @@ fn summary(plan: &FilePlan) -> Result<ReplacementSummary> {
         ]);
     }
     let mut hash = Sha256::new();
-    hash.update(b"empack.import-replacement.v1");
+    hash.update(b"empack.project-replacement.v1");
     for change in plan.changes() {
         let path = crate::engine::layout::ProjectLayout::path(change.target())?;
         hash.update((path.as_str().len() as u64).to_le_bytes());
@@ -194,7 +205,9 @@ fn summary(plan: &FilePlan) -> Result<ReplacementSummary> {
                         hash.update([1]);
                         content(&mut hash, value);
                     }
-                    ObservedPath::Directory => anyhow::bail!("Import cannot replace a directory"),
+                    ObservedPath::Directory => {
+                        anyhow::bail!("Project replacement cannot replace a directory")
+                    }
                 }
                 content(&mut hash, after);
             }
@@ -207,14 +220,19 @@ fn summary(plan: &FilePlan) -> Result<ReplacementSummary> {
     Ok(ReplacementSummary(hash.finalize().into()))
 }
 pub(super) async fn run(
-    prepared: RetainedOutput<PreparedImport>,
+    prepared: RetainedOutput<PreparedProjectChange>,
     config: EngineConfig,
     mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
+    let initialize = prepared.initialize;
     let result = execute(prepared, config, &mut scope).await;
     Ok(match result {
-        Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Import(Box::new(receipt))),
+        Ok(receipt) => ExecutionOutcome::Completed(if initialize {
+            ExecutionReceipt::Initialize(Box::new(receipt))
+        } else {
+            ExecutionReceipt::Import(Box::new(receipt))
+        }),
         Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
             ExecutionOutcome::RecoveryRequired {
                 operation: error
@@ -233,10 +251,10 @@ pub(super) async fn run(
     })
 }
 async fn execute(
-    prepared: RetainedOutput<PreparedImport>,
+    prepared: RetainedOutput<PreparedProjectChange>,
     config: EngineConfig,
     scope: &mut WorkScope,
-) -> Result<RetainedOutput<ImportReceipt>> {
+) -> Result<RetainedOutput<ProjectChangeReceipt>> {
     let publication_bytes =
         prepared
             .view
@@ -268,7 +286,7 @@ async fn execute(
             let receipt = prepared
                 .replacement
                 .publish(&Publisher::open(&config.state_root)?, &cancel)?;
-            Ok::<_, anyhow::Error>(ImportReceipt {
+            Ok::<_, anyhow::Error>(ProjectChangeReceipt {
                 plan: prepared.view.plan,
                 publication: receipt.publication,
                 project: receipt.project,

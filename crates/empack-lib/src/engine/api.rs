@@ -46,8 +46,11 @@ use tokio::sync::oneshot;
 #[error("Publication worker failed; inspect recovery before retrying")]
 struct PublicationWorkerFailed(#[source] RuntimeError);
 mod execution;
-mod import;
-pub use import::{ImportPreview, ImportReceipt, ImportRequest, ReplacementSummary};
+mod project_change;
+pub use project_change::{
+    ImportRequest, InitializeRequest, ProjectChangePreview, ProjectChangeReceipt,
+    ReplacementSummary,
+};
 static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 
 /// In-process identity for one immutable captured plan; deliberately not deserializable.
@@ -134,6 +137,7 @@ struct PreparedBuild {
 pub enum Request {
     Build(BuildRequest),
     Import(Box<ImportRequest>),
+    Initialize(Box<InitializeRequest>),
 }
 /// A selected existing root or one absent child of an existing selected parent.
 #[derive(Clone)]
@@ -151,6 +155,11 @@ impl From<BuildRequest> for Request {
         Self::Build(request)
     }
 }
+impl From<InitializeRequest> for Request {
+    fn from(request: InitializeRequest) -> Self {
+        Self::Initialize(Box::new(request))
+    }
+}
 impl From<ImportRequest> for Request {
     fn from(request: ImportRequest) -> Self {
         Self::Import(Box::new(request))
@@ -159,13 +168,14 @@ impl From<ImportRequest> for Request {
 #[derive(Clone)]
 pub enum OperationPreview {
     Build(BuildPreview),
-    Import(ImportPreview),
+    Import(ProjectChangePreview),
+    Initialize(ProjectChangePreview),
 }
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
             Self::Build(view) => view.plan,
-            Self::Import(view) => view.plan,
+            Self::Import(view) | Self::Initialize(view) => view.plan,
         }
     }
     pub fn build(&self) -> Option<&BuildPreview> {
@@ -174,9 +184,21 @@ impl OperationPreview {
             _ => None,
         }
     }
-    pub fn import(&self) -> Option<&ImportPreview> {
+    pub fn import(&self) -> Option<&ProjectChangePreview> {
         match self {
             Self::Import(view) => Some(view),
+            _ => None,
+        }
+    }
+    pub fn initialize(&self) -> Option<&ProjectChangePreview> {
+        match self {
+            Self::Initialize(view) => Some(view),
+            _ => None,
+        }
+    }
+    pub fn replacement(&self) -> Option<ReplacementSummary> {
+        match self {
+            Self::Import(view) | Self::Initialize(view) => view.replacement,
             _ => None,
         }
     }
@@ -189,13 +211,19 @@ impl OperationPreview {
 }
 enum PreparedKind {
     Build(Box<PreparedBuild>),
-    Import(Box<import::PreparedImport>),
+    ProjectChange(Box<project_change::PreparedProjectChange>),
 }
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
             Self::Build(value) => OperationPreview::Build(value.view.clone()),
-            Self::Import(value) => OperationPreview::Import(value.view.clone()),
+            Self::ProjectChange(value) => {
+                if value.initialize {
+                    OperationPreview::Initialize(value.view.clone())
+                } else {
+                    OperationPreview::Import(value.view.clone())
+                }
+            }
         }
     }
 }
@@ -216,7 +244,7 @@ pub struct ExecutionGrant {
     pub plan: PlanId,
     pub network: NetworkPermission,
     pub run_installer: bool,
-    /// Exact managed replacement footprint displayed by an import preview.
+    /// Exact managed replacement footprint displayed by a project-change preview.
     pub replacement: Option<ReplacementSummary>,
 }
 impl PreparedOperation {
@@ -236,7 +264,7 @@ impl PreparedOperation {
             !self.view.runs_installer() || grant.run_installer,
             "Operation requires trusted installer authorization"
         );
-        let replacement = self.view.import().and_then(|view| view.replacement);
+        let replacement = self.view.replacement();
         ensure!(
             grant.replacement == replacement,
             "Execution grant must acknowledge the exact replacement footprint"
@@ -246,7 +274,8 @@ impl PreparedOperation {
 }
 pub enum ExecutionReceipt {
     Build(Box<RetainedOutput<BuildReceipt>>),
-    Import(Box<RetainedOutput<ImportReceipt>>),
+    Import(Box<RetainedOutput<ProjectChangeReceipt>>),
+    Initialize(Box<RetainedOutput<ProjectChangeReceipt>>),
 }
 /// Accurate publication outcome: a failed preparation and a hot durable journal are distinct.
 pub enum ExecutionOutcome {
@@ -363,11 +392,24 @@ impl Engine {
                                 .transpose()?
                                 .map(|value| PreparedKind::Build(Box::new(value))))
                         }
-                        Request::Import(request) => {
-                            Ok(import::prepare(project, *request, &config, &mut scope)
-                                .await?
-                                .map(|value| PreparedKind::Import(Box::new(value))))
-                        }
+                        Request::Initialize(request) => Ok(project_change::prepare(
+                            project,
+                            request.candidate.into(),
+                            request.replacement,
+                            &config,
+                            &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::ProjectChange(Box::new(value)))),
+                        Request::Import(request) => Ok(project_change::prepare(
+                            project,
+                            request.candidate.into(),
+                            request.replacement,
+                            &config,
+                            &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::ProjectChange(Box::new(value)))),
                     }
                 }
                 .await;
@@ -425,10 +467,10 @@ impl Engine {
                 execution::run(prepared, config, transport, catalog, scope).await
             } else {
                 let prepared = data.map(|kind| match kind {
-                    PreparedKind::Import(value) => *value,
+                    PreparedKind::ProjectChange(value) => *value,
                     _ => unreachable!(),
                 });
-                import::run(prepared, config, scope).await
+                project_change::run(prepared, config, scope).await
             }
         })?)
     }
@@ -555,3 +597,6 @@ fn capture(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod initialize_tests;

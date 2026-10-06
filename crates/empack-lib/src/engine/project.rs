@@ -28,6 +28,7 @@ pub struct ReplacementSnapshot {
     recovery: RecoveryReader,
     limits: SnapshotLimits,
     policy: Option<(Vec<u8>, FilePermissions)>,
+    templates: std::collections::BTreeMap<PortableRelPath, (Vec<u8>, FilePermissions)>,
 }
 impl ReplacementSnapshot {
     pub fn observations(&self) -> &NativeSnapshot {
@@ -35,6 +36,44 @@ impl ReplacementSnapshot {
     }
     pub(super) fn preserved_policy(&self) -> Option<&(Vec<u8>, FilePermissions)> {
         self.policy.as_ref()
+    }
+    pub(super) fn preserved_templates(
+        &self,
+    ) -> &std::collections::BTreeMap<PortableRelPath, (Vec<u8>, FilePermissions)> {
+        &self.templates
+    }
+    pub(super) fn capture_seed_templates(
+        mut self,
+        paths: &[PortableRelPath],
+        cancel: &Cancellation,
+    ) -> Result<Self> {
+        if paths.is_empty() {
+            return Ok(self);
+        }
+        let _guard = self.recovery.enter(&self.root)?;
+        let captured = self.root.capture(paths, self.limits, cancel)?;
+        for path in paths {
+            if let Some(Observation::File(file)) = captured.entries().get(path) {
+                let bytes = read_document(&self.root, &captured, path.as_str(), cancel)?
+                    .context("Captured user template disappeared")?;
+                let name = path
+                    .as_str()
+                    .strip_prefix("templates/")
+                    .context("Template outside its namespace")?;
+                self.templates.insert(
+                    PortableRelPath::parse(name, PathSyntax::ProjectContent)?,
+                    (bytes, super::verification::content(file).permissions),
+                );
+            } else {
+                ensure!(
+                    matches!(captured.entries().get(path), Some(Observation::Absent)),
+                    "Template seed destination is not a regular file or absent"
+                );
+            }
+        }
+        self.native = self.native.merge(captured)?;
+        self.root.revalidate(&self.native, cancel)?;
+        Ok(self)
     }
     /// Explicit incoming paths need unfiltered absence evidence. Filtered directory membership
     /// cannot establish that an ignored destination is absent or authorize overwriting it.
@@ -298,6 +337,7 @@ impl ProjectReader {
             recovery: self.recovery.clone(),
             limits,
             policy,
+            templates: Default::default(),
         })
     }
     /// Bind standard build inputs and each declared local/archive source, including files outside

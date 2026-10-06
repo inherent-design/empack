@@ -23,7 +23,7 @@ use std::{
     io::Read,
 };
 
-mod acquisition;
+pub(super) mod acquisition;
 pub use acquisition::{
     ImportContentInput, ImportContentKey, ImportContentLimits, ImportContentOutcome,
     ImportContentPlan, ImportInputReason, VerifiedImportContent,
@@ -31,11 +31,6 @@ pub use acquisition::{
 mod candidate;
 pub use candidate::{
     ImportCandidate, ImportCandidateOptions, ImportFileDecision, ImportPersistence,
-};
-mod replacement;
-pub use replacement::{
-    ImportReplacementPolicy, ImportReplacementReceipt, PreparedImportCreation,
-    PreparedImportReplacement, prepare_import_creation, prepare_import_replacement,
 };
 mod formats;
 #[cfg(test)]

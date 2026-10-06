@@ -10,12 +10,14 @@ pub mod content;
 pub mod documents;
 
 pub mod import;
+pub mod initialize;
 mod io;
 pub mod layout;
 pub mod mrpack;
 mod native;
 pub mod packwiz;
 pub mod project;
+pub mod project_change;
 pub mod providers;
 pub mod publication;
 pub mod resources;

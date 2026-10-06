@@ -48,20 +48,20 @@ async fn forced_replacement_is_read_only_until_verified_publication_and_reexport
     let captured = reader
         .capture_replacement(&project, SnapshotLimits::default(), &cancel)
         .unwrap();
-    let rejected = prepare_import_replacement(
+    let rejected = prepare_project_replacement(
         captured,
         candidate().await,
-        ImportReplacementPolicy::RejectExisting,
+        ProjectReplacementPolicy::RejectExisting,
         &cancel,
     );
     assert!(matches!(rejected, Err(error) if error.to_string().contains("explicit decision")));
     let captured = reader
         .capture_replacement(&project, SnapshotLimits::default(), &cancel)
         .unwrap();
-    let prepared = prepare_import_replacement(
+    let prepared = prepare_project_replacement(
         captured,
         candidate().await,
-        ImportReplacementPolicy::ReplaceManagedContent,
+        ProjectReplacementPolicy::ReplaceManagedContent,
         &cancel,
     )
     .unwrap();
@@ -151,10 +151,10 @@ async fn source_changes_after_preparation_block_the_whole_replacement() {
         let captured = reader
             .capture_replacement(&project, SnapshotLimits::default(), &cancel)
             .unwrap();
-        let prepared = prepare_import_replacement(
+        let prepared = prepare_project_replacement(
             captured,
             candidate().await,
-            ImportReplacementPolicy::ReplaceManagedContent,
+            ProjectReplacementPolicy::ReplaceManagedContent,
             &cancel,
         )
         .unwrap();
@@ -189,10 +189,10 @@ async fn empty_existing_directory_can_initialize_without_a_manifest_or_backend()
     let captured = reader
         .capture_replacement(&project, SnapshotLimits::default(), &cancel)
         .unwrap();
-    let prepared = prepare_import_replacement(
+    let prepared = prepare_project_replacement(
         captured,
         candidate().await,
-        ImportReplacementPolicy::RejectExisting,
+        ProjectReplacementPolicy::RejectExisting,
         &cancel,
     )
     .unwrap();
@@ -251,10 +251,10 @@ async fn ignored_pack_files_and_policy_are_not_owned_by_managed_replacement() {
     let captured = reader
         .capture_replacement(&project, SnapshotLimits::default(), &cancel)
         .unwrap();
-    let prepared = prepare_import_replacement(
+    let prepared = prepare_project_replacement(
         captured,
         candidate().await,
-        ImportReplacementPolicy::ReplaceManagedContent,
+        ProjectReplacementPolicy::ReplaceManagedContent,
         &cancel,
     )
     .unwrap();
@@ -369,10 +369,10 @@ async fn incoming_ignored_destination_needs_actual_absence_and_cannot_replace_un
         let snapshot = ProjectReader::new(RecoveryReader::new(host.clone()))
             .capture_replacement(&project, SnapshotLimits::default(), &cancel)
             .unwrap();
-        let prepared = prepare_import_replacement(
+        let prepared = prepare_project_replacement(
             snapshot,
             candidate,
-            ImportReplacementPolicy::ReplaceManagedContent,
+            ProjectReplacementPolicy::ReplaceManagedContent,
             &cancel,
         );
         if existing {

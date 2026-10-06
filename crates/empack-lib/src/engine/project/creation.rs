@@ -130,13 +130,24 @@ mod tests {
         fs::write(parent.join("file"), b"untouched").unwrap();
         assert!(reader.capture_new(&parent.join("file"), &cancel).is_err());
         let snapshot = reader.capture_new(&parent.join("new"), &cancel).unwrap();
-        fs::rename(&parent, temp.path().join("old-parent")).unwrap();
-        fs::create_dir(&parent).unwrap();
-        assert!(snapshot.revalidate(&cancel).is_err());
-        assert_eq!(
-            fs::read(temp.path().join("old-parent/file")).unwrap(),
-            b"untouched"
-        );
+        #[cfg(not(windows))]
+        {
+            fs::rename(&parent, temp.path().join("old-parent")).unwrap();
+            fs::create_dir(&parent).unwrap();
+            assert!(snapshot.revalidate(&cancel).is_err());
+            assert_eq!(
+                fs::read(temp.path().join("old-parent/file")).unwrap(),
+                b"untouched"
+            );
+        }
+        #[cfg(windows)]
+        {
+            // Retained cap-std parent capabilities deny delete sharing on Windows.
+            let error = fs::rename(&parent, temp.path().join("old-parent")).unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(32));
+            snapshot.revalidate(&cancel).unwrap();
+            assert_eq!(fs::read(parent.join("file")).unwrap(), b"untouched");
+        }
         let cancelled = Cancellation::default();
         cancelled.cancel();
         assert!(

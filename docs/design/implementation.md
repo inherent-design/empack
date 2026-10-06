@@ -275,7 +275,7 @@ coverage cannot authorize removal. Source declarations and provider facts remain
 available through the retained import. The candidate holds no project writer and
 cannot authorize replacement on its own.
 
-## Native import replacement
+## Shared project initialization and replacement
 
 `ProjectReader::capture_replacement` binds managed documents and content roots even
 when the prior documents are missing or malformed. It gates recovery, rejects unsafe
@@ -283,9 +283,10 @@ ancestors and captures membership and absence. Captured ignore rules exclude uno
 pack files before opening them; the existing rule file remains unchanged. Incoming
 paths omitted by that traversal need independent unfiltered absence evidence, so an
 ignored backup cannot be overwritten merely because it was missing from the managed
-inventory. Templates, distributions and unrelated root files remain outside this footprint.
+inventory. Distributions and unrelated root files remain outside this footprint. Initialization
+may explicitly seed selected templates; existing user versions are retained.
 
-`prepare_import_replacement` consumes a complete semantic candidate. `RejectExisting`
+`prepare_project_replacement` consumes a complete semantic candidate. `RejectExisting`
 refuses occupied managed content. `ReplaceManagedContent` produces an explicit
 file-level replacement/removal plan, with no recursive directory deletion. Every
 candidate document and payload is staged and checked against that plan before
@@ -296,10 +297,10 @@ The trusted host can publish the verified plan through the journaled publisher.
 Concurrent source edits, added files and cancellation before publication prevent the
 whole replacement. Tests publish into an empty existing directory and replace a
 broken project, preserve unrelated files, and re-export the correct layered bytes.
-The shared Engine now accepts build and import requests. Import preparation stages
+The shared Engine now accepts build, import and initialization requests. Import preparation stages
 the full candidate under admission, exposes its file plan and requires an exact
 replacement-summary acknowledgement before existing managed files can change.
-Both operation kinds use the same engine-bound approval, owned runtime, cancellation
+All three operation kinds use the same engine-bound approval, owned runtime, cancellation
 and retained terminal outcomes. Import receipts retain the published semantic project.
 New-root import now uses `ProjectReader::capture_new` and `ProjectTarget::New`.
 The parent must exist, the child must be a valid portable directory name, and the
@@ -319,6 +320,19 @@ scratch that still needs the planned retention/cleanup catalog.
 
 `Publisher::recover_new` is a lower-level creation recovery entry point. Engine recovery,
 continuation and CLI composition remain required.
+
+`InitializeCandidate` validates empty intent and an exact runtime across all loader
+families. It preserves metadata, compatibility alternatives, layout, distribution
+preferences and extension values. The shared project-change module stages its documents
+and optional template seeds without an artificial archive or backend call. Captured
+existing user templates retain bytes and permissions; missing seeds retain expressions
+until build time. Conflicting edits, directories and links block publication. A published
+empty project feeds the existing mrpack build path directly.
+
+This is semantic Engine initialization, not CLI cutover. Interactive runtime selection,
+root-level repository scaffolding and command wiring still need integration. Current
+CLI capabilities remain available until that parity work verifies. Initialization's
+host-supplied exact runtime is checked for internal coherence, not online availability.
 
 ## Composed build behavior
 
@@ -412,6 +426,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Semantic initialization | 1,709 tests and eleven doctests pass. Both real import formats publish and reverify 78 roots through the shared project-change implementation. All-feature Clippy and Windows cross-compilation pass. Seven initialization regressions cover loader intent, approval, user templates, conflicts, directory/link rejection and a subsequent mrpack build. Native CI remains required |
 | Creation review 70 | Both moved-root and first-index-failure regressions reproduced before correction. All 39 affected publication/native/API tests and all-feature Clippy pass. Windows handle lifetime is corrected; native Windows CI remains required |
 | New-root publication | 1,700 tests and eleven doctests pass. Both real import formats publish 78 roots into previously absent destinations through Engine approval, with every placed file checked. Forty-three focused publication/project/API checks cover real process exits and recovery; Windows GNU cross-compilation passes. The final Windows-only shared-parent ACL guard and regression compile but still require native CI execution |
 | Shared build/import Engine | 1,685 tests and eleven doctests passed before the final control-root guard. The final 302 core/engine checks and all-feature Clippy pass; one nextest pipe-leak warning passed cleanly in isolation. Both real import formats published 78 roots through Engine approval and verified every placed file. All seven live provider probes and all eleven Java runtime/distribution probes pass |
@@ -476,7 +491,7 @@ files before publication.
 ## Remaining integration and limits
 
 - Extend the compiled build/import `Engine` lifecycle to the remaining semantic
-  project mutations. New-root import is implemented; all five build recipes and all
+  project mutations. Empty-project initialization and new-root import are implemented; all five build recipes and all
   loader runtime families enter the same approved build driver.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
   provider-locator refresh, continuation and scoped

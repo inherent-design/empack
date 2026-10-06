@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
 };
 
-pub(in crate::engine::import) fn source(
+pub(in crate::engine) fn source(
     manifest: &str,
     value: Value,
     members: &[(&str, &[u8])],
@@ -45,13 +45,13 @@ fn observed(bytes: &[u8]) -> AcquiredContent {
     )
     .unwrap()
 }
-pub(in crate::engine::import) fn mr(files: Vec<Value>) -> Value {
+pub(in crate::engine) fn mr(files: Vec<Value>) -> Value {
     json!({"formatVersion":1,"game":"minecraft","name":"Pack","versionId":"1","files":files,"dependencies":{"minecraft":"1.21.1"}})
 }
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|v| format!("{v:02x}")).collect()
 }
-pub(in crate::engine::import) fn remote(url: String, path: &str, bytes: &[u8]) -> Value {
+pub(in crate::engine) fn remote(url: String, path: &str, bytes: &[u8]) -> Value {
     json!({"path":path,"fileSize":bytes.len(),"downloads":[url],"hashes":{"sha1":hex(&sha1::Sha1::digest(bytes)),"sha512":hex(&sha2::Sha512::digest(bytes))},"env":{"client":"optional","server":"unsupported"}})
 }
 fn limits() -> ImportContentLimits {
@@ -629,7 +629,7 @@ fn candidate_options(content: &VerifiedImportContent) -> super::super::ImportCan
         exclude_auxiliary_members: false,
     }
 }
-pub(in crate::engine::import) async fn interpret(
+pub(in crate::engine) async fn interpret(
     source: AcquiredContent,
     origin: String,
     change: impl FnOnce(&mut super::super::ImportCandidateOptions) + Send + 'static,

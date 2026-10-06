@@ -4,8 +4,8 @@ Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
 [implementation ledger](implementation.md) identifies a compiled API.
 
 The compiled entry point is `empack_lib::engine::api::Engine`. Its `preview`
-and `prepare` accept an absolute `ProjectTarget` and a `Request`: either
-`BuildRequest` or `ImportRequest`. Both capture and plan without live-project writes.
+and `prepare` accept an absolute `ProjectTarget` and a `Request`: `BuildRequest`,
+`ImportRequest` or `InitializeRequest`. Each captures and plan without live-project writes.
 `OperationPreview` carries the operation-specific view. A build view includes exact artifact destinations,
 runtime, missing content, network/tool requirements and the complete requested
 options. It has no conversion into an executable operation. A ready preparation
@@ -81,30 +81,42 @@ local retention is an explicit conversion. `ImportCandidate` exposes coherent do
 and file-slot bindings to retained bytes, with no publication authority.
 
 `ProjectReader::capture_replacement` reads the bounded managed footprint of an existing
-directory without requiring a valid old manifest. `prepare_import_replacement` consumes
-that snapshot and an `ImportCandidate`, returning a `PreparedImportReplacement` only
+directory without requiring a valid old manifest. `prepare_project_replacement` consumes
+that snapshot and an `ImportCandidate`, returning a `PreparedProjectReplacement` only
 when its complete frozen file inventory verifies. Its plan names every replacement
 and removal; publication revalidates the captured source. This lower-level composition
 requires a trusted host to approve the exact plan.
 
 `ImportRequest` consumes the candidate and replacement policy. Engine preparation
-captures the existing destination and verifies privately staged content. `ImportPreview`
+captures the existing destination and verifies privately staged content. `ProjectChangePreview`
 exposes the complete file plan, metadata and runtime. Replacing existing managed files
 requires an `ExecutionGrant` carrying the exact `ReplacementSummary` from that view;
 missing or stale acknowledgements fail before publication. New-file-only plans need no
 replacement acknowledgement. The engine also checks the originating instance and plan.
 
-Build and import share the owned operation registry and `ExecutionOutcome`. Completed
-operations retain a typed `ExecutionReceipt::Build` or `ExecutionReceipt::Import`;
+Build, import and initialization share the owned operation registry and `ExecutionOutcome`. Completed
+operations retain a typed `ExecutionReceipt::Build` `ExecutionReceipt::Import` or `ExecutionReceipt::Initialize`;
 interruption and recovery outcomes are shared. Preparation reserves the candidate and
 its staging copy, then retains the actual staged byte allowance until publication retires.
 Import source resolution/acquisition remains an explicit earlier read-only composition.
-`ProjectTarget::New(path)` selects one absent child of an existing parent for import.
+`ProjectTarget::New(path)` selects one absent child of an existing parent for initialization or import.
 Preparation retains the parent identity and absence without creating the destination
 or host state. After approval, the publisher verifies a complete same-filesystem
 candidate directory, records recovery intent and uses a no-replace rename. A racing
 file, directory or link cannot become a replacement target. `Existing(path)` retains
 the file-level replacement protocol. A `PathBuf` argument defaults to `Existing`.
+
+`InitializeCandidate::new` checks empty-root intent against an exact runtime selection,
+then encodes coherent intent and lock documents. Metadata, acceptable game versions,
+layout, distribution settings and extensions survive. It does not claim remote runtime
+availability; build acquisition verifies runtime declarations and bytes. Nonempty roots
+must go through dependency resolution instead of receiving an empty lock.
+`InitializeRequest` uses the shared replacement policy, preview and grant. Optional
+common/client/server template seeds create missing files and retain existing regular
+user files, including their permissions. Their captured revisions remain publication
+preconditions. Directory-valued destinations and link traversal fail. Default seeds
+contain editable client configuration and server properties; selected build recipes
+supply their exact installer and launch scripts. No user script feature is removed.
 
 Creation journals bind the native candidate/root identity, with a parent/name index
 for recovery before the root exists. Ordinary reads use the root identity to gate

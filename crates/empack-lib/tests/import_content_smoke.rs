@@ -266,9 +266,9 @@ async fn publish_fixture(
             ImportRequest, NetworkPermission, OperationResources, Preparation, ProjectTarget,
         },
         artifacts::ArchiveLimits,
-        import::ImportReplacementPolicy,
         layout::ProjectLayout,
         project::ProjectReader,
+        project_change::ProjectReplacementPolicy,
         publication::RecoveryReader,
         server_runtime::installer::InstallerExecution,
         snapshot::SnapshotLimits,
@@ -318,7 +318,7 @@ async fn publish_fixture(
             ProjectTarget::New(project.clone()),
             ImportRequest {
                 candidate,
-                replacement: ImportReplacementPolicy::RejectExisting,
+                replacement: ProjectReplacementPolicy::RejectExisting,
             },
         )
         .await?
