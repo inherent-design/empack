@@ -105,3 +105,9 @@ Local verification covered Fabulously Optimized 1.20.1 in both formats: 51 mrpac
 file declarations and 27 embedded members; 46 CurseForge exact references and 32
 embedded members. CurseForge fixture file `4800279` was acquired with the provider's
 size/hash assertions checked. This is adapter evidence, not end-to-end import parity.
+
+The three exact-provider smoke cases also identify the acquired bytes through the
+same provider and require the returned canonical owner and matching file role.
+They cover a Modrinth mod, a resource pack and CurseForge content. The original
+provider integrity declarations remain unchanged. The two compatible-version probes
+remain separate checks within the five-case `smoke:providers` suite.

@@ -10,7 +10,7 @@ Fabric, Quilt, Forge and NeoForge runtime preparation. HTTP acquisition and
 explicit build-content obligations feed these paths. The compiled `Engine` now owns
 build preview, preparation, exact-plan authorization, acquisition, runtime assembly
 and publication. The read-only provider catalog resolves canonical selectors and
-exact and compatible Modrinth/CurseForge selections. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. Provider/import
+exact and compatible Modrinth/CurseForge selections, and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. Provider/import
 composition, the remaining operation APIs,
 continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
@@ -21,7 +21,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Boundary | Current behavior | Contract evidence |
 | --- | --- | --- |
 | Build lifecycle | Read-only preview/preparation; engine-bound consumed grants; shared target acquisition; owned runtime/tool work; all-requested publication and retained receipts; abandoned preparation retirement | [Engine tests](../../crates/empack-lib/src/engine/api/tests.rs), [runtime tests](../../crates/empack-lib/src/engine/runtime/tests.rs) |
-| Provider catalog | Canonical slug/ID/URL resolution, exact project-owned selections and bounded compatible-version selection; all file assertions, roles, environment facts and dependency relations retained; fixed-origin authenticated API requests, shared rate budgets, bounded bytes/deadline/retries and owned parsing | [Catalog tests](../../crates/empack-lib/src/engine/providers/tests.rs), [official API smoke](../../crates/empack-lib/tests/provider_catalog_smoke.rs) |
+| Provider catalog | Canonical slug/ID/URL resolution, exact project-owned selections, bounded compatible-version selection and content identification; all file assertions, roles, environment facts and dependency relations retained; fixed-origin authenticated API requests, shared rate budgets, bounded bytes/deadline/retries and owned parsing | [Catalog tests](../../crates/empack-lib/src/engine/providers/tests.rs), [official API smoke](../../crates/empack-lib/tests/provider_catalog_smoke.rs) |
 | Import inspection | Owned bounded mrpack/CurseForge parsing with original archive retention; exact provider references, URL declarations, embedded members, independent environment requirements, override layers and source locations; no project/backend authority | [Adapter tests](../../crates/empack-lib/src/engine/import/tests.rs), [archive smoke](../../crates/empack-lib/tests/import_archive_smoke.rs) |
 | Semantic core | Dependency-free identities, pins, paths, requirements, digests, exact multi-file resolution, file plans, target prerequisites and inventory projection | [Core suites](../../crates/empack-core/tests/) |
 | Documents | Intent schema 2 and lock schema 1; raw and semantic revisions; strict source/selection validation; original-byte no-op writes; stable credential-free persisted locators | [Codec tests](../../crates/empack-lib/src/engine/documents/tests.rs) |
@@ -89,6 +89,28 @@ downloadable payload evidence. Each page retains its best candidate and compact 
 admission. Only the final selection survives. This capability is for new or explicitly
 updated resolution; it does not upgrade a valid sync lock or rewrite project intent.
 
+## Content identification
+
+`ProviderCatalog::identify_file` starts from retained acquired bytes and the exact
+providers requested by its caller. Modrinth lookup uses the observed SHA-512.
+CurseForge lookup uses a whitespace-normalized Murmur2 fingerprint computed in two
+bounded streaming passes. Its fingerprint nominates candidates; it never establishes
+content integrity. Every accepted file must also match the provider's original
+hash assertions and size. Matching roles remain explicit, including several files
+with identical bytes in one version.
+
+Results distinguish unknown, one exact selection and several possible selections.
+Provider preference does not silently discard a second match. Missing credentials,
+authorization failures, incomplete fingerprint indexes, malformed identity and
+transport failures remain errors. A later provider failure returns no earlier
+successful subset. The lookup, project metadata and retries share one cumulative
+byte allowance and deadline. Response parsing and fingerprint work belong to the
+operation; retained results keep their resource charges.
+
+This catalog capability does not adopt a file, rewrite its source provenance or
+publish a project. Original MD5/SHA-1 assertions remain weaker evidence even when
+the acquired bytes have an internal SHA-256 address.
+
 ## Normalized import inspection
 
 `inspect_import` consumes an acquired archive and returns declarations with source
@@ -97,7 +119,10 @@ The original archive stays available for later digest-checked extraction. Parsin
 has no project root, provider client, process launcher or publisher.
 
 Mrpack files retain their destination, every supported digest, size, download
-alternatives and independent client/server requirements. A CDN-shaped URL does not
+alternatives and independent client/server requirements. Read-only inspection retains
+signed HTTPS and HTTP declarations with redacted, record-specific diagnostics.
+Preparation must resolve transient-locator persistence or HTTP transport policy;
+inspection neither authorizes the transfer nor writes a durable URL. A CDN-shaped URL does not
 become a canonical provider identity. Empty download lists refer to a required
 embedded member; missing members and size conflicts fail inspection. Compatibility
 archives missing the specified SHA-1/SHA-512 pair retain their actual assertions and
@@ -213,6 +238,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Content identification | Combined suite: 1,626 tests and eleven doctests; 40 affected import/catalog tests and all-feature Clippy. All five live provider probes passed, including content identification of downloaded mod/resource/CurseForge bytes. Greptile review 57 is green for the accompanying transient-import fix at `d1f69c6` |
 | Normalized import inspection | Combined suite: 1,618 tests and eleven doctests; 36 affected adapter/catalog/archive tests; all-feature Clippy. Real Fabulously Optimized 1.20.1 archives passed in both formats, including every embedded member. Greptile review 55 is green for the accompanying provider fix at `057d838` |
 | Compatible selection | 1,607 tests and eleven doctests, all-feature Clippy and all five live provider probes passed. Both compatible probes acquired bytes against the selected provider digest/size. The first full-suite attempt failed compilation when the disk filled; the retry passed after removing reproducible incremental artifacts |
 | `c7b1c64` | [Native PR CI 37387301198](https://github.com/inherent-design/empack/actions/runs/37387301198) passed Linux/macOS/Windows tests and import-smoke, lint and coverage |

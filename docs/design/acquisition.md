@@ -66,6 +66,13 @@ They retain all declared files and relations before any placement or optionality
 conversion. A provider's environment metadata describes support; it does not
 override the user's required/optional intent.
 
+The compiled catalog supports content identification through
+[Modrinth's hash endpoint](https://docs.modrinth.com/api/operations/versionfromhash/)
+and [CurseForge's game-specific fingerprint lookup](https://docs.curseforge.com/rest-api/#get-fingerprints-matches-by-game-id).
+A fingerprint result still requires declared digest and size checks. See the
+[implementation ledger](implementation.md#content-identification) for the concrete
+API and its current boundaries.
+
 ### 9.3 Transport is not exposed to command handlers
 
 Provider implementations receive a transport policy object that owns credential scope, redirects, retry classification, timeouts, response limits, and rate reservations. Request builders supply endpoint-specific data; they do not each create an unconstrained HTTP client.

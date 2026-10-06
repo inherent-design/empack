@@ -70,6 +70,17 @@ async fn verify(
             }).await?;
             anyhow::ensure!(Some(download.lease().len()) == expected.size, "Acquired file changed size");
             anyhow::ensure!(matches!(download.evidence(), empack_core::digest::IntegrityEvidence::MatchedExpected { expected: original, .. } if Some(original) == expected.digests.as_ref()), "Source evidence was lost");
+            let identity = catalog.identify_file(&mut scope, download.clone(), NonEmpty::new(vec![provider])?, empack_lib::engine::providers::IdentificationLimits::default()).await?;
+            let matches = |found: &empack_lib::engine::providers::IdentifiedSelection| {
+                found.content == download.lease().id() && found.resolution.pin.project == pin.project
+                    && found.matching_files.as_slice().contains(&file.filename)
+            };
+            let identified = match &identity {
+                empack_lib::engine::providers::Identification::Exact(found) => matches(found),
+                empack_lib::engine::providers::Identification::Ambiguous(found) => found.as_slice().iter().any(|value| matches(value)),
+                empack_lib::engine::providers::Identification::Unknown => false,
+            };
+            anyhow::ensure!(identified, "Official content probe did not retain the downloaded provider identity");
             Ok::<_, anyhow::Error>((pin, expected, file.filename.clone(), resolution.project.kind, resolution.game_versions.first().cloned()))
         }.await;
         Ok(result)

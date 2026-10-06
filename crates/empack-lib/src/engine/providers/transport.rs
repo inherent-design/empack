@@ -38,6 +38,8 @@ pub enum CatalogError {
     InvalidRecord,
     #[error("No provider file satisfies the requested compatibility and release policy")]
     NoCompatibleSelection,
+    #[error("Provider fingerprint index is incomplete")]
+    IncompleteLookup,
     #[error("Provider content kind differs from the requested kind")]
     ContentKindMismatch,
     #[error("Provider returned a different project or file identity")]
@@ -217,6 +219,35 @@ impl CatalogTransport {
         budget: &mut RequestBudget,
         cancel: &Cancellation,
     ) -> Result<Vec<u8>> {
+        self.request(provider, segments, query, None, budget, cancel)
+            .await
+    }
+    pub(super) async fn fingerprint(
+        &self,
+        fingerprint: u32,
+        budget: &mut RequestBudget,
+        cancel: &Cancellation,
+    ) -> Result<Vec<u8>> {
+        // This POST only queries records; retries cannot create or mutate provider content.
+        self.request(
+            ProviderKind::CurseForge,
+            &["fingerprints", "432"],
+            &[],
+            Some(serde_json::json!({"fingerprints": [fingerprint]})),
+            budget,
+            cancel,
+        )
+        .await
+    }
+    async fn request(
+        &self,
+        provider: ProviderKind,
+        segments: &[&str],
+        query: &[(&str, &str)],
+        body: Option<serde_json::Value>,
+        budget: &mut RequestBudget,
+        cancel: &Cancellation,
+    ) -> Result<Vec<u8>> {
         ensure!(
             provider != ProviderKind::CurseForge || self.curseforge_key.is_some(),
             CatalogError::Unauthorized
@@ -244,7 +275,10 @@ impl CatalogTransport {
                 if let Some(rate) = &rate {
                     wait_for_budget(rate.as_ref()).await;
                 }
-                let mut request = self.client.get(url.clone());
+                let mut request = match &body {
+                    Some(body) => self.client.post(url.clone()).json(body),
+                    None => self.client.get(url.clone()),
+                };
                 if provider == ProviderKind::CurseForge {
                     request = request.header(
                         "x-api-key",
@@ -274,7 +308,7 @@ impl CatalogTransport {
                     if !retry || attempt == 2 {
                         return Err(error.into());
                     }
-                    // GET only; do not read or log error bodies. The same deadline governs retries.
+                    // Read-only endpoints; never read/log error bodies or reset the deadline.
                     let delay = response
                         .headers()
                         .get("retry-after")

@@ -318,6 +318,17 @@ source for later bounded member acquisition. `datapack_layout_proposals()` retur
 read-only suggestions and their source locations.
 
 Unknown optional defaults and multiple loader declarations require resolution.
+Signed HTTPS and HTTP alternatives remain source declarations with diagnostics;
+preparation must resolve transport and durable-provenance decisions.
 Inspection can recognize an unsupported packwiz archive; recognition does not make
 packwiz-directory import available. See the implementation ledger for the remaining
 composition work.
+
+## Compiled content identification API
+
+`ProviderCatalog::identify_file(&mut WorkScope, AcquiredContent,
+NonEmpty<ProviderKind>, IdentificationLimits)` returns `Identification::Unknown`,
+`Exact` or `Ambiguous`. Exact/ambiguous results contain retained
+`IdentifiedSelection` values with the observed content ID, complete provider
+resolution and all matching filenames. Names identify roles within that exact
+selection; they are not installation destinations. Provider failures remain errors.

@@ -16,6 +16,8 @@ mod compatible;
 pub use compatible::{
     CompatibleRequest, CompatibleSelection, ReleaseChannel, ReleasePolicy, SelectionLimits,
 };
+mod identify;
+pub use identify::{Identification, IdentificationLimits, IdentifiedSelection};
 mod curseforge;
 mod modrinth;
 mod refresh;
