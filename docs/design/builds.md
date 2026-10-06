@@ -190,3 +190,28 @@ Require an explicit representable conversion or selected variant. Acknowledging
 loss of optional descriptions/defaults alone does not authorize making an optional
 file mandatory or deleting its fallback. Ordinary optional references remain
 supported.
+
+### Bootstrap reference trees
+
+Prepare the packwiz tree from selected game obligations. Its index hashes every
+metadata or embedded file; the pack document hashes the index. References preserve
+exact destinations, approved origins, side and representable optional settings.
+Keep original source evidence beside computed output hashes. Metadata-only references
+must not claim an acquired content address.
+
+Packwiz has one download locator per entry; select the first approved alternative
+and retain the complete origin list in the expected inventory. CurseForge metadata
+mode retains the canonical project and file ID. Paths for generated metadata must
+be deterministic and collision checked against both source files and installed
+payload destinations.
+
+The [pinned installer's headless UI](https://github.com/packwiz/packwiz-installer/tree/v0.5.14/src/main/kotlin/link/infra/packwiz/installer/ui)
+enables optional entries instead of honoring their defaults. Headless recipes must
+resolve optional choices before encoding the tree. Interactive recipes may retain
+independent optional references; grouped choices and optional embedded payloads
+require explicit selection. Do not infer these behaviors from `side = "server"`.
+
+Bundle reviewed installer versions and their checked digests. The bootstrap's
+[`--bootstrap-no-update` and `--bootstrap-main-jar` options](https://github.com/packwiz/packwiz-installer-bootstrap/blob/v0.0.3/src/main/java/link/infra/packwiz/installer/bootstrap/Main.java)
+keep launch behavior tied to those exact assets. An empack-maintained digest pin
+must be attributed as such when upstream supplies no published checksum.

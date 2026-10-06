@@ -1,7 +1,7 @@
 //! Full launcher distributions: selected game bytes, captured templates and exact components.
 use super::{
     BuildAcquisitions, PreparedArtifact,
-    materialized::{MaterializedGame, prepare_game_content},
+    materialized::{PreparedGameContent, prepare_game_content},
 };
 use crate::{
     application::process_runtime::Cancellation,
@@ -40,12 +40,12 @@ pub struct ClientFullOptions {
 /// Complete selected pack content and launcher declarations, not an offline Minecraft installation.
 pub struct PreparedClientBuild {
     publication: PreparedArtifact,
-    game: MaterializedGame,
+    game: PreparedGameContent,
     inventory: BTreeMap<PortableRelPath, FileContent>,
     user_configuration: bool,
 }
 impl PreparedClientBuild {
-    pub fn game(&self) -> &MaterializedGame {
+    pub fn game(&self) -> &PreparedGameContent {
         &self.game
     }
     pub fn inventory(&self) -> &BTreeMap<PortableRelPath, FileContent> {
@@ -198,7 +198,7 @@ pub fn prepare_client_full_build(
 }
 pub(super) struct ClientCandidate {
     pub(super) archive: super::ArchiveCandidate,
-    pub(super) game: MaterializedGame,
+    pub(super) game: PreparedGameContent,
     pub(super) inventory: BTreeMap<PortableRelPath, FileContent>,
     pub(super) user_configuration: bool,
 }

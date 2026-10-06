@@ -1,4 +1,4 @@
-//! Exact game-content projection for full distributions, before runtime/template composition.
+//! Shared selected game content for reference and full recipes, before runtime assembly.
 use super::{BuildAcquisitions, capture_build_content};
 use crate::{
     application::process_runtime::Cancellation,
@@ -13,10 +13,10 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     inventory::{
-        BuildInventory, BuildSelection, ContentOwner, InventoryInput, OptionalPolicy,
-        Representation,
+        BuildInventory, BuildSelection, ContentOwner, DownloadOrigins, InventoryInput,
+        OptionalPolicy, Representation,
     },
-    model::ExpectedContent,
+    model::{AcquisitionSpec, ExpectedContent, NonEmpty, ResolvedFile},
     path::PortableRelPath,
     projection::BuildTarget,
 };
@@ -30,15 +30,42 @@ pub struct MissingGameContent {
     pub observed: Vec<PortableRelPath>,
 }
 
-/// Complete materialized game files; this does not prove launcher/server runtime completeness.
-pub struct MaterializedGame {
+/// Complete game projection and retained embedded bytes, not launcher/server runtime completeness.
+pub struct PreparedGameContent {
     project: empack_core::model::ResolvedProject,
     inventory: BuildInventory,
     files: BTreeMap<PortableRelPath, AcquiredBuildFile>,
     observed: Vec<ObservedFileEvidence>,
     comparisons: Vec<BackendDigestComparison>,
 }
-impl MaterializedGame {
+impl PreparedGameContent {
+    /// Encode the selected reference view; the returned tree still needs runtime assembly.
+    pub fn packwiz(
+        &self,
+        interaction: crate::engine::packwiz::InstallerInteraction,
+        cancel: &Cancellation,
+    ) -> Result<crate::engine::packwiz::PackwizPlan> {
+        let mut embedded = BTreeMap::new();
+        for entry in self.inventory.entries() {
+            if matches!(entry.representation, Representation::Embedded { .. }) {
+                embedded.insert(
+                    entry.owner.clone(),
+                    self.files
+                        .get(entry.destination.relative())
+                        .context("Missing selected embedded bytes")?
+                        .clone(),
+                );
+            }
+        }
+        crate::engine::packwiz::PackwizPlan::prepare(
+            self.inventory.clone(),
+            &self.project.intent().metadata,
+            &self.project.lock().runtime,
+            &embedded,
+            interaction,
+            cancel,
+        )
+    }
     pub fn project(&self) -> &empack_core::model::ResolvedProject {
         &self.project
     }
@@ -90,11 +117,37 @@ pub fn prepare_game_content(
     optional: &OptionalPolicy,
     evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
-) -> Result<MaterializedGame> {
+) -> Result<PreparedGameContent> {
     ensure!(
         matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull),
         "Game materialization requires a full target"
     );
+    prepare_selected_content(workspace, external, target, optional, evidence, cancel)
+}
+/// Preserve representable references for a selected bootstrap environment.
+pub fn prepare_bootstrap_game_content(
+    workspace: &WorkspaceSnapshot,
+    external: &BuildAcquisitions,
+    target: BuildTarget,
+    optional: &OptionalPolicy,
+    evidence: SourceEvidencePolicy,
+    cancel: &Cancellation,
+) -> Result<PreparedGameContent> {
+    ensure!(
+        matches!(target, BuildTarget::Client | BuildTarget::Server),
+        "Bootstrap content needs a reference target"
+    );
+    prepare_selected_content(workspace, external, target, optional, evidence, cancel)
+}
+fn prepare_selected_content(
+    workspace: &WorkspaceSnapshot,
+    external: &BuildAcquisitions,
+    target: BuildTarget,
+    optional: &OptionalPolicy,
+    evidence: SourceEvidencePolicy,
+    cancel: &Cancellation,
+) -> Result<PreparedGameContent> {
+    let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
     let captured = capture_build_content(workspace, external, evidence, cancel)?;
     let mut inputs = Vec::new();
     let mut leases = BTreeMap::new();
@@ -122,6 +175,11 @@ pub fn prepare_game_content(
                 Representation::Unacquired {
                     expected: file.expected.clone(),
                 }
+            };
+            let representation = if references {
+                reference_for(file, supplied)?.unwrap_or(representation)
+            } else {
+                representation
             };
             for placement in file.placements.as_slice() {
                 inputs.push(InventoryInput {
@@ -161,12 +219,26 @@ pub fn prepare_game_content(
     for file in captured.observed {
         match file {
             super::ObservedBuildContent::Verified(file) => {
-                let (input, acquired, evidence) = file.into_materialized();
+                let (input, acquired, evidence) = if references {
+                    file.into_reference()
+                } else {
+                    file.into_materialized()
+                };
                 leases.insert(input.owner.clone(), acquired);
                 inputs.push(input);
                 observed.push(evidence);
             }
             super::ObservedBuildContent::Unacquired { record, choice } => {
+                if references
+                    && let Some((input, evidence)) =
+                        crate::engine::mrpack::ObservedFile::reference_input(
+                            &record, &choice, evidence,
+                        )?
+                {
+                    inputs.push(input);
+                    observed.push(evidence);
+                    continue;
+                }
                 let input = crate::engine::mrpack::ObservedFile::pending_input(&record, &choice)?;
                 let ContentOwner::Source(label) = &input.owner else {
                     unreachable!()
@@ -220,7 +292,12 @@ pub fn prepare_game_content(
             permissions,
         } = &entry.representation
         else {
-            anyhow::bail!("Full game inventory contains a reference");
+            ensure!(
+                references && matches!(entry.representation, Representation::Download { .. }),
+                "Full game inventory contains a reference"
+            );
+            collisions.insert_file(entry.destination.relative())?;
+            continue;
         };
         let path = entry.destination.relative().clone();
         collisions.insert_file(&path)?;
@@ -236,13 +313,59 @@ pub fn prepare_game_content(
         file.permissions = *permissions;
         files.insert(path, file);
     }
-    Ok(MaterializedGame {
+    Ok(PreparedGameContent {
         project: captured.project,
         inventory,
         files,
         observed,
         comparisons: captured.comparisons,
     })
+}
+
+fn reference_for(
+    file: &ResolvedFile,
+    acquired: Option<&AcquiredBuildFile>,
+) -> Result<Option<Representation>> {
+    if acquired.is_some_and(|file| file.permissions.readonly || file.permissions.executable) {
+        return Ok(None);
+    }
+    let allowed = match &file.acquisition {
+        AcquisitionSpec::Url(urls) => DownloadOrigins::Urls(urls.clone()),
+        AcquisitionSpec::Provider { alternatives, .. } if !alternatives.is_empty() => {
+            DownloadOrigins::Urls(NonEmpty::new(alternatives.clone())?)
+        }
+        AcquisitionSpec::Provider { pin, slot, .. }
+            if matches!(
+                pin.project,
+                empack_core::identity::ProviderProjectId::CurseForge(_)
+            ) =>
+        {
+            DownloadOrigins::Provider {
+                pin: pin.clone(),
+                slot: slot.clone(),
+            }
+        }
+        _ => return Ok(None),
+    };
+    let mut expected = file.expected.clone();
+    if let Some(acquired) = acquired {
+        // All original assertions already matched. Computed export hashes do not replace
+        // provenance: the returned project retains the original lock and source evidence.
+        expected.digests = Some(acquired.content.observed_digests().clone());
+        expected.size = Some(acquired.content.lease().len());
+    }
+    let Some(digests) = &expected.digests else {
+        return Ok(None);
+    };
+    if let Some(observed) = &expected.accepted_observation
+        && !digests.values().iter().any(|digest| {
+            digest.algorithm() == empack_core::digest::DigestAlgorithm::Sha256
+                && digest.bytes() == observed.bytes()
+        })
+    {
+        return Ok(None);
+    }
+    Ok(Some(Representation::Download { expected, allowed }))
 }
 
 #[cfg(test)]

@@ -254,3 +254,83 @@ fn disabled_unacquired_optional_overlays_preserve_common_fallback() {
     assert!(result.inventory().choices()[0].enabled);
     assert_eq!(result.inventory().precedence().len(), 1);
 }
+
+#[test]
+fn captured_bootstrap_projection_retains_references_and_declared_observed_evidence() {
+    use crate::engine::packwiz::InstallerInteraction;
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let project = project(true, false);
+    write_project(root.path(), &project);
+    put(root.path(), "pack/config/value.bin", b"settings");
+    put(
+        root.path(),
+        "pack/mods/extra.pw.toml",
+        br#"name = "Extra"
+filename = "extra.jar"
+side = "client"
+[download]
+url = "https://example.com/extra.jar"
+hash-format = "md5"
+hash = "321c3cf486ed509164edec1e1981fec8"
+"#,
+    );
+    let workspace = capture(root.path(), host.path());
+    let cancel = Cancellation::default();
+    let game = prepare_bootstrap_game_content(
+        &workspace,
+        &BuildAcquisitions::default(),
+        BuildTarget::Client,
+        &OptionalPolicy::Preserve,
+        SourceEvidencePolicy::Compatibility,
+        &cancel,
+    )
+    .unwrap();
+    assert_eq!(game.inventory().entries().len(), 5);
+    assert_eq!(game.files().len(), 1);
+    assert_eq!(game.observed().len(), 1);
+    assert_eq!(game.observed()[0].actual, None);
+    assert_eq!(
+        game.observed()[0].declared.algorithm(),
+        empack_core::digest::DigestAlgorithm::Md5
+    );
+    let tree = game
+        .packwiz(InstallerInteraction::Headless, &cancel)
+        .unwrap();
+    assert_eq!(tree.files().len(), 7);
+    assert_eq!(bytes(&tree.files()[&path("config/value.bin")]), b"settings");
+    assert!(!tree.files().contains_key(&path("mods/extra.jar")));
+    assert!(
+        prepare_game_content(
+            &workspace,
+            &BuildAcquisitions::default(),
+            BuildTarget::ClientFull,
+            &OptionalPolicy::Preserve,
+            SourceEvidencePolicy::Compatibility,
+            &cancel
+        )
+        .is_err()
+    );
+    assert!(
+        prepare_bootstrap_game_content(
+            &workspace,
+            &BuildAcquisitions::default(),
+            BuildTarget::Client,
+            &OptionalPolicy::Preserve,
+            SourceEvidencePolicy::StrongSourceRequired,
+            &cancel
+        )
+        .is_err()
+    );
+    assert!(
+        prepare_bootstrap_game_content(
+            &workspace,
+            &acquired(&project, b"wrong"),
+            BuildTarget::Client,
+            &OptionalPolicy::Preserve,
+            SourceEvidencePolicy::Compatibility,
+            &cancel
+        )
+        .is_err()
+    );
+}

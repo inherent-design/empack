@@ -14,7 +14,8 @@ pub struct ObservedFileEvidence {
     pub metadata_path: PortableRelPath,
     pub provider: Option<ProviderObservation>,
     pub declared: ExpectedDigest,
-    pub actual: ContentId,
+    /// None for a metadata-only bootstrap reference; never a synthetic byte proof.
+    pub actual: Option<ContentId>,
     pub requirements: Requirements,
 }
 /// A backend record whose declared bytes have been verified. Original weak evidence is retained.
@@ -24,6 +25,86 @@ pub struct ObservedFile {
     pub(super) acquired: AcquiredBuildFile,
 }
 impl ObservedFile {
+    pub(in crate::engine) fn into_reference(
+        mut self,
+    ) -> (InventoryInput, AcquiredBuildFile, ObservedFileEvidence) {
+        if !self.acquired.permissions.readonly
+            && !self.acquired.permissions.executable
+            && let Some(ProviderObservation {
+                project: project @ empack_core::identity::ProviderProjectId::CurseForge(_),
+                selection: Some(selection),
+            }) = &self.evidence.provider
+        {
+            self.input.representation = Representation::Download {
+                expected: ExpectedContent {
+                    digests: Some(self.acquired.content.observed_digests().clone()),
+                    size: Some(self.acquired.content.lease().len()),
+                    accepted_observation: Some(self.acquired.content.lease().id()),
+                },
+                allowed: DownloadOrigins::Provider {
+                    pin: empack_core::model::ResolvedPin {
+                        project: project.clone(),
+                        selection: selection.clone(),
+                    },
+                    slot: FileSlot::parse("primary").expect("constant slot"),
+                },
+            };
+        }
+        (self.input, self.acquired, self.evidence)
+    }
+    /// A declared reference does not claim bytes were acquired or authenticated.
+    pub(in crate::engine) fn reference_input(
+        record: &BackendFile,
+        choice: &ChoiceKey,
+        policy: SourceEvidencePolicy,
+    ) -> Result<Option<(InventoryInput, ObservedFileEvidence)>> {
+        let allowed = match &record.download {
+            BackendDownload::Url(url)
+                if crate::engine::documents::validate_download_url(url).is_ok() =>
+            {
+                DownloadOrigins::Urls(NonEmpty::new(vec![url.clone()])?)
+            }
+            BackendDownload::CurseForgeMetadata => {
+                let Some(ProviderObservation {
+                    project,
+                    selection: Some(selection),
+                }) = &record.provider
+                else {
+                    return Ok(None);
+                };
+                DownloadOrigins::Provider {
+                    pin: empack_core::model::ResolvedPin {
+                        project: project.clone(),
+                        selection: selection.clone(),
+                    },
+                    slot: FileSlot::parse("primary")?,
+                }
+            }
+            _ => return Ok(None),
+        };
+        if policy == SourceEvidencePolicy::StrongSourceRequired {
+            ensure!(
+                matches!(
+                    record.digest.algorithm(),
+                    DigestAlgorithm::Sha256 | DigestAlgorithm::Sha512
+                ),
+                "Observed bootstrap reference has only weaker source evidence"
+            );
+        }
+        let mut input = Self::pending_input(record, choice)?;
+        let Representation::Unacquired { expected } = input.representation else {
+            unreachable!()
+        };
+        input.representation = Representation::Download { expected, allowed };
+        let evidence = ObservedFileEvidence {
+            metadata_path: record.metadata_path.clone(),
+            provider: record.provider.clone(),
+            declared: record.digest.clone(),
+            actual: None,
+            requirements: input.requirements.clone(),
+        };
+        Ok(Some((input, evidence)))
+    }
     pub(in crate::engine) fn into_materialized(
         self,
     ) -> (InventoryInput, AcquiredBuildFile, ObservedFileEvidence) {
@@ -136,7 +217,7 @@ impl ObservedFile {
                 metadata_path: record.metadata_path,
                 provider: record.provider,
                 declared: record.digest,
-                actual: lease.id(),
+                actual: Some(lease.id()),
                 requirements,
             },
             acquired,

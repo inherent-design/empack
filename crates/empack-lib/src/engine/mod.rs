@@ -11,6 +11,7 @@ mod io;
 pub mod layout;
 pub mod mrpack;
 mod native;
+pub mod packwiz;
 pub mod project;
 pub mod publication;
 pub mod resources;
