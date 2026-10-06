@@ -50,6 +50,18 @@ ignore these cases; the explicit task selects every case, limits concurrency to
 two, and fails on unavailable prerequisites or providers. The suite complements
 CLI E2E while command cutover is still pending.
 
+Run official provider identity and byte verification with:
+
+```bash
+mise run smoke:providers
+```
+
+Set `EMPACK_KEY_CURSEFORGE` for this explicit suite. Missing credentials fail the
+CurseForge case. The three probes resolve Modrinth mod/resource-pack and CurseForge
+mod selectors, verify exact file ownership, download the selected file and check
+its original digest and size assertions. They do not publish project state.
+Ordinary offline runs ignore these network cases.
+
 The pure core must compile without runtime or filesystem dependencies. Its tests
 cover portable syntax, typed values and pure decisions. Native filesystem,
 process, lock and recovery guarantees require real platform tests. A mock default

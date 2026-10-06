@@ -59,6 +59,13 @@ pub enum Identification {
 
 `ProviderResolution` returns canonical identity, exact files, requirements and dependency evidence, source metadata, and explicit capability limitations. Authentication failure, throttling, provider failure, and genuine not-found are separate errors. None silently becomes an unidentified local file unless the user's policy explicitly permits that fallback and the diagnostic retains why it happened.
 
+The current concrete catalog is listed in the [implementation ledger](implementation.md).
+Its exact-selection adapters follow the [Modrinth version contract](https://docs.modrinth.com/api/operations/getversion/)
+and [CurseForge file contract](https://docs.curseforge.com/rest-api/).
+They retain all declared files and relations before any placement or optionality
+conversion. A provider's environment metadata describes support; it does not
+override the user's required/optional intent.
+
 ### 9.3 Transport is not exposed to command handlers
 
 Provider implementations receive a transport policy object that owns credential scope, redirects, retry classification, timeouts, response limits, and rate reservations. Request builders supply endpoint-specific data; they do not each create an unconstrained HTTP client.

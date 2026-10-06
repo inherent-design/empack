@@ -15,6 +15,7 @@ pub mod mrpack;
 mod native;
 pub mod packwiz;
 pub mod project;
+pub mod providers;
 pub mod publication;
 pub mod resources;
 pub mod runtime;

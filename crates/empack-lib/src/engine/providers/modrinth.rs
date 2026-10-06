@@ -1,0 +1,163 @@
+use super::*;
+use empack_core::{
+    digest::DigestSet,
+    identity::{ModrinthProjectId, ModrinthVersionId},
+};
+use serde::Deserialize;
+use std::collections::BTreeMap;
+
+#[derive(Deserialize)]
+struct Project {
+    id: String,
+    slug: String,
+    title: String,
+    project_type: String,
+    #[serde(default)]
+    loaders: Vec<String>,
+    client_side: Option<String>,
+    server_side: Option<String>,
+}
+pub(super) fn project(bytes: &[u8]) -> Result<CanonicalProject> {
+    let value: Project = json(bytes)?;
+    let kind = match value.project_type.as_str() {
+        "mod" if value.loaders.as_slice() == ["datapack"] => ContentKind::DataPack,
+        "mod" => ContentKind::Mod,
+        "resourcepack" => ContentKind::ResourcePack,
+        "shader" => ContentKind::ShaderPack,
+        "datapack" => ContentKind::DataPack,
+        _ => return Err(CatalogError::UnsupportedKind.into()),
+    };
+    ensure!(
+        !value.title.trim().is_empty() && !value.slug.is_empty(),
+        CatalogError::InvalidRecord
+    );
+    Ok(CanonicalProject {
+        id: ProviderProjectId::Modrinth(ModrinthProjectId::parse(&value.id)?),
+        slug: value.slug,
+        title: value.title,
+        kind,
+        environment: EnvironmentEvidence {
+            version: None,
+            client: value.client_side,
+            server: value.server_side,
+        },
+    })
+}
+#[derive(Deserialize)]
+struct Version {
+    id: String,
+    project_id: String,
+    files: Vec<File>,
+    game_versions: Vec<String>,
+    loaders: Vec<String>,
+    environment: Option<String>,
+    dependencies: Option<Vec<Dependency>>,
+}
+#[derive(Deserialize)]
+struct File {
+    filename: String,
+    primary: bool,
+    hashes: BTreeMap<String, String>,
+    url: String,
+    size: u64,
+    file_type: Option<String>,
+}
+#[derive(Deserialize)]
+struct Dependency {
+    project_id: Option<String>,
+    version_id: Option<String>,
+    file_name: Option<String>,
+    dependency_type: String,
+}
+pub(super) fn selection(
+    project: CanonicalProject,
+    pin: &ResolvedPin,
+    bytes: &[u8],
+) -> Result<ProviderResolution> {
+    let version: Version = json(bytes)?;
+    ensure!(
+        ProviderProjectId::Modrinth(ModrinthProjectId::parse(&version.project_id)?) == pin.project
+            && PinSelector::ModrinthVersion(ModrinthVersionId::parse(&version.id)?)
+                == pin.selection,
+        CatalogError::Identity
+    );
+    ensure!(
+        version.files.iter().filter(|file| file.primary).count() <= 1,
+        CatalogError::InvalidRecord
+    );
+    let mut names = std::collections::BTreeSet::new();
+    let mut files = Vec::new();
+    for file in version.files {
+        filename(&file.filename)?;
+        ensure!(
+            names.insert(file.filename.clone()),
+            CatalogError::InvalidRecord
+        );
+        download_locator(&file.url)?;
+        let expected = DigestSet::parse(
+            file.hashes
+                .iter()
+                .map(|(algorithm, value)| (algorithm.as_str(), value.as_str())),
+        )
+        .map_err(|_| CatalogError::InvalidRecord)?;
+        files.push(ProviderFile {
+            filename: file.filename,
+            primary: file.primary,
+            role: file.file_type,
+            expected: ExpectedContent {
+                digests: Some(expected),
+                size: Some(file.size),
+                accepted_observation: None,
+            },
+            alternatives: vec![file.url],
+        });
+    }
+    let mut coverage = if version.dependencies.is_some() {
+        Coverage::CompleteForSelection
+    } else {
+        Coverage::Unknown
+    };
+    let mut dependencies = Vec::new();
+    for dep in version.dependencies.unwrap_or_default() {
+        let relation = match dep.dependency_type.as_str() {
+            "required" => DependencyRelation::Required,
+            "optional" => DependencyRelation::Optional,
+            "incompatible" => DependencyRelation::Incompatible,
+            "embedded" => DependencyRelation::Embedded,
+            _ => return Err(CatalogError::InvalidRecord.into()),
+        };
+        let project = dep
+            .project_id
+            .map(|id| ModrinthProjectId::parse(&id).map(ProviderProjectId::Modrinth))
+            .transpose()?;
+        let pin = dep
+            .version_id
+            .map(|id| ModrinthVersionId::parse(&id).map(PinSelector::ModrinthVersion))
+            .transpose()?;
+        if project.is_none() && pin.is_none() {
+            coverage = Coverage::Partial;
+        }
+        // A version-only edge still requires its ownership to be resolved before graph closure.
+        if let Some(name) = &dep.file_name {
+            filename(name)?;
+        }
+        dependencies.push(ProviderDependency {
+            project,
+            pin,
+            filename: dep.file_name,
+            relation,
+        });
+    }
+    let mut environment = project.environment.clone();
+    environment.version = version.environment;
+    Ok(ProviderResolution {
+        project,
+        pin: pin.clone(),
+        files: NonEmpty::new(files)?,
+        game_versions: version.game_versions,
+        loaders: version.loaders,
+        environment,
+        dependencies,
+        coverage,
+    })
+}

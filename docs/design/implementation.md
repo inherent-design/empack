@@ -9,7 +9,9 @@ shapes from a captured workspace. Server recipes have verified vanilla,
 Fabric, Quilt, Forge and NeoForge runtime preparation. HTTP acquisition and
 explicit build-content obligations feed these paths. The compiled `Engine` now owns
 build preview, preparation, exact-plan authorization, acquisition, runtime assembly
-and publication. Provider/import composition, the remaining operation APIs,
+and publication. The read-only provider catalog resolves canonical selectors and
+exact Modrinth/CurseForge selections. Compatible selection, provider/import
+composition, the remaining operation APIs,
 continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
 checks. There will be one implementation per operation, not a permanent legacy engine.
@@ -19,6 +21,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Boundary | Current behavior | Contract evidence |
 | --- | --- | --- |
 | Build lifecycle | Read-only preview/preparation; engine-bound consumed grants; shared target acquisition; owned runtime/tool work; all-requested publication and retained receipts; abandoned preparation retirement | [Engine tests](../../crates/empack-lib/src/engine/api/tests.rs), [runtime tests](../../crates/empack-lib/src/engine/runtime/tests.rs) |
+| Provider catalog | Canonical slug/ID/URL resolution and exact project-owned selections; all file assertions, roles, environment facts and dependency relations retained; fixed-origin authenticated API requests, shared rate budgets, bounded bytes/deadline/retries and owned parsing | [Catalog tests](../../crates/empack-lib/src/engine/providers/tests.rs), [official API smoke](../../crates/empack-lib/tests/provider_catalog_smoke.rs) |
 | Semantic core | Dependency-free identities, pins, paths, requirements, digests, exact multi-file resolution, file plans, target prerequisites and inventory projection | [Core suites](../../crates/empack-core/tests/) |
 | Documents | Intent schema 2 and lock schema 1; raw and semantic revisions; strict source/selection validation; original-byte no-op writes; stable credential-free persisted locators | [Codec tests](../../crates/empack-lib/src/engine/documents/tests.rs) |
 | Project capture | Read-only recovery gate; retained native root; bounded bytes, identities, membership and absence; explicit local/archive sources; exact artifact destinations | [Reader tests](../../crates/empack-lib/src/engine/project/tests.rs), [snapshot tests](../../crates/empack-lib/src/engine/snapshot/tests.rs) |
@@ -51,6 +54,15 @@ File-level verification is not a semantic proof. Container integrity is not evid
 that every required dependency was included. The composed recipes connect normalized obligations, verified acquisitions,
 independently checked output and the journal publisher. Runtime adapters still need
 the semantic Engine and CLI composition; adapter tests do not establish CLI parity.
+
+The compiled `engine::providers::ProviderCatalog` is concrete and read-only. Its
+`resolve_selector` and `resolve_exact` methods return admitted retained data. They
+cannot publish a manifest, select a compatible update or claim a resolved dependency
+closure. Provider environment facts remain separate from user requirements. A
+restricted file keeps its identity, size and original hashes even without a locator.
+Transient signed URLs are execution data; the document codec still rejects them in
+persistent alternatives. Search ranking, compatible selection, identification,
+import composition and command cutover remain completion gates.
 
 ## Composed build behavior
 
@@ -172,6 +184,14 @@ An earlier full run at `4be1023` had four tool-probe deadline failures; isolated
 repeats and the quiet full run at `0455614` passed without weakening assertions.
 A build-acquisition test run reported one nextest pipe-leak warning; its targeted
 repeat passed without a leak. These observations do not establish a production fix.
+
+The provider-catalog landing passed 1,589 tests plus eleven doctests before the
+final adjustment to reserve parsing memory from actual response lengths. Its final
+fourteen focused regressions and all-feature Clippy passed. Three official API
+probes verified canonical identity, exact ownership and downloaded bytes for a
+Modrinth mod, a Modrinth resource pack and a CurseForge mod. The earlier default
+library configuration passed 1,431 tests, followed by all 38 search tests after
+enabling their ordinary unit-test configuration.
 
 ## Remaining integration and limits
 
