@@ -12,6 +12,10 @@ use empack_core::{
 };
 use std::{sync::Arc, time::Duration};
 
+mod compatible;
+pub use compatible::{
+    CompatibleRequest, CompatibleSelection, ReleaseChannel, ReleasePolicy, SelectionLimits,
+};
 mod curseforge;
 mod modrinth;
 mod refresh;

@@ -32,6 +32,14 @@ that no files changed. Native publication errors retain their recovery operation
 The compiled usage example is tested with Rust documentation tests in
 [`api.rs`](../../crates/empack-lib/src/engine/api.rs).
 
+The compiled `ProviderCatalog::resolve_compatible` accepts a canonical project and a
+`CompatibleRequest` containing ordered acceptable game versions, loader, content kind
+and explicit `ReleasePolicy`. `SelectionLimits` bounds all pages, records and transferred
+bytes under one deadline. Its retained result contains the exact provider resolution,
+selected release channel, publication time and matched game version. Pagination failure
+or an incomplete bounded catalog returns an error, never a best-effort partial choice.
+The resolver has no publisher and does not replace the exact lookup used by builds.
+
 ## 17. Public engine API and application wiring
 
 ### 17.1 Public entry points

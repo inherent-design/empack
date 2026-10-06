@@ -54,6 +54,7 @@ windows-core = { workspace = true }
 tempfile = { workspace = true }
 handlebars = { workspace = true }
 semver = { workspace = true }
+time = { workspace = true }
 tracing-chrome = { workspace = true, optional = true }
 tracing-opentelemetry = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }

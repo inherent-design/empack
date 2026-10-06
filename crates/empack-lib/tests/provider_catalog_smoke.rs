@@ -305,3 +305,94 @@ async fn publish_with_refreshed_locator(
     );
     Ok(())
 }
+
+async fn verify_compatible(
+    provider: ProviderKind,
+    id: &str,
+    game: &str,
+    loader: empack_core::model::LoaderKind,
+) -> anyhow::Result<()> {
+    use empack_core::model::{ContentKind, GameVersion};
+    use empack_lib::engine::providers::{CompatibleRequest, ReleasePolicy, SelectionLimits};
+    let key = if provider == ProviderKind::CurseForge {
+        Some(
+            std::env::var("EMPACK_KEY_CURSEFORGE")
+                .map_err(|_| anyhow::anyhow!("Provider smoke requires EMPACK_KEY_CURSEFORGE"))?,
+        )
+    } else {
+        None
+    };
+    let project = match provider {
+        ProviderKind::Modrinth => ProviderProjectId::Modrinth(ModrinthProjectId::parse(id)?),
+        ProviderKind::CurseForge => ProviderProjectId::CurseForge(CurseForgeProjectId::parse(id)?),
+    };
+    let request = CompatibleRequest {
+        project,
+        kind: ContentKind::Mod,
+        game_versions: NonEmpty::new(vec![GameVersion::parse(game)?])?,
+        loader,
+        releases: ReleasePolicy::PreferStable,
+    };
+    let catalog = ProviderCatalog::new(key, Arc::new(HostBudgetRegistry::new()))?;
+    let transport = HttpAcquisition::new()?;
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 256 << 20,
+        scratch_bytes: 256 << 20,
+        open_files: 16,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime.start(move |mut scope| async move {
+        Ok(async {
+            let selected = catalog.resolve_compatible(&mut scope, request.clone(), SelectionLimits::default()).await?;
+            anyhow::ensure!(selected.resolution.pin.project == request.project, "Compatible selection changed project");
+            anyhow::ensure!(selected.matched_game == request.game_versions.as_slice()[0], "Compatible selection changed game");
+            let file = selected.resolution.files.as_slice().iter().find(|file|file.primary).unwrap_or(&selected.resolution.files.as_slice()[0]);
+            let expected = file.expected.clone();
+            let acquired = transport.acquire(&mut scope, DownloadRequest {
+                alternatives: NonEmpty::new(file.alternatives.clone())?, expected: expected.clone(),
+                limits: TransferLimits { file_bytes: 256 << 20, transfer_bytes: 256 << 20, ..Default::default() },
+                evidence: SourceEvidencePolicy::Compatibility, initial: InitialObservation::RequireEvidence,
+            }).await?;
+            anyhow::ensure!(Some(acquired.lease().len()) == expected.size, "Compatible file changed size");
+            anyhow::ensure!(matches!(acquired.evidence(), empack_core::digest::IntegrityEvidence::MatchedExpected { expected: original, .. } if Some(original) == expected.digests.as_ref()), "Compatible file lost source evidence");
+            Ok::<_,anyhow::Error>(())
+        }.await)
+    })?;
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    match &*outcome {
+        OperationOutcome::Completed(Ok(())) => {}
+        OperationOutcome::Completed(Err(error)) => {
+            anyhow::bail!("Compatible provider probe failed: {error:#}")
+        }
+        _ => anyhow::bail!("Compatible provider operation failed"),
+    }
+    anyhow::ensure!(
+        governor.status().reserved == ResourceRequest::default(),
+        "Compatible provider resources remained reserved"
+    );
+    Ok(())
+}
+#[tokio::test]
+#[ignore = "requires official Modrinth API and CDN"]
+async fn modrinth_compatible_selection_and_bytes() -> anyhow::Result<()> {
+    verify_compatible(
+        ProviderKind::Modrinth,
+        "AANobbMI",
+        "1.20.1",
+        empack_core::model::LoaderKind::Fabric,
+    )
+    .await
+}
+#[tokio::test]
+#[ignore = "requires CurseForge API key and CDN"]
+async fn curseforge_compatible_selection_and_bytes() -> anyhow::Result<()> {
+    verify_compatible(
+        ProviderKind::CurseForge,
+        "238222",
+        "1.21.1",
+        empack_core::model::LoaderKind::NeoForge,
+    )
+    .await
+}

@@ -10,7 +10,7 @@ Fabric, Quilt, Forge and NeoForge runtime preparation. HTTP acquisition and
 explicit build-content obligations feed these paths. The compiled `Engine` now owns
 build preview, preparation, exact-plan authorization, acquisition, runtime assembly
 and publication. The read-only provider catalog resolves canonical selectors and
-exact Modrinth/CurseForge selections. Compatible selection, provider/import
+exact and compatible Modrinth/CurseForge selections. Provider/import
 composition, the remaining operation APIs,
 continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
@@ -21,7 +21,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Boundary | Current behavior | Contract evidence |
 | --- | --- | --- |
 | Build lifecycle | Read-only preview/preparation; engine-bound consumed grants; shared target acquisition; owned runtime/tool work; all-requested publication and retained receipts; abandoned preparation retirement | [Engine tests](../../crates/empack-lib/src/engine/api/tests.rs), [runtime tests](../../crates/empack-lib/src/engine/runtime/tests.rs) |
-| Provider catalog | Canonical slug/ID/URL resolution and exact project-owned selections; all file assertions, roles, environment facts and dependency relations retained; fixed-origin authenticated API requests, shared rate budgets, bounded bytes/deadline/retries and owned parsing | [Catalog tests](../../crates/empack-lib/src/engine/providers/tests.rs), [official API smoke](../../crates/empack-lib/tests/provider_catalog_smoke.rs) |
+| Provider catalog | Canonical slug/ID/URL resolution, exact project-owned selections and bounded compatible-version selection; all file assertions, roles, environment facts and dependency relations retained; fixed-origin authenticated API requests, shared rate budgets, bounded bytes/deadline/retries and owned parsing | [Catalog tests](../../crates/empack-lib/src/engine/providers/tests.rs), [official API smoke](../../crates/empack-lib/tests/provider_catalog_smoke.rs) |
 | Semantic core | Dependency-free identities, pins, paths, requirements, digests, exact multi-file resolution, file plans, target prerequisites and inventory projection | [Core suites](../../crates/empack-core/tests/) |
 | Documents | Intent schema 2 and lock schema 1; raw and semantic revisions; strict source/selection validation; original-byte no-op writes; stable credential-free persisted locators | [Codec tests](../../crates/empack-lib/src/engine/documents/tests.rs) |
 | Project capture | Read-only recovery gate; retained native root; bounded bytes, identities, membership and absence; explicit local/archive sources; exact artifact destinations | [Reader tests](../../crates/empack-lib/src/engine/project/tests.rs), [snapshot tests](../../crates/empack-lib/src/engine/snapshot/tests.rs) |
@@ -57,12 +57,11 @@ independently checked output and the journal publisher. Runtime adapters enter t
 adapter and Engine tests do not establish CLI parity.
 
 The compiled `engine::providers::ProviderCatalog` is concrete and read-only. Its
-`resolve_selector` and `resolve_exact` methods return admitted retained data. They
-cannot publish a manifest, select a compatible update or claim a resolved dependency
-closure. Provider environment facts remain separate from user requirements. A
+`resolve_selector`, `resolve_exact` and `resolve_compatible` methods return admitted
+retained data. They cannot publish a manifest or claim a resolved dependency closure. Provider environment facts remain separate from user requirements. A
 restricted file keeps its identity, size and original hashes even without a locator.
 Transient signed URLs are execution data; the document codec still rejects them in
-persistent alternatives. Search ranking, compatible selection, identification,
+persistent alternatives. Search ranking, identification,
 import composition and command cutover remain completion gates. The build Engine can
 use this catalog after authorization to refresh a locked file's locator. It selects
 a declared role or unique matching source evidence, rejects changed assertions and
@@ -71,6 +70,22 @@ restricted downloads remain explicit input; they cannot produce a partial artifa
 Slots sharing an exact provider pin reuse one bounded resolution. If locator refresh
 finds manual input, the build reports it before downloading other payloads; an
 unrelated transport failure cannot hide that requirement.
+
+Compatible selection requires explicit game versions, loader, content kind and release
+policy. Its provisional default prefers stable releases, falling back to prereleases
+only when no compatible stable selection exists. It also supports stable-only and
+any-channel selection, compares
+publication timestamps as instants, and uses canonical pin identity to break ties.
+Stable preference applies before game-version preference; explicitly accepted game
+alternatives follow the primary version. Mods must advertise the selected loader;
+resource packs and other non-mod content do not inherit that mod-loader filter.
+
+Modrinth's filtered version list and CurseForge's paginated per-game queries share one
+transfer budget and deadline per resolution. Page/record limits, invalid pagination,
+conflicting repeated pins and malformed identity/evidence fail without a partial
+selection. Each page retains its best candidate and compact identity evidence under
+admission. Only the final selection survives. This capability is for new or explicitly
+updated resolution; it does not upgrade a valid sync lock or rewrite project intent.
 
 ## Composed build behavior
 
@@ -164,6 +179,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Compatible selection | 1,607 tests and eleven doctests, all-feature Clippy and all five live provider probes passed. Both compatible probes acquired bytes against the selected provider digest/size. The first full-suite attempt failed compilation when the disk filled; the retry passed after removing reproducible incremental artifacts |
 | `c7b1c64` | [Native PR CI 37387301198](https://github.com/inherent-design/empack/actions/runs/37387301198) passed Linux/macOS/Windows tests and import-smoke, lint and coverage |
 | `180c4c3` | `mise run test`: 1,498 tests and ten doctests passed |
 | `efb7799` | `mise run e2e:strict`: 101 tests passed; [native CI 37388992838](https://github.com/inherent-design/empack/actions/runs/37388992838) passed |

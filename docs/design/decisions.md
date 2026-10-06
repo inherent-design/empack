@@ -53,3 +53,10 @@ Implementation qualifications:
 
 The current development version remains `0.0.0-dev`; release builds derive their
 version from a tag. This work sets a release target and does not publish a release.
+
+
+Compatible dependency selection provisionally defaults to stable preference: choose
+among compatible stable files when any exist, otherwise allow compatible beta/alpha
+files. Hosts can select stable-only or any-channel policies explicitly, and exact
+pins remain independent. This default is an implementation assumption pending the
+user's release-channel preference; it does not change sync's lock-retention rule.

@@ -62,7 +62,10 @@ mod selectors, verify exact file ownership, download the selected file and check
 its original digest and size assertions. The resource-pack case additionally builds
 and publishes a full-client ZIP through the Engine from a lock with no stored URL,
 then checks its member against the original source digest and verifies that the
-intent and lock did not change. Ordinary offline runs ignore these network cases.
+intent and lock did not change. Two further probes resolve compatible Modrinth and
+CurseForge versions under an explicit stable-preferred policy and verify the selected
+files against their original hashes and sizes. Ordinary offline runs ignore these
+network cases.
 
 The pure core must compile without runtime or filesystem dependencies. Its tests
 cover portable syntax, typed values and pure decisions. Native filesystem,

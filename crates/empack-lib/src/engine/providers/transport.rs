@@ -36,6 +36,10 @@ pub enum CatalogError {
     Redirect,
     #[error("Provider returned an invalid or unsupported record")]
     InvalidRecord,
+    #[error("No provider file satisfies the requested compatibility and release policy")]
+    NoCompatibleSelection,
+    #[error("Provider content kind differs from the requested kind")]
+    ContentKindMismatch,
     #[error("Provider returned a different project or file identity")]
     Identity,
     #[error("Provider content kind is unsupported by this adapter")]
@@ -57,6 +61,10 @@ pub(super) struct RequestBudget {
     deadline: Instant,
 }
 impl RequestBudget {
+    pub(super) fn check_deadline(&self) -> Result<()> {
+        ensure!(Instant::now() < self.deadline, CatalogError::Deadline);
+        Ok(())
+    }
     pub(super) fn new(limits: CatalogLimits) -> Result<Self> {
         ensure!(
             limits.response_bytes > 0 && limits.transfer_bytes > 0,
@@ -201,7 +209,7 @@ impl CatalogTransport {
             _ => Err(CatalogError::Identity.into()),
         }
     }
-    async fn get(
+    pub(super) async fn get(
         &self,
         provider: ProviderKind,
         segments: &[&str],
