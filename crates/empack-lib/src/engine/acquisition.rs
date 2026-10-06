@@ -68,6 +68,23 @@ pub enum TransferError {
     #[error("Download redirect limit exceeded")]
     RedirectLimit,
 }
+struct TransferBudget {
+    maximum: u64,
+    received: u64,
+    deadline: Instant,
+}
+impl TransferBudget {
+    fn new(limits: TransferLimits) -> Result<Self> {
+        ensure!(!limits.deadline.is_zero(), TransferError::Deadline);
+        Ok(Self {
+            maximum: limits.transfer_bytes,
+            received: 0,
+            deadline: Instant::now()
+                .checked_add(limits.deadline)
+                .context("Download deadline overflow")?,
+        })
+    }
+}
 /// No credentials, automatic redirects, cookies or response decompression. Provider API transport
 /// supplies authentication separately; this port acquires the exact downloadable representation.
 #[derive(Clone)]
@@ -105,6 +122,9 @@ impl HttpAcquisition {
             .user_agent(concat!("empack/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(15))
     }
+    pub(in crate::engine) fn validate_locator(&self, input: &str) -> Result<()> {
+        self.locator(input).map(|_| ())
+    }
     fn locator(&self, input: &str) -> Result<Url> {
         let url = Url::parse(input).map_err(|_| TransferError::InvalidLocator)?;
         let allowed = url.scheme() == "https";
@@ -133,6 +153,45 @@ impl HttpAcquisition {
         scope: &mut WorkScope,
         request: DownloadRequest,
     ) -> Result<AcquiredContent> {
+        let mut budget = TransferBudget::new(request.limits)?;
+        self.acquire_budget(scope, request, &mut budget).await
+    }
+    /// All downloads share bytes and time; no successful subset escapes a later failure.
+    pub(in crate::engine) async fn acquire_batch(
+        &self,
+        scope: &mut WorkScope,
+        requests: Vec<DownloadRequest>,
+        limits: TransferLimits,
+    ) -> Result<Vec<AcquiredContent>> {
+        let mut budget = TransferBudget::new(limits)?;
+        // Validate every declaration before any payload transfer.
+        for request in &requests {
+            validate_expectation(
+                &request.expected,
+                request.limits.file_bytes,
+                request.evidence,
+                request.initial,
+            )?;
+            for locator in request.alternatives.as_slice() {
+                self.locator(locator)?;
+            }
+        }
+        let mut pool = super::content::ContentPool::owned(scope, limits.transfer_bytes).await?;
+        let mut content = Vec::new();
+        for request in requests {
+            let acquired = self.acquire_budget(scope, request, &mut budget).await?;
+            content.push(pool.consolidate_owned(scope, acquired).await?);
+        }
+        scope.cancellation().check()?;
+        ensure!(Instant::now() < budget.deadline, TransferError::Deadline);
+        Ok(content)
+    }
+    async fn acquire_budget(
+        &self,
+        scope: &mut WorkScope,
+        request: DownloadRequest,
+        budget: &mut TransferBudget,
+    ) -> Result<AcquiredContent> {
         let DownloadRequest {
             alternatives,
             expected,
@@ -150,8 +209,15 @@ impl HttpAcquisition {
         let deadline = Instant::now()
             .checked_add(limits.deadline)
             .context("Download deadline overflow")?;
+        let deadline = deadline.min(budget.deadline);
+        ensure!(Instant::now() < deadline, TransferError::Deadline);
+        let limits = TransferLimits {
+            transfer_bytes: budget
+                .maximum
+                .min(budget.received.saturating_add(limits.transfer_bytes)),
+            ..limits
+        };
         let operation_cancel = scope.cancellation();
-        let mut received = 0;
         let mut last = None;
         for url in urls {
             operation_cancel.check()?;
@@ -200,7 +266,7 @@ impl HttpAcquisition {
                     sender,
                     attempt_limits,
                     deadline,
-                    &mut received,
+                    &mut budget.received,
                     &cancel,
                 )
                 .await;

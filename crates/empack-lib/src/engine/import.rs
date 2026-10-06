@@ -23,6 +23,11 @@ use std::{
     io::Read,
 };
 
+mod acquisition;
+pub use acquisition::{
+    ImportContentInput, ImportContentKey, ImportContentLimits, ImportContentOutcome,
+    ImportContentPlan, ImportInputReason, VerifiedImportContent,
+};
 mod formats;
 #[cfg(test)]
 mod tests;

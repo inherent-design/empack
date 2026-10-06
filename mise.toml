@@ -110,6 +110,11 @@ description = "Inspect explicit archives with normalized engine adapters"
 run = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
 run_windows = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
 
+[tasks."smoke:import:content"]
+description = "Resolve explicit imports and verify every requested file"
+run = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test import_content_smoke --run-ignored ignored-only"
+
 [tasks."smoke:import:curated"]
 depends = ["build:bin"]
 description = "Run the full curated import smoke suite"

@@ -119,3 +119,18 @@ remain separate checks within the `smoke:providers` suite. A seventh case expand
 Reese's Sodium Options, requires the Sodium edge to remain present and verifies every
 selected file against its original size/digests. This covers live closure evidence and
 acquisition, not yet add/sync command composition.
+
+
+Run complete normalized import acquisition explicitly with
+`EMPACK_TEST_IMPORT_ARCHIVES` set to local archive paths and
+`mise run smoke:import:content`. CurseForge inputs require the provider key.
+Missing manual content fails this probe; it is not counted as complete acquisition.
+For paired fixtures, `EMPACK_TEST_IMPORT_USE_PRIOR_BYTES=1` explicitly permits bytes
+verified from an earlier archive to satisfy a later manual obligation. Association
+requires the original digest and size; acquisition checks those bytes again. This
+fixture policy is not a production download-discovery heuristic.
+
+The deterministic acquisition tests cover changed remote bytes, later provider
+failure, cumulative catalog/transfer allowances, restricted-file preflight, wrong
+supplied content, retained resource ownership and client/server/optional semantics.
+Project publication and next-command parity require the semantic import integration.

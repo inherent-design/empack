@@ -12,6 +12,8 @@ use empack_core::{
 };
 use std::{sync::Arc, time::Duration};
 
+mod batch;
+pub use batch::ExactBatch;
 mod closure;
 pub use closure::{
     ClosureIssue, ClosureIssueKind, ClosureLimits, ClosureRequest, ClosureRoot, ClosureSelection,

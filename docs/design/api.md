@@ -62,6 +62,15 @@ records, canonical required edges and `ClosureIssue` values. Its
 `complete_for_required()` query applies only to the observed exact selections; it is
 not a deletion grant or proof that another version assignment cannot work.
 
+The compiled `ImportContentPlan::resolve` accepts retained import declarations and a
+catalog, then resolves all exact provider references under one allowance.
+`ImportContentPlan::acquire` accepts explicit supplied files keyed by
+`ImportContentKey`; it returns `NeedsInput` with the retained plan/supplied files or
+`Ready(VerifiedImportContent)` only after every requested byte obligation verifies.
+Original declarations, provider records, source evidence and permissions remain
+accessible. The result has no publisher, and does not substitute for a semantic
+candidate or an approved replacement plan.
+
 ## 17. Public engine API and application wiring
 
 ### 17.1 Public entry points

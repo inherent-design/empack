@@ -200,10 +200,35 @@ remain absent; resolution must supply an explicit choice. Datapack-folder infere
 returns competing suggestions with evidence, without changing backend options.
 Auxiliary archive members remain recorded rather than silently disappearing.
 
-This is the inspection boundary. Provider identification/resolution, backend metadata
-interpretation, conversion decisions, acquisition and project publication still need
+This is the inspection boundary. The acquisition composition below adds verified bytes;
+semantic interpretation, conversion decisions and project publication still need
 composition before the CLI import path can be replaced. The existing importer remains
 available until that complete replacement passes the feature requirements.
+
+## Verified import content
+
+`ImportContentPlan::resolve` composes archive declarations with exact provider records.
+Provider references share one catalog byte/deadline allowance. Repeated pins reuse
+records; conflicting versions of one project fail before lookup. Provider identity,
+all selected file assertions and format record locations remain available.
+
+Acquisition checks the complete inventory before returning `VerifiedImportContent`.
+Declared destinations, optional requirements and common/client/server layers remain
+unchanged. Restricted files and unsupported transports return exact `NeedsInput`
+obligations before unrelated extraction or downloads. Supplied bytes bind to an
+obligation and are reverified against its original digest and size. MD5 remains
+weaker source evidence. Supplied files survive an additional pending input decision.
+
+Embedded files share one admitted archive reader. Verified bytes use packed private
+backing, retain their resource reservations and remain readable independently.
+Downloads share cumulative bytes and a deadline across files and mirrors. A later
+provider, integrity, resource or transport failure returns no successful subset.
+Record and content-size limits are separate from network allowances; bookkeeping
+is charged for actual records rather than the configured maximum.
+
+These values grant no project write authority. Import still needs semantic candidate
+assembly, explicit optional/default and layout choices, replacement planning and
+composition with the Engine's approval/publication lifecycle.
 
 ## Composed build behavior
 
@@ -297,6 +322,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Verified import content | 1,661 tests and eleven doctests passed without a nextest leak warning; 83 affected catalog/import/acquisition tests and all-feature Clippy passed. Both real Fabulously Optimized 1.20.1 archives passed full content acquisition with explicit prior-byte association enabled. The initial CurseForge run correctly stopped for two restricted files; the Modrinth pass verified 78 files / 27,902,856 bytes. This is acquisition evidence, not project publication parity |
 | Closure review 62 | Both the 16 MiB small-graph admission failure and incompatible required-pin abort reproduced. Incremental bookkeeping and explicit incompatible-requirement evidence pass the combined 80 catalog/import/acquisition regressions |
 | Required dependency expansion | 1,651 tests and eleven doctests, 54 affected provider tests, all-feature Clippy and all seven live provider probes passed. Cycles, conflicts, incomplete evidence and shared budgets are covered. One staging test emitted a nextest pipe-leak warning; its isolated repeat passed cleanly. Three graph-capacity edge cases and Greptile review 61's 8 MiB pin-lookup admission failure reproduced before their fixes |
 | Exact pin ownership | 44 affected provider tests, all-feature Clippy and six live provider probes passed. The three exact-provider cases compare owner-free lookup with project-qualified identity and every original file assertion. The preceding full-suite snapshot is the bounded-search revision below |
