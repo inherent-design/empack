@@ -374,3 +374,11 @@ This avoids a descriptor per frozen member during packaging; separately acquired
 content leases still need bounded admission and further consolidation for very large
 packs. The live runtime suite publishes and starts extracted full server archives
 so preparation-only success cannot hide packaging failures.
+
+Acquisition planning uses the same environment, optional-choice and layer selection
+as game projection. `plan_target_build_acquisitions` reports only surviving missing
+files. A server target does not acquire client-only content; disabling a replacement
+retains its common fallback. Bootstrap targets can keep valid packwiz references,
+including explicitly permitted weak evidence, while mrpack still requires its export
+hashes. Selected local files must verify; excluded local or observed content does not
+become a byte obligation merely because it appears in the project.

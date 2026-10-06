@@ -205,6 +205,15 @@ pub fn plan_build_acquisitions(
     mode: BuildMaterialization,
     cancel: &Cancellation,
 ) -> Result<BuildAcquisitionPlan> {
+    plan_acquisitions(workspace, external, mode, None, cancel)
+}
+fn plan_acquisitions(
+    workspace: &WorkspaceSnapshot,
+    external: &BuildAcquisitions,
+    mode: BuildMaterialization,
+    selected: Option<&BTreeSet<AcquisitionKey>>,
+    cancel: &Cancellation,
+) -> Result<BuildAcquisitionPlan> {
     let project = workspace.require_resolved()?;
     let records = workspace.backend_files(cancel)?;
     let available = external
@@ -260,6 +269,9 @@ pub fn plan_build_acquisitions(
                 dependency: key.clone(),
                 slot: file.slot.clone(),
             };
+            if selected.is_some_and(|keys| !keys.contains(&AcquisitionKey::Locked(key.clone()))) {
+                continue;
+            }
             let mut present = external.locked.contains_key(&key);
             if let AcquisitionSpec::Local(path) = &file.acquisition {
                 ensure!(
@@ -326,7 +338,9 @@ pub fn plan_build_acquisitions(
         }
     }
     for record in records {
-        if !backend.unlisted.contains(&record.metadata_path)
+        if selected.is_some_and(|keys| {
+            !keys.contains(&AcquisitionKey::Observed(record.metadata_path.clone()))
+        }) || !backend.unlisted.contains(&record.metadata_path)
             || external.observed.contains_key(&record.metadata_path)
         {
             continue;
@@ -402,6 +416,10 @@ fn reference_ready(file: &ResolvedFile) -> bool {
                     })
         })
 }
+
+mod selection;
+pub use selection::plan_target_build_acquisitions;
+pub(super) use selection::select_game_inputs;
 
 #[cfg(test)]
 mod tests;

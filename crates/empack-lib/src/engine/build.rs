@@ -11,6 +11,7 @@ use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     files::ManagedPath,
+    inventory::ContentOwner,
     model::{AcquisitionSpec, ContentLayer, ResolvedProject},
     requirements::{Requirement, Requirements},
 };
@@ -39,7 +40,7 @@ pub fn prepare_mrpack(
     optional: OptionalConversion,
     cancel: &Cancellation,
 ) -> Result<MrpackPlan> {
-    let content = capture_build_content(workspace, external, evidence, cancel)?;
+    let content = capture_build_content(workspace, external, evidence, None, cancel)?;
     let mut plan = MrpackPlan::prepare_with_observed(
         &content.project,
         &content.acquired,
@@ -76,10 +77,44 @@ enum ObservedBuildContent {
         choice: empack_core::requirements::ChoiceKey,
     },
 }
+fn declared_choices(project: &ResolvedProject) -> BTreeSet<String> {
+    let mut choices = BTreeSet::new();
+    for dependency in project.lock().dependencies.values() {
+        for file in dependency.files.as_slice() {
+            for placement in file.placements.as_slice() {
+                for requirement in [
+                    &placement.requirements.client,
+                    &placement.requirements.server,
+                ] {
+                    if let Requirement::Optional(choice) = requirement {
+                        choices.insert(choice.key.as_str().to_owned());
+                    }
+                }
+            }
+        }
+    }
+    choices
+}
+fn next_observed_choice(
+    record: &BackendFile,
+    choices: &mut BTreeSet<String>,
+) -> Result<empack_core::requirements::ChoiceKey> {
+    let base = format!("observed:{}", record.metadata_path.as_str());
+    let mut choice = base.clone();
+    let mut sequence = 0u64;
+    while !choices.insert(choice.clone()) {
+        sequence = sequence
+            .checked_add(1)
+            .context("Observed choice identifier exhausted")?;
+        choice = format!("{base}#{sequence}");
+    }
+    Ok(empack_core::requirements::ChoiceKey::parse(&choice)?)
+}
 fn capture_build_content(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
     evidence: SourceEvidencePolicy,
+    selected: Option<&BTreeSet<ContentOwner>>,
     cancel: &Cancellation,
 ) -> Result<CapturedBuildContent> {
     let project = workspace.require_resolved()?;
@@ -90,7 +125,13 @@ fn capture_build_content(
     for (key, dependency) in &project.lock().dependencies {
         for file in dependency.files.as_slice() {
             cancel.check()?;
-            if evidence == SourceEvidencePolicy::StrongSourceRequired {
+            let included = selected.is_none_or(|owners| {
+                owners.contains(&ContentOwner::Dependency {
+                    key: key.clone(),
+                    slot: file.slot.clone(),
+                })
+            });
+            if included && evidence == SourceEvidencePolicy::StrongSourceRequired {
                 ensure!(
                     file.expected
                         .digests
@@ -113,12 +154,14 @@ fn capture_build_content(
             let mut local = None;
             if let AcquisitionSpec::Local(path) = &file.acquisition {
                 occupied.insert(path.clone());
-                let (content, permissions) =
-                    workspace.acquire_file(path, Some(&file.expected), evidence, cancel)?;
-                local = Some(AcquiredBuildFile {
-                    content,
-                    permissions,
-                });
+                if included {
+                    let (content, permissions) =
+                        workspace.acquire_file(path, Some(&file.expected), evidence, cancel)?;
+                    local = Some(AcquiredBuildFile {
+                        content,
+                        permissions,
+                    });
+                }
             }
             for placement in file.placements.as_slice() {
                 let path = ProjectLayout::path(&ManagedPath::Content {
@@ -126,6 +169,9 @@ fn capture_build_content(
                     path: placement.destination.relative().clone(),
                 })?;
                 occupied.insert(path.clone());
+                if !included {
+                    continue;
+                }
                 match workspace.observations().entries().get(&path) {
                     Some(Observation::File(_)) => {
                         let (content, permissions) = workspace.acquire_file(
@@ -180,21 +226,7 @@ fn capture_build_content(
         .collect();
     let backend_check = check_backend(&project, &backend, &combined)?;
     let unlisted = backend_check.unlisted;
-    let mut choices = BTreeSet::new();
-    for dependency in project.lock().dependencies.values() {
-        for file in dependency.files.as_slice() {
-            for placement in file.placements.as_slice() {
-                for requirement in [
-                    &placement.requirements.client,
-                    &placement.requirements.server,
-                ] {
-                    if let Requirement::Optional(choice) = requirement {
-                        choices.insert(choice.key.as_str().to_owned());
-                    }
-                }
-            }
-        }
-    }
+    let mut choices = declared_choices(&project);
     let mut observed_files = Vec::new();
     let mut used_observed = BTreeSet::new();
     for record in backend {
@@ -213,6 +245,22 @@ fn capture_build_content(
             path: record.destination.relative().clone(),
         })?;
         occupied.insert(path.clone());
+        let choice = next_observed_choice(&record, &mut choices)?;
+        if selected.is_some_and(|owners| {
+            !owners.contains(&ContentOwner::Source(format!(
+                "backend:{}",
+                record.metadata_path.as_str()
+            )))
+        }) {
+            if external.observed.contains_key(&record.metadata_path) {
+                used_observed.insert(record.metadata_path.clone());
+            }
+            observed_files.push(ObservedBuildContent::Unacquired {
+                record: Box::new(record),
+                choice,
+            });
+            continue;
+        }
         ensure!(
             !matches!(
                 workspace.observations().entries().get(&path),
@@ -242,16 +290,6 @@ fn capture_build_content(
                 permissions,
             });
         }
-        let base = format!("observed:{}", record.metadata_path.as_str());
-        let mut choice = base.clone();
-        let mut sequence = 0u64;
-        while !choices.insert(choice.clone()) {
-            sequence = sequence
-                .checked_add(1)
-                .context("Observed choice identifier exhausted")?;
-            choice = format!("{base}#{sequence}");
-        }
-        let choice = empack_core::requirements::ChoiceKey::parse(&choice)?;
         observed_files.push(match file {
             Some(file) => ObservedBuildContent::Verified(Box::new(
                 super::mrpack::ObservedFile::verify(record, file, choice, evidence)?,

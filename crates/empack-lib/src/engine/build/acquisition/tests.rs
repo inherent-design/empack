@@ -36,6 +36,243 @@ fn capture(root: &std::path::Path, host: &std::path::Path) -> WorkspaceSnapshot 
         )
         .unwrap()
 }
+
+#[test]
+fn acquisition_selection_matches_materialized_missing_content_and_optional_choices() {
+    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let cancel = Cancellation::default();
+    write_project(root.path(), &project(true, true));
+    fs::create_dir_all(root.path().join("pack/mods")).unwrap();
+    fs::write(root.path().join("pack/mods/extra.pw.toml"), b"filename='extra.jar'\nside='client'\n[download]\nurl='https://example.com/extra.jar'\nhash-format='md5'\nhash='321c3cf486ed509164edec1e1981fec8'\n[option]\noptional=true\ndefault=false\n").unwrap();
+    let workspace = capture(root.path(), host.path());
+    for enabled in [false, true] {
+        let optional = OptionalPolicy::Resolve {
+            choices: BTreeMap::from([
+                ("extra".into(), enabled),
+                ("observed:mods/extra.pw.toml".into(), enabled),
+            ]),
+            use_defaults: false,
+        };
+        for target in [BuildTarget::ClientFull, BuildTarget::ServerFull] {
+            let plan = plan_target_build_acquisitions(
+                &workspace,
+                &BuildAcquisitions::default(),
+                target,
+                &optional,
+                SourceEvidencePolicy::Compatibility,
+                &cancel,
+            )
+            .unwrap();
+            let actual = super::super::materialized::prepare_game_content(
+                &workspace,
+                &BuildAcquisitions::default(),
+                target,
+                &optional,
+                SourceEvidencePolicy::Compatibility,
+                &cancel,
+            );
+            if enabled && target == BuildTarget::ClientFull {
+                let error = actual.err().unwrap();
+                let missing = error
+                    .downcast_ref::<super::super::materialized::MissingGameContent>()
+                    .unwrap();
+                let expected: BTreeSet<_> = missing
+                    .files
+                    .iter()
+                    .cloned()
+                    .map(AcquisitionKey::Locked)
+                    .chain(
+                        missing
+                            .observed
+                            .iter()
+                            .cloned()
+                            .map(AcquisitionKey::Observed),
+                    )
+                    .collect();
+                assert_eq!(
+                    plan.needs()
+                        .iter()
+                        .map(|need| need.key.clone())
+                        .collect::<BTreeSet<_>>(),
+                    expected
+                );
+                assert_eq!(plan.needs().len(), 3);
+            } else {
+                assert!(plan.needs().is_empty());
+                assert!(actual.is_ok());
+            }
+        }
+    }
+    assert!(!host.path().join("private").exists());
+    assert!(!root.path().join("dist").exists());
+}
+
+#[test]
+fn bootstrap_references_keep_weak_evidence_without_unnecessary_downloads() {
+    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let cancel = Cancellation::default();
+    write_project(root.path(), &project(true, false));
+    fs::create_dir_all(root.path().join("pack/mods")).unwrap();
+    fs::write(root.path().join("pack/mods/extra.pw.toml"), b"filename='extra.jar'\nside='client'\n[download]\nurl='https://example.com/extra.jar'\nhash-format='md5'\nhash='321c3cf486ed509164edec1e1981fec8'\n").unwrap();
+    let workspace = capture(root.path(), host.path());
+    let plan = |target, evidence| {
+        plan_target_build_acquisitions(
+            &workspace,
+            &BuildAcquisitions::default(),
+            target,
+            &OptionalPolicy::Preserve,
+            evidence,
+            &cancel,
+        )
+    };
+    assert!(
+        plan(BuildTarget::Client, SourceEvidencePolicy::Compatibility)
+            .unwrap()
+            .needs()
+            .is_empty()
+    );
+    assert!(
+        plan(
+            BuildTarget::Client,
+            SourceEvidencePolicy::StrongSourceRequired
+        )
+        .is_err()
+    );
+    assert!(
+        plan(
+            BuildTarget::ServerFull,
+            SourceEvidencePolicy::StrongSourceRequired
+        )
+        .unwrap()
+        .needs()
+        .is_empty()
+    );
+    assert!(
+        super::super::materialized::prepare_game_content(
+            &workspace,
+            &BuildAcquisitions::default(),
+            BuildTarget::ServerFull,
+            &OptionalPolicy::Preserve,
+            SourceEvidencePolicy::StrongSourceRequired,
+            &cancel,
+        )
+        .is_ok()
+    );
+    // Mrpack requires export hashes, unlike a packwiz bootstrap reference.
+    assert_eq!(
+        plan(BuildTarget::Mrpack, SourceEvidencePolicy::Compatibility)
+            .unwrap()
+            .needs()
+            .len(),
+        3
+    );
+}
+
+#[test]
+fn full_target_acquires_only_surviving_overlay_owners() {
+    use empack_core::{inventory::OptionalPolicy, projection::BuildTarget};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    write_project(root.path(), &project(false, false));
+    fs::create_dir_all(root.path().join("overrides/client/resourcepacks")).unwrap();
+    for file in ["a.zip", "copy.zip"] {
+        fs::write(
+            root.path()
+                .join("overrides/client/resourcepacks")
+                .join(file),
+            b"replacement",
+        )
+        .unwrap();
+    }
+    let workspace = capture(root.path(), host.path());
+    let plan = plan_target_build_acquisitions(
+        &workspace,
+        &BuildAcquisitions::default(),
+        BuildTarget::ClientFull,
+        &OptionalPolicy::Preserve,
+        SourceEvidencePolicy::Compatibility,
+        &Cancellation::default(),
+    )
+    .unwrap();
+    assert_eq!(plan.needs().len(), 1);
+    assert!(
+        matches!(&plan.needs()[0].key, AcquisitionKey::Locked(key) if key.slot.as_str() == "second")
+    );
+}
+
+#[test]
+fn excluded_local_records_do_not_require_missing_or_modified_bytes() {
+    use empack_core::{
+        inventory::OptionalPolicy,
+        model::{ResolvedIdentity, SourceIntent},
+        projection::BuildTarget,
+    };
+    let base = project(true, true);
+    let mut intent = base.intent().clone();
+    intent.roots.values_mut().next().unwrap().source = SourceIntent::Local(path("pack/local.zip"));
+    let revision = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "local")
+        .unwrap()
+        .semantic_revision();
+    let mut lock = base.lock().clone();
+    lock.intent_revision = revision;
+    let (key, dependency) = lock.dependencies.iter_mut().next().unwrap();
+    dependency.identity = ResolvedIdentity::Local(key.clone());
+    let mut files = dependency.files.as_slice().to_vec();
+    for file in &mut files {
+        file.acquisition = AcquisitionSpec::Local(path("pack/local.zip"));
+    }
+    dependency.files = NonEmpty::new(files).unwrap();
+    let project = ResolvedProject::validate(intent, lock, revision).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    write_project(root.path(), &project);
+    fs::create_dir(root.path().join("pack")).unwrap();
+    for present in [false, true] {
+        if present {
+            fs::write(root.path().join("pack/local.zip"), b"wrong").unwrap();
+        }
+        let workspace = capture(root.path(), host.path());
+        for enabled in [false, true] {
+            let optional = OptionalPolicy::Resolve {
+                choices: BTreeMap::from([("extra".into(), enabled)]),
+                use_defaults: false,
+            };
+            let actual = super::super::materialized::prepare_game_content(
+                &workspace,
+                &BuildAcquisitions::default(),
+                BuildTarget::ClientFull,
+                &optional,
+                SourceEvidencePolicy::Compatibility,
+                &Cancellation::default(),
+            );
+            assert_eq!(
+                actual.is_err(),
+                enabled,
+                "selected local content must still verify"
+            );
+            if !enabled {
+                assert!(
+                    plan_target_build_acquisitions(
+                        &workspace,
+                        &BuildAcquisitions::default(),
+                        BuildTarget::ClientFull,
+                        &optional,
+                        SourceEvidencePolicy::Compatibility,
+                        &Cancellation::default()
+                    )
+                    .unwrap()
+                    .needs()
+                    .is_empty()
+                );
+            }
+        }
+    }
+}
 #[test]
 fn reference_evidence_and_layer_precedence_determine_missing_bytes_without_effects() {
     let root = tempfile::tempdir().unwrap();

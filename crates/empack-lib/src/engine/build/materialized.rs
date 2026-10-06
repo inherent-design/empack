@@ -148,7 +148,14 @@ fn prepare_selected_content(
     cancel: &Cancellation,
 ) -> Result<PreparedGameContent> {
     let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
-    let captured = capture_build_content(workspace, external, evidence, cancel)?;
+    let (selection, _) =
+        super::acquisition::select_game_inputs(workspace, external, target, optional, cancel)?;
+    let selected: BTreeSet<_> = selection
+        .entries()
+        .iter()
+        .map(|entry| entry.owner.clone())
+        .collect();
+    let captured = capture_build_content(workspace, external, evidence, Some(&selected), cancel)?;
     let mut inputs = Vec::new();
     let mut leases = BTreeMap::new();
     let mut used = BTreeSet::new();
@@ -230,6 +237,10 @@ fn prepare_selected_content(
             }
             super::ObservedBuildContent::Unacquired { record, choice } => {
                 if references
+                    && selected.contains(&ContentOwner::Source(format!(
+                        "backend:{}",
+                        record.metadata_path.as_str()
+                    )))
                     && let Some((input, evidence)) =
                         crate::engine::mrpack::ObservedFile::reference_input(
                             &record, &choice, evidence,
@@ -322,7 +333,7 @@ fn prepare_selected_content(
     })
 }
 
-fn reference_for(
+pub(super) fn reference_for(
     file: &ResolvedFile,
     acquired: Option<&AcquiredBuildFile>,
 ) -> Result<Option<Representation>> {
