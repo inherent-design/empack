@@ -245,14 +245,25 @@ fn mrpack(
             let acquisition = if file.downloads.is_empty() {
                 ImportedAcquisition::Embedded(path(&file.path)?)
             } else {
-                for url in &file.downloads {
+                for (download_index, url) in file.downloads.iter().enumerate() {
                     ensure!(
                         !url.chars().any(|c| c.is_whitespace() || c.is_control()),
                         "Invalid download locator"
                     );
-                    super::super::documents::validate_download_url(url).map_err(|_| {
-                        anyhow::anyhow!("Import requires a stable credential-free HTTPS locator")
-                    })?;
+                    let parsed = reqwest::Url::parse(url).map_err(|_| anyhow::anyhow!("Invalid download locator"))?;
+                    ensure!(matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some()
+                        && parsed.username().is_empty() && parsed.password().is_none() && parsed.fragment().is_none(),
+                        "Invalid download locator");
+                    if super::super::documents::validate_download_url(url).is_err() {
+                        result.diagnostics.push(ImportDiagnostic {
+                            location: location("modrinth.index.json", Some(format!("/files/{index}/downloads/{download_index}")))?,
+                            message: if parsed.scheme() == "http" {
+                                "Source declares HTTP; preparation must resolve transport policy before acquisition or persistence"
+                            } else {
+                                "Source locator is transient; retain it only for acquisition and resolve durable provenance separately"
+                            }.into(),
+                        });
+                    }
                 }
                 ImportedAcquisition::Downloads(file.downloads)
             };

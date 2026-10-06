@@ -270,7 +270,7 @@ fn rejects_bad_environments_paths_urls_and_duplicate_destinations_with_record_lo
         ("hashes", json!({})),
         (
             "downloads",
-            json!(["https://example.com/file?token=secret-marker"]),
+            json!(["https://secret-marker@example.com/file"]),
         ),
         ("downloads", json!(["https://example.com/illegal space"])),
     ] {
@@ -438,4 +438,29 @@ fn datapack_layout_inference_keeps_competing_evidence_and_ignores_substrings() {
             .as_str(),
         "overrides/config/paxi/datapacks/a.zip"
     );
+}
+
+#[test]
+fn inspection_preserves_transient_downloads_without_authorizing_transport_or_persistence() {
+    for url in [
+        "https://example.com/file?token=secret-marker",
+        "http://example.com/file",
+    ] {
+        let mut value = mr();
+        let mut input = file("resourcepacks/declared.zip");
+        input["downloads"] = json!([url]);
+        value["files"] = json!([input]);
+        let imported = inspect_json("modrinth.index.json", &value, &[]).unwrap();
+        assert!(
+            matches!(&imported.files[0].acquisition,ImportedAcquisition::Downloads(urls) if urls == &[url])
+        );
+        assert!(
+            imported
+                .diagnostics
+                .iter()
+                .any(|d| d.location.pointer.as_deref() == Some("/files/0/downloads/0"))
+        );
+        assert!(super::super::documents::validate_download_url(url).is_err());
+        assert!(!format!("{:?}", imported.diagnostics).contains("secret-marker"));
+    }
 }
