@@ -63,7 +63,9 @@ pub enum Identification {
 
 Provider implementations receive a transport policy object that owns credential scope, redirects, retry classification, timeouts, response limits, and rate reservations. Request builders supply endpoint-specific data; they do not each create an unconstrained HTTP client.
 
-Retries apply only to operations classified as safe to retry. A rate-limit cooldown and a capacity reservation are different concepts. Retrying acquisition must not reset the cumulative byte or deadline budget indefinitely.
+Retries apply only to operations classified as safe to retry. A rate-limit cooldown and a capacity reservation are different concepts. Relative
+cooldowns use monotonic deadlines with their fractional-second precision preserved;
+wall-clock rounding must not let a request resume before the declared interval. Retrying acquisition must not reset the cumulative byte or deadline budget indefinitely.
 
 Only send a credential to its intended provider origin. Strip sensitive headers on cross-origin redirects unless an explicit credential rule allows them. Log redacted locators and stable provider/file IDs, not bearer tokens or signed query strings.
 
