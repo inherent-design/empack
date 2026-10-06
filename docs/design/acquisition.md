@@ -237,6 +237,10 @@ After an append failure, existing ranges remain readable but the pool accepts no
 further writes. No compaction or early range reclamation is implied.
 
 Moving a file into the pool briefly needs both its quarantine and destination bytes.
+If that overlap cannot be admitted, acquisition retains the already charged original
+lease. Its native handle remains charged too; pooling does not become an extra
+requirement for an otherwise valid download. Cancelled/closed admission and failed
+pools still reject work. Uncharged inputs cannot use this fallback.
 An existing clone of the original lease retains its original reservation until it
 retires. Synchronous build assembly covers pools with its enclosing worker budget;
 async acquisition owns explicit handle, metadata and byte reservations. This is

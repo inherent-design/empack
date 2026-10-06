@@ -1,8 +1,8 @@
 //! Append-only private backing. Logical source evidence stays on each acquired content value.
 use super::*;
 use crate::engine::{
-    resources::{AdmissionPermit, ResourceRequest},
-    runtime::WorkScope,
+    resources::{AdmissionError, AdmissionPermit, ResourceRequest},
+    runtime::{RuntimeError, WorkScope},
     staging::PrivateFile,
 };
 use std::collections::BTreeMap;
@@ -93,26 +93,45 @@ impl ContentPool {
             ._handles = Some(permit);
         Ok(pool)
     }
-    pub async fn insert_owned(
+    /// Consolidate when temporary overlap can be admitted. Otherwise preserve an already
+    /// charged source lease; reducing handles must not require additional scratch capacity.
+    pub async fn consolidate_owned(
         &mut self,
         scope: &mut WorkScope,
         content: AcquiredContent,
     ) -> Result<AcquiredContent> {
-        let exists = self
-            .storage
-            .state
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .members
-            .contains_key(&content.lease().id());
+        let exists = {
+            let state = self
+                .storage
+                .state
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            ensure!(
+                !state.unavailable,
+                "Content pool has an unfinished or failed append"
+            );
+            state.members.contains_key(&content.lease().id())
+        };
         let reservation = if exists {
             None
         } else {
-            Some(scope.reserve_storage(ResourceRequest {
+            match scope.reserve_storage(ResourceRequest {
                 scratch_bytes: content.lease().len(),
                 memory_bytes: 1024,
                 ..Default::default()
-            })?)
+            }) {
+                Ok(permit) => Some(permit),
+                Err(RuntimeError::Admission(
+                    AdmissionError::Busy { .. } | AdmissionError::TooLarge { .. },
+                )) if content.lease.0._reservation.is_some()
+                    || matches!(
+                        &content.lease.0.backing, ContentBacking::Packed { storage, .. } if storage._handles.is_some()
+                    ) =>
+                {
+                    return Ok(content);
+                }
+                Err(error) => return Err(error.into()),
+            }
         };
         let storage = self.storage.clone();
         let maximum = self.maximum;

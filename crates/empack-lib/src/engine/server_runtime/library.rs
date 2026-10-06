@@ -351,7 +351,7 @@ impl LibraryServerPlan {
                     },
                 )
                 .await?;
-            libraries.push(pool.insert_owned(scope, content).await?);
+            libraries.push(pool.consolidate_owned(scope, content).await?);
         }
         self.finish(vanilla, libraries, scope, archive).await
     }

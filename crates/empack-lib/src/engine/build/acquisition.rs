@@ -246,7 +246,11 @@ impl BuildAcquisitionResult {
                             },
                         )
                         .await?;
-                    let content = pool.as_mut().unwrap().insert_owned(scope, content).await?;
+                    let content = pool
+                        .as_mut()
+                        .unwrap()
+                        .consolidate_owned(scope, content)
+                        .await?;
                     let file = AcquiredBuildFile {
                         content,
                         permissions: FilePermissions {

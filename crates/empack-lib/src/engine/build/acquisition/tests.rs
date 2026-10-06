@@ -361,7 +361,7 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
         let governor = ResourceGovernor::new(ResourceRequest {
             jobs: 1,
             memory_bytes: 1 << 20,
-            scratch_bytes: 32, // quarantine plus retained pooled content
+            scratch_bytes: 16,
             open_files: 10,
         });
         let runtime = OperationRuntime::new(governor.clone(), 2);

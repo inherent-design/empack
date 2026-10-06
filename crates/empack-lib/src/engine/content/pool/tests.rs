@@ -156,13 +156,13 @@ async fn owned_ranges_keep_charges_until_the_last_reader_and_preserve_source_clo
             let source =
                 AcquiredContent::retain_resources(scope.accept(worker.wait().await?)?).unwrap();
             let clone = source.clone();
-            let content = pool.insert_owned(&mut scope, source).await.unwrap();
+            let content = pool.consolidate_owned(&mut scope, source).await.unwrap();
             assert_eq!(ledger.status().reserved.open_files, 3);
             assert_eq!(ledger.status().reserved.scratch_bytes, 14);
             drop(clone);
             assert_eq!(ledger.status().reserved.open_files, 2);
             let duplicate = pool
-                .insert_owned(&mut scope, acquire(b"payload"))
+                .consolidate_owned(&mut scope, acquire(b"payload"))
                 .await
                 .unwrap();
             assert_eq!(ledger.status().reserved.scratch_bytes, 7);
@@ -201,7 +201,7 @@ async fn failed_append_remains_charged_while_existing_ranges_are_readable() {
         .start(move |mut scope| async move {
             let mut pool = ContentPool::owned(&mut scope, 128).await.unwrap();
             let prior = pool
-                .insert_owned(&mut scope, acquire(b"prior"))
+                .consolidate_owned(&mut scope, acquire(b"prior"))
                 .await
                 .unwrap();
             // Deliberately corrupt a source range after verification. The append copies bytes,
@@ -215,10 +215,10 @@ async fn failed_append_remains_charged_while_existing_ranges_are_readable() {
                 state.file.file().seek(SeekFrom::Start(0)).unwrap();
                 state.file.file().write_all(b"other").unwrap();
             }
-            assert!(pool.insert_owned(&mut scope, bad).await.is_err());
+            assert!(pool.consolidate_owned(&mut scope, bad).await.is_err());
             assert_eq!(ledger.status().reserved.scratch_bytes, 10);
             assert!(
-                pool.insert_owned(&mut scope, acquire(b"next"))
+                pool.consolidate_owned(&mut scope, acquire(b"next"))
                     .await
                     .is_err()
             );
@@ -242,4 +242,61 @@ async fn failed_append_remains_charged_while_existing_ranges_are_readable() {
     ));
     runtime.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn tight_scratch_capacity_keeps_the_verified_source_lease() {
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 1 << 20,
+        scratch_bytes: 10,
+        open_files: 8,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let ledger = governor.clone();
+    let mut operation = runtime
+        .start(move |mut scope| async move {
+            let mut pool = ContentPool::owned(&mut scope, 10).await.unwrap();
+            let worker = scope.spawn_blocking(
+                ResourceRequest {
+                    jobs: 1,
+                    scratch_bytes: 7,
+                    open_files: 4,
+                    ..Default::default()
+                },
+                ResourceRequest {
+                    scratch_bytes: 7,
+                    open_files: 1,
+                    ..Default::default()
+                },
+                |_| acquire(b"payload"),
+            )?;
+            let source =
+                AcquiredContent::retain_resources(scope.accept(worker.wait().await?)?).unwrap();
+            let evidence = source.evidence().clone();
+            let content = pool.consolidate_owned(&mut scope, source).await.unwrap();
+            assert_eq!(content.evidence(), &evidence);
+            scope.cancellation().cancel();
+            assert!(
+                pool.consolidate_owned(&mut scope, content.clone())
+                    .await
+                    .is_err()
+            );
+            check(&content, b"payload");
+            assert_eq!(ledger.status().reserved.scratch_bytes, 7);
+            drop(pool);
+            assert_eq!(ledger.status().reserved.open_files, 1);
+            let reader = content.lease().open();
+            drop(content);
+            assert_eq!(ledger.status().reserved.scratch_bytes, 7);
+            drop(reader);
+            assert_eq!(ledger.status().reserved, ResourceRequest::default());
+            Ok(())
+        })
+        .unwrap();
+    assert!(matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(())
+    ));
+    runtime.shutdown().await;
 }
