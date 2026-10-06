@@ -34,6 +34,7 @@ pub struct Publisher {
     host: Dir,
 }
 /// Read-only journal access for snapshot preparation. It cannot create or recover state.
+#[derive(Clone)]
 pub struct RecoveryReader {
     host_state: std::path::PathBuf,
 }

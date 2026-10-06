@@ -139,7 +139,7 @@ async fn forced_replacement_is_read_only_until_verified_publication_and_reexport
 }
 #[tokio::test]
 async fn source_changes_after_preparation_block_the_whole_replacement() {
-    for change in ["document", "membership", "cancel"] {
+    for change in ["document", "membership", "policy", "cancel"] {
         let temp = tempfile::tempdir().unwrap();
         let project = temp.path().join("project");
         let host = temp.path().join("state");
@@ -161,6 +161,7 @@ async fn source_changes_after_preparation_block_the_whole_replacement() {
         match change {
             "document" => fs::write(project.join("empack.yml"), "edited").unwrap(),
             "membership" => fs::write(project.join("pack/new.txt"), "new").unwrap(),
+            "policy" => fs::write(project.join("pack/.packwizignore"), "*.jar").unwrap(),
             _ => cancel.cancel(),
         }
         assert!(
@@ -232,4 +233,132 @@ fn replacement_capture_rejects_symlink_ancestors_without_touching_outside_files(
         "untouched"
     );
     assert!(!temp.path().join("state").exists());
+}
+
+#[tokio::test]
+async fn ignored_pack_files_and_policy_are_not_owned_by_managed_replacement() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    let host = temp.path().join("state");
+    fs::create_dir_all(project.join("pack/private")).unwrap();
+    fs::write(project.join("empack.yml"), "old").unwrap();
+    fs::write(project.join("pack/backup.zip"), "personal backup").unwrap();
+    fs::write(project.join("pack/private/notes"), "private notes").unwrap();
+    fs::write(project.join("pack/.packwizignore"), "private/\n").unwrap();
+    fs::write(project.join("pack/stale.jar"), "managed").unwrap();
+    let cancel = Cancellation::default();
+    let reader = ProjectReader::new(RecoveryReader::new(host.clone()));
+    let captured = reader
+        .capture_replacement(&project, SnapshotLimits::default(), &cancel)
+        .unwrap();
+    let prepared = prepare_import_replacement(
+        captured,
+        candidate().await,
+        ImportReplacementPolicy::ReplaceManagedContent,
+        &cancel,
+    )
+    .unwrap();
+    prepared
+        .publish(&Publisher::open(&host).unwrap(), &cancel)
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(project.join("pack/backup.zip")).unwrap(),
+        "personal backup"
+    );
+    assert_eq!(
+        fs::read_to_string(project.join("pack/private/notes")).unwrap(),
+        "private notes"
+    );
+    assert_eq!(
+        fs::read_to_string(project.join("pack/.packwizignore")).unwrap(),
+        "private/\n"
+    );
+    assert!(!project.join("pack/stale.jar").exists());
+}
+#[cfg(unix)]
+#[test]
+fn ignored_payloads_are_skipped_before_opening_or_rejecting_links() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(project.join("pack/private")).unwrap();
+    fs::write(project.join("pack/.packwizignore"), "private/\n").unwrap();
+    fs::write(project.join("pack/private/large"), vec![0; 4096]).unwrap();
+    std::os::unix::fs::symlink(
+        temp.path().join("missing-outside"),
+        project.join("pack/backup.zip"),
+    )
+    .unwrap();
+    let reader = ProjectReader::new(RecoveryReader::new(temp.path().join("state")));
+    let limits = SnapshotLimits {
+        file_bytes: 1024,
+        total_bytes: 2048,
+        ..Default::default()
+    };
+    assert!(
+        reader
+            .capture_replacement(&project, limits, &Cancellation::default())
+            .is_ok()
+    );
+}
+
+#[tokio::test]
+async fn incoming_ignored_destination_needs_actual_absence_and_cannot_replace_unowned_bytes() {
+    use crate::engine::import::acquisition::tests::remote;
+    for existing in [false, true] {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/payload")
+            .with_body("payload")
+            .create_async()
+            .await;
+        let archive = source(
+            "modrinth.index.json",
+            mr(vec![remote(
+                format!("{}/payload", server.url()),
+                "backup.zip",
+                b"payload",
+            )]),
+            &[],
+        );
+        let outcome = interpret(archive, server.url(), |_| {}).await;
+        let Some(OperationOutcome::Completed(Ok(candidate))) = Arc::into_inner(outcome) else {
+            panic!("missing candidate");
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        let host = temp.path().join("state");
+        fs::create_dir_all(project.join("pack")).unwrap();
+        if existing {
+            fs::write(project.join("pack/backup.zip"), "personal backup").unwrap();
+        }
+        let cancel = Cancellation::default();
+        let snapshot = ProjectReader::new(RecoveryReader::new(host.clone()))
+            .capture_replacement(&project, SnapshotLimits::default(), &cancel)
+            .unwrap();
+        let prepared = prepare_import_replacement(
+            snapshot,
+            candidate,
+            ImportReplacementPolicy::ReplaceManagedContent,
+            &cancel,
+        );
+        if existing {
+            assert!(
+                matches!(prepared, Err(error) if error.to_string().contains("not captured as owned"))
+            );
+            assert_eq!(
+                fs::read_to_string(project.join("pack/backup.zip")).unwrap(),
+                "personal backup"
+            );
+            assert!(!project.join("empack.yml").exists());
+        } else {
+            prepared
+                .unwrap()
+                .publish(&Publisher::open(&host).unwrap(), &cancel)
+                .unwrap();
+            assert_eq!(
+                fs::read_to_string(project.join("pack/backup.zip")).unwrap(),
+                "payload"
+            );
+        }
+    }
 }

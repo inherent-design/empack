@@ -280,8 +280,11 @@ cannot authorize replacement on its own.
 
 `ProjectReader::capture_replacement` binds managed documents and content roots even
 when the prior documents are missing or malformed. It gates recovery, rejects unsafe
-ancestors and captures membership and absence. Templates, distributions and unrelated
-root files remain outside this footprint.
+ancestors and captures membership and absence. Captured ignore rules exclude unowned
+pack files before opening them; the existing rule file remains unchanged. Incoming
+paths omitted by that traversal need independent unfiltered absence evidence, so an
+ignored backup cannot be overwritten merely because it was missing from the managed
+inventory. Templates, distributions and unrelated root files remain outside this footprint.
 
 `prepare_import_replacement` consumes a complete semantic candidate. `RejectExisting`
 refuses occupied managed content. `ReplaceManagedContent` produces an explicit
@@ -389,6 +392,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Replacement review 67 | Ignored-file deletion and ignored-link traversal both reproduced. The ownership fix passes 26 replacement/project/publication checks; all-feature Clippy passed on the combined Engine working tree. Explicit incoming destinations need real absence evidence; existing unowned files and source rules remain untouched |
 | Native import replacement | 1,678 tests and eleven doctests passed, along with 58 affected import/project/staging/publication checks and all-feature Clippy. Both real Fabulously Optimized formats published 78 roots into temporary projects; every placed file was reread against original evidence. This remains lower-level publication evidence, not Engine approval or CLI parity |
 | Import candidate interpretation | 1,673 tests and eleven doctests passed before the final provenance/index refinement. The final 50 core/import checks and all-feature Clippy cover that refinement. Both real formats produced 78 coherent roots, including explicit restricted-file association and exclusion of the known generated `modlist.html` report. The first CurseForge candidate probe correctly refused that unacknowledged auxiliary member. Publication and CLI parity remain unfinished |
 | Verified import content | 1,661 tests and eleven doctests passed without a nextest leak warning; 83 affected catalog/import/acquisition tests and all-feature Clippy passed. Both real Fabulously Optimized 1.20.1 archives passed full content acquisition with explicit prior-byte association enabled. The initial CurseForge run correctly stopped for two restricted files; the Modrinth pass verified 78 files / 27,902,856 bytes. This is acquisition evidence, not project publication parity |

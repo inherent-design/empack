@@ -22,10 +22,46 @@ use std::path::Path;
 pub struct ReplacementSnapshot {
     root: ProjectReadRoot,
     native: NativeSnapshot,
+    recovery: RecoveryReader,
+    limits: SnapshotLimits,
+    policy: Option<(Vec<u8>, FilePermissions)>,
 }
 impl ReplacementSnapshot {
     pub fn observations(&self) -> &NativeSnapshot {
         &self.native
+    }
+    pub(super) fn preserved_policy(&self) -> Option<&(Vec<u8>, FilePermissions)> {
+        self.policy.as_ref()
+    }
+    /// Explicit incoming paths need unfiltered absence evidence. Filtered directory membership
+    /// cannot establish that an ignored destination is absent or authorize overwriting it.
+    pub(super) fn complete_for(
+        mut self,
+        targets: &[PortableRelPath],
+        cancel: &Cancellation,
+    ) -> Result<Self> {
+        let _guard = self.recovery.enter(&self.root)?;
+        let missing: Vec<_> = targets
+            .iter()
+            .filter(|path| !self.native.entries().contains_key(*path))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            let additional = self.root.capture(&missing, self.limits, cancel)?;
+            for path in &missing {
+                ensure!(
+                    !matches!(
+                        additional.entries().get(path),
+                        Some(Observation::File(_) | Observation::Directory { .. })
+                    ),
+                    "Import destination was not captured as owned content: {}",
+                    path.as_str()
+                );
+            }
+            self.native = self.native.merge(additional)?;
+        }
+        self.root.revalidate(&self.native, cancel)?;
+        Ok(self)
     }
     pub(super) fn into_native(self) -> (ProjectReadRoot, NativeSnapshot) {
         (self.root, self.native)
@@ -236,10 +272,30 @@ impl ProjectReader {
         .into_iter()
         .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
         .collect::<std::result::Result<Vec<_>, _>>()?;
-        let native = root.capture(&scopes, limits, cancel)?;
+        let rules_path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
+        let rules_snapshot = root.capture(std::slice::from_ref(&rules_path), limits, cancel)?;
+        let rules = read_document(&root, &rules_snapshot, rules_path.as_str(), cancel)?;
+        let policy = rules.as_ref().map(|bytes| {
+            let Observation::File(file) = &rules_snapshot.entries()[&rules_path] else {
+                unreachable!()
+            };
+            (
+                bytes.clone(),
+                super::verification::content(file).permissions,
+            )
+        });
+        let capture_filter = super::source::PackCaptureFilter::new(rules.unwrap_or_default(), &[])?;
+        let native = root.capture_filtered(&scopes, limits, Some(&capture_filter), cancel)?;
+        let native = rules_snapshot.merge(native)?;
         let _final_guard = self.recovery.enter(&root)?;
         root.revalidate(&native, cancel)?;
-        Ok(ReplacementSnapshot { root, native })
+        Ok(ReplacementSnapshot {
+            root,
+            native,
+            recovery: self.recovery.clone(),
+            limits,
+            policy,
+        })
     }
     /// Bind standard build inputs and each declared local/archive source, including files outside
     /// managed namespaces. Only requested artifact destinations enter the read set, not retained

@@ -73,7 +73,7 @@ pub fn prepare_import_replacement(
         readonly: false,
         executable: false,
     };
-    let documents = BTreeMap::from([
+    let mut documents = BTreeMap::from([
         (
             ManagedPath::IntentDocument,
             DocumentCodec.encode_intent(project.intent())?,
@@ -131,11 +131,39 @@ pub fn prepare_import_replacement(
             payloads.insert(target, acquired.lease().clone());
         }
     }
+    let targets = desired
+        .keys()
+        .map(ProjectLayout::path)
+        .collect::<Result<Vec<_>>>()?;
+    let workspace = workspace.complete_for(&targets, cancel)?;
+    let policy_path = ManagedPath::Content {
+        layer: empack_core::model::ContentLayer::Common,
+        path: empack_core::path::PortableRelPath::parse(
+            ".packwizignore",
+            empack_core::path::PathSyntax::ProjectContent,
+        )?,
+    };
+    if let Some((bytes, permissions)) = workspace.preserved_policy() {
+        ensure!(
+            !desired.contains_key(&policy_path),
+            "Import cannot replace the existing source inclusion policy"
+        );
+        desired.insert(
+            policy_path.clone(),
+            FileContent {
+                content: ContentId::from_sha256(Sha256::digest(bytes).into()),
+                bytes: bytes.len() as u64,
+                permissions: *permissions,
+            },
+        );
+        documents.insert(policy_path.clone(), bytes.clone());
+    }
     let observed = observed_files_for(workspace.observations(), desired.keys().cloned())?;
     let existing: BTreeSet<_> = observed
         .iter()
         .filter_map(|(target, value)| {
-            matches!(value, ObservedPath::File(_)).then_some(target.clone())
+            (matches!(value, ObservedPath::File(_)) && *target != policy_path)
+                .then_some(target.clone())
         })
         .collect();
     ensure!(
@@ -150,10 +178,11 @@ pub fn prepare_import_replacement(
     let limits = candidate_stage_limits(workspace.observations(), &plan)?;
     let mut stage = MutableStage::empty()?;
     for (target, bytes) in &documents {
-        stage.write(
+        stage.write_attributed(
             &ProjectLayout::path(target)?,
             &mut bytes.as_slice(),
             bytes.len() as u64,
+            desired[target].permissions,
             cancel,
         )?;
     }
