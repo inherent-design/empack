@@ -21,6 +21,8 @@ pub use identify::{Identification, IdentificationLimits, IdentifiedSelection};
 mod curseforge;
 mod modrinth;
 mod refresh;
+mod search;
+pub use search::{ProjectCandidate, ProjectSearch, SearchLimits, SearchPage, SearchQuery};
 mod selector;
 mod transport;
 pub use selector::ProjectSelector;

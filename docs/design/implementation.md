@@ -10,7 +10,8 @@ Fabric, Quilt, Forge and NeoForge runtime preparation. HTTP acquisition and
 explicit build-content obligations feed these paths. The compiled `Engine` now owns
 build preview, preparation, exact-plan authorization, acquisition, runtime assembly
 and publication. The read-only provider catalog resolves canonical selectors and
-exact and compatible Modrinth/CurseForge selections, and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. Provider/import
+exact and compatible Modrinth/CurseForge selections, offers bounded search choices,
+and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. Provider/import
 composition, the remaining operation APIs,
 continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
@@ -62,7 +63,7 @@ The compiled `engine::providers::ProviderCatalog` is concrete and read-only. Its
 retained data. They cannot publish a manifest or claim a resolved dependency closure. Provider environment facts remain separate from user requirements. A
 restricted file keeps its identity, size and original hashes even without a locator.
 Transient signed URLs are execution data; the document codec still rejects them in
-persistent alternatives. Search ranking,
+persistent alternatives. Dependency closure,
 import composition and command cutover remain completion gates. The build Engine can
 use this catalog after authorization to refresh a locked file's locator. It selects
 a declared role or unique matching source evidence, rejects changed assertions and
@@ -93,6 +94,26 @@ selection. Unavailable records retain ownership and duplicate checks without req
 downloadable payload evidence. Each page retains its best candidate and compact identity evidence under
 admission. Only the final selection survives. This capability is for new or explicitly
 updated resolution; it does not upgrade a valid sync lock or rewrite project intent.
+
+## Provider search
+
+`ProviderCatalog::search_projects` returns choices grouped by provider preference
+and explicitly accepted game version. Each window retains its original provider
+rank, total, offset, continuation offset and truncation flag. Reaching a provider's
+paging ceiling does not claim the catalog is exhausted. Hosts follow pages explicitly;
+search does not fetch an unbounded catalog or silently choose a winner.
+
+Modrinth uses all advertised project types so mixed mod/datapack projects remain
+findable. CurseForge uses Minecraft class IDs and game-specific loader filters.
+Both adapters distinguish an empty successful query from transport/authentication
+failure. Unsupported provider kinds remain explicit capability evidence. A later
+provider failure discards earlier windows. All requests and retries share one
+byte/deadline budget; retained pages keep their memory reservations.
+
+Fuzzy title/slug similarity helps order a window, using bounded strings and rolling
+edit-distance rows. It does not prove identity, file ownership or compatibility.
+Chosen candidates still go through canonical lookup and exact or compatible
+selection before preparation. These capabilities do not yet replace CLI search.
 
 ## Content identification
 
@@ -245,6 +266,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Bounded provider search | 1,638 tests and eleven doctests; 41 affected provider tests and all-feature Clippy passed. All six live provider probes passed, with search exercised for Sodium, JEI and Terralith. An initial focused run emitted a leak warning; the expanded provider run and full suite passed without it. Greptile review 59 is green for the preceding kind/fingerprint commit `380d9a0` |
 | Provider kinds and fingerprint filtering | 1,630 tests and eleven doctests, all-feature Clippy and six live provider probes passed. Terralith resolves as a datapack despite also advertising mod versions. Review 58 fingerprint-collision failure reproduced before the fix; unrelated candidates no longer trigger project lookup |
 | Content identification | Combined suite: 1,626 tests and eleven doctests; 40 affected import/catalog tests and all-feature Clippy. All five live provider probes passed, including content identification of downloaded mod/resource/CurseForge bytes. Greptile review 57 is green for the accompanying transient-import fix at `d1f69c6` |
 | Normalized import inspection | Combined suite: 1,618 tests and eleven doctests; 36 affected adapter/catalog/archive tests; all-feature Clippy. Real Fabulously Optimized 1.20.1 archives passed in both formats, including every embedded member. Greptile review 55 is green for the accompanying provider fix at `057d838` |

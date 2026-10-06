@@ -360,6 +360,12 @@ async fn verify_compatible(
     let mut handle = runtime.start(move |mut scope| async move {
         Ok(async {
             let selected = catalog.resolve_compatible(&mut scope, request.clone(), SelectionLimits::default()).await?;
+            let choices = catalog.search_projects(&mut scope, empack_lib::engine::providers::SearchQuery {
+                text: selected.resolution.project.title.clone(), providers: NonEmpty::new(vec![provider])?,
+                kind: request.kind, game_versions: request.game_versions.clone(), loader: request.loader, offset: 0,
+            }, empack_lib::engine::providers::SearchLimits::default()).await?;
+            anyhow::ensure!(choices.pages.iter().any(|page| page.candidates.iter().any(|candidate| candidate.project == request.project)), "Official search did not retain the expected project choice");
+            drop(choices);
             anyhow::ensure!(selected.resolution.pin.project == request.project, "Compatible selection changed project");
             anyhow::ensure!(selected.kind == request.kind && selected.resolution.kinds.as_slice().contains(&request.kind), "Compatible selection changed content kind");
             anyhow::ensure!(selected.matched_game == request.game_versions.as_slice()[0], "Compatible selection changed game");

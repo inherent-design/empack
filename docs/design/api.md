@@ -43,6 +43,13 @@ individual file roles or placement choices. Pagination failure
 or an incomplete bounded catalog returns an error, never a best-effort partial choice.
 The resolver has no publisher and does not replace the exact lookup used by builds.
 
+The compiled `ProviderCatalog::search_projects` accepts `SearchQuery` with explicit
+provider order, content kind, accepted games, loader and page offset. `SearchLimits`
+bounds each window and the shared transport budget. `ProjectSearch` owns retained
+`SearchPage` values and unsupported-provider evidence. A page contains
+`ProjectCandidate` choices, its source total/ranks, `has_more` and `next_offset`.
+Similarity is display guidance; there is no automatic exact-match outcome.
+
 ## 17. Public engine API and application wiring
 
 ### 17.1 Public entry points

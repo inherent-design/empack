@@ -65,7 +65,9 @@ then checks its member against the original source digest and verifies that the
 intent and lock did not change. Three further probes resolve compatible Modrinth and
 CurseForge versions under an explicit stable-preferred policy and verify the selected
 files against their original hashes and sizes. Terralith exercises datapack selection
-from a project that also publishes mod versions. Ordinary offline runs ignore these
+from a project that also publishes mod versions. These three compatible probes also
+require official search to retain the expected canonical project among its choices.
+Search ranking is not treated as installation authority. Ordinary offline runs ignore these
 network cases.
 
 The pure core must compile without runtime or filesystem dependencies. Its tests

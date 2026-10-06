@@ -59,6 +59,11 @@ pub enum Identification {
 
 `ProviderResolution` returns canonical identity, exact files, requirements and dependency evidence, source metadata, and explicit capability limitations. Authentication failure, throttling, provider failure, and genuine not-found are separate errors. None silently becomes an unidentified local file unless the user's policy explicitly permits that fallback and the diagnostic retains why it happened.
 
+The compiled search adapter uses [Modrinth search facets](https://docs.modrinth.com/api/operations/searchprojects/)
+and [CurseForge's class/game search](https://docs.curseforge.com/rest-api/#search-mods).
+Its retained windows expose pagination and incomplete coverage; they are not resolved
+selections. See the [search implementation boundary](implementation.md#provider-search).
+
 The current concrete catalog is listed in the [implementation ledger](implementation.md).
 Its exact-selection adapters follow the [Modrinth version contract](https://docs.modrinth.com/api/operations/getversion/)
 and [CurseForge file contract](https://docs.curseforge.com/rest-api/).
