@@ -110,13 +110,13 @@ canonical exact pins, independent of manifest labels or installation filenames.
 
 One transport budget and deadline cover all roots, dependencies and retries. Node and
 edge limits bound graph expansion. Defaults allow 256 MiB of catalog traffic over five
-minutes, with a separate 4 MiB ceiling for each response. Graph bookkeeping and retained provider records
+minutes, with a separate 4 MiB ceiling for each response. Graph bookkeeping grows with admitted nodes and relations; retained provider records
 remain charged to the operation. A network failure or exhausted allowance returns no
 partial graph. Optional and embedded metadata stay available without automatically
 installing those dependencies.
 
 Missing coverage, filename-only requirements, ambiguous content kinds, uninterpreted
-tool/include relations and observed pin conflicts remain explicit issues. Incompatible
+tool/include relations, incompatible required pins and observed pin conflicts remain explicit issues. Incompatible
 relations are checked after expansion, including references discovered later. The
 expander does not backtrack across alternative versions or claim that a conflict proves
 no solution exists. The host must resolve choices before publication. Explicit roots
@@ -297,6 +297,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Closure review 62 | Both the 16 MiB small-graph admission failure and incompatible required-pin abort reproduced. Incremental bookkeeping and explicit incompatible-requirement evidence pass the combined 80 catalog/import/acquisition regressions |
 | Required dependency expansion | 1,651 tests and eleven doctests, 54 affected provider tests, all-feature Clippy and all seven live provider probes passed. Cycles, conflicts, incomplete evidence and shared budgets are covered. One staging test emitted a nextest pipe-leak warning; its isolated repeat passed cleanly. Three graph-capacity edge cases and Greptile review 61's 8 MiB pin-lookup admission failure reproduced before their fixes |
 | Exact pin ownership | 44 affected provider tests, all-feature Clippy and six live provider probes passed. The three exact-provider cases compare owner-free lookup with project-qualified identity and every original file assertion. The preceding full-suite snapshot is the bounded-search revision below |
 | Bounded provider search | 1,638 tests and eleven doctests; 41 affected provider tests and all-feature Clippy passed. All six live provider probes passed, with search exercised for Sodium, JEI and Terralith. An initial focused run emitted a leak warning; the expanded provider run and full suite passed without it. Greptile review 59 is green for the preceding kind/fingerprint commit `380d9a0` |

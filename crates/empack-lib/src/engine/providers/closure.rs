@@ -52,6 +52,9 @@ pub enum ClosureIssueKind {
     IncompatibleSelection {
         selected: ResolvedPin,
     },
+    IncompatibleRequirement {
+        required: ResolvedPin,
+    },
     UninterpretedRelation,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +72,7 @@ pub struct ProviderClosure {
     pub selections: BTreeMap<ProviderProjectId, ClosureSelection>,
     pub required_edges: BTreeMap<ResolvedPin, BTreeSet<ResolvedPin>>,
     pub issues: Vec<ClosureIssue>,
-    _graph: AdmissionPermit,
+    _graph: Vec<AdmissionPermit>,
 }
 impl ProviderClosure {
     /// Complete only for these exact selections. Never authorizes deletion of unlisted content.
@@ -97,24 +100,12 @@ impl ProviderCatalog {
                     .all(|v| v.as_str().len() <= 128),
             CatalogError::Limit
         );
-        let graph_bytes = (limits.projects as u64)
-            .checked_mul(4096)
-            .and_then(|v| {
-                (limits.edges as u64)
-                    .checked_mul(1024)
-                    .and_then(|edges| v.checked_add(edges))
-            })
-            .ok_or(CatalogError::Limit)?;
-        let graph = scope.reserve_storage(ResourceRequest {
-            memory_bytes: graph_bytes,
-            ..Default::default()
-        })?;
         let mut result = ProviderClosure {
             roots: BTreeSet::new(),
             selections: BTreeMap::new(),
             required_edges: BTreeMap::new(),
             issues: Vec::new(),
-            _graph: graph,
+            _graph: Vec::new(),
         };
         let mut budget = transport::RequestBudget::new(limits.selection.catalog)?;
         let mut queue = Vec::new();
@@ -136,6 +127,7 @@ impl ProviderCatalog {
                 result.selections.len() < limits.projects,
                 CatalogError::Limit
             );
+            result._graph.push(graph_reservation(scope, 4096)?);
             let (selected, next) = self
                 .resolve_exact_budget(scope, root.pin.clone(), limits.selection.catalog, budget)
                 .await?;
@@ -164,6 +156,10 @@ impl ProviderCatalog {
                 .checked_add(parent.resolution.dependencies.len())
                 .ok_or(CatalogError::Limit)?;
             ensure!(edge_count <= limits.edges, CatalogError::Limit);
+            let charge = (parent.resolution.dependencies.len() as u64)
+                .checked_mul(1024)
+                .ok_or(CatalogError::Limit)?;
+            result._graph.push(graph_reservation(scope, charge)?);
             let dependencies = parent.resolution.dependencies.clone();
             if coverage != Coverage::CompleteForSelection {
                 result.issues.push(ClosureIssue {
@@ -328,11 +324,21 @@ impl ProviderCatalog {
                             });
                             continue;
                         };
-                        check_selection(&selected, kind, &request)?;
+                        if check_selection(&selected, kind, &request).is_err() {
+                            result.issues.push(ClosureIssue {
+                                from: from.clone(),
+                                dependency: Some(dependency.clone()),
+                                kind: ClosureIssueKind::IncompatibleRequirement {
+                                    required: selected.pin.clone(),
+                                },
+                            });
+                            continue;
+                        }
                         ensure!(
                             result.selections.len() < limits.projects,
                             CatalogError::Limit
                         );
+                        result._graph.push(graph_reservation(scope, 4096)?);
                         let pin = selected.pin.clone();
                         queue.push(pin.project.clone());
                         result.selections.insert(
@@ -387,6 +393,12 @@ impl ProviderCatalog {
         budget.check_deadline()?;
         Ok(result)
     }
+}
+fn graph_reservation(scope: &WorkScope, bytes: u64) -> Result<AdmissionPermit> {
+    Ok(scope.reserve_storage(ResourceRequest {
+        memory_bytes: bytes,
+        ..Default::default()
+    })?)
 }
 fn choose_kind(kinds: &[ContentKind], parent: ContentKind) -> Option<ContentKind> {
     if kinds.contains(&parent) {

@@ -369,3 +369,69 @@ async fn project_capacity_counts_distinct_root_owners() {
     assert!(graph.complete_for_required());
     assert_eq!(graph.selections.len(), 1);
 }
+
+#[tokio::test]
+async fn default_closure_limits_admit_a_small_graph_with_sixteen_megabytes() {
+    let mut server = Server::new_async().await;
+    record(&mut server, "project1", "version1", json!([])).await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 16 << 20,
+        open_files: 4,
+        ..Default::default()
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            Ok(catalog
+                .resolve_required_closure(
+                    &mut scope,
+                    request(vec![pin("project1", "version1")]),
+                    ClosureLimits::default(),
+                )
+                .await)
+        })
+        .unwrap();
+    let result = handle.wait().await;
+    runtime.shutdown().await;
+    assert!(
+        matches!(&*result, OperationOutcome::Completed(Ok(graph)) if graph.complete_for_required()),
+        "small graph did not fit its actual reservation"
+    );
+}
+#[tokio::test]
+async fn incompatible_exact_requirement_retains_graph_and_a_choice_obligation() {
+    let mut server = Server::new_async().await;
+    record(
+        &mut server,
+        "project1",
+        "version1",
+        json!([{"project_id":"project2","version_id":"version2","dependency_type":"required"}]),
+    )
+    .await;
+    server.mock("GET", "/project/project2").with_body(json!({"id":"project2","slug":"project2","title":"Project","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+    let mut incompatible = version("project2", "version2", json!([]));
+    incompatible["game_versions"] = json!(["1.20.1"]);
+    server
+        .mock("GET", "/version/version2")
+        .with_body(incompatible.to_string())
+        .create_async()
+        .await;
+    let (outcome, _) = resolve(
+        &server,
+        request(vec![pin("project1", "version1")]),
+        limits(),
+    )
+    .await;
+    let OperationOutcome::Completed(Ok(graph)) = &*outcome else {
+        panic!("incompatible requirement discarded the whole graph")
+    };
+    assert!(!graph.complete_for_required());
+    assert_eq!(graph.selections.len(), 1);
+    assert_eq!(graph.issues.len(), 1);
+    assert_eq!(
+        graph.issues[0].dependency.as_ref().unwrap().pin,
+        Some(pin("project2", "version2").selection)
+    );
+}
