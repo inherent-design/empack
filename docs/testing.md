@@ -80,3 +80,11 @@ artifacts on preparation and verification failure.
 
 Historical test evidence remains in Git history. It does not establish coverage
 for the new engine. New evidence identifies the tested revision and actual commands.
+
+
+The content-pool and large-local-build regressions run in isolated child processes.
+On Unix the child has a 256-descriptor limit; Windows runs the same content and
+publication assertions under its native handle model. The build fixture publishes
+600 distinct configuration files into both a client ZIP and an mrpack, then reads
+all packaged bytes. These checks exercise retained readers and actual assembly,
+not only the resource ledger. The parent test process keeps its normal limits.

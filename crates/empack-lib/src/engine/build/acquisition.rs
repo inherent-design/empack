@@ -3,7 +3,7 @@ use super::*;
 use crate::engine::{
     acquisition::{DownloadRequest, HttpAcquisition, TransferLimits},
     backend::BackendDownload,
-    content::InitialObservation,
+    content::{ContentPool, InitialObservation},
     runtime::WorkScope,
 };
 use empack_core::{
@@ -147,6 +147,20 @@ impl BuildAcquisitionResult {
             pending: needs,
         } = self;
         let mut pending = Vec::new();
+        let archive_count = needs
+            .iter()
+            .filter_map(|need| match &need.source {
+                BuildContentSource::Embedded { archive, .. } => Some(archive),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+            .len() as u64;
+        let mut pool = ContentPool::new(
+            limits
+                .total_bytes
+                .checked_mul(archive_count)
+                .context("Embedded content size overflow")?,
+        )?;
         let mut archives = BTreeMap::new();
         for need in needs {
             cancel.check()?;
@@ -177,6 +191,7 @@ impl BuildAcquisitionResult {
                 InitialObservation::RequireEvidence,
                 cancel,
             )?;
+            let content = pool.insert(content, cancel)?;
             insert_acquired(
                 &mut acquired,
                 need.key,
@@ -202,9 +217,14 @@ impl BuildAcquisitionResult {
             pending: needs,
         } = self;
         let mut pending = Vec::new();
+        let mut pool = None;
         for need in needs {
             match need.source {
                 BuildContentSource::Download(alternatives) => {
+                    if pool.is_none() {
+                        let maximum = scope.available_scratch_bytes();
+                        pool = Some(ContentPool::owned(scope, maximum).await?);
+                    }
                     let content = transport
                         .acquire(
                             scope,
@@ -217,6 +237,7 @@ impl BuildAcquisitionResult {
                             },
                         )
                         .await?;
+                    let content = pool.as_mut().unwrap().insert_owned(scope, content).await?;
                     let file = AcquiredBuildFile {
                         content,
                         permissions: FilePermissions {

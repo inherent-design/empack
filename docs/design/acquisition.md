@@ -220,3 +220,24 @@ available scratch capacity; admission then reserves it atomically, and the same 
 applies to the receive stream and quarantine writer. Verified leases retain only
 actual bytes and their open file. Retained content therefore cannot block a later
 small file solely because its configured maximum is larger than the remaining budget.
+
+
+### Shared private content backing
+
+Build inputs and downloaded runtime libraries consolidate verified bytes into an
+append-only private pool. Logical leases retain independent readers and original
+source evidence. Sharing a SHA-256 content address never upgrades an observed file
+or an MD5 declaration to stronger source assurance.
+
+Each pool owns one file and its private directory handle. Member readers are bounded
+to their own ranges, and publication checks the content address again. The last
+reader keeps the backing alive. Async acquisition reserves scratch before each new
+range and retains that charge on the backing, including a failed partial append.
+After an append failure, existing ranges remain readable but the pool accepts no
+further writes. No compaction or early range reclamation is implied.
+
+Moving a file into the pool briefly needs both its quarantine and destination bytes.
+An existing clone of the original lease retains its original reservation until it
+retires. Synchronous build assembly covers pools with its enclosing worker budget;
+async acquisition owns explicit handle, metadata and byte reservations. This is
+operation-private storage, not the persistent content cache.

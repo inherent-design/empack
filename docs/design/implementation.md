@@ -28,6 +28,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Source enumeration | Native traversal applies captured pack ignore rules before opening ignored bytes; explicit local/archive inputs remain captured; recovery retains the same filter; common/client/server layers remain separate | [Source matcher](../../crates/empack-lib/src/engine/source.rs), reader tests |
 | Backend observations | Shared canonical provider/pin decoding; safe relative payload paths; requirements, optional defaults and digest declarations; captured metadata revisions | [Backend tests](../../crates/empack-lib/src/engine/backend/tests.rs) |
 | Private content | Bounded quarantine, every source digest/size/observation checked, retained independent readers, original weak evidence separate from computed hashes | [Content tests](../../crates/empack-lib/src/engine/content/tests.rs) |
+| Shared content storage | Downloaded build inputs, captured local/embedded content and downloaded runtime libraries share bounded private backing; source evidence remains per logical file; failed appends retain charges and cannot resume writing | [Pool tests](../../crates/empack-lib/src/engine/content/pool/tests.rs), [large build regression](../../crates/empack-lib/src/engine/api/tests.rs) |
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
 | Build acquisition | Read-only target/side/optional selection before acquisition; bootstrap and mrpack retain their distinct reference requirements; selected local files verify while excluded files need no bytes; failed download batches return no successful subset; exact provider lookup can refresh execution-only locators without rewriting the lock; manual/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
 | Materialized game content | Shared captured identity/content checks; side and optional selection before missing-byte requirements; exact retained leases and source evidence; no unresolved entries in completed inventory | [Materialization tests](../../crates/empack-lib/src/engine/build/materialized/tests.rs), [core inventory tests](../../crates/empack-core/tests/inventory.rs) |
@@ -52,8 +53,8 @@ checks. There will be one implementation per operation, not a permanent legacy e
 
 File-level verification is not a semantic proof. Container integrity is not evidence
 that every required dependency was included. The composed recipes connect normalized obligations, verified acquisitions,
-independently checked output and the journal publisher. Runtime adapters still need
-the semantic Engine and CLI composition; adapter tests do not establish CLI parity.
+independently checked output and the journal publisher. Runtime adapters enter the approved build Engine. CLI composition remains pending;
+adapter and Engine tests do not establish CLI parity.
 
 The compiled `engine::providers::ProviderCatalog` is concrete and read-only. Its
 `resolve_selector` and `resolve_exact` methods return admitted retained data. They

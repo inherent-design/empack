@@ -1,7 +1,7 @@
 //! Build preparation from one captured workspace, before any distribution write.
 use super::{
     backend::{BackendDigestComparison, BackendFile, DigestComparisonBasis},
-    content::SourceEvidencePolicy,
+    content::{ContentPool, SourceEvidencePolicy},
     layout::ProjectLayout,
     mrpack::{AcquiredBuildFile, LockedFileKey, MrpackPlan, OptionalConversion, SourceFile},
     project::WorkspaceSnapshot,
@@ -120,6 +120,18 @@ fn capture_build_content(
     let project = workspace.require_resolved()?;
     let sources = workspace.source_entries(cancel)?;
     let backend = workspace.backend_files(cancel)?;
+    let maximum = workspace
+        .observations()
+        .entries()
+        .values()
+        .try_fold(0u64, |sum, entry| {
+            sum.checked_add(match entry {
+                Observation::File(file) => file.bytes,
+                _ => 0,
+            })
+            .context("Captured content size overflow")
+        })?;
+    let mut pool = ContentPool::new(maximum)?;
     let mut acquired = BTreeMap::new();
     let mut occupied = BTreeSet::new();
     for (key, dependency) in &project.lock().dependencies {
@@ -157,6 +169,7 @@ fn capture_build_content(
                 if included {
                     let (content, permissions) =
                         workspace.acquire_file(path, Some(&file.expected), evidence, cancel)?;
+                    let content = pool.insert(content, cancel)?;
                     local = Some(AcquiredBuildFile {
                         content,
                         permissions,
@@ -180,6 +193,7 @@ fn capture_build_content(
                             evidence,
                             cancel,
                         )?;
+                        let content = pool.insert(content, cancel)?;
                         if let Some(previous) = &local {
                             ensure!(
                                 previous.content.lease().id() == content.lease().id(),
@@ -278,6 +292,7 @@ fn capture_build_content(
         ) {
             let (content, permissions) =
                 workspace.acquire_file(&path, Some(&expected), evidence, cancel)?;
+            let content = pool.insert(content, cancel)?;
             if let Some(previous) = &file {
                 ensure!(
                     previous.content.lease().id() == content.lease().id()
@@ -315,6 +330,7 @@ fn capture_build_content(
             SourceEvidencePolicy::Compatibility,
             cancel,
         )?;
+        let content = pool.insert(content, cancel)?;
         source_files.push(SourceFile {
             label: source.path.as_str().into(),
             destination: source.destination,

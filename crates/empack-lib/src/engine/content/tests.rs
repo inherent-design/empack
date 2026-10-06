@@ -1,12 +1,12 @@
 use super::*;
-fn expected() -> ExpectedContent {
+pub(super) fn expected() -> ExpectedContent {
     ExpectedContent {
         digests: Some(DigestSet::parse([("md5", "321c3cf486ed509164edec1e1981fec8")]).unwrap()),
         size: Some(7),
         accepted_observation: None,
     }
 }
-fn acquire(bytes: &[u8], expected: &ExpectedContent) -> Result<AcquiredContent> {
+pub(super) fn acquire(bytes: &[u8], expected: &ExpectedContent) -> Result<AcquiredContent> {
     verify_stream(
         &mut &bytes[..],
         expected,
@@ -128,4 +128,67 @@ fn size_bounds_cancellation_and_initial_observation_are_enforced() {
         .copy_verified(&mut bytes, &Cancellation::default())
         .unwrap();
     assert_eq!(bytes, b"payload");
+}
+
+#[test]
+fn hundreds_of_independent_files_fit_a_normal_descriptor_limit() {
+    const CHILD: &str = "EMPACK_CONTENT_POOL_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let executable = std::env::current_exe().unwrap();
+        let name =
+            "engine::content::tests::hundreds_of_independent_files_fit_a_normal_descriptor_limit";
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = std::process::Command::new("/bin/sh");
+            command.args([
+                "-c",
+                "ulimit -n 256; exec \"$1\" --exact \"$2\" --nocapture",
+                "empack-content-fixture",
+            ]);
+            command.arg(executable).arg(name);
+            command
+        };
+        #[cfg(not(unix))]
+        let mut command = {
+            let mut command = std::process::Command::new(executable);
+            command.args(["--exact", name, "--nocapture"]);
+            command
+        };
+        let output = command.env(CHILD, "1").output().unwrap();
+        assert!(
+            output.status.success(),
+            "descriptor fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let mut pool = ContentPool::new(64 * 600).unwrap();
+    let mut retained = Vec::new();
+    for index in 0..600 {
+        let data = format!("independent payload {index}").into_bytes();
+        let expected = ExpectedContent {
+            digests: None,
+            size: Some(data.len() as u64),
+            accepted_observation: None,
+        };
+        let content = verify_stream(
+            &mut data.as_slice(),
+            &expected,
+            64,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::Accepted,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        retained.push(pool.insert(content, &Cancellation::default()).unwrap());
+    }
+    drop(pool);
+    for (index, value) in retained.into_iter().enumerate() {
+        let mut output = Vec::new();
+        value
+            .lease()
+            .copy_verified(&mut output, &Cancellation::default())
+            .unwrap();
+        assert_eq!(output, format!("independent payload {index}").as_bytes());
+    }
 }

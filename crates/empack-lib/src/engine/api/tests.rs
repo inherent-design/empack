@@ -622,3 +622,84 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     metadata.assert_async().await;
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn large_local_build_publishes_under_a_normal_descriptor_limit() {
+    const CHILD: &str = "EMPACK_LARGE_BUILD_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let executable = std::env::current_exe().unwrap();
+        let name =
+            "engine::api::tests::large_local_build_publishes_under_a_normal_descriptor_limit";
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = std::process::Command::new("/bin/sh");
+            command.args([
+                "-c",
+                "ulimit -n 256; exec \"$1\" --exact \"$2\" --nocapture",
+                "empack-build-fixture",
+            ]);
+            command.arg(executable).arg(name);
+            command
+        };
+        #[cfg(not(unix))]
+        let mut command = {
+            let mut command = std::process::Command::new(executable);
+            command.args(["--exact", name, "--nocapture"]);
+            command
+        };
+        let output = command.env(CHILD, "1").output().unwrap();
+        assert!(
+            output.status.success(),
+            "large build failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    for index in 0..600 {
+        put(
+            root.path(),
+            &format!("pack/config/{index}.txt"),
+            format!("configuration {index}").as_bytes(),
+        );
+    }
+    let (engine, governor) = engine(host.path().join("state"));
+    let prepared = ready(&engine, root.path(), request()).await;
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(BuildOutcome::Completed(receipt)) => {
+            assert_eq!(receipt.artifacts.len(), 2)
+        }
+        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("large build did not complete"),
+    }
+    for (artifact, prefix) in [("client.zip", ".minecraft"), ("result.mrpack", "overrides")] {
+        let mut archive =
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist").join(artifact)).unwrap())
+                .unwrap();
+        for index in 0..600 {
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(
+                &mut archive
+                    .by_name(&format!("{prefix}/config/{index}.txt"))
+                    .unwrap(),
+                &mut bytes,
+            )
+            .unwrap();
+            assert_eq!(bytes, format!("configuration {index}").as_bytes());
+        }
+    }
+    assert!(engine.release_completed(handle.id()));
+    drop(outcome);
+    drop(handle);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

@@ -335,6 +335,25 @@ pub struct WorkScope {
     inner: Arc<ScopeInner>,
 }
 impl WorkScope {
+    /// Reserve retained storage before a worker can write it. The storage owner receives the
+    /// permit, including when a failed append leaves charged bytes until the backing retires.
+    pub(super) fn reserve_storage(
+        &self,
+        request: ResourceRequest,
+    ) -> Result<AdmissionPermit, RuntimeError> {
+        if request.jobs != 0 {
+            return Err(RuntimeError::InvalidReservation);
+        }
+        let state = locked(&self.inner.state);
+        if !state.open || !state.accepting {
+            return Err(RuntimeError::Closed);
+        }
+        if self.inner.cancel.is_cancelled() {
+            return Err(RuntimeError::Cancelled);
+        }
+        Ok(self.inner.governor.try_admit(request)?)
+    }
+
     /// An admission estimate only; registering work atomically reserves capacity afterward.
     pub(super) fn available_scratch_bytes(&self) -> u64 {
         let status = self.inner.governor.status();

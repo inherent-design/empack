@@ -30,9 +30,21 @@ pub enum InitialObservation {
     /// An explicitly selected initial local/manual file may establish an observation.
     Accepted,
 }
+mod pool;
+pub use pool::ContentPool;
+
+enum ContentBacking {
+    Stage {
+        stage: Box<Mutex<FrozenStage>>,
+        path: PortableRelPath,
+    },
+    Packed {
+        storage: Arc<pool::Storage>,
+        offset: u64,
+    },
+}
 struct ContentObject {
-    stage: Mutex<FrozenStage>,
-    path: PortableRelPath,
+    backing: ContentBacking,
     id: ContentId,
     bytes: u64,
     _reservation: Option<super::resources::AdmissionPermit>,
@@ -58,11 +70,13 @@ impl ContentLease {
     }
     /// Publication/staging recipients discard incomplete output when verification fails.
     pub fn copy_verified(&self, output: &mut dyn Write, cancel: &Cancellation) -> Result<()> {
-        self.0
-            .stage
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .copy_verified(&self.0.path, output, cancel)
+        let (actual, count) =
+            super::io::copy_bounded(&mut self.open(), output, self.len(), cancel)?;
+        ensure!(
+            actual == *self.id().bytes() && count == self.len(),
+            "Retained content bytes changed"
+        );
+        Ok(())
     }
 }
 pub struct ContentReader {
@@ -71,13 +85,15 @@ pub struct ContentReader {
 }
 impl Read for ContentReader {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let count = self
-            .lease
-            .0
-            .stage
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .read_at(&self.lease.0.path, self.position, buffer)?;
+        let count = match &self.lease.0.backing {
+            ContentBacking::Stage { stage, path } => stage
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .read_at(path, self.position, buffer)?,
+            ContentBacking::Packed { storage, offset } => {
+                storage.read_at(*offset, self.lease.len(), self.position, buffer)?
+            }
+        };
         self.position = self
             .position
             .checked_add(count as u64)
@@ -210,8 +226,10 @@ pub fn verify_stream(
     );
     Ok(AcquiredContent {
         lease: ContentLease(Arc::new(ContentObject {
-            stage: Mutex::new(frozen),
-            path,
+            backing: ContentBacking::Stage {
+                stage: Box::new(Mutex::new(frozen)),
+                path,
+            },
             id: address,
             bytes,
             _reservation: None,

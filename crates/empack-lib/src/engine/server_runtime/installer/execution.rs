@@ -174,6 +174,8 @@ impl InstallerServerPlan {
     ) -> Result<Vec<(PortableRelPath, AcquiredContent)>> {
         let mut acquired = Vec::new();
         let mut remaining = output.total_bytes;
+        let mut pool =
+            crate::engine::content::ContentPool::owned(scope, output.total_bytes).await?;
         for library in &self.contract.libraries {
             let Some(url) = &library.download else {
                 continue;
@@ -209,6 +211,7 @@ impl InstallerServerPlan {
             remaining = remaining
                 .checked_sub(content.lease().len())
                 .context("Installer inputs exceed byte allowance")?;
+            let content = pool.insert_owned(scope, content).await?;
             acquired.push((library.path.clone(), content));
         }
         Ok(acquired)

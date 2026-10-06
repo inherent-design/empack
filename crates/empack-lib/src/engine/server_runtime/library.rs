@@ -335,6 +335,8 @@ impl LibraryServerPlan {
         .await?
         .acquire(transport, scope, transfer, archive, policy)
         .await?;
+        let maximum = scope.available_scratch_bytes();
+        let mut pool = crate::engine::content::ContentPool::owned(scope, maximum).await?;
         let mut libraries = Vec::new();
         for library in &self.libraries {
             let content = transport
@@ -349,7 +351,7 @@ impl LibraryServerPlan {
                     },
                 )
                 .await?;
-            libraries.push(content);
+            libraries.push(pool.insert_owned(scope, content).await?);
         }
         self.finish(vanilla, libraries, scope, archive).await
     }
