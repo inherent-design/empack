@@ -1,7 +1,7 @@
 //! Independent file inventory checks. Semantic/artifact checks compose above this boundary.
 use super::{
     layout::{CollisionIndex, ProjectLayout},
-    snapshot::{FileObservation, NativeSnapshot, Observation},
+    snapshot::{FileObservation, NativeSnapshot, Observation, SnapshotLimits},
     staging::FrozenStage,
 };
 use anyhow::{Result, ensure};
@@ -232,67 +232,7 @@ impl VerifiedFileChange {
             collisions.insert_file(&path)?;
             expected.insert(path, file.clone());
         }
-        // Recovery recaptures each group with its original limits. Check the complete
-        // post-publication read set now, including unchanged sources, before any write.
-        let mut after: BTreeMap<_, _> = base
-            .entries()
-            .iter()
-            .filter_map(|(path, entry)| {
-                if let Observation::File(file) = entry {
-                    Some((path.clone(), file.bytes))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for change in plan.changes() {
-            after.remove(&ProjectLayout::path(change.target())?);
-        }
-        after.extend(
-            expected
-                .iter()
-                .map(|(path, file)| (path.clone(), file.bytes)),
-        );
-        for (scopes, limits) in base.groups() {
-            let selected = |path: &PortableRelPath| {
-                scopes.iter().any(|scope| {
-                    path == scope
-                        || path
-                            .as_str()
-                            .strip_prefix(scope.as_str())
-                            .is_some_and(|suffix| suffix.starts_with('/'))
-                })
-            };
-            let mut total = 0u64;
-            let mut entries = BTreeSet::new();
-            for (path, bytes) in after.iter().filter(|(path, _)| selected(path)) {
-                total = total
-                    .checked_add(*bytes)
-                    .ok_or_else(|| anyhow::anyhow!("Candidate byte count overflow"))?;
-                ensure!(
-                    *bytes <= limits.file_bytes
-                        && total <= limits.total_bytes
-                        && path.components().count() <= limits.depth,
-                    "Candidate exceeds publication read budget"
-                );
-                entries.insert(path.as_str());
-                for (index, _) in path.as_str().match_indices('/') {
-                    entries.insert(&path.as_str()[..index]);
-                }
-            }
-            // Keep captured directory/absence entries too; absent removed files can remain
-            // selected scopes during recovery. Conservative counting is safe for custom caps.
-            entries.extend(
-                base.entries()
-                    .keys()
-                    .filter(|path| selected(path))
-                    .map(|path| path.as_str()),
-            );
-            ensure!(
-                entries.len() <= limits.entries,
-                "Candidate exceeds snapshot entry budget"
-            );
-        }
+        candidate_stage_limits(&base, &plan)?;
         let actual: BTreeMap<_, _> = stage
             .inventory()
             .iter()
@@ -321,6 +261,101 @@ impl VerifiedFileChange {
         }
         Ok(Self { plan, stage, base })
     }
+}
+
+/// Preflight the complete resulting read set against each captured allowance, then
+/// bound private staging to precisely the planned files. This does not verify bytes.
+pub(super) fn candidate_stage_limits(
+    base: &NativeSnapshot,
+    plan: &FilePlan,
+) -> Result<SnapshotLimits> {
+    let expected: BTreeMap<_, _> = plan
+        .expected()
+        .iter()
+        .map(|(target, file)| Ok((ProjectLayout::path(target)?, file)))
+        .collect::<Result<_>>()?;
+    // Recovery recaptures each group with its original limits. Check the complete
+    // post-publication read set now, including unchanged sources, before any write.
+    let mut after: BTreeMap<_, _> = base
+        .entries()
+        .iter()
+        .filter_map(|(path, entry)| {
+            if let Observation::File(file) = entry {
+                Some((path.clone(), file.bytes))
+            } else {
+                None
+            }
+        })
+        .collect();
+    for change in plan.changes() {
+        after.remove(&ProjectLayout::path(change.target())?);
+    }
+    after.extend(
+        expected
+            .iter()
+            .map(|(path, file)| (path.clone(), file.bytes)),
+    );
+    for (scopes, limits) in base.groups() {
+        let selected = |path: &PortableRelPath| {
+            scopes.iter().any(|scope| {
+                path == scope
+                    || path
+                        .as_str()
+                        .strip_prefix(scope.as_str())
+                        .is_some_and(|suffix| suffix.starts_with('/'))
+            })
+        };
+        let mut total = 0u64;
+        let mut entries = BTreeSet::new();
+        for (path, bytes) in after.iter().filter(|(path, _)| selected(path)) {
+            total = total
+                .checked_add(*bytes)
+                .ok_or_else(|| anyhow::anyhow!("Candidate byte count overflow"))?;
+            ensure!(
+                *bytes <= limits.file_bytes
+                    && total <= limits.total_bytes
+                    && path.components().count() <= limits.depth,
+                "Candidate exceeds publication read budget"
+            );
+            entries.insert(path.as_str());
+            for (index, _) in path.as_str().match_indices('/') {
+                entries.insert(&path.as_str()[..index]);
+            }
+        }
+        // Keep captured directory/absence entries too; absent removed files can remain
+        // selected scopes during recovery. Conservative counting is safe for custom caps.
+        entries.extend(
+            base.entries()
+                .keys()
+                .filter(|path| selected(path))
+                .map(|path| path.as_str()),
+        );
+        ensure!(
+            entries.len() <= limits.entries,
+            "Candidate exceeds snapshot entry budget"
+        );
+    }
+    let mut limits = SnapshotLimits {
+        entries: 0,
+        depth: 0,
+        file_bytes: 0,
+        total_bytes: 0,
+    };
+    let mut entries = BTreeSet::new();
+    for (path, file) in &expected {
+        limits.file_bytes = limits.file_bytes.max(file.bytes);
+        limits.total_bytes = limits
+            .total_bytes
+            .checked_add(file.bytes)
+            .ok_or_else(|| anyhow::anyhow!("Candidate byte count overflow"))?;
+        limits.depth = limits.depth.max(path.components().count());
+        entries.insert(path.as_str());
+        for (index, _) in path.as_str().match_indices('/') {
+            entries.insert(&path.as_str()[..index]);
+        }
+    }
+    limits.entries = entries.len();
+    Ok(limits)
 }
 
 pub(super) fn content(file: &FileObservation) -> FileContent {

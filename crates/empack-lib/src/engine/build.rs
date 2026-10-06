@@ -509,7 +509,9 @@ fn prepare_archives_publication(
 ) -> Result<PreparedArtifact> {
     use super::{
         staging::MutableStage,
-        verification::{VerifiedFileChange, observed_artifacts_for, plan_files},
+        verification::{
+            VerifiedFileChange, candidate_stage_limits, observed_artifacts_for, plan_files,
+        },
     };
     use empack_core::files::{FileContent, FilePermissions};
     use std::io::Seek;
@@ -517,24 +519,12 @@ fn prepare_archives_publication(
     let mut collisions = super::layout::CollisionIndex::default();
     let mut desired = BTreeMap::new();
     let mut bytes = 0u64;
-    let limits = super::snapshot::SnapshotLimits {
-        file_bytes: super::artifacts::ArchiveLimits::default().compressed_bytes,
-        ..super::snapshot::SnapshotLimits::default()
-    };
     for candidate in &candidates {
         cancel.check()?;
         collisions.insert_file(&candidate.artifact)?;
-        ensure!(
-            candidate.verified.len() <= limits.file_bytes,
-            "Artifact exceeds publication byte limit"
-        );
         bytes = bytes
             .checked_add(candidate.verified.len())
             .context("Artifact size total overflow")?;
-        ensure!(
-            bytes <= limits.total_bytes,
-            "Artifacts exceed publication byte limit"
-        );
         desired.insert(
             ManagedPath::Artifact(candidate.artifact.clone()),
             FileContent {
@@ -549,6 +539,7 @@ fn prepare_archives_publication(
     }
     let observed = observed_artifacts_for(workspace.observations(), desired.keys().cloned())?;
     let file_plan = plan_files(&observed, &desired, &BTreeSet::new())?;
+    let limits = candidate_stage_limits(workspace.observations(), &file_plan)?;
     let mut stage = MutableStage::empty()?;
     for candidate in &mut candidates {
         candidate.archive.file().rewind()?;

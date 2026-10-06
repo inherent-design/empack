@@ -47,7 +47,9 @@ journal publisher. Server/runtime and bootstrap composition remain pending.
 writes private candidates only. Source changes block publication before the previous
 artifact is replaced. Unrelated distributions are outside the read set. Existing and
 new selected outputs use artifact budgets; those allowances cannot widen source-file
-limits. Recovery persists and reuses each capture group's limits.
+limits. Recovery persists and reuses each capture group's limits. Publication
+preflights the complete candidate against those captured allowances before copying;
+private staging uses the exact planned sizes rather than an unrelated default ceiling.
 
 `plan_build_acquisitions` distinguishes sufficient reference evidence from required
 materialization. It accounts for layered replacements and unlisted backend files.
@@ -130,6 +132,8 @@ Results describe the stated revision, not every later edit.
 | `1901434` | 17 template tests and all-feature Clippy passed; six generated configurations each round-tripped through Qt QSettings and Java Properties |
 | `3733d71` | 1,514 default tests passed; the subsequent doctest compile overlapped a source edit and required a repeat |
 | `c5cd762` | 1,517 default tests and ten doctests passed; Greptile review 35 reported no new blocking findings |
+| `713fcc0` | 1,524 default tests and ten doctests passed; strict E2E passed 101 tests |
+| Publication budget integration | 32 affected tests passed; a passing acquisition test reported a pipe-leak warning and its isolated repeat passed without one. Large-size accounting uses synthetic metadata, not a 65 GiB allocation |
 | Build batch integration | 13 composed build tests and all-feature Clippy passed |
 | Full client assembly | 138 affected build/template/core tests passed; the final rebuild regression and all-feature Clippy passed. Archives were published and independently read in ZIP, TAR.GZ and 7z |
 | Materialization integration | 30 affected core inventory, build, mrpack and reader tests passed |

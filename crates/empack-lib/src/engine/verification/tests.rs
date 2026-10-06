@@ -193,3 +193,81 @@ fn artifact_only_publication_binds_read_only_sources_without_copying_or_replacin
         }
     }
 }
+
+#[test]
+fn archive_preflight_honors_captured_budgets_without_widening_source_limits() {
+    // Synthetic content sizes exercise large-file accounting without allocating the payload.
+    let project = tempfile::tempdir().unwrap();
+    fs::write(project.path().join("empack.yml"), b"old").unwrap();
+    let root = ProjectReadRoot::open(project.path()).unwrap();
+    let cancel = Cancellation::default();
+    let huge = 65 * 1024 * 1024 * 1024;
+    let sources = root
+        .capture(
+            &[path("empack.yml")],
+            SnapshotLimits {
+                file_bytes: 3,
+                total_bytes: 3,
+                ..SnapshotLimits::default()
+            },
+            &cancel,
+        )
+        .unwrap();
+    let outputs = root
+        .capture(
+            &[path("dist")],
+            SnapshotLimits {
+                file_bytes: huge,
+                total_bytes: huge + 7,
+                ..SnapshotLimits::default()
+            },
+            &cancel,
+        )
+        .unwrap();
+    let base = NativeSnapshot::merge(sources, outputs).unwrap();
+    let first = ManagedPath::Artifact(path("client.zip"));
+    let second = ManagedPath::Artifact(path("pack.mrpack"));
+    let mut large = wanted(b"synthetic");
+    large.bytes = huge;
+    let mut desired =
+        BTreeMap::from([(first.clone(), large), (second.clone(), wanted(b"archive"))]);
+    let observed = observed_artifacts_for(&base, desired.keys().cloned()).unwrap();
+    let prepare = |desired: &BTreeMap<ManagedPath, FileContent>| {
+        candidate_stage_limits(
+            &base,
+            &plan_files(&observed, desired, &BTreeSet::new()).unwrap(),
+        )
+    };
+    let allowed = prepare(&desired).unwrap();
+    assert_eq!(allowed.file_bytes, huge);
+    assert_eq!(allowed.total_bytes, huge + 7);
+    assert_eq!(allowed.entries, 3); // dist and two leaves
+    assert_eq!(allowed.depth, 2);
+    desired.get_mut(&second).unwrap().bytes = 8;
+    assert!(
+        prepare(&desired)
+            .unwrap_err()
+            .to_string()
+            .contains("read budget")
+    );
+    desired.get_mut(&second).unwrap().bytes = 0;
+    desired.get_mut(&first).unwrap().bytes = huge + 1;
+    assert!(
+        prepare(&desired)
+            .unwrap_err()
+            .to_string()
+            .contains("read budget")
+    );
+    let source_plan = plan_files(
+        &observed_files(&base).unwrap(),
+        &BTreeMap::from([(ManagedPath::IntentDocument, wanted(b"wider"))]),
+        &BTreeSet::new(),
+    )
+    .unwrap();
+    assert!(
+        candidate_stage_limits(&base, &source_plan)
+            .unwrap_err()
+            .to_string()
+            .contains("read budget")
+    );
+}
