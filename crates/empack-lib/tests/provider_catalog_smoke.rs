@@ -439,3 +439,54 @@ async fn modrinth_mixed_project_selects_datapack_bytes() -> anyhow::Result<()> {
     )
     .await
 }
+
+#[tokio::test]
+#[ignore = "requires official Modrinth API and CDN"]
+async fn modrinth_required_closure_and_all_selected_bytes() -> anyhow::Result<()> {
+    use empack_core::model::{ContentKind, GameVersion, LoaderKind};
+    use empack_lib::engine::providers::{
+        ClosureLimits, ClosureRequest, ClosureRoot, ReleasePolicy,
+    };
+    let catalog = ProviderCatalog::new(None, Arc::new(HostBudgetRegistry::new()))?;
+    let transport = HttpAcquisition::new()?;
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 256 << 20,
+        scratch_bytes: 256 << 20,
+        open_files: 16,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle=runtime.start(move |mut scope|async move {Ok(async {
+        let root=ResolvedPin {project:ProviderProjectId::Modrinth(ModrinthProjectId::parse("Bh37bMuy")?),selection:PinSelector::ModrinthVersion(ModrinthVersionId::parse("Rc9pkPug")?)};
+        let graph=catalog.resolve_required_closure(&mut scope,ClosureRequest {
+            roots:NonEmpty::new(vec![ClosureRoot {pin:root.clone(),kind:ContentKind::Mod}])?,
+            game_versions:NonEmpty::new(vec![GameVersion::parse("1.20.1")?])?,loader:LoaderKind::Fabric,releases:ReleasePolicy::PreferStable,
+        },ClosureLimits::default()).await?;
+        anyhow::ensure!(graph.complete_for_required(),"Official dependency closure remains incomplete");
+        anyhow::ensure!(graph.required_edges.get(&root).is_some_and(|edges|edges.iter().any(|pin|pin.project.to_string()=="AANobbMI")),"Required Sodium dependency was lost");
+        for node in graph.selections.values() {
+            for file in node.resolution.files.as_slice() {
+                let expected=file.expected.clone();
+                let content=transport.acquire(&mut scope,DownloadRequest {
+                    alternatives:NonEmpty::new(file.alternatives.clone())?,expected:expected.clone(),
+                    limits:TransferLimits {file_bytes:64<<20,transfer_bytes:64<<20,..Default::default()},evidence:SourceEvidencePolicy::Compatibility,initial:InitialObservation::RequireEvidence,
+                }).await?;
+                anyhow::ensure!(Some(content.lease().len())==expected.size,"Dependency bytes changed size");
+                anyhow::ensure!(matches!(content.evidence(),empack_core::digest::IntegrityEvidence::MatchedExpected {expected:original,..} if Some(original)==expected.digests.as_ref()),"Dependency lost original source assertions");
+            }
+        }
+        Ok::<_,anyhow::Error>(())
+    }.await)})?;
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    match &*outcome {
+        OperationOutcome::Completed(Ok(())) => {}
+        OperationOutcome::Completed(Err(error)) => anyhow::bail!("Closure probe failed: {error:#}"),
+        _ => anyhow::bail!("Closure operation failed"),
+    }
+    anyhow::ensure!(
+        governor.status().reserved == ResourceRequest::default(),
+        "Closure resources remained reserved"
+    );
+    Ok(())
+}

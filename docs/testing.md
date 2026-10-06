@@ -115,4 +115,7 @@ They cover a Modrinth mod, a resource pack and CurseForge content. The original
 provider integrity declarations remain unchanged. Each exact case also resolves its
 version/file ID without a supplied project and compares canonical ownership and every
 file assertion with the project-qualified lookup. The three compatible-version probes
-remain separate checks within the six-case `smoke:providers` suite.
+remain separate checks within the `smoke:providers` suite. A seventh case expands
+Reese's Sodium Options, requires the Sodium edge to remain present and verifies every
+selected file against its original size/digests. This covers live closure evidence and
+acquisition, not yet add/sync command composition.

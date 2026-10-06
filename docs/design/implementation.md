@@ -11,7 +11,7 @@ explicit build-content obligations feed these paths. The compiled `Engine` now o
 build preview, preparation, exact-plan authorization, acquisition, runtime assembly
 and publication. The read-only provider catalog resolves canonical selectors and
 exact and compatible Modrinth/CurseForge selections, offers bounded search choices,
-and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. Provider/import
+and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. Import/operation
 composition, the remaining operation APIs,
 continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
@@ -69,8 +69,7 @@ This supports version-only dependency references without guessing their owner.
 Internal catalog composition can carry one request budget through selector, pin and
 compatible lookups; it does not restart the deadline between dependencies.
 Transient signed URLs are execution data; the document codec still rejects them in
-persistent alternatives. Dependency closure,
-import composition and command cutover remain completion gates. The build Engine can
+persistent alternatives. Import composition and command cutover remain completion gates. The build Engine can
 use this catalog after authorization to refresh a locked file's locator. It selects
 a declared role or unique matching source evidence, rejects changed assertions and
 retains all original expectations during acquisition. Missing credentials and
@@ -100,6 +99,32 @@ selection. Unavailable records retain ownership and duplicate checks without req
 downloadable payload evidence. Each page retains its best candidate and compact identity evidence under
 admission. Only the final selection survives. This capability is for new or explicitly
 updated resolution; it does not upgrade a valid sync lock or rewrite project intent.
+
+## Required dependency expansion
+
+`ProviderCatalog::resolve_required_closure` resolves explicit pins first, then follows
+required provider edges. Project-only references select a compatible file; version-only
+references establish their owner before entering the graph. Repeated selections are
+retained once, and mutually required groups remain valid. Known required edges use
+canonical exact pins, independent of manifest labels or installation filenames.
+
+One transport budget and deadline cover all roots, dependencies and retries. Node and
+edge limits bound graph expansion. Defaults allow 256 MiB of catalog traffic over five
+minutes, with a separate 4 MiB ceiling for each response. Graph bookkeeping and retained provider records
+remain charged to the operation. A network failure or exhausted allowance returns no
+partial graph. Optional and embedded metadata stay available without automatically
+installing those dependencies.
+
+Missing coverage, filename-only requirements, ambiguous content kinds, uninterpreted
+tool/include relations and observed pin conflicts remain explicit issues. Incompatible
+relations are checked after expansion, including references discovered later. The
+expander does not backtrack across alternative versions or claim that a conflict proves
+no solution exists. The host must resolve choices before publication. Explicit roots
+cannot be displaced by a transitive selection.
+
+This is dependency evidence, not an installation plan or authority to delete unlisted
+content. Import and mutation preparation still need to assign roles/placements, resolve
+requirements and compose this evidence with verified publication.
 
 ## Provider search
 
@@ -272,6 +297,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Required dependency expansion | 1,651 tests and eleven doctests, 54 affected provider tests, all-feature Clippy and all seven live provider probes passed. Cycles, conflicts, incomplete evidence and shared budgets are covered. One staging test emitted a nextest pipe-leak warning; its isolated repeat passed cleanly. Three graph-capacity edge cases and Greptile review 61's 8 MiB pin-lookup admission failure reproduced before their fixes |
 | Exact pin ownership | 44 affected provider tests, all-feature Clippy and six live provider probes passed. The three exact-provider cases compare owner-free lookup with project-qualified identity and every original file assertion. The preceding full-suite snapshot is the bounded-search revision below |
 | Bounded provider search | 1,638 tests and eleven doctests; 41 affected provider tests and all-feature Clippy passed. All six live provider probes passed, with search exercised for Sodium, JEI and Terralith. An initial focused run emitted a leak warning; the expanded provider run and full suite passed without it. Greptile review 59 is green for the preceding kind/fingerprint commit `380d9a0` |
 | Provider kinds and fingerprint filtering | 1,630 tests and eleven doctests, all-feature Clippy and six live provider probes passed. Terralith resolves as a datapack despite also advertising mod versions. Review 58 fingerprint-collision failure reproduced before the fix; unrelated candidates no longer trigger project lookup |

@@ -60,7 +60,7 @@ impl ProviderCatalog {
         let retained = ResourceRequest {
             memory_bytes: limits
                 .response_bytes
-                .checked_mul(2)
+                .checked_add(record.1.capacity() as u64)
                 .ok_or(CatalogError::Limit)?,
             ..Default::default()
         };

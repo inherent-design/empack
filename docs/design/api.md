@@ -55,6 +55,13 @@ bounds each window and the shared transport budget. `ProjectSearch` owns retaine
 `ProjectCandidate` choices, its source total/ranks, `has_more` and `next_offset`.
 Similarity is display guidance; there is no automatic exact-match outcome.
 
+The compiled `ProviderCatalog::resolve_required_closure` accepts exact `ClosureRoot`
+values plus explicit game, loader and release constraints. `ClosureLimits` bounds
+projects/edges and carries a shared catalog budget. `ProviderClosure` retains selected
+records, canonical required edges and `ClosureIssue` values. Its
+`complete_for_required()` query applies only to the observed exact selections; it is
+not a deletion grant or proof that another version assignment cannot work.
+
 ## 17. Public engine API and application wiring
 
 ### 17.1 Public entry points

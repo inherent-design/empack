@@ -119,3 +119,39 @@ fn pin_lookup_cannot_substitute_other_records_or_games() {
         );
     }
 }
+
+#[tokio::test]
+async fn small_pin_lookup_fits_eight_megabytes_with_default_response_limits() {
+    let mut server = Server::new_async().await;
+    server
+        .mock("GET", "/version/version1")
+        .with_body(mr_file().to_string())
+        .create_async()
+        .await;
+    server.mock("GET","/project/project1").with_body(json!({"id":"project1","slug":"project","title":"Project","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 8 << 20,
+        open_files: 4,
+        ..Default::default()
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            Ok(catalog
+                .resolve_pin(&mut scope, mr_pin(), CatalogLimits::default())
+                .await)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    drop(runtime);
+    drop(handle);
+    let OperationOutcome::Completed(Ok(resolution)) = &*outcome else {
+        panic!("a small pin could not fit the configured memory allowance")
+    };
+    assert_eq!(resolution.pin.project.to_string(), "project1");
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

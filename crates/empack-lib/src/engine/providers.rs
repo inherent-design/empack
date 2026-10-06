@@ -12,6 +12,11 @@ use empack_core::{
 };
 use std::{sync::Arc, time::Duration};
 
+mod closure;
+pub use closure::{
+    ClosureIssue, ClosureIssueKind, ClosureLimits, ClosureRequest, ClosureRoot, ClosureSelection,
+    ProviderClosure,
+};
 mod compatible;
 pub use compatible::{
     CompatibleRequest, CompatibleSelection, ReleaseChannel, ReleasePolicy, SelectionLimits,

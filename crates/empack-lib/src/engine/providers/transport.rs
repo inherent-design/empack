@@ -16,7 +16,7 @@ use tokio::time::Instant;
 pub enum CatalogError {
     #[error("Invalid provider selector")]
     InvalidSelector,
-    #[error("Provider response exceeds the resolution byte allowance")]
+    #[error("Provider resolution exceeds its configured resource allowance")]
     Limit,
     #[error("Provider resolution deadline elapsed")]
     Deadline,

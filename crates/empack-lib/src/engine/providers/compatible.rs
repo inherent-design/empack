@@ -504,7 +504,7 @@ fn text_field<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
         .and_then(Value::as_str)
         .ok_or_else(|| CatalogError::InvalidRecord.into())
 }
-fn loader_matches(resolution: &ProviderResolution, request: &CompatibleRequest) -> bool {
+pub(super) fn loader_matches(resolution: &ProviderResolution, request: &CompatibleRequest) -> bool {
     match request.kind {
         ContentKind::Mod => {
             let loader = match request.loader {
