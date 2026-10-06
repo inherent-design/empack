@@ -17,6 +17,7 @@ pub mod project;
 pub mod publication;
 pub mod resources;
 pub mod runtime;
+pub mod server_runtime;
 pub mod snapshot;
 pub mod source;
 pub mod staging;

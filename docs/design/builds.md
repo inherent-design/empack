@@ -220,3 +220,23 @@ Bundle reviewed installer versions and their checked digests. The bootstrap's
 [`--bootstrap-no-update` and `--bootstrap-main-jar` options](https://github.com/packwiz/packwiz-installer-bootstrap/blob/v0.0.3/src/main/java/link/infra/packwiz/installer/bootstrap/Main.java)
 keep launch behavior tied to those exact assets. An empack-maintained digest pin
 must be attributed as such when upstream supplies no published checksum.
+
+### Exact server runtime contracts
+
+Resolve the requested game and loader before preparing runtime files. Vanilla
+resolution selects the exact official catalog entry, verifies the version document
+against its catalog digest, and retains both observed document addresses. The
+server download must match the selected size and SHA-1 declaration. Compatibility
+evidence remains labeled; computed hashes do not strengthen that declaration.
+
+Inspect bounded launcher metadata before treating a runtime as prepared. Follow
+[JAR manifest continuation and section rules](https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html#name-value-pairs-and-sections),
+reject ambiguous main attributes, and account for external class-path dependencies.
+Opaque JAR resources are not extracted as native paths: legitimate case-distinct
+resource names must remain usable. A runtime file set still needs to agree with the
+captured project's exact runtime, compose with game/template content without
+collisions, and pass artifact verification before publication.
+
+Loader installer success requires additional contracts for selected loader identity,
+expected libraries, generated launchers and launch arguments. Merely finding a JAR
+or `run.sh` after exit zero does not establish that those obligations were satisfied.

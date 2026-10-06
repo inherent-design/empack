@@ -26,6 +26,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Materialized game content | Shared captured identity/content checks; side and optional selection before missing-byte requirements; exact retained leases and source evidence; no unresolved entries in completed inventory | [Materialization tests](../../crates/empack-lib/src/engine/build/materialized/tests.rs), [core inventory tests](../../crates/empack-core/tests/inventory.rs) |
 | Build batches | Mrpack and full-client recipes prepare privately; duplicate outputs fail preflight; every candidate verifies before one journal publishes their union; original resolution and conversion evidence remain available | [Batch tests](../../crates/empack-lib/src/engine/build/batch/tests.rs) |
 | Packwiz reference projection | Captured game selection feeds a generated pack/index/metadata tree; exact provider references, stable URLs, optional constraints and original declared-vs-acquired evidence remain explicit | [Projection tests](../../crates/empack-lib/src/engine/packwiz/tests.rs), game-content tests |
+| Vanilla server runtime | Official catalog selection, per-version metadata digest, exact server bytes, bounded JAR main-section and launcher checks; owned parsing and verification | [Runtime tests](../../crates/empack-lib/src/engine/server_runtime/tests.rs) |
 | Installer assets | Reviewed bootstrap/main-installer versions, bounded governed acquisition, exact size/digest validation and retained tool identities; pins are maintained by empack | [Tool tests](../../crates/empack-lib/src/engine/bootstrap_tools.rs) |
 | Lightweight client distribution | Generated packwiz tree, exact bundled tools, local byte projection, pinned launcher command, all archive formats and batch publication | [Client tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
 | Full client distribution | `.minecraft` game view, captured templates, exact launcher components, generated defaults, all three archive formats and verified publication | [Client build tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
@@ -85,7 +86,8 @@ is game-content completeness, not launcher/server runtime completeness.
 references. `PreparedGameContent::packwiz` checks generated metadata through the shared
 reader; unlisted metadata-only references retain `actual: None` rather than a fabricated
 byte observation. Full targets still require actual selected bytes.
-Server runtime assembly and server distributions remain pending.
+Vanilla runtime resolution and byte/launcher verification are implemented;
+loader-specific installation contracts and complete server distributions remain pending.
 
 Template preparation selects common and target-side inputs before rendering. Exact
 side replacements retain their replaced source identity; same-layer duplicates,
@@ -142,7 +144,9 @@ Results describe the stated revision, not every later edit.
 | `c5cd762` | 1,517 default tests and ten doctests passed; Greptile review 35 reported no new blocking findings |
 | `713fcc0` | 1,524 default tests and ten doctests passed; strict E2E passed 101 tests |
 | `7eaba64` | 46 affected core/build/mrpack tests and all-feature Clippy passed |
-| `bbe4ee1` | 1,530 default tests and ten doctests passed; Greptile review 38 reported no actionable findings |
+| `bbe4ee1` | 1,530 default tests and ten doctests passed; native CI 37396023965 passed Linux/macOS/Windows tests and import-smoke, lint and coverage; Greptile review 38 reported no actionable findings |
+| `719735a` | 101 strict E2E tests passed; Greptile review 39 reported no actionable findings |
+| Vanilla runtime integration | Live official-catalog resolution and exact Minecraft 1.20.1 server acquisition passed; the actual server completed `--help` under process supervision without accepting the EULA |
 | Lightweight client integration | 46 affected tests passed across templates, tools and builds. Governed acquisition fetched both pinned assets; the published archive installed with its bundled Java tools; Qt read the exact command |
 | Bootstrap projection integration | 29 affected build/mrpack/packwiz tests passed; the actual pinned Java installer consumed a generated selected tree and produced the expected local bytes |
 | Publication budget integration | 32 affected tests passed; a passing acquisition test reported a pipe-leak warning and its isolated repeat passed without one. Large-size accounting uses synthetic metadata, not a 65 GiB allocation |
