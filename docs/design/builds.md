@@ -240,3 +240,23 @@ collisions, and pass artifact verification before publication.
 Loader installer success requires additional contracts for selected loader identity,
 expected libraries, generated launchers and launch arguments. Merely finding a JAR
 or `run.sh` after exit zero does not establish that those obligations were satisfied.
+
+### Server distribution contract
+
+Both server recipes require a prepared runtime matching the captured exact Minecraft
+and loader resolution. Runtime bytes, selected game content, generated bootstrap
+metadata and templates occupy one collision-checked inventory. A template cannot
+replace a verified runtime file. Full servers contain selected pack bytes; lightweight
+servers include the exact installer pair and a server-side packwiz projection. Their
+installer command disables tool updates and selects `-s server` explicitly.
+
+Default `start.sh` and `start.bat` invoke the prepared launcher from the distribution
+root, preserving separate user arguments. `JAVA_HOME` selects Java; lightweight
+`install_pack.sh` also accepts a Java executable argument. Full installation performs
+no download step. No recipe writes an accepted EULA. Captured user scripts and server
+properties remain user input and are reported as such; the verifier does not claim
+arbitrary user-authored commands are correct.
+
+Each archive format carries the same expected files and portable permissions. Server
+and client artifacts can share one AllRequested publication. Runtime mismatch, source
+conflict, missing content or any later recipe failure preserves previous outputs.

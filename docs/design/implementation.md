@@ -4,9 +4,10 @@ Release target: v0.5.0-alpha.1. The [target contracts](README.md) and
 [feature requirements](parity.md) define completion. This page records what the
 source implements; it does not make the target API sketches available by implication.
 
-The normalized engine can prepare and recoverably publish mrpack, lightweight client
-and full-client archives from a captured workspace. HTTP acquisition and explicit build-content obligations now feed that
-path. The complete semantic `Engine` API, other build targets, provider/import
+The normalized engine can prepare and recoverably publish all five distribution
+shapes from a captured workspace. Server recipes currently have a verified vanilla
+runtime; loader-specific runtime preparation is still required. HTTP acquisition and
+explicit build-content obligations feed these paths. The complete semantic `Engine` API, provider/import
 composition, continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
 checks. There will be one implementation per operation, not a permanent legacy engine.
@@ -24,11 +25,12 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
 | Build acquisition | Read-only missing-content plan; references avoid unnecessary downloads; materialization/layer collisions require bytes; failed download batches return no successful subset; manual/provider/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
 | Materialized game content | Shared captured identity/content checks; side and optional selection before missing-byte requirements; exact retained leases and source evidence; no unresolved entries in completed inventory | [Materialization tests](../../crates/empack-lib/src/engine/build/materialized/tests.rs), [core inventory tests](../../crates/empack-core/tests/inventory.rs) |
-| Build batches | Mrpack and full-client recipes prepare privately; duplicate outputs fail preflight; every candidate verifies before one journal publishes their union; original resolution and conversion evidence remain available | [Batch tests](../../crates/empack-lib/src/engine/build/batch/tests.rs) |
+| Build batches | All five recipes prepare privately; duplicate outputs fail preflight; every candidate verifies before one journal publishes their union; original resolution and conversion evidence remain available | [Batch tests](../../crates/empack-lib/src/engine/build/batch/tests.rs) |
 | Packwiz reference projection | Captured game selection feeds a generated pack/index/metadata tree; exact provider references, stable URLs, optional constraints and original declared-vs-acquired evidence remain explicit | [Projection tests](../../crates/empack-lib/src/engine/packwiz/tests.rs), game-content tests |
 | Vanilla server runtime | Official catalog selection, per-version metadata digest, exact server bytes, bounded JAR main-section and launcher checks; owned parsing and verification | [Runtime tests](../../crates/empack-lib/src/engine/server_runtime/tests.rs) |
 | Installer assets | Reviewed bootstrap/main-installer versions, bounded governed acquisition, exact size/digest validation and retained tool identities; pins are maintained by empack | [Tool tests](../../crates/empack-lib/src/engine/bootstrap_tools.rs) |
 | Lightweight client distribution | Generated packwiz tree, exact bundled tools, local byte projection, pinned launcher command, all archive formats and batch publication | [Client tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
+| Server distributions | Full and reference game views, exact prepared runtime, preserved templates, executable launch scripts, pinned bootstrap tools and all archive formats; runtime selection must match the lock | [Server tests](../../crates/empack-lib/src/engine/build/server/tests.rs), batch tests |
 | Full client distribution | `.minecraft` game view, captured templates, exact launcher components, generated defaults, all three archive formats and verified publication | [Client build tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
 | Templates | Captured common/side projection, nested paths, binary and explicit literal copying, strict expressions, format helpers, bounded outputs and preserved portable attributes | [Template tests](../../crates/empack-lib/src/engine/templates/tests.rs) |
 | Archive sources | Retained bounded ZIP reader; raw directory preflight; every member path/kind/collision checked; selected bytes, CRC and portable attributes verified; failed attempts consume extraction allowance | [Archive source tests](../../crates/empack-lib/src/engine/archive_source/tests.rs) |
@@ -41,9 +43,9 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Mrpack semantics | Every locked file/placement accounted for, exact reference evidence, layered replacements, retained observed content, optional conversion rules and inspected output archives | [Mrpack tests](../../crates/empack-lib/src/engine/mrpack/tests.rs), [observed-content tests](../../crates/empack-lib/src/engine/mrpack/observed.rs) |
 
 File-level verification is not a semantic proof. Container integrity is not evidence
-that every required dependency was included. The composed mrpack and full-client paths connect
-normalized obligations, verified acquisitions, independently checked output and the
-journal publisher. Server/runtime composition remains pending.
+that every required dependency was included. The composed recipes connect normalized obligations, verified acquisitions,
+independently checked output and the journal publisher. Loader-specific server
+runtime preparation remains pending.
 
 ## Composed build behavior
 
@@ -87,7 +89,9 @@ references. `PreparedGameContent::packwiz` checks generated metadata through the
 reader; unlisted metadata-only references retain `actual: None` rather than a fabricated
 byte observation. Full targets still require actual selected bytes.
 Vanilla runtime resolution and byte/launcher verification are implemented;
-loader-specific installation contracts and complete server distributions remain pending.
+server recipes bind that preparation to the captured lock. Loader-specific installation
+contracts remain pending. Server output records original runtime evidence; computed
+SHA-256 does not turn a SHA-1 declaration into strong source assurance.
 
 Template preparation selects common and target-side inputs before rendering. Exact
 side replacements retain their replaced source identity; same-layer duplicates,
@@ -107,13 +111,13 @@ Full client archives materialize pack content, not Minecraft binaries and assets
 the launcher still resolves its normal game/runtime components. ZIP supports direct
 launcher import; TAR.GZ and 7z contain the same instance tree for explicit extraction.
 
-`prepare_build_batch` currently composes mrpack, lightweight-client and full-client recipes under the
+`prepare_build_batch` composes mrpack, client, server and both full recipes under the
 AllRequested rule. A later failed recipe drops earlier private candidates. Source
 changes block the whole publication, and output collisions fail preflight. One
 recoverable journal owns the combined artifact changes; this does not claim an
 atomic filesystem-wide visibility switch. Each result retains exact resolution,
 original backend evidence, conversions and expected archive members. Remaining
-recipes must join this boundary before CLI `all` can cut over.
+loader runtime contracts must join this boundary before CLI `all` can cut over.
 
 ## Existing command guarantees
 

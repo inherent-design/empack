@@ -271,3 +271,83 @@ fn bootstrap_client_joins_requested_publication_with_tool_evidence() {
         b"old mrpack"
     );
 }
+
+#[test]
+fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
+    use crate::engine::{build::server, server_runtime::tests::prepared_fixture};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let cancel = Cancellation::default();
+    let external = server::tests::fixture(root.path());
+    fs::create_dir_all(root.path().join("dist")).unwrap();
+    fs::write(root.path().join("dist/client.zip"), b"previous client").unwrap();
+    fs::write(root.path().join("dist/server.zip"), b"previous server").unwrap();
+    let capture = || {
+        ProjectReader::new(RecoveryReader::new(host.path().join("private")))
+            .capture_build(
+                root.path(),
+                &[path("client.zip"), path("server.zip")],
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap()
+    };
+    let requests = || {
+        NonEmpty::new(vec![
+            DistributionRequest::ClientFull {
+                artifact: path("client.zip"),
+                options: ClientOptions {
+                    archive: DistributionArchive::Zip,
+                    optional: OptionalPolicy::Preserve,
+                    templates: TemplateOptions::default(),
+                    evidence: SourceEvidencePolicy::Compatibility,
+                    limits: ArchiveLimits::default(),
+                },
+            },
+            DistributionRequest::ServerFull {
+                artifact: path("server.zip"),
+                options: server::ServerOptions {
+                    archive: DistributionArchive::Zip,
+                    optional: OptionalPolicy::Preserve,
+                    templates: TemplateOptions::default(),
+                    evidence: SourceEvidencePolicy::Compatibility,
+                    limits: ArchiveLimits::default(),
+                },
+                runtime: prepared_fixture(),
+            },
+        ])
+        .unwrap()
+    };
+    fs::create_dir_all(root.path().join("templates/server")).unwrap();
+    fs::write(
+        root.path().join("templates/server/server.jar"),
+        b"bad runtime",
+    )
+    .unwrap();
+    assert!(prepare_build_batch(capture(), requests(), &external, &cancel).is_err());
+    assert_eq!(
+        fs::read(root.path().join("dist/client.zip")).unwrap(),
+        b"previous client"
+    );
+    assert_eq!(
+        fs::read(root.path().join("dist/server.zip")).unwrap(),
+        b"previous server"
+    );
+    fs::remove_file(root.path().join("templates/server/server.jar")).unwrap();
+    let batch = prepare_build_batch(capture(), requests(), &external, &cancel).unwrap();
+    assert!(batch.artifacts()[1].server_runtime.is_some());
+    batch
+        .publish(
+            &Publisher::open(&host.path().join("private")).unwrap(),
+            &cancel,
+        )
+        .unwrap();
+    assert_ne!(
+        fs::read(root.path().join("dist/client.zip")).unwrap(),
+        b"previous client"
+    );
+    assert_ne!(
+        fs::read(root.path().join("dist/server.zip")).unwrap(),
+        b"previous server"
+    );
+}

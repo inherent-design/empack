@@ -464,4 +464,4 @@ fn parse_main_attributes(bytes: &[u8]) -> Result<BTreeMap<String, String>> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

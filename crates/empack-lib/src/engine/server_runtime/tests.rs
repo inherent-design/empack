@@ -129,3 +129,15 @@ fn changed_runtime_bytes_cannot_satisfy_the_selected_metadata() {
     loader.loader = LoaderKind::Fabric;
     assert!(plan_from_metadata(loader, &metadata(&original, "1.20.1")).is_err());
 }
+
+/// Synthetic byte fixture uses the same runtime verification path; it does not claim JVM execution.
+pub(in crate::engine) fn prepared_fixture() -> PreparedServerRuntime {
+    let server = jar(
+        b"Manifest-Version: 1.0\nMain-Class: net.minecraft.server.Main\n\n",
+        true,
+    );
+    plan_from_metadata(runtime(), &metadata(&server, "1.20.1"))
+        .unwrap()
+        .verify(server, ArchiveLimits::default(), &Cancellation::default())
+        .unwrap()
+}

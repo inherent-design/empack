@@ -20,6 +20,7 @@ pub mod acquisition;
 pub mod batch;
 pub mod client;
 pub mod materialized;
+pub mod server;
 
 /// Exact logical requests and retained metadata records occupy distinct acquisition namespaces.
 #[derive(Default)]

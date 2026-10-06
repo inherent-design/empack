@@ -3,6 +3,7 @@ use super::{
     ArchiveCandidate, BuildAcquisitions, PreparedArtifact,
     client::{ClientBootstrap, ClientOptions, prepare_client_archive, prepare_client_full_archive},
     prepare_archives_publication, prepare_mrpack,
+    server::{ServerBootstrap, ServerOptions, prepare_server_archive},
 };
 use crate::{
     application::process_runtime::Cancellation,
@@ -18,7 +19,7 @@ use empack_core::{
 };
 
 /// An implemented distribution recipe and its explicit output. Further targets add recipes here;
-/// this adapter does not advertise server/bootstrap support until their verification is connected.
+/// runtime recipes remain limited to independently verified runtime preparations.
 pub enum DistributionRequest {
     Mrpack {
         artifact: PortableRelPath,
@@ -30,6 +31,17 @@ pub enum DistributionRequest {
         options: ClientOptions,
         bootstrap: ClientBootstrap,
     },
+    Server {
+        artifact: PortableRelPath,
+        options: ServerOptions,
+        runtime: crate::engine::server_runtime::PreparedServerRuntime,
+        bootstrap: ServerBootstrap,
+    },
+    ServerFull {
+        artifact: PortableRelPath,
+        options: ServerOptions,
+        runtime: crate::engine::server_runtime::PreparedServerRuntime,
+    },
     ClientFull {
         artifact: PortableRelPath,
         options: ClientOptions,
@@ -40,7 +52,9 @@ impl DistributionRequest {
         match self {
             Self::Mrpack { artifact, .. }
             | Self::Client { artifact, .. }
-            | Self::ClientFull { artifact, .. } => artifact,
+            | Self::ClientFull { artifact, .. }
+            | Self::Server { artifact, .. }
+            | Self::ServerFull { artifact, .. } => artifact,
         }
     }
     fn target(&self) -> BuildTarget {
@@ -48,6 +62,8 @@ impl DistributionRequest {
             Self::Mrpack { .. } => BuildTarget::Mrpack,
             Self::Client { .. } => BuildTarget::Client,
             Self::ClientFull { .. } => BuildTarget::ClientFull,
+            Self::Server { .. } => BuildTarget::Server,
+            Self::ServerFull { .. } => BuildTarget::ServerFull,
         }
     }
 }
@@ -64,6 +80,7 @@ pub struct BuiltDistribution {
     pub conversions: Vec<String>,
     pub user_configuration: Option<bool>,
     pub toolchain: Vec<crate::engine::bootstrap_tools::InstallerRelease>,
+    pub server_runtime: Option<crate::engine::server_runtime::ServerRuntimeEvidence>,
 }
 pub struct PreparedBuildBatch {
     publication: PreparedArtifact,
@@ -129,6 +146,7 @@ pub fn prepare_build_batch(
                     conversions: plan.conversions().to_vec(),
                     user_configuration: None,
                     toolchain: Vec::new(),
+                    server_runtime: None,
                 };
                 (
                     ArchiveCandidate {
@@ -138,6 +156,47 @@ pub fn prepare_build_batch(
                     },
                     evidence,
                 )
+            }
+            DistributionRequest::ServerFull {
+                artifact,
+                options,
+                runtime,
+            }
+            | DistributionRequest::Server {
+                artifact,
+                options,
+                runtime,
+                ..
+            } => {
+                let bootstrap = if let DistributionRequest::Server { bootstrap, .. } = request {
+                    Some(bootstrap)
+                } else {
+                    None
+                };
+                let (archive, built) = prepare_server_archive(
+                    &workspace,
+                    artifact.clone(),
+                    external,
+                    options,
+                    runtime,
+                    bootstrap,
+                    cancel,
+                )?;
+                let evidence = BuiltDistribution {
+                    target: request.target(),
+                    artifact: artifact.clone(),
+                    bytes: archive.verified.len(),
+                    content: built.game.inventory().clone(),
+                    members: built.inventory,
+                    resolution: built.game.project().lock().clone(),
+                    observed: built.game.observed().to_vec(),
+                    backend_comparisons: built.game.backend_comparisons().to_vec(),
+                    conversions: Vec::new(),
+                    user_configuration: Some(built.user_configuration),
+                    toolchain: built.toolchain,
+                    server_runtime: Some(built.runtime),
+                };
+                (archive, evidence)
             }
             DistributionRequest::ClientFull { artifact, options }
             | DistributionRequest::Client {
@@ -173,6 +232,7 @@ pub fn prepare_build_batch(
                     conversions: Vec::new(),
                     user_configuration: Some(built.user_configuration),
                     toolchain: built.toolchain,
+                    server_runtime: None,
                 };
                 (built.archive, evidence)
             }
