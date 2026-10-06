@@ -301,6 +301,40 @@ fn ignored_payloads_are_skipped_before_opening_or_rejecting_links() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn ignored_nonportable_names_do_not_block_replacement_capture() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    fs::create_dir_all(project.join("pack")).unwrap();
+    fs::write(project.join("pack/backup?.zip"), "private backup").unwrap();
+    // APFS rejects invalid Unicode at creation; Linux filesystems admit these native names.
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        let name = std::ffi::OsString::from_vec(b"backup\xff.zip".to_vec());
+        fs::write(project.join("pack").join(name), "private backup").unwrap();
+    }
+    let reader = ProjectReader::new(RecoveryReader::new(temp.path().join("state")));
+    reader
+        .capture_replacement(
+            &project,
+            SnapshotLimits::default(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    fs::write(project.join("pack/managed?.txt"), "invalid managed name").unwrap();
+    assert!(
+        reader
+            .capture_replacement(
+                &project,
+                SnapshotLimits::default(),
+                &Cancellation::default()
+            )
+            .is_err()
+    );
+}
+
 #[tokio::test]
 async fn incoming_ignored_destination_needs_actual_absence_and_cannot_replace_unowned_bytes() {
     use crate::engine::import::acquisition::tests::remote;

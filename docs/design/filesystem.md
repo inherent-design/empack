@@ -46,6 +46,12 @@ Required behavior:
 - Preserve appropriate permissions and support Windows in-use-file failures as structured errors.
 - Avoid changing a source file through a hardlink alias during staging; immutable cache bytes must not be handed to a mutating backend as writable hardlinks.
 
+Apply captured source-exclusion rules to native directory entries before requiring
+portable names or opening payloads. An ignored backup remains unowned even if its
+name cannot be used in a portable pack. Included files still require portable paths;
+explicit locked inputs and backend control documents cannot disappear behind ignore
+rules. Revalidation and recovery repeat the same captured traversal policy.
+
 No normal user workflow should need arbitrary recursive project deletion. Root discovery can require ambient filesystem authority at the outer boundary; that authority should not leak to importers or planners.
 
 ### 11.3 Staging API

@@ -43,27 +43,23 @@ impl SourceFilter {
     }
     /// Backend control documents are never game files. Metadata membership is checked separately.
     pub fn includes(&self, relative: &PortableRelPath, directory: bool) -> bool {
-        if matches!(
-            relative.as_str(),
-            "pack.toml" | "index.toml" | ".packwizignore"
-        ) {
+        self.includes_native(std::path::Path::new(relative.as_str()), directory)
+    }
+    fn includes_native(&self, relative: &std::path::Path, directory: bool) -> bool {
+        if ["pack.toml", "index.toml", ".packwizignore"]
+            .iter()
+            .any(|name| relative == std::path::Path::new(name))
+        {
             return false;
         }
-        // Match a traversal, not just the leaf: a negated child cannot resurrect a directory
-        // that the walker already pruned. The matcher alone gives a leaf whitelist precedence.
-        for (index, _) in relative.as_str().match_indices('/') {
-            if self
-                .matcher
-                .matched(&relative.as_str()[..index], true)
-                .is_ignore()
-            {
-                return false;
-            }
+        // Match each traversed ancestor before the leaf. Native names are allowed here only
+        // for exclusion; included objects must still pass portable-path validation.
+        if relative.ancestors().skip(1).any(|parent| {
+            !parent.as_os_str().is_empty() && self.matcher.matched(parent, true).is_ignore()
+        }) {
+            return false;
         }
-        !self
-            .matcher
-            .matched(relative.as_str(), directory)
-            .is_ignore()
+        !self.matcher.matched(relative, directory).is_ignore()
     }
 }
 
@@ -98,29 +94,34 @@ impl PackCaptureFilter {
         path: &PortableRelPath,
         directory: bool,
     ) -> bool {
-        let Some(relative) = path.as_str().strip_prefix("pack/") else {
+        self.includes_native(matcher, std::path::Path::new(path.as_str()), directory)
+    }
+    pub(super) fn includes_native(
+        &self,
+        matcher: &SourceFilter,
+        path: &std::path::Path,
+        directory: bool,
+    ) -> bool {
+        let Ok(relative) = path.strip_prefix("pack") else {
             return true;
         };
-        if matches!(relative, "pack.toml" | "index.toml" | ".packwizignore") {
+        if relative.as_os_str().is_empty() {
+            return true;
+        }
+        if ["pack.toml", "index.toml", ".packwizignore"]
+            .iter()
+            .any(|name| relative == std::path::Path::new(name))
+        {
             return true;
         }
         // Explicit locked local/archive sources cannot disappear behind an ignore rule.
         if self.required.iter().any(|required| {
-            required == path.as_str()
-                || required
-                    .strip_prefix(path.as_str())
-                    .is_some_and(|suffix| suffix.starts_with('/'))
-                || path
-                    .as_str()
-                    .strip_prefix(required)
-                    .is_some_and(|suffix| suffix.starts_with('/'))
+            let required = std::path::Path::new(required);
+            required.starts_with(path) || path.starts_with(required)
         }) {
             return true;
         }
-        let relative =
-            PortableRelPath::parse(relative, empack_core::path::PathSyntax::ProjectContent)
-                .expect("suffix of a validated portable path");
-        matcher.includes(&relative, directory)
+        matcher.includes_native(relative, directory)
     }
 }
 
@@ -128,6 +129,23 @@ impl PackCaptureFilter {
 mod tests {
     use super::*;
     use empack_core::path::PathSyntax;
+    #[test]
+    fn excluded_pack_contents_do_not_hide_the_control_root() {
+        let policy = PackCaptureFilter::new(b"**\n".to_vec(), &[]).unwrap();
+        let matcher = policy.matcher().unwrap();
+        for name in [
+            "pack",
+            "pack/.packwizignore",
+            "pack/pack.toml",
+            "pack/index.toml",
+        ] {
+            assert!(
+                policy.includes_native(&matcher, std::path::Path::new(name), name == "pack"),
+                "{name}"
+            );
+        }
+        assert!(!policy.includes_native(&matcher, std::path::Path::new("pack/other"), false));
+    }
     #[test]
     fn source_rules_preserve_defaults_negation_and_ignored_parent_semantics() {
         let filter = SourceFilter::parse(b"!keep.zip\nconfig/private/\n!config/private/rescue.toml\n*.secret\n!config/keep.secret\n").unwrap();

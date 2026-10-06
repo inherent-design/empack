@@ -313,21 +313,22 @@ impl Capture<'_> {
                     seen < self.limits.entries.saturating_sub(self.entries.len()),
                     "Snapshot exceeds entry limit"
                 );
-                let name = entry?
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| anyhow::anyhow!("Nonportable managed filename"))?;
-                PortableRelPath::parse(&name, PathSyntax::ArtifactName)?;
-                let child = PortableRelPath::parse(
-                    &format!("{}/{}", path.as_str(), name),
-                    PathSyntax::ProjectContent,
-                )?;
+                let name = entry?.file_name();
                 if let Some((policy, matcher)) = &self.filter {
                     let metadata = directory.symlink_metadata(&name)?;
-                    if !policy.includes(matcher, &child, metadata.is_dir()) {
+                    let child = std::path::Path::new(path.as_str()).join(&name);
+                    if !policy.includes_native(matcher, &child, metadata.is_dir()) {
                         continue;
                     }
                 }
+                let name = name
+                    .into_string()
+                    .map_err(|_| anyhow::anyhow!("Nonportable managed filename"))?;
+                PortableRelPath::parse(&name, PathSyntax::ArtifactName)?;
+                PortableRelPath::parse(
+                    &format!("{}/{}", path.as_str(), name),
+                    PathSyntax::ProjectContent,
+                )?;
                 members.insert(name);
             }
             self.insert(
