@@ -71,6 +71,14 @@ Original declarations, provider records, source evidence and permissions remain
 accessible. The result has no publisher, and does not substitute for a semantic
 candidate or an approved replacement plan.
 
+`VerifiedImportContent::into_candidate` consumes the verified inventory and explicit
+`ImportCandidateOptions`. Every file needs an `ImportFileDecision` preserving source
+participation. Provider files share canonical identity and exact pins; declared files
+retain their destination and layer. Optional defaults, provider placements and ambiguous
+runtime choices are host decisions. URL persistence enforces the durable locator policy;
+local retention is an explicit conversion. `ImportCandidate` exposes coherent documents
+and file-slot bindings to retained bytes, with no publication authority.
+
 ## 17. Public engine API and application wiring
 
 ### 17.1 Public entry points

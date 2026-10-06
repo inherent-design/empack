@@ -76,6 +76,10 @@ impl<T> NonEmpty<T> {
         }
         Ok(Self(values))
     }
+    /// Append without weakening the nonempty invariant.
+    pub fn push(&mut self, value: T) {
+        self.0.push(value);
+    }
     /// Borrow all elements in their declared order.
     pub fn as_slice(&self) -> &[T] {
         &self.0

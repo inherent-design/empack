@@ -1,13 +1,14 @@
 //! Explicit live import acquisition. No project is created or replaced by this probe.
-use empack_core::model::ExpectedContent;
+use empack_core::{model::*, path::InstallDestination, projection::BuildTarget, requirements::*};
 use empack_lib::{
     application::process_runtime::Cancellation,
     engine::{
         acquisition::HttpAcquisition,
         content::{AcquiredContent, InitialObservation, SourceEvidencePolicy, verify_stream},
         import::{
-            ImportContentLimits, ImportContentOutcome, ImportContentPlan, ImportLimits,
-            inspect_import,
+            ImportCandidateOptions, ImportContentKey, ImportContentLimits, ImportContentOutcome,
+            ImportContentPlan, ImportFileDecision, ImportLimits, ImportPersistence,
+            ImportedRequirement, VerifiedImportContent, inspect_import,
         },
         providers::ProviderCatalog,
         resources::{ResourceGovernor, ResourceRequest},
@@ -82,7 +83,10 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
                     result = plan.acquire(&mut scope, &transport, provided, SourceEvidencePolicy::Compatibility).await?;
                 }
                 match result {
-                    ImportContentOutcome::Ready(content) => Ok((content, supplied)),
+                    ImportContentOutcome::Ready(content) => {
+                        let options = fixture_decisions(&content)?;
+                        Ok((content.into_candidate(&mut scope, options)?, supplied))
+                    },
                     ImportContentOutcome::NeedsInput { pending, .. } => anyhow::bail!("{} import obligations remain", pending.len()),
                 }
             }
@@ -92,19 +96,21 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
         let outcome = handle.wait().await;
         runtime.shutdown().await;
         match &*outcome {
-            OperationOutcome::Completed(Ok((content, supplied))) => {
+            OperationOutcome::Completed(Ok((candidate, supplied))) => {
+                let content = candidate.source();
                 let bytes: u64 = content
                     .content()
                     .values()
                     .map(|value| value.lease().len())
                     .sum();
                 println!(
-                    "{}: {:?}, {} files, {} bytes, {} explicitly supplied files",
+                    "{}: {:?}, {} files, {} bytes, {} explicitly supplied files, {} coherent roots",
                     path.display(),
                     content.plan().imported().format,
                     content.content().len(),
                     bytes,
-                    supplied
+                    supplied,
+                    candidate.project().intent().roots.len()
                 );
                 if allow_prior {
                     for value in content.content().values() {
@@ -121,4 +127,121 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+// These are explicit smoke-host choices, not production importer defaults. Every source path
+// and requirement is preserved; optional items start disabled and provider kinds must be unique.
+fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCandidateOptions> {
+    let source = content.plan().imported();
+    let mut files = BTreeMap::new();
+    for key in content.content().keys() {
+        let (label, requirements, persistence, kind, destination) = match key {
+            ImportContentKey::Declared(i) => {
+                let file = &source.files[*i];
+                let kind = if file.destination.relative().as_str().starts_with("mods/") {
+                    ContentKind::Mod
+                } else if file
+                    .destination
+                    .relative()
+                    .as_str()
+                    .starts_with("resourcepacks/")
+                {
+                    ContentKind::ResourcePack
+                } else {
+                    ContentKind::OtherFile
+                };
+                (
+                    format!("declared-{i}"),
+                    &file.requirements,
+                    ImportPersistence::Url,
+                    kind,
+                    None,
+                )
+            }
+            ImportContentKey::Override(i) => (
+                format!("override-{i}"),
+                &source.overrides[*i].requirements,
+                ImportPersistence::Local,
+                ContentKind::OtherFile,
+                None,
+            ),
+            ImportContentKey::Provider { pin, filename } => {
+                let i = source
+                    .providers
+                    .iter()
+                    .position(|p| &p.selection == pin)
+                    .unwrap();
+                let record = &content.plan().providers().records()[pin];
+                anyhow::ensure!(
+                    record.kinds.as_slice().len() == 1,
+                    "Fixture needs an explicit choice for ambiguous provider content kind"
+                );
+                let kind = record.kinds.as_slice()[0];
+                let folder = match kind {
+                    ContentKind::Mod => "mods",
+                    ContentKind::ResourcePack => "resourcepacks",
+                    ContentKind::ShaderPack => "shaderpacks",
+                    _ => anyhow::bail!("Fixture needs an explicit provider layout choice"),
+                };
+                (
+                    format!("provider-{i}"),
+                    &source.providers[i].requirements,
+                    ImportPersistence::Provider,
+                    kind,
+                    Some(InstallDestination::parse(&format!("{folder}/{filename}"))?),
+                )
+            }
+        };
+        let requirement = |value| -> anyhow::Result<Requirement> {
+            Ok(match value {
+                ImportedRequirement::Required => Requirement::Required,
+                ImportedRequirement::Unsupported => Requirement::Unsupported,
+                ImportedRequirement::Optional => Requirement::Optional(OptionalChoice {
+                    key: ChoiceKey::parse(&label)?,
+                    default_enabled: false,
+                    description: Some("Optional imported content".into()),
+                }),
+            })
+        };
+        files.insert(
+            key.clone(),
+            ImportFileDecision {
+                key: DependencyKey::parse(&label)?,
+                kind,
+                persistence,
+                provider_destination: destination,
+                requirements: Requirements {
+                    client: requirement(requirements.client)?,
+                    server: requirement(requirements.server)?,
+                },
+            },
+        );
+    }
+    Ok(ImportCandidateOptions {
+        metadata: PackMetadata {
+            name: source
+                .metadata
+                .name
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Fixture name missing"))?,
+            version: source
+                .metadata
+                .version
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Fixture version missing"))?,
+            author: source.metadata.author.clone(),
+            description: source.metadata.summary.clone(),
+        },
+        loader: None,
+        layout: BTreeMap::new(),
+        files,
+        distribution: DistributionIntent {
+            targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+            archive: DistributionArchive::Zip,
+        },
+        // The known generated CurseForge report is not game content. Reject any additional
+        // unknown member; record this exact exclusion in the durable import provenance.
+        exclude_auxiliary_members: source.auxiliary_members.len() == 1
+            && source.auxiliary_members[0].as_str() == "modlist.html",
+    })
 }

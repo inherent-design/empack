@@ -201,8 +201,8 @@ returns competing suggestions with evidence, without changing backend options.
 Auxiliary archive members remain recorded rather than silently disappearing.
 
 This is the inspection boundary. The acquisition composition below adds verified bytes;
-semantic interpretation, conversion decisions and project publication still need
-composition before the CLI import path can be replaced. The existing importer remains
+semantic candidate assembly follows below. Replacement planning and project publication
+still need composition before the CLI import path can be replaced. The existing importer remains
 available until that complete replacement passes the feature requirements.
 
 ## Shared override precedence
@@ -248,9 +248,33 @@ provider, integrity, resource or transport failure returns no successful subset.
 Record and content-size limits are separate from network allowances; bookkeeping
 is charged for actual records rather than the configured maximum.
 
-These values grant no project write authority. Import still needs semantic candidate
-assembly, explicit optional/default and layout choices, replacement planning and
-composition with the Engine's approval/publication lifecycle.
+These values grant no project write authority. The interpretation boundary below
+builds candidate documents; replacement planning and composition with the Engine's
+approval/publication lifecycle remain separate.
+
+## Import candidate interpretation
+
+`VerifiedImportContent::into_candidate` requires a decision for every verified file.
+It preserves declared destinations, layers and required/optional/unsupported
+participation. The host supplies absent optional defaults and descriptions, provider
+placements, logical keys and content-kind choices. Provider choices must match the
+exact catalog selection. Multiple files retain one provider identity and exact pin.
+Competing runtime declarations require a selection unless there is a sole primary.
+
+URL files remain URL roots with their original digest assertions. Transient or unsafe
+locators cannot enter durable documents. An explicit local-retention choice keeps the
+verified bytes and records the conversion. Embedded files use observed content identity
+without presenting it as independent source authentication. Shared and side overrides
+remain separate roots. Unknown auxiliary members require an explicit decision. The
+`empack.import` extension records the source archive SHA-256 and exact exclusions,
+including for an otherwise empty import.
+
+The candidate binds every lock file slot to retained verified content, checks portable
+collisions and reserved backend paths, and round-trips the durable document boundary.
+Known required edges between included provider selections are retained; partial
+coverage cannot authorize removal. Source declarations and provider facts remain
+available through the retained import. The candidate holds no project writer and
+cannot authorize replacement on its own.
 
 ## Composed build behavior
 
@@ -344,6 +368,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Import candidate interpretation | 1,673 tests and eleven doctests passed before the final provenance/index refinement. The final 50 core/import checks and all-feature Clippy cover that refinement. Both real formats produced 78 coherent roots, including explicit restricted-file association and exclusion of the known generated `modlist.html` report. The first CurseForge candidate probe correctly refused that unacknowledged auxiliary member. Publication and CLI parity remain unfinished |
 | Verified import content | 1,661 tests and eleven doctests passed without a nextest leak warning; 83 affected catalog/import/acquisition tests and all-feature Clippy passed. Both real Fabulously Optimized 1.20.1 archives passed full content acquisition with explicit prior-byte association enabled. The initial CurseForge run correctly stopped for two restricted files; the Modrinth pass verified 78 files / 27,902,856 bytes. This is acquisition evidence, not project publication parity |
 | Closure review 62 | Both the 16 MiB small-graph admission failure and incompatible required-pin abort reproduced. Incremental bookkeeping and explicit incompatible-requirement evidence pass the combined 80 catalog/import/acquisition regressions |
 | Required dependency expansion | 1,651 tests and eleven doctests, 54 affected provider tests, all-feature Clippy and all seven live provider probes passed. Cycles, conflicts, incomplete evidence and shared budgets are covered. One staging test emitted a nextest pipe-leak warning; its isolated repeat passed cleanly. Three graph-capacity edge cases and Greptile review 61's 8 MiB pin-lookup admission failure reproduced before their fixes |

@@ -28,6 +28,10 @@ pub use acquisition::{
     ImportContentInput, ImportContentKey, ImportContentLimits, ImportContentOutcome,
     ImportContentPlan, ImportInputReason, VerifiedImportContent,
 };
+mod candidate;
+pub use candidate::{
+    ImportCandidate, ImportCandidateOptions, ImportFileDecision, ImportPersistence,
+};
 mod formats;
 #[cfg(test)]
 mod tests;

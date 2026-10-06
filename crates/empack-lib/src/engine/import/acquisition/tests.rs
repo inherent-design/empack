@@ -548,3 +548,405 @@ async fn an_allowed_mirror_remains_usable_without_losing_source_alternatives() {
     );
     payload.assert_async().await;
 }
+
+fn candidate_options(content: &VerifiedImportContent) -> super::super::ImportCandidateOptions {
+    use super::super::{ImportCandidateOptions, ImportFileDecision, ImportPersistence};
+    use empack_core::{model::*, projection::BuildTarget, requirements::*};
+    let requirement = |requirement, key: &str| match requirement {
+        ImportedRequirement::Required => Requirement::Required,
+        ImportedRequirement::Unsupported => Requirement::Unsupported,
+        ImportedRequirement::Optional => Requirement::Optional(OptionalChoice {
+            key: ChoiceKey::parse(key).unwrap(),
+            default_enabled: false,
+            description: Some("Explicit fixture choice".into()),
+        }),
+    };
+    let source = content.plan().imported();
+    let files = content
+        .content()
+        .keys()
+        .enumerate()
+        .map(|(i, key)| {
+            let (requirements, persistence, kind, destination) = match key {
+                ImportContentKey::Declared(i) => (
+                    &source.files[*i].requirements,
+                    ImportPersistence::Local,
+                    ContentKind::ResourcePack,
+                    None,
+                ),
+                ImportContentKey::Override(i) => (
+                    &source.overrides[*i].requirements,
+                    ImportPersistence::Local,
+                    ContentKind::Config,
+                    None,
+                ),
+                ImportContentKey::Provider { pin, filename } => (
+                    &source
+                        .providers
+                        .iter()
+                        .find(|p| &p.selection == pin)
+                        .unwrap()
+                        .requirements,
+                    ImportPersistence::Provider,
+                    ContentKind::Mod,
+                    Some(InstallDestination::parse(&format!("mods/{filename}")).unwrap()),
+                ),
+            };
+            let label = format!("item-{i}");
+            (
+                key.clone(),
+                ImportFileDecision {
+                    key: DependencyKey::parse(&label).unwrap(),
+                    kind,
+                    persistence,
+                    requirements: Requirements {
+                        client: requirement(requirements.client, &label),
+                        server: requirement(requirements.server, &label),
+                    },
+                    provider_destination: destination,
+                },
+            )
+        })
+        .collect();
+    ImportCandidateOptions {
+        metadata: PackMetadata {
+            name: "Imported pack".into(),
+            version: "1".into(),
+            author: None,
+            description: None,
+        },
+        loader: None,
+        layout: BTreeMap::new(),
+        distribution: DistributionIntent {
+            targets: NonEmpty::new(vec![BuildTarget::Mrpack]).unwrap(),
+            archive: DistributionArchive::Zip,
+        },
+        files,
+        exclude_auxiliary_members: false,
+    }
+}
+async fn interpret(
+    source: AcquiredContent,
+    origin: String,
+    change: impl FnOnce(&mut super::super::ImportCandidateOptions) + Send + 'static,
+) -> Arc<OperationOutcome<Result<super::super::ImportCandidate>>> {
+    let (outcome, governor) = run(source, origin, limits()).await;
+    let Some(OperationOutcome::Completed(Ok(ImportContentOutcome::Ready(content)))) =
+        Arc::into_inner(outcome)
+    else {
+        panic!("expected acquired content");
+    };
+    let mut options = candidate_options(&content);
+    change(&mut options);
+    let runtime = OperationRuntime::new(governor, 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move { Ok(content.into_candidate(&mut scope, options)) })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    outcome
+}
+#[tokio::test]
+async fn import_candidate_retains_every_layer_and_explicit_local_conversion() {
+    use empack_core::model::*;
+    let mut server = Server::new_async().await;
+    let response = server
+        .mock("GET", "/payload")
+        .with_body("payload")
+        .create_async()
+        .await;
+    let archive = source(
+        "modrinth.index.json",
+        mr(vec![remote(
+            format!("{}/payload", server.url()),
+            "resourcepacks/chosen.zip",
+            b"payload",
+        )]),
+        &[
+            ("overrides/resourcepacks/chosen.zip", b"shared"),
+            ("client-overrides/resourcepacks/chosen.zip", b"client"),
+            ("server-overrides/resourcepacks/chosen.zip", b"server"),
+        ],
+    );
+    let outcome = interpret(archive, server.url(), |_| {}).await;
+    let OperationOutcome::Completed(Ok(candidate)) = &*outcome else {
+        panic!("candidate failed");
+    };
+    response.assert_async().await;
+    assert_eq!(candidate.bindings().len(), 4);
+    let project = candidate.project();
+    let codec = crate::engine::documents::DocumentCodec;
+    let intent = codec
+        .decode_intent(&codec.encode_intent(project.intent()).unwrap(), "candidate")
+        .unwrap();
+    let lock = codec
+        .decode_lock(&codec.encode_lock(project).unwrap(), &intent, "candidate")
+        .unwrap();
+    assert_eq!(lock.lock(), project.lock());
+    let mut layers = BTreeSet::new();
+    for ((key, slot), content_key) in candidate.bindings() {
+        let root = &project.intent().roots[key];
+        let file = project.lock().dependencies[key]
+            .files
+            .as_slice()
+            .iter()
+            .find(|file| &file.slot == slot)
+            .unwrap();
+        layers.insert(file.placements.as_slice()[0].layer);
+        assert!(matches!(root.source, SourceIntent::Local(_)));
+        assert!(matches!(file.acquisition, AcquisitionSpec::Local(_)));
+        if matches!(content_key, ImportContentKey::Declared(_)) {
+            assert!(
+                file.provenance
+                    .conversions
+                    .iter()
+                    .any(|text| text.contains("local file"))
+            );
+            assert_eq!(
+                file.expected.digests,
+                candidate.source().plan().imported().files[0]
+                    .expected
+                    .digests
+            );
+            assert_eq!(
+                bytes(&candidate.source().content()[content_key]),
+                b"payload"
+            );
+        } else {
+            assert!(file.expected.accepted_observation.is_some());
+        }
+    }
+    assert_eq!(
+        layers,
+        BTreeSet::from([
+            ContentLayer::Common,
+            ContentLayer::CommonOverride,
+            ContentLayer::Client,
+            ContentLayer::Server
+        ])
+    );
+}
+#[tokio::test]
+async fn import_candidate_rejects_inventory_and_semantic_changes() {
+    use empack_core::model::DependencyKey;
+    use empack_core::requirements::Requirement;
+    for case in 0..4 {
+        let archive = source(
+            "modrinth.index.json",
+            mr(vec![]),
+            &[("overrides/config/a", b"a"), ("overrides/config/b", b"b")],
+        );
+        let outcome = interpret(
+            archive,
+            "http://127.0.0.1:1".into(),
+            move |options| match case {
+                0 => {
+                    options.files.pop_first();
+                }
+                1 => {
+                    options
+                        .files
+                        .values_mut()
+                        .next()
+                        .unwrap()
+                        .requirements
+                        .client = Requirement::Unsupported;
+                }
+                2 => {
+                    for decision in options.files.values_mut() {
+                        decision.key = DependencyKey::parse("same").unwrap();
+                    }
+                }
+                _ => {
+                    options.loader = Some(0);
+                }
+            },
+        )
+        .await;
+        assert!(
+            matches!(&*outcome, OperationOutcome::Completed(Err(_))),
+            "case {case}"
+        );
+    }
+}
+#[tokio::test]
+async fn import_candidate_requires_a_safe_durable_url_or_explicit_conversion() {
+    let mut server = Server::new_async().await;
+    server
+        .mock("GET", "/payload")
+        .with_body("payload")
+        .create_async()
+        .await;
+    let archive = source(
+        "modrinth.index.json",
+        mr(vec![remote(
+            format!("{}/payload", server.url()),
+            "mods/chosen.jar",
+            b"payload",
+        )]),
+        &[],
+    );
+    let outcome = interpret(archive, server.url(), |options| {
+        options.files.values_mut().next().unwrap().persistence =
+            super::super::ImportPersistence::Url;
+    })
+    .await;
+    assert!(
+        matches!(&*outcome, OperationOutcome::Completed(Err(error)) if error.to_string().contains("credential-free HTTPS"))
+    );
+}
+#[tokio::test]
+async fn import_candidate_preserves_provider_pins_weak_digests_and_optional_choices() {
+    use empack_core::{model::*, requirements::Requirement};
+    let mut server = Server::new_async().await;
+    let url = format!("{}/payload", server.url());
+    provider(&mut server, 123, 456, Some(url.clone())).await;
+    provider(&mut server, 124, 457, Some(url)).await;
+    server
+        .mock("GET", "/payload")
+        .with_body("payload")
+        .expect(2)
+        .create_async()
+        .await;
+    let outcome = interpret(source("manifest.json", cf(), &[]), server.url(), |_| {}).await;
+    let OperationOutcome::Completed(Ok(candidate)) = &*outcome else {
+        panic!("provider candidate failed");
+    };
+    assert_eq!(
+        candidate.project().intent().runtime.loader,
+        LoaderKind::Fabric
+    );
+    for dependency in candidate.project().lock().dependencies.values() {
+        assert!(matches!(dependency.identity, ResolvedIdentity::Provider(_)));
+        let file = &dependency.files.as_slice()[0];
+        assert!(matches!(file.acquisition, AcquisitionSpec::Provider { .. }));
+        assert_eq!(file.expected.digests, file.provenance.declared_digests);
+        assert!(file.expected.accepted_observation.is_none());
+        if matches!(&dependency.selected.as_ref().unwrap().selection, empack_core::identity::PinSelector::CurseForgeFile(id) if id.get() == 456)
+        {
+            assert!(matches!(
+                file.placements.as_slice()[0].requirements.client,
+                Requirement::Optional(_)
+            ));
+        }
+    }
+}
+
+#[tokio::test]
+async fn import_candidate_keeps_url_files_as_url_roots_with_original_hashes() {
+    use empack_core::model::*;
+    let archive = source(
+        "modrinth.index.json",
+        mr(vec![remote(
+            "https://example.org/different-name.bin".into(),
+            "resourcepacks/chosen.zip",
+            b"payload",
+        )]),
+        &[],
+    );
+    let runtime = OperationRuntime::new(governor(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let result = async {
+                let imported = inspect_source(&mut scope, archive).await?;
+                let catalog = ProviderCatalog::for_loopback_tests("http://127.0.0.1:1", None);
+                let plan =
+                    ImportContentPlan::resolve(&mut scope, imported, &catalog, limits()).await?;
+                let outcome = plan
+                    .acquire(
+                        &mut scope,
+                        &HttpAcquisition::for_loopback_tests(),
+                        BTreeMap::from([(ImportContentKey::Declared(0), observed(b"payload"))]),
+                        SourceEvidencePolicy::Compatibility,
+                    )
+                    .await?;
+                let ImportContentOutcome::Ready(content) = outcome else {
+                    anyhow::bail!("unexpected input");
+                };
+                let mut options = candidate_options(&content);
+                options.files.values_mut().next().unwrap().persistence =
+                    super::super::ImportPersistence::Url;
+                content.into_candidate(&mut scope, options)
+            }
+            .await;
+            Ok(result)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    let OperationOutcome::Completed(Ok(candidate)) = &*outcome else {
+        panic!("URL candidate failed");
+    };
+    let root = candidate.project().intent().roots.values().next().unwrap();
+    let locked = candidate
+        .project()
+        .lock()
+        .dependencies
+        .values()
+        .next()
+        .unwrap();
+    assert!(
+        matches!(&root.source, SourceIntent::Url(urls) if urls.as_slice() == ["https://example.org/different-name.bin"])
+    );
+    assert!(matches!(root.version, VersionIntent::ContentPinned(_)));
+    assert!(matches!(locked.identity, ResolvedIdentity::Url(_)));
+    assert!(locked.selected.is_none());
+    let file = &locked.files.as_slice()[0];
+    assert_eq!(
+        file.placements.as_slice()[0]
+            .destination
+            .relative()
+            .as_str(),
+        "resourcepacks/chosen.zip"
+    );
+    assert_eq!(
+        file.expected.digests,
+        candidate.source().plan().imported().files[0]
+            .expected
+            .digests
+    );
+}
+
+#[tokio::test]
+async fn auxiliary_member_exclusion_requires_a_decision_and_survives_empty_imports() {
+    use empack_core::model::ExtensionValue;
+    for exclude in [false, true] {
+        let archive = source(
+            "modrinth.index.json",
+            mr(vec![]),
+            &[("modlist.html", b"report")],
+        );
+        let outcome = interpret(archive, "http://127.0.0.1:1".into(), move |options| {
+            options.exclude_auxiliary_members = exclude;
+        })
+        .await;
+        if !exclude {
+            assert!(
+                matches!(&*outcome, OperationOutcome::Completed(Err(error)) if error.to_string().contains("auxiliary members"))
+            );
+        } else {
+            let OperationOutcome::Completed(Ok(candidate)) = &*outcome else {
+                panic!("explicit exclusion failed");
+            };
+            assert!(candidate.bindings().is_empty());
+            let ExtensionValue::Object(provenance) =
+                &candidate.project().intent().extensions["empack.import"]
+            else {
+                panic!("missing provenance");
+            };
+            assert_eq!(
+                provenance["excluded-auxiliary-members"],
+                ExtensionValue::List(vec![ExtensionValue::Text("modlist.html".into())])
+            );
+            assert_eq!(
+                provenance["source-archive-sha256"],
+                ExtensionValue::Text(
+                    empack_core::digest::ExpectedDigest::Sha256(
+                        *candidate.source().plan().imported().source_id().bytes()
+                    )
+                    .hex()
+                )
+            );
+        }
+    }
+}
