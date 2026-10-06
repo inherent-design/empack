@@ -17,6 +17,7 @@ use empack_core::{
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod acquisition;
+pub mod client;
 pub mod materialized;
 
 /// Exact logical requests and retained metadata records occupy distinct acquisition namespaces.
@@ -410,12 +411,10 @@ fn check_backend(
 
 /// One verified mrpack output and its complete captured read set. Publication cannot rerun build work.
 pub struct PreparedMrpackBuild {
-    root: super::snapshot::ProjectReadRoot,
-    change: super::verification::VerifiedFileChange,
+    publication: PreparedArtifact,
     conversions: Vec<String>,
     backend_comparisons: Vec<BackendDigestComparison>,
     observed: Vec<super::mrpack::ObservedFileEvidence>,
-    bytes: u64,
 }
 impl PreparedMrpackBuild {
     pub fn backend_comparisons(&self) -> &[BackendDigestComparison] {
@@ -428,14 +427,14 @@ impl PreparedMrpackBuild {
         &self.conversions
     }
     pub fn bytes(&self) -> u64 {
-        self.bytes
+        self.publication.bytes
     }
     pub fn publish(
         self,
         publisher: &super::publication::Publisher,
         cancel: &Cancellation,
     ) -> Result<super::publication::PublicationReceipt> {
-        publisher.publish(&self.root, self.change, cancel)
+        self.publication.publish(publisher, cancel)
     }
 }
 
@@ -449,21 +448,52 @@ pub fn prepare_mrpack_build(
     optional: OptionalConversion,
     cancel: &Cancellation,
 ) -> Result<PreparedMrpackBuild> {
+    ensure!(
+        artifact.as_str().ends_with(".mrpack"),
+        "Mrpack output requires a .mrpack filename"
+    );
+    let plan = prepare_mrpack(&workspace, external, evidence, optional, cancel)?;
+    let mut archive = super::staging::PrivateFile::new()?;
+    let verified = plan.write(archive.file(), cancel)?;
+    let publication = prepare_archive_publication(workspace, artifact, archive, &verified, cancel)?;
+    Ok(PreparedMrpackBuild {
+        publication,
+        conversions: plan.conversions().to_vec(),
+        backend_comparisons: plan.backend_comparisons().to_vec(),
+        observed: plan.observed().to_vec(),
+    })
+}
+
+/// Internal file publication proof, reached only after the caller's semantic archive checks.
+struct PreparedArtifact {
+    root: super::snapshot::ProjectReadRoot,
+    change: super::verification::VerifiedFileChange,
+    bytes: u64,
+}
+impl PreparedArtifact {
+    fn publish(
+        self,
+        publisher: &super::publication::Publisher,
+        cancel: &Cancellation,
+    ) -> Result<super::publication::PublicationReceipt> {
+        publisher.publish(&self.root, self.change, cancel)
+    }
+}
+fn prepare_archive_publication(
+    workspace: WorkspaceSnapshot,
+    artifact: empack_core::path::PortableRelPath,
+    mut archive: super::staging::PrivateFile,
+    verified: &super::artifacts::VerifiedArchive,
+    cancel: &Cancellation,
+) -> Result<PreparedArtifact> {
     use super::{
         staging::MutableStage,
         verification::{VerifiedFileChange, observed_artifacts_for, plan_files},
     };
     use empack_core::files::{FileContent, FilePermissions};
     use std::io::Seek;
-    ensure!(
-        artifact.as_str().ends_with(".mrpack"),
-        "Mrpack output requires a .mrpack filename"
-    );
     let target = ManagedPath::Artifact(artifact);
     let observed = observed_artifacts_for(workspace.observations(), [target.clone()])?;
-    let plan = prepare_mrpack(&workspace, external, evidence, optional, cancel)?;
-    let mut archive = super::staging::PrivateFile::new()?;
-    let verified = plan.write(archive.file(), cancel)?;
     let desired = BTreeMap::from([(
         target.clone(),
         FileContent {
@@ -491,12 +521,9 @@ pub fn prepare_mrpack_build(
     let frozen = stage.freeze(limits, cancel)?;
     let (root, snapshot) = workspace.into_native();
     let change = VerifiedFileChange::verify_artifacts(snapshot, file_plan, frozen)?;
-    Ok(PreparedMrpackBuild {
+    Ok(PreparedArtifact {
         root,
         change,
-        conversions: plan.conversions().to_vec(),
-        backend_comparisons: plan.backend_comparisons().to_vec(),
-        observed: plan.observed().to_vec(),
         bytes: verified.len(),
     })
 }

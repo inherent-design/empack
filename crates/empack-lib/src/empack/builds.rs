@@ -1295,8 +1295,8 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        self.process_build_templates("templates/common", &dist_dir)?;
-        self.process_build_templates("templates/client", &dist_dir)?;
+        self.process_build_templates("templates/common", &dist_dir, BuildTarget::Client)?;
+        self.process_build_templates("templates/client", &dist_dir, BuildTarget::Client)?;
 
         let minecraft_dir = dist_dir.join(".minecraft");
         self.session
@@ -1361,8 +1361,8 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        self.process_build_templates("templates/common", &dist_dir)?;
-        self.process_build_templates("templates/server", &dist_dir)?;
+        self.process_build_templates("templates/common", &dist_dir, BuildTarget::Server)?;
+        self.process_build_templates("templates/server", &dist_dir, BuildTarget::Server)?;
 
         self.stage_pack_for_side(&dist_dir.join("pack"), OverrideSide::ServerOnly)?;
 
@@ -1439,8 +1439,8 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        self.process_build_templates("templates/common", &dist_dir)?;
-        self.process_build_templates("templates/client", &dist_dir)?;
+        self.process_build_templates("templates/common", &dist_dir, BuildTarget::ClientFull)?;
+        self.process_build_templates("templates/client", &dist_dir, BuildTarget::ClientFull)?;
 
         // Copy pack files so the installer can resolve .toml mod entries
         self.stage_pack_for_side(&dist_dir.join("pack"), OverrideSide::ClientOnly)?;
@@ -1501,8 +1501,8 @@ impl<'a> BuildOrchestrator<'a> {
                 reason: e.to_string(),
             })?;
 
-        self.process_build_templates("templates/common", &dist_dir)?;
-        self.process_build_templates("templates/server", &dist_dir)?;
+        self.process_build_templates("templates/common", &dist_dir, BuildTarget::ServerFull)?;
+        self.process_build_templates("templates/server", &dist_dir, BuildTarget::ServerFull)?;
 
         let pack_info = self.load_pack_info()?.clone();
         if let Err(e) = self.download_server_jar(&dist_dir, &pack_info) {
@@ -1792,6 +1792,7 @@ impl<'a> BuildOrchestrator<'a> {
         &mut self,
         template_dir: &str,
         target_dir: &Path,
+        target: BuildTarget,
     ) -> Result<(), BuildError> {
         let template_path = self.workdir.join(template_dir);
         if !self.session.filesystem().exists(&template_path) {
@@ -1801,6 +1802,14 @@ impl<'a> BuildOrchestrator<'a> {
 
         // Ensure the cached TemplateEngine is initialised from pack.toml
         self.get_or_init_template_engine()?;
+        self.template_engine.as_mut().unwrap().set_variable(
+            "BOOTSTRAP",
+            if matches!(target, BuildTarget::Client | BuildTarget::Server) {
+                "true"
+            } else {
+                ""
+            },
+        );
 
         let template_files = self
             .session

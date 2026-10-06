@@ -81,7 +81,7 @@ impl TemplateEngine {
 
         Self {
             handlebars,
-            variables: HashMap::new(),
+            variables: HashMap::from([("BOOTSTRAP".into(), "true".into())]),
         }
     }
 

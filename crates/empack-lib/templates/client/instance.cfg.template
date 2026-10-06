@@ -1,5 +1,6 @@
 [General]
 ConfigVersion=1.2
+InstanceType=OneSix
 ExportAuthor={{ini_quote AUTHOR}}
 MaxMemAlloc=8192
 MinMemAlloc=512
@@ -9,4 +10,4 @@ iconKey=empack_icon
 AutoUpdate=false
 ManagedPack=true
 OverrideCommands=true
-PreLaunchCommand={{ini_quote '"$INST_JAVA" -jar packwiz-installer-bootstrap.jar pack/pack.toml'}}
+PreLaunchCommand={{#if BOOTSTRAP}}{{ini_quote '"$INST_JAVA" -jar packwiz-installer-bootstrap.jar pack/pack.toml'}}{{/if}}

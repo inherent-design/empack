@@ -4,8 +4,8 @@ Release target: v0.5.0-alpha.1. The [target contracts](README.md) and
 [feature requirements](parity.md) define completion. This page records what the
 source implements; it does not make the target API sketches available by implication.
 
-The normalized engine can prepare and recoverably publish one mrpack from a captured
-workspace. HTTP acquisition and explicit build-content obligations now feed that
+The normalized engine can prepare and recoverably publish a mrpack or full client
+archive from a captured workspace. HTTP acquisition and explicit build-content obligations now feed that
 path. The complete semantic `Engine` API, other build targets, provider/import
 composition, continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
@@ -24,6 +24,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
 | Build acquisition | Read-only missing-content plan; references avoid unnecessary downloads; materialization/layer collisions require bytes; failed download batches return no successful subset; manual/provider/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
 | Materialized game content | Shared captured identity/content checks; side and optional selection before missing-byte requirements; exact retained leases and source evidence; no unresolved entries in completed inventory | [Materialization tests](../../crates/empack-lib/src/engine/build/materialized/tests.rs), [core inventory tests](../../crates/empack-core/tests/inventory.rs) |
+| Full client distribution | `.minecraft` game view, captured templates, exact launcher components, generated defaults, all three archive formats and verified publication | [Client build tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
 | Templates | Captured common/side projection, nested paths, binary and explicit literal copying, strict expressions, format helpers, bounded outputs and preserved portable attributes | [Template tests](../../crates/empack-lib/src/engine/templates/tests.rs) |
 | Archive sources | Retained bounded ZIP reader; raw directory preflight; every member path/kind/collision checked; selected bytes, CRC and portable attributes verified; failed attempts consume extraction allowance | [Archive source tests](../../crates/empack-lib/src/engine/archive_source/tests.rs) |
 | Staging | Private native storage, copied inputs, no project/cache hardlinks, closed writers before freeze, retained file handles, safe cleanup order | [Staging tests](../../crates/empack-lib/src/engine/staging/tests.rs) |
@@ -35,9 +36,9 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Mrpack semantics | Every locked file/placement accounted for, exact reference evidence, layered replacements, retained observed content, optional conversion rules and inspected output archives | [Mrpack tests](../../crates/empack-lib/src/engine/mrpack/tests.rs), [observed-content tests](../../crates/empack-lib/src/engine/mrpack/observed.rs) |
 
 File-level verification is not a semantic proof. Container integrity is not evidence
-that every required dependency was included. Only the composed mrpack path currently
-connects normalized obligations, verified acquisitions, independently checked output
-and the journal publisher.
+that every required dependency was included. The composed mrpack and full-client paths connect
+normalized obligations, verified acquisitions, independently checked output and the
+journal publisher. Server/runtime and bootstrap composition remain pending.
 
 ## Composed build behavior
 
@@ -73,8 +74,7 @@ acknowledging missing description/default fields does not make optional content 
 captured obligations as mrpack. It preserves source assurance per logical owner,
 exact locked resolution and observed-backend evidence. Unacquired content on the
 other side or behind a disabled choice does not become a required download. This
-is game-content completeness, not launcher/server runtime completeness; standalone
-runtime assembly and publication remain pending.
+is game-content completeness, not launcher/server runtime completeness; server runtime assembly and bootstrap targets remain pending.
 
 Template preparation selects common and target-side inputs before rendering. Exact
 side replacements retain their replaced source identity; same-layer duplicates,
@@ -82,7 +82,17 @@ portable aliases and file/ancestor conflicts fail. `.template` files require UTF
 other files preserve the text-or-binary convention, with an explicit `Copy` mode
 for literal UTF-8. Expressions use current bound metadata and exact runtime versions.
 Missing values and rendering/size failures return no partial set. Project templates
-remain untouched. The selected outputs still need standalone runtime/build composition.
+remain untouched. `BOOTSTRAP` distinguishes lightweight from full-target defaults.
+Full client preparation adds a format-1 launcher component manifest tied to the
+locked Minecraft/loader versions and maps selected game content under `.minecraft`.
+Default full-client settings do not run an absent bootstrap installer. A captured
+user configuration remains an explicit input; arbitrary user commands are not
+certified by artifact verification. User component manifests must preserve the
+locked game/loader. Template/game collisions fail before publication.
+
+Full client archives materialize pack content, not Minecraft binaries and assets:
+the launcher still resolves its normal game/runtime components. ZIP supports direct
+launcher import; TAR.GZ and 7z contain the same instance tree for explicit extraction.
 
 ## Existing command guarantees
 
@@ -110,6 +120,8 @@ Results describe the stated revision, not every later edit.
 | `efb7799` | `mise run e2e:strict`: 101 tests passed; [native CI 37388992838](https://github.com/inherent-design/empack/actions/runs/37388992838) passed |
 | `1901434` | 17 template tests and all-feature Clippy passed; six generated configurations each round-tripped through Qt QSettings and Java Properties |
 | `3733d71` | 1,514 default tests passed; the subsequent doctest compile overlapped a source edit and required a repeat |
+| `c5cd762` | 1,517 default tests and ten doctests passed; Greptile review 35 reported no new blocking findings |
+| Full client assembly | 138 affected build/template/core tests passed; the final rebuild regression and all-feature Clippy passed. Archives were published and independently read in ZIP, TAR.GZ and 7z |
 | Materialization integration | 30 affected core inventory, build, mrpack and reader tests passed |
 | Captured template integration | 20 affected template tests passed, including all four standalone target selections, malformed inputs, output budgets, cancellation and source changes |
 | Archive and budget integration | 21 affected acquisition/archive/build/reader tests passed; the final five archive tests passed after tightening per-member reads. Three focused source-ownership/scratch tests and all-feature Clippy passed |
@@ -126,8 +138,8 @@ repeat passed without a leak. These observations do not establish a production f
 ## Remaining integration and limits
 
 - Implement semantic request preparation/approval/outcomes and compile the public
-  Engine usage examples. Connect provider catalogs, import normalization, all five
-  build targets, runtime/template preparation and combined publication.
+  Engine usage examples. Connect provider catalogs, import normalization, remaining
+  build targets, server/runtime preparation and combined publication.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
   provider-locator refresh, continuation and scoped
   clean through the same verified obligations.

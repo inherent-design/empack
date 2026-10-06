@@ -198,6 +198,15 @@ pub fn prepare_templates(
         .map(|ch| if ch.is_alphanumeric() { ch } else { '-' })
         .collect();
     let mut values: BTreeMap<String, String> = [
+        (
+            "BOOTSTRAP",
+            if matches!(target, BuildTarget::Client | BuildTarget::Server) {
+                "true"
+            } else {
+                ""
+            }
+            .into(),
+        ),
         ("NAME", metadata.name.clone()),
         ("VERSION", metadata.version.clone()),
         ("AUTHOR", metadata.author.clone().unwrap_or_default()),

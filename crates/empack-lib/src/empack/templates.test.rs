@@ -339,3 +339,15 @@ fn generated_configuration_keeps_metadata_on_one_physical_line() {
     let server = engine.render_template("server.properties").unwrap();
     assert!(!server.lines().any(|line| line == "online-mode=false" || line == "server-port=1"));
 }
+
+#[test]
+fn full_client_default_has_no_bootstrap_command() {
+    let mut engine = TemplateEngine::new();
+    engine.set_pack_variables("Full", "Author", "1.21.1", "1");
+    assert!(engine.render_template("instance.cfg").unwrap().contains("packwiz-installer-bootstrap.jar"));
+    engine.set_variable("BOOTSTRAP", "");
+    let full = engine.render_template("instance.cfg").unwrap();
+    assert!(full.contains("InstanceType=OneSix"));
+    assert!(full.lines().any(|line| line == "PreLaunchCommand="));
+    assert!(!full.contains("packwiz-installer-bootstrap.jar"));
+}

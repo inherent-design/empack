@@ -404,7 +404,7 @@ fn test_process_build_templates() {
     filesystem.create_dir_all(&target_dir).unwrap();
 
     // Process templates
-    let result = orchestrator.process_build_templates("templates/client", &target_dir);
+    let result = orchestrator.process_build_templates("templates/client", &target_dir, BuildTarget::Client);
     assert!(result.is_ok());
 
     // Check that template was processed
@@ -446,7 +446,7 @@ fn test_process_build_templates_reports_template_engine_load_failure() {
     filesystem.create_dir_all(&target_dir).unwrap();
 
     let mut orchestrator = mock.orchestrator();
-    let result = orchestrator.process_build_templates("templates/client", &target_dir);
+    let result = orchestrator.process_build_templates("templates/client", &target_dir, BuildTarget::Client);
 
     match result {
         Err(BuildError::ConfigError { reason }) => {
@@ -469,7 +469,7 @@ fn test_process_build_templates_missing_directory() {
     filesystem.create_dir_all(&target_dir).unwrap();
 
     // Process templates from non-existent directory (should not error)
-    let result = orchestrator.process_build_templates("templates/nonexistent", &target_dir);
+    let result = orchestrator.process_build_templates("templates/nonexistent", &target_dir, BuildTarget::Client);
     assert!(result.is_ok());
 }
 

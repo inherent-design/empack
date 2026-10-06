@@ -126,6 +126,17 @@ encoded values, not unescaped generated comments.
 
 Embedded default templates remain templates until build time. User-authored scripts are explicit inputs; do not silently rewrite them. Runtime preparation uses exact resolved requirements and bounded tools, records its outputs, and never returns “complete” just because an installer process exited.
 
+Full client output is a launcher instance: materialized game files under
+`.minecraft`, root-level templates/configuration and `mmc-pack.json` with the exact
+Minecraft and loader components. The launcher obtains its normal game binaries,
+libraries and assets; “full” describes pack content, not an offline Minecraft
+installation. ZIP is directly importable; TAR.GZ and 7z preserve the same tree for
+explicit extraction. The component format follows [Prism's reader](https://github.com/PrismLauncher/PrismLauncher/blob/develop/launcher/minecraft/PackProfile.cpp).
+A user component manifest may add exact components but must retain the locked
+runtime without duplicate or disabled required entries. Captured custom launcher
+configuration remains user input, including its commands. Template/game path
+collisions require resolution before publication.
+
 ### 13.5 Independent verification
 
 ```rust
