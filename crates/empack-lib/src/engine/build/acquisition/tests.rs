@@ -654,3 +654,95 @@ fn selected_artifact_cannot_overwrite_a_declared_local_source() {
     );
     assert!(!host.path().join("private").exists());
 }
+
+#[tokio::test]
+async fn provider_slots_share_one_exact_resolution_and_keep_their_assertions() {
+    use crate::engine::providers::{CatalogLimits, ProviderCatalog};
+    use empack_core::{
+        identity::{ModrinthProjectId, ProviderProjectId},
+        model::{DependencyKey, FileSlot},
+    };
+    use serde_json::json;
+    let mut server = mockito::Server::new_async().await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let id = ProviderProjectId::Modrinth(ModrinthProjectId::parse("AANobbMI").unwrap());
+    let pin = ResolvedPin {
+        selection: id.parse_pin("abcdefgh").unwrap(),
+        project: id,
+    };
+    let project = server
+        .mock("GET", "/project/AANobbMI")
+        .with_body(
+            json!({"id":"AANobbMI","slug":"assets","title":"Assets","project_type":"resourcepack"})
+                .to_string(),
+        )
+        .expect(1)
+        .create_async()
+        .await;
+    let expected = ExpectedContent {
+        digests: Some(DigestSet::parse([("md5", "321c3cf486ed509164edec1e1981fec8")]).unwrap()),
+        size: Some(7),
+        accepted_observation: None,
+    };
+    let files: Vec<_> = ["first.zip", "second.zip"].iter().map(|name|json!({"filename":name,"primary":false,"size":7,"hashes":{"md5":"321c3cf486ed509164edec1e1981fec8"},"url":format!("https://example.com/{name}")})).collect();
+    let selection = server.mock("GET", "/version/abcdefgh")
+        .with_body(json!({"id":"abcdefgh","project_id":"AANobbMI","files":files,"game_versions":["1.20.1"],"loaders":["minecraft"],"dependencies":[]}).to_string())
+        .expect(1).create_async().await;
+    let plan = BuildAcquisitionResult {
+        acquired: BuildAcquisitions::default(),
+        pending: ["first.zip", "second.zip"]
+            .iter()
+            .map(|name| {
+                let slot = FileSlot::parse(name).unwrap();
+                AcquisitionNeed {
+                    key: AcquisitionKey::Locked(LockedFileKey {
+                        dependency: DependencyKey::parse("assets").unwrap(),
+                        slot: slot.clone(),
+                    }),
+                    reason: AcquisitionReason::MaterializedTarget,
+                    expected: expected.clone(),
+                    source: BuildContentSource::Provider {
+                        pin: pin.clone(),
+                        slot,
+                    },
+                }
+            })
+            .collect(),
+    };
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 1 << 20,
+        scratch_bytes: 0,
+        open_files: 8,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            Ok(plan
+                .refresh_provider_locators(
+                    &catalog,
+                    &mut scope,
+                    CatalogLimits {
+                        response_bytes: 4096,
+                        transfer_bytes: 8192,
+                        deadline: std::time::Duration::from_secs(2),
+                    },
+                )
+                .await)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(Ok(result)) = &*outcome else {
+        panic!("refresh failed")
+    };
+    for (need, name) in result.pending.iter().zip(["first.zip", "second.zip"]) {
+        assert_eq!(need.expected, expected);
+        assert!(
+            matches!(&need.source, BuildContentSource::Download(urls) if urls.as_slice()==[format!("https://example.com/{name}")])
+        );
+    }
+    project.assert_async().await;
+    selection.assert_async().await;
+    runtime.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

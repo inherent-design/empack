@@ -112,7 +112,7 @@ impl fmt::Display for ProviderProjectId {
 }
 
 /// An input pin. Ownership must be checked against a provider response.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PinSelector {
     /// Select a Modrinth version.
     ModrinthVersion(ModrinthVersionId),

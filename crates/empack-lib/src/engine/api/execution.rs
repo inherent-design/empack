@@ -83,6 +83,15 @@ async fn execute(
     } else {
         acquired
     };
+    let missing: Vec<_> = acquired
+        .pending
+        .iter()
+        .filter(|need| !matches!(need.source, BuildContentSource::Download(_)))
+        .map(describe)
+        .collect();
+    if !missing.is_empty() {
+        return Ok(BuildOutcome::NeedsInput(missing));
+    }
     let acquired = acquired
         .acquire_http(&transport, scope, evidence, config.transfer)
         .await?;

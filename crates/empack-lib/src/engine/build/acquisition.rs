@@ -112,22 +112,31 @@ impl BuildAcquisitionResult {
         scope: &mut WorkScope,
         limits: crate::engine::providers::CatalogLimits,
     ) -> Result<Self> {
-        for need in &mut self.pending {
-            let BuildContentSource::Provider { pin, slot } = &need.source else {
-                continue;
-            };
-            if !catalog.availability().supports(&pin.project) {
-                continue;
+        let mut groups = BTreeMap::<ResolvedPin, Vec<usize>>::new();
+        for (index, need) in self.pending.iter().enumerate() {
+            if let BuildContentSource::Provider { pin, .. } = &need.source
+                && catalog.availability().supports(&pin.project)
+            {
+                groups.entry(pin.clone()).or_default().push(index);
             }
+        }
+        for (pin, indices) in groups {
+            // All slots use one bounded response. Release its admission before the next pin.
             let resolution = catalog.resolve_exact(scope, pin.clone(), limits).await?;
-            let alternatives = resolution.download_alternatives(slot, &need.expected)?;
-            need.source = if alternatives.is_empty() {
-                BuildContentSource::Manual {
-                    pin: Some(pin.clone()),
-                }
-            } else {
-                BuildContentSource::Download(NonEmpty::new(alternatives)?)
-            };
+            for index in indices {
+                let need = &mut self.pending[index];
+                let BuildContentSource::Provider { slot, .. } = &need.source else {
+                    unreachable!("grouped provider obligation")
+                };
+                let alternatives = resolution.download_alternatives(slot, &need.expected)?;
+                need.source = if alternatives.is_empty() {
+                    BuildContentSource::Manual {
+                        pin: Some(pin.clone()),
+                    }
+                } else {
+                    BuildContentSource::Download(NonEmpty::new(alternatives)?)
+                };
+            }
         }
         Ok(self)
     }

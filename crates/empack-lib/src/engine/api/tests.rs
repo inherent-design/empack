@@ -551,6 +551,50 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let expected = provider_fixture(root.path(), true);
+    // A second file is downloadable in principle but deliberately unreachable here.
+    // Its failure must not hide the provider file's manual-input requirement.
+    {
+        use empack_core::model::{AcquisitionSpec, DependencyKey, FileSlot, ResolvedProject};
+        let intent = DocumentCodec
+            .decode_intent(
+                &fs::read(root.path().join("empack.yml")).unwrap(),
+                "fixture",
+            )
+            .unwrap();
+        let resolved = DocumentCodec
+            .decode_lock(
+                &fs::read(root.path().join("empack.lock")).unwrap(),
+                &intent,
+                "fixture",
+            )
+            .unwrap();
+        let mut lock = resolved.lock().clone();
+        let dependency = lock
+            .dependencies
+            .get_mut(&DependencyKey::parse("assets").unwrap())
+            .unwrap();
+        let primary = dependency.files.as_slice()[0].clone();
+        let mut other = primary.clone();
+        other.slot = FileSlot::parse("bystander").unwrap();
+        other.acquisition = AcquisitionSpec::Provider {
+            pin: dependency.selected.clone().unwrap(),
+            slot: other.slot.clone(),
+            alternatives: vec!["https://127.0.0.1:1/must-not-download".into()],
+        };
+        let mut placement = other.placements.as_slice()[0].clone();
+        placement.destination =
+            empack_core::path::InstallDestination::parse("resourcepacks/bystander.zip").unwrap();
+        other.placements = NonEmpty::new(vec![placement]).unwrap();
+        dependency.files = NonEmpty::new(vec![primary, other]).unwrap();
+        let resolved =
+            ResolvedProject::validate(resolved.intent().clone(), lock, intent.semantic_revision())
+                .unwrap();
+        put(
+            root.path(),
+            "empack.lock",
+            &DocumentCodec.encode_lock(&resolved).unwrap(),
+        );
+    }
     let before = inventory(root.path());
     let mut server = mockito::Server::new_async().await;
     let (engine, _) = engine(host.path().join("state"));

@@ -273,7 +273,7 @@ pub struct ProjectIntent {
     pub extensions: BTreeMap<String, ExtensionValue>,
 }
 /// Exact provider selection binds a pin to its project.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResolvedPin {
     /// Canonical owning project.
     pub project: ProviderProjectId,

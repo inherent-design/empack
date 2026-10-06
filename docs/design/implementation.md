@@ -68,6 +68,9 @@ use this catalog after authorization to refresh a locked file's locator. It sele
 a declared role or unique matching source evidence, rejects changed assertions and
 retains all original expectations during acquisition. Missing credentials and
 restricted downloads remain explicit input; they cannot produce a partial artifact.
+Slots sharing an exact provider pin reuse one bounded resolution. If locator refresh
+finds manual input, the build reports it before downloading other payloads; an
+unrelated transport failure cannot hide that requirement.
 
 ## Composed build behavior
 
