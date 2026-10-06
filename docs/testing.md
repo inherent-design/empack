@@ -112,5 +112,7 @@ size/hash assertions checked. This is adapter evidence, not end-to-end import pa
 The three exact-provider smoke cases also identify the acquired bytes through the
 same provider and require the returned canonical owner and matching file role.
 They cover a Modrinth mod, a resource pack and CurseForge content. The original
-provider integrity declarations remain unchanged. The three compatible-version probes
+provider integrity declarations remain unchanged. Each exact case also resolves its
+version/file ID without a supplied project and compares canonical ownership and every
+file assertion with the project-qualified lookup. The three compatible-version probes
 remain separate checks within the six-case `smoke:providers` suite.

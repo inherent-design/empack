@@ -239,6 +239,37 @@ impl CatalogTransport {
         )
         .await
     }
+    pub(super) async fn pin(
+        &self,
+        pin: &PinSelector,
+        budget: &mut RequestBudget,
+        cancel: &Cancellation,
+    ) -> Result<Vec<u8>> {
+        match pin {
+            PinSelector::ModrinthVersion(id) => {
+                self.get(
+                    ProviderKind::Modrinth,
+                    &["version", id.as_str()],
+                    &[],
+                    budget,
+                    cancel,
+                )
+                .await
+            }
+            // This POST is the provider's read-only batch file lookup.
+            PinSelector::CurseForgeFile(id) => {
+                self.request(
+                    ProviderKind::CurseForge,
+                    &["mods", "files"],
+                    &[],
+                    Some(serde_json::json!({"fileIds":[id.get()]})),
+                    budget,
+                    cancel,
+                )
+                .await
+            }
+        }
+    }
     async fn request(
         &self,
         provider: ProviderKind,

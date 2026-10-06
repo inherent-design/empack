@@ -83,11 +83,30 @@ impl ProviderCatalog {
         request: CompatibleRequest,
         limits: SelectionLimits,
     ) -> Result<RetainedOutput<CompatibleSelection>> {
+        Ok(self
+            .resolve_compatible_budget(
+                scope,
+                request,
+                limits,
+                transport::RequestBudget::new(limits.catalog)?,
+            )
+            .await?
+            .0)
+    }
+    pub(super) async fn resolve_compatible_budget(
+        &self,
+        scope: &mut WorkScope,
+        request: CompatibleRequest,
+        limits: SelectionLimits,
+        budget: transport::RequestBudget,
+    ) -> Result<(
+        RetainedOutput<CompatibleSelection>,
+        transport::RequestBudget,
+    )> {
         ensure!(
             limits.candidates > 0 && limits.pages > 0,
             CatalogError::Limit
         );
-        let budget = transport::RequestBudget::new(limits.catalog)?;
         let raw = fetch(
             self.transport.clone(),
             scope,
@@ -211,9 +230,12 @@ impl ProviderCatalog {
         scope.cancellation().check()?;
         budget.check_deadline()?;
         let (page, candidate) = best.ok_or(CatalogError::NoCompatibleSelection)?;
-        Ok(pages
-            .swap_remove(page)
-            .map(|mut page| page.candidates.swap_remove(candidate).selected))
+        Ok((
+            pages
+                .swap_remove(page)
+                .map(|mut page| page.candidates.swap_remove(candidate).selected),
+            budget,
+        ))
     }
 }
 

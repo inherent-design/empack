@@ -20,6 +20,7 @@ mod identify;
 pub use identify::{Identification, IdentificationLimits, IdentifiedSelection};
 mod curseforge;
 mod modrinth;
+mod pin;
 mod refresh;
 mod search;
 pub use search::{ProjectCandidate, ProjectSearch, SearchLimits, SearchPage, SearchQuery};
@@ -145,6 +146,23 @@ impl ProviderCatalog {
         selector: ProjectSelector,
         limits: CatalogLimits,
     ) -> Result<RetainedOutput<CanonicalProject>> {
+        Ok(self
+            .resolve_selector_budget(
+                scope,
+                selector,
+                limits,
+                transport::RequestBudget::new(limits)?,
+            )
+            .await?
+            .0)
+    }
+    async fn resolve_selector_budget(
+        &self,
+        scope: &mut WorkScope,
+        selector: ProjectSelector,
+        limits: CatalogLimits,
+        mut budget: transport::RequestBudget,
+    ) -> Result<(RetainedOutput<CanonicalProject>, transport::RequestBudget)> {
         let transport = self.transport.clone();
         let retained = ResourceRequest {
             memory_bytes: limits.response_bytes,
@@ -158,9 +176,8 @@ impl ProviderCatalog {
             },
             retained,
             move |cancel| async move {
-                let mut budget = transport::RequestBudget::new(limits)?;
                 let bytes = transport.project(&selector, &mut budget, &cancel).await?;
-                Ok::<_, anyhow::Error>((selector, bytes))
+                Ok::<_, anyhow::Error>((selector, bytes, budget))
             },
         )?;
         let bytes = scope.accept(work.wait().await?)?.transpose()?;
@@ -173,12 +190,14 @@ impl ProviderCatalog {
             retained,
             move |cancel| {
                 cancel.check()?;
-                let result = decode_project(&bytes.0, &bytes.1)?;
+                let ((selector, bytes, budget), _permit) = bytes.into_parts();
+                let result = decode_project(&selector, &bytes)?;
                 cancel.check()?;
-                Ok::<_, anyhow::Error>(result)
+                budget.check_deadline()?;
+                Ok::<_, anyhow::Error>((result, budget))
             },
         )?;
-        scope.accept(work.wait().await?)?.transpose()
+        Ok(split_budget(scope.accept(work.wait().await?)?.transpose()?))
     }
     /// Resolve only the requested project-owned pin. Compatibility selection is a separate
     /// planning decision; an exact request cannot quietly pick a different file/version.
@@ -188,6 +207,18 @@ impl ProviderCatalog {
         pin: ResolvedPin,
         limits: CatalogLimits,
     ) -> Result<RetainedOutput<ProviderResolution>> {
+        Ok(self
+            .resolve_exact_budget(scope, pin, limits, transport::RequestBudget::new(limits)?)
+            .await?
+            .0)
+    }
+    async fn resolve_exact_budget(
+        &self,
+        scope: &mut WorkScope,
+        pin: ResolvedPin,
+        limits: CatalogLimits,
+        mut budget: transport::RequestBudget,
+    ) -> Result<(RetainedOutput<ProviderResolution>, transport::RequestBudget)> {
         pin.validate()?;
         let transport = self.transport.clone();
         let retained = ResourceRequest {
@@ -205,11 +236,10 @@ impl ProviderCatalog {
             },
             retained,
             move |cancel| async move {
-                let mut budget = transport::RequestBudget::new(limits)?;
                 let selector = ProjectSelector::canonical(pin.project.clone());
                 let project = transport.project(&selector, &mut budget, &cancel).await?;
                 let file = transport.selection(&pin, &mut budget, &cancel).await?;
-                Ok::<_, anyhow::Error>((selector, pin, project, file))
+                Ok::<_, anyhow::Error>((selector, pin, project, file, budget))
             },
         )?;
         let bytes = scope.accept(work.wait().await?)?.transpose()?;
@@ -226,21 +256,29 @@ impl ProviderCatalog {
             retained,
             move |cancel| {
                 cancel.check()?;
-                let project = decode_project(&bytes.0, &bytes.2)?;
-                let result = match &bytes.1.project {
-                    ProviderProjectId::Modrinth(_) => {
-                        modrinth::selection(project, &bytes.1, &bytes.3)
-                    }
-                    ProviderProjectId::CurseForge(_) => {
-                        curseforge::selection(project, &bytes.1, &bytes.3)
-                    }
+                let ((selector, pin, project, file, budget), _permit) = bytes.into_parts();
+                let project = decode_project(&selector, &project)?;
+                let result = match &pin.project {
+                    ProviderProjectId::Modrinth(_) => modrinth::selection(project, &pin, &file),
+                    ProviderProjectId::CurseForge(_) => curseforge::selection(project, &pin, &file),
                 }?;
                 cancel.check()?;
-                Ok::<_, anyhow::Error>(result)
+                budget.check_deadline()?;
+                Ok::<_, anyhow::Error>((result, budget))
             },
         )?;
-        scope.accept(work.wait().await?)?.transpose()
+        Ok(split_budget(scope.accept(work.wait().await?)?.transpose()?))
     }
+}
+fn split_budget<T>(
+    value: RetainedOutput<(T, transport::RequestBudget)>,
+) -> (RetainedOutput<T>, transport::RequestBudget) {
+    let mut budget = None;
+    let value = value.map(|(value, next)| {
+        budget = Some(next);
+        value
+    });
+    (value, budget.expect("catalog operation returns its budget"))
 }
 fn parse_resources(response_bytes: u64) -> Result<ResourceRequest> {
     // Admission estimate for DTO and normalized strings; response bytes are independently bounded.

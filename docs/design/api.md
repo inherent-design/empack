@@ -32,6 +32,11 @@ that no files changed. Native publication errors retain their recovery operation
 The compiled usage example is tested with Rust documentation tests in
 [`api.rs`](../../crates/empack-lib/src/engine/api.rs).
 
+The compiled `ProviderCatalog::resolve_pin` accepts a provider-qualified `PinSelector`
+without a caller-supplied project. It returns a retained exact `ProviderResolution`
+after provider ownership and file assertions are checked. This is distinct from
+`resolve_exact`, which additionally requires the caller's asserted owner to match.
+
 The compiled `ProviderCatalog::resolve_compatible` accepts a canonical project and a
 `CompatibleRequest` containing ordered acceptable game versions, loader, content kind
 and explicit `ReleasePolicy`. `SelectionLimits` bounds all pages, records and transferred

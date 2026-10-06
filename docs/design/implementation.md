@@ -59,9 +59,15 @@ independently checked output and the journal publisher. Runtime adapters enter t
 adapter and Engine tests do not establish CLI parity.
 
 The compiled `engine::providers::ProviderCatalog` is concrete and read-only. Its
-`resolve_selector`, `resolve_exact` and `resolve_compatible` methods return admitted
+`resolve_selector`, `resolve_pin`, `resolve_exact` and `resolve_compatible` methods return admitted
 retained data. They cannot publish a manifest or claim a resolved dependency closure. Provider environment facts remain separate from user requirements. A
 restricted file keeps its identity, size and original hashes even without a locator.
+`resolve_pin` accepts a provider-qualified version/file selector without an asserted
+project. It verifies the exact response ID, resolves the declared owner, then validates
+all file evidence. CurseForge lookup rejects multiple or foreign-game records.
+This supports version-only dependency references without guessing their owner.
+Internal catalog composition can carry one request budget through selector, pin and
+compatible lookups; it does not restart the deadline between dependencies.
 Transient signed URLs are execution data; the document codec still rejects them in
 persistent alternatives. Dependency closure,
 import composition and command cutover remain completion gates. The build Engine can
@@ -266,6 +272,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Exact pin ownership | 44 affected provider tests, all-feature Clippy and six live provider probes passed. The three exact-provider cases compare owner-free lookup with project-qualified identity and every original file assertion. The preceding full-suite snapshot is the bounded-search revision below |
 | Bounded provider search | 1,638 tests and eleven doctests; 41 affected provider tests and all-feature Clippy passed. All six live provider probes passed, with search exercised for Sodium, JEI and Terralith. An initial focused run emitted a leak warning; the expanded provider run and full suite passed without it. Greptile review 59 is green for the preceding kind/fingerprint commit `380d9a0` |
 | Provider kinds and fingerprint filtering | 1,630 tests and eleven doctests, all-feature Clippy and six live provider probes passed. Terralith resolves as a datapack despite also advertising mod versions. Review 58 fingerprint-collision failure reproduced before the fix; unrelated candidates no longer trigger project lookup |
 | Content identification | Combined suite: 1,626 tests and eleven doctests; 40 affected import/catalog tests and all-feature Clippy. All five live provider probes passed, including content identification of downloaded mod/resource/CurseForge bytes. Greptile review 57 is green for the accompanying transient-import fix at `d1f69c6` |

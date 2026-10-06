@@ -60,6 +60,12 @@ async fn verify(
             drop(project);
             let resolution = catalog.resolve_exact(&mut scope, pin.clone(), CatalogLimits::default()).await?;
             anyhow::ensure!(resolution.pin == pin, "Official API returned another selection");
+            let unowned = catalog.resolve_pin(&mut scope, pin.selection.clone(), CatalogLimits::default()).await?;
+            anyhow::ensure!(unowned.pin == pin && unowned.files.as_slice().len() == resolution.files.as_slice().len(), "Owner lookup changed selection");
+            for file in resolution.files.as_slice() {
+                anyhow::ensure!(unowned.files.as_slice().iter().any(|other| other.filename == file.filename && other.expected == file.expected), "Owner lookup changed file assertions");
+            }
+            drop(unowned);
             let file = resolution.files.as_slice().iter().find(|file| file.primary).unwrap_or(&resolution.files.as_slice()[0]);
             anyhow::ensure!(!file.alternatives.is_empty(), "Fixture now requires manual acquisition");
             let expected = file.expected.clone();
