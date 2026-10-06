@@ -263,7 +263,7 @@ async fn publish_fixture(
         acquisition::TransferLimits,
         api::{
             Engine, EngineConfig, ExecutionGrant, ExecutionOutcome, ExecutionReceipt,
-            ImportRequest, NetworkPermission, OperationResources, Preparation,
+            ImportRequest, NetworkPermission, OperationResources, Preparation, ProjectTarget,
         },
         artifacts::ArchiveLimits,
         import::ImportReplacementPolicy,
@@ -287,7 +287,6 @@ async fn publish_fixture(
     let temp = tempfile::tempdir()?;
     let project = temp.path().join("project");
     let host = temp.path().join("state");
-    std::fs::create_dir(&project)?;
     let format = candidate.source().plan().imported().format;
     let files = candidate.source().content().values().cloned().collect();
     let engine = Engine::new(
@@ -316,7 +315,7 @@ async fn publish_fixture(
     )?;
     let prepared = match engine
         .prepare(
-            project.clone(),
+            ProjectTarget::New(project.clone()),
             ImportRequest {
                 candidate,
                 replacement: ImportReplacementPolicy::RejectExisting,
@@ -328,7 +327,7 @@ async fn publish_fixture(
         Preparation::NeedsInput(_) => anyhow::bail!("Verified import unexpectedly needs input"),
     };
     anyhow::ensure!(
-        std::fs::read_dir(&project)?.count() == 0 && !host.exists(),
+        !project.exists() && !host.exists() && std::fs::read_dir(temp.path())?.count() == 0,
         "Preparation changed the project or host state"
     );
     let grant = ExecutionGrant {

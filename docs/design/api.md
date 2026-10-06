@@ -4,7 +4,7 @@ Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
 [implementation ledger](implementation.md) identifies a compiled API.
 
 The compiled entry point is `empack_lib::engine::api::Engine`. Its `preview`
-and `prepare` accept an absolute existing-project selection and a `Request`: either
+and `prepare` accept an absolute `ProjectTarget` and a `Request`: either
 `BuildRequest` or `ImportRequest`. Both capture and plan without live-project writes.
 `OperationPreview` carries the operation-specific view. A build view includes exact artifact destinations,
 runtime, missing content, network/tool requirements and the complete requested
@@ -99,7 +99,18 @@ operations retain a typed `ExecutionReceipt::Build` or `ExecutionReceipt::Import
 interruption and recovery outcomes are shared. Preparation reserves the candidate and
 its staging copy, then retains the actual staged byte allowance until publication retires.
 Import source resolution/acquisition remains an explicit earlier read-only composition.
-Creating a nonexistent project root and CLI cutover remain unfinished.
+`ProjectTarget::New(path)` selects one absent child of an existing parent for import.
+Preparation retains the parent identity and absence without creating the destination
+or host state. After approval, the publisher verifies a complete same-filesystem
+candidate directory, records recovery intent and uses a no-replace rename. A racing
+file, directory or link cannot become a replacement target. `Existing(path)` retains
+the file-level replacement protocol. A `PathBuf` argument defaults to `Existing`.
+
+Creation journals bind the native candidate/root identity, with a parent/name index
+for recovery before the root exists. Ordinary reads use the root identity to gate
+unfinished creation, including after a move or through an alias. The lower-level
+`Publisher::recover_new` completes retained creation without tools or downloads.
+Engine recovery/continuation composition and CLI cutover remain unfinished.
 
 ## 17. Public engine API and application wiring
 
@@ -150,7 +161,7 @@ impl Engine {
 }
 ```
 
-`ProjectTarget` is `Existing` or `NewAt(UserSelectedDirectory)`. Both must resolve into host-bound root capabilities; creation is also a publication effect. For a nonexistent destination, bind and lock the existing parent plus validated child name and its expected absence until creation. Do not create the destination or a persistent project registration during preview; use a proposed in-memory identity until execution is authorized. Source/destination path selection belongs at the public boundary, not inside imported content.
+`ProjectTarget` selects an existing or new root; the compiled variants are `Existing(PathBuf)` and `New(PathBuf)`. Both must resolve into host-bound root capabilities; creation is also a publication effect. For a nonexistent destination, bind and lock the existing parent plus validated child name and its expected absence until creation. Do not create the destination or a persistent project registration during preview; use a proposed in-memory identity until execution is authorized. Source/destination path selection belongs at the public boundary, not inside imported content.
 
 `preview` uses the same resolver and pure planner as execution, but composes read-only cache/storage capabilities and no publisher or mutating backend capability. It returns plan confidence, required decisions, and unresolved blockers. Temporary downloads are bounded and removed. It does not serialize a durable operation as a side effect.
 

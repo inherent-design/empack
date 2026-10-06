@@ -4,6 +4,8 @@ use cap_fs_ext::{DirExt, FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions};
 use empack_core::path::PortableRelPath;
 use std::fs::File;
+mod creation;
+pub(super) use creation::rename_new_directory;
 #[cfg(windows)]
 use std::io;
 

@@ -135,6 +135,17 @@ pub enum Request {
     Build(BuildRequest),
     Import(Box<ImportRequest>),
 }
+/// A selected existing root or one absent child of an existing selected parent.
+#[derive(Clone)]
+pub enum ProjectTarget {
+    Existing(PathBuf),
+    New(PathBuf),
+}
+impl From<PathBuf> for ProjectTarget {
+    fn from(path: PathBuf) -> Self {
+        Self::Existing(path)
+    }
+}
 impl From<BuildRequest> for Request {
     fn from(request: BuildRequest) -> Self {
         Self::Build(request)
@@ -318,10 +329,11 @@ impl Engine {
     /// this worker. Dropping the future cancels its engine-owned preparation.
     pub async fn prepare(
         &self,
-        project: PathBuf,
+        project: impl Into<ProjectTarget>,
         request: impl Into<Request>,
     ) -> Result<Preparation> {
         let request = request.into();
+        let project = project.into();
         let config = self.config.clone();
         let provider_access = self
             .catalog
@@ -336,6 +348,9 @@ impl Engine {
                 let prepared: Result<RetainedOutput<PreparedKind>> = async {
                     match request {
                         Request::Build(request) => {
+                            let ProjectTarget::Existing(project) = project else {
+                                anyhow::bail!("Build requires an existing project");
+                            };
                             let work = scope.spawn_blocking(
                                 config.resources.capture,
                                 config.resources.prepared,
@@ -384,7 +399,7 @@ impl Engine {
     /// Preview has no authority-bearing output even when its plan requires no additional input.
     pub async fn preview(
         &self,
-        project: PathBuf,
+        project: impl Into<ProjectTarget>,
         request: impl Into<Request>,
     ) -> Result<OperationPreview> {
         Ok(match self.prepare(project, request).await? {

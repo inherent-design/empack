@@ -39,6 +39,56 @@ pub struct ImportReplacementReceipt {
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
 }
+pub struct PreparedImportCreation {
+    change: crate::engine::publication::PreparedRootCreation,
+    project: ResolvedProject,
+}
+impl PreparedImportCreation {
+    pub fn plan(&self) -> &FilePlan {
+        self.change.plan()
+    }
+    pub fn project(&self) -> &ResolvedProject {
+        &self.project
+    }
+    pub fn publish(
+        self,
+        publisher: &Publisher,
+        cancel: &Cancellation,
+    ) -> Result<ImportReplacementReceipt> {
+        Ok(ImportReplacementReceipt {
+            publication: publisher.publish_new(self.change, cancel)?,
+            project: self.project,
+        })
+    }
+}
+/// Reuse complete import staging against an empty private workspace. The live destination remains
+/// absent; its parent/child binding is carried separately into no-replace publication.
+pub fn prepare_import_creation(
+    target: crate::engine::project::NewProjectSnapshot,
+    candidate: ImportCandidate,
+    limits: crate::engine::snapshot::SnapshotLimits,
+    cancel: &Cancellation,
+) -> Result<PreparedImportCreation> {
+    target.revalidate(cancel)?;
+    let scratch = tempfile::tempdir()?;
+    let workspace = crate::engine::project::ProjectReader::new(
+        crate::engine::publication::RecoveryReader::new(scratch.path().join("unused-host-state")),
+    )
+    .capture_replacement(scratch.path(), limits, cancel)?;
+    let prepared = prepare_import_replacement(
+        workspace,
+        candidate,
+        ImportReplacementPolicy::RejectExisting,
+        cancel,
+    )?;
+    target.revalidate(cancel)?;
+    let change =
+        crate::engine::publication::PreparedRootCreation::from_verified(target, prepared.change)?;
+    Ok(PreparedImportCreation {
+        change,
+        project: prepared.project,
+    })
+}
 impl PreparedImportReplacement {
     pub fn plan(&self) -> &FilePlan {
         self.change.plan()

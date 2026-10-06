@@ -17,6 +17,9 @@ use empack_core::{
 };
 use std::path::Path;
 
+mod creation;
+pub use creation::NewProjectSnapshot;
+
 /// Managed replacement inputs may be empty or contain an invalid prior document.
 /// Capturing them grants no authority to remove or overwrite files.
 pub struct ReplacementSnapshot {

@@ -11,7 +11,7 @@ explicit build-content obligations feed these paths. The compiled `Engine` now o
 build/import preview, preparation, exact-plan authorization and publication.
 Build execution also owns acquisition and runtime assembly. The read-only provider catalog resolves canonical selectors and
 exact and compatible Modrinth/CurseForge selections, offers bounded search choices,
-and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. New-root creation, the remaining operation APIs,
+and identifies acquired files by their content. Normalized mrpack and CurseForge inspection also runs over retained bounded archive sources. The remaining operation APIs,
 continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
 checks. There will be one implementation per operation, not a permanent legacy engine.
@@ -301,7 +301,24 @@ the full candidate under admission, exposes its file plan and requires an exact
 replacement-summary acknowledgement before existing managed files can change.
 Both operation kinds use the same engine-bound approval, owned runtime, cancellation
 and retained terminal outcomes. Import receipts retain the published semantic project.
-Creating a nonexistent root remains required before CLI cutover.
+New-root import now uses `ProjectReader::capture_new` and `ProjectTarget::New`.
+The parent must exist, the child must be a valid portable directory name, and the
+captured destination must remain absent. Preparation does not create it. Approved
+execution stages and verifies the whole root beside its destination, writes durable
+recovery intent and publishes with a no-replace directory rename. File permissions
+and the expected inventory are checked independently before and after the rename.
+
+The immutable parent/name record can recover a crash before the root exists; an
+authoritative journal belongs to the created native root identity. Ordinary project
+reads therefore detect unfinished creation without depending on the spelling or
+current parent of the project path. A completed project can move and its old name can
+be reused. Recovery verifies retained candidates and refuses unrelated occupants or
+changed bytes. Cancellation is deferred after durable intent. Pre-intent ordinary
+failures discard private scratch; abrupt process death before intent can leave private
+scratch that still needs the planned retention/cleanup catalog.
+
+`Publisher::recover_new` is a lower-level creation recovery entry point. Engine recovery,
+continuation and CLI composition remain required.
 
 ## Composed build behavior
 
@@ -395,7 +412,8 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
-| Shared build/import Engine | 1,685 tests and eleven doctests passed before the final control-root guard. The final 302 core/engine checks and all-feature Clippy pass; one nextest pipe-leak warning passed cleanly in isolation. Both real import formats published 78 roots through Engine approval and verified every placed file. All seven live provider probes pass; the eleven-runtime sweep is still running |
+| New-root publication | 1,700 tests and eleven doctests pass. Both real import formats publish 78 roots into previously absent destinations through Engine approval, with every placed file checked. Forty-three focused publication/project/API checks cover real process exits and recovery; Windows GNU cross-compilation passes. The final Windows-only shared-parent ACL guard and regression compile but still require native CI execution |
+| Shared build/import Engine | 1,685 tests and eleven doctests passed before the final control-root guard. The final 302 core/engine checks and all-feature Clippy pass; one nextest pipe-leak warning passed cleanly in isolation. Both real import formats published 78 roots through Engine approval and verified every placed file. All seven live provider probes and all eleven Java runtime/distribution probes pass |
 | Native-name review 68 | The original ignored `backup?.zip` failure reproduced. Exclusion now precedes portable validation; included invalid names still fail. A broad-ignore control-root regression also reproduced and is covered by the final core/engine checks. Linux-only invalid-Unicode coverage is compiled for native CI; APFS rejects those names at creation |
 | Replacement review 67 | Ignored-file deletion and ignored-link traversal both reproduced. The ownership fix passes 26 replacement/project/publication checks; all-feature Clippy passed on the combined Engine working tree. Explicit incoming destinations need real absence evidence; existing unowned files and source rules remain untouched |
 | Native import replacement | 1,678 tests and eleven doctests passed, along with 58 affected import/project/staging/publication checks and all-feature Clippy. Both real Fabulously Optimized formats published 78 roots into temporary projects; every placed file was reread against original evidence. This remains lower-level publication evidence, not Engine approval or CLI parity |
@@ -457,7 +475,7 @@ files before publication.
 ## Remaining integration and limits
 
 - Extend the compiled build/import `Engine` lifecycle to the remaining semantic
-  project mutations and nonexistent-root creation. All five build recipes and all
+  project mutations. New-root import is implemented; all five build recipes and all
   loader runtime families enter the same approved build driver.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
   provider-locator refresh, continuation and scoped

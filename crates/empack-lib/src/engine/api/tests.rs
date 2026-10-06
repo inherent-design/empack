@@ -1063,3 +1063,108 @@ async fn import_rejects_cross_engine_grants_and_preserves_conflicting_or_cancell
     other.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn new_import_preview_preserves_absence_and_approved_execution_publishes_one_complete_root() {
+    let parent = tempfile::tempdir().unwrap();
+    let selected = parent.path().join("new project");
+    let host = tempfile::tempdir().unwrap();
+    let (engine, governor) = engine(host.path().join("state"));
+    put(parent.path(), "unrelated", b"keep");
+    let prepared = match engine
+        .prepare(
+            ProjectTarget::New(selected.clone()),
+            ImportRequest {
+                candidate: imported(governor.clone()).await,
+                replacement: crate::engine::import::ImportReplacementPolicy::RejectExisting,
+            },
+        )
+        .await
+        .unwrap()
+    {
+        Preparation::Ready(prepared) => prepared,
+        _ => panic!("verified new import needs no additional input"),
+    };
+    assert!(!selected.exists() && !host.path().join("state").exists());
+    assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 1);
+    assert!(prepared.view().import().unwrap().replacement.is_none());
+    let permission = import_grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Import(
+            receipt,
+        ))) => {
+            assert_eq!(receipt.project.intent().metadata.name, "Imported");
+            assert!(receipt.publication.changed_files >= 3);
+        }
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        OperationOutcome::Completed(ExecutionOutcome::RecoveryRequired { cause, .. }) => {
+            panic!("{cause:#}")
+        }
+        _ => panic!("new root was not published"),
+    }
+    assert_eq!(
+        fs::read(selected.join("overrides/common/config/value")).unwrap(),
+        b"new config"
+    );
+    assert_eq!(fs::read(parent.path().join("unrelated")).unwrap(), b"keep");
+    let reader = ProjectReader::new(RecoveryReader::new(host.path().join("state")));
+    reader
+        .capture_build(
+            &selected,
+            &[],
+            SnapshotLimits::default(),
+            &crate::application::process_runtime::Cancellation::default(),
+        )
+        .unwrap()
+        .require_resolved()
+        .unwrap();
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn new_import_refuses_racing_destinations_and_build_requires_an_existing_root() {
+    let parent = tempfile::tempdir().unwrap();
+    let selected = parent.path().join("new");
+    let host = tempfile::tempdir().unwrap();
+    let (engine, governor) = engine(host.path().join("state"));
+    assert!(
+        engine
+            .prepare(ProjectTarget::New(selected.clone()), request())
+            .await
+            .is_err()
+    );
+    let prepared = match engine
+        .prepare(
+            ProjectTarget::New(selected.clone()),
+            ImportRequest {
+                candidate: imported(governor.clone()).await,
+                replacement: crate::engine::import::ImportReplacementPolicy::ReplaceManagedContent,
+            },
+        )
+        .await
+        .unwrap()
+    {
+        Preparation::Ready(prepared) => prepared,
+        _ => panic!("unexpected missing input"),
+    };
+    fs::create_dir(&selected).unwrap();
+    put(&selected, "sentinel", b"unowned");
+    let permission = import_grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+    ));
+    assert_eq!(fs::read(selected.join("sentinel")).unwrap(), b"unowned");
+    assert!(!selected.join("empack.yml").exists());
+    engine.shutdown().await;
+}

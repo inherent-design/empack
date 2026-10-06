@@ -255,6 +255,12 @@ fn set_dacl(file: &File, descriptor: &LocalAllocation) -> Result<()> {
 }
 
 #[cfg(test)]
+pub(super) fn share_for_test(directory: &Dir) -> Result<()> {
+    let shared = descriptor("D:P(A;OICI;FA;;;WD)")?;
+    set_dacl(&security_handle(directory, true)?, &shared)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]

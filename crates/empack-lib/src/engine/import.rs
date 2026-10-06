@@ -34,8 +34,8 @@ pub use candidate::{
 };
 mod replacement;
 pub use replacement::{
-    ImportReplacementPolicy, ImportReplacementReceipt, PreparedImportReplacement,
-    prepare_import_replacement,
+    ImportReplacementPolicy, ImportReplacementReceipt, PreparedImportCreation,
+    PreparedImportReplacement, prepare_import_creation, prepare_import_replacement,
 };
 mod formats;
 #[cfg(test)]

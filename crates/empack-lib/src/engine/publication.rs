@@ -26,6 +26,8 @@ use std::{
 };
 
 const JOURNAL_SCHEMA: u32 = 4;
+mod creation;
+pub use creation::PreparedRootCreation;
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -111,6 +113,7 @@ pub struct PublicationReceipt {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PublicationPoint {
     RecoveryDataDurable,
+    CreationIndexDurable,
     IntentDurable,
     SiblingWritten,
     SiblingSynced,
@@ -256,7 +259,8 @@ impl Publisher {
         if let Some(journal) = &journal {
             validate_journal(journal, root)?;
         }
-        Ok(journal.is_some_and(|journal| !journal.committed))
+        let creation_pending = creation::requires_root_recovery(&directory, root)?;
+        Ok(creation_pending || journal.is_some_and(|journal| !journal.committed))
     }
 
     pub fn publish(
@@ -278,6 +282,10 @@ impl Publisher {
         let (plan, mut stage, base) = verified.into_parts();
         let state = self.project_state(root)?;
         let _lock = lock(&state)?;
+        ensure!(
+            !creation::requires_root_recovery(&state, root)?,
+            "Project requires creation recovery"
+        );
         if let Some(journal) = load_journal(&state)? {
             validate_journal(&journal, root)?;
             ensure!(journal.committed, "Project requires publication recovery");
@@ -692,12 +700,16 @@ fn candidate_name(journal: &Journal, index: usize) -> String {
 }
 
 fn root_key(root: &ProjectReadRoot) -> Result<String> {
-    let (seconds, nanos) = root.binding.created.context(
+    binding_key(&root.binding.into())
+}
+fn binding_key(binding: &Binding) -> Result<String> {
+    let (seconds, nanos) = binding.created.context(
         "Filesystem lacks durable directory creation identity; publication is unsupported",
     )?;
     Ok(format!(
         "project-{:016x}-{:032x}-{seconds:x}-{nanos:x}",
-        root.binding.volume, root.binding.object
+        binding.volume,
+        u128::from_le_bytes(binding.object)
     ))
 }
 

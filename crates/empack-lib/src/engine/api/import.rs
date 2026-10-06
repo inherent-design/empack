@@ -2,8 +2,8 @@
 use super::*;
 use crate::engine::{
     import::{
-        ImportCandidate, ImportReplacementPolicy, PreparedImportReplacement,
-        prepare_import_replacement,
+        ImportCandidate, ImportReplacementPolicy, PreparedImportCreation,
+        PreparedImportReplacement, prepare_import_creation, prepare_import_replacement,
     },
     publication::{Publisher, RecoveryRequired},
     runtime::WorkScope,
@@ -37,7 +37,39 @@ pub struct ImportReceipt {
 }
 pub(super) struct PreparedImport {
     pub(super) view: ImportPreview,
-    replacement: PreparedImportReplacement,
+    replacement: NativeImport,
+}
+enum NativeImport {
+    Existing(PreparedImportReplacement),
+    New(PreparedImportCreation),
+}
+impl NativeImport {
+    fn plan(&self) -> &FilePlan {
+        match self {
+            Self::Existing(value) => value.plan(),
+            Self::New(value) => value.plan(),
+        }
+    }
+    fn project(&self) -> &empack_core::model::ResolvedProject {
+        match self {
+            Self::Existing(value) => value.project(),
+            Self::New(value) => value.project(),
+        }
+    }
+    fn publish(
+        self,
+        publisher: &Publisher,
+        cancel: &crate::application::process_runtime::Cancellation,
+    ) -> Result<crate::engine::import::ImportReplacementReceipt> {
+        match self {
+            Self::Existing(value) => value.publish(publisher, cancel),
+            Self::New(value) => value.publish(publisher, cancel),
+        }
+    }
+}
+enum CapturedImport {
+    Existing(crate::engine::project::ReplacementSnapshot),
+    New(crate::engine::project::NewProjectSnapshot),
 }
 fn resources(bytes: u64, config: &EngineConfig) -> Result<(ResourceRequest, ResourceRequest)> {
     let mut retained = config.resources.prepared;
@@ -53,42 +85,67 @@ fn resources(bytes: u64, config: &EngineConfig) -> Result<(ResourceRequest, Reso
     Ok((resources, retained))
 }
 pub(super) async fn prepare(
-    project: PathBuf,
+    project: ProjectTarget,
     request: ImportRequest,
     config: &EngineConfig,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedImport>> {
-    ensure!(project.is_absolute(), "Project selection must be absolute");
     let host_state = config.state_root.clone();
     let limits = config.snapshot;
     let work = scope.spawn_blocking(
         config.resources.capture,
         config.resources.prepared,
         move |cancel| {
-            ProjectReader::new(RecoveryReader::new(host_state))
-                .capture_replacement(&project, limits, &cancel)
+            let reader = ProjectReader::new(RecoveryReader::new(host_state));
+            match project {
+                ProjectTarget::Existing(project) => {
+                    ensure!(project.is_absolute(), "Project selection must be absolute");
+                    reader
+                        .capture_replacement(&project, limits, &cancel)
+                        .map(CapturedImport::Existing)
+                }
+                ProjectTarget::New(project) => reader
+                    .capture_new(&project, &cancel)
+                    .map(CapturedImport::New),
+            }
         },
     )?;
     let snapshot = scope.accept(work.wait().await?)?.transpose()?;
+    let policy_bytes = match &*snapshot {
+        CapturedImport::Existing(value) => value
+            .preserved_policy()
+            .map_or(0, |(bytes, _)| bytes.len() as u64),
+        CapturedImport::New(_) => 0,
+    };
     let bytes = request
         .candidate
         .publication_bytes()
-        .checked_add(
-            snapshot
-                .preserved_policy()
-                .map_or(0, |(bytes, _)| bytes.len() as u64),
-        )
+        .checked_add(policy_bytes)
         .context("Import staging size overflow")?;
     let (resources, retained) = resources(bytes, config)?;
     let work = scope.spawn_blocking(resources, retained, move |cancel| {
         let (snapshot, _reservation) = snapshot.into_parts();
-        let replacement =
-            prepare_import_replacement(snapshot, request.candidate, request.replacement, &cancel)?;
+        let replacement = match snapshot {
+            CapturedImport::Existing(snapshot) => {
+                NativeImport::Existing(prepare_import_replacement(
+                    snapshot,
+                    request.candidate,
+                    request.replacement,
+                    &cancel,
+                )?)
+            }
+            CapturedImport::New(snapshot) => NativeImport::New(prepare_import_creation(
+                snapshot,
+                request.candidate,
+                limits,
+                &cancel,
+            )?),
+        };
         describe(replacement)
     })?;
     scope.accept(work.wait().await?)?.transpose()
 }
-fn describe(replacement: PreparedImportReplacement) -> Result<PreparedImport> {
+fn describe(replacement: NativeImport) -> Result<PreparedImport> {
     let files = replacement.plan().clone();
     let replaces = files.changes().iter().any(|change| {
         matches!(
@@ -180,8 +237,30 @@ async fn execute(
     config: EngineConfig,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<ImportReceipt>> {
+    let publication_bytes =
+        prepared
+            .view
+            .files
+            .changes()
+            .iter()
+            .try_fold(0u64, |sum, change| {
+                let bytes = match change {
+                    FileChange::Replace { before, after, .. } => {
+                        after.bytes.checked_add(match before {
+                            ObservedPath::File(file) => file.bytes,
+                            _ => 0,
+                        })
+                    }
+                    FileChange::Remove { before, .. } => Some(before.bytes),
+                }
+                .context("Publication size overflow")?;
+                sum.checked_add(bytes).context("Publication size overflow")
+            })?;
+    let mut publication_resources = config.resources.assembly;
+    publication_resources.scratch_bytes =
+        publication_resources.scratch_bytes.max(publication_bytes);
     let work = scope.spawn_blocking(
-        config.resources.assembly,
+        publication_resources,
         config.resources.receipt,
         move |cancel| {
             cancel.check()?;

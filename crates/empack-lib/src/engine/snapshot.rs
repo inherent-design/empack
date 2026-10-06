@@ -13,7 +13,7 @@ use std::{
 };
 
 /// Limits apply while reading, including files that grow after metadata inspection.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SnapshotLimits {
     pub entries: usize,
@@ -39,6 +39,20 @@ pub struct ProjectReadRoot {
     pub(super) binding: ObjectIdentity,
 }
 impl ProjectReadRoot {
+    pub(super) fn open_child(parent: &Self, child: &str) -> Result<Self> {
+        PortableRelPath::parse(child, PathSyntax::ArtifactName)?;
+        parent.check_binding()?;
+        let directory = parent.directory.open_dir_nofollow(child)?;
+        native::reject_reparse(&directory.try_clone()?.into_std_file())?;
+        let binding = native::directory_identity(&directory)?;
+        let root = Self {
+            directory,
+            binding,
+            location: parent.location.join(child),
+        };
+        root.check_binding()?;
+        Ok(root)
+    }
     /// Ambient authority is used only for the explicitly selected project root.
     pub fn open(selected: &Path) -> Result<Self> {
         let location = selected

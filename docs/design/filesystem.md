@@ -54,6 +54,15 @@ rules. Revalidation and recovery repeat the same captured traversal policy.
 
 No normal user workflow should need arbitrary recursive project deletion. Root discovery can require ambient filesystem authority at the outer boundary; that authority should not leak to importers or planners.
 
+A new project is a different publication footprint from replacing existing files.
+Bind the existing parent and expected child absence during preparation. Publish a
+complete verified sibling directory using a native no-replace operation, with no
+fallback that can replace an occupied directory. Linux uses `RENAME_NOREPLACE`, Apple
+uses `RENAME_EXCL`, and Windows uses a handle-relative rename with `ReplaceIfExists`
+false. The Windows flag explicitly requires an error when the destination exists.
+[Microsoft's rename contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
+Unsupported native/filesystem behavior is an error, not permission to delete and retry.
+
 ### 11.3 Staging API
 
 ```rust
