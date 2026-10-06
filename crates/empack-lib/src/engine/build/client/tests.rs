@@ -39,8 +39,8 @@ fn fixture(root: &Path) -> BuildAcquisitions {
     }
     acquired
 }
-fn options(format: DistributionArchive) -> ClientFullOptions {
-    ClientFullOptions {
+fn options(format: DistributionArchive) -> ClientOptions {
+    ClientOptions {
         archive: format,
         optional: OptionalPolicy::Preserve,
         templates: TemplateOptions::default(),
@@ -315,4 +315,113 @@ fn client_preparation_preserves_user_templates_and_old_artifacts_on_failure() {
         fs::read(root.path().join("dist/client.zip")).unwrap(),
         previous
     );
+}
+
+#[test]
+fn lightweight_clients_bundle_reference_tree_exact_tools_and_selected_local_bytes() {
+    for (format, name) in [
+        (DistributionArchive::Zip, "light.zip"),
+        (DistributionArchive::TarGz, "light.tar.gz"),
+        (DistributionArchive::SevenZip, "light.7z"),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        put(root.path(), "pack/config/example.txt", b"common");
+        put(
+            root.path(),
+            "overrides/client/config/example.txt",
+            b"selected",
+        );
+        let bootstrap = ClientBootstrap {
+            assets: InstallerAssets::fixture(),
+            interaction: InstallerInteraction::Headless,
+        };
+        let cancel = Cancellation::default();
+        let plan = prepare_client_build(
+            capture(root.path(), host.path(), name),
+            path(name).unwrap(),
+            &BuildAcquisitions::default(),
+            &options(format),
+            &bootstrap,
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(plan.game().inventory().target(), BuildTarget::Client);
+        assert_eq!(plan.toolchain().len(), 2);
+        assert!(
+            !plan
+                .inventory()
+                .contains_key(&path(".minecraft/resourcepacks/a.zip").unwrap())
+        );
+        assert!(
+            plan.inventory()
+                .contains_key(&path(".minecraft/pack/pack.toml").unwrap())
+        );
+        assert!(
+            plan.inventory()
+                .contains_key(&path(".minecraft/packwiz-installer.jar").unwrap())
+        );
+        let expected = plan.inventory().clone();
+        plan.publish(
+            &Publisher::open(&host.path().join("private")).unwrap(),
+            &cancel,
+        )
+        .unwrap();
+        let mut file = fs::File::open(root.path().join("dist").join(name)).unwrap();
+        verify_archive(
+            &mut file,
+            format,
+            &expected,
+            ArchiveLimits::default(),
+            &cancel,
+        )
+        .unwrap();
+        if format == DistributionArchive::Zip {
+            let mut zip = zip::ZipArchive::new(file).unwrap();
+            let mut ini = String::new();
+            zip.by_name("instance.cfg")
+                .unwrap()
+                .read_to_string(&mut ini)
+                .unwrap();
+            assert!(ini.contains("--bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar --no-gui -s client pack/pack.toml"));
+            for destination in [
+                ".minecraft/config/example.txt",
+                ".minecraft/pack/config/example.txt",
+            ] {
+                let mut bytes = Vec::new();
+                zip.by_name(destination)
+                    .unwrap()
+                    .read_to_end(&mut bytes)
+                    .unwrap();
+                assert_eq!(bytes, b"selected");
+            }
+        }
+    }
+}
+#[test]
+fn bootstrap_tool_and_tree_collisions_preserve_existing_distribution() {
+    for destination in ["pack/packwiz-installer.jar", "pack/pack/pack.toml"] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        put(root.path(), destination, b"user input");
+        put(root.path(), "dist/client.zip", b"prior");
+        let result = prepare_client_build(
+            capture(root.path(), host.path(), "client.zip"),
+            path("client.zip").unwrap(),
+            &BuildAcquisitions::default(),
+            &options(DistributionArchive::Zip),
+            &ClientBootstrap {
+                assets: InstallerAssets::fixture(),
+                interaction: InstallerInteraction::Interactive,
+            },
+            &Cancellation::default(),
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read(root.path().join("dist/client.zip")).unwrap(),
+            b"prior"
+        );
+    }
 }

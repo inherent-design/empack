@@ -1,15 +1,17 @@
 //! Full launcher distributions: selected game bytes, captured templates and exact components.
 use super::{
     BuildAcquisitions, PreparedArtifact,
-    materialized::{PreparedGameContent, prepare_game_content},
+    materialized::{PreparedGameContent, prepare_bootstrap_game_content, prepare_game_content},
 };
 use crate::{
     application::process_runtime::Cancellation,
     engine::{
         artifacts::{ArchiveLimits, write_archive},
+        bootstrap_tools::{InstallerArtifact, InstallerAssets, InstallerRelease},
         content::{InitialObservation, SourceEvidencePolicy, verify_stream},
         layout::CollisionIndex,
         mrpack::AcquiredBuildFile,
+        packwiz::InstallerInteraction,
         project::WorkspaceSnapshot,
         snapshot::SnapshotLimits,
         staging::{MutableStage, PrivateFile},
@@ -30,21 +32,42 @@ use std::{
     io::Read,
 };
 
-pub struct ClientFullOptions {
+pub struct ClientOptions {
     pub archive: DistributionArchive,
     pub optional: OptionalPolicy,
     pub templates: TemplateOptions,
     pub evidence: SourceEvidencePolicy,
     pub limits: ArchiveLimits,
 }
-/// Complete selected pack content and launcher declarations, not an offline Minecraft installation.
+/// Exact bundled tools and whether the installer may present optional choices.
+pub struct ClientBootstrap {
+    pub assets: InstallerAssets,
+    pub interaction: InstallerInteraction,
+}
+impl ClientBootstrap {
+    fn command(&self) -> String {
+        let interaction = if self.interaction == InstallerInteraction::Headless {
+            " --no-gui"
+        } else {
+            ""
+        };
+        format!(
+            "\"$INST_JAVA\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar{interaction} -s client pack/pack.toml"
+        )
+    }
+}
+/// Verified selected game representation and launcher declarations, not an offline Minecraft installation.
 pub struct PreparedClientBuild {
     publication: PreparedArtifact,
     game: PreparedGameContent,
     inventory: BTreeMap<PortableRelPath, FileContent>,
     user_configuration: bool,
+    toolchain: Vec<InstallerRelease>,
 }
 impl PreparedClientBuild {
+    pub fn toolchain(&self) -> &[InstallerRelease] {
+        &self.toolchain
+    }
     pub fn game(&self) -> &PreparedGameContent {
         &self.game
     }
@@ -183,7 +206,7 @@ pub fn prepare_client_full_build(
     workspace: WorkspaceSnapshot,
     artifact: PortableRelPath,
     external: &BuildAcquisitions,
-    options: &ClientFullOptions,
+    options: &ClientOptions,
     cancel: &Cancellation,
 ) -> Result<PreparedClientBuild> {
     let candidate = prepare_client_full_archive(&workspace, artifact, external, options, cancel)?;
@@ -194,6 +217,7 @@ pub fn prepare_client_full_build(
         game: candidate.game,
         inventory: candidate.inventory,
         user_configuration: candidate.user_configuration,
+        toolchain: candidate.toolchain,
     })
 }
 pub(super) struct ClientCandidate {
@@ -201,12 +225,49 @@ pub(super) struct ClientCandidate {
     pub(super) game: PreparedGameContent,
     pub(super) inventory: BTreeMap<PortableRelPath, FileContent>,
     pub(super) user_configuration: bool,
+    pub(super) toolchain: Vec<InstallerRelease>,
 }
 pub(super) fn prepare_client_full_archive(
     workspace: &WorkspaceSnapshot,
     artifact: PortableRelPath,
     external: &BuildAcquisitions,
-    options: &ClientFullOptions,
+    options: &ClientOptions,
+    cancel: &Cancellation,
+) -> Result<ClientCandidate> {
+    prepare_client_archive(workspace, artifact, external, options, None, cancel)
+}
+/// Prepare the lightweight client with exact bundled tools and reference content.
+pub fn prepare_client_build(
+    workspace: WorkspaceSnapshot,
+    artifact: PortableRelPath,
+    external: &BuildAcquisitions,
+    options: &ClientOptions,
+    bootstrap: &ClientBootstrap,
+    cancel: &Cancellation,
+) -> Result<PreparedClientBuild> {
+    let built = prepare_client_archive(
+        &workspace,
+        artifact,
+        external,
+        options,
+        Some(bootstrap),
+        cancel,
+    )?;
+    let publication = super::prepare_archives_publication(workspace, vec![built.archive], cancel)?;
+    Ok(PreparedClientBuild {
+        publication,
+        game: built.game,
+        inventory: built.inventory,
+        user_configuration: built.user_configuration,
+        toolchain: built.toolchain,
+    })
+}
+pub(super) fn prepare_client_archive(
+    workspace: &WorkspaceSnapshot,
+    artifact: PortableRelPath,
+    external: &BuildAcquisitions,
+    options: &ClientOptions,
+    bootstrap: Option<&ClientBootstrap>,
     cancel: &Cancellation,
 ) -> Result<ClientCandidate> {
     let suffix = match options.archive {
@@ -218,26 +279,72 @@ pub(super) fn prepare_client_full_archive(
         artifact.as_str().ends_with(suffix),
         "Client artifact extension differs from selected format"
     );
-    let game = prepare_game_content(
-        workspace,
-        external,
-        BuildTarget::ClientFull,
-        &options.optional,
-        options.evidence,
-        cancel,
-    )?;
-    let templates = prepare_templates(
-        workspace,
-        BuildTarget::ClientFull,
-        &options.templates,
-        cancel,
-    )?;
+    let target = if bootstrap.is_some() {
+        BuildTarget::Client
+    } else {
+        BuildTarget::ClientFull
+    };
+    let game = if bootstrap.is_some() {
+        prepare_bootstrap_game_content(
+            workspace,
+            external,
+            target,
+            &options.optional,
+            options.evidence,
+            cancel,
+        )?
+    } else {
+        prepare_game_content(
+            workspace,
+            external,
+            target,
+            &options.optional,
+            options.evidence,
+            cancel,
+        )?
+    };
+    let mut template_options = options.templates.clone();
+    if let Some(bootstrap) = bootstrap {
+        template_options
+            .values
+            .entry("BOOTSTRAP_COMMAND".into())
+            .or_insert_with(|| bootstrap.command());
+    }
+    let templates = prepare_templates(workspace, target, &template_options, cancel)?;
     let mut files = BTreeMap::new();
     for (destination, file) in game.files() {
         files.insert(
             path(&format!(".minecraft/{}", destination.as_str()))?,
             file.clone(),
         );
+    }
+    if let Some(bootstrap) = bootstrap {
+        let tree = game.packwiz(bootstrap.interaction, cancel)?;
+        for (destination, file) in tree.files() {
+            let destination = path(&format!(".minecraft/pack/{}", destination.as_str()))?;
+            ensure!(
+                !files.contains_key(&destination),
+                "Game content collides with bootstrap tree"
+            );
+            files.insert(destination, file.clone());
+        }
+        for artifact in [InstallerArtifact::Bootstrap, InstallerArtifact::Installer] {
+            let destination = path(&format!(".minecraft/{}", artifact.release().filename))?;
+            ensure!(
+                !files.contains_key(&destination),
+                "Game content collides with bundled installer"
+            );
+            files.insert(
+                destination,
+                AcquiredBuildFile {
+                    content: bootstrap.assets.content(artifact).clone(),
+                    permissions: FilePermissions {
+                        readonly: false,
+                        executable: false,
+                    },
+                },
+            );
+        }
     }
     for (destination, file) in templates.files() {
         ensure!(
@@ -265,7 +372,10 @@ pub(super) fn prepare_client_full_archive(
             runtime.minecraft.as_str(),
             &metadata.version,
         );
-        renderer.set_variable("BOOTSTRAP", "");
+        renderer.set_variable("BOOTSTRAP", if bootstrap.is_some() { "true" } else { "" });
+        if let Some(bootstrap) = bootstrap {
+            renderer.set_variable("BOOTSTRAP_COMMAND", bootstrap.command());
+        }
         files.insert(
             instance,
             generated(renderer.render_template("instance.cfg")?.as_bytes(), cancel)?,
@@ -339,6 +449,14 @@ pub(super) fn prepare_client_full_archive(
         game,
         inventory,
         user_configuration,
+        toolchain: if bootstrap.is_some() {
+            vec![
+                InstallerArtifact::Bootstrap.release(),
+                InstallerArtifact::Installer.release(),
+            ]
+        } else {
+            Vec::new()
+        },
     })
 }
 

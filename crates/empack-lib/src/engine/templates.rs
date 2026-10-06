@@ -58,7 +58,7 @@ impl Default for TemplateLimits {
         }
     }
 }
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TemplateOptions {
     /// Exact captured input paths; unknown entries are errors, not ignored configuration.
     pub modes: BTreeMap<PortableRelPath, TemplateMode>,
@@ -207,6 +207,7 @@ pub fn prepare_templates(
             }
             .into(),
         ),
+        ("BOOTSTRAP_COMMAND", "\"$INST_JAVA\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar -s client pack/pack.toml".into()),
         ("NAME", metadata.name.clone()),
         ("VERSION", metadata.version.clone()),
         ("AUTHOR", metadata.author.clone().unwrap_or_default()),

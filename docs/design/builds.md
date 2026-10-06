@@ -211,6 +211,11 @@ resolve optional choices before encoding the tree. Interactive recipes may retai
 independent optional references; grouped choices and optional embedded payloads
 require explicit selection. Do not infer these behaviors from `side = "server"`.
 
+Lightweight client archives place the reference tree under `.minecraft/pack`,
+bundle installer tools under `.minecraft`, and include selected local bytes at
+their game destinations as well as in the reference tree. They use the same exact
+launcher component checks and all-requested publication group as full clients.
+
 Bundle reviewed installer versions and their checked digests. The bootstrap's
 [`--bootstrap-no-update` and `--bootstrap-main-jar` options](https://github.com/packwiz/packwiz-installer-bootstrap/blob/v0.0.3/src/main/java/link/infra/packwiz/installer/bootstrap/Main.java)
 keep launch behavior tied to those exact assets. An empack-maintained digest pin

@@ -10,4 +10,4 @@ iconKey=empack_icon
 AutoUpdate=false
 ManagedPack=true
 OverrideCommands=true
-PreLaunchCommand={{#if BOOTSTRAP}}{{ini_quote '"$INST_JAVA" -jar packwiz-installer-bootstrap.jar pack/pack.toml'}}{{/if}}
+PreLaunchCommand={{#if BOOTSTRAP}}{{ini_quote BOOTSTRAP_COMMAND}}{{/if}}

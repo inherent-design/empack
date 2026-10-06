@@ -81,7 +81,13 @@ impl TemplateEngine {
 
         Self {
             handlebars,
-            variables: HashMap::from([("BOOTSTRAP".into(), "true".into())]),
+            variables: HashMap::from([
+                ("BOOTSTRAP".into(), "true".into()),
+                (
+                    "BOOTSTRAP_COMMAND".into(),
+                    "\"$INST_JAVA\" -jar packwiz-installer-bootstrap.jar pack/pack.toml".into(),
+                ),
+            ]),
         }
     }
 

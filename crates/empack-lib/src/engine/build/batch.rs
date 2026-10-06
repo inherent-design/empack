@@ -1,7 +1,7 @@
 //! AllRequested publication across independently verified distribution candidates.
 use super::{
     ArchiveCandidate, BuildAcquisitions, PreparedArtifact,
-    client::{ClientFullOptions, prepare_client_full_archive},
+    client::{ClientBootstrap, ClientOptions, prepare_client_archive, prepare_client_full_archive},
     prepare_archives_publication, prepare_mrpack,
 };
 use crate::{
@@ -25,20 +25,28 @@ pub enum DistributionRequest {
         optional: OptionalConversion,
         evidence: SourceEvidencePolicy,
     },
+    Client {
+        artifact: PortableRelPath,
+        options: ClientOptions,
+        bootstrap: ClientBootstrap,
+    },
     ClientFull {
         artifact: PortableRelPath,
-        options: ClientFullOptions,
+        options: ClientOptions,
     },
 }
 impl DistributionRequest {
     fn artifact(&self) -> &PortableRelPath {
         match self {
-            Self::Mrpack { artifact, .. } | Self::ClientFull { artifact, .. } => artifact,
+            Self::Mrpack { artifact, .. }
+            | Self::Client { artifact, .. }
+            | Self::ClientFull { artifact, .. } => artifact,
         }
     }
     fn target(&self) -> BuildTarget {
         match self {
             Self::Mrpack { .. } => BuildTarget::Mrpack,
+            Self::Client { .. } => BuildTarget::Client,
             Self::ClientFull { .. } => BuildTarget::ClientFull,
         }
     }
@@ -55,6 +63,7 @@ pub struct BuiltDistribution {
     pub backend_comparisons: Vec<crate::engine::backend::BackendDigestComparison>,
     pub conversions: Vec<String>,
     pub user_configuration: Option<bool>,
+    pub toolchain: Vec<crate::engine::bootstrap_tools::InstallerRelease>,
 }
 pub struct PreparedBuildBatch {
     publication: PreparedArtifact,
@@ -119,6 +128,7 @@ pub fn prepare_build_batch(
                     backend_comparisons: plan.backend_comparisons().to_vec(),
                     conversions: plan.conversions().to_vec(),
                     user_configuration: None,
+                    toolchain: Vec::new(),
                 };
                 (
                     ArchiveCandidate {
@@ -129,14 +139,28 @@ pub fn prepare_build_batch(
                     evidence,
                 )
             }
-            DistributionRequest::ClientFull { artifact, options } => {
-                let built = prepare_client_full_archive(
-                    &workspace,
-                    artifact.clone(),
-                    external,
-                    options,
-                    cancel,
-                )?;
+            DistributionRequest::ClientFull { artifact, options }
+            | DistributionRequest::Client {
+                artifact, options, ..
+            } => {
+                let built = if let DistributionRequest::Client { bootstrap, .. } = request {
+                    prepare_client_archive(
+                        &workspace,
+                        artifact.clone(),
+                        external,
+                        options,
+                        Some(bootstrap),
+                        cancel,
+                    )?
+                } else {
+                    prepare_client_full_archive(
+                        &workspace,
+                        artifact.clone(),
+                        external,
+                        options,
+                        cancel,
+                    )?
+                };
                 let evidence = BuiltDistribution {
                     target: request.target(),
                     artifact: artifact.clone(),
@@ -148,6 +172,7 @@ pub fn prepare_build_batch(
                     backend_comparisons: built.game.backend_comparisons().to_vec(),
                     conversions: Vec::new(),
                     user_configuration: Some(built.user_configuration),
+                    toolchain: built.toolchain,
                 };
                 (built.archive, evidence)
             }

@@ -3,6 +3,7 @@ pub mod acquisition;
 pub mod archive_source;
 pub mod artifacts;
 pub mod backend;
+pub mod bootstrap_tools;
 pub mod build;
 pub mod content;
 pub mod documents;

@@ -4,8 +4,8 @@ Release target: v0.5.0-alpha.1. The [target contracts](README.md) and
 [feature requirements](parity.md) define completion. This page records what the
 source implements; it does not make the target API sketches available by implication.
 
-The normalized engine can prepare and recoverably publish a mrpack or full client
-archive from a captured workspace. HTTP acquisition and explicit build-content obligations now feed that
+The normalized engine can prepare and recoverably publish mrpack, lightweight client
+and full-client archives from a captured workspace. HTTP acquisition and explicit build-content obligations now feed that
 path. The complete semantic `Engine` API, other build targets, provider/import
 composition, continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
@@ -26,6 +26,8 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Materialized game content | Shared captured identity/content checks; side and optional selection before missing-byte requirements; exact retained leases and source evidence; no unresolved entries in completed inventory | [Materialization tests](../../crates/empack-lib/src/engine/build/materialized/tests.rs), [core inventory tests](../../crates/empack-core/tests/inventory.rs) |
 | Build batches | Mrpack and full-client recipes prepare privately; duplicate outputs fail preflight; every candidate verifies before one journal publishes their union; original resolution and conversion evidence remain available | [Batch tests](../../crates/empack-lib/src/engine/build/batch/tests.rs) |
 | Packwiz reference projection | Captured game selection feeds a generated pack/index/metadata tree; exact provider references, stable URLs, optional constraints and original declared-vs-acquired evidence remain explicit | [Projection tests](../../crates/empack-lib/src/engine/packwiz/tests.rs), game-content tests |
+| Installer assets | Reviewed bootstrap/main-installer versions, bounded governed acquisition, exact size/digest validation and retained tool identities; pins are maintained by empack | [Tool tests](../../crates/empack-lib/src/engine/bootstrap_tools.rs) |
+| Lightweight client distribution | Generated packwiz tree, exact bundled tools, local byte projection, pinned launcher command, all archive formats and batch publication | [Client tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
 | Full client distribution | `.minecraft` game view, captured templates, exact launcher components, generated defaults, all three archive formats and verified publication | [Client build tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
 | Templates | Captured common/side projection, nested paths, binary and explicit literal copying, strict expressions, format helpers, bounded outputs and preserved portable attributes | [Template tests](../../crates/empack-lib/src/engine/templates/tests.rs) |
 | Archive sources | Retained bounded ZIP reader; raw directory preflight; every member path/kind/collision checked; selected bytes, CRC and portable attributes verified; failed attempts consume extraction allowance | [Archive source tests](../../crates/empack-lib/src/engine/archive_source/tests.rs) |
@@ -40,7 +42,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 File-level verification is not a semantic proof. Container integrity is not evidence
 that every required dependency was included. The composed mrpack and full-client paths connect
 normalized obligations, verified acquisitions, independently checked output and the
-journal publisher. Server/runtime and bootstrap composition remain pending.
+journal publisher. Server/runtime composition remains pending.
 
 ## Composed build behavior
 
@@ -83,7 +85,7 @@ is game-content completeness, not launcher/server runtime completeness.
 references. `PreparedGameContent::packwiz` checks generated metadata through the shared
 reader; unlisted metadata-only references retain `actual: None` rather than a fabricated
 byte observation. Full targets still require actual selected bytes.
-Server runtime assembly and complete bootstrap distributions remain pending.
+Server runtime assembly and server distributions remain pending.
 
 Template preparation selects common and target-side inputs before rendering. Exact
 side replacements retain their replaced source identity; same-layer duplicates,
@@ -103,7 +105,7 @@ Full client archives materialize pack content, not Minecraft binaries and assets
 the launcher still resolves its normal game/runtime components. ZIP supports direct
 launcher import; TAR.GZ and 7z contain the same instance tree for explicit extraction.
 
-`prepare_build_batch` currently composes mrpack and full-client recipes under the
+`prepare_build_batch` currently composes mrpack, lightweight-client and full-client recipes under the
 AllRequested rule. A later failed recipe drops earlier private candidates. Source
 changes block the whole publication, and output collisions fail preflight. One
 recoverable journal owns the combined artifact changes; this does not claim an
@@ -140,6 +142,8 @@ Results describe the stated revision, not every later edit.
 | `c5cd762` | 1,517 default tests and ten doctests passed; Greptile review 35 reported no new blocking findings |
 | `713fcc0` | 1,524 default tests and ten doctests passed; strict E2E passed 101 tests |
 | `7eaba64` | 46 affected core/build/mrpack tests and all-feature Clippy passed |
+| `bbe4ee1` | 1,530 default tests and ten doctests passed; Greptile review 38 reported no actionable findings |
+| Lightweight client integration | 46 affected tests passed across templates, tools and builds. Governed acquisition fetched both pinned assets; the published archive installed with its bundled Java tools; Qt read the exact command |
 | Bootstrap projection integration | 29 affected build/mrpack/packwiz tests passed; the actual pinned Java installer consumed a generated selected tree and produced the expected local bytes |
 | Publication budget integration | 32 affected tests passed; a passing acquisition test reported a pipe-leak warning and its isolated repeat passed without one. Large-size accounting uses synthetic metadata, not a 65 GiB allocation |
 | Build batch integration | 13 composed build tests and all-feature Clippy passed |
@@ -185,7 +189,9 @@ repeat passed without a leak. These observations do not establish a production f
 The upstream installer v0.5.14 enables all optional entries in headless mode,
 regardless of their declared default. This was observed in a disposable installer
 run; projection now requires resolved choices for headless execution. Interactive
-reference packages retain supported optional metadata. Grouped optional files and
+reference packages retain supported optional metadata. Lightweight client defaults
+bundle both exact tools and disable bootstrap updates. Captured user configuration
+remains explicit input; its arbitrary commands are not certified by these checks. Grouped optional files and
 optional embedded bytes need explicit selections because the format lacks those
 relationships. These checks precede any publication.
 

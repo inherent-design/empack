@@ -86,7 +86,7 @@ fn requests() -> NonEmpty<DistributionRequest> {
         },
         DistributionRequest::ClientFull {
             artifact: path("client.zip"),
-            options: ClientFullOptions {
+            options: ClientOptions {
                 archive: DistributionArchive::Zip,
                 optional: OptionalPolicy::Preserve,
                 templates: TemplateOptions::default(),
@@ -217,4 +217,57 @@ fn duplicate_output_ownership_is_rejected_before_preparation() {
         b"old mrpack"
     );
     assert!(!host.path().join("private").exists());
+}
+
+#[test]
+fn bootstrap_client_joins_requested_publication_with_tool_evidence() {
+    use crate::engine::{bootstrap_tools::InstallerAssets, packwiz::InstallerInteraction};
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let external = fixture(root.path());
+    let cancel = Cancellation::default();
+    let requests = NonEmpty::new(vec![
+        DistributionRequest::Mrpack {
+            artifact: path("pack.mrpack"),
+            optional: OptionalConversion::RejectMetadataLoss,
+            evidence: SourceEvidencePolicy::Compatibility,
+        },
+        DistributionRequest::Client {
+            artifact: path("client.zip"),
+            options: ClientOptions {
+                archive: DistributionArchive::Zip,
+                optional: OptionalPolicy::Preserve,
+                templates: TemplateOptions::default(),
+                evidence: SourceEvidencePolicy::Compatibility,
+                limits: ArchiveLimits::default(),
+            },
+            bootstrap: ClientBootstrap {
+                assets: InstallerAssets::fixture(),
+                interaction: InstallerInteraction::Headless,
+            },
+        },
+    ])
+    .unwrap();
+    let plan = prepare_build_batch(
+        capture(root.path(), host.path()),
+        requests,
+        &external,
+        &cancel,
+    )
+    .unwrap();
+    assert_eq!(plan.artifacts()[1].toolchain.len(), 2);
+    assert_eq!(plan.artifacts()[1].target, BuildTarget::Client);
+    plan.publish(
+        &Publisher::open(&host.path().join("private")).unwrap(),
+        &cancel,
+    )
+    .unwrap();
+    assert_ne!(
+        fs::read(root.path().join("dist/client.zip")).unwrap(),
+        b"old client"
+    );
+    assert_ne!(
+        fs::read(root.path().join("dist/pack.mrpack")).unwrap(),
+        b"old mrpack"
+    );
 }
