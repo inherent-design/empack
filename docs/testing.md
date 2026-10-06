@@ -121,7 +121,7 @@ selected file against its original size/digests. This covers live closure eviden
 acquisition, not yet add/sync command composition.
 
 
-Run complete normalized import acquisition explicitly with
+Run normalized import acquisition, candidate assembly and temporary-project publication with
 `EMPACK_TEST_IMPORT_ARCHIVES` set to local archive paths and
 `mise run smoke:import:content`. CurseForge inputs require the provider key.
 Missing manual content fails this probe; it is not counted as complete acquisition.
@@ -133,4 +133,10 @@ fixture policy is not a production download-discovery heuristic.
 The deterministic acquisition tests cover changed remote bytes, later provider
 failure, cumulative catalog/transfer allowances, restricted-file preflight, wrong
 supplied content, retained resource ownership and client/server/optional semantics.
-Project publication and next-command parity require the semantic import integration.
+The probe also assembles coherent intent/lock documents using explicit fixture choices,
+publishes into an existing empty temporary directory, and rechecks every placed file
+against its original assertions. It explicitly excludes only the known generated
+CurseForge `modlist.html` report and records that decision. Unknown auxiliary members
+still fail. Deterministic tests cover forced replacement from a malformed manifest,
+unrelated-file preservation, publication conflicts, cancellation and layered re-export.
+These checks do not yet establish Engine import approval or CLI parity.

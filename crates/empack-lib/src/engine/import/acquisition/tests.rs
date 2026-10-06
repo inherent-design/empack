@@ -11,7 +11,11 @@ use std::{
     sync::Arc,
 };
 
-fn source(manifest: &str, value: Value, members: &[(&str, &[u8])]) -> AcquiredContent {
+pub(in crate::engine::import) fn source(
+    manifest: &str,
+    value: Value,
+    members: &[(&str, &[u8])],
+) -> AcquiredContent {
     let bytes = serde_json::to_vec(&value).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     for (name, bytes) in
@@ -41,7 +45,7 @@ fn observed(bytes: &[u8]) -> AcquiredContent {
     )
     .unwrap()
 }
-fn mr(files: Vec<Value>) -> Value {
+pub(in crate::engine::import) fn mr(files: Vec<Value>) -> Value {
     json!({"formatVersion":1,"game":"minecraft","name":"Pack","versionId":"1","files":files,"dependencies":{"minecraft":"1.21.1"}})
 }
 fn hex(bytes: &[u8]) -> String {
@@ -625,7 +629,7 @@ fn candidate_options(content: &VerifiedImportContent) -> super::super::ImportCan
         exclude_auxiliary_members: false,
     }
 }
-async fn interpret(
+pub(in crate::engine::import) async fn interpret(
     source: AcquiredContent,
     origin: String,
     change: impl FnOnce(&mut super::super::ImportCandidateOptions) + Send + 'static,

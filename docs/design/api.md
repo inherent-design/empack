@@ -79,6 +79,14 @@ runtime choices are host decisions. URL persistence enforces the durable locator
 local retention is an explicit conversion. `ImportCandidate` exposes coherent documents
 and file-slot bindings to retained bytes, with no publication authority.
 
+`ProjectReader::capture_replacement` reads the bounded managed footprint of an existing
+directory without requiring a valid old manifest. `prepare_import_replacement` consumes
+that snapshot and an `ImportCandidate`, returning a `PreparedImportReplacement` only
+when its complete frozen file inventory verifies. Its plan names every replacement
+and removal; publication revalidates the captured source. This lower-level composition
+requires a trusted host to approve the exact plan. Engine-bound import authorization
+and nonexistent-root creation remain unfinished.
+
 ## 17. Public engine API and application wiring
 
 ### 17.1 Public entry points

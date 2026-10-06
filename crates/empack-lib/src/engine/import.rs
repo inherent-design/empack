@@ -32,6 +32,11 @@ mod candidate;
 pub use candidate::{
     ImportCandidate, ImportCandidateOptions, ImportFileDecision, ImportPersistence,
 };
+mod replacement;
+pub use replacement::{
+    ImportReplacementPolicy, ImportReplacementReceipt, PreparedImportReplacement,
+    prepare_import_replacement,
+};
 mod formats;
 #[cfg(test)]
 mod tests;

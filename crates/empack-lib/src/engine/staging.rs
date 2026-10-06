@@ -94,6 +94,7 @@ impl MutableStage {
                         expected.bytes,
                         cancel,
                         Some(permission),
+                        None,
                     )?;
                     let (parent, leaf) = native::parent(&stage.root.directory, path)?;
                     let mut copied = native::open_file(&parent, &leaf)?;
@@ -119,7 +120,19 @@ impl MutableStage {
         maximum: u64,
         cancel: &Cancellation,
     ) -> Result<()> {
-        self.write_with_permissions(path, source, maximum, cancel, None)
+        self.write_with_permissions(path, source, maximum, cancel, None, None)
+    }
+
+    /// Apply explicit portable attributes to a fresh private candidate before freezing.
+    pub(super) fn write_attributed(
+        &mut self,
+        path: &PortableRelPath,
+        source: &mut dyn Read,
+        maximum: u64,
+        attributes: empack_core::files::FilePermissions,
+        cancel: &Cancellation,
+    ) -> Result<()> {
+        self.write_with_permissions(path, source, maximum, cancel, None, Some(attributes))
     }
 
     fn write_with_permissions(
@@ -129,6 +142,7 @@ impl MutableStage {
         maximum: u64,
         cancel: &Cancellation,
         permissions: Option<std::fs::Permissions>,
+        attributes: Option<empack_core::files::FilePermissions>,
     ) -> Result<()> {
         cancel.check()?;
         self.root.check_binding()?;
@@ -146,6 +160,21 @@ impl MutableStage {
             copy_bounded(source, &mut file, maximum, cancel)?;
             if let Some(permissions) = permissions {
                 file.set_permissions(permissions)?;
+            }
+            if let Some(attributes) = attributes {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mode = if attributes.readonly { 0o400 } else { 0o600 }
+                        | if attributes.executable { 0o100 } else { 0 };
+                    file.set_permissions(std::fs::Permissions::from_mode(mode))?;
+                }
+                #[cfg(not(unix))]
+                {
+                    let mut permissions = file.metadata()?.permissions();
+                    permissions.set_readonly(attributes.readonly);
+                    file.set_permissions(permissions)?;
+                }
             }
             file.sync_all()?;
             drop(file);

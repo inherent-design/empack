@@ -17,6 +17,20 @@ use empack_core::{
 };
 use std::path::Path;
 
+/// Managed replacement inputs may be empty or contain an invalid prior document.
+/// Capturing them grants no authority to remove or overwrite files.
+pub struct ReplacementSnapshot {
+    root: ProjectReadRoot,
+    native: NativeSnapshot,
+}
+impl ReplacementSnapshot {
+    pub fn observations(&self) -> &NativeSnapshot {
+        &self.native
+    }
+    pub(super) fn into_native(self) -> (ProjectReadRoot, NativeSnapshot) {
+        (self.root, self.native)
+    }
+}
 pub struct WorkspaceSnapshot {
     root: ProjectReadRoot,
     native: NativeSnapshot,
@@ -199,6 +213,33 @@ pub struct ProjectReader {
 impl ProjectReader {
     pub fn new(recovery: RecoveryReader) -> Self {
         Self { recovery }
+    }
+    /// Observe only authoring documents and managed content roots, without requiring valid
+    /// prior schemas. Templates, distributions and unrelated root files remain outside replacement.
+    pub fn capture_replacement(
+        &self,
+        selected: &Path,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<ReplacementSnapshot> {
+        cancel.check()?;
+        let root = ProjectReadRoot::open(selected)?;
+        let _initial_guard = self.recovery.enter(&root)?;
+        let scopes = [
+            "empack.yml",
+            "empack.lock",
+            "pack",
+            "overrides/common",
+            "overrides/client",
+            "overrides/server",
+        ]
+        .into_iter()
+        .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        let native = root.capture(&scopes, limits, cancel)?;
+        let _final_guard = self.recovery.enter(&root)?;
+        root.revalidate(&native, cancel)?;
+        Ok(ReplacementSnapshot { root, native })
     }
     /// Bind standard build inputs and each declared local/archive source, including files outside
     /// managed namespaces. Only requested artifact destinations enter the read set, not retained

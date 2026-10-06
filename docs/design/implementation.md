@@ -249,8 +249,8 @@ Record and content-size limits are separate from network allowances; bookkeeping
 is charged for actual records rather than the configured maximum.
 
 These values grant no project write authority. The interpretation boundary below
-builds candidate documents; replacement planning and composition with the Engine's
-approval/publication lifecycle remain separate.
+builds candidate documents; native replacement preparation follows below. Composition
+with the Engine's operation-bound approval lifecycle remains separate.
 
 ## Import candidate interpretation
 
@@ -275,6 +275,27 @@ Known required edges between included provider selections are retained; partial
 coverage cannot authorize removal. Source declarations and provider facts remain
 available through the retained import. The candidate holds no project writer and
 cannot authorize replacement on its own.
+
+## Native import replacement
+
+`ProjectReader::capture_replacement` binds managed documents and content roots even
+when the prior documents are missing or malformed. It gates recovery, rejects unsafe
+ancestors and captures membership and absence. Templates, distributions and unrelated
+root files remain outside this footprint.
+
+`prepare_import_replacement` consumes a complete semantic candidate. `RejectExisting`
+refuses occupied managed content. `ReplaceManagedContent` produces an explicit
+file-level replacement/removal plan, with no recursive directory deletion. Every
+candidate document and payload is staged and checked against that plan before
+publication. Portable file attributes survive staging. Source leases retire before
+the frozen publication tree is packed.
+
+The trusted host can publish the verified plan through the journaled publisher.
+Concurrent source edits, added files and cancellation before publication prevent the
+whole replacement. Tests publish into an empty existing directory and replace a
+broken project, preserve unrelated files, and re-export the correct layered bytes.
+Creating a nonexistent root and binding import preparation to the Engine's approval
+and operation lifecycle remain required before CLI cutover.
 
 ## Composed build behavior
 
@@ -368,6 +389,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Native import replacement | 1,678 tests and eleven doctests passed, along with 58 affected import/project/staging/publication checks and all-feature Clippy. Both real Fabulously Optimized formats published 78 roots into temporary projects; every placed file was reread against original evidence. This remains lower-level publication evidence, not Engine approval or CLI parity |
 | Import candidate interpretation | 1,673 tests and eleven doctests passed before the final provenance/index refinement. The final 50 core/import checks and all-feature Clippy cover that refinement. Both real formats produced 78 coherent roots, including explicit restricted-file association and exclusion of the known generated `modlist.html` report. The first CurseForge candidate probe correctly refused that unacknowledged auxiliary member. Publication and CLI parity remain unfinished |
 | Verified import content | 1,661 tests and eleven doctests passed without a nextest leak warning; 83 affected catalog/import/acquisition tests and all-feature Clippy passed. Both real Fabulously Optimized 1.20.1 archives passed full content acquisition with explicit prior-byte association enabled. The initial CurseForge run correctly stopped for two restricted files; the Modrinth pass verified 78 files / 27,902,856 bytes. This is acquisition evidence, not project publication parity |
 | Closure review 62 | Both the 16 MiB small-graph admission failure and incompatible required-pin abort reproduced. Incremental bookkeeping and explicit incompatible-requirement evidence pass the combined 80 catalog/import/acquisition regressions |

@@ -1,4 +1,4 @@
-//! Explicit live import acquisition. No project is created or replaced by this probe.
+//! Live import acquisition, semantic assembly and publication into temporary projects.
 use empack_core::{model::*, path::InstallDestination, projection::BuildTarget, requirements::*};
 use empack_lib::{
     application::process_runtime::Cancellation,
@@ -85,7 +85,8 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
                 match result {
                     ImportContentOutcome::Ready(content) => {
                         let options = fixture_decisions(&content)?;
-                        Ok((content.into_candidate(&mut scope, options)?, supplied))
+                        let candidate = content.into_candidate(&mut scope, options)?;
+                        Ok((publish_fixture(&mut scope, candidate).await?, supplied))
                     },
                     ImportContentOutcome::NeedsInput { pending, .. } => anyhow::bail!("{} import obligations remain", pending.len()),
                 }
@@ -96,24 +97,23 @@ async fn resolve_and_verify_all_real_import_content() -> anyhow::Result<()> {
         let outcome = handle.wait().await;
         runtime.shutdown().await;
         match &*outcome {
-            OperationOutcome::Completed(Ok((candidate, supplied))) => {
-                let content = candidate.source();
-                let bytes: u64 = content
-                    .content()
-                    .values()
+            OperationOutcome::Completed(Ok((published, supplied))) => {
+                let bytes: u64 = published
+                    .files
+                    .iter()
                     .map(|value| value.lease().len())
                     .sum();
                 println!(
-                    "{}: {:?}, {} files, {} bytes, {} explicitly supplied files, {} coherent roots",
+                    "{}: {:?}, {} files, {} bytes, {} explicitly supplied files, {} published roots",
                     path.display(),
-                    content.plan().imported().format,
-                    content.content().len(),
+                    published.format,
+                    published.files.len(),
                     bytes,
                     supplied,
-                    candidate.project().intent().roots.len()
+                    published.roots
                 );
                 if allow_prior {
-                    for value in content.content().values() {
+                    for value in &published.files {
                         prior
                             .entry(value.lease().id())
                             .or_insert_with(|| value.clone());
@@ -244,4 +244,91 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
         exclude_auxiliary_members: source.auxiliary_members.len() == 1
             && source.auxiliary_members[0].as_str() == "modlist.html",
     })
+}
+
+struct PublishedProbe {
+    format: empack_lib::engine::import::ImportFormat,
+    files: Vec<AcquiredContent>,
+    roots: usize,
+}
+async fn publish_fixture(
+    scope: &mut empack_lib::engine::runtime::WorkScope,
+    candidate: empack_lib::engine::import::ImportCandidate,
+) -> anyhow::Result<empack_lib::engine::runtime::RetainedOutput<PublishedProbe>> {
+    use empack_core::files::ManagedPath;
+    use empack_lib::engine::{
+        import::{ImportReplacementPolicy, prepare_import_replacement},
+        layout::ProjectLayout,
+        project::ProjectReader,
+        publication::{Publisher, RecoveryReader},
+        snapshot::SnapshotLimits,
+    };
+    let bytes: u64 = candidate
+        .source()
+        .content()
+        .values()
+        .map(|value| value.lease().len())
+        .sum();
+    let work = scope.spawn_blocking(
+        ResourceRequest {
+            jobs: 1,
+            memory_bytes: 32 << 20,
+            scratch_bytes: bytes * 3 + (8 << 20),
+            open_files: 16,
+        },
+        ResourceRequest {
+            memory_bytes: 8 << 20,
+            ..Default::default()
+        },
+        move |cancel| {
+            let temp = tempfile::tempdir()?;
+            let project = temp.path().join("project");
+            let host = temp.path().join("state");
+            std::fs::create_dir(&project)?;
+            let reader = ProjectReader::new(RecoveryReader::new(host.clone()));
+            let captured =
+                reader.capture_replacement(&project, SnapshotLimits::default(), &cancel)?;
+            let format = candidate.source().plan().imported().format;
+            let files = candidate.source().content().values().cloned().collect();
+            let prepared = prepare_import_replacement(
+                captured,
+                candidate,
+                ImportReplacementPolicy::RejectExisting,
+                &cancel,
+            )?;
+            anyhow::ensure!(
+                std::fs::read_dir(&project)?.count() == 0 && !host.exists(),
+                "Preparation changed the project or host state"
+            );
+            let receipt = prepared.publish(&Publisher::open(&host)?, &cancel)?;
+            let snapshot =
+                reader.capture_build(&project, &[], SnapshotLimits::default(), &cancel)?;
+            anyhow::ensure!(
+                snapshot.require_resolved()?.lock() == receipt.project.lock(),
+                "Published resolution differs from candidate"
+            );
+            for dependency in receipt.project.lock().dependencies.values() {
+                for file in dependency.files.as_slice() {
+                    for placement in file.placements.as_slice() {
+                        let path = ProjectLayout::path(&ManagedPath::Content {
+                            layer: placement.layer,
+                            path: placement.destination.relative().clone(),
+                        })?;
+                        snapshot.acquire_file(
+                            &path,
+                            Some(&file.expected),
+                            SourceEvidencePolicy::Compatibility,
+                            &cancel,
+                        )?;
+                    }
+                }
+            }
+            Ok(PublishedProbe {
+                format,
+                files,
+                roots: receipt.project.intent().roots.len(),
+            })
+        },
+    )?;
+    scope.accept(work.wait().await?)?.transpose()
 }
