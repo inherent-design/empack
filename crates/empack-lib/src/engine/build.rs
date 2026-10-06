@@ -17,6 +17,7 @@ use empack_core::{
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod acquisition;
+pub mod materialized;
 
 /// Exact logical requests and retained metadata records occupy distinct acquisition namespaces.
 #[derive(Default)]
@@ -35,6 +36,49 @@ pub fn prepare_mrpack(
     optional: OptionalConversion,
     cancel: &Cancellation,
 ) -> Result<MrpackPlan> {
+    let content = capture_build_content(workspace, external, evidence, cancel)?;
+    let mut plan = MrpackPlan::prepare_with_observed(
+        &content.project,
+        &content.acquired,
+        content.sources,
+        content
+            .observed
+            .into_iter()
+            .map(|file| match file {
+                ObservedBuildContent::Verified(file) => Ok(*file),
+                ObservedBuildContent::Unacquired { record, .. } => anyhow::bail!(
+                    "Acquire retained backend file before export: {}",
+                    record.metadata_path.as_str()
+                ),
+            })
+            .collect::<Result<Vec<_>>>()?,
+        optional,
+    )?;
+    plan.backend_comparisons = content.comparisons;
+    Ok(plan)
+}
+
+/// Shared captured obligations for reference and materialized projections.
+struct CapturedBuildContent {
+    project: ResolvedProject,
+    acquired: BTreeMap<super::mrpack::LockedFileKey, AcquiredBuildFile>,
+    sources: Vec<super::mrpack::SourceFile>,
+    observed: Vec<ObservedBuildContent>,
+    comparisons: Vec<BackendDigestComparison>,
+}
+enum ObservedBuildContent {
+    Verified(Box<super::mrpack::ObservedFile>),
+    Unacquired {
+        record: Box<BackendFile>,
+        choice: empack_core::requirements::ChoiceKey,
+    },
+}
+fn capture_build_content(
+    workspace: &WorkspaceSnapshot,
+    external: &BuildAcquisitions,
+    evidence: SourceEvidencePolicy,
+    cancel: &Cancellation,
+) -> Result<CapturedBuildContent> {
     let project = workspace.require_resolved()?;
     let sources = workspace.source_entries(cancel)?;
     let backend = workspace.backend_files(cancel)?;
@@ -195,12 +239,6 @@ pub fn prepare_mrpack(
                 permissions,
             });
         }
-        let file = file.with_context(|| {
-            format!(
-                "Acquire retained backend file before export: {}",
-                record.metadata_path.as_str()
-            )
-        })?;
         let base = format!("observed:{}", record.metadata_path.as_str());
         let mut choice = base.clone();
         let mut sequence = 0u64;
@@ -210,12 +248,16 @@ pub fn prepare_mrpack(
                 .context("Observed choice identifier exhausted")?;
             choice = format!("{base}#{sequence}");
         }
-        observed_files.push(super::mrpack::ObservedFile::verify(
-            record,
-            file,
-            empack_core::requirements::ChoiceKey::parse(&choice)?,
-            evidence,
-        )?);
+        let choice = empack_core::requirements::ChoiceKey::parse(&choice)?;
+        observed_files.push(match file {
+            Some(file) => ObservedBuildContent::Verified(Box::new(
+                super::mrpack::ObservedFile::verify(record, file, choice, evidence)?,
+            )),
+            None => ObservedBuildContent::Unacquired {
+                record: Box::new(record),
+                choice,
+            },
+        });
     }
     ensure!(
         used_observed.len() == external.observed.len(),
@@ -265,15 +307,13 @@ pub fn prepare_mrpack(
             )
         })
         .collect();
-    let mut plan = MrpackPlan::prepare_with_observed(
-        &project,
-        &owned,
-        source_files,
-        observed_files,
-        optional,
-    )?;
-    plan.backend_comparisons = backend_check.comparisons;
-    Ok(plan)
+    Ok(CapturedBuildContent {
+        project,
+        acquired: owned,
+        sources: source_files,
+        observed: observed_files,
+        comparisons: backend_check.comparisons,
+    })
 }
 
 struct BackendCheck {

@@ -2,7 +2,7 @@
 use crate::{
     digest::{ContentId, DigestSet},
     files::FilePermissions,
-    model::{ContentLayer, DependencyKey, FileSlot, NonEmpty},
+    model::{ContentLayer, DependencyKey, ExpectedContent, FileSlot, NonEmpty},
     path::InstallDestination,
     projection::BuildTarget,
     requirements::{OptionalChoice, Requirement, Requirements},
@@ -15,7 +15,7 @@ use alloc::{
 use core::fmt;
 
 /// Why an expected output exists. Identity never comes from an exporter's observed files.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ContentOwner {
     /// A normalized exact selection and file slot.
     Dependency {
@@ -32,6 +32,12 @@ pub enum ContentOwner {
 /// How an included file must appear in the target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Representation {
+    /// An exact input whose bytes are not acquired yet. Selection can eliminate it;
+    /// a completed inventory cannot contain this planning-only representation.
+    Unacquired {
+        /// Original byte assertions, never invented placeholder hashes or URLs.
+        expected: ExpectedContent,
+    },
     /// Verified bytes must be included with their declared archive permissions.
     Embedded {
         /// Observed address.
@@ -167,8 +173,21 @@ impl fmt::Display for InventoryError {
 }
 impl core::error::Error for InventoryError {}
 impl BuildInventory {
-    /// Plan from independently enumerated semantic obligations, never observed exporter output.
+    /// Plan and require target representations to be complete.
     pub fn project(
+        inputs: &[InventoryInput],
+        target: BuildTarget,
+        policy: &OptionalPolicy,
+    ) -> Result<Self, InventoryError> {
+        BuildSelection::select(inputs, target, policy)?.finish()
+    }
+}
+/// Side and optional selection before acquisition. It is not a complete output inventory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildSelection(BuildInventory);
+impl BuildSelection {
+    /// Select surviving obligations before deciding which missing bytes must be acquired.
+    pub fn select(
         inputs: &[InventoryInput],
         target: BuildTarget,
         policy: &OptionalPolicy,
@@ -214,7 +233,7 @@ impl BuildInventory {
             if !matches!(policy, OptionalPolicy::Preserve) {
                 return Err(InventoryError::ReferenceChoicesMustBePreserved);
             }
-            return Ok(Self {
+            return Ok(Self(BuildInventory {
                 target,
                 entries: by_layer
                     .values()
@@ -228,7 +247,7 @@ impl BuildInventory {
                     .collect(),
                 precedence: Vec::new(),
                 choices: Vec::new(),
-            });
+            }));
         }
         let client = matches!(target, BuildTarget::Client | BuildTarget::ClientFull);
         let full = matches!(target, BuildTarget::ClientFull | BuildTarget::ServerFull);
@@ -314,23 +333,36 @@ impl BuildInventory {
                 },
             );
         }
-        // Materialize only the surviving view; a replaced common reference need not be downloaded.
-        if full {
-            for entry in selected.values() {
-                if matches!(entry.representation, Representation::Download { .. }) {
-                    return Err(InventoryError::MaterializationRequired(
-                        entry.destination.relative().as_str().into(),
-                    ));
-                }
-            }
-        }
-        Ok(Self {
+        Ok(Self(BuildInventory {
             target,
             entries: selected.into_values().collect(),
             precedence,
             choices: choices.into_values().collect(),
-        })
+        }))
     }
+    /// Surviving obligations, which may still need content acquisition.
+    pub fn entries(&self) -> &[ProjectedEntry] {
+        &self.0.entries
+    }
+    /// Complete only after every included entry has an allowed target representation.
+    pub fn finish(self) -> Result<BuildInventory, InventoryError> {
+        let full = matches!(
+            self.0.target,
+            BuildTarget::ClientFull | BuildTarget::ServerFull
+        );
+        for entry in &self.0.entries {
+            if matches!(entry.representation, Representation::Unacquired { .. })
+                || (full && matches!(entry.representation, Representation::Download { .. }))
+            {
+                return Err(InventoryError::MaterializationRequired(
+                    entry.destination.relative().as_str().into(),
+                ));
+            }
+        }
+        Ok(self.0)
+    }
+}
+impl BuildInventory {
     /// Requested target.
     pub fn target(&self) -> BuildTarget {
         self.target

@@ -23,6 +23,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Private content | Bounded quarantine, every source digest/size/observation checked, retained independent readers, original weak evidence separate from computed hashes | [Content tests](../../crates/empack-lib/src/engine/content/tests.rs) |
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
 | Build acquisition | Read-only missing-content plan; references avoid unnecessary downloads; materialization/layer collisions require bytes; failed download batches return no successful subset; manual/provider/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
+| Materialized game content | Shared captured identity/content checks; side and optional selection before missing-byte requirements; exact retained leases and source evidence; no unresolved entries in completed inventory | [Materialization tests](../../crates/empack-lib/src/engine/build/materialized/tests.rs), [core inventory tests](../../crates/empack-core/tests/inventory.rs) |
 | Templates | Captured common/side projection, nested paths, binary and explicit literal copying, strict expressions, format helpers, bounded outputs and preserved portable attributes | [Template tests](../../crates/empack-lib/src/engine/templates/tests.rs) |
 | Archive sources | Retained bounded ZIP reader; raw directory preflight; every member path/kind/collision checked; selected bytes, CRC and portable attributes verified; failed attempts consume extraction allowance | [Archive source tests](../../crates/empack-lib/src/engine/archive_source/tests.rs) |
 | Staging | Private native storage, copied inputs, no project/cache hardlinks, closed writers before freeze, retained file handles, safe cleanup order | [Staging tests](../../crates/empack-lib/src/engine/staging/tests.rs) |
@@ -68,6 +69,13 @@ Mrpack cannot represent optional embedded content or a selectable replacement wi
 common fallback losslessly. Those cases require an explicit representable choice;
 acknowledging missing description/default fields does not make optional content mandatory.
 
+`prepare_game_content` projects complete client/server game views from the same
+captured obligations as mrpack. It preserves source assurance per logical owner,
+exact locked resolution and observed-backend evidence. Unacquired content on the
+other side or behind a disabled choice does not become a required download. This
+is game-content completeness, not launcher/server runtime completeness; standalone
+runtime assembly and publication remain pending.
+
 Template preparation selects common and target-side inputs before rendering. Exact
 side replacements retain their replaced source identity; same-layer duplicates,
 portable aliases and file/ancestor conflicts fail. `.template` files require UTF-8;
@@ -101,6 +109,8 @@ Results describe the stated revision, not every later edit.
 | `180c4c3` | `mise run test`: 1,498 tests and ten doctests passed |
 | `efb7799` | `mise run e2e:strict`: 101 tests passed; [native CI 37388992838](https://github.com/inherent-design/empack/actions/runs/37388992838) passed |
 | `1901434` | 17 template tests and all-feature Clippy passed; six generated configurations each round-tripped through Qt QSettings and Java Properties |
+| `3733d71` | 1,514 default tests passed; the subsequent doctest compile overlapped a source edit and required a repeat |
+| Materialization integration | 30 affected core inventory, build, mrpack and reader tests passed |
 | Captured template integration | 20 affected template tests passed, including all four standalone target selections, malformed inputs, output budgets, cancellation and source changes |
 | Archive and budget integration | 21 affected acquisition/archive/build/reader tests passed; the final five archive tests passed after tightening per-member reads. Three focused source-ownership/scratch tests and all-feature Clippy passed |
 

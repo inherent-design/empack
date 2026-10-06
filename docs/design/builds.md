@@ -69,7 +69,14 @@ pub enum ExpectedRepresentation {
 }
 ```
 
-Every included item has an expected representation. Required provider files, unknown URL content, local files, embedded overrides, side-specific replacements, templates, runtime assets, and deliberately preserved observed content are accounted for. The inventory, not dependency source kind, decides verification.
+Selection may carry an `Unacquired` expectation while applying side, override and
+optional choices. `BuildSelection` is not a completed inventory: finishing it rejects
+any surviving unacquired item, and full targets also reject download references.
+This lets a disabled optional replacement retain its common fallback without first
+requiring the replacement's bytes. Missing work remains identified by the exact
+locked file slot or observed backend metadata path.
+
+Every included item in the completed inventory has an expected representation. Required provider files, unknown URL content, local files, embedded overrides, side-specific replacements, templates, runtime assets, and deliberately preserved observed content are accounted for. The inventory, not dependency source kind, decides verification.
 
 If exact hashes are unavailable for a required downloadable reference, acquire and verify sufficient evidence or stop for input; do not mark an unknown expectation satisfied. `RuntimeGenerated` obligations are discharged after the responsible runtime step, recording observed content and its semantic checks before final inventory verification.
 

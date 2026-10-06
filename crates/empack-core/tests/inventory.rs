@@ -212,3 +212,38 @@ fn optional_overlay_keeps_fallback_or_requires_a_materialized_choice() {
     );
     assert_eq!(result.precedence().len(), 1);
 }
+
+#[test]
+fn selection_can_defer_bytes_but_completed_inventory_cannot() {
+    let mut common = input(ContentLayer::Common, "config/a", 1);
+    common.representation = Representation::Unacquired {
+        expected: empack_core::model::ExpectedContent {
+            digests: None,
+            size: None,
+            accepted_observation: None,
+        },
+    };
+    let inputs = vec![common.clone()];
+    for target in [
+        BuildTarget::Mrpack,
+        BuildTarget::Client,
+        BuildTarget::ClientFull,
+        BuildTarget::ServerFull,
+    ] {
+        let selected = BuildSelection::select(&inputs, target, &OptionalPolicy::Preserve).unwrap();
+        assert_eq!(selected.entries().len(), 1);
+        assert!(selected.finish().is_err());
+        assert!(BuildInventory::project(&inputs, target, &OptionalPolicy::Preserve).is_err());
+    }
+    let side = input(ContentLayer::Client, "config/a", 2);
+    let complete = BuildSelection::select(
+        &[common, side],
+        BuildTarget::ClientFull,
+        &OptionalPolicy::Preserve,
+    )
+    .unwrap()
+    .finish()
+    .unwrap();
+    assert_eq!(complete.entries().len(), 1);
+    assert_eq!(complete.precedence().len(), 1);
+}

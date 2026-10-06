@@ -315,6 +315,9 @@ impl MrpackPlan {
                 installation_paths.insert_file(entry.destination.relative())?;
             }
             match &entry.representation {
+                Representation::Unacquired { .. } => {
+                    anyhow::bail!("Mrpack inventory contains unacquired content")
+                }
                 Representation::Download {
                     digests,
                     bytes,

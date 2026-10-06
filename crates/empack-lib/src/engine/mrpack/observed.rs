@@ -24,6 +24,59 @@ pub struct ObservedFile {
     pub(super) acquired: AcquiredBuildFile,
 }
 impl ObservedFile {
+    pub(in crate::engine) fn into_materialized(
+        self,
+    ) -> (InventoryInput, AcquiredBuildFile, ObservedFileEvidence) {
+        let mut input = self.input;
+        let lease = self.acquired.content.lease();
+        input.representation = Representation::Embedded {
+            content: lease.id(),
+            bytes: lease.len(),
+            permissions: self.acquired.permissions,
+        };
+        (input, self.acquired, self.evidence)
+    }
+
+    pub(in crate::engine) fn pending_input(
+        record: &BackendFile,
+        choice: &ChoiceKey,
+    ) -> Result<InventoryInput> {
+        let participation = match &record.optional {
+            Some(option) => Requirement::Optional(OptionalChoice {
+                key: choice.clone(),
+                default_enabled: option.default_enabled,
+                description: option.description.clone(),
+            }),
+            None => Requirement::Required,
+        };
+        let requirements = Requirements {
+            client: if record.environments == Environments::Server {
+                Requirement::Unsupported
+            } else {
+                participation.clone()
+            },
+            server: if record.environments == Environments::Client {
+                Requirement::Unsupported
+            } else {
+                participation
+            },
+        };
+        Ok(InventoryInput {
+            owner: ContentOwner::Source(format!("backend:{}", record.metadata_path.as_str())),
+            destination: record.destination.clone(),
+            layer: ContentLayer::Common,
+            requirements,
+            representation: Representation::Unacquired {
+                expected: empack_core::model::ExpectedContent {
+                    digests: Some(empack_core::digest::DigestSet::new(vec![
+                        record.digest.clone(),
+                    ])?),
+                    size: None,
+                    accepted_observation: None,
+                },
+            },
+        })
+    }
     pub fn verify(
         record: BackendFile,
         acquired: AcquiredBuildFile,
@@ -47,26 +100,7 @@ impl ObservedFile {
                 "Observed backend content has only weaker source evidence"
             );
         }
-        let participation = match record.optional {
-            Some(option) => Requirement::Optional(OptionalChoice {
-                key: choice,
-                default_enabled: option.default_enabled,
-                description: option.description,
-            }),
-            None => Requirement::Required,
-        };
-        let requirements = Requirements {
-            client: if record.environments == Environments::Server {
-                Requirement::Unsupported
-            } else {
-                participation.clone()
-            },
-            server: if record.environments == Environments::Client {
-                Requirement::Unsupported
-            } else {
-                participation
-            },
-        };
+        let requirements = Self::pending_input(&record, &choice)?.requirements;
         let lease = acquired.content.lease();
         let representation = match record.download {
             BackendDownload::Url(url)
