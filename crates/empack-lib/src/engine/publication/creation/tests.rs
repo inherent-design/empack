@@ -377,3 +377,74 @@ fn creation_protects_its_candidate_without_changing_a_shared_selected_parent() {
     assert_eq!(parent.read("unrelated").unwrap(), b"keep");
     check_contents(&selected);
 }
+
+#[test]
+fn interrupted_creation_recovers_after_the_published_root_moves() {
+    let temp = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let publisher = Publisher::open(&state).unwrap();
+    let selected = temp.path().join("new");
+    let error = publisher
+        .publish_new_with_hook(
+            prepare(&selected, &state),
+            &Cancellation::default(),
+            &mut |point| {
+                if point == PublicationPoint::TargetChanged {
+                    anyhow::bail!("interrupted after rename");
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+    assert!(error.downcast_ref::<RecoveryRequired>().is_some());
+    let other = tempfile::tempdir().unwrap();
+    let moved = other.path().join("moved");
+    fs::rename(&selected, &moved).unwrap();
+    assert!(
+        RecoveryReader::new(state.clone())
+            .enter(&ProjectReadRoot::open(&moved).unwrap())
+            .is_err()
+    );
+    fs::write(moved.join("pack/config/value"), b"tampered").unwrap();
+    assert!(publisher.recover_new(&moved).is_err());
+    fs::write(moved.join("pack/config/value"), b"payload").unwrap();
+    publisher.recover_new(&moved).unwrap();
+    check_contents(&moved);
+    RecoveryReader::new(state.clone())
+        .enter(&ProjectReadRoot::open(&moved).unwrap())
+        .unwrap();
+    assert!(publisher.recover_new(&selected).is_err());
+    // The old name's completed selection can be reused for a distinct native root.
+    publisher
+        .publish_new(prepare(&selected, &state), &Cancellation::default())
+        .unwrap();
+    check_contents(&selected);
+}
+
+#[test]
+fn failure_before_first_creation_index_publication_cleans_private_candidate() {
+    let temp = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    let publisher = Publisher::open(&state).unwrap();
+    let selected = temp.path().join("new");
+    let error = publisher
+        .publish_new_with_hook(
+            prepare(&selected, &state),
+            &Cancellation::default(),
+            &mut |point| {
+                if point == PublicationPoint::RecoveryDataDurable {
+                    let parent = ProjectReadRoot::open(temp.path()).unwrap();
+                    let index = creation_state(&publisher, &parent, "new", false)?.unwrap();
+                    // The first atomic index replacement must fail before publishing any intent.
+                    index.create_dir("creation.json")?;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+    assert!(error.downcast_ref::<RecoveryRequired>().is_none());
+    assert!(!selected.exists());
+    assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+}

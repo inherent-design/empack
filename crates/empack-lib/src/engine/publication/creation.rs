@@ -105,12 +105,15 @@ impl Publisher {
         );
         let candidate = format!(".empack-create-{operation}");
         target.parent.directory.create_dir(&candidate)?;
-        let directory = target.parent.directory.open_dir_nofollow(&candidate)?;
-        let mut cleanup = CandidateCleanup(Some(directory.try_clone()?));
+        let mut cleanup =
+            CandidateCleanup(Some(target.parent.directory.open_dir_nofollow(&candidate)?));
+        // Keep one owning handle: a second Windows directory capability would prevent both
+        // no-replace publication and cleanup of failed private staging.
+        let directory = cleanup.0.as_ref().unwrap();
         #[cfg(windows)]
-        crate::engine::windows_privacy::protect_empty_temporary(&directory)?;
-        private_directory(&directory)?;
-        let binding = native::directory_identity(&directory)?;
+        crate::engine::windows_privacy::protect_empty_temporary(directory)?;
+        private_directory(directory)?;
+        let binding = native::directory_identity(directory)?;
         ensure!(
             binding.created.is_some(),
             "Filesystem lacks durable directory creation identity"
@@ -130,7 +133,7 @@ impl Publisher {
         for (name, expected) in &expected {
             cancel.check()?;
             let path = PortableRelPath::parse(name, PathSyntax::ProjectContent)?;
-            let (parent, leaf) = publication_parent(&directory, &path)?;
+            let (parent, leaf) = publication_parent(directory, &path)?;
             let mut output = new_retained_file(&parent, &leaf)?;
             stage.copy_verified(&path, &mut output, cancel)?;
             let mut permissions = output.metadata()?.permissions();
@@ -148,7 +151,7 @@ impl Publisher {
             output.sync_all()?;
             sync_directory(&parent)?;
         }
-        sync_directory(&directory)?;
+        sync_directory(directory)?;
         sync_directory(&target.parent.directory)?;
         let mut journal = CreationJournal {
             schema: 1,
@@ -165,14 +168,23 @@ impl Publisher {
         hook(PublicationPoint::RecoveryDataDurable)?;
         target.parent.revalidate(&target.absence, cancel)?;
         // Once durable intent exists, cancellation is deferred until the root is recoverable.
-        // A failed journal sync can still have published its intent file. Retain recovery bytes
-        // before attempting that boundary; only pre-intent failures discard private scratch.
+        // A failed journal sync can still have published its intent file. Track that boundary
+        // explicitly; failures before it discard private scratch instead of claiming recovery.
         let root_state = bound_state(self, &journal.binding, true)?.unwrap();
         let _root_lock = lock(&root_state)?;
+        let mut indexed = false;
+        if let Err(error) = write_creation_tracked(&state, &journal, &mut indexed) {
+            if indexed {
+                cleanup.0.take();
+                return Err(error.context(RecoveryRequired {
+                    operation: journal.operation.clone(),
+                }));
+            }
+            return Err(error);
+        }
+        // Intent is visible. Retain bytes even if later durability or publication fails.
+        // Releasing this capability also permits the Windows DELETE handle used for rename.
         cleanup.0.take();
-        write_creation(&state, &journal).with_context(|| RecoveryRequired {
-            operation: journal.operation.clone(),
-        })?;
         hook(PublicationPoint::CreationIndexDurable).with_context(|| RecoveryRequired {
             operation: journal.operation.clone(),
         })?;
@@ -192,6 +204,28 @@ impl Publisher {
     /// Complete retained new-root publication without reacquiring bytes or rerunning tools.
     pub fn recover_new(&self, selected: &Path) -> Result<PublicationReceipt> {
         let (parent, child) = creation_selection(selected)?;
+        // An already visible root may have moved after publication but before journal commit.
+        // Its native identity, not the old parent/name index, owns the authoritative record.
+        if let Ok(root) = ProjectReadRoot::open_child(&parent, &child)
+            && let Some(root_state) = bound_state(self, &root.binding.into(), false)?
+        {
+            let _root_lock = lock(&root_state)?;
+            if let Some(mut journal) = load_creation(&root_state)? {
+                validate_creation_structure(&journal)?;
+                ensure!(
+                    journal.binding == Binding::from(root.binding),
+                    "Creation root identity changed"
+                );
+                if !journal.committed {
+                    verify_created_root(&parent, &child, &journal, &Cancellation::default())?;
+                    root.check_binding()?;
+                    sync_directory(&parent.directory)?;
+                    journal.committed = true;
+                    write_creation(&root_state, &journal)?;
+                }
+                return Ok(creation_receipt(&journal));
+            }
+        }
         let state = creation_state(self, &parent, &child, false)?
             .context("No retained project creation")?;
         let _lock = lock(&state)?;
@@ -341,6 +375,14 @@ fn state_by_key(publisher: &Publisher, key: &str, create: bool) -> Result<Option
     Ok(Some(state))
 }
 fn write_creation(state: &Dir, journal: &CreationJournal) -> Result<()> {
+    write_creation_tracked(state, journal, &mut false)
+}
+/// Distinguish failure before intent visibility from a failed synchronization after rename.
+fn write_creation_tracked(
+    state: &Dir,
+    journal: &CreationJournal,
+    visible: &mut bool,
+) -> Result<()> {
     let bytes = serde_json::to_vec(journal)?;
     ensure!(
         bytes.len() as u64 <= JOURNAL_LIMIT,
@@ -351,6 +393,7 @@ fn write_creation(state: &Dir, journal: &CreationJournal) -> Result<()> {
         output.write_all(&bytes)?;
         output.sync_all()?;
         state.rename(&name, state, "creation.json")?;
+        *visible = true;
         sync_directory(state)
     })();
     if result.is_err() {
@@ -540,6 +583,7 @@ fn finish_creation(
             Binding::from(identity) == journal.binding,
             "Creation candidate changed before publication"
         );
+        drop(candidate);
         native::rename_new_directory(
             &parent.directory,
             &journal.candidate,
@@ -556,13 +600,16 @@ fn finish_creation(
         write_creation(state, journal)?;
         hook(PublicationPoint::Committed)?;
     }
-    Ok(PublicationReceipt {
+    Ok(creation_receipt(journal))
+}
+fn creation_receipt(journal: &CreationJournal) -> PublicationReceipt {
+    PublicationReceipt {
         disposition: PublicationDisposition::Published,
         operation: journal.operation.clone(),
         changed_files: journal.expected.len(),
         directory_synced: cfg!(unix),
         executable_bits_verified: cfg!(unix),
-    })
+    }
 }
 
 #[cfg(test)]

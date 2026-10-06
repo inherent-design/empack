@@ -62,6 +62,11 @@ uses `RENAME_EXCL`, and Windows uses a handle-relative rename with `ReplaceIfExi
 false. The Windows flag explicitly requires an error when the destination exists.
 [Microsoft's rename contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
 Unsupported native/filesystem behavior is an error, not permission to delete and retry.
+Windows directory capabilities that deny delete sharing must retire before the
+identity-checked rename handle opens. Failed first-index writes discard private
+staging only when intent never became visible. A failed sync after index publication
+retains recovery bytes. Recovery of an already published root uses its native
+identity journal, including when the root moved before the commit record was written.
 
 ### 11.3 Staging API
 

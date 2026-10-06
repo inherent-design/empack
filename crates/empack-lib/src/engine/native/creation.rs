@@ -49,6 +49,9 @@ pub(in crate::engine) fn rename_new_directory(
     }
     #[cfg(windows)]
     {
+        // cap-std directory capabilities omit FILE_SHARE_DELETE. Only the identity-checked
+        // DELETE handle may remain open while renaming this owned candidate.
+        drop(directory);
         use cap_std::fs::OpenOptionsExt;
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::Storage::FileSystem::{
@@ -121,6 +124,7 @@ mod tests {
         );
         assert_eq!(parent.read("candidate/payload").unwrap(), b"complete");
         parent.remove_dir("target").unwrap();
+        drop(candidate);
         rename_new_directory(&parent, "candidate", "target", binding).unwrap();
         assert_eq!(
             directory_identity(&parent.open_dir_nofollow("target").unwrap()).unwrap(),
