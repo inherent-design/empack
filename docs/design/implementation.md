@@ -579,3 +579,15 @@ optional embedded bytes need explicit selections because the format lacks those
 relationships. These checks precede any publication.
 
 No alpha release is ready while these feature and lifecycle gates remain incomplete.
+
+### Canonical removal queries
+
+Removal requests distinguish exact logical keys from user queries. Queries resolve
+keys first, then title and installed-stem candidates. Backend ownership includes the
+exact pin, placement and requirements. Ambiguous title/stem matches return candidate
+keys; no raw query reaches a filesystem deletion. Equivalent aliases select one
+locked dependency. Observed-only removal remains a completion gate.
+
+Validation: 28 focused removal tests pass, including publication through an installed
+stem while preserving an unrelated file whose stem collides with the logical key.
+This evidence does not establish CLI cutover or observed-only removal.

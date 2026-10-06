@@ -1,5 +1,6 @@
 //! Removal uses the same captured-plan approval, resource ownership and terminal outcomes.
 use super::*;
+pub use crate::engine::removal::RemovalSelector;
 use crate::engine::{
     publication::{Publisher, RecoveryRequired},
     removal::{self as native_removal, PreparedRemoval},
@@ -14,7 +15,7 @@ use std::collections::BTreeSet;
 
 #[derive(Clone)]
 pub struct RemoveRequest {
-    pub selections: NonEmpty<DependencyKey>,
+    pub selections: NonEmpty<RemovalSelector>,
     pub mode: RemovalMode,
 }
 /// Display identity excludes secret-bearing acquisition locators.
@@ -62,7 +63,12 @@ pub(super) async fn prepare(
         move |cancel| {
             let snapshot = ProjectReader::new(RecoveryReader::new(state))
                 .capture_mutation(&project, limits, &cancel)?;
-            native_removal::plan_removal(snapshot, &request.selections, request.mode, &cancel)
+            native_removal::plan_selected_removal(
+                snapshot,
+                &request.selections,
+                request.mode,
+                &cancel,
+            )
         },
     )?;
     let planned = scope.accept(work.wait().await?)?.transpose()?;

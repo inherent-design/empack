@@ -16,7 +16,7 @@ use anyhow::{Context, ensure};
 use empack_core::{
     digest::{ContentId, ExpectedDigest},
     files::{FileContent, FilePlan, ManagedPath, ObservedPath},
-    model::{ContentLayer, ResolvedIdentity},
+    model::ContentLayer,
     path::{PathSyntax, PortableRelPath},
 };
 use sha2::{Digest, Sha256};
@@ -114,17 +114,36 @@ pub(in crate::engine) fn plan_removal(
     mode: RemovalMode,
     cancel: &Cancellation,
 ) -> Result<RemovalPreparation> {
+    let selectors = NonEmpty::new(
+        selections
+            .as_slice()
+            .iter()
+            .cloned()
+            .map(RemovalSelector::Key)
+            .collect(),
+    )?;
+    plan_selected_removal(workspace, &selectors, mode, cancel)
+}
+
+pub(in crate::engine) fn plan_selected_removal(
+    workspace: MutationSnapshot,
+    selectors: &NonEmpty<RemovalSelector>,
+    mode: RemovalMode,
+    cancel: &Cancellation,
+) -> Result<RemovalPreparation> {
     cancel.check()?;
     let workspace = workspace.into_workspace();
+    let current = workspace.require_resolved()?;
+    let records = workspace.backend_files(cancel)?;
+    let selections = selection::resolve(&current, &records, selectors)?;
     let candidate = RemovalCandidate::prepare(
         workspace.intent(),
         workspace
             .prior_lock()
             .context("Removal requires an exact lock")?,
-        selections,
+        &selections,
         mode,
     )?;
-    let current = workspace.require_resolved()?;
     let mut removals = BTreeSet::new();
     if mode == RemovalMode::RemoveContent {
         for dependency in candidate.plan.selected().values() {
@@ -157,42 +176,10 @@ pub(in crate::engine) fn plan_removal(
                 }
             }
         }
-        for record in workspace.backend_files(cancel)? {
-            let mut owners = Vec::new();
-            let mut claimed = false;
-            for (key, dependency) in &current.lock().dependencies {
-                if record.provider.as_ref().is_some_and(|actual| {
-                    matches!(&dependency.identity,
-                    ResolvedIdentity::Provider(expected) if actual.project == *expected)
-                }) {
-                    claimed = true;
-                }
-                for file in dependency.files.as_slice() {
-                    for placement in file.placements.as_slice() {
-                        if placement.layer != ContentLayer::Common
-                            || placement.destination != record.destination
-                        {
-                            continue;
-                        }
-                        claimed = true;
-                        if record.matches_selection_and_requirements(
-                            dependency.selected.as_ref(),
-                            &placement.requirements,
-                        )? {
-                            owners.push((key, file));
-                        }
-                    }
-                }
-            }
-            if owners.is_empty() && !claimed {
+        for record in records {
+            let Some((key, file)) = record.locked_owner(&current)? else {
                 continue;
-            }
-            ensure!(
-                owners.len() == 1,
-                "Backend metadata does not identify one exact locked file: {}",
-                record.metadata_path.as_str()
-            );
-            let (key, file) = owners[0];
+            };
             if !candidate.plan.selected().contains_key(key) {
                 continue;
             }

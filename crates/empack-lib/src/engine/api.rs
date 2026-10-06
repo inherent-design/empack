@@ -52,7 +52,7 @@ pub use project_change::{
     ImportRequest, InitializeRequest, ProjectChangePreview, ProjectChangeReceipt,
     ReplacementSummary,
 };
-pub use removal::{RemovalSelection, RemovePreview, RemoveReceipt, RemoveRequest};
+pub use removal::{RemovalSelection, RemovalSelector, RemovePreview, RemoveReceipt, RemoveRequest};
 static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 
 /// In-process identity for one immutable captured plan; deliberately not deserializable.

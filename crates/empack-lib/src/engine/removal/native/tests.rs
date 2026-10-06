@@ -409,3 +409,48 @@ fn removal_accepts_empty_indexes_and_preserves_disabled_internal_hashes() {
         }
     }
 }
+
+#[test]
+fn installed_stem_removal_publishes_the_canonical_owner_and_preserves_label_collision() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    backend(root.path(), false);
+    let unrelated = fs::read(root.path().join("pack/resourcepacks/assets.pw.toml")).unwrap();
+    let cancel = Cancellation::default();
+    let snapshot = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
+        .capture_mutation(root.path(), SnapshotLimits::default(), &cancel)
+        .unwrap();
+    let selectors = NonEmpty::new(vec![
+        RemovalSelector::Query("actual-name".into()),
+        RemovalSelector::Query("Assets".into()),
+    ])
+    .unwrap();
+    let prepared = plan_selected_removal(snapshot, &selectors, RemovalMode::RemoveContent, &cancel)
+        .unwrap()
+        .stage(&cancel)
+        .unwrap();
+    assert_eq!(prepared.candidate().plan().selected().len(), 1);
+    let receipt = prepared
+        .publish(
+            &Publisher::open(&state.path().join("state")).unwrap(),
+            &cancel,
+        )
+        .unwrap();
+    assert_eq!(
+        receipt.selected,
+        BTreeSet::from([DependencyKey::parse("assets").unwrap()])
+    );
+    assert!(receipt.project.intent().roots.is_empty());
+    assert!(
+        !root
+            .path()
+            .join("pack/resourcepacks/actual-name.pw.toml")
+            .exists()
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/assets.pw.toml")).unwrap(),
+        unrelated
+    );
+    kept(root.path());
+}

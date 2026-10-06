@@ -4,7 +4,10 @@ use empack_core::{model::DependencyKey, removal::RemovalMode};
 use std::{fs, path::Path};
 fn request(mode: RemovalMode) -> RemoveRequest {
     RemoveRequest {
-        selections: NonEmpty::new(vec![DependencyKey::parse("assets").unwrap()]).unwrap(),
+        selections: NonEmpty::new(vec![RemovalSelector::Key(
+            DependencyKey::parse("assets").unwrap(),
+        )])
+        .unwrap(),
         mode,
     }
 }
@@ -223,6 +226,38 @@ async fn removal_admission_failure_preserves_all_files_and_releases_reservations
         fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
         b"payload"
     );
+    assert!(!state.path().join("state").exists());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn title_selection_previews_canonical_identity_and_unknown_batch_changes_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let before = fs::read(root.path().join("empack.yml")).unwrap();
+    let (engine, _) = engine(state.path().join("state"));
+    let mut request = request(RemovalMode::RemoveContent);
+    request.selections = NonEmpty::new(vec![RemovalSelector::Query("ASSETS".into())]).unwrap();
+    let preview = engine
+        .preview(root.path().to_path_buf(), request.clone())
+        .await
+        .unwrap();
+    let selected = &preview.remove().unwrap().selected;
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].key.as_str(), "assets");
+    request.selections = NonEmpty::new(vec![
+        RemovalSelector::Query("ASSETS".into()),
+        RemovalSelector::Query("missing".into()),
+    ])
+    .unwrap();
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), request)
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), before);
     assert!(!state.path().join("state").exists());
     engine.shutdown().await;
 }

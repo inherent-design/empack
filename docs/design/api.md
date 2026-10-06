@@ -135,13 +135,16 @@ Engine recovery/continuation composition and CLI cutover remain unfinished.
 with `RemovalMode::ForgetRoots` or `RemoveContent`. Its read-only file plan precedes
 any publication. `PreparedRemoval::publish` consumes verified documents and file
 changes through the common publisher, returning the selected keys, actual removal
-mode, resulting project and publication receipt. The shared `Engine` accepts `RemoveRequest` with exact logical keys and an explicit
+mode, resulting project and publication receipt. The shared `Engine` accepts `RemoveRequest` with exact logical keys or user queries and an explicit
 mode. `RemovePreview` lists canonical selections and the exact file footprint;
 authorization requires its plan and replacement digest. `RemoveReceipt` distinguishes
 demotion from physical removal. Source verification streams without retaining payload
 copies, then staging reserves the actual candidate-document bytes. Publication reserves
 its before-images separately. Missing selections, stale inputs or failed admission
-cannot produce a successful subset. Alias/title/stem selection and CLI wiring remain
+cannot produce a successful subset. Exact logical keys win over colliding metadata stems. Queries otherwise combine
+ASCII-case-insensitive titles and exact installed stems, bind metadata to an exact
+locked file, and reject ambiguous or missing selections. Equivalent queries collapse
+to one logical selection. Untracked installed-content removal and CLI wiring remain
 host integration work.
 
 ## 17. Public engine API and application wiring
