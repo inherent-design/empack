@@ -62,9 +62,10 @@ mod selectors, verify exact file ownership, download the selected file and check
 its original digest and size assertions. The resource-pack case additionally builds
 and publishes a full-client ZIP through the Engine from a lock with no stored URL,
 then checks its member against the original source digest and verifies that the
-intent and lock did not change. Two further probes resolve compatible Modrinth and
+intent and lock did not change. Three further probes resolve compatible Modrinth and
 CurseForge versions under an explicit stable-preferred policy and verify the selected
-files against their original hashes and sizes. Ordinary offline runs ignore these
+files against their original hashes and sizes. Terralith exercises datapack selection
+from a project that also publishes mod versions. Ordinary offline runs ignore these
 network cases.
 
 The pure core must compile without runtime or filesystem dependencies. Its tests
@@ -109,5 +110,5 @@ size/hash assertions checked. This is adapter evidence, not end-to-end import pa
 The three exact-provider smoke cases also identify the acquired bytes through the
 same provider and require the returned canonical owner and matching file role.
 They cover a Modrinth mod, a resource pack and CurseForge content. The original
-provider integrity declarations remain unchanged. The two compatible-version probes
-remain separate checks within the five-case `smoke:providers` suite.
+provider integrity declarations remain unchanged. The three compatible-version probes
+remain separate checks within the six-case `smoke:providers` suite.

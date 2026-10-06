@@ -56,7 +56,8 @@ pub struct CanonicalProject {
     pub id: ProviderProjectId,
     pub slug: String,
     pub title: String,
-    pub kind: ContentKind,
+    /// Project-level advertised kinds; a selected version may support only a subset.
+    pub kinds: NonEmpty<ContentKind>,
     pub environment: EnvironmentEvidence,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +86,8 @@ pub struct ProviderFile {
 }
 pub struct ProviderResolution {
     pub project: CanonicalProject,
+    /// Kinds advertised by this exact selection, distinct from the project-wide union.
+    pub kinds: NonEmpty<ContentKind>,
     pub pin: ResolvedPin,
     /// All declared files; selecting a primary file never drops additional records here.
     pub files: NonEmpty<ProviderFile>,

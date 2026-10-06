@@ -19,12 +19,11 @@ struct Project {
 }
 pub(super) fn project(bytes: &[u8]) -> Result<CanonicalProject> {
     let value: Project = json(bytes)?;
-    let kind = match value.project_type.as_str() {
-        "mod" if value.loaders.as_slice() == ["datapack"] => ContentKind::DataPack,
-        "mod" => ContentKind::Mod,
-        "resourcepack" => ContentKind::ResourcePack,
-        "shader" => ContentKind::ShaderPack,
-        "datapack" => ContentKind::DataPack,
+    let kinds = match value.project_type.as_str() {
+        "mod" => mod_kinds(&value.loaders)?,
+        "resourcepack" => NonEmpty::new(vec![ContentKind::ResourcePack])?,
+        "shader" => NonEmpty::new(vec![ContentKind::ShaderPack])?,
+        "datapack" => NonEmpty::new(vec![ContentKind::DataPack])?,
         _ => return Err(CatalogError::UnsupportedKind.into()),
     };
     ensure!(
@@ -35,13 +34,24 @@ pub(super) fn project(bytes: &[u8]) -> Result<CanonicalProject> {
         id: ProviderProjectId::Modrinth(ModrinthProjectId::parse(&value.id)?),
         slug: value.slug,
         title: value.title,
-        kind,
+        kinds,
         environment: EnvironmentEvidence {
             version: None,
             client: value.client_side,
             server: value.server_side,
         },
     })
+}
+fn mod_kinds(loaders: &[String]) -> Result<NonEmpty<ContentKind>> {
+    let datapack = loaders.iter().any(|value| value == "datapack");
+    let mut kinds = Vec::new();
+    if !datapack || loaders.iter().any(|value| value != "datapack") {
+        kinds.push(ContentKind::Mod);
+    }
+    if datapack {
+        kinds.push(ContentKind::DataPack);
+    }
+    Ok(NonEmpty::new(kinds)?)
 }
 #[derive(Deserialize)]
 struct Version {
@@ -150,8 +160,20 @@ pub(super) fn selection(
     }
     let mut environment = project.environment.clone();
     environment.version = version.environment;
+    let kinds = if project
+        .kinds
+        .as_slice()
+        .iter()
+        .any(|kind| matches!(kind, ContentKind::Mod | ContentKind::DataPack))
+        && !version.loaders.is_empty()
+    {
+        mod_kinds(&version.loaders)?
+    } else {
+        project.kinds.clone()
+    };
     Ok(ProviderResolution {
         project,
+        kinds,
         pin: pin.clone(),
         files: NonEmpty::new(files)?,
         game_versions: version.game_versions,

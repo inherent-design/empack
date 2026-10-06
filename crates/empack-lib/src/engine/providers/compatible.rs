@@ -47,6 +47,8 @@ impl Default for SelectionLimits {
     }
 }
 pub struct CompatibleSelection {
+    /// The requested kind satisfied by the selected version.
+    pub kind: ContentKind,
     pub resolution: ProviderResolution,
     pub channel: ReleaseChannel,
     pub published_at: String,
@@ -112,7 +114,7 @@ impl ProviderCatalog {
         let parsed = scope.accept(work.wait().await?)?.transpose()?;
         let ((project, mut budget), _project_permit) = parsed.into_parts();
         ensure!(
-            project.kind == request.kind,
+            project.kinds.as_slice().contains(&request.kind),
             CatalogError::ContentKindMismatch
         );
         let mut unique_games = BTreeSet::new();
@@ -428,12 +430,15 @@ fn parse_page(
         else {
             continue;
         };
-        if !loader_matches(&resolution, request) {
+        if !resolution.kinds.as_slice().contains(&request.kind)
+            || !loader_matches(&resolution, request)
+        {
             continue;
         }
         let candidate = Candidate {
             rank: (channel_rank, game, std::cmp::Reverse(date), pin),
             selected: CompatibleSelection {
+                kind: request.kind,
                 resolution,
                 channel,
                 published_at: published,

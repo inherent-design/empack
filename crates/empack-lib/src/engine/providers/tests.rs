@@ -131,7 +131,7 @@ async fn equivalent_modrinth_selectors_resolve_canonical_identity_and_kind() {
         match &*result {
             OperationOutcome::Completed(Ok(project)) => {
                 assert_eq!(project.id, pin(ProviderKind::Modrinth).project);
-                assert_eq!(project.kind, ContentKind::ResourcePack);
+                assert_eq!(project.kinds.as_slice(), &[ContentKind::ResourcePack]);
             }
             _ => panic!("selector resolution failed"),
         }
@@ -588,15 +588,21 @@ fn provider_classification_and_all_dependency_relations_survive_normalization() 
         let mut project = cf_project();
         project["data"]["classId"] = json!(class);
         assert_eq!(
-            curseforge::project(&bytes(&project), false).unwrap().kind,
-            kind
+            curseforge::project(&bytes(&project), false)
+                .unwrap()
+                .kinds
+                .as_slice(),
+            &[kind]
         );
     }
     let mut project = mr_project();
     project["loaders"] = json!(["datapack"]);
     assert_eq!(
-        modrinth::project(&bytes(&project)).unwrap().kind,
-        ContentKind::DataPack
+        modrinth::project(&bytes(&project))
+            .unwrap()
+            .kinds
+            .as_slice(),
+        &[ContentKind::DataPack]
     );
     let mut file = cf_file();
     file["data"]["dependencies"] = json!(
@@ -759,4 +765,36 @@ fn locator_refresh_keeps_locked_assertions_and_refuses_ambiguous_or_changed_role
             .is_err()
     );
     assert_eq!(result.files.as_slice()[1].expected, expected);
+}
+
+#[test]
+fn exact_version_kinds_do_not_inherit_the_whole_project_union() {
+    let mut project = mr_project();
+    project["loaders"] = json!(["datapack", "fabric", "forge"]);
+    let project = modrinth::project(&bytes(&project)).unwrap();
+    assert_eq!(
+        project.kinds.as_slice(),
+        &[ContentKind::Mod, ContentKind::DataPack]
+    );
+    for (loaders, expected) in [
+        (vec!["fabric"], vec![ContentKind::Mod]),
+        (vec!["datapack"], vec![ContentKind::DataPack]),
+        (
+            vec!["datapack", "fabric"],
+            vec![ContentKind::Mod, ContentKind::DataPack],
+        ),
+    ] {
+        let mut file = mr_version();
+        file["loaders"] = json!(loaders);
+        let pin = ResolvedPin {
+            project: project.id.clone(),
+            selection: project.id.parse_pin(file["id"].as_str().unwrap()).unwrap(),
+        };
+        let resolved = modrinth::selection(project.clone(), &pin, &bytes(&file)).unwrap();
+        assert_eq!(resolved.kinds.as_slice(), expected.as_slice());
+        assert_eq!(
+            resolved.project.kinds.as_slice(),
+            &[ContentKind::Mod, ContentKind::DataPack]
+        );
+    }
 }

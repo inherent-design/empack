@@ -62,7 +62,7 @@ The compiled `engine::providers::ProviderCatalog` is concrete and read-only. Its
 retained data. They cannot publish a manifest or claim a resolved dependency closure. Provider environment facts remain separate from user requirements. A
 restricted file keeps its identity, size and original hashes even without a locator.
 Transient signed URLs are execution data; the document codec still rejects them in
-persistent alternatives. Search ranking, identification,
+persistent alternatives. Search ranking,
 import composition and command cutover remain completion gates. The build Engine can
 use this catalog after authorization to refresh a locked file's locator. It selects
 a declared role or unique matching source evidence, rejects changed assertions and
@@ -80,6 +80,11 @@ publication timestamps as instants, and uses canonical pin identity to break tie
 Stable preference applies before game-version preference; explicitly accepted game
 alternatives follow the primary version. Mods must advertise the selected loader;
 resource packs and other non-mod content do not inherit that mod-loader filter.
+Project facts retain all advertised content kinds. Exact selections retain their own
+kinds: a project offering both mods and datapacks can have mod-only or datapack-only
+versions. Compatible resolution checks the selected version against the requested kind;
+it cannot substitute a newer mod release for a requested datapack. File roles and
+placement decisions remain separate from these selection-wide facts.
 
 Modrinth's filtered version list and CurseForge's paginated per-game queries share one
 transfer budget and deadline per resolution. Page/record limits, invalid pagination,
@@ -95,7 +100,9 @@ updated resolution; it does not upgrade a valid sync lock or rewrite project int
 providers requested by its caller. Modrinth lookup uses the observed SHA-512.
 CurseForge lookup uses a whitespace-normalized Murmur2 fingerprint computed in two
 bounded streaming passes. Its fingerprint nominates candidates; it never establishes
-content integrity. Every accepted file must also match the provider's original
+content integrity. Fingerprint nominees are compared with the acquired bytes before
+project lookup or content-class interpretation, so an unrelated collision cannot hide
+a valid match. Malformed evidence and inconsistent owner records still fail. Every accepted file must also match the provider's original
 hash assertions and size. Matching roles remain explicit, including several files
 with identical bytes in one version.
 
@@ -238,6 +245,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Provider kinds and fingerprint filtering | 1,630 tests and eleven doctests, all-feature Clippy and six live provider probes passed. Terralith resolves as a datapack despite also advertising mod versions. Review 58 fingerprint-collision failure reproduced before the fix; unrelated candidates no longer trigger project lookup |
 | Content identification | Combined suite: 1,626 tests and eleven doctests; 40 affected import/catalog tests and all-feature Clippy. All five live provider probes passed, including content identification of downloaded mod/resource/CurseForge bytes. Greptile review 57 is green for the accompanying transient-import fix at `d1f69c6` |
 | Normalized import inspection | Combined suite: 1,618 tests and eleven doctests; 36 affected adapter/catalog/archive tests; all-feature Clippy. Real Fabulously Optimized 1.20.1 archives passed in both formats, including every embedded member. Greptile review 55 is green for the accompanying provider fix at `057d838` |
 | Compatible selection | 1,607 tests and eleven doctests, all-feature Clippy and all five live provider probes passed. Both compatible probes acquired bytes against the selected provider digest/size. The first full-suite attempt failed compilation when the disk filled; the retry passed after removing reproducible incremental artifacts |

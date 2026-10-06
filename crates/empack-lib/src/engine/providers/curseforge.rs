@@ -43,7 +43,7 @@ pub(super) fn project(bytes: &[u8], search: bool) -> Result<CanonicalProject> {
         id: ProviderProjectId::CurseForge(CurseForgeProjectId::parse(&value.id.to_string())?),
         slug: value.slug,
         title: value.name,
-        kind,
+        kinds: NonEmpty::new(vec![kind])?,
         environment: EnvironmentEvidence {
             version: None,
             client: None,
@@ -90,16 +90,7 @@ pub(super) fn selection(
         CatalogError::Identity
     );
     filename(&file.file_name)?;
-    let mut hashes = Vec::new();
-    for hash in &file.hashes {
-        let algorithm = match hash.algo {
-            1 => "sha1",
-            2 => "md5",
-            _ => return Err(CatalogError::InvalidRecord.into()),
-        };
-        hashes.push((algorithm, hash.value.as_str()));
-    }
-    let digests = DigestSet::parse(hashes).map_err(|_| CatalogError::InvalidRecord)?;
+    let expected = expected_content(&file.hashes, file.file_length)?;
     let mut alternatives = Vec::new();
     if let Some(url) = file.download_url {
         download_locator(&url)?;
@@ -145,17 +136,14 @@ pub(super) fn selection(
         .collect();
     let environment = project.environment.clone();
     Ok(ProviderResolution {
+        kinds: project.kinds.clone(),
         project,
         pin: pin.clone(),
         files: NonEmpty::new(vec![ProviderFile {
             filename: file.file_name,
             primary: true,
             role: None,
-            expected: ExpectedContent {
-                digests: Some(digests),
-                size: Some(file.file_length),
-                accepted_observation: None,
-            },
+            expected,
             alternatives,
         }])?,
         game_versions: file.game_versions,
@@ -164,4 +152,39 @@ pub(super) fn selection(
         dependencies,
         coverage,
     })
+}
+
+fn expected_content(assertions: &[Hash], size: u64) -> Result<ExpectedContent> {
+    let mut hashes = Vec::new();
+    for hash in assertions {
+        let algorithm = match hash.algo {
+            1 => "sha1",
+            2 => "md5",
+            _ => return Err(CatalogError::InvalidRecord.into()),
+        };
+        hashes.push((algorithm, hash.value.as_str()));
+    }
+    let digests = DigestSet::parse(hashes).map_err(|_| CatalogError::InvalidRecord)?;
+    Ok(ExpectedContent {
+        digests: Some(digests),
+        size: Some(size),
+        accepted_observation: None,
+    })
+}
+/// Fingerprints nominate files across all content classes. Reject byte mismatches
+/// before resolving a nominee's project or requiring supported content semantics.
+pub(super) fn matches_content(bytes: &[u8], size: u64, observed: &DigestSet) -> Result<bool> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Assertions {
+        file_length: u64,
+        hashes: Vec<Hash>,
+    }
+    let file: Assertions = json::<Envelope<Assertions>>(bytes)?.data;
+    let expected = expected_content(&file.hashes, file.file_length)?;
+    Ok(expected.size == Some(size)
+        && expected
+            .digests
+            .as_ref()
+            .is_some_and(|hashes| hashes.check(observed.values()).is_ok()))
 }

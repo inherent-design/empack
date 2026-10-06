@@ -36,7 +36,10 @@ The compiled `ProviderCatalog::resolve_compatible` accepts a canonical project a
 `CompatibleRequest` containing ordered acceptable game versions, loader, content kind
 and explicit `ReleasePolicy`. `SelectionLimits` bounds all pages, records and transferred
 bytes under one deadline. Its retained result contains the exact provider resolution,
-selected release channel, publication time and matched game version. Pagination failure
+selected content kind, release channel, publication time and matched game version.
+`CanonicalProject::kinds` describes the project-wide union;
+`ProviderResolution::kinds` describes the exact selection. Neither substitutes for
+individual file roles or placement choices. Pagination failure
 or an incomplete bounded catalog returns an error, never a best-effort partial choice.
 The resolver has no publisher and does not replace the exact lookup used by builds.
 

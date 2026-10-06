@@ -81,7 +81,7 @@ async fn verify(
                 empack_lib::engine::providers::Identification::Unknown => false,
             };
             anyhow::ensure!(identified, "Official content probe did not retain the downloaded provider identity");
-            Ok::<_, anyhow::Error>((pin, expected, file.filename.clone(), resolution.project.kind, resolution.game_versions.first().cloned()))
+            Ok::<_, anyhow::Error>((pin, expected, file.filename.clone(), resolution.kinds.clone(), resolution.game_versions.first().cloned()))
         }.await;
         Ok(result)
     })?;
@@ -89,7 +89,10 @@ async fn verify(
     runtime.shutdown().await;
     match &*outcome {
         OperationOutcome::Completed(Ok((pin, expected, filename, kind, game))) => {
-            if *kind == empack_core::model::ContentKind::ResourcePack {
+            if kind
+                .as_slice()
+                .contains(&empack_core::model::ContentKind::ResourcePack)
+            {
                 publish_with_refreshed_locator(
                     build_catalog,
                     pin.clone(),
@@ -322,8 +325,9 @@ async fn verify_compatible(
     id: &str,
     game: &str,
     loader: empack_core::model::LoaderKind,
+    kind: empack_core::model::ContentKind,
 ) -> anyhow::Result<()> {
-    use empack_core::model::{ContentKind, GameVersion};
+    use empack_core::model::GameVersion;
     use empack_lib::engine::providers::{CompatibleRequest, ReleasePolicy, SelectionLimits};
     let key = if provider == ProviderKind::CurseForge {
         Some(
@@ -339,7 +343,7 @@ async fn verify_compatible(
     };
     let request = CompatibleRequest {
         project,
-        kind: ContentKind::Mod,
+        kind,
         game_versions: NonEmpty::new(vec![GameVersion::parse(game)?])?,
         loader,
         releases: ReleasePolicy::PreferStable,
@@ -357,6 +361,7 @@ async fn verify_compatible(
         Ok(async {
             let selected = catalog.resolve_compatible(&mut scope, request.clone(), SelectionLimits::default()).await?;
             anyhow::ensure!(selected.resolution.pin.project == request.project, "Compatible selection changed project");
+            anyhow::ensure!(selected.kind == request.kind && selected.resolution.kinds.as_slice().contains(&request.kind), "Compatible selection changed content kind");
             anyhow::ensure!(selected.matched_game == request.game_versions.as_slice()[0], "Compatible selection changed game");
             let file = selected.resolution.files.as_slice().iter().find(|file|file.primary).unwrap_or(&selected.resolution.files.as_slice()[0]);
             let expected = file.expected.clone();
@@ -393,6 +398,7 @@ async fn modrinth_compatible_selection_and_bytes() -> anyhow::Result<()> {
         "AANobbMI",
         "1.20.1",
         empack_core::model::LoaderKind::Fabric,
+        empack_core::model::ContentKind::Mod,
     )
     .await
 }
@@ -404,6 +410,20 @@ async fn curseforge_compatible_selection_and_bytes() -> anyhow::Result<()> {
         "238222",
         "1.21.1",
         empack_core::model::LoaderKind::NeoForge,
+        empack_core::model::ContentKind::Mod,
+    )
+    .await
+}
+
+#[tokio::test]
+#[ignore = "requires official Modrinth API and CDN"]
+async fn modrinth_mixed_project_selects_datapack_bytes() -> anyhow::Result<()> {
+    verify_compatible(
+        ProviderKind::Modrinth,
+        "8oi3bsk5",
+        "1.21.1",
+        empack_core::model::LoaderKind::Vanilla,
+        empack_core::model::ContentKind::DataPack,
     )
     .await
 }

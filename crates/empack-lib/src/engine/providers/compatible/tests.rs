@@ -18,7 +18,7 @@ fn mr_project() -> CanonicalProject {
 fn request(project: &CanonicalProject, policy: ReleasePolicy) -> CompatibleRequest {
     CompatibleRequest {
         project: project.id.clone(),
-        kind: project.kind,
+        kind: project.kinds.as_slice()[0],
         game_versions: NonEmpty::new(vec![
             GameVersion::parse("1.20.1").unwrap(),
             GameVersion::parse("1.20").unwrap(),
@@ -138,7 +138,7 @@ fn selection_orders_instants_and_explicit_policy_not_response_order_or_semver() 
 #[test]
 fn resource_packs_ignore_mod_loader_but_keep_visibility_and_game_checks() {
     let mut project = mr_project();
-    project.kind = ContentKind::ResourcePack;
+    project.kinds = NonEmpty::new(vec![ContentKind::ResourcePack]).unwrap();
     let mut hidden = version(
         "hidden01",
         "release",
@@ -170,8 +170,8 @@ fn resource_packs_ignore_mod_loader_but_keep_visibility_and_game_checks() {
     );
     assert_eq!(parsed.candidates.len(), 1);
     assert_eq!(
-        parsed.candidates[0].selected.resolution.project.kind,
-        ContentKind::ResourcePack
+        parsed.candidates[0].selected.resolution.kinds.as_slice(),
+        &[ContentKind::ResourcePack]
     );
     assert_eq!(
         parsed.candidates[0].selected.resolution.files.as_slice()[0]
@@ -535,4 +535,55 @@ fn unavailable_records_need_identity_but_not_downloadable_file_evidence() {
             .is_err()
         );
     }
+}
+
+#[tokio::test]
+async fn mixed_modrinth_projects_select_datapack_versions_without_becoming_mods() {
+    let mut server = mockito::Server::new_async().await;
+    server.mock("GET","/project/AANobbMI").with_body(json!({"id":"AANobbMI","slug":"terrain","title":"Terrain","project_type":"mod","loaders":["datapack","fabric","forge"]}).to_string()).create_async().await;
+    server
+        .mock("GET", "/project/AANobbMI/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(
+            json!([
+                version(
+                    "datapk01",
+                    "release",
+                    "2025-01-01T00:00:00Z",
+                    "1.20.1",
+                    "datapack"
+                ),
+                version(
+                    "modded01",
+                    "release",
+                    "2026-01-01T00:00:00Z",
+                    "1.20.1",
+                    "fabric"
+                )
+            ])
+            .to_string(),
+        )
+        .create_async()
+        .await;
+    let mut request = request(&mr_project(), ReleasePolicy::Any);
+    request.kind = ContentKind::DataPack;
+    request.loader = LoaderKind::Vanilla;
+    let (outcome, _) = resolve(
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+        request,
+        limits(),
+    )
+    .await;
+    let OperationOutcome::Completed(Ok(selected)) = &*outcome else {
+        panic!("mixed project lost its datapack selection")
+    };
+    assert_eq!(
+        selected.resolution.pin.selection,
+        selected
+            .resolution
+            .pin
+            .project
+            .parse_pin("datapk01")
+            .unwrap()
+    );
 }

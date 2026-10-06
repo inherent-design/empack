@@ -50,6 +50,7 @@ struct Probe {
 struct Record {
     pin: ResolvedPin,
     bytes: Vec<u8>,
+    matches_content: bool,
 }
 enum Request {
     Hash(String),
@@ -133,6 +134,7 @@ impl ProviderCatalog {
             let provider = *provider;
             let fingerprint = probe.fingerprint;
             let remaining = limits.matches.saturating_sub(count);
+            let lookup_probe = (*probe).clone();
             let worker = scope.spawn_blocking(
                 ResourceRequest {
                     jobs: 1,
@@ -142,10 +144,20 @@ impl ProviderCatalog {
                 move |cancel| {
                     cancel.check()?;
                     let ((bytes, budget), _permit) = raw.into_parts();
-                    let records = match bytes {
+                    let mut records = match bytes {
                         Some(bytes) => parse_lookup(provider, &bytes, fingerprint, remaining)?,
                         None => Vec::new(),
                     };
+                    if provider == ProviderKind::CurseForge {
+                        for record in &mut records {
+                            cancel.check()?;
+                            record.matches_content = curseforge::matches_content(
+                                &record.bytes,
+                                lookup_probe.size,
+                                &lookup_probe.digests,
+                            )?;
+                        }
+                    }
                     Ok::<_, anyhow::Error>((records, budget))
                 },
             )?;
@@ -157,6 +169,9 @@ impl ProviderCatalog {
                 .ok_or(CatalogError::Limit)?;
             for record in records {
                 ensure!(seen.insert(record.pin.clone()), CatalogError::InvalidRecord);
+                if !record.matches_content {
+                    continue;
+                }
                 let raw = fetch(
                     &self.transport,
                     scope,
@@ -345,6 +360,7 @@ fn parse_lookup(
             Ok(vec![Record {
                 pin,
                 bytes: bytes.to_vec(),
+                matches_content: true,
             }])
         }
         ProviderKind::CurseForge => {
@@ -380,6 +396,7 @@ fn parse_lookup(
                     };
                     Ok(Record {
                         pin,
+                        matches_content: true,
                         bytes: serde_json::to_vec(&serde_json::json!({"data":matched.file}))?,
                     })
                 })

@@ -257,6 +257,63 @@ async fn curseforge_fingerprints_only_nominate_original_digest_checked_candidate
     lookup.assert_async().await;
 }
 #[tokio::test]
+async fn fingerprint_collision_skips_unrelated_project_classification() {
+    let mut server = Server::new_async().await;
+    let mut collision = cf_file(456, 1);
+    collision["hashes"][0]["value"] = json!("00".repeat(16));
+    server
+        .mock("POST", "/fingerprints/432")
+        .with_body(cf_response(vec![collision, cf_file(123, 2)]).to_string())
+        .create_async()
+        .await;
+    let unrelated = server.mock("GET", "/mods/456")
+        .with_body(json!({"data":{"id":456,"gameId":432,"classId":4471,"slug":"unrelated","name":"Unrelated"}}).to_string())
+        .expect(0).create_async().await;
+    server
+        .mock("GET", "/mods/123")
+        .with_body(
+            json!({"data":{"id":123,"gameId":432,"classId":6,"slug":"project","name":"Project"}})
+                .to_string(),
+        )
+        .create_async()
+        .await;
+    let (outcome, _) = identify(
+        &server,
+        vec![ProviderKind::CurseForge],
+        Some("fixture-key".into()),
+        limits(),
+    )
+    .await;
+    let OperationOutcome::Completed(Ok(Identification::Exact(found))) = &*outcome else {
+        panic!("an unrelated fingerprint collision hid the valid match")
+    };
+    assert_eq!(found.resolution.pin.project.to_string(), "123");
+    unrelated.assert_async().await;
+}
+#[test]
+fn fingerprint_prefilter_requires_all_original_assertions() {
+    let probe = content();
+    let mut file = cf_file(123, 1);
+    let check = |file: &Value| {
+        curseforge::matches_content(
+            &serde_json::to_vec(&json!({"data":file})).unwrap(),
+            probe.lease().len(),
+            probe.observed_digests(),
+        )
+    };
+    assert!(check(&file).unwrap());
+    file["hashes"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"algo":1,"value":"00".repeat(20)}));
+    assert!(!check(&file).unwrap());
+    file = cf_file(123, 1);
+    file["fileLength"] = json!(11);
+    assert!(!check(&file).unwrap());
+    file["hashes"] = json!([]);
+    assert!(check(&file).is_err());
+}
+#[tokio::test]
 async fn duplicate_provider_matches_remain_ambiguous_and_bounded() {
     let mut server = Server::new_async().await;
     server
