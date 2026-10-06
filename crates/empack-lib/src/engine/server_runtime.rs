@@ -22,6 +22,8 @@ use std::{
     io::{Read, Seek},
 };
 
+pub mod fabric;
+
 /// A metadata document bound to the requested Minecraft version and its exact server artifact.
 /// Parsing this contract does not grant publication authority or claim bytes were downloaded.
 pub struct VanillaServerPlan {
@@ -315,6 +317,7 @@ impl VanillaServerPlan {
             actual: server.lease().id(),
             java_major: self.java_major,
             main_class: main_class.clone(),
+            loader: None,
         };
         let files = BTreeMap::from([(
             PortableRelPath::parse("server.jar", PathSyntax::ProjectContent)?,
@@ -335,12 +338,20 @@ impl VanillaServerPlan {
 }
 #[derive(Debug, Clone)]
 pub struct ServerRuntimeEvidence {
+    /// Exact Minecraft version metadata, independently bound to its catalog entry.
     pub metadata: ContentId,
     pub catalog: ContentId,
+    /// Original Minecraft server assertions and observed bytes, even when a loader wraps them.
     pub expected: ExpectedContent,
     pub actual: ContentId,
     pub java_major: Option<u16>,
     pub main_class: String,
+    pub loader: Option<LoaderRuntimeEvidence>,
+}
+/// Evidence for the selected additional loader; absent for a vanilla runtime.
+#[derive(Debug, Clone)]
+pub enum LoaderRuntimeEvidence {
+    Fabric(fabric::FabricRuntimeEvidence),
 }
 /// A verified runtime file set, still separate from game content, templates and publication.
 #[derive(Clone)]
@@ -352,6 +363,12 @@ pub struct PreparedServerRuntime {
 impl PreparedServerRuntime {
     pub fn runtime(&self) -> &RuntimeResolution {
         &self.runtime
+    }
+    pub fn launcher_main_class(&self) -> &str {
+        match &self.evidence.loader {
+            Some(LoaderRuntimeEvidence::Fabric(loader)) => &loader.main_class,
+            None => &self.evidence.main_class,
+        }
     }
     pub fn files(&self) -> &BTreeMap<PortableRelPath, AcquiredBuildFile> {
         &self.files

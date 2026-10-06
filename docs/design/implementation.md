@@ -5,8 +5,8 @@ Release target: v0.5.0-alpha.1. The [target contracts](README.md) and
 source implements; it does not make the target API sketches available by implication.
 
 The normalized engine can prepare and recoverably publish all five distribution
-shapes from a captured workspace. Server recipes currently have a verified vanilla
-runtime; loader-specific runtime preparation is still required. HTTP acquisition and
+shapes from a captured workspace. Server recipes currently have verified vanilla
+and Fabric runtimes; Quilt, Forge and NeoForge preparation remains required. HTTP acquisition and
 explicit build-content obligations feed these paths. The complete semantic `Engine` API, provider/import
 composition, continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
@@ -28,6 +28,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Build batches | All five recipes prepare privately; duplicate outputs fail preflight; every candidate verifies before one journal publishes their union; original resolution and conversion evidence remain available | [Batch tests](../../crates/empack-lib/src/engine/build/batch/tests.rs) |
 | Packwiz reference projection | Captured game selection feeds a generated pack/index/metadata tree; exact provider references, stable URLs, optional constraints and original declared-vs-acquired evidence remain explicit | [Projection tests](../../crates/empack-lib/src/engine/packwiz/tests.rs), game-content tests |
 | Vanilla server runtime | Official catalog selection, per-version metadata digest, exact server bytes, bounded JAR main-section and launcher checks; owned parsing and verification | [Runtime tests](../../crates/empack-lib/src/engine/server_runtime/tests.rs) |
+| Fabric server runtime | Exact catalog/library coordinates, declared digest sidecars where needed, verified Minecraft base, generated classpath or historical shaded launcher, service merging and retained source/tool evidence | [Fabric tests](../../crates/empack-lib/src/engine/server_runtime/fabric/tests.rs), [live runtime smoke](../../crates/empack-lib/tests/runtime_server_smoke.rs) |
 | Installer assets | Reviewed bootstrap/main-installer versions, bounded governed acquisition, exact size/digest validation and retained tool identities; pins are maintained by empack | [Tool tests](../../crates/empack-lib/src/engine/bootstrap_tools.rs) |
 | Lightweight client distribution | Generated packwiz tree, exact bundled tools, local byte projection, pinned launcher command, all archive formats and batch publication | [Client tests](../../crates/empack-lib/src/engine/build/client/tests.rs) |
 | Server distributions | Full and reference game views, exact prepared runtime, preserved templates, executable launch scripts, pinned bootstrap tools and all archive formats; runtime selection must match the lock | [Server tests](../../crates/empack-lib/src/engine/build/server/tests.rs), batch tests |
@@ -44,7 +45,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 
 File-level verification is not a semantic proof. Container integrity is not evidence
 that every required dependency was included. The composed recipes connect normalized obligations, verified acquisitions,
-independently checked output and the journal publisher. Loader-specific server
+independently checked output and the journal publisher. Quilt, Forge and NeoForge server
 runtime preparation remains pending.
 
 ## Composed build behavior
@@ -88,8 +89,8 @@ is game-content completeness, not launcher/server runtime completeness.
 references. `PreparedGameContent::packwiz` checks generated metadata through the shared
 reader; unlisted metadata-only references retain `actual: None` rather than a fabricated
 byte observation. Full targets still require actual selected bytes.
-Vanilla runtime resolution and byte/launcher verification are implemented;
-server recipes bind that preparation to the captured lock. Loader-specific installation
+Vanilla and Fabric runtime resolution and byte/launcher verification are implemented;
+server recipes bind that preparation to the captured lock. Quilt, Forge and NeoForge
 contracts remain pending. Server output records original runtime evidence; computed
 SHA-256 does not turn a SHA-1 declaration into strong source assurance.
 
@@ -172,8 +173,8 @@ repeat passed without a leak. These observations do not establish a production f
 ## Remaining integration and limits
 
 - Implement semantic request preparation/approval/outcomes and compile the public
-  Engine usage examples. Connect provider catalogs, import normalization, remaining
-  build targets, server/runtime preparation and combined publication.
+  Engine usage examples. Connect provider catalogs, import normalization and remaining
+  loader runtime contracts. The five build recipes already share combined publication.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
   provider-locator refresh, continuation and scoped
   clean through the same verified obligations.

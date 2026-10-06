@@ -95,6 +95,11 @@ description = "Run deterministic CLI smoke contracts without live providers"
 run = "cargo nextest run -p empack-tests --test smoke"
 run_windows = "cargo nextest run -p empack-tests --test smoke"
 
+[tasks."smoke:runtime"]
+description = "Verify official runtime bytes and actual Java server launchers"
+run = "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --features test-utils --test runtime_server_smoke --run-ignored ignored-only"
+
 [tasks."smoke:import:curated"]
 depends = ["build:bin"]
 description = "Run the full curated import smoke suite"

@@ -262,3 +262,26 @@ arbitrary user-authored commands are correct.
 Each archive format carries the same expected files and portable permissions. Server
 and client artifacts can share one AllRequested publication. Runtime mismatch, source
 conflict, missing content or any later recipe failure preserves previous outputs.
+
+### Fabric runtime preparation
+
+The official server profile must name the exact game, loader and intermediary.
+Every library has a validated Maven coordinate, safe destination and declared digest;
+missing profile hashes are resolved from repository checksum documents. Every
+published assertion is checked against acquired bytes. The Minecraft base remains
+bound to Mojang metadata, separately from loader metadata and generated launcher
+content. Computed addresses do not upgrade that source evidence.
+
+The launcher follows [Fabric's installer layouts](https://github.com/FabricMC/fabric-installer/blob/master/src/main/java/net/fabricmc/installer/server/ServerInstaller.java):
+versions through 0.12.5 shade library entries and merge service definitions; later
+versions use a manifest classpath. Shading preserves first-entry precedence and
+removes signatures that cannot authenticate the assembled archive. Generation
+streams through a bounded writer, then reads every emitted member against the input
+inventory. The generated lease retains its resource reservation. Minecraft bytes
+are stored separately, and explicit launcher properties select that file.
+
+`mise run smoke:runtime` checks official acquisition and actual Java launcher
+execution for vanilla plus both Fabric layouts. Unit fixtures separately exercise
+wrong bytes, metadata mismatch, missing classes, service merging, bounded output,
+cancellation and retained ownership. These tests do not imply that Quilt, Forge or
+NeoForge preparation is implemented.

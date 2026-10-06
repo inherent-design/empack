@@ -17,6 +17,20 @@ Strict E2E requires the managed or configured packwiz backend, Java, network
 access and provider credentials required by the selected fixtures. Missing
 prerequisites fail strict execution. Never store credentials in test reports.
 
+Run the live normalized-runtime checks explicitly:
+
+```bash
+mise run smoke:runtime
+```
+
+This suite requires public Mojang/Fabric/Maven access and Java 17 or 21, selected
+through `JAVA_HOME` or `PATH`. It verifies official metadata and bytes, copies the
+prepared runtime into disposable directories, then runs the actual server launcher
+with `--help`. It checks vanilla and both historical/modern Fabric layouts without
+accepting the EULA. These tests are marked ignored in ordinary offline runs; the
+explicit task selects all of them and fails on missing prerequisites or providers.
+It complements CLI E2E while command cutover is still pending.
+
 The pure core must compile without runtime or filesystem dependencies. Its tests
 cover portable syntax, typed values and pure decisions. Native filesystem,
 process, lock and recovery guarantees require real platform tests. A mock default

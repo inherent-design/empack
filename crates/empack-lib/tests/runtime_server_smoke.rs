@@ -1,0 +1,127 @@
+//! Explicit live runtime probes. Missing HTTP/Java prerequisites fail this opt-in suite.
+use empack_core::model::{GameVersion, LoaderKind, LoaderVersion, RuntimeResolution};
+use empack_lib::{
+    application::process_runtime::{Cancellation, execute_async},
+    engine::{
+        acquisition::{HttpAcquisition, TransferLimits},
+        artifacts::ArchiveLimits,
+        content::SourceEvidencePolicy,
+        resources::{ResourceGovernor, ResourceRequest},
+        runtime::{OperationOutcome, OperationRuntime},
+        server_runtime::{VanillaServerPlan, fabric::FabricServerPlan},
+    },
+};
+use std::{fs, path::PathBuf, time::Duration};
+async fn verify_live_runtime(game: &str, loader: Option<&str>) -> anyhow::Result<()> {
+    let runtime = RuntimeResolution {
+        minecraft: GameVersion::parse(game)?,
+        loader: if loader.is_some() {
+            LoaderKind::Fabric
+        } else {
+            LoaderKind::Vanilla
+        },
+        loader_version: loader.map(LoaderVersion::parse).transpose()?,
+    };
+    let transport = HttpAcquisition::new()?;
+    let owner = OperationRuntime::new(
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 2,
+            memory_bytes: 128 << 20,
+            scratch_bytes: 512 << 20,
+            open_files: 64,
+        }),
+        1,
+    );
+    let mut handle = owner.start(move |mut scope| async move {
+        let limits = TransferLimits {
+            file_bytes: 128 << 20,
+            transfer_bytes: 128 << 20,
+            deadline: Duration::from_secs(45),
+            ..TransferLimits::default()
+        };
+        Ok(async {
+            if runtime.loader == LoaderKind::Vanilla {
+                VanillaServerPlan::resolve(&transport, &mut scope, runtime, limits)
+                    .await?
+                    .acquire(
+                        &transport,
+                        &mut scope,
+                        limits,
+                        ArchiveLimits::default(),
+                        SourceEvidencePolicy::Compatibility,
+                    )
+                    .await
+            } else {
+                FabricServerPlan::resolve(&transport, &mut scope, runtime, limits)
+                    .await?
+                    .acquire(
+                        &transport,
+                        &mut scope,
+                        limits,
+                        ArchiveLimits::default(),
+                        SourceEvidencePolicy::Compatibility,
+                    )
+                    .await
+            }
+        }
+        .await)
+    })?;
+    let terminal = handle.wait().await;
+    owner.shutdown().await;
+    let prepared = match &*terminal {
+        OperationOutcome::Completed(Ok(runtime)) => runtime,
+        OperationOutcome::Completed(Err(error)) => {
+            anyhow::bail!("Runtime preparation failed: {error:#}")
+        }
+        OperationOutcome::Failed(error) => anyhow::bail!("Runtime operation failed: {error}"),
+    };
+    let root = tempfile::tempdir()?;
+    for (relative, file) in prepared.files() {
+        let destination = root.path().join(relative.as_str());
+        fs::create_dir_all(destination.parent().unwrap())?;
+        file.content.lease().copy_verified(
+            &mut fs::File::create(destination)?,
+            &Cancellation::default(),
+        )?;
+    }
+    let executable = if cfg!(windows) { "java.exe" } else { "java" };
+    let java = std::env::var_os("JAVA_HOME")
+        .map(|home| PathBuf::from(home).join("bin").join(executable))
+        .unwrap_or_else(|| executable.into());
+    let mut command = std::process::Command::new(java);
+    command
+        .args(["-jar", "server.jar", "--help"])
+        .current_dir(root.path());
+    let output = execute_async(
+        command,
+        Duration::from_secs(90),
+        Cancellation::default(),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(
+        output.success,
+        "Actual server launcher failed: {}",
+        output.error_output()
+    );
+    anyhow::ensure!(
+        !root.path().join("eula.txt").exists(),
+        "Help probe unexpectedly created an EULA file"
+    );
+    Ok(())
+}
+#[tokio::test]
+#[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]
+async fn runtime_server_vanilla() {
+    verify_live_runtime("1.20.1", None).await.unwrap();
+}
+#[tokio::test]
+#[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]
+async fn runtime_server_fabric_classpath() {
+    verify_live_runtime("1.20.1", Some("0.16.0")).await.unwrap();
+}
+#[tokio::test]
+#[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]
+async fn runtime_server_fabric_shaded() {
+    verify_live_runtime("1.16.5", Some("0.11.7")).await.unwrap();
+}
