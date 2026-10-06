@@ -218,6 +218,7 @@ fn installed_runtime_rejects_missing_and_changed_outputs_before_proof() {
         "changed vanilla",
         "alternative match",
         "wrong alternatives",
+        "strong policy",
     ] {
         let mut contract = InstallerContract::parse(
             runtime.clone(),
@@ -309,6 +310,14 @@ fn installed_runtime_rejects_missing_and_changed_outputs_before_proof() {
                 )
                 .unwrap();
         }
+        stage
+            .write(
+                &path("libraries/unrequested.jar").unwrap(),
+                &mut b"unexpected".as_slice(),
+                10,
+                &Cancellation::default(),
+            )
+            .unwrap();
         let plan = InstallerServerPlan {
             contract,
             installer: installer.clone(),
@@ -325,6 +334,11 @@ fn installed_runtime_rejects_missing_and_changed_outputs_before_proof() {
                 .freeze(SnapshotLimits::default(), &Cancellation::default())
                 .unwrap(),
             ArchiveLimits::default(),
+            if failure == "strong policy" {
+                SourceEvidencePolicy::StrongSourceRequired
+            } else {
+                SourceEvidencePolicy::Compatibility
+            },
             &Cancellation::default(),
         );
         if matches!(failure, "none" | "alternative match") {
@@ -332,6 +346,11 @@ fn installed_runtime_rejects_missing_and_changed_outputs_before_proof() {
             assert_eq!(prepared.runtime().loader, LoaderKind::Forge);
             assert_eq!(prepared.launcher_main_class(), "test.Launcher");
             assert!(matches!(prepared.launch(), ServerLaunch::Jar(_)));
+            assert!(
+                !prepared
+                    .files()
+                    .contains_key(&path("libraries/unrequested.jar").unwrap())
+            );
         } else {
             assert!(result.is_err(), "accepted {failure}");
         }

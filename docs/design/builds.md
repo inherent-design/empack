@@ -355,3 +355,13 @@ inputs; explicit locked local/archive sources remain required even under an igno
 path. Eligible membership changes and rule edits invalidate preparation. Changes
 confined to ignored content do not. Journal capture groups retain the exact filter
 and input exceptions, so recovery does not silently broaden or reinterpret the read set.
+
+Installer output selection is an allowlist: declared profile libraries, processor
+outputs, exact launch files and Minecraft bundler libraries. Bundler declarations
+come from `META-INF/libraries.list` inside the independently verified Minecraft JAR;
+coordinates, relative destinations, embedded sizes and SHA-256 assertions must agree.
+Extra installer files do not enter the distribution merely because they appeared
+under `libraries/`. Output verification honors the requested evidence policy, and
+server assembly rechecks evidence when a caller supplies a previously prepared runtime.
+Strong-source mode rejects weak or undeclared output evidence; compatibility remains
+an explicit option rather than a silent fallback.

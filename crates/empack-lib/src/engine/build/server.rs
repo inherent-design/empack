@@ -233,6 +233,10 @@ pub(super) fn prepare_server_archive(
                 ))),
             "Strong-source build policy requires an independent strong runtime declaration"
         );
+        ensure!(runtime.files().values().all(|file| matches!(file.content.evidence(),
+            empack_core::digest::IntegrityEvidence::MatchedExpected {expected, ..}
+            if matches!(expected.strongest(), empack_core::digest::DigestAlgorithm::Sha256 | empack_core::digest::DigestAlgorithm::Sha512))),
+            "Strong-source build policy rejects weak or undeclared loader output evidence");
     }
     let suffix = match options.archive {
         DistributionArchive::Zip => ".zip",

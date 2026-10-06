@@ -23,6 +23,7 @@ pub struct InstallerRuntimeEvidence {
     pub contract: InstallerContract,
     pub main_class: String,
     pub alternative_matches: BTreeMap<PortableRelPath, ExpectedDigest>,
+    pub bundled_libraries: BTreeMap<PortableRelPath, ExpectedContent>,
 }
 impl InstallerServerPlan {
     pub async fn prepare(
@@ -148,7 +149,7 @@ impl InstallerServerPlan {
                 .await?;
             tokio::task::spawn_blocking(move || {
                 let frozen = stage.freeze(execution.output, &cancel)?;
-                plan.verify_outputs(vanilla, frozen, archive, &cancel)
+                plan.verify_outputs(vanilla, frozen, archive, policy, &cancel)
             })
             .await
             .context("Installer verification worker panicked")?
@@ -218,6 +219,7 @@ impl InstallerServerPlan {
         mut vanilla: PreparedServerRuntime,
         mut stage: FrozenStage,
         archive: ArchiveLimits,
+        policy: SourceEvidencePolicy,
         cancel: &Cancellation,
     ) -> Result<PreparedServerRuntime> {
         let contract = &self.contract;
@@ -240,16 +242,37 @@ impl InstallerServerPlan {
                 required.insert(path.clone(), expected.clone());
             }
         }
-        // Libraries and generated launch files must be regular captured objects. Logs and the
-        // installer executable are temporary tool outputs, never distribution members.
-        let mut selected = BTreeSet::from([contract.minecraft_path.clone()]);
-        for (relative, observation) in stage.inventory() {
-            if relative.as_str().starts_with("libraries/")
-                && matches!(observation, Observation::File(_))
-            {
-                selected.insert(relative.clone());
+        let bundled_libraries = bundled_library_assertions(
+            &vanilla
+                .files
+                .get(&path("server.jar")?)
+                .context("Missing verified vanilla server")?
+                .content,
+            archive,
+            cancel,
+        )?;
+        for (path, expected) in &bundled_libraries {
+            if let Some(previous) = required.get_mut(path) {
+                ensure!(
+                    previous.size.is_none() || previous.size == expected.size,
+                    "Conflicting bundled library size"
+                );
+                previous.size = expected.size;
+                previous.digests = Some(DigestSet::new(
+                    previous
+                        .digests
+                        .iter()
+                        .flat_map(|set| set.values())
+                        .chain(expected.digests.iter().flat_map(|set| set.values()))
+                        .cloned()
+                        .collect(),
+                )?);
+            } else {
+                required.insert(path.clone(), expected.clone());
             }
         }
+        // Only declared profile/bundler members and exact launch outputs belong in a runtime.
+        let mut selected = BTreeSet::from([contract.minecraft_path.clone()]);
         let launch = match &contract.layout {
             InstallerLayout::Arguments {
                 unix,
@@ -272,6 +295,8 @@ impl InstallerServerPlan {
                     "Installer omitted JVM configuration"
                 );
                 selected.insert(user);
+                selected.insert(unix_path.clone());
+                selected.insert(windows_path.clone());
                 ServerLaunch::Arguments {
                     unix: unix_path,
                     windows: windows_path,
@@ -316,7 +341,7 @@ impl InstallerServerPlan {
                 &mut reader,
                 &expected,
                 archive.file_bytes,
-                SourceEvidencePolicy::Compatibility,
+                policy,
                 InitialObservation::Accepted,
                 cancel,
             )?;
@@ -360,11 +385,62 @@ impl InstallerServerPlan {
                 contract: self.contract,
                 main_class: main,
                 alternative_matches,
+                bundled_libraries,
             },
         )));
         Ok(vanilla)
     }
 }
+fn bundled_library_assertions(
+    base: &AcquiredContent,
+    limits: ArchiveLimits,
+    cancel: &Cancellation,
+) -> Result<BTreeMap<PortableRelPath, ExpectedContent>> {
+    let mut jar = JarReader::open(base, limits, cancel)?;
+    if !jar
+        .archive
+        .file_names()
+        .any(|name| name == "META-INF/libraries.list")
+    {
+        return Ok(BTreeMap::new());
+    }
+    let bytes = member(&mut jar, "META-INF/libraries.list", 1 << 20, cancel)?;
+    let mut libraries = BTreeMap::new();
+    for line in std::str::from_utf8(&bytes)?.lines() {
+        cancel.check()?;
+        ensure!(
+            libraries.len() < 2048,
+            "Bundled library count exceeds limit"
+        );
+        let fields: Vec<_> = line.split('\t').collect();
+        ensure!(fields.len() == 3, "Invalid bundled library record");
+        let relative = maven_path(fields[1])?;
+        ensure!(
+            relative.as_str() == fields[2],
+            "Bundled library destination differs from coordinate"
+        );
+        let expected = ExpectedDigest::parse("sha256", fields[0])?;
+        let entry = jar
+            .archive
+            .by_name(&format!("META-INF/libraries/{}", relative.as_str()))
+            .context("Bundler omits declared library")?;
+        ensure!(
+            !entry.is_dir() && !entry.encrypted() && entry.size() <= limits.file_bytes,
+            "Invalid bundled library entry"
+        );
+        let previous = libraries.insert(
+            path(&format!("libraries/{}", relative.as_str()))?,
+            ExpectedContent {
+                digests: Some(DigestSet::new(vec![expected])?),
+                size: Some(entry.size()),
+                accepted_observation: None,
+            },
+        );
+        ensure!(previous.is_none(), "Duplicate bundled library declaration");
+    }
+    Ok(libraries)
+}
+
 fn verify_library_alternatives(
     library: &InstallerLibrary,
     content: &AcquiredContent,
@@ -578,6 +654,82 @@ mod tests {
             "-p \"quoted\" actual.Main",
         ] {
             assert!(launch_arguments(text, ':').is_err(), "accepted {text}");
+        }
+    }
+    #[test]
+    fn bundled_libraries_require_exact_declared_coordinates_and_hashes() {
+        use std::io::{Cursor, Write};
+        let hash = ExpectedDigest::Sha256(Sha256::digest(b"payload").into()).hex();
+        for case in [
+            "valid",
+            "wrong path",
+            "bad digest",
+            "duplicate",
+            "missing member",
+        ] {
+            let relative = "fixture/library/1/library-1.jar";
+            let line = format!(
+                "{}\tfixture:library:1\t{}\n",
+                if case == "bad digest" { "bad" } else { &hash },
+                if case == "wrong path" {
+                    "../outside.jar"
+                } else {
+                    relative
+                }
+            );
+            let document = if case == "duplicate" {
+                format!("{line}{line}")
+            } else {
+                line
+            };
+            let mut jar = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            jar.start_file(
+                "META-INF/libraries.list",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            jar.write_all(document.as_bytes()).unwrap();
+            if case != "missing member" {
+                jar.start_file(
+                    format!("META-INF/libraries/{relative}"),
+                    zip::write::SimpleFileOptions::default(),
+                )
+                .unwrap();
+                jar.write_all(b"payload").unwrap();
+            }
+            let bytes = jar.finish().unwrap().into_inner();
+            let cancel = Cancellation::default();
+            let source = verify_stream(
+                &mut bytes.as_slice(),
+                &ExpectedContent {
+                    digests: None,
+                    size: None,
+                    accepted_observation: None,
+                },
+                1 << 20,
+                SourceEvidencePolicy::Compatibility,
+                InitialObservation::Accepted,
+                &cancel,
+            )
+            .unwrap();
+            let result = bundled_library_assertions(&source, ArchiveLimits::default(), &cancel);
+            assert_eq!(result.is_ok(), case == "valid", "{case}");
+            if let Ok(files) = result {
+                let expected = &files[&path(&format!("libraries/{relative}")).unwrap()];
+                assert_eq!(expected.size, Some(7));
+                assert_eq!(expected.digests.as_ref().unwrap().values()[0].hex(), hash);
+                assert!(
+                    verify_stream(
+                        &mut b"changed".as_slice(),
+                        expected,
+                        7,
+                        SourceEvidencePolicy::Compatibility,
+                        InitialObservation::RequireEvidence,
+                        &cancel
+                    )
+                    .is_err()
+                );
+            }
         }
     }
 }
