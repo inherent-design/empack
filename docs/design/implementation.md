@@ -7,8 +7,10 @@ source implements; it does not make the target API sketches available by implica
 The normalized engine can prepare and recoverably publish all five distribution
 shapes from a captured workspace. Server recipes have verified vanilla,
 Fabric, Quilt, Forge and NeoForge runtime preparation. HTTP acquisition and
-explicit build-content obligations feed these paths. The complete semantic `Engine` API, provider/import
-composition, continuation/cleanup and CLI cutover remain unfinished. Existing
+explicit build-content obligations feed these paths. The compiled `Engine` now owns
+build preview, preparation, exact-plan authorization, acquisition, runtime assembly
+and publication. Provider/import composition, the remaining operation APIs,
+continuation/cleanup and CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
 checks. There will be one implementation per operation, not a permanent legacy engine.
 
@@ -16,6 +18,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 
 | Boundary | Current behavior | Contract evidence |
 | --- | --- | --- |
+| Build lifecycle | Read-only preview/preparation; engine-bound consumed grants; shared target acquisition; owned runtime/tool work; all-requested publication and retained receipts; abandoned preparation retirement | [Engine tests](../../crates/empack-lib/src/engine/api/tests.rs), [runtime tests](../../crates/empack-lib/src/engine/runtime/tests.rs) |
 | Semantic core | Dependency-free identities, pins, paths, requirements, digests, exact multi-file resolution, file plans, target prerequisites and inventory projection | [Core suites](../../crates/empack-core/tests/) |
 | Documents | Intent schema 2 and lock schema 1; raw and semantic revisions; strict source/selection validation; original-byte no-op writes; stable credential-free persisted locators | [Codec tests](../../crates/empack-lib/src/engine/documents/tests.rs) |
 | Project capture | Read-only recovery gate; retained native root; bounded bytes, identities, membership and absence; explicit local/archive sources; exact artifact destinations | [Reader tests](../../crates/empack-lib/src/engine/project/tests.rs), [snapshot tests](../../crates/empack-lib/src/engine/snapshot/tests.rs) |
@@ -172,9 +175,9 @@ repeat passed without a leak. These observations do not establish a production f
 
 ## Remaining integration and limits
 
-- Implement semantic request preparation/approval/outcomes and compile the public
-  Engine usage examples. Connect provider catalogs, import normalization and remaining
-  loader runtime contracts. The five build recipes already share combined publication.
+- Extend the compiled build `Engine` lifecycle to semantic project mutations,
+  provider catalogs and import normalization. All five build recipes and all loader
+  runtime families now enter the same approved build driver.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
   provider-locator refresh, continuation and scoped
   clean through the same verified obligations.

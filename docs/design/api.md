@@ -3,6 +3,30 @@
 Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
 [implementation ledger](implementation.md) identifies a compiled API.
 
+The compiled build entry point is `empack_lib::engine::api::Engine`. Its `preview`
+and `prepare` accept an absolute existing-project selection and a `BuildRequest`.
+Both only capture and plan. The preview includes exact artifact destinations,
+runtime, missing content, network/tool requirements and the complete requested
+options. It has no conversion into an executable operation. A ready preparation
+can be consumed with an `ExecutionGrant` naming its opaque in-process `PlanId`;
+the originating engine then admits `start`.
+
+The owned driver acquires captured archives and remote content, prepares the exact
+runtime, verifies every requested artifact and publishes their union. Missing
+manual/provider acquisitions remain `NeedsInput`; the build API does not invent a
+provider result or download association. Persistent content lookup and the APIs for
+other operation kinds remain completion work. The broader interface below remains
+the target for those operations.
+
+Preparation, acquired content and retained receipts own explicit host admission
+estimates. Those estimates are separate from enforced stream/snapshot byte limits.
+Abandoned preparations retire before their registry entries disappear. Publication
+receipts survive cancellation after commitment; a runtime-level worker failure or
+`ExecutionUncertain` requires recovery assessment and must not be presented as proof
+that no files changed. Native publication errors retain their recovery operation ID.
+The compiled usage example is tested with Rust documentation tests in
+[`api.rs`](../../crates/empack-lib/src/engine/api.rs).
+
 ## 17. Public engine API and application wiring
 
 ### 17.1 Public entry points

@@ -32,6 +32,7 @@ pub enum AcquisitionReason {
 }
 /// Missing manual/provider/archive acquisition remains typed input, never a guessed filename.
 /// This type is not Debug/serializable: transient observed download URLs may contain secrets.
+#[derive(PartialEq, Eq)]
 pub enum BuildContentSource {
     Download(NonEmpty<String>),
     Provider {
@@ -61,6 +62,26 @@ pub struct BuildAcquisitionResult {
     pub pending: Vec<AcquisitionNeed>,
 }
 impl BuildAcquisitionPlan {
+    /// One logical file needed by several targets is acquired once. Conflicting assertions or
+    /// locators cannot silently inherit whichever target happened to be visited first.
+    pub fn combine(plans: impl IntoIterator<Item = Self>) -> Result<Self> {
+        let mut needs = BTreeMap::<AcquisitionKey, AcquisitionNeed>::new();
+        for plan in plans {
+            for need in plan.needs {
+                if let Some(previous) = needs.get(&need.key) {
+                    ensure!(
+                        previous.expected == need.expected && previous.source == need.source,
+                        "Build targets disagree about a shared acquisition"
+                    );
+                } else {
+                    needs.insert(need.key.clone(), need);
+                }
+            }
+        }
+        Ok(Self {
+            needs: needs.into_values().collect(),
+        })
+    }
     pub fn needs(&self) -> &[AcquisitionNeed] {
         &self.needs
     }

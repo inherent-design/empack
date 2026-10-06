@@ -67,7 +67,7 @@ struct Registry<T> {
 pub struct OperationRuntime<T> {
     governor: ResourceGovernor,
     maximum: usize,
-    registry: Mutex<Registry<T>>,
+    registry: Arc<Mutex<Registry<T>>>,
 }
 fn locked<T>(value: &Mutex<T>) -> MutexGuard<'_, T> {
     value.lock().unwrap_or_else(|error| error.into_inner())
@@ -77,15 +77,31 @@ impl<T: Send + Sync + 'static> OperationRuntime<T> {
         Self {
             governor,
             maximum: retained_operations,
-            registry: Mutex::new(Registry {
+            registry: Arc::new(Mutex::new(Registry {
                 open: true,
                 next: 0,
                 entries: BTreeMap::new(),
-            }),
+            })),
         }
     }
     /// Registration and admission close share one lock; no started driver can escape shutdown.
     pub fn start<F, Fut>(&self, run: F) -> Result<OperationHandle<T>, RuntimeError>
+    where
+        F: FnOnce(WorkScope) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T, RuntimeError>> + Send + 'static,
+    {
+        self.start_owned(run, true)
+    }
+    /// Preparation results travel through a separate owned channel. Retire the registry entry
+    /// automatically even if the waiting preparation future is dropped.
+    pub(super) fn start_ephemeral<F, Fut>(&self, run: F) -> Result<OperationHandle<T>, RuntimeError>
+    where
+        F: FnOnce(WorkScope) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T, RuntimeError>> + Send + 'static,
+    {
+        self.start_owned(run, false)
+    }
+    fn start_owned<F, Fut>(&self, run: F, retain: bool) -> Result<OperationHandle<T>, RuntimeError>
     where
         F: FnOnce(WorkScope) -> Fut + Send + 'static,
         Fut: Future<Output = Result<T, RuntimeError>> + Send + 'static,
@@ -122,6 +138,7 @@ impl<T: Send + Sync + 'static> OperationRuntime<T> {
         });
         let owned_scope = scope.clone();
         let final_status = status.clone();
+        let owner_registry = self.registry.clone();
         let driver = host.spawn(async move {
             // The supervisor retains the scope even if construction or polling of the driver panics.
             let worker_scope = owned_scope.clone();
@@ -152,6 +169,9 @@ impl<T: Send + Sync + 'static> OperationRuntime<T> {
                 phase: OperationPhase::Terminal,
                 terminal: Some(Arc::new(outcome)),
             }));
+            if !retain {
+                locked(&owner_registry).entries.remove(&id);
+            }
         });
         registry.entries.insert(
             id,
@@ -225,10 +245,7 @@ impl<T: Send + Sync + 'static> OperationRuntime<T> {
 }
 impl<T> Drop for OperationRuntime<T> {
     fn drop(&mut self) {
-        let registry = self
-            .registry
-            .get_mut()
-            .unwrap_or_else(|error| error.into_inner());
+        let mut registry = locked(&self.registry);
         registry.open = false;
         for entry in registry.entries.values() {
             entry.scope.close();
@@ -444,6 +461,20 @@ impl WorkScope {
             || self.inner.cancel.is_cancelled()
             || result.token.operation != self.inner.operation
             || result.token.attempt != state.attempt
+            || !Weak::ptr_eq(&result.token.owner, &Arc::downgrade(&self.inner))
+        {
+            return Err(RuntimeError::StaleResult);
+        }
+        Ok(result.output)
+    }
+
+    /// Once publication has been admitted, cancellation cannot erase a receipt describing
+    /// durable effects. Only the owning engine driver can collect this terminal worker result.
+    pub(super) fn accept_publication<T>(
+        &self,
+        result: WorkResult<T>,
+    ) -> Result<RetainedOutput<T>, RuntimeError> {
+        if result.token.operation != self.inner.operation
             || !Weak::ptr_eq(&result.token.owner, &Arc::downgrade(&self.inner))
         {
             return Err(RuntimeError::StaleResult);

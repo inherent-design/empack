@@ -25,8 +25,9 @@ mise run smoke:runtime
 
 This suite requires public Mojang/Fabric/Quilt/Maven access and Java 21, selected
 through `JAVA_HOME` or `PATH`. Set `EMPACK_TEST_JAVA8_HOME` to a Java 8 installation
-for historical Forge. It verifies official metadata and bytes, copies prepared
-runtimes into full server archives, publishes them through the journal, extracts them
+for historical Forge. It enters the build `Engine` through read-only preparation
+and an explicit execution grant, verifies official metadata and bytes, builds full
+server archives, publishes them through the journal, extracts them
 into disposable directories, then runs their generated startup scripts. A current
 configuration file must also survive packaging. Modern
 cases must print Minecraft's help options. Forge 1.7.10 and 1.12.2 ignore `--help`;

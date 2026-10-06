@@ -8,11 +8,7 @@ use empack_lib::{
         content::SourceEvidencePolicy,
         resources::{ResourceGovernor, ResourceRequest},
         runtime::{OperationOutcome, OperationRuntime},
-        server_runtime::{
-            VanillaServerPlan,
-            installer::{InstallerExecution, InstallerServerPlan},
-            library::LibraryServerPlan,
-        },
+        server_runtime::installer::InstallerExecution,
         snapshot::SnapshotLimits,
     },
 };
@@ -38,93 +34,8 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
     let java = java_home
         .map(|home| PathBuf::from(home).join("bin").join(executable))
         .unwrap_or_else(|| executable.into());
-    let installer_java = java.clone();
-    let installer = matches!(runtime.loader, LoaderKind::Forge | LoaderKind::NeoForge);
-    let transport = HttpAcquisition::new()?;
-    let owner = OperationRuntime::new(
-        ResourceGovernor::new(ResourceRequest {
-            jobs: 2,
-            memory_bytes: if installer { 2 << 30 } else { 128 << 20 },
-            scratch_bytes: if installer { 2 << 30 } else { 512 << 20 },
-            // Remote input leases coexist briefly with the reserved output allowance.
-            open_files: if installer { 2200 } else { 64 },
-        }),
-        1,
-    );
-    let mut handle = owner.start(move |mut scope| async move {
-        let limits = TransferLimits {
-            file_bytes: 128 << 20,
-            transfer_bytes: 128 << 20,
-            deadline: Duration::from_secs(45),
-            ..TransferLimits::default()
-        };
-        Ok(async {
-            if runtime.loader == LoaderKind::Vanilla {
-                VanillaServerPlan::resolve(&transport, &mut scope, runtime, limits)
-                    .await?
-                    .acquire(
-                        &transport,
-                        &mut scope,
-                        limits,
-                        ArchiveLimits::default(),
-                        SourceEvidencePolicy::Compatibility,
-                    )
-                    .await
-            } else if installer {
-                InstallerServerPlan::resolve(
-                    &transport,
-                    &mut scope,
-                    runtime,
-                    limits,
-                    ArchiveLimits::default(),
-                    SourceEvidencePolicy::Compatibility,
-                )
-                .await?
-                .prepare(
-                    &transport,
-                    &mut scope,
-                    limits,
-                    ArchiveLimits::default(),
-                    SourceEvidencePolicy::Compatibility,
-                    InstallerExecution {
-                        java: installer_java,
-                        deadline: Duration::from_secs(240),
-                        heap_megabytes: 1024,
-                        output: SnapshotLimits {
-                            entries: 1024,
-                            depth: 32,
-                            file_bytes: 128 << 20,
-                            total_bytes: 512 << 20,
-                        },
-                    },
-                )
-                .await
-            } else {
-                LibraryServerPlan::resolve(&transport, &mut scope, runtime, limits)
-                    .await?
-                    .acquire(
-                        &transport,
-                        &mut scope,
-                        limits,
-                        ArchiveLimits::default(),
-                        SourceEvidencePolicy::Compatibility,
-                    )
-                    .await
-            }
-        }
-        .await)
-    })?;
-    let terminal = handle.wait().await;
-    owner.shutdown().await;
-    let prepared = match &*terminal {
-        OperationOutcome::Completed(Ok(runtime)) => runtime,
-        OperationOutcome::Completed(Err(error)) => {
-            anyhow::bail!("Runtime preparation failed: {error:#}")
-        }
-        OperationOutcome::Failed(error) => anyhow::bail!("Runtime operation failed: {error}"),
-    };
     let root = tempfile::tempdir()?;
-    package_runtime(prepared, root.path())?;
+    package_runtime(runtime, java.clone(), root.path()).await?;
     let mut command = if cfg!(windows) {
         let mut command = std::process::Command::new("cmd.exe");
         command.args(["/D", "/C", "start.bat"]);
@@ -182,8 +93,9 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
     Ok(())
 }
 // Exercise the published distribution, not merely loose copies of prepared runtime files.
-fn package_runtime(
-    runtime: &empack_lib::engine::server_runtime::PreparedServerRuntime,
+async fn package_runtime(
+    runtime: RuntimeResolution,
+    java: PathBuf,
     destination: &std::path::Path,
 ) -> anyhow::Result<()> {
     use empack_core::{
@@ -191,23 +103,24 @@ fn package_runtime(
         model::{DistributionArchive, ResolutionLock, ResolvedProject},
         path::{PathSyntax, PortableRelPath},
     };
+    use empack_core::{model::NonEmpty, projection::BuildTarget};
     use empack_lib::engine::{
-        build::{
-            BuildAcquisitions,
-            server::{ServerOptions, prepare_server_build},
+        api::{
+            BuildOutcome, BuildOutput, BuildRequest, BuildResources, Engine, EngineConfig,
+            ExecutionGrant, NetworkPermission, Preparation,
         },
         documents::DocumentCodec,
-        project::ProjectReader,
-        publication::{Publisher, RecoveryReader},
+        mrpack::OptionalConversion,
+        packwiz::InstallerInteraction,
         templates::TemplateOptions,
     };
     let project = tempfile::tempdir()?;
     let host = tempfile::tempdir()?;
     let codec = DocumentCodec;
     let mut intent = codec.decode_intent(b"schema: 2\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {targets: [server-full], archive: zip}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
-    intent.runtime.minecraft = runtime.runtime().minecraft.clone();
-    intent.runtime.loader = runtime.runtime().loader;
-    intent.runtime.loader_version = runtime.runtime().loader_version.clone();
+    intent.runtime.minecraft = runtime.minecraft.clone();
+    intent.runtime.loader = runtime.loader;
+    intent.runtime.loader_version = runtime.loader_version.clone();
     let bytes = codec.encode_intent(&intent)?;
     let revision = codec
         .decode_intent(&bytes, "runtime-smoke")?
@@ -220,7 +133,7 @@ fn package_runtime(
             dependencies: Default::default(),
             required_edges: Default::default(),
             coverage: Default::default(),
-            runtime: runtime.runtime().clone(),
+            runtime: runtime.clone(),
         },
         revision,
     )?;
@@ -235,30 +148,121 @@ fn package_runtime(
         b"current content",
     )?;
     let artifact = PortableRelPath::parse("server.zip", PathSyntax::ArtifactName)?;
-    let cancel = Cancellation::default();
-    let captured = ProjectReader::new(RecoveryReader::new(host.path().join("state")))
-        .capture_build(
-            project.path(),
-            std::slice::from_ref(&artifact),
-            SnapshotLimits::default(),
-            &cancel,
-        )?;
-    let build = prepare_server_build(
-        captured,
-        artifact,
-        &BuildAcquisitions::default(),
-        &ServerOptions {
-            archive: DistributionArchive::Zip,
-            optional: OptionalPolicy::Preserve,
-            templates: TemplateOptions::default(),
-            evidence: SourceEvidencePolicy::Compatibility,
-            limits: ArchiveLimits::default(),
+    let work = ResourceRequest {
+        jobs: 1,
+        memory_bytes: 64 << 20,
+        scratch_bytes: 128 << 20,
+        open_files: 64,
+    };
+    let engine = Engine::new(
+        EngineConfig {
+            state_root: host.path().join("state"),
+            retained_operations: 2,
+            resources: BuildResources {
+                capture: work,
+                prepared: ResourceRequest {
+                    jobs: 0,
+                    memory_bytes: 4 << 20,
+                    scratch_bytes: 0,
+                    open_files: 1,
+                },
+                local_acquisition: work,
+                acquired: ResourceRequest {
+                    jobs: 0,
+                    memory_bytes: 4 << 20,
+                    scratch_bytes: 16 << 20,
+                    open_files: 16,
+                },
+                assembly: ResourceRequest {
+                    jobs: 1,
+                    memory_bytes: 128 << 20,
+                    scratch_bytes: 2 << 30,
+                    open_files: 1200,
+                },
+                receipt: ResourceRequest {
+                    jobs: 0,
+                    memory_bytes: 16 << 20,
+                    scratch_bytes: 0,
+                    open_files: 0,
+                },
+            },
+            snapshot: SnapshotLimits {
+                entries: 1024,
+                depth: 32,
+                file_bytes: 128 << 20,
+                total_bytes: 512 << 20,
+            },
+            archive: ArchiveLimits::default(),
+            transfer: TransferLimits {
+                file_bytes: 128 << 20,
+                transfer_bytes: 128 << 20,
+                deadline: Duration::from_secs(45),
+                ..TransferLimits::default()
+            },
+            installer: InstallerExecution {
+                java,
+                deadline: Duration::from_secs(240),
+                heap_megabytes: 1024,
+                output: SnapshotLimits {
+                    entries: 1024,
+                    depth: 32,
+                    file_bytes: 128 << 20,
+                    total_bytes: 512 << 20,
+                },
+            },
         },
-        runtime,
-        None,
-        &cancel,
+        ResourceGovernor::new(ResourceRequest {
+            jobs: 2,
+            memory_bytes: 3 << 30,
+            scratch_bytes: 3 << 30,
+            open_files: 2400,
+        }),
     )?;
-    build.publish(&Publisher::open(&host.path().join("state"))?, &cancel)?;
+    let request = BuildRequest {
+        outputs: NonEmpty::new(vec![BuildOutput {
+            target: BuildTarget::ServerFull,
+            artifact,
+        }])?,
+        archive: DistributionArchive::Zip,
+        optional: OptionalPolicy::Preserve,
+        mrpack_optional: OptionalConversion::RejectMetadataLoss,
+        templates: TemplateOptions::default(),
+        evidence: SourceEvidencePolicy::Compatibility,
+        interaction: InstallerInteraction::Headless,
+    };
+    let prepared = match engine.prepare(project.path().to_owned(), request).await? {
+        Preparation::Ready(value) => value,
+        Preparation::NeedsInput(_) => {
+            anyhow::bail!("Runtime smoke unexpectedly needs manual content")
+        }
+    };
+    anyhow::ensure!(
+        !host.path().join("state").exists(),
+        "Preparation created host state"
+    );
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan,
+        network: NetworkPermission::Allow,
+        run_installer: true,
+    };
+    let mut handle = engine.start(prepared.authorize(grant)?)?;
+    let result = handle.wait().await;
+    engine.shutdown().await;
+    match &*result {
+        OperationOutcome::Completed(BuildOutcome::Completed(receipt)) => {
+            anyhow::ensure!(
+                receipt.artifacts.len() == 1 && receipt.artifacts[0].server_runtime.is_some(),
+                "Published archive lacks runtime evidence"
+            );
+        }
+        OperationOutcome::Completed(
+            BuildOutcome::FailedBeforePublication(error) | BuildOutcome::ExecutionUncertain(error),
+        ) => anyhow::bail!("Runtime build failed: {error:#}"),
+        OperationOutcome::Completed(BuildOutcome::RecoveryRequired { cause, .. }) => {
+            anyhow::bail!("Runtime publication requires recovery: {cause:#}")
+        }
+        _ => anyhow::bail!("Runtime build did not complete"),
+    }
     zip::ZipArchive::new(fs::File::open(project.path().join("dist/server.zip"))?)?
         .extract(destination)?;
     anyhow::ensure!(

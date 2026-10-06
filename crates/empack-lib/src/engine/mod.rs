@@ -1,5 +1,6 @@
 //! Typed engine boundaries. Native execution is composed separately from document decoding.
 pub mod acquisition;
+pub mod api;
 pub mod archive_source;
 pub mod artifacts;
 pub mod backend;

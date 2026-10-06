@@ -97,6 +97,17 @@ impl PreparedBuildBatch {
     ) -> Result<crate::engine::publication::PublicationReceipt> {
         self.publication.publish(publisher, cancel)
     }
+    pub(in crate::engine) fn publish_with_evidence(
+        self,
+        publisher: &crate::engine::publication::Publisher,
+        cancel: &Cancellation,
+    ) -> Result<(
+        crate::engine::publication::PublicationReceipt,
+        Vec<BuiltDistribution>,
+    )> {
+        let receipt = self.publication.publish(publisher, cancel)?;
+        Ok((receipt, self.artifacts))
+    }
 }
 /// No artifact becomes visible until every requested recipe succeeds. Cancellation or any
 /// later recipe failure drops all private candidates; the one journal publishes their union.

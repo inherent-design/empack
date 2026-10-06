@@ -233,3 +233,54 @@ async fn preparation_retirement_does_not_cancel_authorized_publication() {
         OperationOutcome::Completed(())
     ));
 }
+
+#[tokio::test]
+async fn publication_receipt_survives_cancellation_after_worker_completion() {
+    let (runtime, governor) = runtime::<RetainedOutput<u8>>();
+    let mut handle = runtime
+        .start(|scope| async move {
+            let worker = scope.spawn_blocking(request(), retained(), |_| 42)?;
+            let result = worker.wait().await?;
+            scope.cancellation().cancel();
+            scope.accept_publication(result)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(&*outcome, OperationOutcome::Completed(value) if **value == 42));
+    assert_eq!(governor.status().reserved, retained());
+    assert!(runtime.release_completed(handle.id()));
+    drop(outcome);
+    drop(handle);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn ephemeral_preparations_retire_abandoned_results_and_registry_entries() {
+    let governor = ResourceGovernor::new(request());
+    let runtime = OperationRuntime::<()>::new(governor.clone(), 1);
+    for _ in 0..8 {
+        let (started, ready) = oneshot::channel();
+        let handle = runtime
+            .start_ephemeral(move |scope| async move {
+                let worker = scope.spawn(
+                    request(),
+                    ResourceRequest::default(),
+                    move |cancel| async move {
+                        let _ = started.send(());
+                        cancel.cancelled().await;
+                    },
+                )?;
+                worker.wait().await?;
+                Ok(())
+            })
+            .unwrap();
+        let id = handle.id();
+        let mut observer = runtime.observe(id).unwrap();
+        ready.await.unwrap();
+        drop(handle);
+        observer.wait().await;
+        assert!(runtime.observe(id).is_none());
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+    runtime.shutdown().await;
+}
