@@ -543,7 +543,7 @@ struct ArchiveCandidate {
 }
 fn prepare_archives_publication(
     workspace: WorkspaceSnapshot,
-    mut candidates: Vec<ArchiveCandidate>,
+    candidates: Vec<ArchiveCandidate>,
     cancel: &Cancellation,
 ) -> Result<PreparedArtifact> {
     use super::{
@@ -580,7 +580,9 @@ fn prepare_archives_publication(
     let file_plan = plan_files(&observed, &desired, &BTreeSet::new())?;
     let limits = candidate_stage_limits(workspace.observations(), &file_plan)?;
     let mut stage = MutableStage::empty()?;
-    for candidate in &mut candidates {
+    // Transfer ownership one candidate at a time. The original file retires at the end of
+    // each iteration, before freeze creates a packed copy of the publication tree.
+    for mut candidate in candidates {
         candidate.archive.file().rewind()?;
         stage.write(
             &ProjectLayout::path(&ManagedPath::Artifact(candidate.artifact.clone()))?,

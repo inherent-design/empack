@@ -370,6 +370,9 @@ Freezing a multi-file tree copies its verified members into one private backing 
 Member readers are confined to their own ranges and recheck bytes on verified copy.
 The unpacked staging tree retires before further copies, keeping the peak at the
 input tree plus its frozen copy. A single-file lease retains its original object.
+Batch publication consumes each original archive after copying it into the candidate
+tree, before freezing that tree. Original archives do not coexist with both the
+unpacked publication tree and its packed backing.
 This avoids a descriptor per frozen member during packaging; separately acquired
 content leases still need bounded admission and further consolidation for very large
 packs. The live runtime suite publishes and starts extracted full server archives
