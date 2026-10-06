@@ -91,3 +91,17 @@ publication assertions under its native handle model. The build fixture publishe
 600 distinct configuration files into both a client ZIP and an mrpack, then reads
 all packaged bytes. These checks exercise retained readers and actual assembly,
 not only the resource ledger. The parent test process keeps its normal limits.
+
+### Normalized import adapter smoke
+
+Set `EMPACK_TEST_IMPORT_ARCHIVES` to existing mrpack/CurseForge archive paths, using
+the host path-list separator (`:` on Unix, `;` on Windows), then run
+`mise run smoke:import:adapters`. Missing input fails the opt-in test. It captures
+each source privately, uses the normalized engine adapter and verifies every
+referenced embedded member against its original declarations. It does not download
+manifest files, resolve provider references or publish a project.
+
+Local verification covered Fabulously Optimized 1.20.1 in both formats: 51 mrpack
+file declarations and 27 embedded members; 46 CurseForge exact references and 32
+embedded members. CurseForge fixture file `4800279` was acquired with the provider's
+size/hash assertions checked. This is adapter evidence, not end-to-end import parity.

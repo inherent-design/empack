@@ -306,3 +306,18 @@ No operation reads global CLI flags. Providers and planners receive explicit per
 5. Reprepare against the new revision, reusing validated content if applicable. Any changed destructive footprint requires a new grant.
 
 **Regression prevented:** a long-running plan cannot overwrite a later user edit solely because it still holds an old manifest in memory.
+
+## Compiled import inspection API
+
+`engine::import::inspect_import(&mut WorkScope, AcquiredContent, ImportLimits)`
+returns a `RetainedOutput<ImportedProject>`. `ImportFormat`, `ImportLocation`,
+`ImportedProvider`, `ImportedFile`, `ImportedRuntime` and `ImportedRequirements`
+represent input evidence. They are not a resolved lock, an approved mutation or a
+publication receipt. `ImportedProject::archive()` retains the original verified
+source for later bounded member acquisition. `datapack_layout_proposals()` returns
+read-only suggestions and their source locations.
+
+Unknown optional defaults and multiple loader declarations require resolution.
+Inspection can recognize an unsupported packwiz archive; recognition does not make
+packwiz-directory import available. See the implementation ledger for the remaining
+composition work.

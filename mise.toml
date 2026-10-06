@@ -105,6 +105,11 @@ description = "Verify official provider identities and exact downloaded bytes"
 run = "cargo nextest run -p empack-lib --test provider_catalog_smoke --run-ignored ignored-only --test-threads 2"
 run_windows = "cargo nextest run -p empack-lib --test provider_catalog_smoke --run-ignored ignored-only --test-threads 2"
 
+[tasks."smoke:import:adapters"]
+description = "Inspect explicit archives with normalized engine adapters"
+run = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
+run_windows = "cargo nextest run -p empack-lib --test import_archive_smoke --run-ignored ignored-only"
+
 [tasks."smoke:import:curated"]
 depends = ["build:bin"]
 description = "Run the full curated import smoke suite"

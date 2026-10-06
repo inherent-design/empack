@@ -9,6 +9,7 @@ pub mod build;
 pub mod content;
 pub mod documents;
 
+pub mod import;
 mod io;
 pub mod layout;
 pub mod mrpack;
