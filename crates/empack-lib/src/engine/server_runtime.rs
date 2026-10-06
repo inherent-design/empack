@@ -22,7 +22,7 @@ use std::{
     io::{Read, Seek},
 };
 
-pub mod fabric;
+pub mod library;
 
 /// A metadata document bound to the requested Minecraft version and its exact server artifact.
 /// Parsing this contract does not grant publication authority or claim bytes were downloaded.
@@ -351,7 +351,7 @@ pub struct ServerRuntimeEvidence {
 /// Evidence for the selected additional loader; absent for a vanilla runtime.
 #[derive(Debug, Clone)]
 pub enum LoaderRuntimeEvidence {
-    Fabric(fabric::FabricRuntimeEvidence),
+    Libraries(library::LibraryRuntimeEvidence),
 }
 /// A verified runtime file set, still separate from game content, templates and publication.
 #[derive(Clone)]
@@ -366,7 +366,7 @@ impl PreparedServerRuntime {
     }
     pub fn launcher_main_class(&self) -> &str {
         match &self.evidence.loader {
-            Some(LoaderRuntimeEvidence::Fabric(loader)) => &loader.main_class,
+            Some(LoaderRuntimeEvidence::Libraries(loader)) => &loader.main_class,
             None => &self.evidence.main_class,
         }
     }

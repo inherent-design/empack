@@ -23,11 +23,11 @@ Run the live normalized-runtime checks explicitly:
 mise run smoke:runtime
 ```
 
-This suite requires public Mojang/Fabric/Maven access and Java 17 or 21, selected
+This suite requires public Mojang/Fabric/Quilt/Maven access and Java 17 or 21, selected
 through `JAVA_HOME` or `PATH`. It verifies official metadata and bytes, copies the
 prepared runtime into disposable directories, then runs the actual server launcher
-with `--help`. It checks vanilla and both historical/modern Fabric layouts without
-accepting the EULA. These tests are marked ignored in ordinary offline runs; the
+with `--help`. It checks vanilla, both historical/modern Fabric layouts and Quilt
+without accepting the EULA. These tests are marked ignored in ordinary offline runs; the
 explicit task selects all of them and fails on missing prerequisites or providers.
 It complements CLI E2E while command cutover is still pending.
 

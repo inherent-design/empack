@@ -1,14 +1,52 @@
-//! Fabric's declared libraries and launcher layouts, including the shaded historical layout.
+//! Declared library runtimes for Fabric and Quilt, including historical Fabric shading.
 use super::*;
 use crate::engine::{acquisition::TransferError, content::verify_stream, layout::CollisionIndex};
 use empack_core::digest::ExpectedDigest;
 use serde_json::Value;
 
-pub struct FabricServerPlan {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LibraryKind {
+    Fabric,
+    Quilt,
+}
+impl LibraryKind {
+    fn from_loader(loader: LoaderKind) -> Result<Self> {
+        match loader {
+            LoaderKind::Fabric => Ok(Self::Fabric),
+            LoaderKind::Quilt => Ok(Self::Quilt),
+            _ => anyhow::bail!("Loader does not use a supported library runtime"),
+        }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Self::Fabric => "fabric",
+            Self::Quilt => "quilt",
+        }
+    }
+    fn coordinate(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Fabric => ("net.fabricmc", "fabric-loader"),
+            Self::Quilt => ("org.quiltmc", "quilt-loader"),
+        }
+    }
+    fn catalog(self) -> &'static str {
+        match self {
+            Self::Fabric => "https://meta.fabricmc.net/v2/versions/loader/",
+            Self::Quilt => "https://meta.quiltmc.org/v3/versions/loader/",
+        }
+    }
+}
+#[derive(Clone)]
+pub(super) struct LauncherContract {
+    kind: LibraryKind,
+    launch_main: String,
+    declared_main: Option<String>,
+    shaded: bool,
+}
+pub struct LibraryServerPlan {
     runtime: RuntimeResolution,
     metadata: ContentId,
-    launch_main: String,
-    shaded: bool,
+    launcher: LauncherContract,
     libraries: Vec<LibraryPlan>,
 }
 #[derive(Clone)]
@@ -20,7 +58,7 @@ struct LibraryPlan {
     digest_documents: Vec<ContentId>,
 }
 #[derive(Debug, Clone)]
-pub struct FabricLibraryEvidence {
+pub struct LibraryFileEvidence {
     pub name: String,
     pub path: PortableRelPath,
     pub expected: ExpectedContent,
@@ -28,30 +66,28 @@ pub struct FabricLibraryEvidence {
     pub digest_documents: Vec<ContentId>,
 }
 #[derive(Debug, Clone)]
-pub struct FabricRuntimeEvidence {
+pub struct LibraryRuntimeEvidence {
     pub metadata: ContentId,
+    pub family: LoaderKind,
     pub shaded: bool,
-    pub libraries: Vec<FabricLibraryEvidence>,
+    pub libraries: Vec<LibraryFileEvidence>,
     pub launcher: ContentId,
     pub main_class: String,
 }
 
-impl FabricServerPlan {
+impl LibraryServerPlan {
     pub async fn resolve(
         transport: &HttpAcquisition,
         scope: &mut WorkScope,
         runtime: RuntimeResolution,
         limits: TransferLimits,
     ) -> Result<Self> {
-        ensure!(
-            runtime.loader == LoaderKind::Fabric,
-            "Fabric catalog cannot satisfy another loader"
-        );
+        let kind = LibraryKind::from_loader(runtime.loader)?;
         let loader = runtime
             .loader_version
             .as_ref()
-            .context("Fabric requires an exact loader version")?;
-        let mut url = reqwest::Url::parse("https://meta.fabricmc.net/v2/versions/loader/")?;
+            .context("Library runtime requires an exact loader version")?;
+        let mut url = reqwest::Url::parse(kind.catalog())?;
         url.path_segments_mut()
             .expect("static base")
             .pop_if_empty()
@@ -119,53 +155,63 @@ impl FabricServerPlan {
                 library.digest_documents.push(id);
                 break;
             }
-            library.expected.digests = Some(DigestSet::new(vec![
-                declared.context("Fabric library has no declared digest")?,
-            ])?);
+            library.expected.digests =
+                Some(DigestSet::new(vec![declared.context(
+                    "Library runtime library has no declared digest",
+                )?])?);
         }
         Ok(plan)
     }
     fn from_metadata(runtime: RuntimeResolution, metadata: &AcquiredContent) -> Result<Self> {
-        ensure!(
-            runtime.loader == LoaderKind::Fabric,
-            "Fabric metadata cannot satisfy another loader"
-        );
+        let kind = LibraryKind::from_loader(runtime.loader)?;
         let loader = runtime
             .loader_version
             .as_ref()
-            .context("Fabric requires an exact loader version")?;
-        let version = semver::Version::parse(loader.as_str())?;
+            .context("Library runtime requires an exact loader version")?;
+        let shaded = kind == LibraryKind::Fabric
+            && semver::Version::parse(loader.as_str())? <= semver::Version::new(0, 12, 5);
         let value: Value = serde_json::from_reader(metadata.lease().open())?;
         ensure!(
             value["inheritsFrom"] == runtime.minecraft.as_str()
                 && value["id"]
                     == format!(
-                        "fabric-loader-{}-{}",
+                        "{}-loader-{}-{}",
+                        kind.name(),
                         loader.as_str(),
                         runtime.minecraft.as_str()
                     ),
-            "Fabric metadata differs from selected runtime"
+            "Library runtime metadata differs from selected runtime"
         );
         let launch_main = value["mainClass"]
             .as_str()
-            .context("Fabric metadata lacks server main class")?
+            .context("Library runtime metadata lacks server main class")?
             .to_owned();
         class_path(&launch_main)?;
+        let declared_main = if kind == LibraryKind::Quilt {
+            let main = value["launcherMainClass"]
+                .as_str()
+                .context("Quilt metadata lacks launcher main class")?
+                .to_owned();
+            class_path(&main)?;
+            Some(main)
+        } else {
+            None
+        };
         for argument in ["game", "jvm"] {
             ensure!(
                 value["arguments"][argument].is_null()
                     || value["arguments"][argument]
                         .as_array()
                         .is_some_and(|args| args.is_empty()),
-                "Fabric metadata declares unsupported launch arguments"
+                "Library runtime metadata declares unsupported launch arguments"
             );
         }
         let libraries = value["libraries"]
             .as_array()
-            .context("Fabric metadata lacks libraries")?;
+            .context("Library runtime metadata lacks libraries")?;
         ensure!(
             !libraries.is_empty() && libraries.len() <= 512,
-            "Fabric library count exceeds limit"
+            "Library runtime library count exceeds limit"
         );
         let mut planned = Vec::new();
         let mut collisions = CollisionIndex::default();
@@ -174,18 +220,24 @@ impl FabricServerPlan {
         for library in libraries {
             ensure!(
                 library.get("rules").is_none() && library.get("natives").is_none(),
-                "Fabric server library declares unsupported conditional selection"
+                "Library runtime server library declares unsupported conditional selection"
             );
             let name = library["name"]
                 .as_str()
                 .context("Library lacks Maven identity")?;
             let (relative, coordinate) = maven_path(name)?;
-            if coordinate[0] == "net.fabricmc" && coordinate[1] == "fabric-loader" {
+            if (coordinate[0], coordinate[1]) == kind.coordinate() {
                 ensure!(
                     coordinate[2] == loader.as_str(),
-                    "Fabric library version differs from selected loader"
+                    "Library runtime library version differs from selected loader"
                 );
                 loader_count += 1;
+            }
+            if coordinate[0] == "org.quiltmc" && coordinate[1] == "hashed" {
+                ensure!(
+                    coordinate[2] == runtime.minecraft.as_str(),
+                    "Quilt mappings differ from selected game"
+                );
             }
             if coordinate[0] == "net.fabricmc" && coordinate[1] == "intermediary" {
                 ensure!(
@@ -248,13 +300,17 @@ impl FabricServerPlan {
         }
         ensure!(
             loader_count == 1 && intermediary_count == 1,
-            "Fabric metadata must select one loader and intermediary"
+            "Library runtime metadata must select one loader and intermediary"
         );
         Ok(Self {
             runtime,
             metadata: metadata.lease().id(),
-            launch_main,
-            shaded: version <= semver::Version::new(0, 12, 5),
+            launcher: LauncherContract {
+                kind,
+                launch_main,
+                declared_main,
+                shaded,
+            },
             libraries: planned,
         })
     }
@@ -336,7 +392,7 @@ fn maven_path(name: &str) -> Result<(String, Vec<&str>)> {
                     .bytes()
                     .all(|byte| byte.is_ascii_alphanumeric() || b"._-+".contains(&byte)))
             && parts[0].split('.').all(|part| !part.is_empty()),
-        "Invalid Fabric Maven coordinate"
+        "Invalid runtime Maven coordinate"
     );
     Ok((
         format!(
@@ -357,12 +413,12 @@ fn class_path(name: &str) -> Result<String> {
                 && part
                     .bytes()
                     .all(|ch| ch.is_ascii_alphanumeric() || b"_$".contains(&ch))),
-        "Invalid Fabric main class"
+        "Invalid runtime main class"
     );
     Ok(format!("{}.class", name.replace('.', "/")))
 }
 
-impl FabricServerPlan {
+impl LibraryServerPlan {
     async fn finish(
         self,
         mut vanilla: PreparedServerRuntime,
@@ -373,11 +429,11 @@ impl FabricServerPlan {
         ensure!(
             vanilla.runtime.loader == LoaderKind::Vanilla
                 && vanilla.runtime.minecraft == self.runtime.minecraft,
-            "Fabric base runtime differs from selected Minecraft"
+            "Library runtime base runtime differs from selected Minecraft"
         );
         ensure!(
             libraries.len() == self.libraries.len(),
-            "Fabric library acquisition is incomplete"
+            "Library runtime library acquisition is incomplete"
         );
         let mut evidence = Vec::new();
         for (plan, content) in self.libraries.iter().zip(&libraries) {
@@ -385,14 +441,14 @@ impl FabricServerPlan {
                 plan.expected
                     .size
                     .is_none_or(|size| size == content.lease().len()),
-                "Fabric library size differs from declaration"
+                "Library runtime library size differs from declaration"
             );
             plan.expected
                 .digests
                 .as_ref()
-                .context("Fabric library lacks source evidence")?
+                .context("Library runtime library lacks source evidence")?
                 .check(content.observed_digests().values())?;
-            evidence.push(FabricLibraryEvidence {
+            evidence.push(LibraryFileEvidence {
                 name: plan.name.clone(),
                 path: plan.path.clone(),
                 expected: plan.expected.clone(),
@@ -418,8 +474,7 @@ impl FabricServerPlan {
             .iter()
             .map(|library| library.path.clone())
             .collect::<Vec<_>>();
-        let launch_main = self.launch_main.clone();
-        let shaded = self.shaded;
+        let contract = self.launcher.clone();
         let worker = scope.spawn_blocking(
             ResourceRequest {
                 jobs: 1,
@@ -432,8 +487,7 @@ impl FabricServerPlan {
                 launcher::assemble(
                     &paths,
                     &worker_libraries,
-                    &launch_main,
-                    shaded,
+                    &contract,
                     limits,
                     maximum,
                     &cancel,
@@ -490,7 +544,7 @@ impl FabricServerPlan {
         )?;
         vanilla.files.insert(
             PortableRelPath::parse(
-                "fabric-server-launcher.properties",
+                &format!("{}-server-launcher.properties", self.launcher.kind.name()),
                 PathSyntax::ProjectContent,
             )?,
             AcquiredBuildFile {
@@ -498,10 +552,12 @@ impl FabricServerPlan {
                 permissions,
             },
         );
+        let family = self.runtime.loader;
         vanilla.runtime = self.runtime;
-        vanilla.evidence.loader = Some(LoaderRuntimeEvidence::Fabric(FabricRuntimeEvidence {
+        vanilla.evidence.loader = Some(LoaderRuntimeEvidence::Libraries(LibraryRuntimeEvidence {
             metadata: self.metadata,
-            shaded: self.shaded,
+            family,
+            shaded: self.launcher.shaded,
             libraries: evidence,
             launcher: launcher_id,
             main_class: main,

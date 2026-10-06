@@ -263,7 +263,7 @@ Each archive format carries the same expected files and portable permissions. Se
 and client artifacts can share one AllRequested publication. Runtime mismatch, source
 conflict, missing content or any later recipe failure preserves previous outputs.
 
-### Fabric runtime preparation
+### Fabric and Quilt runtime preparation
 
 The official server profile must name the exact game, loader and intermediary.
 Every library has a validated Maven coordinate, safe destination and declared digest;
@@ -280,8 +280,15 @@ streams through a bounded writer, then reads every emitted member against the in
 inventory. The generated lease retains its resource reservation. Minecraft bytes
 are stored separately, and explicit launcher properties select that file.
 
+Quilt uses the same verified library pipeline with its own catalog and loader
+coordinate. Its [server profile](https://github.com/QuiltMC/quilt-installer/blob/master/src/main/java/org/quiltmc/installer/action/InstallServer.java)
+provides both the launch target and the wrapper main class; both must exist in the
+verified loader JAR. The generated manifest uses a classpath, and Quilt-specific
+properties select the exact Minecraft base. Fabric shading rules do not apply to
+Quilt. Conditional libraries or undeclared launch arguments require an explicit
+adapter extension rather than silently dropping runtime requirements.
+
 `mise run smoke:runtime` checks official acquisition and actual Java launcher
-execution for vanilla plus both Fabric layouts. Unit fixtures separately exercise
+execution for vanilla, both Fabric layouts and Quilt. Unit fixtures separately exercise
 wrong bytes, metadata mismatch, missing classes, service merging, bounded output,
-cancellation and retained ownership. These tests do not imply that Quilt, Forge or
-NeoForge preparation is implemented.
+cancellation and retained ownership. These tests do not imply that Forge or NeoForge preparation is implemented.

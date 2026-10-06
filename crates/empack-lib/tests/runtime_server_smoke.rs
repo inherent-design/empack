@@ -8,19 +8,17 @@ use empack_lib::{
         content::SourceEvidencePolicy,
         resources::{ResourceGovernor, ResourceRequest},
         runtime::{OperationOutcome, OperationRuntime},
-        server_runtime::{VanillaServerPlan, fabric::FabricServerPlan},
+        server_runtime::{VanillaServerPlan, library::LibraryServerPlan},
     },
 };
 use std::{fs, path::PathBuf, time::Duration};
-async fn verify_live_runtime(game: &str, loader: Option<&str>) -> anyhow::Result<()> {
+async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> anyhow::Result<()> {
     let runtime = RuntimeResolution {
         minecraft: GameVersion::parse(game)?,
-        loader: if loader.is_some() {
-            LoaderKind::Fabric
-        } else {
-            LoaderKind::Vanilla
-        },
-        loader_version: loader.map(LoaderVersion::parse).transpose()?,
+        loader: loader.map_or(LoaderKind::Vanilla, |(_, kind)| kind),
+        loader_version: loader
+            .map(|(version, _)| LoaderVersion::parse(version))
+            .transpose()?,
     };
     let transport = HttpAcquisition::new()?;
     let owner = OperationRuntime::new(
@@ -52,7 +50,7 @@ async fn verify_live_runtime(game: &str, loader: Option<&str>) -> anyhow::Result
                     )
                     .await
             } else {
-                FabricServerPlan::resolve(&transport, &mut scope, runtime, limits)
+                LibraryServerPlan::resolve(&transport, &mut scope, runtime, limits)
                     .await?
                     .acquire(
                         &transport,
@@ -118,10 +116,22 @@ async fn runtime_server_vanilla() {
 #[tokio::test]
 #[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]
 async fn runtime_server_fabric_classpath() {
-    verify_live_runtime("1.20.1", Some("0.16.0")).await.unwrap();
+    verify_live_runtime("1.20.1", Some(("0.16.0", LoaderKind::Fabric)))
+        .await
+        .unwrap();
 }
 #[tokio::test]
 #[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]
 async fn runtime_server_fabric_shaded() {
-    verify_live_runtime("1.16.5", Some("0.11.7")).await.unwrap();
+    verify_live_runtime("1.16.5", Some(("0.11.7", LoaderKind::Fabric)))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]
+async fn runtime_server_quilt() {
+    verify_live_runtime("1.20.1", Some(("0.26.3", LoaderKind::Quilt)))
+        .await
+        .unwrap();
 }

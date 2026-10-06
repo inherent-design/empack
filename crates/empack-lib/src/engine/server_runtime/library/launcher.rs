@@ -9,41 +9,44 @@ use std::{
 pub(super) fn assemble(
     paths: &[PortableRelPath],
     libraries: &[AcquiredContent],
-    launch_main: &str,
-    shaded: bool,
+    contract: &LauncherContract,
     limits: ArchiveLimits,
     maximum: u64,
     cancel: &Cancellation,
 ) -> Result<(AcquiredContent, String)> {
+    let launch_main = &contract.launch_main;
+    let shaded = contract.shaded;
+    let (group, artifact) = contract.kind.coordinate();
+    let prefix = format!("libraries/{}/{artifact}/", group.replace('.', "/"));
     let loader = libraries
         .iter()
         .zip(paths)
-        .find(|(_, path)| {
-            path.as_str()
-                .starts_with("libraries/net/fabricmc/fabric-loader/")
-        })
-        .context("Fabric loader library is missing")?
+        .find(|(_, path)| path.as_str().starts_with(&prefix))
+        .context("Library runtime loader library is missing")?
         .0;
     let mut jar = JarReader::open(loader, limits, cancel)?;
-    let main = jar
-        .main_attributes()?
-        .remove("main-class")
-        .context("Fabric loader has no launcher")?;
+    let main = match &contract.declared_main {
+        Some(main) => main.clone(),
+        None => jar
+            .main_attributes()?
+            .remove("main-class")
+            .context("Loader JAR has no main class")?,
+    };
     for class in [&main, launch_main] {
         let class_path = class_path(class)?;
         let mut entry = jar
             .archive
             .by_name(&class_path)
-            .context("Fabric loader omits a declared launcher class")?;
+            .context("Library runtime loader omits a declared launcher class")?;
         ensure!(
             !entry.encrypted() && !entry.is_dir() && entry.size() <= 16 << 20,
-            "Invalid Fabric launcher class entry"
+            "Invalid runtime launcher class entry"
         );
         let mut magic = [0; 4];
         entry.read_exact(&mut magic)?;
         ensure!(
             magic == [0xca, 0xfe, 0xba, 0xbe],
-            "Invalid Fabric launcher class"
+            "Invalid runtime launcher class"
         );
         copy_bounded(&mut entry, &mut io::sink(), 16 << 20, cancel)?;
     }
@@ -74,7 +77,7 @@ pub(super) fn assemble(
      -> Result<()> {
         ensure!(
             expected.len() < limits.entries,
-            "Fabric launcher entry count exceeds limit"
+            "Library runtime launcher entry count exceeds limit"
         );
         output.start_file(
             name,
@@ -91,7 +94,7 @@ pub(super) fn assemble(
         )?;
         total = total
             .checked_add(size)
-            .context("Fabric launcher byte count overflow")?;
+            .context("Library runtime launcher byte count overflow")?;
         expected.insert(name.to_owned(), (hash, size));
         Ok(())
     };
@@ -102,12 +105,12 @@ pub(super) fn assemble(
     )?;
     emit(
         &mut output,
-        "fabric-server-launch.properties",
+        &format!("{}-server-launch.properties", contract.kind.name()),
         &mut format!("launch.mainClass={launch_main}\n").as_bytes(),
     )?;
     let mut added = BTreeSet::from([
         "META-INF/MANIFEST.MF".to_owned(),
-        "fabric-server-launch.properties".to_owned(),
+        format!("{}-server-launch.properties", contract.kind.name()),
     ]);
     let mut services: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut service_bytes = 0usize;
@@ -120,7 +123,10 @@ pub(super) fn assemble(
                 if entry.is_dir() {
                     continue;
                 }
-                ensure!(!entry.encrypted(), "Fabric library contains encrypted data");
+                ensure!(
+                    !entry.encrypted(),
+                    "Library runtime library contains encrypted data"
+                );
                 let name = entry.name().to_owned();
                 if name
                     .strip_prefix("META-INF/services/")
@@ -128,20 +134,20 @@ pub(super) fn assemble(
                 {
                     ensure!(
                         entry.size() <= 64 << 10,
-                        "Fabric service declaration exceeds limit"
+                        "Library runtime service declaration exceeds limit"
                     );
                     let mut bytes = String::new();
                     entry.take((64 << 10) + 1).read_to_string(&mut bytes)?;
                     ensure!(
                         bytes.len() <= 64 << 10,
-                        "Fabric service declaration exceeds limit"
+                        "Library runtime service declaration exceeds limit"
                     );
                     service_bytes = service_bytes
                         .checked_add(bytes.len())
-                        .context("Fabric service size overflow")?;
+                        .context("Library runtime service size overflow")?;
                     ensure!(
                         service_bytes <= 4 << 20,
-                        "Fabric service declarations exceed limit"
+                        "Library runtime service declarations exceed limit"
                     );
                     let definitions = services.entry(name).or_default();
                     for line in bytes.lines() {
@@ -158,7 +164,7 @@ pub(super) fn assemble(
                 } else if !signature(&name) && added.insert(name.clone()) {
                     ensure!(
                         entry.size() <= limits.file_bytes,
-                        "Fabric library entry exceeds limit"
+                        "Library runtime library entry exceeds limit"
                     );
                     emit(&mut output, &name, &mut entry)?;
                 }
@@ -182,7 +188,7 @@ pub(super) fn assemble(
     let mut seen = BTreeSet::new();
     ensure!(
         archive.len() == expected.len(),
-        "Generated Fabric launcher inventory differs"
+        "Generated library launcher inventory differs"
     );
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
@@ -200,7 +206,7 @@ pub(super) fn assemble(
         let actual = copy_bounded(&mut entry, &mut io::sink(), size, cancel)?;
         ensure!(
             actual == (hash, size),
-            "Generated Fabric launcher bytes differ"
+            "Generated library launcher bytes differ"
         );
     }
     drop(archive);
@@ -255,7 +261,9 @@ impl Write for BoundedFile<'_> {
             .checked_add(bytes.len() as u64)
             .is_none_or(|end| end > self.maximum)
         {
-            return Err(io::Error::other("Fabric launcher exceeds reserved bytes"));
+            return Err(io::Error::other(
+                "Library runtime launcher exceeds reserved bytes",
+            ));
         }
         self.file.write(bytes)
     }
