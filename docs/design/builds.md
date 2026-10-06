@@ -365,3 +365,12 @@ under `libraries/`. Output verification honors the requested evidence policy, an
 server assembly rechecks evidence when a caller supplies a previously prepared runtime.
 Strong-source mode rejects weak or undeclared output evidence; compatibility remains
 an explicit option rather than a silent fallback.
+
+Freezing a multi-file tree copies its verified members into one private backing file.
+Member readers are confined to their own ranges and recheck bytes on verified copy.
+The unpacked staging tree retires before further copies, keeping the peak at the
+input tree plus its frozen copy. A single-file lease retains its original object.
+This avoids a descriptor per frozen member during packaging; separately acquired
+content leases still need bounded admission and further consolidation for very large
+packs. The live runtime suite publishes and starts extracted full server archives
+so preparation-only success cannot hide packaging failures.

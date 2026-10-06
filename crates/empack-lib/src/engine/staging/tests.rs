@@ -204,3 +204,102 @@ async fn owned_tool_returns_only_a_retired_private_stage() {
         .await;
     assert!(result.is_err());
 }
+
+#[test]
+fn packed_trees_bound_descriptors_and_keep_member_ranges_independent() {
+    let cancel = Cancellation::default();
+    let mut stage = MutableStage::empty().unwrap();
+    for index in 0..600 {
+        let bytes = format!("member-{index}");
+        stage
+            .write(
+                &path(&format!("files/{index:04}")),
+                &mut bytes.as_bytes(),
+                32,
+                &cancel,
+            )
+            .unwrap();
+    }
+    stage
+        .write(&path("empty"), &mut b"".as_slice(), 0, &cancel)
+        .unwrap();
+    let readonly = stage.storage.path().join("files/0300");
+    let mut permissions = fs::metadata(&readonly).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&readonly, permissions).unwrap();
+    let original = stage.storage.path().to_owned();
+    let mut frozen = stage.freeze(SnapshotLimits::default(), &cancel).unwrap();
+    assert!(frozen.packed.is_some());
+    assert!(
+        !original.exists(),
+        "the unpacked duplicate must retire before subsequent copies"
+    );
+    for index in [599, 0, 300, 1] {
+        let member = path(&format!("files/{index:04}"));
+        let mut bytes = Vec::new();
+        frozen.copy_verified(&member, &mut bytes, &cancel).unwrap();
+        assert_eq!(bytes, format!("member-{index}").as_bytes());
+        let mut probe = [0; 64];
+        assert_eq!(
+            frozen
+                .read_at(&member, bytes.len() as u64, &mut probe)
+                .unwrap(),
+            0
+        );
+        assert_eq!(frozen.read_at(&member, u64::MAX, &mut probe).unwrap(), 0);
+        let count = frozen.read_at(&member, 2, &mut probe).unwrap();
+        assert_eq!(&probe[..count], &bytes[2..]);
+    }
+    let mut empty = Vec::new();
+    frozen
+        .copy_verified(&path("empty"), &mut empty, &cancel)
+        .unwrap();
+    assert!(empty.is_empty());
+    frozen.retire_input(&path("files/0000")).unwrap();
+    assert!(
+        frozen
+            .copy_verified(&path("files/0000"), &mut Vec::new(), &cancel)
+            .is_err()
+    );
+    // Only the test can access the backing writer; consumers receive bounded readers.
+    frozen.packed.as_mut().unwrap().file().rewind().unwrap();
+    frozen
+        .packed
+        .as_mut()
+        .unwrap()
+        .file()
+        .write_all(b"corrupt!")
+        .unwrap();
+    assert!(
+        frozen
+            .copy_verified(&path("files/0001"), &mut Vec::new(), &cancel)
+            .is_ok()
+    );
+    // The first nonempty member starts at zero, even though an empty member sorts before it.
+    let mut affected = MutableStage::empty().unwrap();
+    affected
+        .write(&path("a"), &mut b"first".as_slice(), 5, &cancel)
+        .unwrap();
+    affected
+        .write(&path("b"), &mut b"next".as_slice(), 4, &cancel)
+        .unwrap();
+    let mut affected = affected.freeze(SnapshotLimits::default(), &cancel).unwrap();
+    affected.packed.as_mut().unwrap().file().rewind().unwrap();
+    affected
+        .packed
+        .as_mut()
+        .unwrap()
+        .file()
+        .write_all(b"wrong")
+        .unwrap();
+    assert!(
+        affected
+            .copy_verified(&path("a"), &mut Vec::new(), &cancel)
+            .is_err()
+    );
+    let mut intact = Vec::new();
+    affected
+        .copy_verified(&path("b"), &mut intact, &cancel)
+        .unwrap();
+    assert_eq!(intact, b"next");
+}

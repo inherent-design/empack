@@ -214,7 +214,8 @@ impl MutableStage {
     }
 
     /// Consuming the only writer retires synchronous writes after any owned tool has returned.
-    /// Capture actual inventory and retain opened handles; later copying rechecks their bytes.
+    /// Capture actual inventory and retain private bytes; trees use one packed backing file.
+    /// Later member copying rechecks hashes and cannot read neighbouring packed ranges.
     pub fn freeze(self, limits: SnapshotLimits, cancel: &Cancellation) -> Result<FrozenStage> {
         let mut scopes = Vec::new();
         for entry in self.root.directory.entries()? {
@@ -228,54 +229,117 @@ impl MutableStage {
         }
         let snapshot = self.root.capture(&scopes, limits, cancel)?;
         let mut files = BTreeMap::new();
+        // A whole pack must not require one host descriptor per frozen member.
+        // Single-file leases keep their existing retained object; trees share one private backing.
+        let mut packed = (snapshot
+            .entries()
+            .values()
+            .filter(|entry| matches!(entry, Observation::File(_)))
+            .count()
+            > 1)
+        .then(PrivateFile::new)
+        .transpose()?;
         for (path, observation) in snapshot.entries() {
             if let Observation::File(expected) = observation {
                 let (parent, leaf) = native::parent(&self.root.directory, path)?;
-                let file = native::open_file(&parent, &leaf)?;
+                let mut file = native::open_file(&parent, &leaf)?;
                 ensure!(
                     native::identity(&file)? == expected.object,
                     "Stage object changed while freezing"
                 );
+                let data = if let Some(packed) = &mut packed {
+                    let offset = packed.file().stream_position()?;
+                    let (digest, bytes) =
+                        copy_bounded(&mut file, packed.file(), expected.bytes, cancel)?;
+                    ensure!(
+                        digest == expected.content && bytes == expected.bytes,
+                        "Stage bytes changed while packing"
+                    );
+                    RetainedData::Packed { offset }
+                } else {
+                    RetainedData::Native(file)
+                };
                 files.insert(
                     path.clone(),
                     RetainedFile {
-                        file,
+                        data,
                         observation: expected.clone(),
                     },
                 );
             }
         }
         self.root.revalidate(&snapshot, cancel)?;
+        if let Some(packed) = &mut packed {
+            packed.file().sync_all()?;
+        }
+        drop(self.root);
+        let storage = if packed.is_some() {
+            self.storage.close()?;
+            None
+        } else {
+            Some(self.storage)
+        };
+        #[cfg(windows)]
+        let private_parent = if packed.is_some() {
+            self.private_parent.close()?;
+            None
+        } else {
+            Some(self.private_parent)
+        };
         Ok(FrozenStage {
-            _storage: self.storage,
+            packed,
+            _storage: storage,
             #[cfg(windows)]
-            _private_parent: self.private_parent,
+            _private_parent: private_parent,
             files,
             snapshot,
         })
     }
 }
 
+enum RetainedData {
+    Native(File),
+    Packed { offset: u64 },
+}
 struct RetainedFile {
-    file: File,
+    data: RetainedData,
     observation: FileObservation,
 }
 /// Candidate inventory is evidence for a verifier, not authorization for publication.
 pub struct FrozenStage {
+    packed: Option<PrivateFile>,
     files: BTreeMap<PortableRelPath, RetainedFile>,
     snapshot: NativeSnapshot,
-    _storage: TempDir,
+    _storage: Option<TempDir>,
     #[cfg(windows)]
-    _private_parent: TempDir,
+    _private_parent: Option<TempDir>,
 }
 impl FrozenStage {
-    /// Borrow a retained input for a bounded streaming encoder. No path or writer escapes.
-    pub(super) fn reader(&mut self, path: &PortableRelPath) -> Result<impl Read + '_> {
-        let retained = self.files.get_mut(path).context("Missing frozen input")?;
-        retained.file.rewind()?;
-        Ok((&mut retained.file).take(retained.observation.bytes.saturating_add(1)))
+    fn source(&mut self, path: &PortableRelPath) -> std::io::Result<(&mut File, u64, u64)> {
+        let retained = self.files.get_mut(path).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Retained content is unavailable",
+            )
+        })?;
+        match &mut retained.data {
+            RetainedData::Native(file) => {
+                Ok((file, 0, retained.observation.bytes.saturating_add(1)))
+            }
+            RetainedData::Packed { offset } => Ok((
+                self.packed.as_mut().expect("packed member backing").file(),
+                *offset,
+                retained.observation.bytes,
+            )),
+        }
     }
-    /// Retire an input handle after its verified private copy has been retained elsewhere.
+    /// Borrow exactly one retained member; packed neighbours cannot enter its stream.
+    pub(super) fn reader(&mut self, path: &PortableRelPath) -> Result<impl Read + '_> {
+        let (file, offset, limit) = self.source(path)?;
+        file.seek(SeekFrom::Start(offset))?;
+        Ok(file.take(limit))
+    }
+    /// Retire a member after its verified private copy has been retained elsewhere.
     /// The inventory remains capture evidence; this file is no longer readable from this stage.
     pub(super) fn retire_input(&mut self, path: &PortableRelPath) -> Result<()> {
         self.files
@@ -291,14 +355,18 @@ impl FrozenStage {
         offset: u64,
         buffer: &mut [u8],
     ) -> std::io::Result<usize> {
-        let retained = self.files.get_mut(path).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Retained content is unavailable",
-            )
-        })?;
-        retained.file.seek(SeekFrom::Start(offset))?;
-        retained.file.read(buffer)
+        let (file, start, limit) = self.source(path)?;
+        if offset >= limit {
+            return Ok(0);
+        }
+        let absolute = start
+            .checked_add(offset)
+            .ok_or_else(|| std::io::Error::other("Packed offset overflow"))?;
+        file.seek(SeekFrom::Start(absolute))?;
+        let length = buffer
+            .len()
+            .min(usize::try_from(limit - offset).unwrap_or(usize::MAX));
+        file.read(&mut buffer[..length])
     }
 
     pub fn inventory(&self) -> &BTreeMap<PortableRelPath, Observation> {
@@ -313,19 +381,16 @@ impl FrozenStage {
         output: &mut dyn Write,
         cancel: &Cancellation,
     ) -> Result<()> {
-        let retained = self
+        let expected = self
             .files
-            .get_mut(path)
-            .context("Candidate is not a frozen regular file")?;
-        retained.file.seek(SeekFrom::Start(0))?;
-        let (digest, bytes) = copy_bounded(
-            &mut retained.file,
-            output,
-            retained.observation.bytes,
-            cancel,
-        )?;
+            .get(path)
+            .context("Candidate is not a frozen regular file")?
+            .observation
+            .clone();
+        let mut reader = self.reader(path)?;
+        let (digest, bytes) = copy_bounded(&mut reader, output, expected.bytes, cancel)?;
         ensure!(
-            digest == retained.observation.content && bytes == retained.observation.bytes,
+            digest == expected.content && bytes == expected.bytes,
             "Frozen candidate bytes changed: {}",
             path.as_str()
         );

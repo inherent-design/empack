@@ -9,7 +9,7 @@ use empack_lib::{
         resources::{ResourceGovernor, ResourceRequest},
         runtime::{OperationOutcome, OperationRuntime},
         server_runtime::{
-            ServerLaunch, VanillaServerPlan,
+            VanillaServerPlan,
             installer::{InstallerExecution, InstallerServerPlan},
             library::LibraryServerPlan,
         },
@@ -124,25 +124,21 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
         OperationOutcome::Failed(error) => anyhow::bail!("Runtime operation failed: {error}"),
     };
     let root = tempfile::tempdir()?;
-    for (relative, file) in prepared.files() {
-        let destination = root.path().join(relative.as_str());
-        fs::create_dir_all(destination.parent().unwrap())?;
-        file.content.lease().copy_verified(
-            &mut fs::File::create(destination)?,
-            &Cancellation::default(),
-        )?;
-    }
-    let mut command = std::process::Command::new(java);
-    match prepared.launch() {
-        ServerLaunch::Jar(path) => {
-            command.args(["-jar", path.as_str()]);
-        }
-        ServerLaunch::Arguments { unix, windows } => {
-            let path = if cfg!(windows) { windows } else { unix };
-            command
-                .arg("@user_jvm_args.txt")
-                .arg(format!("@{}", path.as_str()));
-        }
+    package_runtime(prepared, root.path())?;
+    let mut command = if cfg!(windows) {
+        let mut command = std::process::Command::new("cmd.exe");
+        command.args(["/D", "/C", "start.bat"]);
+        command
+    } else {
+        let mut command = std::process::Command::new("bash");
+        command.arg("start.sh");
+        command
+    };
+    if java.is_absolute() {
+        command.env(
+            "JAVA_HOME",
+            java.parent().and_then(std::path::Path::parent).unwrap(),
+        );
     }
     let historical = matches!(game, "1.12.2" | "1.7.10");
     command
@@ -185,6 +181,93 @@ async fn verify_live_runtime(game: &str, loader: Option<(&str, LoaderKind)>) -> 
     }
     Ok(())
 }
+// Exercise the published distribution, not merely loose copies of prepared runtime files.
+fn package_runtime(
+    runtime: &empack_lib::engine::server_runtime::PreparedServerRuntime,
+    destination: &std::path::Path,
+) -> anyhow::Result<()> {
+    use empack_core::{
+        inventory::OptionalPolicy,
+        model::{DistributionArchive, ResolutionLock, ResolvedProject},
+        path::{PathSyntax, PortableRelPath},
+    };
+    use empack_lib::engine::{
+        build::{
+            BuildAcquisitions,
+            server::{ServerOptions, prepare_server_build},
+        },
+        documents::DocumentCodec,
+        project::ProjectReader,
+        publication::{Publisher, RecoveryReader},
+        templates::TemplateOptions,
+    };
+    let project = tempfile::tempdir()?;
+    let host = tempfile::tempdir()?;
+    let codec = DocumentCodec;
+    let mut intent = codec.decode_intent(b"schema: 2\npack: {name: Runtime, version: test}\nruntime: {minecraft: '1.20.1', loader: {kind: vanilla}}\ndistribution: {targets: [server-full], archive: zip}\ndependencies: {}\nlayout: {}\nextensions: {}\n", "runtime-smoke")?.intent().clone();
+    intent.runtime.minecraft = runtime.runtime().minecraft.clone();
+    intent.runtime.loader = runtime.runtime().loader;
+    intent.runtime.loader_version = runtime.runtime().loader_version.clone();
+    let bytes = codec.encode_intent(&intent)?;
+    let revision = codec
+        .decode_intent(&bytes, "runtime-smoke")?
+        .semantic_revision();
+    let resolved = ResolvedProject::validate(
+        intent,
+        ResolutionLock {
+            intent_revision: revision,
+            resolver: "runtime-smoke".into(),
+            dependencies: Default::default(),
+            required_edges: Default::default(),
+            coverage: Default::default(),
+            runtime: runtime.runtime().clone(),
+        },
+        revision,
+    )?;
+    fs::write(project.path().join("empack.yml"), bytes)?;
+    fs::write(
+        project.path().join("empack.lock"),
+        codec.encode_lock(&resolved)?,
+    )?;
+    fs::create_dir_all(project.path().join("pack/config"))?;
+    fs::write(
+        project.path().join("pack/config/runtime-check.txt"),
+        b"current content",
+    )?;
+    let artifact = PortableRelPath::parse("server.zip", PathSyntax::ArtifactName)?;
+    let cancel = Cancellation::default();
+    let captured = ProjectReader::new(RecoveryReader::new(host.path().join("state")))
+        .capture_build(
+            project.path(),
+            std::slice::from_ref(&artifact),
+            SnapshotLimits::default(),
+            &cancel,
+        )?;
+    let build = prepare_server_build(
+        captured,
+        artifact,
+        &BuildAcquisitions::default(),
+        &ServerOptions {
+            archive: DistributionArchive::Zip,
+            optional: OptionalPolicy::Preserve,
+            templates: TemplateOptions::default(),
+            evidence: SourceEvidencePolicy::Compatibility,
+            limits: ArchiveLimits::default(),
+        },
+        runtime,
+        None,
+        &cancel,
+    )?;
+    build.publish(&Publisher::open(&host.path().join("state"))?, &cancel)?;
+    zip::ZipArchive::new(fs::File::open(project.path().join("dist/server.zip"))?)?
+        .extract(destination)?;
+    anyhow::ensure!(
+        fs::read(destination.join("config/runtime-check.txt"))? == b"current content",
+        "Distribution omitted current game content"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "live official HTTP endpoints and Java 17/21; run mise run smoke:runtime"]
 async fn runtime_server_vanilla() {
