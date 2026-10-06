@@ -7,7 +7,7 @@ pub mod loader;
 pub mod session;
 pub mod sync;
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod session_mocks;
 
 pub use cli::{BuildArgs, Cli, CliArchiveFormat, CliConfig, CliLoad, Commands, InitArgs};

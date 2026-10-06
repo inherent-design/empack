@@ -4,34 +4,34 @@ use std::io::{Cursor, Write};
 use tempfile::NamedTempFile;
 
 use super::*;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use crate::application::session_mocks::mock_root;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use crate::application::session::NetworkProvider;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use crate::application::session::FileSystemProvider;
 use crate::empack::config::DependencyEntry;
 use crate::empack::content::{OverrideCategory, OverrideSide, SideEnv, SideRequirement};
 use crate::empack::parsing::ModLoader;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use crate::empack::search::ProjectResolverTrait;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use crate::networking::rate_budget::{
     FixedWindowBudget, HeaderDrivenBudget, HostBudgetRegistry, RateBudget,
 };
 use crate::primitives::ProjectPlatform;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use reqwest::StatusCode;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use reqwest::header::HeaderMap;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use std::sync::atomic::{AtomicU32, Ordering};
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Default)]
 struct RecordingBudget {
     acquire_calls: AtomicU32,
@@ -40,7 +40,7 @@ struct RecordingBudget {
     last_remaining: Mutex<Option<u32>>,
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 impl RateBudget for RecordingBudget {
     fn record_response(&self, headers: &HeaderMap, status: StatusCode) {
         self.record_calls.fetch_add(1, Ordering::Relaxed);
@@ -61,13 +61,13 @@ impl RateBudget for RecordingBudget {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 struct TestNetworkProvider {
     client: reqwest::Client,
     budgets: HostBudgetRegistry,
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 impl TestNetworkProvider {
     fn new() -> Self {
         Self {
@@ -77,7 +77,7 @@ impl TestNetworkProvider {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 impl NetworkProvider for TestNetworkProvider {
     fn http_client(&self) -> Result<reqwest::Client> {
         Ok(self.client.clone())
@@ -96,12 +96,12 @@ impl NetworkProvider for TestNetworkProvider {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 fn registry_with_budget(host: &str, budget: Arc<dyn RateBudget>) -> HostBudgetRegistry {
     HostBudgetRegistry::with_budgets(HashMap::from([(host.to_string(), budget)]))
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 fn test_api_bases(modrinth: &str, curseforge: &str) -> ResolveApiBases {
     ResolveApiBases {
         modrinth: modrinth.to_string(),
@@ -109,7 +109,7 @@ fn test_api_bases(modrinth: &str, curseforge: &str) -> ResolveApiBases {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 fn modrinth_pref(project_id: &str) -> PlatformRef {
     PlatformRef {
         destination_path: format!("mods/{project_id}.jar"),
@@ -130,7 +130,7 @@ fn modrinth_pref(project_id: &str) -> PlatformRef {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 fn curseforge_pref(project_id: &str, file_id: Option<&str>) -> PlatformRef {
     PlatformRef {
         destination_path: format!("mods/{project_id}.jar"),
@@ -151,7 +151,7 @@ fn curseforge_pref(project_id: &str, file_id: Option<&str>) -> PlatformRef {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 fn manifest_with_content(content: Vec<ContentEntry>) -> ModpackManifest {
     ModpackManifest {
         identity: PackIdentity {
@@ -172,7 +172,7 @@ fn manifest_with_content(content: Vec<ContentEntry>) -> ModpackManifest {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 fn offline_modrinth_pref(destination_path: &str) -> PlatformRef {
     let mut pref = modrinth_pref("AANobbMI");
     pref.destination_path = destination_path.to_string();
@@ -186,7 +186,7 @@ fn offline_modrinth_pref(destination_path: &str) -> PlatformRef {
     pref
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 fn offline_curseforge_datapack_pref(destination_path: &str) -> PlatformRef {
     let mut pref = curseforge_pref("12345", Some("67890"));
     pref.destination_path = destination_path.to_string();
@@ -1422,7 +1422,7 @@ fn test_classify_override_options_variants() {
     assert_eq!(classify_override("optionsshaders.txt"), OverrideCategory::Other);
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_modrinth_project_records_headers_and_metadata() {
     let mut server = mockito::Server::new_async().await;
@@ -1486,7 +1486,7 @@ async fn test_resolve_modrinth_project_records_headers_and_metadata() {
     project_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_modrinth_project_uses_cdn_version_id_without_hash_lookup() {
     let mut server = mockito::Server::new_async().await;
@@ -1534,7 +1534,7 @@ async fn test_resolve_modrinth_project_uses_cdn_version_id_without_hash_lookup()
     project_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_curseforge_file_ids_records_budget_and_maps_results() {
     let mut server = mockito::Server::new_async().await;
@@ -1574,7 +1574,7 @@ async fn test_resolve_curseforge_file_ids_records_budget_and_maps_results() {
     batch_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_manifest_shares_curseforge_budget_across_file_lookup_and_project_lookup() {
     let mut server = mockito::Server::new_async().await;
@@ -1634,7 +1634,7 @@ async fn test_resolve_manifest_shares_curseforge_budget_across_file_lookup_and_p
     project_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_manifest_concurrent_modrinth_requests_share_budget_without_429s() {
     let mut server = mockito::Server::new_async().await;
@@ -1847,7 +1847,7 @@ fn test_parse_modrinth_mrpack_defaults_and_side_override_dirs() {
     }));
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_curseforge_file_ids_missing_api_key_returns_empty_map() {
     let provider = TestNetworkProvider::new();
@@ -1862,7 +1862,7 @@ async fn test_resolve_curseforge_file_ids_missing_api_key_returns_empty_map() {
         .any(|warning| warning.contains("missing; cannot resolve file IDs")));
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_curseforge_file_ids_batch_failure_warns() {
     let mut server = mockito::Server::new_async().await;
@@ -1895,7 +1895,7 @@ async fn test_resolve_curseforge_file_ids_batch_failure_warns() {
     batch_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_curseforge_project_missing_api_key_warns() {
     let mut pref = curseforge_pref("12345", Some("67890"));
@@ -1910,7 +1910,7 @@ async fn test_resolve_curseforge_project_missing_api_key_warns() {
         .any(|warning| warning.contains("CurseForge API key missing")));
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_resolve_manifest_recovers_from_panics_and_passthrough_warnings() {
     let skip = {
@@ -1988,7 +1988,7 @@ async fn test_resolve_manifest_recovers_from_panics_and_passthrough_warnings() {
     ));
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_add_platform_ref_modrinth_offline_args() {
     let session = crate::application::session_mocks::MockCommandSession::new();
@@ -2039,7 +2039,7 @@ async fn test_add_platform_ref_modrinth_offline_args() {
     );
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_execute_import_uses_url_derived_modrinth_version_id_for_packwiz_add() {
     let target_dir = mock_root().join("execute-import-modrinth-version-id");
@@ -2145,7 +2145,7 @@ async fn test_execute_import_uses_url_derived_modrinth_version_id_for_packwiz_ad
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_provider_install_refuses_unverified_url_fallback() {
     let session = crate::application::session_mocks::MockCommandSession::new();
@@ -2167,7 +2167,7 @@ async fn test_provider_install_refuses_unverified_url_fallback() {
 
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_add_platform_ref_curseforge_datapack_meta_folder() {
     let session = crate::application::session_mocks::MockCommandSession::new();
@@ -2221,7 +2221,7 @@ async fn test_add_platform_ref_curseforge_datapack_meta_folder() {
     );
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn test_add_platform_ref_retry_exhaustion() {
     let pref = offline_modrinth_pref("mods/sodium.jar");
@@ -2309,7 +2309,7 @@ fn archive_input_limit_precedes_zip_parsing_or_allocation() {
 }
 
 #[test]
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 fn override_fallback_requires_destination_and_environment_coverage() {
     let mut reference = modrinth_pref("example");
     let mut overrides = vec![make_override("config/example.jar")];
@@ -2355,7 +2355,7 @@ fn downloadable_world_import_preserves_type_through_manifest_serialization() {
     assert!(yaml.contains("type: world"));
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn nonportable_override_is_rejected_before_project_or_backend_changes() {
     use crate::application::session_mocks::MockCommandSession;
@@ -2379,7 +2379,7 @@ async fn nonportable_override_is_rejected_before_project_or_backend_changes() {
     assert!(session.process_provider.get_calls_for_command(crate::empack::packwiz::PACKWIZ_BIN).is_empty());
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn malformed_provider_identity_is_rejected_before_import_mutation() {
     use crate::application::session_mocks::MockCommandSession;
@@ -2398,7 +2398,7 @@ async fn malformed_provider_identity_is_rejected_before_import_mutation() {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn modrinth_version_names_resolve_sha512_only_pins() {
     let mut server = mockito::Server::new_async().await;
@@ -2417,7 +2417,7 @@ async fn modrinth_version_names_resolve_sha512_only_pins() {
     project.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 #[tokio::test]
 async fn unresolved_downloaded_version_preserves_verified_url_intent() {
     use crate::application::session_mocks::MockCommandSession;

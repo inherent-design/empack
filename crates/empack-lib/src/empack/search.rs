@@ -200,7 +200,7 @@ impl ProjectResolver {
     }
 
     /// Create new resolver with custom base URLs (for testing)
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn new_with_base_urls(
         client: Client,
         curseforge_api_key: Option<String>,
@@ -220,7 +220,7 @@ impl ProjectResolver {
     }
 
     /// Create new resolver with custom base URLs and networking (for testing)
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn new_with_base_urls_and_networking(
         client: Client,
         curseforge_api_key: Option<String>,

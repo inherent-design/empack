@@ -13,6 +13,15 @@ mise run smoke
 mise run e2e:strict
 ```
 
+The library unit suite also runs without `test-utils`:
+
+```bash
+cargo nextest run -p empack-lib --lib --no-default-features
+```
+
+PR lint checks this configuration separately. Workspace feature unification must
+not hide dependencies on helpers needed by ordinary unit tests.
+
 Strict E2E requires the managed or configured packwiz backend, Java, network
 access and provider credentials required by the selected fixtures. Missing
 prerequisites fail strict execution. Never store credentials in test reports.

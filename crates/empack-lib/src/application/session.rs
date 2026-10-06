@@ -533,9 +533,9 @@ pub struct LiveNetworkProvider {
     cache: Arc<HttpCache>,
     rate_limiter: Arc<RateLimiterManager>,
     rate_budgets: Arc<HostBudgetRegistry>,
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     modrinth_base_url: Option<String>,
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     curseforge_base_url: Option<String>,
 }
 
@@ -557,9 +557,9 @@ impl LiveNetworkProvider {
             cache: Arc::new(HttpCache::new(cache_dir)),
             rate_limiter: Arc::new(RateLimiterManager::new_with_budgets(client, &rate_budgets)),
             rate_budgets,
-            #[cfg(feature = "test-utils")]
+            #[cfg(any(test, feature = "test-utils"))]
             modrinth_base_url: None,
-            #[cfg(feature = "test-utils")]
+            #[cfg(any(test, feature = "test-utils"))]
             curseforge_base_url: None,
         }
     }
@@ -576,7 +576,7 @@ impl LiveNetworkProvider {
         provider
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn new_for_test(
         modrinth_base_url: Option<String>,
         curseforge_base_url: Option<String>,
@@ -618,7 +618,7 @@ impl NetworkProvider for LiveNetworkProvider {
         client: Client,
         curseforge_api_key: Option<String>,
     ) -> Box<dyn ProjectResolverTrait + Send + Sync> {
-        #[cfg(feature = "test-utils")]
+        #[cfg(any(test, feature = "test-utils"))]
         {
             Box::new(ProjectResolver::new_with_base_urls_and_networking(
                 client,
@@ -630,7 +630,7 @@ impl NetworkProvider for LiveNetworkProvider {
             ))
         }
 
-        #[cfg(not(feature = "test-utils"))]
+        #[cfg(not(any(test, feature = "test-utils")))]
         {
             Box::new(ProjectResolver::with_networking(
                 client,
@@ -1155,7 +1155,7 @@ where
     I: InteractiveProvider,
     A: ArchiveProvider,
 {
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn new_with_providers_and_archive(
         filesystem_provider: F,
         network_provider: N,
@@ -1220,7 +1220,7 @@ where
     C: ConfigProvider,
     I: InteractiveProvider,
 {
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     pub fn new_with_providers(
         filesystem_provider: F,
         network_provider: N,
@@ -1934,7 +1934,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     #[test]
     fn live_network_provider_exposes_client_budget_and_resolver() {
         let default_provider = LiveNetworkProvider::default();
@@ -2181,7 +2181,7 @@ mod tests {
         assert_eq!(session.packwiz_bin(), command.to_string_lossy());
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     #[test]
     fn command_session_new_with_providers_wires_packwiz_and_interactive_defaults() {
         let session = CommandSession::new_with_providers_and_archive(
@@ -2209,7 +2209,7 @@ mod tests {
         assert!(!session.config().app_config().yes);
     }
 
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     #[test]
     fn command_session_accessors_and_state_are_structured() {
         let temp = TempDir::new().expect("temp dir");

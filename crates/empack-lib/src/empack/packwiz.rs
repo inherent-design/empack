@@ -653,7 +653,7 @@ pub fn get_packwiz_version(
 /// - `run_packwiz_refresh` verifies pack.toml exists
 /// - `get_installed_mods` returns a configured mock mod set
 /// - JAR cache paths return test-appropriate paths
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 pub struct MockPackwizOps {
     pub installed_mods: HashSet<String>,
     pub filesystem: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<PathBuf, String>>>,
@@ -661,7 +661,7 @@ pub struct MockPackwizOps {
     pub fail_init: bool,
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 impl MockPackwizOps {
     pub fn new() -> Self {
         Self {
@@ -699,7 +699,7 @@ impl MockPackwizOps {
     }
 }
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 impl Default for MockPackwizOps {
     fn default() -> Self {
         Self::new()
@@ -707,7 +707,7 @@ impl Default for MockPackwizOps {
 }
 
 /// Default index.toml template for packwiz mock init
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 const MOCK_DEFAULT_INDEX_TOML: &str = r#"hash-format = "sha256"
 
 [[files]]
@@ -715,7 +715,7 @@ file = "pack.toml"
 hash = ""
 "#;
 
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 impl PackwizOps for MockPackwizOps {
     fn run_packwiz_init(
         &self,

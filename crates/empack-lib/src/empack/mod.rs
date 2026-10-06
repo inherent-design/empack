@@ -31,7 +31,7 @@ pub use import::{
     RuntimeTarget, SourceKind, classify_override, detect_local_source, parse_curseforge_zip,
     parse_modrinth_mrpack, prepare_import, resolve_manifest,
 };
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 pub use packwiz::MockPackwizOps;
 pub use packwiz::{
     InstallResult, PackwizError, PackwizInstaller, PackwizMetadata, PackwizOps, RestrictedModInfo,

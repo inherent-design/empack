@@ -1,25 +1,15 @@
 use super::*;
 
-#[cfg(feature = "test-utils")]
 use crate::networking::cache::HttpCache;
-#[cfg(feature = "test-utils")]
 use crate::networking::rate_budget::{HeaderDrivenBudget, HostBudgetRegistry, RateBudget};
-#[cfg(feature = "test-utils")]
 use crate::networking::rate_limit::RateLimiterManager;
-#[cfg(feature = "test-utils")]
 use reqwest::StatusCode;
-#[cfg(feature = "test-utils")]
 use reqwest::header::HeaderMap;
-#[cfg(feature = "test-utils")]
 use std::collections::HashMap;
-#[cfg(feature = "test-utils")]
 use std::sync::atomic::{AtomicU32, Ordering};
-#[cfg(feature = "test-utils")]
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "test-utils")]
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "test-utils")]
 #[derive(Default)]
 struct RecordingBudget {
     acquire_calls: AtomicU32,
@@ -28,7 +18,6 @@ struct RecordingBudget {
     last_remaining: Mutex<Option<u32>>,
 }
 
-#[cfg(feature = "test-utils")]
 impl RateBudget for RecordingBudget {
     fn record_response(&self, headers: &HeaderMap, status: StatusCode) {
         self.record_calls.fetch_add(1, Ordering::Relaxed);
@@ -49,7 +38,6 @@ impl RateBudget for RecordingBudget {
     }
 }
 
-#[cfg(feature = "test-utils")]
 fn registry_with_budget(host: &str, budget: Arc<dyn RateBudget>) -> HostBudgetRegistry {
     HostBudgetRegistry::with_budgets(HashMap::from([(host.to_string(), budget)]))
 }
@@ -131,7 +119,6 @@ fn curseforge_empty_json() -> String {
     serde_json::json!({ "data": [] }).to_string()
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_platform_priority_default_modrinth_first() {
     // Default (preferred_platform=None): Modrinth is tried first.
@@ -174,7 +161,6 @@ async fn test_platform_priority_default_modrinth_first() {
     cf_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_platform_priority_preferred_curseforge_first() {
     // preferred_platform=CurseForge: CurseForge is tried first.
@@ -221,7 +207,6 @@ async fn test_platform_priority_preferred_curseforge_first() {
     cf_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_platform_priority_preferred_curseforge_falls_back_to_modrinth() {
     let mut mr_server = mockito::Server::new_async().await;
@@ -265,7 +250,6 @@ async fn test_platform_priority_preferred_curseforge_falls_back_to_modrinth() {
     cf_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_platform_priority_first_fails_second_succeeds() {
     // Default order: Modrinth first → returns NoResults → falls back to CurseForge
@@ -302,7 +286,6 @@ async fn test_platform_priority_first_fails_second_succeeds() {
     assert_eq!(result.project_id, "99");
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_platform_priority_both_fail_returns_no_results() {
     // Both platforms return empty → final NoResults error
@@ -343,7 +326,6 @@ async fn test_platform_priority_both_fail_returns_no_results() {
 
 // ===== TIERED SEARCH FALLBACK TESTS =====
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_tiered_search_first_tier_mod_succeeds() {
     // project_type=None: tries mod first → succeeds → stops
@@ -375,7 +357,6 @@ async fn test_tiered_search_first_tier_mod_succeeds() {
     mr_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_tiered_search_first_fails_second_succeeds() {
     // project_type=None: mod tier → empty → resourcepack tier → success
@@ -412,7 +393,6 @@ async fn test_tiered_search_first_fails_second_succeeds() {
     assert_eq!(result.project_type, "resourcepack");
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_tiered_search_third_tier_shader_succeeds() {
     // mod → empty, resourcepack → empty, shader → success
@@ -455,7 +435,6 @@ async fn test_tiered_search_third_tier_shader_succeeds() {
     assert_eq!(result.project_type, "shader");
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_tiered_search_all_tiers_fail() {
     // All four tiers return empty → NoResults error with original query
@@ -488,7 +467,6 @@ async fn test_tiered_search_all_tiers_fail() {
 
 // ===== ERROR PROPAGATION TESTS =====
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_error_propagation_network_error_stops_immediately() {
     // NetworkError on first platform → propagates, second platform NOT tried
@@ -529,7 +507,6 @@ async fn test_error_propagation_network_error_stops_immediately() {
     cf_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_error_propagation_network_error_in_tiered_search() {
     // During tiered search: mod tier → NetworkError → propagates immediately,
@@ -563,7 +540,6 @@ async fn test_error_propagation_network_error_in_tiered_search() {
     mr_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_error_propagation_missing_api_key_swallowed() {
     // MissingApiKey is treated as recoverable in try_platform_search (Ok(None)),
@@ -600,7 +576,6 @@ async fn test_error_propagation_missing_api_key_swallowed() {
     );
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_error_propagation_no_results_swallowed_second_platform_succeeds() {
     // Modrinth → NoResults (empty hits) → swallowed, falls to CurseForge → success
@@ -637,7 +612,6 @@ async fn test_error_propagation_no_results_swallowed_second_platform_succeeds() 
     assert_eq!(result.project_id, "777");
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_error_propagation_low_confidence_swallowed_next_tier_succeeds() {
     // Tiered search: mod tier → low confidence result (swallowed) → resourcepack tier → success.
@@ -678,7 +652,6 @@ async fn test_error_propagation_low_confidence_swallowed_next_tier_succeeds() {
 
 // ===== CACHE INTEGRATION TESTS =====
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_cache_miss_makes_network_call() {
     use crate::networking::cache::HttpCache;
@@ -727,7 +700,6 @@ async fn test_cache_miss_makes_network_call() {
     assert!(!cache.is_empty().await);
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_cache_hit_skips_network_call() {
     use crate::networking::cache::HttpCache;
@@ -780,7 +752,6 @@ async fn test_cache_hit_skips_network_call() {
     mr_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_rate_limiter_retries_on_429() {
     use crate::networking::cache::HttpCache;
@@ -917,7 +888,6 @@ fn test_score_results_ranks_by_confidence_descending() {
     assert!(ranked[1].confidence >= ranked[2].confidence);
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_resolve_picks_best_from_multiple_results() {
     // Modrinth returns 3 results; the second is an exact match.
@@ -951,7 +921,6 @@ async fn test_resolve_picks_best_from_multiple_results() {
     assert_eq!(result.confidence, 100);
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_resolve_auto_selects_high_confidence() {
     // Single result at >=90% confidence → auto-selected without needing candidates
@@ -980,7 +949,6 @@ async fn test_resolve_auto_selects_high_confidence() {
     assert_eq!(result.project_id, "AUTO1");
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_search_candidates_returns_ranked_list() {
     // Both platforms return results; search_candidates merges and ranks them
@@ -1029,7 +997,6 @@ async fn test_search_candidates_returns_ranked_list() {
     }
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_search_candidates_filters_below_min_confidence() {
     // Only results above min_confidence threshold should be returned
@@ -1065,7 +1032,6 @@ async fn test_search_candidates_filters_below_min_confidence() {
     assert!(!candidates.iter().any(|c| c.project_id == "BAD1"));
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_search_candidates_all_below_threshold_returns_error() {
     // When all results are below min_confidence, return LowConfidence error
@@ -1099,7 +1065,6 @@ async fn test_search_candidates_all_below_threshold_returns_error() {
     );
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_search_candidates_respects_preferred_platform() {
     // With preferred_platform=CurseForge, CurseForge results should be searched first
@@ -1140,7 +1105,6 @@ async fn test_search_candidates_respects_preferred_platform() {
     assert!(candidates.iter().any(|c| c.platform == ProjectPlatform::CurseForge));
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_search_candidates_network_error_propagates() {
     // Network errors should propagate even in search_candidates
@@ -1194,7 +1158,6 @@ fn modrinth_hit_with_categories_json(
     .to_string()
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_phase2_detects_incompatible_project() {
     let mut mr_server = mockito::Server::new_async().await;
@@ -1263,7 +1226,6 @@ async fn test_phase2_detects_incompatible_project() {
     }
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_phase2_returns_no_results_when_unfaceted_also_empty() {
     let mut mr_server = mockito::Server::new_async().await;
@@ -1303,7 +1265,6 @@ async fn test_phase2_returns_no_results_when_unfaceted_also_empty() {
     );
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_phase2_skips_when_no_filters_applied() {
     let mut mr_server = mockito::Server::new_async().await;
@@ -1341,7 +1302,6 @@ async fn test_phase2_skips_when_no_filters_applied() {
     mr_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_phase2_incompatible_propagates_through_platform_search() {
     let mut mr_server = mockito::Server::new_async().await;
@@ -1431,7 +1391,6 @@ fn test_extract_loaders_empty_on_no_loaders() {
     assert!(loaders.is_empty());
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_search_rate_limiter_records_headers_into_shared_budget() {
     let mut mr_server = mockito::Server::new_async().await;
@@ -1473,7 +1432,6 @@ async fn test_search_rate_limiter_records_headers_into_shared_budget() {
     mr_mock.assert_async().await;
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn test_search_shared_budget_applies_low_remaining_delay_to_next_request() {
     let mut mr_server = mockito::Server::new_async().await;
@@ -1546,7 +1504,6 @@ async fn exact_selector_canonicalizes_identity_and_rejects_foreign_pin() {
     assert!(error.to_string().contains("does not belong"));
 }
 
-#[cfg(feature = "test-utils")]
 #[tokio::test]
 async fn world_search_uses_curseforge_without_a_modrinth_request() {
     let mut mr = mockito::Server::new_async().await;

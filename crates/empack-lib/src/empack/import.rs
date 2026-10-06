@@ -883,7 +883,7 @@ async fn resolve_platform_ref_with_client(
     curseforge_api_key: Option<&str>,
     warnings: &mut Vec<String>,
 ) {
-    #[cfg(feature = "test-utils")]
+    #[cfg(any(test, feature = "test-utils"))]
     if pref.project_id == "__panic__" {
         panic!("forced resolve task panic for test coverage");
     }
@@ -1704,9 +1704,9 @@ enum AddRefResult {
 }
 
 const MAX_ADD_RETRIES: u32 = 5;
-#[cfg(feature = "test-utils")]
+#[cfg(any(test, feature = "test-utils"))]
 const RETRY_BASE_DELAY_SECS: u64 = 0;
-#[cfg(not(feature = "test-utils"))]
+#[cfg(not(any(test, feature = "test-utils")))]
 const RETRY_BASE_DELAY_SECS: u64 = 5;
 
 /// Wrap [`add_platform_ref`] with exponential backoff retries.
