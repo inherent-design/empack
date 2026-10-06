@@ -12,10 +12,13 @@ use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::{ContentId, DigestAlgorithm},
     files::{FileContent, FilePermissions},
-    inventory::{BuildInventory, ContentOwner, InventoryInput, OptionalPolicy, Representation},
+    inventory::{
+        BuildInventory, ContentOwner, DownloadOrigins, InventoryInput, OptionalPolicy,
+        Representation,
+    },
     model::{
-        AcquisitionSpec, ContentLayer, DependencyKey, DistributionArchive, FileSlot, LoaderKind,
-        NonEmpty, ResolutionLock, ResolvedProject,
+        AcquisitionSpec, ContentLayer, DependencyKey, DistributionArchive, ExpectedContent,
+        FileSlot, LoaderKind, NonEmpty, ResolutionLock, ResolvedProject,
     },
     path::{InstallDestination, PathSyntax, PortableRelPath},
     projection::BuildTarget,
@@ -167,9 +170,12 @@ impl MrpackPlan {
                         .or(file.expected.size)
                         .context("Mrpack reference requires an exact byte length")?;
                     Representation::Download {
-                        digests: digests.clone(),
-                        bytes,
-                        urls: NonEmpty::new(urls)?,
+                        expected: ExpectedContent {
+                            digests: Some(digests.clone()),
+                            size: Some(bytes),
+                            accepted_observation: file.expected.accepted_observation.clone(),
+                        },
+                        allowed: DownloadOrigins::Urls(NonEmpty::new(urls)?),
                     }
                 } else {
                     let acquired = acquired.with_context(|| {
@@ -318,11 +324,25 @@ impl MrpackPlan {
                 Representation::Unacquired { .. } => {
                     anyhow::bail!("Mrpack inventory contains unacquired content")
                 }
-                Representation::Download {
-                    digests,
-                    bytes,
-                    urls,
-                } => {
+                Representation::Download { expected, allowed } => {
+                    let DownloadOrigins::Urls(urls) = allowed else {
+                        anyhow::bail!("Mrpack needs direct URL references")
+                    };
+                    let digests = expected
+                        .digests
+                        .as_ref()
+                        .context("Mrpack needs reference digests")?;
+                    let bytes = expected.size.context("Mrpack needs exact reference size")?;
+                    for algorithm in [DigestAlgorithm::Sha1, DigestAlgorithm::Sha512] {
+                        ensure!(
+                            digests
+                                .values()
+                                .iter()
+                                .any(|digest| digest.algorithm() == algorithm),
+                            "Mrpack reference is missing {}",
+                            algorithm.name()
+                        );
+                    }
                     reference_paths.insert_file(entry.destination.relative())?;
                     let mut hashes = BTreeMap::new();
                     for digest in digests.values() {

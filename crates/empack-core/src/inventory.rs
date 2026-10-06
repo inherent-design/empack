@@ -1,8 +1,8 @@
 //! Independent expected build content, including environment precedence and optional choices.
 use crate::{
-    digest::{ContentId, DigestSet},
+    digest::ContentId,
     files::FilePermissions,
-    model::{ContentLayer, DependencyKey, ExpectedContent, FileSlot, NonEmpty},
+    model::{ContentLayer, DependencyKey, ExpectedContent, FileSlot, NonEmpty, ResolvedPin},
     path::InstallDestination,
     projection::BuildTarget,
     requirements::{OptionalChoice, Requirement, Requirements},
@@ -47,14 +47,25 @@ pub enum Representation {
         /// Output attributes, independent of host filesystem capabilities.
         permissions: FilePermissions,
     },
-    /// A reference format must retain the exact byte assertions and approved locators.
+    /// A reference format must retain exact byte assertions and approved origins.
     Download {
-        /// Expected source/output hashes.
-        digests: DigestSet,
-        /// Exact reference byte length.
-        bytes: u64,
-        /// Allowed download alternatives in preference order.
-        urls: NonEmpty<String>,
+        /// Byte assertions; unknown size is not a fabricated zero-length file.
+        expected: ExpectedContent,
+        /// Exact provider selection or allowed URL alternatives.
+        allowed: DownloadOrigins,
+    },
+}
+/// Locator meaning is independent of an output format's representation constraints.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadOrigins {
+    /// Stable download alternatives in preference order.
+    Urls(NonEmpty<String>),
+    /// An exact provider file, including its role within a multi-file selection.
+    Provider {
+        /// Provider-qualified project and version/file selection.
+        pin: ResolvedPin,
+        /// Exact selected file role.
+        slot: FileSlot,
     },
 }
 /// One input obligation before target/environment projection.
@@ -141,6 +152,8 @@ pub enum InventoryError {
     InvalidEnvironment(String),
     /// A full distribution needs acquired bytes instead of a download-only reference.
     MaterializationRequired(String),
+    /// A reference lacks byte evidence or a valid provider selection.
+    InvalidReference(String),
     /// Reference output must preserve optional semantics instead of baking in local selections.
     ReferenceChoicesMustBePreserved,
     /// A flat selectable override would erase its common-layer fallback.
@@ -165,6 +178,9 @@ impl fmt::Display for InventoryError {
                 f,
                 "Optional side override needs a selection before flattening: {path}"
             ),
+            Self::InvalidReference(path) => {
+                write!(f, "Reference needs exact byte evidence and origin: {path}")
+            }
             Self::ReferenceChoicesMustBePreserved => {
                 f.write_str("Mrpack output preserves optional choices")
             }
@@ -351,6 +367,19 @@ impl BuildSelection {
             BuildTarget::ClientFull | BuildTarget::ServerFull
         );
         for entry in &self.0.entries {
+            if let Representation::Download { expected, allowed } = &entry.representation {
+                let invalid_origin = match allowed {
+                    DownloadOrigins::Provider { pin, .. } => pin.validate().is_err(),
+                    DownloadOrigins::Urls(urls) => urls.as_slice().iter().any(|url| url.is_empty()),
+                };
+                if (expected.digests.is_none() && expected.accepted_observation.is_none())
+                    || invalid_origin
+                {
+                    return Err(InventoryError::InvalidReference(
+                        entry.destination.relative().as_str().into(),
+                    ));
+                }
+            }
             if matches!(entry.representation, Representation::Unacquired { .. })
                 || (full && matches!(entry.representation, Representation::Download { .. }))
             {

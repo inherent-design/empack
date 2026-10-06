@@ -2,7 +2,7 @@ use empack_core::{
     digest::{ContentId, DigestSet},
     files::FilePermissions,
     inventory::*,
-    model::{ContentLayer, NonEmpty},
+    model::{ContentLayer, ExpectedContent, NonEmpty},
     path::InstallDestination,
     projection::BuildTarget,
     requirements::*,
@@ -115,9 +115,14 @@ fn optionality_needs_explicit_full_policy_and_preserves_bootstrap_choices() {
 fn reference_presence_never_satisfies_full_bytes_and_replaced_content_is_recorded() {
     let mut reference = input(ContentLayer::Common, "mods/a.jar", 1);
     reference.representation = Representation::Download {
-        digests: DigestSet::parse([("md5", "321c3cf486ed509164edec1e1981fec8")]).unwrap(),
-        bytes: 7,
-        urls: NonEmpty::new(vec!["https://example.com/a.jar".into()]).unwrap(),
+        expected: ExpectedContent {
+            digests: Some(DigestSet::parse([("md5", "321c3cf486ed509164edec1e1981fec8")]).unwrap()),
+            size: Some(7),
+            accepted_observation: None,
+        },
+        allowed: DownloadOrigins::Urls(
+            NonEmpty::new(vec!["https://example.com/a.jar".into()]).unwrap(),
+        ),
     };
     assert!(matches!(
         BuildInventory::project(
@@ -246,4 +251,69 @@ fn selection_can_defer_bytes_but_completed_inventory_cannot() {
     .unwrap();
     assert_eq!(complete.entries().len(), 1);
     assert_eq!(complete.precedence().len(), 1);
+}
+
+#[test]
+fn provider_references_preserve_unknown_size_and_require_real_byte_evidence() {
+    use empack_core::{
+        identity::*,
+        model::{FileSlot, ResolvedPin},
+    };
+    let mut reference = input(ContentLayer::Common, "mods/a.jar", 1);
+    let pin = ResolvedPin {
+        project: ProviderProjectId::CurseForge(CurseForgeProjectId::parse("123").unwrap()),
+        selection: PinSelector::CurseForgeFile(CurseForgeFileId::parse("456").unwrap()),
+    };
+    reference.representation = Representation::Download {
+        expected: ExpectedContent {
+            digests: Some(DigestSet::parse([("md5", "321c3cf486ed509164edec1e1981fec8")]).unwrap()),
+            size: None,
+            accepted_observation: None,
+        },
+        allowed: DownloadOrigins::Provider {
+            pin,
+            slot: FileSlot::parse("primary").unwrap(),
+        },
+    };
+    let planned = BuildInventory::project(
+        &[reference.clone()],
+        BuildTarget::Server,
+        &OptionalPolicy::Preserve,
+    )
+    .unwrap();
+    assert_eq!(
+        planned.entries()[0].representation,
+        reference.representation
+    );
+    assert!(matches!(
+        BuildInventory::project(
+            &[reference.clone()],
+            BuildTarget::ServerFull,
+            &OptionalPolicy::Preserve
+        ),
+        Err(InventoryError::MaterializationRequired(_))
+    ));
+    if let Representation::Download { expected, .. } = &mut reference.representation {
+        expected.digests = None;
+    }
+    assert!(matches!(
+        BuildInventory::project(
+            &[reference.clone()],
+            BuildTarget::Server,
+            &OptionalPolicy::Preserve
+        ),
+        Err(InventoryError::InvalidReference(_))
+    ));
+    if let Representation::Download {
+        expected,
+        allowed: DownloadOrigins::Provider { pin, .. },
+    } = &mut reference.representation
+    {
+        expected.accepted_observation = Some(ContentId::from_sha256([1; 32]));
+        pin.selection = PinSelector::ModrinthVersion(ModrinthVersionId::parse("abcdefgh").unwrap());
+    }
+    assert!(matches!(
+        BuildInventory::project(&[reference], BuildTarget::Server, &OptionalPolicy::Preserve),
+        Err(InventoryError::InvalidReference(_))
+    ));
 }

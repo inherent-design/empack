@@ -109,9 +109,12 @@ impl ObservedFile {
                     && crate::engine::documents::validate_download_url(&url).is_ok() =>
             {
                 Representation::Download {
-                    digests: acquired.content.observed_digests().clone(),
-                    bytes: lease.len(),
-                    urls: NonEmpty::new(vec![url])?,
+                    expected: ExpectedContent {
+                        digests: Some(acquired.content.observed_digests().clone()),
+                        size: Some(lease.len()),
+                        accepted_observation: Some(lease.id()),
+                    },
+                    allowed: DownloadOrigins::Urls(NonEmpty::new(vec![url])?),
                 }
             }
             _ => Representation::Embedded {

@@ -76,6 +76,13 @@ This lets a disabled optional replacement retain its common fallback without fir
 requiring the replacement's bytes. Missing work remains identified by the exact
 locked file slot or observed backend metadata path.
 
+Download origins distinguish stable URL alternatives from an exact provider pin and
+file slot. Unknown size remains unknown; it never becomes a zero-byte assertion.
+Completed references require real digest or accepted-observation evidence. Each
+format then applies its own constraints: mrpack needs direct URLs, exact length,
+SHA-1 and SHA-512, while packwiz can express an exact CurseForge metadata reference.
+Full targets still require acquired bytes.
+
 Every included item in the completed inventory has an expected representation. Required provider files, unknown URL content, local files, embedded overrides, side-specific replacements, templates, runtime assets, and deliberately preserved observed content are accounted for. The inventory, not dependency source kind, decides verification.
 
 If exact hashes are unavailable for a required downloadable reference, acquire and verify sufficient evidence or stop for input; do not mark an unknown expectation satisfied. `RuntimeGenerated` obligations are discharged after the responsible runtime step, recording observed content and its semantic checks before final inventory verification.
