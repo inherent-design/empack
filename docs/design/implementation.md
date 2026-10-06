@@ -427,9 +427,25 @@ pins and graph evidence. It is a distinct outcome, not successful content deleti
 encodes coherent intent/lock documents. Unknown or repeated selections fail the entire
 request. A stale lock cannot establish removability, and the original raw intent
 revision remains a publication precondition. These values establish semantic coherence;
-native ownership, staging, publication and Engine request wiring remain to be composed.
+native ownership and publication require the separate preparation described below.
 Seven regressions cover batch errors, cycles, evidence gaps, demotion, unrequested
 retention and stale documents.
+
+`ProjectReader::capture_mutation` produces a distinct `MutationSnapshot`: locked
+placements remain visible through ignore rules, while templates, artifacts and
+external acquisition paths grant no deletion authority. `prepare_removal` checks
+existing payloads against original lock evidence, rejects directory targets, and
+binds derivative metadata by exact selection, destination, requirements and digest.
+Manifest labels never become backend filenames. Unlisted files remain untouched.
+
+The candidate contains updated intent/lock documents, exact file removals and, when
+present, an updated backend index and its pack-document digest. Existing index
+content must match its declaration; portable aliases cannot leave a stale reference
+to removed content. Private staging and scoped file verification feed the shared
+recoverable publisher. Root demotion publishes documents only. Concurrent document
+or payload edits invalidate the entire plan. This lower-level composition is tested
+on real filesystems; shared Engine request/admission wiring and user selector
+resolution remain implementation work.
 
 ## Existing command guarantees
 
@@ -452,7 +468,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
-| Creation review 73 | The unrelated-template byte-limit regression reproduced before correction. All 45 affected initialization, snapshot, source and publication checks pass, including real process-crash recovery. Filtering is retained in recovery observations. Native Windows default tests at `bcbd8e5` have passed the relative-rename correction; the full CI run remains pending |
+| Creation review 73 | The unrelated-template byte-limit regression reproduced before correction. All 45 affected initialization, snapshot, source and publication checks pass, including real process-crash recovery. Filtering is retained in recovery observations. Native CI at `bcbd8e5` passed Linux/macOS/Windows default and strict E2E suites, all three import-smoke jobs, lint and coverage |
 | Creation review 72 | 1,712 tests and eleven doctests pass; all-feature Clippy and Windows cross-compilation pass. The template collision reproduced before correction. New cases cover literal/template aliases, common-layer precedence, portable case collisions and additions after preparation. Native Windows execution remains required for the relative rename correction |
 | Semantic initialization | 1,709 tests and eleven doctests pass. Both real import formats publish and reverify 78 roots through the shared project-change implementation. All-feature Clippy and Windows cross-compilation pass. Seven initialization regressions cover loader intent, approval, user templates, conflicts, directory/link rejection and a subsequent mrpack build. Native CI remains required |
 | Creation review 70 | Both moved-root and first-index-failure regressions reproduced before correction. All 39 affected publication/native/API tests and all-feature Clippy pass. Windows handle lifetime is corrected; native Windows CI remains required |

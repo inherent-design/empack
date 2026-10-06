@@ -129,6 +129,14 @@ unfinished creation, including after a move or through an alias. The lower-level
 `Publisher::recover_new` completes retained creation without tools or downloads.
 Engine recovery/continuation composition and CLI cutover remain unfinished.
 
+`ProjectReader::capture_mutation` captures exact managed placements into a distinct
+`MutationSnapshot`. `prepare_removal` consumes that snapshot and explicit logical keys
+with `RemovalMode::ForgetRoots` or `RemoveContent`. Its read-only file plan precedes
+any publication. `PreparedRemoval::publish` consumes verified documents and file
+changes through the common publisher, returning the selected keys, actual removal
+mode, resulting project and publication receipt. This is lower-level host composition;
+the shared `Engine` removal request and selector interface are still being wired.
+
 ## 17. Public engine API and application wiring
 
 ### 17.1 Public entry points

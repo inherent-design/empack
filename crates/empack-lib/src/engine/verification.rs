@@ -97,6 +97,27 @@ pub fn observed_artifacts_for(
     extend_observations(snapshot, &mut observed, targets)?;
     Ok(observed)
 }
+/// Narrow document/content mutations keep other captured inputs outside the write footprint.
+/// Callers must separately establish semantic ownership of every selected target.
+pub(super) fn observed_mutation_for(
+    snapshot: &NativeSnapshot,
+    targets: impl IntoIterator<Item = ManagedPath>,
+) -> Result<BTreeMap<ManagedPath, ObservedPath>> {
+    let targets: Vec<_> = targets.into_iter().collect();
+    ensure!(
+        targets.iter().all(|target| matches!(
+            target,
+            ManagedPath::IntentDocument
+                | ManagedPath::LockDocument
+                | ManagedPath::BackendDocument(_)
+                | ManagedPath::Content { .. }
+        )),
+        "Mutation cannot own templates or distributions"
+    );
+    let mut observed = BTreeMap::new();
+    extend_observations(snapshot, &mut observed, targets)?;
+    Ok(observed)
+}
 fn extend_observations(
     snapshot: &NativeSnapshot,
     observed: &mut BTreeMap<ManagedPath, ObservedPath>,
@@ -201,6 +222,21 @@ impl VerifiedFileChange {
             }
         }
         let observed = observed_project_replacement_for(
+            &base,
+            plan.expected()
+                .keys()
+                .cloned()
+                .chain(plan.changes().iter().map(|change| change.target().clone())),
+        )?;
+        Self::verify_observed(base, plan, stage, observed)
+    }
+    /// Verify only explicitly owned document/content changes, retaining the complete read set.
+    pub(super) fn verify_mutation(
+        base: NativeSnapshot,
+        plan: FilePlan,
+        stage: FrozenStage,
+    ) -> Result<Self> {
+        let observed = observed_mutation_for(
             &base,
             plan.expected()
                 .keys()

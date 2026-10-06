@@ -156,6 +156,17 @@ impl ReplacementSnapshot {
         (self.root, self.native)
     }
 }
+/// Managed mutation capture includes every locked placement even when source rules exclude it.
+/// Acquisition sources outside managed placements are not deletion authority.
+pub struct MutationSnapshot {
+    workspace: WorkspaceSnapshot,
+}
+impl MutationSnapshot {
+    pub(super) fn into_workspace(self) -> WorkspaceSnapshot {
+        self.workspace
+    }
+}
+
 pub struct WorkspaceSnapshot {
     root: ProjectReadRoot,
     native: NativeSnapshot,
@@ -165,6 +176,13 @@ pub struct WorkspaceSnapshot {
 impl WorkspaceSnapshot {
     pub(super) fn into_native(self) -> (ProjectReadRoot, NativeSnapshot) {
         (self.root, self.native)
+    }
+    pub(super) fn read_document(
+        &self,
+        path: &PortableRelPath,
+        cancel: &Cancellation,
+    ) -> Result<Option<Vec<u8>>> {
+        read_document(&self.root, &self.native, path.as_str(), cancel)
     }
     pub fn intent(&self) -> &DecodedIntent {
         &self.intent
@@ -509,6 +527,57 @@ impl ProjectReader {
             "Project documents changed while selecting build inputs"
         );
         Ok(captured)
+    }
+    /// Capture managed placements for semantic mutations. Templates, artifacts and external
+    /// acquisition sources remain outside this operation; locked placements override ignore rules.
+    pub fn capture_mutation(
+        &self,
+        selected: &Path,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        let rules_path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
+        let documents = self.capture(selected, &[rules_path], limits, cancel)?;
+        let rules = read_document(
+            &documents.root,
+            &documents.native,
+            "pack/.packwizignore",
+            cancel,
+        )?
+        .unwrap_or_default();
+        let project = documents.require_resolved()?;
+        let mut required = Vec::new();
+        for dependency in project.lock().dependencies.values() {
+            for file in dependency.files.as_slice() {
+                for placement in file.placements.as_slice() {
+                    required.push(super::layout::ProjectLayout::path(
+                        &empack_core::files::ManagedPath::Content {
+                            layer: placement.layer,
+                            path: placement.destination.relative().clone(),
+                        },
+                    )?);
+                }
+            }
+        }
+        let scopes = [
+            "pack",
+            "overrides/common",
+            "overrides/client",
+            "overrides/server",
+        ]
+        .into_iter()
+        .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        let filter = super::source::CaptureFilter::new(rules, &required)?;
+        let workspace = self.capture_selected(selected, &scopes, limits, Some(&filter), cancel)?;
+        ensure!(
+            documents.root.binding == workspace.root.binding
+                && documents.intent.raw_revision() == workspace.intent.raw_revision()
+                && documents.prior_lock.as_ref().map(DecodedLock::raw_revision)
+                    == workspace.prior_lock.as_ref().map(DecodedLock::raw_revision),
+            "Project documents changed while selecting mutation inputs"
+        );
+        Ok(MutationSnapshot { workspace })
     }
     /// Documents are always in the read set. Extra scopes bind this operation's source and output inputs.
     pub fn capture(

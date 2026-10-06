@@ -6,6 +6,9 @@ use empack_core::{
     removal::{RemovalMode, RemovalPlan},
 };
 
+mod native;
+pub use native::{PreparedRemoval, RemovalReceipt, prepare_removal};
+
 /// Coherent next documents and explicit exact selections. This is not permission to delete files.
 /// Native preparation must still bind placements and metadata to captured regular files and
 /// verify original content assertions before constructing a publication candidate.
