@@ -187,7 +187,7 @@ struct Journal {
 struct JournalCapture {
     scopes: Vec<String>,
     limits: SnapshotLimits,
-    filter: Option<super::source::PackCaptureFilter>,
+    filter: Option<super::source::CaptureFilter>,
 }
 
 impl Publisher {

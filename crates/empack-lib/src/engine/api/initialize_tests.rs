@@ -495,3 +495,83 @@ async fn initialization_rejects_a_new_common_template_after_preparation() {
     );
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn initialization_ignores_unrelated_user_template_contents() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    let outside = tempfile::tempdir().unwrap();
+    let (engine, _) = engine(state.path().join("state"));
+    put(
+        root.path(),
+        "templates/client/unrelated.bin",
+        &vec![42; (1 << 20) + 1],
+    );
+    put(
+        root.path(),
+        "templates/common/existing-user-file",
+        b"unrelated",
+    );
+    #[cfg(unix)]
+    {
+        put(
+            root.path(),
+            "templates/common/unrelated:note",
+            b"nonportable user name",
+        );
+        put(outside.path(), "sentinel", b"outside");
+        std::os::unix::fs::symlink(
+            outside.path(),
+            root.path().join("templates/common/unrelated-link"),
+        )
+        .unwrap();
+    }
+    let prepared = prepare(
+        &engine,
+        ProjectTarget::Existing(root.path().to_path_buf()),
+        request(LoaderKind::Vanilla, false),
+    )
+    .await;
+    put(
+        root.path(),
+        "templates/common/another-user-file",
+        b"added during preview",
+    );
+    let permission = grant(&prepared);
+    let mut operation = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    assert!(matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Initialize(_)))
+    ));
+    assert_eq!(
+        fs::metadata(root.path().join("templates/client/unrelated.bin"))
+            .unwrap()
+            .len(),
+        (1 << 20) + 1
+    );
+    assert_eq!(
+        fs::read(root.path().join("templates/client/unrelated.bin")).unwrap(),
+        vec![42; (1 << 20) + 1]
+    );
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            fs::read(root.path().join("templates/common/unrelated:note")).unwrap(),
+            b"nonportable user name"
+        );
+        assert!(
+            fs::symlink_metadata(root.path().join("templates/common/unrelated-link"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read(outside.path().join("sentinel")).unwrap(),
+            b"outside"
+        );
+    }
+    engine.shutdown().await;
+}

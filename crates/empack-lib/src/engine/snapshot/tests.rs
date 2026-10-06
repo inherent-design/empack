@@ -233,7 +233,7 @@ fn filtered_capture_preserves_explicit_inputs_inside_ignored_directories() {
     std::fs::write(root.path().join("pack/ignored/large.bin"), vec![0; 1024]).unwrap();
     let path = |value| PortableRelPath::parse(value, PathSyntax::ProjectContent).unwrap();
     let required = path("pack/ignored/required.bin");
-    let filter = super::super::source::PackCaptureFilter::new(
+    let filter = super::super::source::CaptureFilter::new(
         b"ignored/\n".to_vec(),
         std::slice::from_ref(&required),
     )

@@ -115,9 +115,11 @@ must go through dependency resolution instead of receiving an empty lock.
 common/client/server template seeds fill missing rendered destinations. Existing user
 files, including their permissions, stay outside the publication footprint. A literal
 file, a `.template` variant or a common-layer output prevents a default seed from
-shadowing that destination; portable case and ancestor collisions count too. Relevant
-template layers are observed without buffering their contents, and their revisions
-remain publication preconditions. Directory-valued destinations and link traversal fail. Default seeds
+shadowing that destination; portable case and ancestor collisions count too. Capture selects only entries that can collide with seed outputs, before opening
+unrelated contents or validating unrelated filenames. Selected entries and filtered
+directory membership remain publication preconditions; unrelated templates remain
+user-owned, even when large, unreadable, linked or nonportable. Traversal still has a
+finite entry budget. Directory-valued destinations and link traversal fail. Default seeds
 contain editable client configuration and server properties; selected build recipes
 supply their exact installer and launch scripts. No user script feature is removed.
 

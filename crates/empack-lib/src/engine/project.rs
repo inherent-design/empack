@@ -36,8 +36,8 @@ impl ReplacementSnapshot {
     pub(super) fn preserved_policy(&self) -> Option<&(Vec<u8>, FilePermissions)> {
         self.policy.as_ref()
     }
-    /// Bind the relevant template layers so a new seed cannot shadow another spelling of an
-    /// existing output. Byte observation is streamed; unrelated templates are not copied to memory.
+    /// Bind entries that can collide with seed outputs, including common-layer alternatives.
+    /// Unrelated templates are filtered before opening their contents or validating their names.
     pub(super) fn capture_seed_templates(
         mut self,
         paths: &[PortableRelPath],
@@ -75,9 +75,11 @@ impl ReplacementSnapshot {
             return Ok(self);
         }
         let _guard = self.recovery.enter(&self.root)?;
-        let captured = self.root.capture(
+        let filter = super::source::CaptureFilter::template_seeds(paths)?;
+        let captured = self.root.capture_filtered(
             &scopes.iter().cloned().collect::<Vec<_>>(),
             self.limits,
+            Some(&filter),
             cancel,
         )?;
         for scope in &scopes {
@@ -371,7 +373,7 @@ impl ProjectReader {
                 super::verification::content(file).permissions,
             )
         });
-        let capture_filter = super::source::PackCaptureFilter::new(rules.unwrap_or_default(), &[])?;
+        let capture_filter = super::source::CaptureFilter::new(rules.unwrap_or_default(), &[])?;
         let native = root.capture_filtered(&scopes, limits, Some(&capture_filter), cancel)?;
         let native = rules_snapshot.merge(native)?;
         let _final_guard = self.recovery.enter(&root)?;
@@ -467,7 +469,7 @@ impl ProjectReader {
             })
             .cloned()
             .collect();
-        let filter = super::source::PackCaptureFilter::new(rules, &required_sources)?;
+        let filter = super::source::CaptureFilter::new(rules, &required_sources)?;
         let mut captured =
             self.capture_selected(selected, &scopes, limits, Some(&filter), cancel)?;
         // The rule bytes used to select traversal remain exact read-set inputs.
@@ -523,7 +525,7 @@ impl ProjectReader {
         selected: &Path,
         scopes: &[PortableRelPath],
         limits: SnapshotLimits,
-        filter: Option<&super::source::PackCaptureFilter>,
+        filter: Option<&super::source::CaptureFilter>,
         cancel: &Cancellation,
     ) -> Result<WorkspaceSnapshot> {
         cancel.check()?;

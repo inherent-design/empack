@@ -333,9 +333,10 @@ preferences and extension values. The shared project-change module stages its do
 and optional template seeds without an artificial archive or backend call. Captured
 existing user templates remain outside the write set, retaining bytes and permissions.
 Seeds compare rendered destinations across their own and common layers, so a different
-filename or a common-layer template cannot be shadowed by a default. Relevant layers
-are streamed into the read set rather than copied into staging; concurrent additions
-and edits block publication. Missing seeds retain expressions until build time. Conflicting edits, directories and links block publication. A published
+filename or a common-layer template cannot be shadowed by a default. A persisted traversal policy selects only entries capable of colliding with seed
+outputs. Unrelated template bytes, links and names are excluded before content reads
+and portable validation. Relevant additions and edits block publication; unrelated
+files stay outside the read and write sets. Directory enumeration remains bounded. Missing seeds retain expressions until build time. Conflicting edits, directories and links block publication. A published
 empty project feeds the existing mrpack build path directly.
 
 This is semantic Engine initialization, not CLI cutover. Interactive runtime selection,
@@ -451,6 +452,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Creation review 73 | The unrelated-template byte-limit regression reproduced before correction. All 45 affected initialization, snapshot, source and publication checks pass, including real process-crash recovery. Filtering is retained in recovery observations. Native Windows default tests at `bcbd8e5` have passed the relative-rename correction; the full CI run remains pending |
 | Creation review 72 | 1,712 tests and eleven doctests pass; all-feature Clippy and Windows cross-compilation pass. The template collision reproduced before correction. New cases cover literal/template aliases, common-layer precedence, portable case collisions and additions after preparation. Native Windows execution remains required for the relative rename correction |
 | Semantic initialization | 1,709 tests and eleven doctests pass. Both real import formats publish and reverify 78 roots through the shared project-change implementation. All-feature Clippy and Windows cross-compilation pass. Seven initialization regressions cover loader intent, approval, user templates, conflicts, directory/link rejection and a subsequent mrpack build. Native CI remains required |
 | Creation review 70 | Both moved-root and first-index-failure regressions reproduced before correction. All 39 affected publication/native/API tests and all-feature Clippy pass. Windows handle lifetime is corrected; native Windows CI remains required |

@@ -93,7 +93,7 @@ impl ProjectReadRoot {
         &self,
         scopes: &[PortableRelPath],
         limits: SnapshotLimits,
-        filter: Option<&super::source::PackCaptureFilter>,
+        filter: Option<&super::source::CaptureFilter>,
         cancel: &Cancellation,
     ) -> Result<NativeSnapshot> {
         self.check_binding()?;
@@ -186,7 +186,7 @@ pub struct DirectoryBinding(ObjectIdentity);
 pub(super) struct CaptureGroup {
     pub scopes: Vec<PortableRelPath>,
     pub limits: SnapshotLimits,
-    pub filter: Option<super::source::PackCaptureFilter>,
+    pub filter: Option<super::source::CaptureFilter>,
 }
 
 /// Immutable native evidence bound to one retained project root.
@@ -236,7 +236,7 @@ struct Capture<'a> {
     limits: SnapshotLimits,
     cancel: &'a Cancellation,
     filter: Option<(
-        &'a super::source::PackCaptureFilter,
+        &'a super::source::CaptureFilter,
         super::source::SourceFilter,
     )>,
 }
