@@ -413,3 +413,56 @@ fn native_windows_start_installs_first_and_propagates_failure_without_bash() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn typed_runtime_launch_preserves_argument_files_and_historical_jars() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    put(
+        root.path(),
+        "java/bin/java",
+        b"#!/bin/sh\nprintf '%s\\n' \"$@\" > arguments.txt\n",
+    );
+    std::fs::set_permissions(
+        root.path().join("java/bin/java"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    for (launch, expected) in [
+        (
+            ServerLaunch::Arguments {
+                unix: path("libraries/loader/unix_args.txt").unwrap(),
+                windows: path("libraries/loader/win_args.txt").unwrap(),
+            },
+            "@user_jvm_args.txt\n@libraries/loader/unix_args.txt\nuser argument\n",
+        ),
+        (
+            ServerLaunch::Jar(path("forge-1.12.2-14.23.5.2860.jar").unwrap()),
+            "-jar\nforge-1.12.2-14.23.5.2860.jar\nuser argument\n",
+        ),
+    ] {
+        put(
+            root.path(),
+            "start.sh",
+            runtime_start(&launch, false, false).as_bytes(),
+        );
+        let status = std::process::Command::new("bash")
+            .arg(root.path().join("start.sh"))
+            .arg("user argument")
+            .env("JAVA_HOME", root.path().join("java"))
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("arguments.txt")).unwrap(),
+            expected
+        );
+        let windows = runtime_start(&launch, false, true);
+        assert!(windows.contains("DisableDelayedExpansion"));
+        if matches!(launch, ServerLaunch::Arguments { .. }) {
+            assert!(windows.contains("@libraries/loader/win_args.txt"));
+            assert!(!windows.contains("unix_args.txt"));
+        }
+    }
+}

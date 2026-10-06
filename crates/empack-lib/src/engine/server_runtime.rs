@@ -331,6 +331,10 @@ impl VanillaServerPlan {
             },
         )]);
         Ok(PreparedServerRuntime {
+            launch: ServerLaunch::Jar(PortableRelPath::parse(
+                "server.jar",
+                PathSyntax::ProjectContent,
+            )?),
             runtime: self.runtime,
             files,
             evidence,
@@ -353,21 +357,36 @@ pub struct ServerRuntimeEvidence {
 #[derive(Debug, Clone)]
 pub enum LoaderRuntimeEvidence {
     Libraries(library::LibraryRuntimeEvidence),
+    Installer(Box<installer::InstallerRuntimeEvidence>),
+}
+/// Host-specific Java invocation bound to verified runtime files.
+#[derive(Debug, Clone)]
+pub enum ServerLaunch {
+    Jar(PortableRelPath),
+    Arguments {
+        unix: PortableRelPath,
+        windows: PortableRelPath,
+    },
 }
 /// A verified runtime file set, still separate from game content, templates and publication.
 #[derive(Clone)]
 pub struct PreparedServerRuntime {
+    launch: ServerLaunch,
     runtime: RuntimeResolution,
     files: BTreeMap<PortableRelPath, AcquiredBuildFile>,
     evidence: ServerRuntimeEvidence,
 }
 impl PreparedServerRuntime {
+    pub fn launch(&self) -> &ServerLaunch {
+        &self.launch
+    }
     pub fn runtime(&self) -> &RuntimeResolution {
         &self.runtime
     }
     pub fn launcher_main_class(&self) -> &str {
         match &self.evidence.loader {
             Some(LoaderRuntimeEvidence::Libraries(loader)) => &loader.main_class,
+            Some(LoaderRuntimeEvidence::Installer(loader)) => &loader.main_class,
             None => &self.evidence.main_class,
         }
     }

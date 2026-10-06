@@ -178,3 +178,175 @@ fn legacy_profile_requires_exact_embedded_executable_without_inventing_hashes() 
     profile["install"]["filePath"] = "../outside.jar".into();
     assert!(parse(&profile, &[]).is_err());
 }
+
+#[test]
+fn installed_runtime_rejects_missing_and_changed_outputs_before_proof() {
+    use crate::engine::{snapshot::SnapshotLimits, staging::MutableStage};
+    let runtime = runtime("1.12.2", LoaderKind::Forge, "14.23.5.2860");
+    let identity = InstallerIdentity::for_runtime(&runtime).unwrap();
+    let mut jar = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, bytes) in [
+        (
+            "META-INF/MANIFEST.MF",
+            b"Manifest-Version: 1.0\r\nMain-Class: test.Launcher\r\n\r\n".as_slice(),
+        ),
+        (
+            "test/Launcher.class",
+            &[0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 52],
+        ),
+    ] {
+        jar.start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        jar.write_all(bytes).unwrap();
+    }
+    let executable = jar.finish().unwrap().into_inner();
+    let digest = ExpectedDigest::Sha1(sha1::Sha1::digest(&executable).into()).hex();
+    let relative = maven_path(&identity.coordinate).unwrap();
+    let profile = json!({"spec":0,"minecraft":"1.12.2","version":"1.12.2-forge-14.23.5.2860","json":"/version.json","path":identity.coordinate,"libraries":[{"name":identity.coordinate,"downloads":{"artifact":{"path":relative.as_str(),"url":"","sha1":digest,"size":executable.len()}}}]});
+    let version = json!({"id":"1.12.2-forge-14.23.5.2860","inheritsFrom":"1.12.2","libraries":[profile["libraries"][0].clone(),{"name":"fixture:dependency:1","downloads":{"artifact":{"path":"fixture/dependency/1/dependency-1.jar","url":"https://example.com/dependency.jar","sha1":digest,"size":executable.len()}}}]});
+    let installer = content(
+        &profile,
+        &version,
+        &[(&format!("maven/{}", relative.as_str()), &executable)],
+    );
+    for failure in [
+        "none",
+        "missing library",
+        "changed library",
+        "changed executable",
+        "missing generated",
+        "changed vanilla",
+        "alternative match",
+        "wrong alternatives",
+    ] {
+        let mut contract = InstallerContract::parse(
+            runtime.clone(),
+            identity.clone(),
+            &installer,
+            ArchiveLimits::default(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+        if failure == "missing generated" {
+            contract.generated.insert(
+                path("libraries/generated.jar").unwrap(),
+                ExpectedContent {
+                    digests: None,
+                    size: None,
+                    accepted_observation: None,
+                },
+            );
+        }
+        if matches!(failure, "alternative match" | "wrong alternatives") {
+            let library = contract
+                .libraries
+                .iter_mut()
+                .find(|library| library.coordinate == "fixture:dependency:1")
+                .unwrap();
+            library.expected.digests = None;
+            library.acceptable_sha1 = vec![ExpectedDigest::Sha1([0; 20])];
+            if failure == "alternative match" {
+                library
+                    .acceptable_sha1
+                    .push(ExpectedDigest::parse("sha1", &digest).unwrap());
+            }
+        }
+        let mut vanilla = crate::engine::server_runtime::tests::prepared_fixture();
+        vanilla.runtime.minecraft = runtime.minecraft.clone();
+        let base = &vanilla.files[&path("server.jar").unwrap()].content;
+        let mut stage = MutableStage::empty().unwrap();
+        stage
+            .write(
+                &contract.minecraft_path,
+                &mut base.lease().open(),
+                base.lease().len(),
+                &Cancellation::default(),
+            )
+            .unwrap();
+        if failure == "changed vanilla" {
+            stage
+                .write(
+                    &contract.minecraft_path,
+                    &mut b"wrong".as_slice(),
+                    5,
+                    &Cancellation::default(),
+                )
+                .unwrap();
+        }
+        let InstallerLayout::ExecutableJar { destination, .. } = &contract.layout else {
+            panic!("wrong fixture layout")
+        };
+        let bytes = if failure == "changed executable" {
+            b"wrong".as_slice()
+        } else {
+            executable.as_slice()
+        };
+        stage
+            .write(
+                destination,
+                &mut &*bytes,
+                bytes.len() as u64,
+                &Cancellation::default(),
+            )
+            .unwrap();
+        if failure != "missing library" {
+            let bytes = if failure == "changed library" {
+                b"wrong".as_slice()
+            } else {
+                executable.as_slice()
+            };
+            stage
+                .write(
+                    &contract
+                        .libraries
+                        .iter()
+                        .find(|library| library.coordinate == "fixture:dependency:1")
+                        .unwrap()
+                        .path,
+                    &mut &*bytes,
+                    bytes.len() as u64,
+                    &Cancellation::default(),
+                )
+                .unwrap();
+        }
+        let plan = InstallerServerPlan {
+            contract,
+            installer: installer.clone(),
+            expected: ExpectedContent {
+                digests: Some(installer.observed_digests().clone()),
+                size: Some(installer.lease().len()),
+                accepted_observation: None,
+            },
+            checksum_document: installer.lease().id(),
+        };
+        let result = plan.verify_outputs(
+            vanilla,
+            stage
+                .freeze(SnapshotLimits::default(), &Cancellation::default())
+                .unwrap(),
+            ArchiveLimits::default(),
+            &Cancellation::default(),
+        );
+        if matches!(failure, "none" | "alternative match") {
+            let prepared = result.unwrap();
+            assert_eq!(prepared.runtime().loader, LoaderKind::Forge);
+            assert_eq!(prepared.launcher_main_class(), "test.Launcher");
+            assert!(matches!(prepared.launch(), ServerLaunch::Jar(_)));
+        } else {
+            assert!(result.is_err(), "accepted {failure}");
+        }
+    }
+}
+
+#[test]
+fn historical_checksum_alternatives_remain_an_explicit_disjunction() {
+    let value = json!({"name":"group:artifact:1","checksums":["ab".repeat(20),"cd".repeat(20)]});
+    let library = parse_library(&value).unwrap();
+    assert!(library.expected.digests.is_none());
+    assert_eq!(library.acceptable_sha1.len(), 2);
+    for checksums in [json!([]), json!(["wrong"]), json!("not an array")] {
+        let mut wrong = value.clone();
+        wrong["checksums"] = checksums;
+        assert!(parse_library(&wrong).is_err());
+    }
+}

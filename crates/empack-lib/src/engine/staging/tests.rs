@@ -162,3 +162,45 @@ fn abandoned_writers_and_seekable_candidates_release_private_storage() {
     drop(candidate);
     assert!(!location.exists());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn owned_tool_returns_only_a_retired_private_stage() {
+    use super::StageToolArgument;
+    use std::{path::Path, time::Duration};
+    let stage = MutableStage::empty()
+        .unwrap()
+        .run_tool(
+            Path::new("/bin/sh"),
+            &[
+                StageToolArgument::Text("-c".into()),
+                StageToolArgument::Text("printf retained > output".into()),
+            ],
+            Duration::from_secs(5),
+            Cancellation::default(),
+        )
+        .await
+        .unwrap();
+    let mut frozen = stage
+        .freeze(SnapshotLimits::default(), &Cancellation::default())
+        .unwrap();
+    let path = PortableRelPath::parse("output", PathSyntax::ProjectContent).unwrap();
+    let mut bytes = Vec::new();
+    frozen
+        .copy_verified(&path, &mut bytes, &Cancellation::default())
+        .unwrap();
+    assert_eq!(bytes, b"retained");
+    let result = MutableStage::empty()
+        .unwrap()
+        .run_tool(
+            Path::new("/bin/sh"),
+            &[
+                StageToolArgument::Text("-c".into()),
+                StageToolArgument::Text("printf partial > output; sleep 30".into()),
+            ],
+            Duration::from_millis(100),
+            Cancellation::default(),
+        )
+        .await;
+    assert!(result.is_err());
+}

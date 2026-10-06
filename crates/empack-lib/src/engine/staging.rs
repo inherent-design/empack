@@ -21,6 +21,12 @@ use tempfile::TempDir;
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
+pub(super) enum StageToolArgument {
+    Text(String),
+    Path(PortableRelPath),
+    Root,
+}
+
 /// No live project path or writable file handle is exposed by the stage writer.
 pub struct MutableStage {
     // Native handles must close before TempDir cleanup, especially without Windows delete sharing.
@@ -169,7 +175,45 @@ impl MutableStage {
         Ok(())
     }
 
-    /// Consuming the only writer retires synchronous writes. Tool execution is not admitted by this API.
+    /// Run a trusted tool against this private tree. The caller must own this future through
+    /// retirement; the stage cannot be frozen or reused while the process tree is alive.
+    /// This is process ownership and output isolation, not an OS sandbox for arbitrary code.
+    pub(super) async fn run_tool(
+        self,
+        executable: &std::path::Path,
+        arguments: &[StageToolArgument],
+        deadline: std::time::Duration,
+        cancel: Cancellation,
+    ) -> Result<Self> {
+        self.root.check_binding()?;
+        let mut command = std::process::Command::new(executable);
+        command.current_dir(self.storage.path());
+        for argument in arguments {
+            match argument {
+                StageToolArgument::Text(value) => {
+                    command.arg(value);
+                }
+                StageToolArgument::Path(relative) => {
+                    command.arg(self.storage.path().join(relative.as_str()));
+                }
+                StageToolArgument::Root => {
+                    command.arg(self.storage.path());
+                }
+            }
+        }
+        let result =
+            crate::application::process_runtime::execute_async(command, deadline, cancel, None)
+                .await?;
+        ensure!(
+            result.success,
+            "Private preparation tool failed: {}",
+            result.error_output()
+        );
+        self.root.check_binding()?;
+        Ok(self)
+    }
+
+    /// Consuming the only writer retires synchronous writes after any owned tool has returned.
     /// Capture actual inventory and retain opened handles; later copying rechecks their bytes.
     pub fn freeze(self, limits: SnapshotLimits, cancel: &Cancellation) -> Result<FrozenStage> {
         let mut scopes = Vec::new();
@@ -231,6 +275,15 @@ impl FrozenStage {
         retained.file.rewind()?;
         Ok((&mut retained.file).take(retained.observation.bytes.saturating_add(1)))
     }
+    /// Retire an input handle after its verified private copy has been retained elsewhere.
+    /// The inventory remains capture evidence; this file is no longer readable from this stage.
+    pub(super) fn retire_input(&mut self, path: &PortableRelPath) -> Result<()> {
+        self.files
+            .remove(path)
+            .context("Frozen input was already retired")?;
+        Ok(())
+    }
+
     /// Independent lease cursors serialize native seeking; no pathname or writable handle escapes.
     pub(super) fn read_at(
         &mut self,

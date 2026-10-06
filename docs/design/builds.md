@@ -291,7 +291,7 @@ adapter extension rather than silently dropping runtime requirements.
 `mise run smoke:runtime` checks official acquisition and actual Java launcher
 execution for vanilla, both Fabric layouts and Quilt. Unit fixtures separately exercise
 wrong bytes, metadata mismatch, missing classes, service merging, bounded output,
-cancellation and retained ownership. These tests do not imply that Forge or NeoForge preparation is implemented.
+cancellation and retained ownership. Forge-family checks are described below.
 
 ### Forge-family installer contracts
 
@@ -312,3 +312,30 @@ must retire its owned process, inspect confined regular files, verify declared
 libraries and generated outputs, and bind the actual launcher to those files before
 constructing `PreparedServerRuntime`. Process exit alone cannot discharge those
 obligations.
+
+`InstallerServerPlan::prepare` now executes this contract in private staging through
+an owned, deadline-bound process tree. It independently acquires the selected
+Minecraft server before execution. Only verified runtime files survive; installer
+executables and logs do not become distribution members. A typed `ServerLaunch`
+selects the historical executable JAR or the appropriate Unix/Windows argument file,
+so generated scripts preserve the launch contract instead of assuming `server.jar`.
+
+Historical checksum lists are alternatives, not simultaneous digest assertions.
+Verification records which declared SHA-1 matched. Missing historical declarations
+are resolved from repository checksum documents before execution. Computed hashes
+remain observations; neither SHA-1 nor MD5 becomes strong source evidence by copying
+it into a SHA-256-addressed store. Processor inputs are required only when the
+profile contains server processors, including intermediate executable-JAR layouts.
+
+The installer has a Java heap cap and an owned process deadline. Output entry and
+byte limits apply when staging is captured after the process exits. These are
+admission and verification limits, not kernel quotas or an OS sandbox: an external
+tool can consume disk before capture rejects its output. Captured output handles
+are retired as verified private leases replace them, avoiding duplicate retained
+handles for the same runtime tree. Large trees still require adequate host file
+limits; that resource boundary remains an implementation task.
+
+Live smoke verifies actual launch behavior for historical and modern Forge and both
+NeoForge artifact families. It checks Minecraft help where supported and the EULA
+refusal on old releases. It does not accept the EULA, start a playable world or
+establish that every loader release has an identical profile format.

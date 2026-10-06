@@ -23,16 +23,20 @@ Run the live normalized-runtime checks explicitly:
 mise run smoke:runtime
 ```
 
-This suite requires public Mojang/Fabric/Quilt/Maven access and Java 17 or 21, selected
-through `JAVA_HOME` or `PATH`. It verifies official metadata and bytes, copies the
-prepared runtime into disposable directories, then runs the actual server launcher
-with `--help`. It checks vanilla, both historical/modern Fabric layouts and Quilt
-without accepting the EULA. These tests are marked ignored in ordinary offline runs; the
-explicit task selects all of them and fails on missing prerequisites or providers.
-A separate case acquires and parses five official Forge/NeoForge installer profiles,
-including historical Forge and early NeoForge coordinates. That case verifies plan
-inputs; it does not claim an installed runtime. The suite complements CLI E2E while
-command cutover is still pending.
+This suite requires public Mojang/Fabric/Quilt/Maven access and Java 21, selected
+through `JAVA_HOME` or `PATH`. Set `EMPACK_TEST_JAVA8_HOME` to a Java 8 installation
+for historical Forge. It verifies official metadata and bytes, copies prepared
+runtimes into disposable directories, then runs their actual launchers. Modern
+cases must print Minecraft's help options. Forge 1.7.10 and 1.12.2 ignore `--help`;
+those cases must reach the EULA refusal and leave `eula=false`. No test accepts
+the EULA or claims gameplay verification.
+
+The maintained matrix covers vanilla, both Fabric launcher layouts, Quilt,
+Forge 1.7.10/1.12.2/1.16.5/1.20.1 and both early/current NeoForge artifact families.
+A separate case validates six official installer profiles. Ordinary offline runs
+ignore these cases; the explicit task selects every case, limits concurrency to
+two, and fails on unavailable prerequisites or providers. The suite complements
+CLI E2E while command cutover is still pending.
 
 The pure core must compile without runtime or filesystem dependencies. Its tests
 cover portable syntax, typed values and pure decisions. Native filesystem,

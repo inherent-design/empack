@@ -108,14 +108,26 @@ impl AcquiredContent {
     /// Attach admission to the lease itself so clones/readers keep retained bytes charged.
     pub(super) fn retain_resources(value: super::runtime::RetainedOutput<Self>) -> Result<Self> {
         let (mut content, mut permit) = value.into_parts();
-        let object = Arc::get_mut(&mut content.lease.0)
+        content.retain_reservation(&mut permit)?;
+        Ok(content)
+    }
+
+    pub(super) fn retain_reservation(
+        &mut self,
+        permit: &mut super::resources::AdmissionPermit,
+    ) -> Result<()> {
+        let object = Arc::get_mut(&mut self.lease.0)
             .context("Acquisition must attach resources before sharing its lease")?;
+        ensure!(
+            object._reservation.is_none(),
+            "Content already owns a reservation"
+        );
         object._reservation = Some(permit.split(super::resources::ResourceRequest {
             scratch_bytes: object.bytes,
             open_files: 1,
             ..super::resources::ResourceRequest::default()
         })?);
-        Ok(content)
+        Ok(())
     }
 
     pub fn lease(&self) -> &ContentLease {

@@ -13,7 +13,7 @@ use crate::{
         mrpack::AcquiredBuildFile,
         packwiz::InstallerInteraction,
         project::WorkspaceSnapshot,
-        server_runtime::{PreparedServerRuntime, ServerRuntimeEvidence},
+        server_runtime::{PreparedServerRuntime, ServerLaunch, ServerRuntimeEvidence},
         snapshot::SnapshotLimits,
         staging::{MutableStage, PrivateFile},
         templates::{TemplateOptions, prepare_templates},
@@ -129,7 +129,7 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 JAVA_PATH="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 exec "$JAVA_PATH" -jar server.jar "$@"
 "#;
-const START_BAT: &str = "@echo off\r\ncd /d \"%~dp0\"\r\nif defined JAVA_HOME (\r\n  \"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar %*\r\n) else (\r\n  java -jar server.jar %*\r\n)\r\n";
+const START_BAT: &str = "@echo off\r\nsetlocal DisableDelayedExpansion\r\ncd /d \"%~dp0\"\r\nif defined JAVA_HOME (\r\n  \"%JAVA_HOME%\\bin\\java.exe\" -jar server.jar %*\r\n) else (\r\n  java -jar server.jar %*\r\n)\r\n";
 fn start_script(bootstrap: bool) -> String {
     if bootstrap {
         START_SH.replace(
@@ -151,6 +151,33 @@ fn start_batch(bootstrap: bool) -> String {
         &format!("{command}if defined JAVA_HOME"),
     )
 }
+fn runtime_start(launch: &ServerLaunch, bootstrap: bool, windows: bool) -> String {
+    let script = if windows {
+        start_batch(bootstrap)
+    } else {
+        start_script(bootstrap)
+    };
+    let quote = |value: &str| {
+        if windows {
+            format!("\"{}\"", value.replace('%', "%%"))
+        } else {
+            format!("'{}'", value.replace('\'', "'\"'\"'"))
+        }
+    };
+    let arguments = match launch {
+        ServerLaunch::Jar(path) if path.as_str() == "server.jar" => return script,
+        ServerLaunch::Jar(path) => format!("-jar {}", quote(path.as_str())),
+        ServerLaunch::Arguments { unix, windows: win } => {
+            let path = if windows { win } else { unix };
+            format!(
+                "@user_jvm_args.txt {}",
+                quote(&format!("@{}", path.as_str()))
+            )
+        }
+    };
+    script.replace("-jar server.jar", &arguments)
+}
+
 fn install_batch(bootstrap: Option<&ServerBootstrap>) -> String {
     let command=bootstrap.map(|bootstrap| {
         let headless=if bootstrap.interaction==InstallerInteraction::Headless { " --no-gui" } else { "" };
@@ -296,12 +323,12 @@ pub(super) fn prepare_server_archive(
     for (name, bytes, executable) in [
         (
             "start.sh",
-            start_script(bootstrap.is_some()).into_bytes(),
+            runtime_start(runtime.launch(), bootstrap.is_some(), false).into_bytes(),
             true,
         ),
         (
             "start.bat",
-            start_batch(bootstrap.is_some()).into_bytes(),
+            runtime_start(runtime.launch(), bootstrap.is_some(), true).into_bytes(),
             false,
         ),
         (
