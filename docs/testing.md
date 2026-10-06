@@ -59,8 +59,10 @@ mise run smoke:providers
 Set `EMPACK_KEY_CURSEFORGE` for this explicit suite. Missing credentials fail the
 CurseForge case. The three probes resolve Modrinth mod/resource-pack and CurseForge
 mod selectors, verify exact file ownership, download the selected file and check
-its original digest and size assertions. They do not publish project state.
-Ordinary offline runs ignore these network cases.
+its original digest and size assertions. The resource-pack case additionally builds
+and publishes a full-client ZIP through the Engine from a lock with no stored URL,
+then checks its member against the original source digest and verifies that the
+intent and lock did not change. Ordinary offline runs ignore these network cases.
 
 The pure core must compile without runtime or filesystem dependencies. Its tests
 cover portable syntax, typed values and pure decisions. Native filesystem,

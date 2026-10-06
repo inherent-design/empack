@@ -14,6 +14,7 @@ use std::{sync::Arc, time::Duration};
 
 mod curseforge;
 mod modrinth;
+mod refresh;
 mod selector;
 mod transport;
 pub use selector::ProjectSelector;
@@ -89,11 +90,37 @@ pub struct ProviderResolution {
     pub coverage: Coverage,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ProviderAvailability {
+    pub modrinth: bool,
+    pub curseforge: bool,
+}
+impl ProviderAvailability {
+    pub fn supports(self, project: &ProviderProjectId) -> bool {
+        match project {
+            ProviderProjectId::Modrinth(_) => self.modrinth,
+            ProviderProjectId::CurseForge(_) => self.curseforge,
+        }
+    }
+}
 #[derive(Clone)]
 pub struct ProviderCatalog {
     transport: transport::CatalogTransport,
 }
 impl ProviderCatalog {
+    /// Read-only capability description; it makes no network request or authentication claim.
+    pub fn availability(&self) -> ProviderAvailability {
+        ProviderAvailability {
+            modrinth: true,
+            curseforge: self.transport.has_curseforge_key(),
+        }
+    }
+    #[cfg(test)]
+    pub(in crate::engine) fn for_loopback_tests(origin: &str, key: Option<String>) -> Self {
+        Self {
+            transport: transport::CatalogTransport::test(origin, key),
+        }
+    }
     pub fn new(curseforge_key: Option<String>, budgets: Arc<HostBudgetRegistry>) -> Result<Self> {
         Ok(Self {
             transport: transport::CatalogTransport::new(curseforge_key, budgets)?,
@@ -235,8 +262,16 @@ fn filename(value: &str) -> Result<()> {
 }
 fn download_locator(value: &str) -> Result<()> {
     let url = reqwest::Url::parse(value).map_err(|_| CatalogError::InvalidRecord)?;
+    let allowed = url.scheme() == "https";
+    #[cfg(test)]
+    let allowed = allowed
+        || (url.scheme() == "http"
+            && url.host_str().is_some_and(|host| {
+                host.parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+            }));
     ensure!(
-        url.scheme() == "https"
+        allowed
             && url.host_str().is_some()
             && url.username().is_empty()
             && url.password().is_none()

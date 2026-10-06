@@ -692,3 +692,71 @@ async fn safe_retry_can_complete_and_malformed_response_does_not_disclose_its_va
     assert!(!format!("{:#}", error(&outcome)).contains("must-not-leak"));
     invalid.assert_async().await;
 }
+
+#[test]
+fn locator_refresh_keeps_locked_assertions_and_refuses_ambiguous_or_changed_roles() {
+    use empack_core::{
+        digest::{ContentId, DigestSet},
+        model::FileSlot,
+    };
+    let mut version = mr_version();
+    let mut extra = version["files"][0].clone();
+    extra["filename"] = json!("extra.zip");
+    extra["primary"] = json!(false);
+    extra["hashes"]["sha1"] = json!("99".repeat(20));
+    extra["hashes"]["sha512"] = json!("88".repeat(64));
+    version["files"].as_array_mut().unwrap().push(extra);
+    let result = modrinth::selection(
+        modrinth::project(&bytes(&mr_project())).unwrap(),
+        &pin(ProviderKind::Modrinth),
+        &bytes(&version),
+    )
+    .unwrap();
+    let role = |name| FileSlot::parse(name).unwrap();
+    let expected = result.files.as_slice()[1].expected.clone();
+    assert_eq!(
+        result
+            .download_alternatives(&role("extra.zip"), &expected)
+            .unwrap(),
+        result.files.as_slice()[1].alternatives
+    );
+    assert_eq!(
+        result
+            .download_alternatives(&role("arbitrary-logical-role"), &expected)
+            .unwrap(),
+        result.files.as_slice()[1].alternatives
+    );
+    assert!(
+        result
+            .download_alternatives(&role("primary"), &expected)
+            .is_err()
+    );
+    let mut unknown = expected.clone();
+    unknown.digests = None;
+    unknown.accepted_observation = Some(ContentId::from_sha256([1; 32]));
+    assert!(
+        result
+            .download_alternatives(&role("arbitrary-logical-role"), &unknown)
+            .is_err()
+    );
+    assert!(
+        result
+            .download_alternatives(&role("extra.zip"), &unknown)
+            .is_ok()
+    );
+    let mut conflict = expected.clone();
+    conflict.digests = Some(DigestSet::parse([("sha1", "00".repeat(20).as_str())]).unwrap());
+    assert!(
+        result
+            .download_alternatives(&role("extra.zip"), &conflict)
+            .is_err()
+    );
+    let mut wrong_size = expected.clone();
+    wrong_size.size = Some(99);
+    assert!(
+        result
+            .download_alternatives(&role("extra.zip"), &wrong_size)
+            .is_err()
+    );
+    assert_eq!(result.files.as_slice()[1].expected, expected);
+}

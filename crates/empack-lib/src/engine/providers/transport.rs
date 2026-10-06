@@ -73,6 +73,10 @@ impl RequestBudget {
     }
 }
 impl CatalogTransport {
+    pub(super) fn has_curseforge_key(&self) -> bool {
+        self.curseforge_key.is_some()
+    }
+
     pub(super) fn new(key: Option<String>, budgets: Arc<HostBudgetRegistry>) -> Result<Self> {
         let key = key
             .map(|value| {

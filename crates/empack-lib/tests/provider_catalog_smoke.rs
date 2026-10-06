@@ -33,6 +33,7 @@ async fn verify(
         None
     };
     let catalog = ProviderCatalog::new(key, Arc::new(HostBudgetRegistry::new()))?;
+    let build_catalog = catalog.clone();
     let transport = HttpAcquisition::new()?;
     let pin = match provider {
         ProviderKind::Modrinth => ResolvedPin {
@@ -69,14 +70,26 @@ async fn verify(
             }).await?;
             anyhow::ensure!(Some(download.lease().len()) == expected.size, "Acquired file changed size");
             anyhow::ensure!(matches!(download.evidence(), empack_core::digest::IntegrityEvidence::MatchedExpected { expected: original, .. } if Some(original) == expected.digests.as_ref()), "Source evidence was lost");
-            Ok::<_, anyhow::Error>(())
+            Ok::<_, anyhow::Error>((pin, expected, file.filename.clone(), resolution.project.kind, resolution.game_versions.first().cloned()))
         }.await;
         Ok(result)
     })?;
     let outcome = handle.wait().await;
     runtime.shutdown().await;
     match &*outcome {
-        OperationOutcome::Completed(Ok(())) => {}
+        OperationOutcome::Completed(Ok((pin, expected, filename, kind, game))) => {
+            if *kind == empack_core::model::ContentKind::ResourcePack {
+                publish_with_refreshed_locator(
+                    build_catalog,
+                    pin.clone(),
+                    expected.clone(),
+                    filename,
+                    game.as_deref()
+                        .ok_or_else(|| anyhow::anyhow!("Fixture declares no game version"))?,
+                )
+                .await?;
+            }
+        }
         OperationOutcome::Completed(Err(error)) => {
             anyhow::bail!("Official provider probe failed: {error:#}")
         }
@@ -108,4 +121,187 @@ async fn modrinth_resource_pack_identity_and_exact_bytes() -> anyhow::Result<()>
 #[ignore = "requires CurseForge API key and CDN"]
 async fn curseforge_identity_and_exact_bytes() -> anyhow::Result<()> {
     verify(ProviderKind::CurseForge, "jei", "238222", "7364663").await
+}
+
+async fn publish_with_refreshed_locator(
+    catalog: ProviderCatalog,
+    pin: ResolvedPin,
+    expected: empack_core::model::ExpectedContent,
+    filename: &str,
+    game: &str,
+) -> anyhow::Result<()> {
+    use empack_core::{
+        inventory::OptionalPolicy,
+        model::*,
+        path::{InstallDestination, PathSyntax, PortableRelPath},
+        projection::BuildTarget,
+    };
+    use empack_lib::engine::{
+        api::*, artifacts::ArchiveLimits, documents::DocumentCodec, mrpack::OptionalConversion,
+        packwiz::InstallerInteraction, server_runtime::installer::InstallerExecution,
+        snapshot::SnapshotLimits, templates::TemplateOptions,
+    };
+    use serde_json::json;
+    use sha2::Digest;
+    use std::{collections::BTreeMap, fs, io::Read, time::Duration};
+    let root = tempfile::tempdir()?;
+    let host = tempfile::tempdir()?;
+    let selection = match &pin.selection {
+        PinSelector::ModrinthVersion(id) => id.to_string(),
+        _ => anyhow::bail!("Resource fixture must use Modrinth"),
+    };
+    let intent_bytes = serde_json::to_vec(
+        &json!({"schema":2,"pack":{"name":"Provider smoke","version":"alpha"},"runtime":{"minecraft":game,"loader":{"kind":"vanilla"}},"distribution":{"targets":["client-full"],"archive":"zip"},"dependencies":{"resources":{"source":{"kind":"provider","identity":{"provider":"modrinth","project":pin.project.to_string()}},"content":"resource-pack","version":{"mode":"exact","pin":{"provider":"modrinth","id":selection}},"placement":"automatic","environment":{"client":"required","server":"unsupported"}}}}),
+    )?;
+    let intent = DocumentCodec.decode_intent(&intent_bytes, "provider-smoke")?;
+    let key = DependencyKey::parse("resources")?;
+    let slot = FileSlot::parse("primary")?;
+    let lock = ResolutionLock {
+        intent_revision: intent.semantic_revision(),
+        resolver: "provider-smoke".into(),
+        runtime: RuntimeResolution {
+            minecraft: GameVersion::parse(game)?,
+            loader: LoaderKind::Vanilla,
+            loader_version: None,
+        },
+        dependencies: BTreeMap::from([(
+            key.clone(),
+            LockedDependency {
+                title: "Resources".into(),
+                kind: ContentKind::ResourcePack,
+                identity: ResolvedIdentity::Provider(pin.project.clone()),
+                selected: Some(pin.clone()),
+                files: NonEmpty::new(vec![ResolvedFile {
+                    slot: slot.clone(),
+                    acquisition: AcquisitionSpec::Provider {
+                        pin,
+                        slot,
+                        alternatives: vec![],
+                    },
+                    expected: expected.clone(),
+                    provenance: Provenance {
+                        source: "modrinth-api-v2".into(),
+                        location: None,
+                        declared_digests: expected.digests.clone(),
+                        conversions: vec![],
+                    },
+                    placements: NonEmpty::new(vec![Placement {
+                        destination: InstallDestination::parse(&format!(
+                            "resourcepacks/{filename}"
+                        ))?,
+                        layer: ContentLayer::Common,
+                        requirements: intent.intent().roots[&key].requirements.clone(),
+                    }])?,
+                }])?,
+            },
+        )]),
+        coverage: BTreeMap::from([(key, Coverage::Unknown)]),
+        required_edges: BTreeMap::new(),
+    };
+    let project =
+        ResolvedProject::validate(intent.intent().clone(), lock, intent.semantic_revision())?;
+    let lock_bytes = DocumentCodec.encode_lock(&project)?;
+    fs::write(root.path().join("empack.yml"), &intent_bytes)?;
+    fs::write(root.path().join("empack.lock"), &lock_bytes)?;
+    let work = ResourceRequest {
+        jobs: 1,
+        memory_bytes: 32 << 20,
+        scratch_bytes: 512 << 20,
+        open_files: 32,
+    };
+    let retained = ResourceRequest {
+        memory_bytes: 1 << 20,
+        open_files: 1,
+        ..Default::default()
+    };
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 256 << 20,
+        scratch_bytes: 1 << 30,
+        open_files: 128,
+    });
+    let engine = Engine::new(
+        EngineConfig {
+            state_root: host.path().join("state"),
+            retained_operations: 1,
+            resources: BuildResources {
+                capture: work,
+                prepared: retained,
+                local_acquisition: work,
+                acquired: retained,
+                assembly: work,
+                receipt: retained,
+            },
+            snapshot: SnapshotLimits::default(),
+            archive: ArchiveLimits::default(),
+            transfer: TransferLimits {
+                file_bytes: 256 << 20,
+                transfer_bytes: 256 << 20,
+                ..Default::default()
+            },
+            installer: InstallerExecution {
+                java: "not-needed-for-client-content".into(),
+                deadline: Duration::from_secs(10),
+                heap_megabytes: 64,
+                output: SnapshotLimits::default(),
+            },
+        },
+        governor,
+    )?
+    .with_provider_catalog(catalog, CatalogLimits::default());
+    let request = BuildRequest {
+        outputs: NonEmpty::new(vec![BuildOutput {
+            target: BuildTarget::ClientFull,
+            artifact: PortableRelPath::parse("client.zip", PathSyntax::ArtifactName)?,
+        }])?,
+        archive: DistributionArchive::Zip,
+        optional: OptionalPolicy::Preserve,
+        mrpack_optional: OptionalConversion::RejectMetadataLoss,
+        templates: TemplateOptions::default(),
+        evidence: SourceEvidencePolicy::Compatibility,
+        interaction: InstallerInteraction::Headless,
+    };
+    let prepared = match engine.prepare(root.path().to_owned(), request).await? {
+        Preparation::Ready(value) => value,
+        _ => anyhow::bail!("Public provider file was not executable"),
+    };
+    anyhow::ensure!(
+        !host.path().join("state").exists(),
+        "Preparation wrote host state"
+    );
+    let grant = ExecutionGrant {
+        plan: prepared.view().plan,
+        network: NetworkPermission::Allow,
+        run_installer: false,
+    };
+    let mut handle = engine.start(prepared.authorize(grant)?)?;
+    let outcome = handle.wait().await;
+    engine.shutdown().await;
+    match &*outcome {
+        OperationOutcome::Completed(BuildOutcome::Completed(_)) => {}
+        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+            anyhow::bail!("Provider-backed build failed: {error:#}")
+        }
+        _ => anyhow::bail!("Provider-backed build did not publish"),
+    }
+    anyhow::ensure!(
+        fs::read(root.path().join("empack.lock"))? == lock_bytes
+            && fs::read(root.path().join("empack.yml"))? == intent_bytes,
+        "Locator refresh rewrote project intent"
+    );
+    let mut archive = zip::ZipArchive::new(fs::File::open(root.path().join("dist/client.zip"))?)?;
+    let mut member = archive.by_name(&format!(".minecraft/resourcepacks/{filename}"))?;
+    let mut bytes = Vec::new();
+    member.read_to_end(&mut bytes)?;
+    let sha512 = empack_core::digest::ExpectedDigest::Sha512(sha2::Sha512::digest(&bytes).into());
+    anyhow::ensure!(
+        expected
+            .digests
+            .as_ref()
+            .unwrap()
+            .values()
+            .contains(&sha512),
+        "Published archive differs from official source digest"
+    );
+    Ok(())
 }

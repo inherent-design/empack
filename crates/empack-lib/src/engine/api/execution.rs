@@ -22,10 +22,11 @@ pub(super) async fn run(
     prepared: RetainedOutput<PreparedBuild>,
     config: EngineConfig,
     transport: HttpAcquisition,
+    catalog: Option<(ProviderCatalog, CatalogLimits)>,
     mut scope: WorkScope,
 ) -> Result<BuildOutcome, RuntimeError> {
     let cancel = scope.cancellation();
-    let result = execute(prepared, config, transport, &mut scope).await;
+    let result = execute(prepared, config, transport, catalog, &mut scope).await;
     Ok(match result {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -48,6 +49,7 @@ async fn execute(
     prepared: RetainedOutput<PreparedBuild>,
     config: EngineConfig,
     transport: HttpAcquisition,
+    catalog: Option<(ProviderCatalog, CatalogLimits)>,
     scope: &mut WorkScope,
 ) -> Result<BuildOutcome> {
     let (prepared, prepared_permit) = prepared.into_parts();
@@ -74,6 +76,13 @@ async fn execute(
     )?;
     let local = scope.accept(local.wait().await?)?.transpose()?;
     let ((workspace, acquired, prepared_permit), acquired_permit) = local.into_parts();
+    let acquired = if let Some((catalog, limits)) = catalog {
+        acquired
+            .refresh_provider_locators(&catalog, scope, limits)
+            .await?
+    } else {
+        acquired
+    };
     let acquired = acquired
         .acquire_http(&transport, scope, evidence, config.transfer)
         .await?;

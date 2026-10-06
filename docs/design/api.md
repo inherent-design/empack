@@ -13,7 +13,12 @@ the originating engine then admits `start`.
 
 The owned driver acquires captured archives and remote content, prepares the exact
 runtime, verifies every requested artifact and publishes their union. Missing
-manual/provider acquisitions remain `NeedsInput`; the build API does not invent a
+manual acquisitions remain `NeedsInput`. Attach `ProviderCatalog` with
+`with_provider_catalog` to refresh exact provider file locators during authorized
+execution. Preparation sees only provider availability and performs no API lookup.
+The refresh retains every locked byte assertion and placement; changed declarations
+fail, and a restricted file without a locator becomes explicit manual input. Missing
+provider credentials remain preparation input. The build API does not invent a
 provider result or download association. Persistent content lookup and the APIs for
 other operation kinds remain completion work. The broader interface below remains
 the target for those operations.

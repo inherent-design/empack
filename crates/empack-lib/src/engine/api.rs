@@ -15,6 +15,7 @@ use super::{
     mrpack::OptionalConversion,
     packwiz::InstallerInteraction,
     project::{ProjectReader, WorkspaceSnapshot},
+    providers::{CatalogLimits, ProviderAvailability, ProviderCatalog},
     publication::{PublicationReceipt, RecoveryReader},
     resources::{ResourceGovernor, ResourceRequest},
     runtime::{
@@ -208,6 +209,7 @@ pub struct Engine {
     owner: Arc<()>,
     config: EngineConfig,
     transport: HttpAcquisition,
+    catalog: Option<(ProviderCatalog, CatalogLimits)>,
     preparations: OperationRuntime<()>,
     operations: OperationRuntime<BuildOutcome>,
 }
@@ -221,15 +223,31 @@ impl Engine {
         Ok(Self {
             owner: Arc::new(()),
             transport: HttpAcquisition::new()?,
+            catalog: None,
             preparations: OperationRuntime::new(governor.clone(), config.retained_operations),
             operations: OperationRuntime::new(governor, config.retained_operations),
             config,
         })
     }
+    /// Attach read-only provider resolution for authorized execution. Preparation receives only
+    /// its availability description, never the network client or credentials.
+    pub fn with_provider_catalog(
+        mut self,
+        catalog: ProviderCatalog,
+        limits: CatalogLimits,
+    ) -> Self {
+        self.catalog = Some((catalog, limits));
+        self
+    }
     /// Capture and plan only. No persistent cache writer, downloader or process runner enters
     /// this worker. Dropping the future cancels its engine-owned preparation.
     pub async fn prepare(&self, project: PathBuf, request: BuildRequest) -> Result<Preparation> {
         let config = self.config.clone();
+        let provider_access = self
+            .catalog
+            .as_ref()
+            .map(|(catalog, _)| catalog.availability())
+            .unwrap_or_default();
         let owner = self.owner.clone();
         let (sender, receiver) = oneshot::channel();
         let mut handle =
@@ -238,7 +256,7 @@ impl Engine {
                     let work = scope.spawn_blocking(
                         config.resources.capture,
                         config.resources.prepared,
-                        move |cancel| capture(project, request, &config, &cancel),
+                        move |cancel| capture(project, request, &config, provider_access, &cancel),
                     )?;
                     let prepared = scope.accept(work.wait().await?)?.transpose().map(|data| {
                         PreparedOperation {
@@ -276,8 +294,9 @@ impl Engine {
         );
         let config = self.config.clone();
         let transport = self.transport.clone();
+        let catalog = self.catalog.clone();
         Ok(self.operations.start(move |scope| async move {
-            execution::run(*approved.prepared.data, config, transport, scope).await
+            execution::run(*approved.prepared.data, config, transport, catalog, scope).await
         })?)
     }
     pub fn observe(&self, id: OperationId) -> Option<OperationHandle<BuildOutcome>> {
@@ -306,6 +325,7 @@ fn capture(
     project: PathBuf,
     request: BuildRequest,
     config: &EngineConfig,
+    provider_access: ProviderAvailability,
     cancel: &crate::application::process_runtime::Cancellation,
 ) -> Result<PreparedBuild> {
     ensure!(project.is_absolute(), "Project selection must be absolute");
@@ -350,7 +370,8 @@ fn capture(
         .needs()
         .iter()
         .filter(|need| match &need.source {
-            BuildContentSource::Provider { .. } | BuildContentSource::Manual { .. } => true,
+            BuildContentSource::Provider { pin, .. } => !provider_access.supports(&pin.project),
+            BuildContentSource::Manual { .. } => true,
             BuildContentSource::Embedded { archive, .. } => !matches!(
                 workspace.observations().entries().get(archive),
                 Some(Observation::File(_))

@@ -29,7 +29,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Backend observations | Shared canonical provider/pin decoding; safe relative payload paths; requirements, optional defaults and digest declarations; captured metadata revisions | [Backend tests](../../crates/empack-lib/src/engine/backend/tests.rs) |
 | Private content | Bounded quarantine, every source digest/size/observation checked, retained independent readers, original weak evidence separate from computed hashes | [Content tests](../../crates/empack-lib/src/engine/content/tests.rs) |
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
-| Build acquisition | Read-only target/side/optional selection before acquisition; bootstrap and mrpack retain their distinct reference requirements; selected local files verify while excluded files need no bytes; failed download batches return no successful subset; manual/provider/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
+| Build acquisition | Read-only target/side/optional selection before acquisition; bootstrap and mrpack retain their distinct reference requirements; selected local files verify while excluded files need no bytes; failed download batches return no successful subset; exact provider lookup can refresh execution-only locators without rewriting the lock; manual/missing-archive work remains explicit | [Build acquisition tests](../../crates/empack-lib/src/engine/build/acquisition/tests.rs) |
 | Materialized game content | Shared captured identity/content checks; side and optional selection before missing-byte requirements; exact retained leases and source evidence; no unresolved entries in completed inventory | [Materialization tests](../../crates/empack-lib/src/engine/build/materialized/tests.rs), [core inventory tests](../../crates/empack-core/tests/inventory.rs) |
 | Build batches | All five recipes prepare privately; duplicate outputs fail preflight; every candidate verifies before one journal publishes their union; original resolution and conversion evidence remain available | [Batch tests](../../crates/empack-lib/src/engine/build/batch/tests.rs) |
 | Packwiz reference projection | Captured game selection feeds a generated pack/index/metadata tree; exact provider references, stable URLs, optional constraints and original declared-vs-acquired evidence remain explicit | [Projection tests](../../crates/empack-lib/src/engine/packwiz/tests.rs), game-content tests |
@@ -62,7 +62,11 @@ closure. Provider environment facts remain separate from user requirements. A
 restricted file keeps its identity, size and original hashes even without a locator.
 Transient signed URLs are execution data; the document codec still rejects them in
 persistent alternatives. Search ranking, compatible selection, identification,
-import composition and command cutover remain completion gates.
+import composition and command cutover remain completion gates. The build Engine can
+use this catalog after authorization to refresh a locked file's locator. It selects
+a declared role or unique matching source evidence, rejects changed assertions and
+retains all original expectations during acquisition. Missing credentials and
+restricted downloads remain explicit input; they cannot produce a partial artifact.
 
 ## Composed build behavior
 
@@ -192,6 +196,14 @@ probes verified canonical identity, exact ownership and downloaded bytes for a
 Modrinth mod, a Modrinth resource pack and a CurseForge mod. The earlier default
 library configuration passed 1,431 tests, followed by all 38 search tests after
 enabling their ordinary unit-test configuration.
+
+The provider-to-build integration passes 31 affected catalog, acquisition and Engine
+tests plus all-feature Clippy. All three live provider probes passed again; the
+resource-pack probe now publishes a full-client ZIP from a lock without stored
+locators, verifies the member against its original source hash and confirms that
+both project documents remain byte-for-byte unchanged. Deterministic cases cover
+changed provider assertions, failed acquisition, missing credentials and restricted
+files before publication.
 
 ## Remaining integration and limits
 

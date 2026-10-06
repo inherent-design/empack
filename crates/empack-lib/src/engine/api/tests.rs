@@ -371,3 +371,254 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     engine.shutdown().await;
 }
+
+fn provider_fixture(root: &Path, curseforge: bool) -> empack_core::model::ExpectedContent {
+    use empack_core::{identity::ModrinthProjectId, model::*};
+    fixture(root);
+    let original = project(false, false);
+    let mut intent = original.intent().clone();
+    let mut lock = original.lock().clone();
+    let id = if curseforge {
+        empack_core::identity::ProviderProjectId::CurseForge(
+            empack_core::identity::CurseForgeProjectId::parse("123").unwrap(),
+        )
+    } else {
+        empack_core::identity::ProviderProjectId::Modrinth(
+            ModrinthProjectId::parse("AANobbMI").unwrap(),
+        )
+    };
+    let pin = ResolvedPin {
+        project: id.clone(),
+        selection: id
+            .parse_pin(if curseforge { "456" } else { "abcdefgh" })
+            .unwrap(),
+    };
+    let key = DependencyKey::parse("assets").unwrap();
+    intent.roots.get_mut(&key).unwrap().source = SourceIntent::Provider(id.clone());
+    let dependency = lock.dependencies.get_mut(&key).unwrap();
+    dependency.identity = ResolvedIdentity::Provider(id);
+    dependency.selected = Some(pin.clone());
+    let mut file = dependency.files.as_slice()[0].clone();
+    file.slot = FileSlot::parse("primary").unwrap();
+    file.acquisition = AcquisitionSpec::Provider {
+        pin,
+        slot: file.slot.clone(),
+        alternatives: vec![],
+    };
+    let expected = file.expected.clone();
+    dependency.files = NonEmpty::new(vec![file]).unwrap();
+    let raw = DocumentCodec.encode_intent(&intent).unwrap();
+    lock.intent_revision = DocumentCodec
+        .decode_intent(&raw, "fixture")
+        .unwrap()
+        .semantic_revision();
+    let resolved = ResolvedProject::validate(intent, lock.clone(), lock.intent_revision).unwrap();
+    put(root, "empack.yml", &raw);
+    put(
+        root,
+        "empack.lock",
+        &DocumentCodec.encode_lock(&resolved).unwrap(),
+    );
+    for file in ["a.zip", "copy.zip", "b.zip"] {
+        fs::remove_file(root.join(format!("pack/resourcepacks/{file}"))).unwrap();
+    }
+    expected
+}
+#[tokio::test]
+async fn provider_refresh_executes_only_after_grant_and_preserves_locked_intent() {
+    provider_build_case(false, false).await;
+    provider_build_case(true, false).await;
+    provider_build_case(false, true).await;
+}
+async fn provider_build_case(changed_digest: bool, unavailable: bool) {
+    use serde_json::json;
+    use std::io::Read;
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let expected = provider_fixture(root.path(), false);
+    let before = inventory(root.path());
+    let mut server = mockito::Server::new_async().await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let (mut engine, governor) = engine(host.path().join("state"));
+    engine.transport = HttpAcquisition::for_loopback_tests();
+    let engine = engine.with_provider_catalog(
+        catalog,
+        CatalogLimits {
+            response_bytes: 4096,
+            transfer_bytes: 8192,
+            deadline: Duration::from_secs(2),
+        },
+    );
+    let mut request = request();
+    request.outputs = NonEmpty::new(vec![BuildOutput {
+        target: BuildTarget::ClientFull,
+        artifact: path("client.zip"),
+    }])
+    .unwrap();
+    let view = engine
+        .preview(root.path().to_owned(), request.clone())
+        .await
+        .unwrap();
+    assert!(view.needs_network);
+    assert!(view.unresolved.is_empty());
+    assert_eq!(before, inventory(root.path()));
+    assert!(!host.path().join("state").exists());
+    // Install mocks after preview: any accidental request during preview cannot succeed.
+    let project = server
+        .mock("GET", "/project/AANobbMI")
+        .with_body(
+            json!({"id":"AANobbMI","slug":"assets","title":"Assets","project_type":"resourcepack"})
+                .to_string(),
+        )
+        .create_async()
+        .await;
+    let mut hashes: serde_json::Map<String, serde_json::Value> = expected
+        .digests
+        .as_ref()
+        .unwrap()
+        .values()
+        .iter()
+        .map(|digest| (digest.algorithm().name().to_owned(), json!(digest.hex())))
+        .collect();
+    if changed_digest {
+        hashes.insert("sha512".into(), json!("00".repeat(64)));
+    }
+    // Modrinth requires a URL; use an explicit blocked locator to test acquisition failure.
+    let download = if unavailable {
+        "https://127.0.0.1:1/unavailable".to_owned()
+    } else {
+        format!("{}/payload", server.url())
+    };
+    let metadata = server.mock("GET", "/version/abcdefgh").with_body(json!({"id":"abcdefgh","project_id":"AANobbMI","files":[{"filename":"assets.zip","primary":true,"size":7,"hashes":hashes,"url":download}],"game_versions":["1.20.1"],"loaders":["minecraft"],"dependencies":[]}).to_string()).create_async().await;
+    let content = server
+        .mock("GET", "/payload")
+        .with_body("payload")
+        .expect(if changed_digest || unavailable { 0 } else { 1 })
+        .create_async()
+        .await;
+    let prepared = ready(&engine, root.path(), request).await;
+    let approval = ExecutionGrant {
+        network: NetworkPermission::Allow,
+        ..grant(&prepared)
+    };
+    let mut handle = engine.start(prepared.authorize(approval).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(BuildOutcome::Completed(_))
+            if !changed_digest && !unavailable =>
+        {
+            let mut archive =
+                zip::ZipArchive::new(fs::File::open(root.path().join("dist/client.zip")).unwrap())
+                    .unwrap();
+            let mut bytes = Vec::new();
+            archive
+                .by_name(".minecraft/resourcepacks/a.zip")
+                .unwrap()
+                .read_to_end(&mut bytes)
+                .unwrap();
+            assert_eq!(bytes, b"payload");
+            for name in ["empack.yml", "empack.lock"] {
+                assert_eq!(
+                    fs::read(root.path().join(name)).unwrap(),
+                    before[&PathBuf::from(name)]
+                );
+            }
+        }
+        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(_))
+            if changed_digest || unavailable =>
+        {
+            assert_eq!(before, inventory(root.path()));
+            assert!(!host.path().join("state").exists());
+        }
+        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+            panic!("provider build failed: {error:#}")
+        }
+        _ => panic!("unexpected provider build outcome"),
+    }
+    project.assert_async().await;
+    metadata.assert_async().await;
+    content.assert_async().await;
+    engine.release_completed(handle.id());
+    drop(outcome);
+    drop(handle);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn missing_provider_credentials_and_restricted_files_remain_explicit_input() {
+    use serde_json::json;
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let expected = provider_fixture(root.path(), true);
+    let before = inventory(root.path());
+    let mut server = mockito::Server::new_async().await;
+    let (engine, _) = engine(host.path().join("state"));
+    let engine = engine.with_provider_catalog(
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+        CatalogLimits::default(),
+    );
+    let mut request = request();
+    request.outputs = NonEmpty::new(vec![BuildOutput {
+        target: BuildTarget::ClientFull,
+        artifact: path("client.zip"),
+    }])
+    .unwrap();
+    let preparation = engine
+        .prepare(root.path().to_owned(), request.clone())
+        .await
+        .unwrap();
+    assert!(matches!(preparation, Preparation::NeedsInput(view) if view.unresolved.len() == 1));
+    let engine = engine.with_provider_catalog(
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        CatalogLimits::default(),
+    );
+    let project = server
+        .mock("GET", "/mods/123")
+        .with_body(
+            json!({"data":{"id":123,"gameId":432,"slug":"assets","name":"Assets","classId":12}})
+                .to_string(),
+        )
+        .create_async()
+        .await;
+    let hashes: Vec<_> = expected
+        .digests
+        .as_ref()
+        .unwrap()
+        .values()
+        .iter()
+        .filter_map(|digest| match digest.algorithm() {
+            empack_core::digest::DigestAlgorithm::Md5 => {
+                Some(json!({"algo":2,"value":digest.hex()}))
+            }
+            empack_core::digest::DigestAlgorithm::Sha1 => {
+                Some(json!({"algo":1,"value":digest.hex()}))
+            }
+            _ => None,
+        })
+        .collect();
+    let metadata = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"assets.zip","fileLength":7,"downloadUrl":null,"hashes":hashes,"gameVersions":["1.20.1"],"dependencies":[]}}).to_string()).create_async().await;
+    let prepared = ready(&engine, root.path(), request).await;
+    let approval = ExecutionGrant {
+        network: NetworkPermission::Allow,
+        ..grant(&prepared)
+    };
+    let mut handle = engine.start(prepared.authorize(approval).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(BuildOutcome::NeedsInput(needs)) => {
+            assert_eq!(needs.len(), 1);
+            assert_eq!(needs[0].kind, ContentRequirementKind::Manual);
+            assert_eq!(needs[0].expected, expected);
+        }
+        OperationOutcome::Completed(BuildOutcome::FailedBeforePublication(error)) => {
+            panic!("restricted file became a failure: {error:#}")
+        }
+        _ => panic!("restricted file did not report missing input"),
+    }
+    assert_eq!(before, inventory(root.path()));
+    assert!(!host.path().join("state").exists());
+    project.assert_async().await;
+    metadata.assert_async().await;
+    engine.shutdown().await;
+}

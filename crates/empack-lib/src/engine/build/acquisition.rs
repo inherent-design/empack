@@ -104,6 +104,34 @@ impl BuildAcquisitionPlan {
     }
 }
 impl BuildAcquisitionResult {
+    /// Resolve exact locked selections to execution-only locators. This does not update pins,
+    /// expected hashes, size, accepted observations, destinations or durable lock documents.
+    pub async fn refresh_provider_locators(
+        mut self,
+        catalog: &crate::engine::providers::ProviderCatalog,
+        scope: &mut WorkScope,
+        limits: crate::engine::providers::CatalogLimits,
+    ) -> Result<Self> {
+        for need in &mut self.pending {
+            let BuildContentSource::Provider { pin, slot } = &need.source else {
+                continue;
+            };
+            if !catalog.availability().supports(&pin.project) {
+                continue;
+            }
+            let resolution = catalog.resolve_exact(scope, pin.clone(), limits).await?;
+            let alternatives = resolution.download_alternatives(slot, &need.expected)?;
+            need.source = if alternatives.is_empty() {
+                BuildContentSource::Manual {
+                    pin: Some(pin.clone()),
+                }
+            } else {
+                BuildContentSource::Download(NonEmpty::new(alternatives)?)
+            };
+        }
+        Ok(self)
+    }
+
     /// Process every captured archive once. Missing source archives remain pending for a new
     /// preparation; changed, malformed or mismatched members fail the whole unpublished batch.
     /// Run this synchronous phase in an admitted blocking worker.
