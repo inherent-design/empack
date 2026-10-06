@@ -72,6 +72,16 @@ impl ProjectReadRoot {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<NativeSnapshot> {
+        self.capture_filtered(scopes, limits, None, cancel)
+    }
+
+    pub(super) fn capture_filtered(
+        &self,
+        scopes: &[PortableRelPath],
+        limits: SnapshotLimits,
+        filter: Option<&super::source::PackCaptureFilter>,
+        cancel: &Cancellation,
+    ) -> Result<NativeSnapshot> {
         self.check_binding()?;
         let selected: BTreeSet<_> = scopes.iter().cloned().collect();
         ensure!(selected.len() == scopes.len(), "Duplicate snapshot scope");
@@ -88,6 +98,9 @@ impl ProjectReadRoot {
             total: 0,
             limits,
             cancel,
+            filter: filter
+                .map(|policy| Ok::<_, anyhow::Error>((policy, policy.matcher()?)))
+                .transpose()?,
         };
         for path in scopes {
             cancel.check()?;
@@ -96,7 +109,11 @@ impl ProjectReadRoot {
         self.check_binding()?;
         Ok(NativeSnapshot {
             root: self.binding,
-            groups: vec![(scopes.to_vec(), limits)],
+            groups: vec![CaptureGroup {
+                scopes: scopes.to_vec(),
+                limits,
+                filter: filter.cloned(),
+            }],
             entries: capture.entries,
         })
     }
@@ -108,8 +125,9 @@ impl ProjectReadRoot {
             "Snapshot belongs to another project root"
         );
         let mut current = None;
-        for (scopes, limits) in &snapshot.groups {
-            let group = self.capture(scopes, *limits, cancel)?;
+        for group in &snapshot.groups {
+            let group =
+                self.capture_filtered(&group.scopes, group.limits, group.filter.as_ref(), cancel)?;
             current = Some(match current {
                 None => group,
                 Some(previous) => NativeSnapshot::merge(previous, group)?,
@@ -150,18 +168,23 @@ pub enum Observation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DirectoryBinding(ObjectIdentity);
 
+#[derive(Debug)]
+pub(super) struct CaptureGroup {
+    pub scopes: Vec<PortableRelPath>,
+    pub limits: SnapshotLimits,
+    pub filter: Option<super::source::PackCaptureFilter>,
+}
+
 /// Immutable native evidence bound to one retained project root.
 #[derive(Debug)]
 pub struct NativeSnapshot {
     root: ObjectIdentity,
-    groups: Vec<(Vec<PortableRelPath>, SnapshotLimits)>,
+    groups: Vec<CaptureGroup>,
     entries: BTreeMap<PortableRelPath, Observation>,
 }
 impl NativeSnapshot {
-    pub(super) fn groups(&self) -> impl Iterator<Item = (&[PortableRelPath], SnapshotLimits)> {
-        self.groups
-            .iter()
-            .map(|(scopes, limits)| (scopes.as_slice(), *limits))
+    pub(super) fn groups(&self) -> impl Iterator<Item = &CaptureGroup> {
+        self.groups.iter()
     }
     /// Preserve each read group's own budget while combining evidence for one publication.
     pub(super) fn merge(mut self, other: Self) -> Result<Self> {
@@ -198,6 +221,10 @@ struct Capture<'a> {
     total: u64,
     limits: SnapshotLimits,
     cancel: &'a Cancellation,
+    filter: Option<(
+        &'a super::source::PackCaptureFilter,
+        super::source::SourceFilter,
+    )>,
 }
 impl Capture<'_> {
     fn insert(&mut self, path: PortableRelPath, value: Observation) -> Result<()> {
@@ -263,6 +290,13 @@ impl Capture<'_> {
             }
             Err(error) => return Err(error.into()),
         };
+        if self
+            .filter
+            .as_ref()
+            .is_some_and(|(policy, matcher)| !policy.includes(matcher, &path, metadata.is_dir()))
+        {
+            return Ok(());
+        }
         ensure!(
             !metadata.file_type().is_symlink(),
             "Managed input is a link: {}",
@@ -273,10 +307,10 @@ impl Capture<'_> {
             native::reject_reparse(&directory.try_clone()?.into_std_file())?;
             let binding = DirectoryBinding(native::directory_identity(&directory)?);
             let mut members = BTreeSet::new();
-            for entry in directory.entries()? {
+            for (seen, entry) in directory.entries()?.enumerate() {
                 self.cancel.check()?;
                 ensure!(
-                    members.len() < self.limits.entries.saturating_sub(self.entries.len()),
+                    seen < self.limits.entries.saturating_sub(self.entries.len()),
                     "Snapshot exceeds entry limit"
                 );
                 let name = entry?
@@ -284,6 +318,16 @@ impl Capture<'_> {
                     .into_string()
                     .map_err(|_| anyhow::anyhow!("Nonportable managed filename"))?;
                 PortableRelPath::parse(&name, PathSyntax::ArtifactName)?;
+                let child = PortableRelPath::parse(
+                    &format!("{}/{}", path.as_str(), name),
+                    PathSyntax::ProjectContent,
+                )?;
+                if let Some((policy, matcher)) = &self.filter {
+                    let metadata = directory.symlink_metadata(&name)?;
+                    if !policy.includes(matcher, &child, metadata.is_dir()) {
+                        continue;
+                    }
+                }
                 members.insert(name);
             }
             self.insert(

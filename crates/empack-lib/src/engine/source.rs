@@ -67,6 +67,63 @@ impl SourceFilter {
     }
 }
 
+/// Persisted build traversal policy. Recovery repeats these captured rules, never live rules.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct PackCaptureFilter {
+    rules: String,
+    required: Vec<String>,
+}
+impl PackCaptureFilter {
+    pub(super) fn new(rules: Vec<u8>, required: &[PortableRelPath]) -> Result<Self> {
+        let value = Self {
+            rules: String::from_utf8(rules)?,
+            required: required
+                .iter()
+                .map(|path| path.as_str().to_owned())
+                .collect(),
+        };
+        value.matcher()?;
+        Ok(value)
+    }
+    pub(super) fn matcher(&self) -> Result<SourceFilter> {
+        for path in &self.required {
+            PortableRelPath::parse(path, empack_core::path::PathSyntax::ProjectContent)?;
+        }
+        SourceFilter::parse(self.rules.as_bytes())
+    }
+    pub(super) fn includes(
+        &self,
+        matcher: &SourceFilter,
+        path: &PortableRelPath,
+        directory: bool,
+    ) -> bool {
+        let Some(relative) = path.as_str().strip_prefix("pack/") else {
+            return true;
+        };
+        if matches!(relative, "pack.toml" | "index.toml" | ".packwizignore") {
+            return true;
+        }
+        // Explicit locked local/archive sources cannot disappear behind an ignore rule.
+        if self.required.iter().any(|required| {
+            required == path.as_str()
+                || required
+                    .strip_prefix(path.as_str())
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+                || path
+                    .as_str()
+                    .strip_prefix(required)
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+        }) {
+            return true;
+        }
+        let relative =
+            PortableRelPath::parse(relative, empack_core::path::PathSyntax::ProjectContent)
+                .expect("suffix of a validated portable path");
+        matcher.includes(&relative, directory)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

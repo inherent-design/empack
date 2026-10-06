@@ -228,8 +228,17 @@ impl ProjectReader {
         artifact_limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<WorkspaceSnapshot> {
-        let documents = self.capture(selected, &[], limits, cancel)?;
+        let rules_path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
+        let documents = self.capture(selected, &[rules_path], limits, cancel)?;
+        let rules = read_document(
+            &documents.root,
+            &documents.native,
+            "pack/.packwizignore",
+            cancel,
+        )?
+        .unwrap_or_default();
         let project = documents.require_resolved()?;
+        let mut required_sources = Vec::new();
         let mut scopes = ["pack", "overrides/client", "overrides/server", "templates"]
             .into_iter()
             .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
@@ -237,8 +246,14 @@ impl ProjectReader {
         for dependency in project.lock().dependencies.values() {
             for file in dependency.files.as_slice() {
                 match &file.acquisition {
-                    AcquisitionSpec::Local(path) => scopes.push(path.clone()),
-                    AcquisitionSpec::Embedded { archive, .. } => scopes.push(archive.clone()),
+                    AcquisitionSpec::Local(path) => {
+                        scopes.push(path.clone());
+                        required_sources.push(path.clone());
+                    }
+                    AcquisitionSpec::Embedded { archive, .. } => {
+                        scopes.push(archive.clone());
+                        required_sources.push(archive.clone());
+                    }
                     _ => {}
                 }
             }
@@ -257,7 +272,11 @@ impl ProjectReader {
             })
             .cloned()
             .collect();
-        let mut captured = self.capture(selected, &scopes, limits, cancel)?;
+        let filter = super::source::PackCaptureFilter::new(rules, &required_sources)?;
+        let mut captured =
+            self.capture_selected(selected, &scopes, limits, Some(&filter), cancel)?;
+        // The rule bytes used to select traversal remain exact read-set inputs.
+        captured.native = documents.native.merge(captured.native)?;
         if !artifacts.is_empty() {
             // A build may observe old outputs, but cannot replace an input under another role.
             // Use portable collision rules too: case aliases must not bypass this on Windows.
@@ -302,6 +321,16 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<WorkspaceSnapshot> {
+        self.capture_selected(selected, scopes, limits, None, cancel)
+    }
+    fn capture_selected(
+        &self,
+        selected: &Path,
+        scopes: &[PortableRelPath],
+        limits: SnapshotLimits,
+        filter: Option<&super::source::PackCaptureFilter>,
+        cancel: &Cancellation,
+    ) -> Result<WorkspaceSnapshot> {
         cancel.check()?;
         let root = ProjectReadRoot::open(selected)?;
         let _initial_guard = self.recovery.enter(&root)?;
@@ -312,7 +341,7 @@ impl ProjectReader {
                 scopes.push(path);
             }
         }
-        let native = root.capture(&scopes, limits, cancel)?;
+        let native = root.capture_filtered(&scopes, limits, filter, cancel)?;
         let intent_bytes = read_document(&root, &native, "empack.yml", cancel)?
             .context("Project has no empack.yml")?;
         let intent = DocumentCodec.decode_intent(&intent_bytes, "empack.yml")?;

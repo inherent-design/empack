@@ -25,7 +25,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const JOURNAL_SCHEMA: u32 = 3;
+const JOURNAL_SCHEMA: u32 = 4;
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -183,6 +183,7 @@ struct Journal {
 struct JournalCapture {
     scopes: Vec<String>,
     limits: SnapshotLimits,
+    filter: Option<super::source::PackCaptureFilter>,
 }
 
 impl Publisher {
@@ -379,9 +380,14 @@ impl Publisher {
             changes,
             groups: base
                 .groups()
-                .map(|(scopes, limits)| JournalCapture {
-                    scopes: scopes.iter().map(|path| path.as_str().to_owned()).collect(),
-                    limits,
+                .map(|group| JournalCapture {
+                    scopes: group
+                        .scopes
+                        .iter()
+                        .map(|path| path.as_str().to_owned())
+                        .collect(),
+                    limits: group.limits,
+                    filter: group.filter.clone(),
                 })
                 .collect(),
             expected,
@@ -938,6 +944,11 @@ fn validate_journal(journal: &Journal, root: &ProjectReadRoot) -> Result<()> {
         }
     }
     ensure!(!journal.groups.is_empty(), "Journal lacks capture groups");
+    for group in &journal.groups {
+        if let Some(filter) = &group.filter {
+            filter.matcher()?;
+        }
+    }
     for path in journal.groups.iter().flat_map(|group| &group.scopes) {
         PortableRelPath::parse(path, PathSyntax::ProjectContent)?;
     }
@@ -1059,7 +1070,12 @@ fn capture_journal(
             .iter()
             .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let next = root.capture(&scopes, group.limits, &Cancellation::default())?;
+        let next = root.capture_filtered(
+            &scopes,
+            group.limits,
+            group.filter.as_ref(),
+            &Cancellation::default(),
+        )?;
         captured = Some(match captured {
             None => next,
             Some(previous) => super::snapshot::NativeSnapshot::merge(previous, next)?,

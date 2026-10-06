@@ -295,7 +295,9 @@ pub(super) fn candidate_stage_limits(
             .iter()
             .map(|(path, file)| (path.clone(), file.bytes)),
     );
-    for (scopes, limits) in base.groups() {
+    for group in base.groups() {
+        let scopes = &group.scopes;
+        let limits = group.limits;
         let selected = |path: &PortableRelPath| {
             scopes.iter().any(|scope| {
                 path == scope

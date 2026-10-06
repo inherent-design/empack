@@ -347,3 +347,11 @@ A later download failure returns no prepared subset. Input leases remain charged
 until their staging copies complete; host admission must allow those leases to
 coexist with the execution reservation. The installer may still acquire undeclared
 internal inputs, so this does not claim offline or fully mediated tool execution.
+
+Build capture applies pack ignore rules during native traversal. Ignored subtrees
+are pruned before their bytes or descendants are opened. Directory enumeration
+still has an entry limit. The rule document and backend control documents remain
+inputs; explicit locked local/archive sources remain required even under an ignored
+path. Eligible membership changes and rule edits invalidate preparation. Changes
+confined to ignored content do not. Journal capture groups retain the exact filter
+and input exceptions, so recovery does not silently broaden or reinterpret the read set.

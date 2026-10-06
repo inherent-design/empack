@@ -106,6 +106,9 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
     let cancel = Cancellation::default();
     fs::create_dir(project.join("dist")).unwrap();
     fs::write(project.join("dist/old.zip"), vec![0; 8192]).unwrap();
+    fs::create_dir_all(project.join("pack/ignored")).unwrap();
+    fs::write(project.join("pack/.packwizignore"), b"ignored/\n").unwrap();
+    fs::write(project.join("pack/ignored/large.bin"), vec![0; 8192]).unwrap();
     let captured = reader
         .capture_build(
             &project,
@@ -124,6 +127,34 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
             .get(&PortableRelPath::parse("dist/new.mrpack", PathSyntax::ProjectContent).unwrap()),
         Some(Observation::Absent)
     ));
+    assert!(
+        !captured
+            .observations()
+            .entries()
+            .keys()
+            .any(|path| path.as_str().starts_with("pack/ignored/"))
+    );
+    fs::write(project.join("pack/ignored/new.bin"), vec![1; 8192]).unwrap();
+    captured
+        .root()
+        .revalidate(captured.observations(), &cancel)
+        .unwrap();
+    fs::write(project.join("pack/new.txt"), b"new").unwrap();
+    assert!(
+        captured
+            .root()
+            .revalidate(captured.observations(), &cancel)
+            .is_err()
+    );
+    fs::remove_file(project.join("pack/new.txt")).unwrap();
+    fs::write(project.join("pack/.packwizignore"), b"ignored/\n*.txt\n").unwrap();
+    assert!(
+        captured
+            .root()
+            .revalidate(captured.observations(), &cancel)
+            .is_err()
+    );
+    fs::write(project.join("pack/.packwizignore"), b"ignored/\n").unwrap();
     fs::write(project.join("dist/old.zip"), b"unrelated replacement").unwrap();
     captured
         .root()
@@ -139,7 +170,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
         .unwrap();
     assert_eq!(content.lease().len(), 5);
     assert!(!host.exists());
-    assert_eq!(fs::read_dir(&project).unwrap().count(), 4);
+    assert_eq!(fs::read_dir(&project).unwrap().count(), 5);
     assert!(
         !captured
             .observations()

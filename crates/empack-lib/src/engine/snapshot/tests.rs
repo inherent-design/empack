@@ -224,3 +224,45 @@ fn retained_windows_roots_prevent_replacement_and_reopened_roots_reject_old_snap
             .is_err()
     );
 }
+
+#[test]
+fn filtered_capture_preserves_explicit_inputs_inside_ignored_directories() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("pack/ignored")).unwrap();
+    std::fs::write(root.path().join("pack/ignored/required.bin"), b"kept").unwrap();
+    std::fs::write(root.path().join("pack/ignored/large.bin"), vec![0; 1024]).unwrap();
+    let path = |value| PortableRelPath::parse(value, PathSyntax::ProjectContent).unwrap();
+    let required = path("pack/ignored/required.bin");
+    let filter = super::super::source::PackCaptureFilter::new(
+        b"ignored/\n".to_vec(),
+        std::slice::from_ref(&required),
+    )
+    .unwrap();
+    let reader = ProjectReadRoot::open(root.path()).unwrap();
+    let cancel = Cancellation::default();
+    let snapshot = reader
+        .capture_filtered(
+            &[path("pack")],
+            SnapshotLimits {
+                file_bytes: 8,
+                total_bytes: 8,
+                ..SnapshotLimits::default()
+            },
+            Some(&filter),
+            &cancel,
+        )
+        .unwrap();
+    assert!(matches!(
+        snapshot.entries().get(&required),
+        Some(Observation::File(_))
+    ));
+    assert!(
+        !snapshot
+            .entries()
+            .contains_key(&path("pack/ignored/large.bin"))
+    );
+    std::fs::write(root.path().join("pack/ignored/large.bin"), vec![1; 2048]).unwrap();
+    reader.revalidate(&snapshot, &cancel).unwrap();
+    std::fs::write(root.path().join("pack/ignored/required.bin"), b"edit").unwrap();
+    assert!(reader.revalidate(&snapshot, &cancel).is_err());
+}

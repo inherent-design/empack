@@ -19,7 +19,7 @@ checks. There will be one implementation per operation, not a permanent legacy e
 | Semantic core | Dependency-free identities, pins, paths, requirements, digests, exact multi-file resolution, file plans, target prerequisites and inventory projection | [Core suites](../../crates/empack-core/tests/) |
 | Documents | Intent schema 2 and lock schema 1; raw and semantic revisions; strict source/selection validation; original-byte no-op writes; stable credential-free persisted locators | [Codec tests](../../crates/empack-lib/src/engine/documents/tests.rs) |
 | Project capture | Read-only recovery gate; retained native root; bounded bytes, identities, membership and absence; explicit local/archive sources; exact artifact destinations | [Reader tests](../../crates/empack-lib/src/engine/project/tests.rs), [snapshot tests](../../crates/empack-lib/src/engine/snapshot/tests.rs) |
-| Source enumeration | Captured pack ignore rules; new files independent of backend index; separate common/client/server layers | [Source matcher](../../crates/empack-lib/src/engine/source.rs), reader tests |
+| Source enumeration | Native traversal applies captured pack ignore rules before opening ignored bytes; explicit local/archive inputs remain captured; recovery retains the same filter; common/client/server layers remain separate | [Source matcher](../../crates/empack-lib/src/engine/source.rs), reader tests |
 | Backend observations | Shared canonical provider/pin decoding; safe relative payload paths; requirements, optional defaults and digest declarations; captured metadata revisions | [Backend tests](../../crates/empack-lib/src/engine/backend/tests.rs) |
 | Private content | Bounded quarantine, every source digest/size/observation checked, retained independent readers, original weak evidence separate from computed hashes | [Content tests](../../crates/empack-lib/src/engine/content/tests.rs) |
 | HTTP acquisition | HTTPS/redirect/status policy, bounded channel, cumulative mirror bytes, one deadline, scope-owned verifier, redacted locators, reservations retained by leases/readers | [Transfer tests](../../crates/empack-lib/src/engine/acquisition/tests.rs) |
@@ -181,8 +181,9 @@ repeat passed without a leak. These observations do not establish a production f
 - Add persistent content lookup/store capabilities with read-only preview authority.
   Coordinate provider authentication, retry and rate policy; the new content HTTP
   port does not replace the existing catalog clients yet.
-- Source filtering currently follows a bounded full snapshot. Ignored bytes still
-  count toward capture limits. Filtered native traversal remains required.
+- Native build capture filters ignored pack content before opening its bytes. Directory
+  enumeration remains bounded; captured rules and explicit input exceptions survive
+  revalidation and journal recovery.
 - Windows publication reports file synchronization, not Unix directory synchronization.
   Filesystems without durable root creation identity are refused. Portable permission
   checks cover read-only/executable intent, not arbitrary ACL equivalence.

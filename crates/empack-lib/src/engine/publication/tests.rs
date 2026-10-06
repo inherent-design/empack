@@ -608,6 +608,11 @@ fn separate_source_and_artifact_budgets_survive_interrupted_publication() {
     for artifact_limit in [16, 128] {
         let project = tempfile::tempdir().unwrap();
         fs::write(project.path().join("input"), b"input").unwrap();
+        fs::create_dir_all(project.path().join("pack/ignored")).unwrap();
+        fs::write(project.path().join("pack/.packwizignore"), b"ignored/\n").unwrap();
+        fs::write(project.path().join("pack/ignored/huge"), vec![0; 1024]).unwrap();
+        let filter =
+            crate::engine::source::PackCaptureFilter::new(b"ignored/\n".to_vec(), &[]).unwrap();
         let state = tempfile::tempdir().unwrap();
         let publisher = Publisher::open(&state.path().join("private")).unwrap();
         let root = ProjectReadRoot::open(project.path()).unwrap();
@@ -623,7 +628,12 @@ fn separate_source_and_artifact_budgets_survive_interrupted_publication() {
             ..SnapshotLimits::default()
         };
         let base = root
-            .capture(&[path("input")], source_limits, &cancel)
+            .capture_filtered(
+                &[path("input"), path("pack")],
+                source_limits,
+                Some(&filter),
+                &cancel,
+            )
             .unwrap()
             .merge(
                 root.capture(&[path("dist/result.zip")], artifact_limits, &cancel)
@@ -667,6 +677,7 @@ fn separate_source_and_artifact_budgets_survive_interrupted_publication() {
                 .is_err()
         );
         assert!(publisher.recovery_required(&root).unwrap());
+        fs::write(project.path().join("pack/ignored/huge"), vec![1; 2048]).unwrap();
         fs::write(project.path().join("input"), vec![0; 33]).unwrap();
         assert!(
             publisher.recover(&root).is_err(),
