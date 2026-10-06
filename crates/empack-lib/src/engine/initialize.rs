@@ -45,6 +45,7 @@ impl InitializeCandidate {
             revision,
         )?;
         let mut collisions = super::layout::CollisionIndex::default();
+        let mut outputs = BTreeMap::<_, super::layout::CollisionIndex>::new();
         let mut publication_bytes =
             bytes.len() as u64 + DocumentCodec.encode_lock(&project)?.len() as u64;
         for (path, bytes) in &templates {
@@ -58,6 +59,12 @@ impl InitializeCandidate {
                 "Template must belong to a common, client or server layer"
             );
             collisions.insert_file(path)?;
+            let (layer, destination, _) = super::templates::template_address(path.as_str())?
+                .expect("validated template layer");
+            outputs
+                .entry(layer)
+                .or_default()
+                .insert_file(&destination)?;
             publication_bytes = publication_bytes
                 .checked_add(bytes.len() as u64)
                 .ok_or_else(|| anyhow::anyhow!("Initialization staging size overflow"))?;

@@ -28,7 +28,6 @@ pub struct ReplacementSnapshot {
     recovery: RecoveryReader,
     limits: SnapshotLimits,
     policy: Option<(Vec<u8>, FilePermissions)>,
-    templates: std::collections::BTreeMap<PortableRelPath, (Vec<u8>, FilePermissions)>,
 }
 impl ReplacementSnapshot {
     pub fn observations(&self) -> &NativeSnapshot {
@@ -37,11 +36,8 @@ impl ReplacementSnapshot {
     pub(super) fn preserved_policy(&self) -> Option<&(Vec<u8>, FilePermissions)> {
         self.policy.as_ref()
     }
-    pub(super) fn preserved_templates(
-        &self,
-    ) -> &std::collections::BTreeMap<PortableRelPath, (Vec<u8>, FilePermissions)> {
-        &self.templates
-    }
+    /// Bind the relevant template layers so a new seed cannot shadow another spelling of an
+    /// existing output. Byte observation is streamed; unrelated templates are not copied to memory.
     pub(super) fn capture_seed_templates(
         mut self,
         paths: &[PortableRelPath],
@@ -50,30 +46,79 @@ impl ReplacementSnapshot {
         if paths.is_empty() {
             return Ok(self);
         }
-        let _guard = self.recovery.enter(&self.root)?;
-        let captured = self.root.capture(paths, self.limits, cancel)?;
+        let mut scopes = std::collections::BTreeSet::from([PortableRelPath::parse(
+            "templates/common",
+            PathSyntax::ProjectContent,
+        )?]);
         for path in paths {
-            if let Some(Observation::File(file)) = captured.entries().get(path) {
-                let bytes = read_document(&self.root, &captured, path.as_str(), cancel)?
-                    .context("Captured user template disappeared")?;
-                let name = path
-                    .as_str()
-                    .strip_prefix("templates/")
-                    .context("Template outside its namespace")?;
-                self.templates.insert(
-                    PortableRelPath::parse(name, PathSyntax::ProjectContent)?,
-                    (bytes, super::verification::content(file).permissions),
-                );
-            } else {
-                ensure!(
-                    matches!(captured.entries().get(path), Some(Observation::Absent)),
-                    "Template seed destination is not a regular file or absent"
-                );
-            }
+            let relative = path
+                .as_str()
+                .strip_prefix("templates/")
+                .context("Template outside its namespace")?;
+            let layer = relative
+                .split_once('/')
+                .context("Template lacks a layer")?
+                .0;
+            ensure!(
+                matches!(layer, "common" | "client" | "server"),
+                "Unknown template layer"
+            );
+            scopes.insert(PortableRelPath::parse(
+                &format!("templates/{layer}"),
+                PathSyntax::ProjectContent,
+            )?);
+        }
+        if scopes
+            .iter()
+            .all(|scope| self.native.entries().contains_key(scope))
+        {
+            return Ok(self);
+        }
+        let _guard = self.recovery.enter(&self.root)?;
+        let captured = self.root.capture(
+            &scopes.iter().cloned().collect::<Vec<_>>(),
+            self.limits,
+            cancel,
+        )?;
+        for scope in &scopes {
+            ensure!(
+                matches!(
+                    captured.entries().get(scope),
+                    Some(Observation::Directory { .. } | Observation::Absent)
+                ),
+                "Template layer is not a directory or absent"
+            );
         }
         self.native = self.native.merge(captured)?;
         self.root.revalidate(&self.native, cancel)?;
         Ok(self)
+    }
+    pub(super) fn template_seed_is_missing(&self, path: &PortableRelPath) -> Result<bool> {
+        let (layer, destination, _) = super::templates::template_address(path.as_str())?
+            .context("Unknown template seed layer")?;
+        for (observed, kind) in self.native.entries() {
+            if !matches!(kind, Observation::File(_)) {
+                continue;
+            }
+            let Some(relative) = observed.as_str().strip_prefix("templates/") else {
+                continue;
+            };
+            let Some((existing_layer, existing_destination, _)) =
+                super::templates::template_address(relative)?
+            else {
+                continue;
+            };
+            if existing_layer != empack_core::model::ContentLayer::Common && existing_layer != layer
+            {
+                continue;
+            }
+            let mut collisions = super::layout::CollisionIndex::default();
+            collisions.insert_file(&existing_destination)?;
+            if collisions.insert_file(&destination).is_err() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
     /// Explicit incoming paths need unfiltered absence evidence. Filtered directory membership
     /// cannot establish that an ignored destination is absent or authorize overwriting it.
@@ -337,7 +382,6 @@ impl ProjectReader {
             recovery: self.recovery.clone(),
             limits,
             policy,
-            templates: Default::default(),
         })
     }
     /// Bind standard build inputs and each declared local/archive source, including files outside

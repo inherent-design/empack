@@ -91,6 +91,30 @@ impl RenderedTemplates {
     }
 }
 
+/// One source-to-output interpretation, shared by build rendering and missing-template seeds.
+pub(super) fn template_address(
+    relative: &str,
+) -> Result<Option<(ContentLayer, PortableRelPath, TemplateMode)>> {
+    let Some((layer, name)) = relative.split_once('/') else {
+        return Ok(None);
+    };
+    let layer = match layer {
+        "common" => ContentLayer::Common,
+        "client" => ContentLayer::Client,
+        "server" => ContentLayer::Server,
+        _ => return Ok(None),
+    };
+    let (name, mode) = match name.strip_suffix(".template") {
+        Some(name) => (name, TemplateMode::Handlebars),
+        None => (name, TemplateMode::TextOrBinary),
+    };
+    Ok(Some((
+        layer,
+        PortableRelPath::parse(name, PathSyntax::ArchiveMember)?,
+        mode,
+    )))
+}
+
 /// Render a standalone target from its captured common and side inputs. Nested paths,
 /// user scripts and binary content remain inputs, never rewritten project files.
 /// Call from an admitted worker: parsing and local file verification are synchronous.
@@ -125,24 +149,13 @@ pub fn prepare_templates(
         let Some(relative) = path.as_str().strip_prefix("templates/") else {
             continue;
         };
-        let Some((layer, name)) = relative.split_once('/') else {
+        let Some((layer, destination, mode)) = template_address(relative)? else {
             continue;
-        };
-        let layer = match layer {
-            "common" => ContentLayer::Common,
-            "client" => ContentLayer::Client,
-            "server" => ContentLayer::Server,
-            _ => continue,
         };
         all_inputs.insert(path.clone());
         if layer != ContentLayer::Common && layer != side {
             continue;
         }
-        let (name, mode) = match name.strip_suffix(".template") {
-            Some(name) => (name, TemplateMode::Handlebars),
-            None => (name, TemplateMode::TextOrBinary),
-        };
-        let destination = PortableRelPath::parse(name, PathSyntax::ArchiveMember)?;
         let input = TemplateInput {
             source: path.clone(),
             destination: destination.clone(),

@@ -66,6 +66,20 @@ pub fn observed_files_for(
     Ok(observed)
 }
 
+/// Project replacement owns managed content and explicitly missing template seeds. Other
+/// captured user templates remain read-set evidence, never implicit mutation targets.
+pub(super) fn observed_project_replacement_for(
+    snapshot: &NativeSnapshot,
+    targets: impl IntoIterator<Item = ManagedPath>,
+) -> Result<BTreeMap<ManagedPath, ObservedPath>> {
+    let targets: BTreeSet<_> = targets.into_iter().collect();
+    let mut observed = observed_files_for(snapshot, targets.iter().cloned())?;
+    observed.retain(|target, _| {
+        !matches!(target, ManagedPath::UserTemplate(_)) || targets.contains(target)
+    });
+    Ok(observed)
+}
+
 /// Read-only inputs outside the publication footprint remain in the native snapshot.
 /// Only explicitly selected artifact destinations participate in this file plan.
 pub fn observed_artifacts_for(
@@ -157,6 +171,36 @@ impl VerifiedFileChange {
     /// Consume a candidate only when its complete selected file inventory matches the pure plan.
     pub fn verify(base: NativeSnapshot, plan: FilePlan, stage: FrozenStage) -> Result<Self> {
         let observed = observed_files_for(
+            &base,
+            plan.expected()
+                .keys()
+                .cloned()
+                .chain(plan.changes().iter().map(|change| change.target().clone())),
+        )?;
+        Self::verify_observed(base, plan, stage, observed)
+    }
+    /// User templates outside the explicit plan remain captured inputs. Project creation and
+    /// replacement may seed missing templates, but cannot reset or delete existing user files.
+    pub(super) fn verify_project_replacement(
+        base: NativeSnapshot,
+        plan: FilePlan,
+        stage: FrozenStage,
+    ) -> Result<Self> {
+        for change in plan.changes() {
+            if matches!(change.target(), ManagedPath::UserTemplate(_)) {
+                ensure!(
+                    matches!(
+                        change,
+                        FileChange::Replace {
+                            before: ObservedPath::Absent,
+                            ..
+                        }
+                    ),
+                    "Project replacement cannot overwrite or delete user templates"
+                );
+            }
+        }
+        let observed = observed_project_replacement_for(
             &base,
             plan.expected()
                 .keys()

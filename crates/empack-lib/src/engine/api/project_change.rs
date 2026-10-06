@@ -122,15 +122,9 @@ pub(super) async fn prepare(
     )?;
     let snapshot = scope.accept(work.wait().await?)?.transpose()?;
     let policy_bytes = match &*snapshot {
-        CapturedProjectChange::Existing(value) => value.preserved_templates().values().try_fold(
-            value
-                .preserved_policy()
-                .map_or(0, |(bytes, _)| bytes.len() as u64),
-            |sum, (bytes, _)| {
-                sum.checked_add(bytes.len() as u64)
-                    .context("Template staging size overflow")
-            },
-        )?,
+        CapturedProjectChange::Existing(value) => value
+            .preserved_policy()
+            .map_or(0, |(bytes, _)| bytes.len() as u64),
         CapturedProjectChange::New(_) => 0,
     };
     let bytes = candidate

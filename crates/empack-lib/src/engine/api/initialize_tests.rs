@@ -372,3 +372,126 @@ async fn initialization_refuses_template_links_without_changing_outside_bytes() 
     );
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn initialization_preserves_user_template_destinations_and_common_precedence() {
+    for name in [
+        "client/instance.cfg",
+        "client/INSTANCE.cfg",
+        "common/instance.cfg.template",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let (engine, _) = engine(state.path().join("state"));
+        put(
+            root.path(),
+            &format!("templates/{name}"),
+            b"user configuration",
+        );
+        let prepared = prepare(
+            &engine,
+            ProjectTarget::Existing(root.path().to_path_buf()),
+            request(LoaderKind::Vanilla, false),
+        )
+        .await;
+        assert!(!prepared.view().initialize().unwrap().files.changes().iter().any(|change|
+            matches!(change.target(), ManagedPath::UserTemplate(path) if path.as_str() == "client/instance.cfg.template")));
+        let permission = grant(&prepared);
+        let mut operation = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        assert!(matches!(
+            &*operation.wait().await,
+            OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Initialize(
+                _
+            )))
+        ));
+        let workspace = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
+            .capture_build(
+                root.path(),
+                &[],
+                SnapshotLimits::default(),
+                &crate::application::process_runtime::Cancellation::default(),
+            )
+            .unwrap();
+        let rendered = crate::engine::templates::prepare_templates(
+            &workspace,
+            BuildTarget::ClientFull,
+            &TemplateOptions::default(),
+            &crate::application::process_runtime::Cancellation::default(),
+        )
+        .unwrap();
+        let destination = if name == "client/INSTANCE.cfg" {
+            "INSTANCE.cfg"
+        } else {
+            "instance.cfg"
+        };
+        let file = &rendered.files()[&path(destination)];
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut file.content.lease().open(), &mut bytes).unwrap();
+        assert_eq!(bytes, b"user configuration");
+        engine.shutdown().await;
+    }
+}
+
+#[test]
+fn initialization_rejects_seeds_with_colliding_rendered_destinations() {
+    let request = request(LoaderKind::Vanilla, false);
+    let project = request.candidate.project();
+    for names in [
+        ["client/instance.cfg", "client/instance.cfg.template"],
+        ["client/INSTANCE.cfg", "client/instance.cfg.template"],
+        ["server/config", "server/config/file.template"],
+    ] {
+        let seeds = names
+            .into_iter()
+            .map(|name| (path(name), b"seed".to_vec()))
+            .collect();
+        assert!(
+            InitializeCandidate::new(
+                project.intent().clone(),
+                project.lock().runtime.clone(),
+                seeds
+            )
+            .is_err()
+        );
+    }
+}
+
+#[tokio::test]
+async fn initialization_rejects_a_new_common_template_after_preparation() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let (engine, _) = engine(state.path().join("state"));
+    let prepared = prepare(
+        &engine,
+        ProjectTarget::Existing(root.path().to_path_buf()),
+        request(LoaderKind::Vanilla, false),
+    )
+    .await;
+    put(
+        root.path(),
+        "templates/common/instance.cfg",
+        b"new user configuration",
+    );
+    let permission = grant(&prepared);
+    let mut operation = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    assert!(!matches!(
+        &*operation.wait().await,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+    ));
+    assert!(!root.path().join("empack.yml").exists());
+    assert!(
+        !root
+            .path()
+            .join("templates/client/instance.cfg.template")
+            .exists()
+    );
+    assert_eq!(
+        fs::read(root.path().join("templates/common/instance.cfg")).unwrap(),
+        b"new user configuration"
+    );
+    engine.shutdown().await;
+}

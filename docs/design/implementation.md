@@ -318,6 +318,12 @@ changed bytes. Cancellation is deferred after durable intent. Pre-intent ordinar
 failures discard private scratch; abrupt process death before intent can leave private
 scratch that still needs the planned retention/cleanup catalog.
 
+Windows creation uses `NtSetInformationFile` with a retained destination directory
+and `ReplaceIfExists = false`. Native CI at `8b1790b` exposed error 87 in the Win32
+wrapper when given a relative destination and root handle; the native call follows the
+[relative-name contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information)
+directly. Cross-compilation verifies the bindings; native CI must verify execution.
+
 `Publisher::recover_new` is a lower-level creation recovery entry point. Engine recovery,
 continuation and CLI composition remain required.
 
@@ -325,8 +331,11 @@ continuation and CLI composition remain required.
 families. It preserves metadata, compatibility alternatives, layout, distribution
 preferences and extension values. The shared project-change module stages its documents
 and optional template seeds without an artificial archive or backend call. Captured
-existing user templates retain bytes and permissions; missing seeds retain expressions
-until build time. Conflicting edits, directories and links block publication. A published
+existing user templates remain outside the write set, retaining bytes and permissions.
+Seeds compare rendered destinations across their own and common layers, so a different
+filename or a common-layer template cannot be shadowed by a default. Relevant layers
+are streamed into the read set rather than copied into staging; concurrent additions
+and edits block publication. Missing seeds retain expressions until build time. Conflicting edits, directories and links block publication. A published
 empty project feeds the existing mrpack build path directly.
 
 This is semantic Engine initialization, not CLI cutover. Interactive runtime selection,
@@ -426,6 +435,7 @@ Results describe the stated revision, not every later edit.
 
 | Revision | Executed checks |
 | --- | --- |
+| Creation review 72 | 1,712 tests and eleven doctests pass; all-feature Clippy and Windows cross-compilation pass. The template collision reproduced before correction. New cases cover literal/template aliases, common-layer precedence, portable case collisions and additions after preparation. Native Windows execution remains required for the relative rename correction |
 | Semantic initialization | 1,709 tests and eleven doctests pass. Both real import formats publish and reverify 78 roots through the shared project-change implementation. All-feature Clippy and Windows cross-compilation pass. Seven initialization regressions cover loader intent, approval, user templates, conflicts, directory/link rejection and a subsequent mrpack build. Native CI remains required |
 | Creation review 70 | Both moved-root and first-index-failure regressions reproduced before correction. All 39 affected publication/native/API tests and all-feature Clippy pass. Windows handle lifetime is corrected; native Windows CI remains required |
 | New-root publication | 1,700 tests and eleven doctests pass. Both real import formats publish 78 roots into previously absent destinations through Engine approval, with every placed file checked. Forty-three focused publication/project/API checks cover real process exits and recovery; Windows GNU cross-compilation passes. The final Windows-only shared-parent ACL guard and regression compile but still require native CI execution |

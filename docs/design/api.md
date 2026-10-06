@@ -112,9 +112,12 @@ layout, distribution settings and extensions survive. It does not claim remote r
 availability; build acquisition verifies runtime declarations and bytes. Nonempty roots
 must go through dependency resolution instead of receiving an empty lock.
 `InitializeRequest` uses the shared replacement policy, preview and grant. Optional
-common/client/server template seeds create missing files and retain existing regular
-user files, including their permissions. Their captured revisions remain publication
-preconditions. Directory-valued destinations and link traversal fail. Default seeds
+common/client/server template seeds fill missing rendered destinations. Existing user
+files, including their permissions, stay outside the publication footprint. A literal
+file, a `.template` variant or a common-layer output prevents a default seed from
+shadowing that destination; portable case and ancestor collisions count too. Relevant
+template layers are observed without buffering their contents, and their revisions
+remain publication preconditions. Directory-valued destinations and link traversal fail. Default seeds
 contain editable client configuration and server properties; selected build recipes
 supply their exact installer and launch scripts. No user script feature is removed.
 

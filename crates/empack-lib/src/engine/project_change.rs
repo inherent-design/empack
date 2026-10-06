@@ -10,7 +10,8 @@ use crate::{
         snapshot::ProjectReadRoot,
         staging::MutableStage,
         verification::{
-            VerifiedFileChange, candidate_stage_limits, observed_files_for, plan_files,
+            VerifiedFileChange, candidate_stage_limits, observed_project_replacement_for,
+            plan_files,
         },
     },
 };
@@ -179,12 +180,10 @@ pub fn prepare_project_replacement(
     ]);
     if let ProjectCandidate::Initialize(value) = &candidate {
         for (path, bytes) in value.templates() {
-            documents.insert(ManagedPath::UserTemplate(path.clone()), bytes.clone());
+            if workspace.template_seed_is_missing(path)? {
+                documents.insert(ManagedPath::UserTemplate(path.clone()), bytes.clone());
+            }
         }
-    }
-    // Seed only missing templates. Captured user versions remain exact inputs and are never reset.
-    for (path, (bytes, _)) in workspace.preserved_templates() {
-        documents.insert(ManagedPath::UserTemplate(path.clone()), bytes.clone());
     }
     let mut desired = BTreeMap::new();
     let mut payloads = BTreeMap::new();
@@ -194,14 +193,7 @@ pub fn prepare_project_replacement(
             FileContent {
                 content: ContentId::from_sha256(Sha256::digest(bytes).into()),
                 bytes: bytes.len() as u64,
-                permissions: match target {
-                    ManagedPath::UserTemplate(path) => workspace
-                        .preserved_templates()
-                        .get(path)
-                        .map(|(_, permissions)| *permissions)
-                        .unwrap_or(default_permissions),
-                    _ => default_permissions,
-                },
+                permissions: default_permissions,
             },
         );
     }
@@ -270,7 +262,8 @@ pub fn prepare_project_replacement(
         );
         documents.insert(policy_path.clone(), bytes.clone());
     }
-    let observed = observed_files_for(workspace.observations(), desired.keys().cloned())?;
+    let observed =
+        observed_project_replacement_for(workspace.observations(), desired.keys().cloned())?;
     let existing: BTreeSet<_> = observed
         .iter()
         .filter_map(|(target, value)| {
@@ -315,7 +308,7 @@ pub fn prepare_project_replacement(
     drop(candidate);
     let frozen = stage.freeze(limits, cancel)?;
     let (root, native) = workspace.into_native();
-    let change = VerifiedFileChange::verify(native, plan, frozen)?;
+    let change = VerifiedFileChange::verify_project_replacement(native, plan, frozen)?;
     Ok(PreparedProjectReplacement {
         root,
         change,
