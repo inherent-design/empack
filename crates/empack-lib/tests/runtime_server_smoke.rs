@@ -135,3 +135,61 @@ async fn runtime_server_quilt() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "live official Forge/NeoForge Maven; run mise run smoke:runtime"]
+async fn runtime_installer_profiles_bind_modern_and_historical_releases() {
+    use empack_lib::engine::server_runtime::installer::InstallerServerPlan;
+    for (game, loader, version) in [
+        ("1.20.1", LoaderKind::Forge, "47.4.0"),
+        ("1.12.2", LoaderKind::Forge, "14.23.5.2860"),
+        ("1.7.10", LoaderKind::Forge, "10.13.4.1614"),
+        ("1.21.1", LoaderKind::NeoForge, "21.1.209"),
+        ("1.20.1", LoaderKind::NeoForge, "47.1.106"),
+    ] {
+        let runtime = RuntimeResolution {
+            minecraft: GameVersion::parse(game).unwrap(),
+            loader,
+            loader_version: Some(LoaderVersion::parse(version).unwrap()),
+        };
+        let owner = OperationRuntime::new(
+            ResourceGovernor::new(ResourceRequest {
+                jobs: 2,
+                memory_bytes: 128 << 20,
+                scratch_bytes: 128 << 20,
+                open_files: 16,
+            }),
+            1,
+        );
+        let mut handle = owner
+            .start(move |mut scope| async move {
+                Ok(InstallerServerPlan::resolve(
+                    &HttpAcquisition::new().unwrap(),
+                    &mut scope,
+                    runtime,
+                    TransferLimits {
+                        file_bytes: 32 << 20,
+                        transfer_bytes: 32 << 20,
+                        deadline: Duration::from_secs(45),
+                        ..TransferLimits::default()
+                    },
+                    ArchiveLimits::default(),
+                    SourceEvidencePolicy::Compatibility,
+                )
+                .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        owner.shutdown().await;
+        match &*outcome {
+            OperationOutcome::Completed(Ok(plan)) => {
+                assert!(!plan.contract().libraries.is_empty());
+                assert!(plan.expected().digests.is_some());
+            }
+            OperationOutcome::Completed(Err(error)) => {
+                panic!("{game} {loader:?} {version}: {error:#}")
+            }
+            OperationOutcome::Failed(error) => panic!("Installer operation failed: {error}"),
+        }
+    }
+}

@@ -354,7 +354,7 @@ impl LibraryServerPlan {
         self.finish(vanilla, libraries, scope, archive).await
     }
 }
-async fn metadata_document(
+pub(super) async fn metadata_document(
     transport: &HttpAcquisition,
     scope: &mut WorkScope,
     url: String,

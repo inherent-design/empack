@@ -22,6 +22,7 @@ use std::{
     io::{Read, Seek},
 };
 
+pub mod installer;
 pub mod library;
 
 /// A metadata document bound to the requested Minecraft version and its exact server artifact.

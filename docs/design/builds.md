@@ -292,3 +292,23 @@ adapter extension rather than silently dropping runtime requirements.
 execution for vanilla, both Fabric layouts and Quilt. Unit fixtures separately exercise
 wrong bytes, metadata mismatch, missing classes, service merging, bounded output,
 cancellation and retained ownership. These tests do not imply that Forge or NeoForge preparation is implemented.
+
+### Forge-family installer contracts
+
+Installer selection binds an exact loader and game to an official Maven coordinate.
+Forge retains its late-1.7.10 repeated-game coordinate; NeoForge retains its early
+1.20.1 `forge` artifact family. Repository checksum evidence is checked before
+parsing an installer. The original algorithm and checksum document remain visible.
+
+The bounded profile reader checks both profile and version identities, library
+coordinates, declared paths and byte assertions. Historical executable JARs and
+modern Unix/Windows argument files are separate layouts. Duplicate library
+declarations must agree, and server processor output hashes remain obligations.
+Historical libraries lacking hashes remain unresolved evidence; reading a coordinate
+does not authenticate the installed bytes.
+
+An `InstallerServerPlan` is preparation input, not a completed runtime. Execution
+must retire its owned process, inspect confined regular files, verify declared
+libraries and generated outputs, and bind the actual launcher to those files before
+constructing `PreparedServerRuntime`. Process exit alone cannot discharge those
+obligations.

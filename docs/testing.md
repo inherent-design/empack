@@ -29,7 +29,10 @@ prepared runtime into disposable directories, then runs the actual server launch
 with `--help`. It checks vanilla, both historical/modern Fabric layouts and Quilt
 without accepting the EULA. These tests are marked ignored in ordinary offline runs; the
 explicit task selects all of them and fails on missing prerequisites or providers.
-It complements CLI E2E while command cutover is still pending.
+A separate case acquires and parses five official Forge/NeoForge installer profiles,
+including historical Forge and early NeoForge coordinates. That case verifies plan
+inputs; it does not claim an installed runtime. The suite complements CLI E2E while
+command cutover is still pending.
 
 The pure core must compile without runtime or filesystem dependencies. Its tests
 cover portable syntax, typed values and pure decisions. Native filesystem,
