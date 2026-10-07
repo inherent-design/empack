@@ -177,6 +177,16 @@ pub(in crate::engine) fn plan_selected_removal(
             }
         }
         for record in records {
+            if !candidate.plan.selected().values().any(|dependency| {
+                dependency.files.as_slice().iter().any(|file| {
+                    file.placements.as_slice().iter().any(|placement| {
+                        placement.layer == ContentLayer::Common
+                            && placement.destination == record.destination
+                    })
+                })
+            }) {
+                continue;
+            }
             let Some((key, file)) = record.locked_owner(&current)? else {
                 continue;
             };

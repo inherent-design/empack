@@ -3,9 +3,7 @@ use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::ExpectedDigest,
     identity::{CurseForgeProjectId, ModrinthProjectId, PinSelector, ProviderProjectId},
-    model::{
-        ContentLayer, DependencyKey, ResolvedFile, ResolvedIdentity, ResolvedPin, ResolvedProject,
-    },
+    model::{ContentLayer, DependencyKey, ResolvedFile, ResolvedPin, ResolvedProject},
     path::{InstallDestination, PortableRelPath},
     requirements::{Environments, Requirements},
 };
@@ -165,12 +163,6 @@ impl BackendFile {
         let mut owner = None;
         let mut claimed = false;
         for (key, dependency) in &project.lock().dependencies {
-            if self.provider.as_ref().is_some_and(|actual| {
-                matches!(&dependency.identity,
-                    ResolvedIdentity::Provider(expected) if actual.project == *expected)
-            }) {
-                claimed = true;
-            }
             for file in dependency.files.as_slice() {
                 for placement in file.placements.as_slice() {
                     if placement.layer != ContentLayer::Common

@@ -569,18 +569,53 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
-        let rules_path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
-        let documents = self.capture(selected, &[rules_path], limits, cancel)?;
-        let rules = read_document(
-            &documents.root,
-            &documents.native,
-            "pack/.packwizignore",
-            cancel,
-        )?
-        .unwrap_or_default();
+        self.capture_removal_inputs(selected, None, limits, cancel)
+    }
+    /// Resolve read-only user selectors before capturing only their managed file placements.
+    pub fn capture_removal(
+        &self,
+        selected: &Path,
+        selectors: &empack_core::model::NonEmpty<super::removal::RemovalSelector>,
+        mode: empack_core::removal::RemovalMode,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        self.capture_removal_inputs(selected, Some((selectors, mode)), limits, cancel)
+    }
+    fn capture_removal_inputs(
+        &self,
+        selected: &Path,
+        selection: Option<(
+            &empack_core::model::NonEmpty<super::removal::RemovalSelector>,
+            empack_core::removal::RemovalMode,
+        )>,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
+        let metadata = super::source::CaptureFilter::mutation(&[])?;
+        let documents =
+            self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
         let project = documents.require_resolved()?;
+        let selected_keys = selection
+            .map(|(selectors, mode)| {
+                let keys = super::removal::resolve_selections(
+                    &project,
+                    &documents.backend_files(cancel)?,
+                    selectors,
+                )?;
+                let plan = empack_core::removal::RemovalPlan::prepare(&project, &keys, mode)?;
+                Ok::<_, anyhow::Error>(plan.removed())
+            })
+            .transpose()?;
         let mut required = Vec::new();
-        for dependency in project.lock().dependencies.values() {
+        for (key, dependency) in &project.lock().dependencies {
+            if selected_keys
+                .as_ref()
+                .is_some_and(|keys| !keys.contains(key))
+            {
+                continue;
+            }
             for file in dependency.files.as_slice() {
                 for placement in file.placements.as_slice() {
                     required.push(super::layout::ProjectLayout::path(
@@ -599,9 +634,15 @@ impl ProjectReader {
             "overrides/server",
         ]
         .into_iter()
+        .filter(|name| {
+            *name == "pack"
+                || required
+                    .iter()
+                    .any(|path| path.as_str().starts_with(&format!("{name}/")))
+        })
         .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
         .collect::<std::result::Result<Vec<_>, _>>()?;
-        let filter = super::source::CaptureFilter::new(rules, &required)?;
+        let filter = super::source::CaptureFilter::mutation(&required)?;
         let workspace = self.capture_selected(selected, &scopes, limits, Some(&filter), cancel)?;
         ensure!(
             documents.root.binding == workspace.root.binding
@@ -610,6 +651,7 @@ impl ProjectReader {
                     == workspace.prior_lock.as_ref().map(DecodedLock::raw_revision),
             "Project documents changed while selecting mutation inputs"
         );
+        documents.root.revalidate(&documents.native, cancel)?;
         Ok(MutationSnapshot { workspace })
     }
     /// Documents are always in the read set. Extra scopes bind this operation's source and output inputs.

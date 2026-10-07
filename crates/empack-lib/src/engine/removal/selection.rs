@@ -28,7 +28,7 @@ pub enum SelectionError {
     Untracked(String),
 }
 
-pub(super) fn resolve(
+pub(in crate::engine) fn resolve(
     project: &ResolvedProject,
     records: &[BackendFile],
     selectors: &NonEmpty<RemovalSelector>,

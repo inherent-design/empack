@@ -71,6 +71,8 @@ pub(super) struct CaptureFilter {
     required: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     template_outputs: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    managed_only: bool,
 }
 impl CaptureFilter {
     pub(super) fn new(rules: Vec<u8>, required: &[PortableRelPath]) -> Result<Self> {
@@ -81,6 +83,7 @@ impl CaptureFilter {
                 .map(|path| path.as_str().to_owned())
                 .collect(),
             template_outputs: None,
+            managed_only: false,
         };
         value.matcher()?;
         Ok(value)
@@ -106,14 +109,21 @@ impl CaptureFilter {
             rules: String::new(),
             required: vec![],
             template_outputs: Some(outputs.into_iter().collect()),
+            managed_only: false,
         };
         value.matcher()?;
+        Ok(value)
+    }
+    /// Retain backend discovery and exact managed inputs without reading unrelated game bytes.
+    pub(super) fn mutation(required: &[PortableRelPath]) -> Result<Self> {
+        let mut value = Self::new(Vec::new(), required)?;
+        value.managed_only = true;
         Ok(value)
     }
     pub(super) fn matcher(&self) -> Result<SourceFilter> {
         if let Some(outputs) = &self.template_outputs {
             anyhow::ensure!(
-                self.rules.is_empty() && self.required.is_empty(),
+                self.rules.is_empty() && self.required.is_empty() && !self.managed_only,
                 "Mixed snapshot policies"
             );
             for output in outputs {
@@ -161,6 +171,34 @@ impl CaptureFilter {
                 };
                 outputs.iter().any(|seed| template_overlap(output, seed))
             });
+        }
+        if self.managed_only {
+            if self.required.iter().any(|required| {
+                let required = std::path::Path::new(required);
+                required == path || required.starts_with(path)
+            }) {
+                return true;
+            }
+            if [
+                "empack.yml",
+                "empack.lock",
+                "pack/pack.toml",
+                "pack/index.toml",
+                "pack/.packwizignore",
+            ]
+            .iter()
+            .any(|name| path == std::path::Path::new(name))
+            {
+                return true;
+            }
+            // Directories permit bounded backend discovery. Unrelated leaves, including links,
+            // are excluded before portable-name validation or payload reads.
+            return path.starts_with("pack")
+                && (directory
+                    || path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(".pw.toml")));
         }
         let Ok(relative) = path.strip_prefix("pack") else {
             return true;

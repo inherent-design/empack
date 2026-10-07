@@ -61,8 +61,13 @@ pub(super) async fn prepare(
         config.resources.capture,
         config.resources.prepared,
         move |cancel| {
-            let snapshot = ProjectReader::new(RecoveryReader::new(state))
-                .capture_mutation(&project, limits, &cancel)?;
+            let snapshot = ProjectReader::new(RecoveryReader::new(state)).capture_removal(
+                &project,
+                &request.selections,
+                request.mode,
+                limits,
+                &cancel,
+            )?;
             native_removal::plan_selected_removal(
                 snapshot,
                 &request.selections,

@@ -10,6 +10,7 @@ mod native;
 mod selection;
 pub(super) use native::plan_selected_removal;
 pub use native::{PreparedRemoval, RemovalReceipt, prepare_removal};
+pub(super) use selection::resolve as resolve_selections;
 pub use selection::{RemovalSelector, SelectionError};
 
 /// Coherent next documents and explicit exact selections. This is not permission to delete files.

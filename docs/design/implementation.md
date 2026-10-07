@@ -431,9 +431,13 @@ native ownership and publication require the separate preparation described belo
 Seven regressions cover batch errors, cycles, evidence gaps, demotion, unrequested
 retention and stale documents.
 
-`ProjectReader::capture_mutation` produces a distinct `MutationSnapshot`: locked
-placements remain visible through ignore rules, while templates, artifacts and
-external acquisition paths grant no deletion authority. `prepare_removal` checks
+`ProjectReader::capture_removal` first observes bounded backend metadata and resolves
+queries, then captures only the selected managed placements into a `MutationSnapshot`.
+The lower-level `capture_mutation` captures all locked placements for callers that
+have already selected exact keys. Locked placements remain visible through ignore
+rules; unrelated payload bytes, templates, artifacts and external acquisition paths
+grant no deletion authority. The traversal policy survives journal persistence and
+revalidation. Backend discovery still has finite directory-entry and metadata limits. `prepare_removal` checks
 existing payloads against original lock evidence, rejects directory targets, and
 binds derivative metadata by exact selection, destination, requirements and digest.
 Manifest labels never become backend filenames. Unlisted files remain untouched.
@@ -447,7 +451,7 @@ and [pack options](https://raw.githubusercontent.com/mannie-exe/packwiz-tx/v0.2.
 This does not relax source-content assertions. Private staging and scoped file verification feed the shared
 recoverable publisher. Root demotion publishes documents only. Concurrent document
 or payload edits invalidate the entire plan. This lower-level composition is tested
-on real filesystems. Shared Engine removal now carries exact logical keys and an
+on real filesystems. Shared Engine removal carries logical keys or user queries and an
 explicit mode through preparation, footprint acknowledgement, execution and retained
 receipts. Failed admission and stale inputs return failure before publication.
 
@@ -455,7 +459,12 @@ Removal observations share digest validation with acquired content but retain no
 payload copy. A bounded planning worker determines exact document staging bytes;
 separate admission covers staging and publication before-images. Root demotion and
 physical removal feed subsequent builds with distinct preserved inventories. The
-user-facing alias/title/stem selector and CLI integration remain implementation work.
+selector resolves exact keys first, then ASCII-case-insensitive titles and exact
+installed stems. Metadata ownership includes the exact pin, placement and requirements.
+Ambiguous matches return candidate keys; equivalent aliases select one dependency.
+A different installation from the same provider project does not claim another
+locked destination. Observed-only removal and CLI integration remain implementation
+work.
 
 ## Existing command guarantees
 
@@ -580,14 +589,12 @@ relationships. These checks precede any publication.
 
 No alpha release is ready while these feature and lifecycle gates remain incomplete.
 
-### Canonical removal queries
+### Removal review validation
 
-Removal requests distinguish exact logical keys from user queries. Queries resolve
-keys first, then title and installed-stem candidates. Backend ownership includes the
-exact pin, placement and requirements. Ambiguous title/stem matches return candidate
-keys; no raw query reaches a filesystem deletion. Equivalent aliases select one
-locked dependency. Observed-only removal remains a completion gate.
-
-Validation: 28 focused removal tests pass, including publication through an installed
-stem while preserving an unrelated file whose stem collides with the logical key.
-This evidence does not establish CLI cutover or observed-only removal.
+The unrelated-content regression failed before correction because a nonportable
+filename entered the removal snapshot. Seventy focused tests pass after correction,
+including oversized unrelated and unselected locked payloads, symlinks, colliding
+names, source edits and durable publication recovery. All-feature Clippy and Windows
+cross-compilation pass. The full suite passes 1,746 tests and eleven doctests. Native CI at `c5b6e06`
+also passed on Linux, macOS and Windows; these new changes still require their own
+pushed-revision CI and Greptile review.

@@ -261,3 +261,93 @@ async fn title_selection_previews_canonical_identity_and_unknown_batch_changes_n
     assert!(!state.path().join("state").exists());
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn unrelated_content_does_not_block_removal_or_become_a_read_precondition() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    for name in ["pack/unrelated.bin", "overrides/client/unrelated.bin"] {
+        put(root.path(), name, &vec![0; 3 << 20]);
+    }
+    #[cfg(unix)]
+    {
+        put(root.path(), "pack/bad:name", b"unrelated nonportable file");
+        std::os::unix::fs::symlink("/nonexistent", root.path().join("pack/unrelated-link"))
+            .unwrap();
+    }
+    let (engine, _) = engine(state.path().join("state"));
+    let prepared = ready(&engine, root.path(), RemovalMode::RemoveContent).await;
+    put(root.path(), "pack/unrelated.bin", b"changed unrelated file");
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Remove(_)))
+    ));
+    assert_eq!(
+        fs::read(root.path().join("pack/unrelated.bin")).unwrap(),
+        b"changed unrelated file"
+    );
+    assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn unselected_locked_bytes_are_not_removal_inputs() {
+    use crate::engine::{documents::DocumentCodec, mrpack::tests::project};
+    use empack_core::{model::*, path::InstallDestination};
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let original = project(false, false);
+    let mut lock = original.lock().clone();
+    let other = DependencyKey::parse("retained").unwrap();
+    let mut dependency = lock.dependencies.values().next().unwrap().clone();
+    dependency.identity = ResolvedIdentity::Url(other.clone());
+    let mut file = dependency.files.as_slice()[0].clone();
+    let mut placement = file.placements.as_slice()[0].clone();
+    placement.destination = InstallDestination::parse("retained/oversized.zip").unwrap();
+    file.placements = NonEmpty::new(vec![placement]).unwrap();
+    dependency.files = NonEmpty::new(vec![file]).unwrap();
+    lock.dependencies.insert(other.clone(), dependency);
+    lock.coverage.insert(other, Coverage::CompleteForSelection);
+    let resolved = ResolvedProject::validate(
+        original.intent().clone(),
+        lock.clone(),
+        lock.intent_revision,
+    )
+    .unwrap();
+    put(
+        root.path(),
+        "empack.lock",
+        &DocumentCodec.encode_lock(&resolved).unwrap(),
+    );
+    put(
+        root.path(),
+        "pack/retained/oversized.zip",
+        &vec![0; 3 << 20],
+    );
+    let (engine, _) = engine(state.path().join("state"));
+    let prepared = ready(&engine, root.path(), RemovalMode::RemoveContent).await;
+    assert_eq!(prepared.view().remove().unwrap().selected.len(), 1);
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Remove(_)))
+    ));
+    assert_eq!(
+        fs::metadata(root.path().join("pack/retained/oversized.zip"))
+            .unwrap()
+            .len(),
+        3 << 20
+    );
+    engine.shutdown().await;
+}
