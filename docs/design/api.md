@@ -136,9 +136,10 @@ source evidence and dependency edges, including installations no longer listed a
 roots. Pin, source, placement or runtime edits that invalidate that resolution return
 `ResolutionRequired`. `capture_synchronization` and `prepare_synchronization` bind
 recorded placements and verified supplied bytes to a restoration plan. Modified files
-are explicit replacements; unrelated content remains. Shared Engine synchronization
-and changed-intent resolution remain pending; the document candidate alone has no
-write authority.
+are explicit replacements; unrelated content remains. `SyncRequest` carries verified exact inputs through the shared Engine lifecycle.
+`SyncPreview` lists selected records, lock rebinding and the replacement plan;
+`SyncReceipt` retains the coherent published project. Changed-intent resolution and
+acquisition hosts remain pending; the document candidate alone has no write authority.
 
 `AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical

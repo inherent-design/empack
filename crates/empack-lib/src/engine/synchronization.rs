@@ -3,6 +3,7 @@ mod native;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, DocumentEdit, PreparedDocument};
 use anyhow::Result;
 use empack_core::model::ResolvedProject;
+pub(in crate::engine) use native::plan_synchronization;
 pub use native::{PreparedSynchronization, SynchronizationReceipt, prepare_synchronization};
 
 /// Intent edits requiring new provider/content/runtime evidence cannot reuse the old lock.

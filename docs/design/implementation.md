@@ -297,7 +297,7 @@ The trusted host can publish the verified plan through the journaled publisher.
 Concurrent source edits, added files and cancellation before publication prevent the
 whole replacement. Tests publish into an empty existing directory and replace a
 broken project, preserve unrelated files, and re-export the correct layered bytes.
-The shared Engine accepts build, import, initialization, resolved addition and removal requests. Import preparation stages
+The shared Engine accepts build, import, initialization, resolved addition, recorded synchronization and removal requests. Import preparation stages
 the full candidate under admission, exposes its file plan and requires an exact
 replacement-summary acknowledgement before existing managed files can change.
 All three operation kinds use the same engine-bound approval, owned runtime, cancellation
@@ -468,8 +468,12 @@ Authoring-only changes can rebind the lock without new acquisition or version ch
 Raw intent remains unchanged; an already bound lock requests raw-byte preservation.
 Unlisted selections and original source assertions remain. Changed pins, sources,
 placements or runtime requirements that the old lock cannot satisfy produce a typed
-`ResolutionRequired` outcome. The shared Engine sync request and changed-intent
-resolution remain pending. Four focused contracts and all-feature Clippy pass.
+`ResolutionRequired` outcome. Changed-intent resolution and acquisition hosts remain pending. Four focused contracts and all-feature Clippy pass.
+
+The shared Engine accepts `SyncRequest` with exact acquired slots, publishes an
+engine-bound restoration plan, and retains a typed receipt. The composed sequence now
+exercises removal, addition, re-addition, synchronization twice and distribution builds.
+A changed runtime fails before publication with `ResolutionRequired`.
 
 Native synchronization captures recorded placements and restores missing or modified
 files from verified exact bytes. It retains unrelated content, checks directory/link
@@ -486,6 +490,12 @@ follow the [pinned backend wire contract](https://github.com/mannie-exe/packwiz-
 The combined native synchronization and index correction passes 107 affected tests and
 all-feature Clippy. One pure addition test reported a nextest pipe-leak warning; its
 isolated repeat passed cleanly. The broader final-head suite remains a later gate.
+
+The shared synchronization API revision passes 1,779 default tests and eleven doctests,
+47 focused tests, all-feature Clippy and Windows cross-compilation. The full run has no
+pipe-leak warnings. Review 80 still identifies overly broad metadata requirements and
+staging of unchanged sync content; those remain follow-up corrections rather than
+being implied complete by the passing suite.
 
 ## Semantic removal planning
 

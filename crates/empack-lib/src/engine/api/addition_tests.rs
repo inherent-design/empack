@@ -137,7 +137,7 @@ async fn addition_requires_existing_identity_policy_exact_grants_and_engine_owne
     engine.shutdown().await;
 }
 #[tokio::test]
-async fn remove_add_readd_build_share_logical_and_byte_postconditions() {
+async fn remove_add_readd_sync_twice_build_share_logical_and_byte_postconditions() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     fixture(root.path());
@@ -200,6 +200,44 @@ async fn remove_add_readd_build_share_logical_and_byte_postconditions() {
             b"payload"
         );
     }
+    fs::write(
+        root.path().join("pack/resourcepacks/a.zip"),
+        b"edited after add",
+    )
+    .unwrap();
+    for repeat in [false, true] {
+        let sync = SyncRequest {
+            content: request(ExistingDependencyPolicy::UpdateSameIdentity).content,
+        };
+        let prepared = ready(&engine, root.path(), sync).await;
+        assert_eq!(prepared.view().sync().unwrap().selected.len(), 1);
+        assert_eq!(
+            prepared.view().sync().unwrap().files.changes().is_empty(),
+            repeat
+        );
+        let permission = grant(&prepared);
+        let mut handle = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        let outcome = handle.wait().await;
+        match &*outcome {
+            OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Sync(
+                receipt,
+            ))) => assert_eq!(receipt.project.intent().roots.len(), 1),
+            OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+                panic!("{error:#}")
+            }
+            _ => panic!("synchronization failed"),
+        }
+        engine.release_completed(handle.id());
+        drop(outcome);
+        drop(handle);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+            b"payload"
+        );
+    }
     let prepared = ready(&engine, root.path(), super::tests::request()).await;
     let permission = grant(&prepared);
     let mut handle = engine
@@ -220,4 +258,38 @@ async fn remove_add_readd_build_share_logical_and_byte_postconditions() {
     drop(handle);
     engine.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn synchronization_requires_grants_and_new_resolution_for_runtime_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let (engine, governor) = engine(state.path().join("state"));
+    let sync = || SyncRequest {
+        content: request(ExistingDependencyPolicy::UpdateSameIdentity).content,
+    };
+    let prepared = ready(&engine, root.path(), sync()).await;
+    let mut permission = grant(&prepared);
+    permission.replacement = None;
+    assert!(prepared.authorize(permission).is_err());
+    let before = fs::read(root.path().join("empack.yml")).unwrap();
+    let codec = crate::engine::documents::DocumentCodec;
+    let source = codec.decode_intent(&before, "fixture").unwrap();
+    let mut changed = source.intent().clone();
+    changed.runtime.minecraft = empack_core::model::GameVersion::parse("1.21.1").unwrap();
+    let changed = codec.encode_intent(&changed).unwrap();
+    fs::write(root.path().join("empack.yml"), &changed).unwrap();
+    let result = engine.prepare(root.path().to_path_buf(), sync()).await;
+    assert!(
+        result
+            .err()
+            .unwrap()
+            .downcast_ref::<crate::engine::synchronization::ResolutionRequired>()
+            .is_some()
+    );
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), changed);
+    assert!(!state.path().join("state").exists());
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
 }

@@ -50,6 +50,7 @@ pub use addition::{AddPreview, AddReceipt, AddRequest, ExistingDependencyPolicy}
 mod execution;
 mod project_change;
 mod removal;
+mod synchronization;
 pub use project_change::{
     ImportRequest, InitializeRequest, ProjectChangePreview, ProjectChangeReceipt,
     ReplacementSummary,
@@ -58,6 +59,7 @@ pub use removal::{
     ObservedRemovalSelection, RemovalSelection, RemovalSelector, RemovePreview, RemoveReceipt,
     RemoveRequest,
 };
+pub use synchronization::{SyncPreview, SyncReceipt, SyncRequest};
 static NEXT_PLAN: AtomicU64 = AtomicU64::new(1);
 
 /// In-process identity for one immutable captured plan; deliberately not deserializable.
@@ -147,6 +149,7 @@ pub enum Request {
     Initialize(Box<InitializeRequest>),
     Remove(RemoveRequest),
     Add(AddRequest),
+    Sync(SyncRequest),
 }
 /// A selected existing root or one absent child of an existing selected parent.
 #[derive(Clone)]
@@ -167,6 +170,11 @@ impl From<BuildRequest> for Request {
 impl From<InitializeRequest> for Request {
     fn from(request: InitializeRequest) -> Self {
         Self::Initialize(Box::new(request))
+    }
+}
+impl From<SyncRequest> for Request {
+    fn from(request: SyncRequest) -> Self {
+        Self::Sync(request)
     }
 }
 impl From<AddRequest> for Request {
@@ -191,6 +199,7 @@ pub enum OperationPreview {
     Initialize(ProjectChangePreview),
     Remove(RemovePreview),
     Add(AddPreview),
+    Sync(SyncPreview),
 }
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
@@ -198,6 +207,7 @@ impl OperationPreview {
             Self::Build(view) => view.plan,
             Self::Remove(view) => view.plan,
             Self::Add(view) => view.plan,
+            Self::Sync(view) => view.plan,
             Self::Import(view) | Self::Initialize(view) => view.plan,
         }
     }
@@ -219,6 +229,12 @@ impl OperationPreview {
             _ => None,
         }
     }
+    pub fn sync(&self) -> Option<&SyncPreview> {
+        match self {
+            Self::Sync(view) => Some(view),
+            _ => None,
+        }
+    }
     pub fn add(&self) -> Option<&AddPreview> {
         match self {
             Self::Add(view) => Some(view),
@@ -236,6 +252,7 @@ impl OperationPreview {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
             Self::Remove(view) => Some(view.replacement),
             Self::Add(view) => Some(view.replacement),
+            Self::Sync(view) => Some(view.replacement),
             _ => None,
         }
     }
@@ -251,6 +268,7 @@ enum PreparedKind {
     ProjectChange(Box<project_change::PreparedProjectChange>),
     Remove(Box<removal::PreparedRemovalOperation>),
     Add(Box<addition::PreparedAdditionOperation>),
+    Sync(Box<synchronization::PreparedSynchronizationOperation>),
 }
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
@@ -258,6 +276,7 @@ impl PreparedKind {
             Self::Build(value) => OperationPreview::Build(value.view.clone()),
             Self::Remove(value) => OperationPreview::Remove(value.view.clone()),
             Self::Add(value) => OperationPreview::Add(value.view.clone()),
+            Self::Sync(value) => OperationPreview::Sync(value.view.clone()),
             Self::ProjectChange(value) => {
                 if value.initialize {
                     OperationPreview::Initialize(value.view.clone())
@@ -319,6 +338,7 @@ pub enum ExecutionReceipt {
     Initialize(Box<RetainedOutput<ProjectChangeReceipt>>),
     Remove(Box<RetainedOutput<RemoveReceipt>>),
     Add(Box<RetainedOutput<AddReceipt>>),
+    Sync(Box<RetainedOutput<SyncReceipt>>),
 }
 /// Accurate publication outcome: a failed preparation and a hot durable journal are distinct.
 pub enum ExecutionOutcome {
@@ -435,6 +455,11 @@ impl Engine {
                                 .transpose()?
                                 .map(|value| PreparedKind::Build(Box::new(value))))
                         }
+                        Request::Sync(request) => Ok(synchronization::prepare(
+                            project, request, &config, &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::Sync(Box::new(value)))),
                         Request::Add(request) => {
                             Ok(addition::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -526,6 +551,13 @@ impl Engine {
                         _ => unreachable!(),
                     });
                     project_change::run(prepared, config, scope).await
+                }
+                PreparedKind::Sync(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::Sync(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    synchronization::run(prepared, config, scope).await
                 }
                 PreparedKind::Add(_) => {
                     let prepared = data.map(|kind| match kind {
