@@ -658,7 +658,7 @@ impl ProjectReader {
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
         let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
-        let metadata = super::source::CaptureFilter::mutation(&[])?;
+        let metadata = super::source::CaptureFilter::selected_mutation(&[])?;
         let documents =
             self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
         let current = documents.require_resolved()?;
@@ -688,7 +688,7 @@ impl ProjectReader {
                 }
             }
         }
-        self.capture_mutation_paths(selected, documents, required, limits, cancel)
+        self.capture_dependency_paths(selected, documents, required, limits, cancel)
     }
     fn capture_mutation_paths(
         &self,

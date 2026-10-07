@@ -374,6 +374,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
             }
         }
     }
+    fs::write(root.path().join("pack/unrelated.pw.toml"), b"invalid = [").unwrap();
     let (engine, governor) = engine(state.path().join("state"));
     let make_request = || UpdateRequest {
         group: AdditionGroup::from_resolved(&requested).unwrap(),
@@ -438,6 +439,10 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
         assert!(view.sync().unwrap().files.changes().is_empty());
         assert!(view.sync().unwrap().files.expected().is_empty());
     }
+    assert_eq!(
+        fs::read(root.path().join("pack/unrelated.pw.toml")).unwrap(),
+        b"invalid = ["
+    );
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     engine.shutdown().await;
 }

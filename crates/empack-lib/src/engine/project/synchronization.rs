@@ -15,7 +15,7 @@ impl ProjectReader {
     ) -> Result<MutationSnapshot> {
         let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
         let controls = CaptureFilter::selected_mutation(&[])?;
-        let mut documents =
+        let documents =
             self.capture_selected(selected, &[pack], limits, Some(&controls), cancel)?;
         let candidate = crate::engine::synchronization::SynchronizationCandidate::prepare(
             documents.intent(),
@@ -24,7 +24,6 @@ impl ProjectReader {
                 .context("Synchronization requires a lock")?,
         )?;
         let mut required = Vec::new();
-        let mut destinations = BTreeSet::new();
         for dependency in candidate.project().lock().dependencies.values() {
             for file in dependency.files.as_slice() {
                 for placement in file.placements.as_slice() {
@@ -32,12 +31,30 @@ impl ProjectReader {
                         layer: placement.layer,
                         path: placement.destination.relative().clone(),
                     })?);
-                    if placement.layer == ContentLayer::Common {
-                        destinations.insert(placement.destination.relative().clone());
-                    }
                 }
             }
         }
+        self.capture_dependency_paths(selected, documents, required, limits, cancel)
+    }
+    /// Share exact destination discovery across restoration, addition and explicit updates.
+    pub(super) fn capture_dependency_paths(
+        &self,
+        selected: &Path,
+        mut documents: WorkspaceSnapshot,
+        mut required: Vec<PortableRelPath>,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        let destinations = required
+            .iter()
+            .filter_map(|path| match ProjectLayout::classify(path) {
+                Ok(ManagedPath::Content {
+                    layer: ContentLayer::Common,
+                    path,
+                }) => Some(path),
+                _ => None,
+            })
+            .collect();
         let _guard = self.recovery.enter(&documents.root)?;
         let discovered = discover_metadata(&documents, &destinations, limits, cancel)?;
         for snapshot in discovered {

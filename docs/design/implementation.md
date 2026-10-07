@@ -483,6 +483,12 @@ tests and eleven doctests. One pure legacy-coordinate test reported a nextest pi
 warning; the check contains no subprocess or I/O operation. Its isolated repeat passed
 cleanly. Native CI and Greptile for this update revision remain separate gates.
 
+Add and update now share synchronization's bounded selected-metadata discovery. The
+unrelated malformed/directory-valued metadata regression reproduced before the change;
+91 affected tests and all-feature Clippy pass afterward. The update-to-sync composition
+also preserves an unrelated malformed record. This targeted result follows the full
+1,786-test update revision above.
+
 ## Recorded synchronization candidate
 
 `SynchronizationCandidate` validates current intent against the prior exact resolution.

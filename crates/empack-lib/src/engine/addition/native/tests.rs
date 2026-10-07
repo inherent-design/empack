@@ -394,3 +394,37 @@ fn input_aliases_bind_to_existing_keys_and_extra_slots_are_rejected() {
             .is_empty()
     );
 }
+
+#[test]
+fn unrelated_malformed_metadata_does_not_authorize_or_block_addition() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    save(root.path(), &empty());
+    put(root.path(), "pack/unrelated.pw.toml", b"broken = [");
+    put(root.path(), "pack/directory.pw.toml/sentinel", b"keep");
+    let prepared = prepare(
+        root.path(),
+        state.path(),
+        &project(false, false),
+        b"payload",
+    )
+    .unwrap();
+    prepared
+        .publish(
+            &Publisher::open(&state.path().join("state")).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        fs::read(root.path().join("pack/unrelated.pw.toml")).unwrap(),
+        b"broken = ["
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/directory.pw.toml/sentinel")).unwrap(),
+        b"keep"
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+        b"payload"
+    );
+}
