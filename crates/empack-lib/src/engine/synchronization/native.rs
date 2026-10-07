@@ -4,6 +4,7 @@ use crate::{
     application::process_runtime::Cancellation,
     engine::{
         content::{InitialObservation, SourceEvidencePolicy, verify_observation},
+        dependency_content::{self, DependencyContent, DependencyContents},
         mrpack::{AcquiredBuildFile, LockedFileKey},
         project::{MutationSnapshot, WorkspaceSnapshot},
         publication::{PublicationReceipt, Publisher},
@@ -25,12 +26,16 @@ pub struct PreparedSynchronization {
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     candidate: SynchronizationCandidate,
+    references: BTreeSet<LockedFileKey>,
 }
 pub struct SynchronizationReceipt {
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
 }
 impl PreparedSynchronization {
+    pub fn references(&self) -> &BTreeSet<LockedFileKey> {
+        &self.references
+    }
     pub fn files(&self) -> &FilePlan {
         self.change.plan()
     }
@@ -66,6 +71,7 @@ pub(in crate::engine) struct SynchronizationPreparation {
     plan: FilePlan,
     documents: BTreeMap<ManagedPath, Vec<u8>>,
     content: BTreeMap<ManagedPath, AcquiredBuildFile>,
+    references: BTreeSet<LockedFileKey>,
 }
 impl SynchronizationPreparation {
     pub(in crate::engine) fn bytes(&self) -> Result<u64> {
@@ -86,6 +92,7 @@ impl SynchronizationPreparation {
             root,
             change,
             candidate: self.candidate,
+            references: self.references,
         })
     }
 }
@@ -94,11 +101,16 @@ pub(in crate::engine) fn plan_synchronization(
     acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
     cancel: &Cancellation,
 ) -> Result<SynchronizationPreparation> {
-    plan_synchronization_with_resolution(workspace, acquired, None, cancel)
+    plan_synchronization_with_resolution(
+        workspace,
+        dependency_content::materialized(acquired),
+        None,
+        cancel,
+    )
 }
 pub(in crate::engine) fn plan_synchronization_with_resolution(
     workspace: MutationSnapshot,
-    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    acquired: DependencyContents,
     proposed: Option<&ResolvedProject>,
     cancel: &Cancellation,
 ) -> Result<SynchronizationPreparation> {
@@ -129,6 +141,8 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
     }
     let mut slots = BTreeSet::new();
     let mut content = BTreeMap::new();
+    let mut references = BTreeSet::new();
+    let mut referenced = BTreeMap::new();
     let mut owned = BTreeMap::new();
     for (key, dependency) in &candidate.project().lock().dependencies {
         for file in dependency.files.as_slice() {
@@ -139,7 +153,23 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
             let bytes = acquired
                 .get(&slot)
                 .context("Synchronization is missing a recorded file")?;
-            slots.insert(slot);
+            slots.insert(slot.clone());
+            let DependencyContent::Materialized(bytes) = bytes else {
+                dependency_content::validate_reference(file)?;
+                references.insert(slot);
+                for placement in file.placements.as_slice() {
+                    let target = ManagedPath::Content {
+                        layer: placement.layer,
+                        path: placement.destination.relative().clone(),
+                    };
+                    ensure!(
+                        referenced.insert(target.clone(), &file.expected).is_none(),
+                        "Synchronization has duplicate reference placements"
+                    );
+                    owned.insert(target, (dependency, placement));
+                }
+                continue;
+            };
             verify_observation(
                 &mut bytes.content.lease().open(),
                 &file.expected,
@@ -167,7 +197,11 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
     );
     let observed_content = verification::observed_mutation_for(
         workspace.observations(),
-        content.keys().chain(previous.keys()).cloned(),
+        content
+            .keys()
+            .chain(referenced.keys())
+            .chain(previous.keys())
+            .cloned(),
     )?;
     ensure!(
         observed_content
@@ -182,8 +216,26 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
         );
     }
     let mut removals = BTreeSet::new();
+    let mut retained = BTreeMap::new();
+    for (target, expected) in &referenced {
+        if let ObservedPath::File(before) = &observed_content[target] {
+            let (_, old, _) = previous
+                .get(target)
+                .context("Reference destination contains untracked content")?;
+            workspace.verify_file(
+                &crate::engine::layout::ProjectLayout::path(target)?,
+                &old.expected,
+                cancel,
+            )?;
+            if &old.expected == *expected {
+                retained.insert(target.clone(), before.clone());
+            } else {
+                removals.insert(target.clone());
+            }
+        }
+    }
     for (target, (_, file, _)) in &previous {
-        if !content.contains_key(target) {
+        if !content.contains_key(target) && !referenced.contains_key(target) {
             if matches!(&observed_content[target], ObservedPath::File(_)) {
                 workspace.verify_file(
                     &crate::engine::layout::ProjectLayout::path(target)?,
@@ -231,6 +283,9 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
                         acquired
                             .values()
                             .find(|bytes| {
+                                let DependencyContent::Materialized(bytes) = bytes else {
+                                    return false;
+                                };
                                 let content = &bytes.content;
                                 file.expected
                                     .size
@@ -245,6 +300,8 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
                                         .is_none_or(|prior| prior == &content.lease().id())
                             })
                             .context("Missing obsolete payload has no matching content evidence")?
+                            .materialized()
+                            .expect("matching original bytes are materialized")
                             .content
                             .observed_digests()
                             .clone()
@@ -264,15 +321,40 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
         );
         // Restore the selected locked identity, including observed backend drift. The exact
         // captured metadata path is part of the approved plan; other installations remain.
-        if !record.matches_selection_and_requirements(
+        let matches_selection = record.matches_selection_and_requirements(
             dependency.selected.as_ref(),
             &placement.requirements,
-        )? || !content[&target]
-            .content
-            .observed_digests()
-            .values()
-            .contains(&record.digest)
-        {
+        )?;
+        let matches_bytes = if let Some(bytes) = content.get(&target) {
+            bytes
+                .content
+                .observed_digests()
+                .values()
+                .contains(&record.digest)
+        } else if matches_selection {
+            let expected = referenced[&target];
+            if let Some(digest) = expected.digests.as_ref().and_then(|set| {
+                set.values()
+                    .iter()
+                    .find(|digest| digest.algorithm() == record.digest.algorithm())
+            }) {
+                digest == &record.digest
+            } else if retained.contains_key(&target) {
+                workspace
+                    .verify_file(
+                        &crate::engine::layout::ProjectLayout::path(&target)?,
+                        expected,
+                        cancel,
+                    )?
+                    .values()
+                    .contains(&record.digest)
+            } else {
+                anyhow::bail!("Reference metadata requires content evidence for its digest")
+            }
+        } else {
+            false
+        };
+        if !matches_selection || !matches_bytes {
             removals.insert(ManagedPath::BackendDocument(record.metadata_path));
         }
     }
@@ -324,10 +406,11 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
         documents
             .keys()
             .chain(content.keys())
+            .chain(retained.keys())
             .chain(removals.iter())
             .cloned(),
     )?;
-    let mut desired = BTreeMap::new();
+    let mut desired = retained;
     for (target, bytes) in &documents {
         let permissions = match &observed[target] {
             ObservedPath::File(before) => before.permissions,
@@ -368,6 +451,7 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
         plan,
         documents,
         content,
+        references,
     })
 }
 

@@ -2,7 +2,7 @@
 use super::*;
 use crate::engine::{
     addition::{self as native_addition, PreparedAddition},
-    mrpack::{AcquiredBuildFile, LockedFileKey},
+    mrpack::LockedFileKey,
     publication::{Publisher, RecoveryRequired},
     runtime::WorkScope,
 };
@@ -19,11 +19,11 @@ pub enum ExistingDependencyPolicy {
     RejectExisting,
     UpdateSameIdentity,
 }
-/// Resolved request and immutable acquired bytes. Provider/local/URL hosts resolve before this
-/// boundary; neither the supplied group nor its content grants project publication authority.
+/// Resolved request and explicit per-slot materialization. Provider/local/URL hosts resolve before
+/// this boundary; neither the group nor its references grant project publication authority.
 pub struct AddRequest {
     pub group: AdditionGroup,
-    pub content: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    pub content: DependencyContents,
     pub existing: ExistingDependencyPolicy,
 }
 #[derive(Clone)]
@@ -34,18 +34,22 @@ pub struct AddPreview {
     pub existing: ExistingDependencyPolicy,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
+    /// Canonical slots explicitly recorded as references, not claimed as newly acquired bytes.
+    pub references: BTreeSet<LockedFileKey>,
 }
 pub struct AddReceipt {
     pub plan: PlanId,
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
+    /// Canonical slots explicitly recorded as references, not claimed as newly acquired bytes.
+    pub references: BTreeSet<LockedFileKey>,
 }
 /// Exact replacement selections for explicitly requested installed identities. Resolution hosts
 /// supply the group; the engine preserves current authoring intent, including explicit pins.
 pub struct UpdateRequest {
     pub group: AdditionGroup,
-    pub content: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    pub content: DependencyContents,
 }
 #[derive(Clone)]
 pub struct UpdatePreview {
@@ -54,6 +58,8 @@ pub struct UpdatePreview {
     pub selected: BTreeSet<DependencyKey>,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
+    /// Canonical slots explicitly recorded as references, not claimed as newly acquired bytes.
+    pub references: BTreeSet<LockedFileKey>,
 }
 impl From<&AddPreview> for UpdatePreview {
     fn from(value: &AddPreview) -> Self {
@@ -62,6 +68,7 @@ impl From<&AddPreview> for UpdatePreview {
             bindings: value.bindings.clone(),
             selected: value.existing_roots.clone(),
             files: value.files.clone(),
+            references: value.references.clone(),
             replacement: value.replacement,
         }
     }
@@ -71,6 +78,8 @@ pub struct UpdateReceipt {
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
+    /// Canonical slots explicitly recorded as references, not claimed as newly acquired bytes.
+    pub references: BTreeSet<LockedFileKey>,
 }
 /// Selected observed content and its proposed durable description. Every selected payload must
 /// already exist and satisfy the supplied evidence. Adoption does not install missing bytes.
@@ -195,6 +204,7 @@ async fn prepare_change(
             bindings: addition.candidate().plan().bindings().clone(),
             existing_roots: addition.candidate().plan().existing_roots().clone(),
             existing: policy,
+            references: addition.references().clone(),
             replacement: project_change::summary(&files)?,
             files,
         };
@@ -241,6 +251,7 @@ pub(super) async fn run_update(
                     publication: value.publication,
                     project: value.project,
                     bindings: value.bindings,
+                    references: value.references,
                 }
             }))))
         }
@@ -301,6 +312,7 @@ async fn execute(
             publication: receipt.publication,
             project: receipt.project,
             bindings: prepared.view.bindings,
+            references: prepared.view.references,
         })
     })?;
     scope

@@ -127,3 +127,4 @@ pub(in crate::engine) fn plan_adoption(
         content: BTreeMap::new(),
     })
 }
+        references: BTreeSet::new(),

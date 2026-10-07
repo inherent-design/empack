@@ -11,6 +11,232 @@ use empack_core::{
     removal::{RemovalEvidencePolicy, RemovalMode},
 };
 use std::{collections::BTreeMap, fs, path::Path};
+fn references(project: &empack_core::model::ResolvedProject) -> DependencyContents {
+    project
+        .lock()
+        .dependencies
+        .iter()
+        .flat_map(|(key, dependency)| {
+            dependency.files.as_slice().iter().map(|file| {
+                (
+                    LockedFileKey {
+                        dependency: key.clone(),
+                        slot: file.slot.clone(),
+                    },
+                    DependencyContent::Reference,
+                )
+            })
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn reference_add_sync_export_and_materialization_keep_distinct_byte_obligations() {
+    use crate::engine::documents::DocumentCodec;
+    use empack_core::{files::ManagedPath, model::ResolvedProject};
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let resolved = project(false, false);
+    let mut intent = resolved.intent().clone();
+    intent.roots.clear();
+    let source = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "empty")
+        .unwrap();
+    let mut lock = resolved.lock().clone();
+    lock.dependencies.clear();
+    lock.coverage.clear();
+    lock.required_edges.clear();
+    lock.intent_revision = source.semantic_revision();
+    let empty = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+    fs::write(
+        root.path().join("empack.yml"),
+        DocumentCodec.encode_intent(empty.intent()).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("empack.lock"),
+        DocumentCodec.encode_lock(&empty).unwrap(),
+    )
+    .unwrap();
+    for name in ["a.zip", "b.zip", "copy.zip"] {
+        fs::remove_file(root.path().join(format!("pack/resourcepacks/{name}"))).unwrap();
+    }
+    let (engine, governor) = engine(state.path().join("state"));
+    let make_request = || AddRequest {
+        group: AdditionGroup::from_resolved(&resolved).unwrap(),
+        content: references(&resolved),
+        existing: ExistingDependencyPolicy::RejectExisting,
+    };
+    let prepared = ready(&engine, root.path(), make_request()).await;
+    let preview = prepared.view();
+    assert_eq!(preview.add().unwrap().references.len(), 2);
+    assert!(
+        preview
+            .add()
+            .unwrap()
+            .files
+            .expected()
+            .keys()
+            .all(|target| !matches!(target, ManagedPath::Content { .. }))
+    );
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Add(receipt))) =
+        &*outcome
+    else {
+        panic!("reference addition failed")
+    };
+    assert_eq!(receipt.references.len(), 2);
+    assert_eq!(receipt.project.lock().dependencies.len(), 1);
+    engine.release_completed(handle.id());
+    drop((outcome, handle));
+    for _ in 0..2 {
+        let preview = engine
+            .preview(
+                root.path().to_path_buf(),
+                SyncRequest {
+                    resolution: None,
+                    content: references(&resolved),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(preview.sync().unwrap().references.len(), 2);
+        assert!(preview.sync().unwrap().files.changes().is_empty());
+    }
+    assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
+    let mut build = super::tests::request();
+    build.outputs = NonEmpty::new(vec![BuildOutput {
+        target: BuildTarget::Mrpack,
+        artifact: empack_core::path::PortableRelPath::parse(
+            "result.mrpack",
+            empack_core::path::PathSyntax::ProjectContent,
+        )
+        .unwrap(),
+    }])
+    .unwrap();
+    let prepared = ready(&engine, root.path(), build).await;
+    assert!(!prepared.view().build().unwrap().needs_network);
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(_)))
+    ));
+    engine.release_completed(handle.id());
+    drop((outcome, handle));
+    let mut archive =
+        zip::ZipArchive::new(fs::File::open(root.path().join("dist/result.mrpack")).unwrap())
+            .unwrap();
+    let index: serde_json::Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(index["files"].as_array().unwrap().len(), 3);
+    assert_eq!(index["files"][0]["path"], "resourcepacks/a.zip");
+    assert_eq!(index["files"][0]["env"]["server"], "unsupported");
+    let view = engine
+        .preview(root.path().to_path_buf(), super::tests::request())
+        .await
+        .unwrap();
+    assert!(view.build().unwrap().needs_network);
+    assert!(!view.build().unwrap().content.is_empty());
+    let prepared = ready(
+        &engine,
+        root.path(),
+        request(ExistingDependencyPolicy::UpdateSameIdentity),
+    )
+    .await;
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Add(receipt))) =
+        &*outcome
+    else {
+        panic!("materialization failed")
+    };
+    assert!(receipt.references.is_empty());
+    engine.release_completed(handle.id());
+    drop((outcome, handle));
+    let path = root.path().join("pack/resourcepacks/a.zip");
+    let modified = fs::metadata(&path).unwrap().modified().unwrap();
+    let preview = engine
+        .preview(
+            root.path().to_path_buf(),
+            SyncRequest {
+                resolution: None,
+                content: references(&resolved),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(preview.sync().unwrap().files.changes().is_empty());
+    assert_eq!(fs::read(&path).unwrap(), b"payload");
+    assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn reference_requests_cannot_omit_slots_or_accept_changed_payloads() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let (engine, governor) = engine(state.path().join("state"));
+    let mut content = references(&project(false, false));
+    content.pop_first();
+    assert!(
+        engine
+            .prepare(
+                root.path().to_path_buf(),
+                SyncRequest {
+                    resolution: None,
+                    content
+                }
+            )
+            .await
+            .is_err()
+    );
+    let mut add = request(ExistingDependencyPolicy::UpdateSameIdentity);
+    add.content.clear();
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), add)
+            .await
+            .is_err()
+    );
+    fs::write(
+        root.path().join("pack/resourcepacks/a.zip"),
+        b"user changes",
+    )
+    .unwrap();
+    assert!(
+        engine
+            .prepare(
+                root.path().to_path_buf(),
+                SyncRequest {
+                    resolution: None,
+                    content: references(&project(false, false))
+                }
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+        b"user changes"
+    );
+    assert!(!state.path().join("state").exists());
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}
 fn request(policy: ExistingDependencyPolicy) -> AddRequest {
     let project = project(false, false);
     let mut content = BTreeMap::new();
@@ -41,7 +267,7 @@ fn request(policy: ExistingDependencyPolicy) -> AddRequest {
     }
     AddRequest {
         group: AdditionGroup::from_resolved(&project).unwrap(),
-        content,
+        content: crate::engine::dependency_content::materialized(content),
         existing: policy,
     }
 }
@@ -380,7 +606,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
     let (engine, governor) = engine(state.path().join("state"));
     let make_request = || UpdateRequest {
         group: AdditionGroup::from_resolved(&requested).unwrap(),
-        content: acquired_project(&requested),
+        content: crate::engine::dependency_content::materialized(acquired_project(&requested)),
     };
     let preview = engine
         .preview(root.path().to_path_buf(), make_request())
@@ -434,7 +660,9 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
                 root.path().to_path_buf(),
                 SyncRequest {
                     resolution: None,
-                    content: acquired_project(&updated),
+                    content: crate::engine::dependency_content::materialized(acquired_project(
+                        &updated,
+                    )),
                 },
             )
             .await
@@ -477,7 +705,9 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
                 root.path().to_path_buf(),
                 SyncRequest {
                     resolution: None,
-                    content: acquired_project(&updated)
+                    content: crate::engine::dependency_content::materialized(acquired_project(
+                        &updated
+                    ))
                 }
             )
             .await
@@ -488,7 +718,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
         root.path(),
         SyncRequest {
             resolution: Some(resolved.clone()),
-            content: acquired_project(&resolved),
+            content: crate::engine::dependency_content::materialized(acquired_project(&resolved)),
         },
     )
     .await;
@@ -515,7 +745,9 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
             root.path().to_path_buf(),
             SyncRequest {
                 resolution: None,
-                content: acquired_project(&resolved),
+                content: crate::engine::dependency_content::materialized(acquired_project(
+                    &resolved,
+                )),
             },
         )
         .await
@@ -671,7 +903,7 @@ async fn adoption_publishes_observed_intent_without_payload_writes_then_sync_ret
             root.path().to_path_buf(),
             SyncRequest {
                 resolution: None,
-                content,
+                content: crate::engine::dependency_content::materialized(content),
             },
         )
         .await

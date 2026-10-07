@@ -86,6 +86,196 @@ fn prepare(
     )?;
     prepare_addition(snapshot, &group, files(value, bytes), &cancel)
 }
+fn references(value: &ResolvedProject) -> DependencyContents {
+    value
+        .lock()
+        .dependencies
+        .iter()
+        .flat_map(|(key, dependency)| {
+            dependency.files.as_slice().iter().map(|file| {
+                (
+                    LockedFileKey {
+                        dependency: key.clone(),
+                        slot: file.slot.clone(),
+                    },
+                    DependencyContent::Reference,
+                )
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn reference_updates_retire_only_verified_old_materializations_and_index_entries() {
+    for edited in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let current = project(false, false);
+        save(root.path(), &empty());
+        let cancel = Cancellation::default();
+        let publisher = Publisher::open(&state.path().join("state")).unwrap();
+        prepare(root.path(), state.path(), &current, b"payload")
+            .unwrap()
+            .publish(&publisher, &cancel)
+            .unwrap();
+        put(root.path(), "pack/index.toml", b"hash-format='sha256'\n[[files]]\nfile='resourcepacks/a.zip'\nhash='239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5'\n");
+        put(
+            root.path(),
+            "pack/pack.toml",
+            b"name='Test'\n[index]\nfile='index.toml'\n",
+        );
+        let mut lock = current.lock().clone();
+        for dependency in lock.dependencies.values_mut() {
+            dependency.files = NonEmpty::new(
+                dependency
+                    .files
+                    .as_slice()
+                    .iter()
+                    .cloned()
+                    .map(|mut file| {
+                        let digest = empack_core::digest::DigestSet::new(vec![
+                            empack_core::digest::ExpectedDigest::Sha256(
+                                Sha256::digest(b"replacement").into(),
+                            ),
+                        ])
+                        .unwrap();
+                        file.expected.digests = Some(digest.clone());
+                        file.expected.size = Some(11);
+                        file.provenance.declared_digests = Some(digest);
+                        file
+                    })
+                    .collect(),
+            )
+            .unwrap();
+        }
+        let requested = ResolvedProject::validate(
+            current.intent().clone(),
+            lock,
+            current.lock().intent_revision,
+        )
+        .unwrap();
+        let group = AdditionGroup::from_resolved(&requested).unwrap();
+        if edited {
+            put(root.path(), "pack/resourcepacks/a.zip", b"user edit");
+        }
+        let snapshot = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
+            .capture_addition(root.path(), &group, SnapshotLimits::default(), &cancel)
+            .unwrap();
+        let plan = plan_update(snapshot, &group, references(&requested), &cancel);
+        if edited {
+            assert!(plan.is_err());
+            assert_eq!(
+                fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+                b"user edit"
+            );
+            continue;
+        }
+        let prepared = plan.unwrap().stage(&cancel).unwrap();
+        assert_eq!(prepared.references().len(), 2);
+        prepared.publish(&publisher, &cancel).unwrap();
+        for name in ["a.zip", "b.zip", "copy.zip"] {
+            assert!(
+                !root
+                    .path()
+                    .join(format!("pack/resourcepacks/{name}"))
+                    .exists()
+            );
+        }
+        let index: toml::Value =
+            toml::from_str(&fs::read_to_string(root.path().join("pack/index.toml")).unwrap())
+                .unwrap();
+        assert!(index["files"].as_array().unwrap().is_empty());
+        assert_eq!(
+            fs::read(root.path().join("pack/unrelated.bin")).unwrap(),
+            b"unrelated"
+        );
+        let restored = DocumentCodec.decode_lock(
+            &fs::read(root.path().join("empack.lock")).unwrap(),
+            &DocumentCodec
+                .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "intent")
+                .unwrap(),
+            "lock",
+        );
+        assert!(restored.is_ok());
+    }
+}
+
+#[test]
+fn reference_additions_preserve_restricted_evidence_and_reject_local_deferral() {
+    use empack_core::identity::{CurseForgeProjectId, ProviderProjectId};
+    for local in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        save(root.path(), &empty());
+        let base = project(true, false);
+        let key = base.intent().roots.keys().next().unwrap().clone();
+        let mut intent = base.intent().clone();
+        let provider = ProviderProjectId::CurseForge(CurseForgeProjectId::parse("123").unwrap());
+        intent.roots.get_mut(&key).unwrap().source = SourceIntent::Provider(provider.clone());
+        let source = DocumentCodec
+            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "intent")
+            .unwrap();
+        let pin = ResolvedPin {
+            project: provider.clone(),
+            selection: provider.parse_pin("456").unwrap(),
+        };
+        let mut lock = base.lock().clone();
+        lock.intent_revision = source.semantic_revision();
+        let dependency = lock.dependencies.get_mut(&key).unwrap();
+        dependency.identity = ResolvedIdentity::Provider(provider);
+        dependency.selected = Some(pin.clone());
+        dependency.files = NonEmpty::new(
+            dependency
+                .files
+                .as_slice()
+                .iter()
+                .cloned()
+                .map(|mut file| {
+                    file.acquisition = if local {
+                        AcquisitionSpec::Local(
+                            PortableRelPath::parse("pack/source.jar", PathSyntax::ProjectContent)
+                                .unwrap(),
+                        )
+                    } else {
+                        AcquisitionSpec::Provider {
+                            pin: pin.clone(),
+                            slot: file.slot.clone(),
+                            alternatives: vec![],
+                        }
+                    };
+                    file
+                })
+                .collect(),
+        )
+        .unwrap();
+        let requested =
+            ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+        let group = AdditionGroup::from_resolved(&requested).unwrap();
+        let cancel = Cancellation::default();
+        let snapshot = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
+            .capture_addition(root.path(), &group, SnapshotLimits::default(), &cancel)
+            .unwrap();
+        let plan = plan_addition(snapshot, &group, references(&requested), &cancel);
+        if local {
+            assert!(plan.is_err());
+            continue;
+        }
+        let receipt = plan
+            .unwrap()
+            .stage(&cancel)
+            .unwrap()
+            .publish(
+                &Publisher::open(&state.path().join("state")).unwrap(),
+                &cancel,
+            )
+            .unwrap();
+        assert_eq!(
+            receipt.project.lock().dependencies[&key].files,
+            requested.lock().dependencies[&key].files
+        );
+        assert!(!root.path().join("pack/resourcepacks").exists());
+    }
+}
 #[test]
 fn addition_publishes_exact_files_then_readdition_preserves_raw_documents() {
     let root = tempfile::tempdir().unwrap();

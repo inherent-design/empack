@@ -5,6 +5,7 @@ use crate::{
     application::process_runtime::Cancellation,
     engine::{
         content::{InitialObservation, SourceEvidencePolicy, verify_observation},
+        dependency_content::{self, DependencyContent, DependencyContents},
         layout::ProjectLayout,
         mrpack::{AcquiredBuildFile, LockedFileKey},
         project::{MutationSnapshot, WorkspaceSnapshot},
@@ -29,12 +30,16 @@ pub struct PreparedAddition {
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     candidate: AdditionCandidate,
+    references: BTreeSet<LockedFileKey>,
 }
 pub struct AdditionReceipt {
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
 }
 impl PreparedAddition {
+    pub fn references(&self) -> &BTreeSet<LockedFileKey> {
+        &self.references
+    }
     pub fn files(&self) -> &FilePlan {
         self.change.plan()
     }
@@ -57,7 +62,12 @@ pub fn prepare_addition(
     acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
     cancel: &Cancellation,
 ) -> Result<PreparedAddition> {
-    let planned = plan_addition(workspace, group, acquired, cancel)?;
+    let planned = plan_addition(
+        workspace,
+        group,
+        dependency_content::materialized(acquired),
+        cancel,
+    )?;
     planned.bytes()?;
     planned.stage(cancel)
 }
@@ -67,6 +77,7 @@ pub(in crate::engine) struct AdditionPreparation {
     plan: FilePlan,
     documents: BTreeMap<ManagedPath, Vec<u8>>,
     content: BTreeMap<ManagedPath, AcquiredBuildFile>,
+    references: BTreeSet<LockedFileKey>,
 }
 impl AdditionPreparation {
     pub(in crate::engine) fn candidate(&self) -> &AdditionCandidate {
@@ -90,13 +101,14 @@ impl AdditionPreparation {
             root,
             change,
             candidate: self.candidate,
+            references: self.references,
         })
     }
 }
 pub(in crate::engine) fn plan_addition(
     workspace: MutationSnapshot,
     group: &AdditionGroup,
-    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    acquired: DependencyContents,
     cancel: &Cancellation,
 ) -> Result<AdditionPreparation> {
     plan_change(workspace, group, acquired, false, cancel)
@@ -104,7 +116,7 @@ pub(in crate::engine) fn plan_addition(
 pub(in crate::engine) fn plan_update(
     workspace: MutationSnapshot,
     group: &AdditionGroup,
-    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    acquired: DependencyContents,
     cancel: &Cancellation,
 ) -> Result<AdditionPreparation> {
     plan_change(workspace, group, acquired, true, cancel)
@@ -112,7 +124,7 @@ pub(in crate::engine) fn plan_update(
 fn plan_change(
     workspace: MutationSnapshot,
     group: &AdditionGroup,
-    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    acquired: DependencyContents,
     update: bool,
     cancel: &Cancellation,
 ) -> Result<AdditionPreparation> {
@@ -153,6 +165,8 @@ fn plan_change(
     let selected: BTreeSet<_> = candidate.plan().bindings().values().cloned().collect();
     let mut expected_slots = BTreeSet::new();
     let mut content = BTreeMap::new();
+    let mut references = BTreeSet::new();
+    let mut referenced = BTreeMap::new();
     let mut old = BTreeMap::new();
     for key in &selected {
         if let Some(dependency) = current.lock().dependencies.get(key) {
@@ -179,7 +193,22 @@ fn plan_change(
             let bytes = acquired
                 .get(&slot)
                 .context("Addition is missing an exact acquired file")?;
-            expected_slots.insert(slot);
+            expected_slots.insert(slot.clone());
+            let DependencyContent::Materialized(bytes) = bytes else {
+                dependency_content::validate_reference(file)?;
+                references.insert(slot);
+                for placement in file.placements.as_slice() {
+                    let target = ManagedPath::Content {
+                        layer: placement.layer,
+                        path: placement.destination.relative().clone(),
+                    };
+                    ensure!(
+                        referenced.insert(target, &file.expected).is_none(),
+                        "Addition has duplicate reference placements"
+                    );
+                }
+                continue;
+            };
             verify_observation(
                 &mut bytes.content.lease().open(),
                 &file.expected,
@@ -206,12 +235,15 @@ fn plan_change(
     );
     let mut removals: BTreeSet<_> = old
         .keys()
-        .filter(|target| !content.contains_key(*target))
+        .filter(|target| !content.contains_key(*target) && !referenced.contains_key(*target))
         .cloned()
         .collect();
     let observed_content = verification::observed_mutation_for(
         workspace.observations(),
-        old.keys().chain(content.keys()).cloned(),
+        old.keys()
+            .chain(content.keys())
+            .chain(referenced.keys())
+            .cloned(),
     )?;
     for (target, observed) in &observed_content {
         match observed {
@@ -226,6 +258,18 @@ fn plan_change(
             ObservedPath::Absent => {}
         }
     }
+    let mut retained = BTreeMap::new();
+    for (target, expected) in &referenced {
+        if let ObservedPath::File(before) = &observed_content[target] {
+            if old.get(target) == Some(expected) {
+                retained.insert(target.clone(), before.clone());
+            } else {
+                // The old bytes were verified above. Reference-only updates retire that
+                // old materialization rather than silently treating it as the new pin.
+                removals.insert(target.clone());
+            }
+        }
+    }
     // Derivative backend records for changed selections cannot continue claiming the old pin.
     // Preserve unrelated metadata; known ownership conflicts at affected destinations fail.
     for record in workspace.backend_files(cancel)? {
@@ -233,7 +277,10 @@ fn plan_change(
             layer: empack_core::model::ContentLayer::Common,
             path: record.destination.relative().clone(),
         };
-        if !old.contains_key(&target) && !content.contains_key(&target) {
+        if !old.contains_key(&target)
+            && !content.contains_key(&target)
+            && !referenced.contains_key(&target)
+        {
             continue;
         }
         let (key, file) = record
@@ -243,7 +290,7 @@ fn plan_change(
             selected.contains(key),
             "Addition overlaps retained backend ownership"
         );
-        if !candidate.plan().changed().contains(key) {
+        if !candidate.plan().changed().contains(key) && !referenced.contains_key(&target) {
             continue;
         }
         if let Some(digest) = file.expected.digests.as_ref().and_then(|set| {
@@ -263,7 +310,9 @@ fn plan_change(
                 "Backend digest differs from selected bytes"
             );
         }
-        removals.insert(ManagedPath::BackendDocument(record.metadata_path));
+        if candidate.plan().changed().contains(key) {
+            removals.insert(ManagedPath::BackendDocument(record.metadata_path));
+        }
     }
     let mut documents = BTreeMap::from([
         (
@@ -312,10 +361,11 @@ fn plan_change(
         documents
             .keys()
             .chain(content.keys())
+            .chain(retained.keys())
             .chain(removals.iter())
             .cloned(),
     )?;
-    let mut desired = BTreeMap::new();
+    let mut desired = retained;
     for (target, bytes) in &documents {
         let ObservedPath::File(before) = &observed[target] else {
             anyhow::bail!("Addition document is not an existing regular file")
@@ -349,6 +399,7 @@ fn plan_change(
         plan,
         documents,
         content,
+        references,
     })
 }
 

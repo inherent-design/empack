@@ -1,7 +1,7 @@
 //! Recorded synchronization uses captured plans, explicit replacement and retained engine outcomes.
 use super::*;
 use crate::engine::{
-    mrpack::{AcquiredBuildFile, LockedFileKey},
+    mrpack::LockedFileKey,
     publication::{Publisher, RecoveryRequired},
     runtime::WorkScope,
     synchronization::{self as native_sync, PreparedSynchronization},
@@ -10,12 +10,12 @@ use empack_core::{
     files::{FileChange, FilePlan, ObservedPath},
     model::{DependencyKey, ResolvedProject},
 };
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
-/// Exact acquired slots, optionally paired with resolution justified by changed authoring intent.
+/// Exact per-slot materialization, optionally paired with resolution for changed authoring intent.
 pub struct SyncRequest {
     pub resolution: Option<ResolvedProject>,
-    pub content: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    pub content: DependencyContents,
 }
 #[derive(Clone)]
 pub struct SyncPreview {
@@ -24,11 +24,13 @@ pub struct SyncPreview {
     pub rebinds_lock: bool,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
+    pub references: BTreeSet<LockedFileKey>,
 }
 pub struct SyncReceipt {
     pub plan: PlanId,
     pub publication: PublicationReceipt,
     pub project: ResolvedProject,
+    pub references: BTreeSet<LockedFileKey>,
 }
 pub(super) struct PreparedSynchronizationOperation {
     pub(super) view: SyncPreview,
@@ -85,6 +87,7 @@ pub(super) async fn prepare(
                 .keys()
                 .cloned()
                 .collect(),
+            references: synchronization.references().clone(),
             rebinds_lock: !synchronization.candidate().preserves_lock_document(),
             replacement: project_change::summary(&files)?,
             files,
@@ -158,6 +161,7 @@ async fn execute(
             plan: prepared.view.plan,
             publication: receipt.publication,
             project: receipt.project,
+            references: prepared.view.references,
         })
     })?;
     scope

@@ -556,7 +556,7 @@ fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_b
             .unwrap();
         let planned = plan_synchronization_with_resolution(
             snapshot,
-            acquired(&proposed, false),
+            dependency_content::materialized(acquired(&proposed, false)),
             Some(&proposed),
             &cancel,
         );
@@ -642,7 +642,7 @@ fn first_resolution_creates_a_lock_without_adopting_untracked_files() {
             .unwrap();
         let plan = plan_synchronization_with_resolution(
             snapshot,
-            acquired(&project, false),
+            dependency_content::materialized(acquired(&project, false)),
             Some(&project),
             &cancel,
         );

@@ -45,6 +45,7 @@ use tokio::sync::oneshot;
 #[derive(Debug, thiserror::Error)]
 #[error("Publication worker failed; inspect recovery before retrying")]
 struct PublicationWorkerFailed(#[source] RuntimeError);
+pub use super::dependency_content::{DependencyContent, DependencyContents};
 mod addition;
 pub use addition::{
     AddPreview, AddReceipt, AddRequest, AdoptObservedPreview, AdoptObservedReceipt,
