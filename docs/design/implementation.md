@@ -493,9 +493,18 @@ isolated repeat passed cleanly. The broader final-head suite remains a later gat
 
 The shared synchronization API revision passes 1,779 default tests and eleven doctests,
 47 focused tests, all-feature Clippy and Windows cross-compilation. The full run has no
-pipe-leak warnings. Review 80 still identifies overly broad metadata requirements and
-staging of unchanged sync content; those remain follow-up corrections rather than
-being implied complete by the passing suite.
+pipe-leak warnings. Review 80's two regressions reproduced independently of that suite.
+Synchronization now discovers backend records through bounded, non-following reads and
+captures only interpretable records naming locked common destinations. Malformed,
+nonregular and unrelated metadata remains untouched. Selected metadata and payloads
+still bind publication to their observed identities and bytes.
+
+Synchronization stages only changed files and documents. Unchanged inputs remain in
+the native read set and durable postconditions without being copied into the candidate.
+The advanced API still accepts acquired bytes for every locked slot; this change does
+not claim to eliminate acquisition by a future host. The corrections pass 106 affected
+tests and all-feature Clippy, including empty no-op staging, late selected-file edits,
+malformed and symlinked metadata, bounded discovery and publication recovery.
 
 ## Semantic removal planning
 

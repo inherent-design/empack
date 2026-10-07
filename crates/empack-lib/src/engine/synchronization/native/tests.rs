@@ -100,12 +100,21 @@ fn restores_modified_and_missing_locked_files_then_syncs_without_changes() {
         fs::read(root.path().join("pack/unlisted.bin")).unwrap(),
         b"retain"
     );
+    let unchanged = prepare(root.path(), state.path(), &project, false).unwrap();
+    assert!(unchanged.files().changes().is_empty());
     assert!(
-        prepare(root.path(), state.path(), &project, false)
-            .unwrap()
-            .files()
-            .changes()
-            .is_empty()
+        unchanged.files().expected().is_empty(),
+        "unchanged payloads must not require private staging"
+    );
+    put(
+        root.path(),
+        "pack/resourcepacks/a.zip",
+        b"changed after no-op preview",
+    );
+    assert!(
+        unchanged
+            .publish(&publisher, &Cancellation::default())
+            .is_err()
     );
 }
 #[test]
@@ -222,7 +231,16 @@ fn selected_links_fail_while_unrelated_links_are_retained() {
     let project = fixture(root.path());
     put(outside.path(), "sentinel", b"outside");
     std::os::unix::fs::symlink(outside.path(), root.path().join("pack/unrelated-link")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("sentinel"),
+        root.path().join("pack/unrelated.pw.toml"),
+    )
+    .unwrap();
     assert!(prepare(root.path(), state.path(), &project, false).is_ok());
+    assert_eq!(
+        fs::read(outside.path().join("sentinel")).unwrap(),
+        b"outside"
+    );
     std::os::unix::fs::symlink(
         outside.path().join("sentinel"),
         root.path().join("pack/resourcepacks/b.zip"),
@@ -232,5 +250,113 @@ fn selected_links_fail_while_unrelated_links_are_retained() {
     assert_eq!(
         fs::read(outside.path().join("sentinel")).unwrap(),
         b"outside"
+    );
+}
+
+#[test]
+fn unrelated_uninterpretable_metadata_does_not_block_recorded_restoration() {
+    for directory in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let project = fixture(root.path());
+        if directory {
+            put(root.path(), "pack/unrelated.pw.toml/sentinel", b"keep");
+        } else {
+            put(root.path(), "pack/unrelated.pw.toml", b"malformed = [");
+        }
+        let prepared = prepare(root.path(), state.path(), &project, false).unwrap();
+        prepared
+            .publish(
+                &Publisher::open(&state.path().join("state")).unwrap(),
+                &Cancellation::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+            b"payload"
+        );
+        if directory {
+            assert_eq!(
+                fs::read(root.path().join("pack/unrelated.pw.toml/sentinel")).unwrap(),
+                b"keep"
+            );
+        } else {
+            assert_eq!(
+                fs::read(root.path().join("pack/unrelated.pw.toml")).unwrap(),
+                b"malformed = ["
+            );
+        }
+    }
+}
+
+#[test]
+fn selected_metadata_changes_after_preview_refuse_publication() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let project = fixture(root.path());
+    let path = "pack/resourcepacks/selected.pw.toml";
+    let metadata = "filename = 'a.zip'\nside = 'both'\n[download]\nurl = 'https://example.com/a'\nhash-format = 'sha256'\nhash = '0000000000000000000000000000000000000000000000000000000000000000'\n";
+    put(root.path(), path, metadata.as_bytes());
+    let prepared = prepare(root.path(), state.path(), &project, false).unwrap();
+    put(
+        root.path(),
+        path,
+        metadata.replace("a.zip", "unrelated.zip").as_bytes(),
+    );
+    assert!(
+        prepared
+            .publish(
+                &Publisher::open(&state.path().join("state")).unwrap(),
+                &Cancellation::default()
+            )
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+        b"edited bytes"
+    );
+    assert!(root.path().join(path).exists());
+}
+
+#[test]
+fn metadata_discovery_remains_bounded_and_cancellable() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    for n in 0..12 {
+        put(
+            root.path(),
+            &format!("pack/unrelated/{n}.pw.toml"),
+            b"invalid = [",
+        );
+    }
+    let reader = ProjectReader::new(RecoveryReader::new(state.path().join("state")));
+    let error = reader
+        .capture_synchronization(
+            root.path(),
+            SnapshotLimits {
+                entries: 10,
+                ..SnapshotLimits::default()
+            },
+            &Cancellation::default(),
+        )
+        .err()
+        .unwrap();
+    assert!(
+        error
+            .to_string()
+            .contains("Metadata discovery exceeds entry limit"),
+        "{error:#}"
+    );
+    let cancel = Cancellation::default();
+    cancel.cancel();
+    assert!(
+        reader
+            .capture_synchronization(root.path(), SnapshotLimits::default(), &cancel)
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+        b"edited bytes"
     );
 }

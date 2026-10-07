@@ -136,7 +136,10 @@ source evidence and dependency edges, including installations no longer listed a
 roots. Pin, source, placement or runtime edits that invalidate that resolution return
 `ResolutionRequired`. `capture_synchronization` and `prepare_synchronization` bind
 recorded placements and verified supplied bytes to a restoration plan. Modified files
-are explicit replacements; unrelated content remains. `SyncRequest` carries verified exact inputs through the shared Engine lifecycle.
+are explicit replacements; unrelated content remains. Metadata discovery tolerates
+opaque unrelated records and binds only interpretable records naming locked destinations.
+No-op content remains a publication precondition without being staged again.
+`SyncRequest` carries verified exact inputs through the shared Engine lifecycle.
 `SyncPreview` lists selected records, lock rebinding and the replacement plan;
 `SyncReceipt` retains the coherent published project. Changed-intent resolution and
 acquisition hosts remain pending; the document candidate alone has no write authority.

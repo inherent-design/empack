@@ -81,6 +81,37 @@ pub fn plan_files(
     )?)
 }
 
+/// Stage only actual writes. The complete native read set remains the publication precondition
+/// and contributes unchanged file postconditions independently of this narrower write plan.
+pub(super) fn plan_mutation_files(
+    observed: &BTreeMap<ManagedPath, ObservedPath>,
+    desired: &BTreeMap<ManagedPath, FileContent>,
+    removals: &BTreeSet<ManagedPath>,
+) -> Result<FilePlan> {
+    let complete = plan_files(observed, desired, removals)?;
+    let changed: BTreeSet<_> = complete
+        .changes()
+        .iter()
+        .map(|change| change.target())
+        .collect();
+    let observed = observed
+        .iter()
+        .filter(|(path, _)| changed.contains(path))
+        .map(|(path, value)| (path.clone(), value.clone()))
+        .collect();
+    let desired = desired
+        .iter()
+        .filter(|(path, _)| changed.contains(path))
+        .map(|(path, value)| (path.clone(), value.clone()))
+        .collect();
+    let removals = removals
+        .iter()
+        .filter(|path| changed.contains(path))
+        .cloned()
+        .collect();
+    plan_files(&observed, &desired, &removals)
+}
+
 /// Convert native observations into pure planner data, preserving each raw content revision.
 pub fn observed_files(snapshot: &NativeSnapshot) -> Result<BTreeMap<ManagedPath, ObservedPath>> {
     let mut observed = BTreeMap::new();

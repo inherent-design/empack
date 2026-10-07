@@ -246,7 +246,9 @@ pub(in crate::engine) fn plan_synchronization(
             },
         );
     }
-    let plan = verification::plan_files(&observed, &desired, &removals)?;
+    let plan = verification::plan_mutation_files(&observed, &desired, &removals)?;
+    documents.retain(|target, _| plan.expected().contains_key(target));
+    content.retain(|target, _| plan.expected().contains_key(target));
     verification::candidate_stage_limits(workspace.observations(), &plan)?;
     Ok(SynchronizationPreparation {
         workspace,

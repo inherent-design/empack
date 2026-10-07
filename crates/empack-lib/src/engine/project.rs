@@ -18,6 +18,7 @@ use empack_core::{
 use std::path::Path;
 
 mod creation;
+mod synchronization;
 pub use creation::NewProjectSnapshot;
 
 /// Managed replacement inputs may be empty or contain an invalid prior document.
@@ -689,44 +690,25 @@ impl ProjectReader {
         }
         self.capture_mutation_paths(selected, documents, required, limits, cancel)
     }
-    /// Bind every recorded placement for exact restoration, retaining unrelated payloads.
-    pub fn capture_synchronization(
-        &self,
-        selected: &Path,
-        limits: SnapshotLimits,
-        cancel: &Cancellation,
-    ) -> Result<MutationSnapshot> {
-        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
-        let metadata = super::source::CaptureFilter::mutation(&[])?;
-        let documents =
-            self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
-        let candidate = super::synchronization::SynchronizationCandidate::prepare(
-            documents.intent(),
-            documents
-                .prior_lock()
-                .context("Synchronization requires a lock")?,
-        )?;
-        let mut required = Vec::new();
-        for dependency in candidate.project().lock().dependencies.values() {
-            for file in dependency.files.as_slice() {
-                for placement in file.placements.as_slice() {
-                    required.push(super::layout::ProjectLayout::path(
-                        &empack_core::files::ManagedPath::Content {
-                            layer: placement.layer,
-                            path: placement.destination.relative().clone(),
-                        },
-                    )?);
-                }
-            }
-        }
-        self.capture_mutation_paths(selected, documents, required, limits, cancel)
-    }
     fn capture_mutation_paths(
         &self,
         selected: &Path,
         documents: WorkspaceSnapshot,
         required: Vec<PortableRelPath>,
         limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        let filter = super::source::CaptureFilter::mutation(&required)?;
+        self.capture_mutation_paths_filtered(selected, documents, required, limits, &filter, cancel)
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn capture_mutation_paths_filtered(
+        &self,
+        selected: &Path,
+        documents: WorkspaceSnapshot,
+        required: Vec<PortableRelPath>,
+        limits: SnapshotLimits,
+        filter: &super::source::CaptureFilter,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
         let scopes = [
@@ -744,8 +726,7 @@ impl ProjectReader {
         })
         .map(|name| PortableRelPath::parse(name, PathSyntax::ProjectContent))
         .collect::<std::result::Result<Vec<_>, _>>()?;
-        let filter = super::source::CaptureFilter::mutation(&required)?;
-        let workspace = self.capture_selected(selected, &scopes, limits, Some(&filter), cancel)?;
+        let workspace = self.capture_selected(selected, &scopes, limits, Some(filter), cancel)?;
         ensure!(
             documents.root.binding == workspace.root.binding
                 && documents.intent.raw_revision() == workspace.intent.raw_revision()
