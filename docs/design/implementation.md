@@ -96,6 +96,19 @@ passes. The first fixture run retained its completed handle during the reservati
 assertion; dropping that final owner corrected the test. No production resource
 release behavior was changed. Live authenticated CDN verification remains a
 combined-candidate gate.
+Provider additions now connect retained exact catalog records to the shared verified
+HTTP acquisition port. Every slot has an explicit reference, acquire or supplied-byte
+decision. Validation precedes payload requests; HTTP files share one transfer budget.
+Restricted files retain pending obligations and original MD5 evidence. Supplied
+bytes must satisfy the selected slot's complete assertions before native preparation.
+The composed regression publishes acquired root and required files, then synchronizes
+twice without changes. Negative cases cover mismatched bytes, cumulative limits and
+missing/extra decisions. This does not yet establish durable continuation or CLI parity.
+Review 88's retained companion case reproduced: main content now establishes required
+participation while companion files retain their separate sides. A negative case
+ensures a companion cannot satisfy an absent main-content requirement. The 106-test
+affected provider, acquisition, addition and build-refresh suite passes, with
+all-feature Clippy. This is targeted evidence after the 1,819-test full run.
 Internal catalog composition can carry one request budget through selector, pin and
 compatible lookups; it does not restart the deadline between dependencies.
 Transient signed URLs are execution data; the document codec still rejects them in

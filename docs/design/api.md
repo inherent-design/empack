@@ -86,6 +86,16 @@ runtime or insufficient participation needs an explicit change. Generated labels
 reserve explicit roots and current records before choosing a disambiguated label.
 CLI selection and local/URL hosts remain separate integration work.
 
+`ProviderAddition::acquire_content` accepts one explicit `ProviderContentChoice`
+per locked file: reference, acquisition, or supplied verified bytes. It validates the
+whole decision set before downloading, reuses retained exact catalog records and
+shares one transfer allowance across HTTP files. Restricted or unsupported
+acquisition returns `ProviderContent::pending` with original assertions. Only a
+complete inventory can pass native addition preparation; pending content is never
+counted as a successful requested item. Supplied files are matched by exact logical
+slot and every locked assertion, preserving their portable permissions. This is
+in-memory preparation; durable manual continuation remains separate work.
+
 The compiled `ImportContentPlan::resolve` accepts retained import declarations and a
 catalog, then resolves all exact provider references under one allowance.
 `ImportContentPlan::acquire` accepts explicit supplied files keyed by

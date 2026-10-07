@@ -776,3 +776,447 @@ async fn generated_labels_preserve_unrelated_retained_records() {
             .contains(&key)
     );
 }
+
+#[tokio::test]
+async fn provider_acquisition_materializes_a_complete_native_addition_or_returns_no_subset() {
+    use crate::engine::{
+        acquisition::{HttpAcquisition, TransferLimits},
+        content::SourceEvidencePolicy,
+    };
+    for mode in ["complete", "digest", "budget", "missing", "extra"] {
+        let mut server = Server::new_async().await;
+        for (id, slug, pin, deps) in [
+            (
+                "project1",
+                "renderer",
+                "version1",
+                json!([{"project_id":"project2","version_id":"version2","dependency_type":"required"}]),
+            ),
+            ("project2", "library", "version2", json!([])),
+        ] {
+            let mut value = version(id, pin, deps);
+            value["files"][0]["url"] = json!(format!("{}/{id}", server.url()));
+            records(&mut server, id, slug, "mod", &value).await;
+        }
+        let first = server
+            .mock("GET", "/project1")
+            .with_body("payload")
+            .expect(if matches!(mode, "missing" | "extra") {
+                0
+            } else {
+                1
+            })
+            .create_async()
+            .await;
+        let second = server
+            .mock("GET", "/project2")
+            .with_body(if mode == "digest" {
+                "changed"
+            } else {
+                "payload"
+            })
+            .expect(if matches!(mode, "missing" | "extra") {
+                0
+            } else {
+                1
+            })
+            .create_async()
+            .await;
+        let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 2,
+            memory_bytes: 8 << 20,
+            scratch_bytes: 1 << 20,
+            open_files: 20,
+        });
+        let runtime = OperationRuntime::new(governor.clone(), 1);
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                let result = async {
+                    let ProviderAdditionOutcome::Ready(addition) = catalog
+                        .resolve_addition(
+                            &mut scope,
+                            &current(),
+                            NonEmpty::new(vec![input("renderer", true)])?,
+                            ReleasePolicy::PreferStable,
+                            limits(),
+                        )
+                        .await?
+                    else {
+                        anyhow::bail!("incomplete closure")
+                    };
+                    let mut choices: BTreeMap<_, _> = references(addition.project())
+                        .into_keys()
+                        .map(|key| (key, ProviderContentChoice::Acquire))
+                        .collect();
+                    if mode == "missing" {
+                        choices.pop_last();
+                    }
+                    if mode == "extra" {
+                        choices.insert(
+                            crate::engine::mrpack::LockedFileKey {
+                                dependency: DependencyKey::parse("extra")?,
+                                slot: FileSlot::parse("extra")?,
+                            },
+                            ProviderContentChoice::Acquire,
+                        );
+                    }
+                    let content = addition
+                        .acquire_content(
+                            &mut scope,
+                            &HttpAcquisition::for_loopback_tests(),
+                            choices,
+                            SourceEvidencePolicy::Compatibility,
+                            TransferLimits {
+                                file_bytes: 32,
+                                transfer_bytes: if mode == "budget" { 10 } else { 32 },
+                                deadline: Duration::from_secs(3),
+                                redirects: 2,
+                            },
+                        )
+                        .await?;
+                    Ok::<_, anyhow::Error>((addition, content))
+                }
+                .await;
+                Ok(result)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        runtime.release_completed(handle.id());
+        runtime.shutdown().await;
+        drop(handle);
+        if mode == "complete" {
+            let OperationOutcome::Completed(Ok((addition, content))) = &*outcome else {
+                panic!("acquisition failed")
+            };
+            assert!(content.complete());
+            assert_eq!(content.content().len(), 2);
+            let root = tempfile::tempdir().unwrap();
+            let host = tempfile::tempdir().unwrap();
+            fs::write(
+                root.path().join("empack.yml"),
+                DocumentCodec.encode_intent(current().intent()).unwrap(),
+            )
+            .unwrap();
+            fs::write(
+                root.path().join("empack.lock"),
+                DocumentCodec.encode_lock(&current()).unwrap(),
+            )
+            .unwrap();
+            let cancel = crate::application::process_runtime::Cancellation::default();
+            let reader = ProjectReader::new(RecoveryReader::new(host.path().join("state")));
+            let snapshot = reader
+                .capture_addition(
+                    root.path(),
+                    addition.group(),
+                    SnapshotLimits::default(),
+                    &cancel,
+                )
+                .unwrap();
+            crate::engine::addition::plan_addition(
+                snapshot,
+                addition.group(),
+                content.content().clone(),
+                &cancel,
+            )
+            .unwrap()
+            .stage(&cancel)
+            .unwrap()
+            .publish(
+                &Publisher::open(&host.path().join("state")).unwrap(),
+                &cancel,
+            )
+            .unwrap();
+            for id in ["project1", "project2"] {
+                assert_eq!(
+                    fs::read(root.path().join(format!("pack/mods/{id}.jar"))).unwrap(),
+                    b"payload"
+                );
+            }
+            for _ in 0..2 {
+                let snapshot = reader
+                    .capture_synchronization(root.path(), SnapshotLimits::default(), &cancel)
+                    .unwrap();
+                let sync = crate::engine::synchronization::plan_synchronization_with_resolution(
+                    snapshot,
+                    content.content().clone(),
+                    None,
+                    &cancel,
+                )
+                .unwrap()
+                .stage(&cancel)
+                .unwrap();
+                assert!(sync.files().changes().is_empty());
+            }
+        } else {
+            assert!(
+                matches!(&*outcome, OperationOutcome::Completed(Err(_))),
+                "{mode}"
+            );
+        }
+        first.assert_async().await;
+        second.assert_async().await;
+        drop(outcome);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}
+
+#[tokio::test]
+async fn restricted_provider_content_requires_explicit_verified_association_or_reference() {
+    use crate::engine::{
+        acquisition::{HttpAcquisition, TransferLimits},
+        content::{AcquiredContent, InitialObservation, SourceEvidencePolicy, verify_stream},
+        mrpack::AcquiredBuildFile,
+    };
+    use empack_core::{
+        digest::DigestAlgorithm, files::FilePermissions, identity::CurseForgeFileId,
+    };
+    let mut server = Server::new_async().await;
+    server.mock("GET", "/mods/123").with_body(json!({"data":{"id":123,"gameId":432,"classId":6,"slug":"restricted","name":"Restricted"}}).to_string()).create_async().await;
+    server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"restricted.jar","fileLength":7,"downloadUrl":null,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"gameVersions":["1.20.1","Fabric"],"dependencies":[],"isAvailable":true,"releaseType":1,"fileDate":"2026-01-01T00:00:00Z"}}).to_string()).create_async().await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into()));
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 8 << 20,
+        scratch_bytes: 1 << 20,
+        open_files: 20,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let result = async {
+                let mut selected = input("renderer", false);
+                selected.selector = ProjectSelector::parse(ProviderKind::CurseForge, "123")?;
+                selected.pin = Some(PinSelector::CurseForgeFile(CurseForgeFileId::parse("456")?));
+                let ProviderAdditionOutcome::Ready(addition) = catalog
+                    .resolve_addition(
+                        &mut scope,
+                        &current(),
+                        NonEmpty::new(vec![selected])?,
+                        ReleasePolicy::PreferStable,
+                        limits(),
+                    )
+                    .await?
+                else {
+                    anyhow::bail!("incomplete")
+                };
+                let key = references(addition.project()).into_keys().next().unwrap();
+                let limits = TransferLimits {
+                    file_bytes: 32,
+                    transfer_bytes: 32,
+                    deadline: Duration::from_secs(3),
+                    redirects: 2,
+                };
+                let transport =
+                    catalog.configure_acquisition(HttpAcquisition::for_loopback_tests());
+                let pending = addition
+                    .acquire_content(
+                        &mut scope,
+                        &transport,
+                        BTreeMap::from([(key.clone(), ProviderContentChoice::Acquire)]),
+                        SourceEvidencePolicy::Compatibility,
+                        limits,
+                    )
+                    .await?;
+                assert!(!pending.complete());
+                assert!(pending.content().is_empty());
+                assert_eq!(
+                    pending.pending()[&key].reason,
+                    ProviderInputReason::RestrictedDownload
+                );
+                assert_eq!(
+                    pending.pending()[&key]
+                        .expected
+                        .digests
+                        .as_ref()
+                        .unwrap()
+                        .strongest(),
+                    DigestAlgorithm::Md5
+                );
+                drop(pending);
+                let reference = addition
+                    .acquire_content(
+                        &mut scope,
+                        &transport,
+                        BTreeMap::from([(key.clone(), ProviderContentChoice::Reference)]),
+                        SourceEvidencePolicy::Compatibility,
+                        limits,
+                    )
+                    .await?;
+                assert!(reference.complete());
+                assert!(matches!(
+                    reference.content()[&key],
+                    DependencyContent::Reference
+                ));
+                drop(reference);
+                for payload in [b"changed", b"payload"] {
+                    let work = scope.spawn_blocking(
+                        ResourceRequest {
+                            jobs: 1,
+                            memory_bytes: 1 << 16,
+                            scratch_bytes: 32,
+                            open_files: 3,
+                        },
+                        ResourceRequest {
+                            scratch_bytes: 32,
+                            open_files: 3,
+                            ..Default::default()
+                        },
+                        move |cancel| {
+                            verify_stream(
+                                &mut &payload[..],
+                                &ExpectedContent {
+                                    digests: None,
+                                    size: Some(7),
+                                    accepted_observation: None,
+                                },
+                                32,
+                                SourceEvidencePolicy::Compatibility,
+                                InitialObservation::Accepted,
+                                &cancel,
+                            )
+                        },
+                    )?;
+                    let supplied = AcquiredContent::retain_resources(
+                        scope.accept(work.wait().await?)?.transpose()?,
+                    )?;
+                    let result = addition
+                        .acquire_content(
+                            &mut scope,
+                            &transport,
+                            BTreeMap::from([(
+                                key.clone(),
+                                ProviderContentChoice::Supplied(AcquiredBuildFile {
+                                    content: supplied,
+                                    permissions: FilePermissions {
+                                        readonly: true,
+                                        executable: false,
+                                    },
+                                }),
+                            )]),
+                            SourceEvidencePolicy::Compatibility,
+                            limits,
+                        )
+                        .await;
+                    if payload == b"changed" {
+                        assert!(result.is_err());
+                    } else {
+                        let result = result?;
+                        assert!(result.complete());
+                        assert!(
+                            result.content()[&key]
+                                .materialized()
+                                .unwrap()
+                                .permissions
+                                .readonly
+                        );
+                    }
+                }
+                Ok::<_, anyhow::Error>(())
+            }
+            .await;
+            Ok(result)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(Ok(())) = &*outcome else {
+        panic!("restricted acquisition failed")
+    };
+    runtime.release_completed(handle.id());
+    runtime.shutdown().await;
+    drop(handle);
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn retained_companion_participation_is_preserved_without_satisfying_the_main_content() {
+    for main_on_server in [true, false] {
+        let mut server = Server::new_async().await;
+        let mut library_version = version("project2", "version2", json!([]));
+        let mut companion = library_version["files"][0].clone();
+        companion["filename"] = json!("companion.zip");
+        companion["primary"] = json!(false);
+        companion["file_type"] = json!("optional-resource-pack");
+        library_version["files"]
+            .as_array_mut()
+            .unwrap()
+            .push(companion);
+        records(&mut server, "project2", "library", "mod", &library_version).await;
+        let mut library = input("library", false);
+        library.key = Some(DependencyKey::parse("library").unwrap());
+        library.pin = Some(PinSelector::ModrinthVersion(
+            ModrinthVersionId::parse("version2").unwrap(),
+        ));
+        library.requirements.server = if main_on_server {
+            Requirement::Required
+        } else {
+            Requirement::Unsupported
+        };
+        library.files = ProviderFiles::Placed(BTreeMap::from([
+            (
+                "project2.jar".into(),
+                NonEmpty::new(vec![Placement {
+                    destination: InstallDestination::parse("mods/library.jar").unwrap(),
+                    layer: ContentLayer::Common,
+                    requirements: library.requirements.clone(),
+                }])
+                .unwrap(),
+            ),
+            (
+                "companion.zip".into(),
+                NonEmpty::new(vec![Placement {
+                    destination: InstallDestination::parse("resourcepacks/companion.zip").unwrap(),
+                    layer: ContentLayer::Common,
+                    requirements: Requirements {
+                        client: Requirement::Required,
+                        server: if main_on_server {
+                            Requirement::Unsupported
+                        } else {
+                            Requirement::Required
+                        },
+                    },
+                }])
+                .unwrap(),
+            ),
+        ]));
+        let (prior, _) = resolve(&server, vec![library], limits()).await;
+        let prior = ready(&prior).project().clone();
+        records(
+            &mut server,
+            "project1",
+            "renderer",
+            "mod",
+            &version(
+                "project1",
+                "version1",
+                json!([{"project_id":"project2","dependency_type":"required"}]),
+            ),
+        )
+        .await;
+        let mut root = input("renderer", true);
+        root.requirements.server = Requirement::Required;
+        let (outcome, _) = resolve_with_current(&server, prior.clone(), vec![root], limits()).await;
+        if !main_on_server {
+            let OperationOutcome::Completed(Err(error)) = &*outcome else {
+                panic!("companion incorrectly satisfied the mod requirement")
+            };
+            assert!(error.to_string().contains("participation needs"));
+            continue;
+        }
+        let plan =
+            empack_core::addition::AdditionPlan::prepare(&prior, ready(&outcome).group()).unwrap();
+        let source = DocumentCodec
+            .decode_intent(
+                &DocumentCodec.encode_intent(plan.intent()).unwrap(),
+                "merged",
+            )
+            .unwrap();
+        let merged = plan.resolve(source.semantic_revision()).unwrap();
+        let key = DependencyKey::parse("library").unwrap();
+        assert_eq!(
+            merged.lock().dependencies[&key],
+            prior.lock().dependencies[&key]
+        );
+    }
+}

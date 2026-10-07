@@ -1,7 +1,11 @@
 //! Canonical provider requests become one resolved dependency group before native mutation.
 use super::*;
+mod content;
 use crate::engine::{documents::DocumentCodec, resources::AdmissionPermit};
 use anyhow::Context;
+pub use content::{
+    ProviderContent, ProviderContentChoice, ProviderContentInput, ProviderInputReason,
+};
 use empack_core::{
     addition::AdditionGroup,
     model::*,
@@ -321,29 +325,45 @@ fn normalize(
                     && existing.selected.as_ref() == Some(&selected.resolution.pin),
                 "A required selection conflicts with retained content; update it explicitly"
             );
+            let mut participation = Vec::new();
             for file in existing.files.as_slice() {
-                // Refresh checks overlapping provider assertions; the original complete evidence
-                // remains binding, even if a provider stops publishing an old digest algorithm.
-                selected
-                    .resolution
-                    .download_alternatives(&file.slot, &file.expected)?;
-                ensure!(
-                    [(&requirements.client, true), (&requirements.server, false)]
-                        .into_iter()
-                        .all(|(needed, client)| {
-                            matches!(needed, Requirement::Unsupported)
-                                || file.placements.as_slice().iter().any(|placement| {
-                                    let actual = if client {
-                                        &placement.requirements.client
-                                    } else {
-                                        &placement.requirements.server
-                                    };
-                                    actual == needed || matches!(actual, Requirement::Required)
-                                })
-                        }),
-                    "Retained dependency participation needs an explicit change"
-                );
+                // Keep every original assertion; matching refreshed records only establishes
+                // file role and locator correspondence, not permission to change stored bytes.
+                let slot = match &file.acquisition {
+                    AcquisitionSpec::Provider { slot, .. } => slot,
+                    _ => &file.slot,
+                };
+                let provider_file = selected.resolution.file_for_slot(slot, &file.expected)?;
+                if !matches!(
+                    provider_file.role.as_deref(),
+                    Some("required-resource-pack" | "optional-resource-pack")
+                ) {
+                    participation.extend(
+                        file.placements
+                            .as_slice()
+                            .iter()
+                            .map(|placement| &placement.requirements),
+                    );
+                }
             }
+            // A dependency can use distinct main files on each side. Companions retain their
+            // narrower requirements and cannot stand in for absent main content.
+            ensure!(
+                [(&requirements.client, true), (&requirements.server, false)]
+                    .into_iter()
+                    .all(|(needed, client)| {
+                        matches!(needed, Requirement::Unsupported)
+                            || participation.iter().any(|requirements| {
+                                let actual = if client {
+                                    &requirements.client
+                                } else {
+                                    &requirements.server
+                                };
+                                actual == needed || matches!(actual, Requirement::Required)
+                            })
+                    }),
+                "Retained dependency participation needs an explicit change"
+            );
             dependencies.insert(key.clone(), existing.clone());
             coverage.insert(key.clone(), selected.resolution.coverage);
             if let Some(required) = closure.required_edges.get(&selected.resolution.pin) {

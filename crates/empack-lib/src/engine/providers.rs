@@ -14,7 +14,10 @@ use std::{sync::Arc, time::Duration};
 
 mod addition;
 mod batch;
-pub use addition::{ProviderAddInput, ProviderAddition, ProviderAdditionOutcome, ProviderFiles};
+pub use addition::{
+    ProviderAddInput, ProviderAddition, ProviderAdditionOutcome, ProviderContent,
+    ProviderContentChoice, ProviderContentInput, ProviderFiles, ProviderInputReason,
+};
 pub use batch::ExactBatch;
 mod closure;
 pub use closure::{

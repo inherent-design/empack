@@ -11,6 +11,13 @@ impl ProviderResolution {
         slot: &FileSlot,
         expected: &ExpectedContent,
     ) -> Result<Vec<String>> {
+        Ok(self.file_for_slot(slot, expected)?.alternatives.clone())
+    }
+    pub(super) fn file_for_slot(
+        &self,
+        slot: &FileSlot,
+        expected: &ExpectedContent,
+    ) -> Result<&ProviderFile> {
         ensure!(
             expected.digests.is_some() || expected.accepted_observation.is_some(),
             "Locked file lacks content evidence"
@@ -27,7 +34,7 @@ impl ProviderResolution {
                 compatible(file, expected),
                 "Provider file assertions changed since resolution"
             );
-            return Ok(file.alternatives.clone());
+            return Ok(file);
         }
         let candidates: Vec<_> = files
             .iter()
@@ -40,7 +47,7 @@ impl ProviderResolution {
             candidates.len() == 1,
             "Locked file role has no unique provider match"
         );
-        Ok(candidates[0].alternatives.clone())
+        Ok(candidates[0])
     }
 }
 fn compatible(file: &ProviderFile, expected: &ExpectedContent) -> bool {
