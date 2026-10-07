@@ -220,6 +220,23 @@ The cache is not user intent and not the operation journal. A lost disposable ca
 
 A content store can begin as verified files plus a small index. It does not require a database. Metadata index transactions, if introduced, still do not make file operations outside that index transactional.
 
+The native implementation uses SHA-256-addressed files in a host-private directory.
+`FileContentStore` can insert verified leases; its separate `FileContentLookup` view
+cannot write. `CachedFileRequest` carries the current source assertions and policy.
+Lookup verifies those assertions and the content address while copying into owned
+private storage under a shared OS lock. The copy remains readable after cache
+eviction and retains its resource reservation until its last reader closes. This
+uses additional temporary disk space in exchange for a consistent lease contract on
+all supported platforms. An address is never promoted to independent source evidence.
+
+Insertion takes exclusive coordination, verifies streamed bytes again, enforces
+object/count/total limits and publishes a synchronized temporary file. Existing
+objects are checked before reuse. Corrupt objects, links and special files are errors;
+unrecognized neighboring files are preserved. Lookup does not create directories,
+coordination files, indexes, pin records or application access timestamps. Native
+filesystem access-time behavior remains controlled by the host filesystem. This
+store is disposable and must never hold the only publication recovery preimage.
+
 ### 10.3 Archive interface and limits
 
 ```rust

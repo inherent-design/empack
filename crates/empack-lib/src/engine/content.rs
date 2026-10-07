@@ -31,6 +31,7 @@ pub enum InitialObservation {
     Accepted,
 }
 mod pool;
+pub mod store;
 pub use pool::ContentPool;
 
 enum ContentBacking {

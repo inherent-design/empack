@@ -864,6 +864,21 @@ both project documents remain byte-for-byte unchanged. Deterministic cases cover
 changed provider assertions, failed acquisition, missing credentials and restricted
 files before publication.
 
+## Persistent content storage
+
+`FileContentStore` publishes verified content-addressed objects into private host
+storage. Its separate lookup capability is read-only. Both operations use admitted
+workers; lookup charges the observed byte size and retains that reservation on the
+returned lease. Every cache hit checks the request's unchanged source declarations
+and the stored address. MD5 evidence stays weaker, and strong-source policy still
+refuses it. Copies survive cache eviction without persistent pin writes.
+
+Native tests cover reopen/read-only behavior, corruption, conflicting assertions,
+limits, cancellation, coordination, links/special files, privacy and retained reader
+lifetimes. A composed file-addition test reopens cached content, publishes its declared
+placement and requirements, then synchronizes twice. Cache maintenance, durable
+continuation and normal Engine/CLI cache selection remain separate integration work.
+
 ## Remaining integration and limits
 
 - Extend the compiled build/import `Engine` lifecycle to the remaining semantic
@@ -872,9 +887,10 @@ files before publication.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
   provider-locator refresh, continuation and scoped
   clean through the same verified obligations.
-- Add persistent content lookup/store capabilities with read-only preview authority.
-  Coordinate provider authentication, retry and rate policy; the new content HTTP
-  port does not replace the existing catalog clients yet.
+- Connect persistent content lookup/store to normal Engine/CLI acquisition and durable
+  continuation. The separate read-only and insertion ports are implemented.
+  Coordinate provider authentication, retry and rate policy; the content HTTP port
+  does not replace existing catalog clients yet.
 - Native build capture filters ignored pack content before opening its bytes. Directory
   enumeration remains bounded; captured rules and explicit input exceptions survive
   revalidation and journal recovery.

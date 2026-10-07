@@ -133,6 +133,26 @@ async fn prepare(
                         },
                     }
                 };
+                let file = if mode == "cached" {
+                    use crate::engine::content::store::{CachedFileRequest, ContentStoreLimits, FileContentLookup, FileContentStore};
+                    let host = tempfile::tempdir()?;
+                    let path = host.path().join("content");
+                    let store = FileContentStore::open(&path, ContentStoreLimits::default())?;
+                    let stored = store.publish_verified(&mut scope, file.content.clone()).await?;
+                    let permissions = file.permissions;
+                    drop((store, file));
+                    let lookup = FileContentLookup::open_existing(&path, ContentStoreLimits::default())?.unwrap();
+                    AcquiredBuildFile {
+                        content: lookup.retain(&mut scope, CachedFileRequest {
+                            id: stored.id,
+                            expected: declared(),
+                            maximum: 8 << 30,
+                            evidence: SourceEvidencePolicy::Compatibility,
+                            initial: InitialObservation::RequireEvidence,
+                        }).await?.unwrap(),
+                        permissions,
+                    }
+                } else { file };
                 let mut value = input(file, mode != "url");
                 let policy = if mode == "strong" {
                     SourceEvidencePolicy::StrongSourceRequired
@@ -189,7 +209,7 @@ async fn prepare(
 
 #[tokio::test]
 async fn acquired_local_and_url_files_preserve_placement_requirements_and_sync_convergence() {
-    for mode in ["local", "url"] {
+    for mode in ["local", "url", "cached"] {
         let (outcome, governor) = prepare(mode).await;
         let OperationOutcome::Completed(Ok(addition)) = &*outcome else {
             panic!("normalization failed")
@@ -205,7 +225,7 @@ async fn acquired_local_and_url_files_preserve_placement_requirements_and_sync_c
             matches!(&root_intent.version, VersionIntent::ContentPinned(value) if Some(value) == declared().digests.as_ref())
         );
         let target = "overrides/client/resourcepacks/chosen-name.zip";
-        if mode == "local" {
+        if mode != "url" {
             assert!(
                 matches!(&root_intent.source, SourceIntent::Local(path) if path.as_str() == target)
             );
