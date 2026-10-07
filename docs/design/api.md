@@ -133,16 +133,24 @@ Engine recovery/continuation composition and CLI cutover remain unfinished.
 `SynchronizationCandidate::prepare` rebinds authoring-only edits to the recorded
 resolution without selecting newer files. It preserves all exact selections, original
 source evidence and dependency edges, including installations no longer listed as
-roots. Pin, source, placement or runtime edits that invalidate that resolution return
-`ResolutionRequired`. `capture_synchronization` and `prepare_synchronization` bind
+roots. A unique renamed provider label rebinds the same exact installation and graph
+edges. Pin, source, placement or runtime edits that invalidate the old resolution
+require a fresh candidate. `capture_synchronization` and `prepare_synchronization` bind
 recorded placements and verified supplied bytes to a restoration plan. Modified files
 are explicit replacements; unrelated content remains. Metadata discovery tolerates
 opaque unrelated records and binds only interpretable records naming locked destinations.
 No-op content remains a publication precondition without being staged again.
 `SyncRequest` carries verified exact inputs through the shared Engine lifecycle.
 `SyncPreview` lists selected records, lock rebinding and the replacement plan;
-`SyncReceipt` retains the coherent published project. Changed-intent resolution and
-acquisition hosts remain pending; the document candidate alone has no write authority.
+`SyncReceipt` retains the coherent published project. `SyncRequest.resolution` may
+supply fresh resolution for changed or missing intent. The planner preserves valid
+exact selections, rejects unrelated upgrades/deletions and requires new records to
+belong to the changed roots' required closure. Known retained dependents remain binding.
+A missing lock requires fresh resolution and cannot authorize adoption of existing
+files. Changed placements capture both paths; obsolete files must still match their
+old declarations before removal. Native publication preserves authoring bytes.
+Resolution/acquisition hosts and CLI routing remain pending; a supplied candidate
+alone has no write authority.
 
 `UpdateRequest` supplies exact resolved selections and acquired content for requested
 installed identities. It shares dependency capture, staging and publication with add,

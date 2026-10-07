@@ -94,14 +94,39 @@ pub(in crate::engine) fn plan_synchronization(
     acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
     cancel: &Cancellation,
 ) -> Result<SynchronizationPreparation> {
+    plan_synchronization_with_resolution(workspace, acquired, None, cancel)
+}
+pub(in crate::engine) fn plan_synchronization_with_resolution(
+    workspace: MutationSnapshot,
+    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    proposed: Option<&ResolvedProject>,
+    cancel: &Cancellation,
+) -> Result<SynchronizationPreparation> {
     cancel.check()?;
     let workspace = workspace.into_workspace();
-    let candidate = SynchronizationCandidate::prepare(
+    let candidate = SynchronizationCandidate::prepare_input(
         workspace.intent(),
-        workspace
-            .prior_lock()
-            .context("Synchronization requires a lock")?,
+        workspace.prior_lock(),
+        proposed,
     )?;
+    let mut previous = BTreeMap::new();
+    for dependency in workspace
+        .prior_lock()
+        .into_iter()
+        .flat_map(|prior| prior.lock().dependencies.values())
+    {
+        for file in dependency.files.as_slice() {
+            for placement in file.placements.as_slice() {
+                previous.insert(
+                    ManagedPath::Content {
+                        layer: placement.layer,
+                        path: placement.destination.relative().clone(),
+                    },
+                    (dependency, file, placement),
+                );
+            }
+        }
+    }
     let mut slots = BTreeSet::new();
     let mut content = BTreeMap::new();
     let mut owned = BTreeMap::new();
@@ -140,23 +165,77 @@ pub(in crate::engine) fn plan_synchronization(
         acquired.keys().all(|key| slots.contains(key)),
         "Synchronization received unrequested content"
     );
-    let observed_content =
-        verification::observed_mutation_for(workspace.observations(), content.keys().cloned())?;
+    let observed_content = verification::observed_mutation_for(
+        workspace.observations(),
+        content.keys().chain(previous.keys()).cloned(),
+    )?;
     ensure!(
         observed_content
             .values()
             .all(|value| !matches!(value, ObservedPath::Directory)),
         "Synchronization destination is a directory"
     );
+    for (target, observed) in &observed_content {
+        ensure!(
+            !matches!(observed, ObservedPath::File(_)) || previous.contains_key(target),
+            "Synchronization destination contains untracked content"
+        );
+    }
     let mut removals = BTreeSet::new();
+    for (target, (_, file, _)) in &previous {
+        if !content.contains_key(target) {
+            if matches!(&observed_content[target], ObservedPath::File(_)) {
+                workspace.verify_file(
+                    &crate::engine::layout::ProjectLayout::path(target)?,
+                    &file.expected,
+                    cancel,
+                )?;
+            }
+            removals.insert(target.clone());
+        }
+    }
     for record in workspace.backend_files(cancel)? {
         let target = ManagedPath::Content {
             layer: ContentLayer::Common,
             path: record.destination.relative().clone(),
         };
         let Some((dependency, placement)) = owned.get(&target) else {
+            if let Some((dependency, file, placement)) = previous.get(&target) {
+                ensure!(
+                    record.matches_selection_and_requirements(
+                        dependency.selected.as_ref(),
+                        &placement.requirements
+                    )?,
+                    "Obsolete metadata has different ownership"
+                );
+                if let Some(expected) = file.expected.digests.as_ref().and_then(|set| {
+                    set.values()
+                        .iter()
+                        .find(|digest| digest.algorithm() == record.digest.algorithm())
+                }) {
+                    ensure!(
+                        *expected == record.digest,
+                        "Obsolete metadata has different source bytes"
+                    );
+                } else {
+                    let observed = workspace.verify_file(
+                        &crate::engine::layout::ProjectLayout::path(&target)?,
+                        &file.expected,
+                        cancel,
+                    )?;
+                    ensure!(
+                        observed.values().contains(&record.digest),
+                        "Obsolete metadata has different observed bytes"
+                    );
+                }
+                removals.insert(ManagedPath::BackendDocument(record.metadata_path));
+            }
             continue;
         };
+        ensure!(
+            previous.contains_key(&target),
+            "Synchronization destination has untracked backend ownership"
+        );
         // Restore the selected locked identity, including observed backend drift. The exact
         // captured metadata path is part of the approved plan; other installations remain.
         if !record.matches_selection_and_requirements(
@@ -224,15 +303,22 @@ pub(in crate::engine) fn plan_synchronization(
     )?;
     let mut desired = BTreeMap::new();
     for (target, bytes) in &documents {
-        let ObservedPath::File(before) = &observed[target] else {
-            anyhow::bail!("Synchronization document is not an existing regular file")
+        let permissions = match &observed[target] {
+            ObservedPath::File(before) => before.permissions,
+            ObservedPath::Absent if *target == ManagedPath::LockDocument => {
+                empack_core::files::FilePermissions {
+                    readonly: false,
+                    executable: false,
+                }
+            }
+            _ => anyhow::bail!("Synchronization document is not a regular file"),
         };
         desired.insert(
             target.clone(),
             FileContent {
                 content: ContentId::from_sha256(Sha256::digest(bytes).into()),
                 bytes: bytes.len() as u64,
-                permissions: before.permissions,
+                permissions,
             },
         );
     }

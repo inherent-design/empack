@@ -207,6 +207,7 @@ async fn remove_add_readd_sync_twice_build_share_logical_and_byte_postconditions
     .unwrap();
     for repeat in [false, true] {
         let sync = SyncRequest {
+            resolution: None,
             content: request(ExistingDependencyPolicy::UpdateSameIdentity).content,
         };
         let prepared = ready(&engine, root.path(), sync).await;
@@ -267,6 +268,7 @@ async fn synchronization_requires_grants_and_new_resolution_for_runtime_changes(
     fixture(root.path());
     let (engine, governor) = engine(state.path().join("state"));
     let sync = || SyncRequest {
+        resolution: None,
         content: request(ExistingDependencyPolicy::UpdateSameIdentity).content,
     };
     let prepared = ready(&engine, root.path(), sync()).await;
@@ -431,6 +433,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
             .preview(
                 root.path().to_path_buf(),
                 SyncRequest {
+                    resolution: None,
                     content: acquired_project(&updated),
                 },
             )
@@ -439,6 +442,85 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
         assert!(view.sync().unwrap().files.changes().is_empty());
         assert!(view.sync().unwrap().files.expected().is_empty());
     }
+    // An author changes a pin after the explicit update. Fresh resolution may satisfy this
+    // change, but the ordinary recorded-only request must not pretend the old pin still fits.
+    let mut next_intent = updated.intent().clone();
+    let pin = empack_core::identity::PinSelector::ModrinthVersion(
+        empack_core::identity::ModrinthVersionId::parse("Version3").unwrap(),
+    );
+    next_intent
+        .roots
+        .get_mut(&DependencyKey::parse("existing").unwrap())
+        .unwrap()
+        .version = empack_core::model::VersionIntent::Exact(pin.clone());
+    let raw = DocumentCodec.encode_intent(&next_intent).unwrap();
+    let source = DocumentCodec.decode_intent(&raw, "edited pin").unwrap();
+    let mut lock = updated.lock().clone();
+    lock.intent_revision = source.semantic_revision();
+    lock.dependencies
+        .get_mut(&DependencyKey::parse("existing").unwrap())
+        .unwrap()
+        .selected
+        .as_mut()
+        .unwrap()
+        .selection = pin;
+    let resolved = empack_core::model::ResolvedProject::validate(
+        next_intent,
+        lock,
+        source.semantic_revision(),
+    )
+    .unwrap();
+    fs::write(root.path().join("empack.yml"), &raw).unwrap();
+    assert!(
+        engine
+            .preview(
+                root.path().to_path_buf(),
+                SyncRequest {
+                    resolution: None,
+                    content: acquired_project(&updated)
+                }
+            )
+            .await
+            .is_err()
+    );
+    let prepared = ready(
+        &engine,
+        root.path(),
+        SyncRequest {
+            resolution: Some(resolved.clone()),
+            content: acquired_project(&resolved),
+        },
+    )
+    .await;
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Sync(
+            receipt,
+        ))) => assert_eq!(receipt.project.lock(), resolved.lock()),
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("changed-intent synchronization did not publish"),
+    }
+    engine.release_completed(handle.id());
+    drop(outcome);
+    drop(handle);
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), raw);
+    let no_op = engine
+        .preview(
+            root.path().to_path_buf(),
+            SyncRequest {
+                resolution: None,
+                content: acquired_project(&resolved),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(no_op.sync().unwrap().files.changes().is_empty());
     assert_eq!(
         fs::read(root.path().join("pack/unrelated.pw.toml")).unwrap(),
         b"invalid = ["

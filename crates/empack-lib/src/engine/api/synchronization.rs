@@ -12,8 +12,9 @@ use empack_core::{
 };
 use std::collections::BTreeMap;
 
-/// Exact acquired slots for the recorded lock. Resolution-changing requests remain separate.
+/// Exact acquired slots, optionally paired with resolution justified by changed authoring intent.
 pub struct SyncRequest {
+    pub resolution: Option<ResolvedProject>,
     pub content: BTreeMap<LockedFileKey, AcquiredBuildFile>,
 }
 #[derive(Clone)]
@@ -50,8 +51,18 @@ pub(super) async fn prepare(
         config.resources.prepared,
         move |cancel| {
             let snapshot = ProjectReader::new(RecoveryReader::new(state))
-                .capture_synchronization(&project, limits, &cancel)?;
-            native_sync::plan_synchronization(snapshot, request.content, &cancel)
+                .capture_synchronization_with_resolution(
+                    &project,
+                    request.resolution.as_ref(),
+                    limits,
+                    &cancel,
+                )?;
+            native_sync::plan_synchronization_with_resolution(
+                snapshot,
+                request.content,
+                request.resolution.as_ref(),
+                &cancel,
+            )
         },
     )?;
     let planned = scope.accept(work.wait().await?)?.transpose()?;

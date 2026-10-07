@@ -360,3 +360,201 @@ fn metadata_discovery_remains_bounded_and_cancellable() {
         b"edited bytes"
     );
 }
+
+#[test]
+fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_bytes() {
+    use crate::engine::layout::ProjectLayout;
+    use empack_core::{model::*, path::InstallDestination};
+    for conflict in ["none", "old-edited", "new-occupied"] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let current = fixture(root.path());
+        for dependency in current.lock().dependencies.values() {
+            for file in dependency.files.as_slice() {
+                for placement in file.placements.as_slice() {
+                    let path = ProjectLayout::path(&ManagedPath::Content {
+                        layer: placement.layer,
+                        path: placement.destination.relative().clone(),
+                    })
+                    .unwrap();
+                    put(root.path(), path.as_str(), b"payload");
+                }
+            }
+        }
+        let mut intent = current.intent().clone();
+        let mut lock = current.lock().clone();
+        let mut all_placements = Vec::new();
+        let dependency = lock.dependencies.values_mut().next().unwrap();
+        let files = dependency
+            .files
+            .as_slice()
+            .iter()
+            .cloned()
+            .map(|mut file| {
+                let placements = file
+                    .placements
+                    .as_slice()
+                    .iter()
+                    .cloned()
+                    .map(|mut placement| {
+                        if placement.destination.relative().as_str() == "resourcepacks/a.zip" {
+                            placement.destination =
+                                InstallDestination::parse("resourcepacks/renamed.zip").unwrap();
+                        }
+                        all_placements.push(placement.clone());
+                        placement
+                    })
+                    .collect();
+                file.placements = NonEmpty::new(placements).unwrap();
+                file
+            })
+            .collect();
+        dependency.files = NonEmpty::new(files).unwrap();
+        intent.roots.values_mut().next().unwrap().placement =
+            PlacementIntent::Explicit(NonEmpty::new(all_placements).unwrap());
+        let encoded = DocumentCodec.encode_intent(&intent).unwrap();
+        let source = DocumentCodec
+            .decode_intent(&encoded, "edited intent")
+            .unwrap();
+        lock.intent_revision = source.semantic_revision();
+        let proposed = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+        put(root.path(), "empack.yml", &encoded);
+        if conflict == "old-edited" {
+            put(root.path(), "pack/resourcepacks/a.zip", b"user edit");
+        }
+        if conflict == "new-occupied" {
+            put(root.path(), "pack/resourcepacks/renamed.zip", b"user edit");
+        }
+        let cancel = Cancellation::default();
+        let reader = ProjectReader::new(RecoveryReader::new(state.path().join("state")));
+        assert!(
+            reader
+                .capture_synchronization(root.path(), SnapshotLimits::default(), &cancel)
+                .is_err()
+        );
+        let snapshot = reader
+            .capture_synchronization_with_resolution(
+                root.path(),
+                Some(&proposed),
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+        let planned = plan_synchronization_with_resolution(
+            snapshot,
+            acquired(&proposed, false),
+            Some(&proposed),
+            &cancel,
+        );
+        if conflict != "none" {
+            assert!(planned.is_err(), "{conflict}");
+            assert_eq!(
+                fs::read(root.path().join(if conflict == "old-edited" {
+                    "pack/resourcepacks/a.zip"
+                } else {
+                    "pack/resourcepacks/renamed.zip"
+                }))
+                .unwrap(),
+                b"user edit"
+            );
+            assert!(!state.path().join("state").exists());
+            continue;
+        }
+        planned
+            .unwrap()
+            .stage(&cancel)
+            .unwrap()
+            .publish(
+                &Publisher::open(&state.path().join("state")).unwrap(),
+                &cancel,
+            )
+            .unwrap();
+        assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/renamed.zip")).unwrap(),
+            b"payload"
+        );
+        assert_eq!(
+            fs::read(root.path().join("pack/unlisted.bin")).unwrap(),
+            b"retain"
+        );
+        assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), encoded);
+        assert!(
+            prepare(root.path(), state.path(), &proposed, false)
+                .unwrap()
+                .files()
+                .changes()
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn first_resolution_creates_a_lock_without_adopting_untracked_files() {
+    for occupied in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let project = project(false, false);
+        put(
+            root.path(),
+            "empack.yml",
+            &DocumentCodec.encode_intent(project.intent()).unwrap(),
+        );
+        if occupied {
+            put(root.path(), "pack/resourcepacks/a.zip", b"payload");
+        }
+        let cancel = Cancellation::default();
+        let reader = ProjectReader::new(RecoveryReader::new(state.path().join("state")));
+        assert!(
+            reader
+                .capture_synchronization(root.path(), SnapshotLimits::default(), &cancel)
+                .is_err()
+        );
+        let snapshot = reader
+            .capture_synchronization_with_resolution(
+                root.path(),
+                Some(&project),
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+        let plan = plan_synchronization_with_resolution(
+            snapshot,
+            acquired(&project, false),
+            Some(&project),
+            &cancel,
+        );
+        if occupied {
+            assert!(plan.is_err());
+            assert!(!root.path().join("empack.lock").exists());
+            assert_eq!(
+                fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+                b"payload"
+            );
+            continue;
+        }
+        plan.unwrap()
+            .stage(&cancel)
+            .unwrap()
+            .publish(
+                &Publisher::open(&state.path().join("state")).unwrap(),
+                &cancel,
+            )
+            .unwrap();
+        let intent = DocumentCodec
+            .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "intent")
+            .unwrap();
+        let locked = DocumentCodec
+            .decode_lock(
+                &fs::read(root.path().join("empack.lock")).unwrap(),
+                &intent,
+                "lock",
+            )
+            .unwrap();
+        assert_eq!(locked.lock(), project.lock());
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+            b"payload"
+        );
+    }
+}

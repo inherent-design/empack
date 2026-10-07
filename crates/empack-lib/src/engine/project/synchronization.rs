@@ -13,18 +13,32 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
+        self.capture_synchronization_with_resolution(selected, None, limits, cancel)
+    }
+    /// Fresh resolution extends capture to prior and next placements; it grants no write authority.
+    pub fn capture_synchronization_with_resolution(
+        &self,
+        selected: &Path,
+        proposed: Option<&ResolvedProject>,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
         let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
         let controls = CaptureFilter::selected_mutation(&[])?;
         let documents =
             self.capture_selected(selected, &[pack], limits, Some(&controls), cancel)?;
-        let candidate = crate::engine::synchronization::SynchronizationCandidate::prepare(
+        let candidate = crate::engine::synchronization::SynchronizationCandidate::prepare_input(
             documents.intent(),
-            documents
-                .prior_lock()
-                .context("Synchronization requires a lock")?,
+            documents.prior_lock(),
+            proposed,
         )?;
         let mut required = Vec::new();
-        for dependency in candidate.project().lock().dependencies.values() {
+        for dependency in candidate.project().lock().dependencies.values().chain(
+            documents
+                .prior_lock()
+                .into_iter()
+                .flat_map(|prior| prior.lock().dependencies.values()),
+        ) {
             for file in dependency.files.as_slice() {
                 for placement in file.placements.as_slice() {
                     required.push(ProjectLayout::path(&ManagedPath::Content {

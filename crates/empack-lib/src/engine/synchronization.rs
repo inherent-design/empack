@@ -1,9 +1,9 @@
 //! Synchronization restores exact recorded selections; it never resolves an implicit upgrade.
 mod native;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, DocumentEdit, PreparedDocument};
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use empack_core::model::ResolvedProject;
-pub(in crate::engine) use native::plan_synchronization;
+pub(in crate::engine) use native::plan_synchronization_with_resolution;
 pub use native::{PreparedSynchronization, SynchronizationReceipt, prepare_synchronization};
 
 /// Intent edits requiring new provider/content/runtime evidence cannot reuse the old lock.
@@ -22,8 +22,21 @@ impl SynchronizationCandidate {
     /// Rebind authoring-only edits while retaining every exact selection, content assertion and
     /// graph edge. Changed semantic requirements fail until an explicit resolver satisfies them.
     pub fn prepare(source: &DecodedIntent, prior: &DecodedLock) -> Result<Self> {
-        let mut lock = prior.lock().clone();
+        let mut lock =
+            empack_core::synchronization::rebind_prior_aliases(source.intent(), prior.lock())?;
         let preserve_lock = lock.intent_revision == source.semantic_revision();
+        if !preserve_lock
+            && source
+                .intent()
+                .roots
+                .values()
+                .any(|root| matches!(root.source, empack_core::model::SourceIntent::Search { .. }))
+        {
+            return Err(ResolutionRequired(empack_core::model::ModelError(
+                "Changed unresolved search intent requires fresh resolution".into(),
+            ))
+            .into());
+        }
         lock.intent_revision = source.semantic_revision();
         let project =
             ResolvedProject::validate(source.intent().clone(), lock, source.semantic_revision())
@@ -39,6 +52,72 @@ impl SynchronizationCandidate {
             lock,
             preserve_lock,
         })
+    }
+    /// Bind freshly resolved changed intent without upgrading still-valid prior selections.
+    pub fn prepare_resolved(
+        source: &DecodedIntent,
+        prior: &DecodedLock,
+        proposed: &ResolvedProject,
+    ) -> Result<Self> {
+        ensure!(
+            proposed.lock().intent_revision == source.semantic_revision(),
+            "Fresh synchronization resolution has another intent revision"
+        );
+        empack_core::synchronization::SynchronizationResolution::prepare(
+            source.intent(),
+            prior.lock(),
+            proposed,
+        )?;
+        Ok(Self {
+            project: proposed.clone(),
+            intent: PreparedDocument {
+                expected: source.raw_revision(),
+                bytes: source.original().to_vec(),
+                edit: DocumentEdit::Unchanged,
+            },
+            lock: DocumentCodec.encode_lock(proposed)?,
+            preserve_lock: proposed.lock() == prior.lock(),
+        })
+    }
+    /// Create a first lock from fresh resolution; pre-existing native content remains unowned.
+    pub fn prepare_initial(source: &DecodedIntent, proposed: &ResolvedProject) -> Result<Self> {
+        ensure!(
+            proposed.lock().intent_revision == source.semantic_revision(),
+            "Initial synchronization resolution has another intent revision"
+        );
+        let mut empty = proposed.lock().clone();
+        empty.dependencies.clear();
+        empty.required_edges.clear();
+        empty.coverage.clear();
+        empack_core::synchronization::SynchronizationResolution::prepare(
+            source.intent(),
+            &empty,
+            proposed,
+        )?;
+        Ok(Self {
+            project: proposed.clone(),
+            intent: PreparedDocument {
+                expected: source.raw_revision(),
+                bytes: source.original().to_vec(),
+                edit: DocumentEdit::Unchanged,
+            },
+            lock: DocumentCodec.encode_lock(proposed)?,
+            preserve_lock: false,
+        })
+    }
+    pub(in crate::engine) fn prepare_input(
+        source: &DecodedIntent,
+        prior: Option<&DecodedLock>,
+        proposed: Option<&ResolvedProject>,
+    ) -> Result<Self> {
+        match (prior, proposed) {
+            (Some(prior), Some(proposed)) => Self::prepare_resolved(source, prior, proposed),
+            (Some(prior), None) => Self::prepare(source, prior),
+            (None, Some(proposed)) => Self::prepare_initial(source, proposed),
+            (None, None) => {
+                anyhow::bail!("Synchronization needs fresh resolution when empack.lock is absent")
+            }
+        }
     }
     pub fn project(&self) -> &ResolvedProject {
         &self.project
@@ -155,3 +234,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod resolution_tests;

@@ -153,7 +153,7 @@ pub enum Request {
     Remove(RemoveRequest),
     Add(AddRequest),
     Update(UpdateRequest),
-    Sync(SyncRequest),
+    Sync(Box<SyncRequest>),
 }
 /// A selected existing root or one absent child of an existing selected parent.
 #[derive(Clone)]
@@ -178,7 +178,7 @@ impl From<InitializeRequest> for Request {
 }
 impl From<SyncRequest> for Request {
     fn from(request: SyncRequest) -> Self {
-        Self::Sync(request)
+        Self::Sync(Box::new(request))
     }
 }
 impl From<AddRequest> for Request {
@@ -477,7 +477,7 @@ impl Engine {
                                 .map(|value| PreparedKind::Build(Box::new(value))))
                         }
                         Request::Sync(request) => Ok(synchronization::prepare(
-                            project, request, &config, &mut scope,
+                            project, *request, &config, &mut scope,
                         )
                         .await?
                         .map(|value| PreparedKind::Sync(Box::new(value)))),

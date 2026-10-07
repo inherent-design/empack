@@ -218,6 +218,79 @@ pub struct DependencyIntent {
     /// Required or optional participation per side.
     pub requirements: Requirements,
 }
+impl DependencyIntent {
+    /// Check one exact selection against this root's source, pin, placement and participation.
+    /// Runtime compatibility and native byte verification belong to their enclosing boundaries.
+    pub fn validate_selection(
+        &self,
+        key: &DependencyKey,
+        selected: &LockedDependency,
+    ) -> Result<(), ModelError> {
+        if selected.kind != self.kind {
+            return Err(invalid("Lock changed requested content kind"));
+        }
+        match (&self.source, &selected.identity) {
+            (SourceIntent::Provider(a), ResolvedIdentity::Provider(b)) if a == b => {}
+            (SourceIntent::Search { providers, .. }, ResolvedIdentity::Provider(project))
+                if providers.as_slice().contains(&match project {
+                    ProviderProjectId::Modrinth(_) => ProviderKind::Modrinth,
+                    ProviderProjectId::CurseForge(_) => ProviderKind::CurseForge,
+                }) => {}
+            (SourceIntent::Url(_), ResolvedIdentity::Url(b))
+            | (SourceIntent::Local(_), ResolvedIdentity::Local(b))
+                if key == b => {}
+            _ => return Err(invalid("Locked identity differs from source intent")),
+        }
+        if let VersionIntent::Exact(pin) = &self.version
+            && selected.selected.as_ref().map(|value| &value.selection) != Some(pin)
+        {
+            return Err(invalid("Lock does not satisfy requested pin"));
+        }
+        for file in selected.files.as_slice() {
+            match (&self.source, &file.acquisition) {
+                (SourceIntent::Url(expected), AcquisitionSpec::Url(actual))
+                    if expected == actual => {}
+                (SourceIntent::Local(expected), AcquisitionSpec::Local(actual))
+                    if expected == actual => {}
+                (SourceIntent::Url(_) | SourceIntent::Local(_), _) => {
+                    return Err(invalid("Lock changed declared acquisition source"));
+                }
+                _ => {}
+            }
+            if let VersionIntent::ContentPinned(expected) = &self.version
+                && file.expected.digests.as_ref() != Some(expected)
+            {
+                return Err(invalid("Lock changed declared source digests"));
+            }
+        }
+        if let PlacementIntent::Explicit(expected) = &self.placement {
+            let actual: Vec<_> = selected
+                .files
+                .as_slice()
+                .iter()
+                .flat_map(|file| file.placements.as_slice())
+                .collect();
+            if actual.len() != expected.as_slice().len()
+                || expected
+                    .as_slice()
+                    .iter()
+                    .any(|p| actual.iter().filter(|a| *a == &p).count() != 1)
+            {
+                return Err(invalid("Lock changed explicit placements or requirements"));
+            }
+        } else if selected
+            .files
+            .as_slice()
+            .iter()
+            .flat_map(|file| file.placements.as_slice())
+            .any(|p| p.requirements != self.requirements)
+        {
+            return Err(invalid("Lock changed root requirements"));
+        }
+        Ok(())
+    }
+}
+
 /// File destination and participation; this is not deletion authorization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Placement {
@@ -613,63 +686,7 @@ impl ResolvedProject {
                 .dependencies
                 .get(key)
                 .ok_or_else(|| invalid("Lock omits an explicit dependency root"))?;
-            if selected.kind != dep.kind {
-                return Err(invalid("Lock changed requested content kind"));
-            }
-            match (&dep.source, &selected.identity) {
-                (SourceIntent::Provider(a), ResolvedIdentity::Provider(b)) if a == b => {}
-                (SourceIntent::Search { .. }, ResolvedIdentity::Provider(_)) => {}
-                (SourceIntent::Url(_), ResolvedIdentity::Url(b))
-                | (SourceIntent::Local(_), ResolvedIdentity::Local(b))
-                    if key == b => {}
-                _ => return Err(invalid("Locked identity differs from source intent")),
-            }
-            if let VersionIntent::Exact(pin) = &dep.version
-                && selected.selected.as_ref().map(|value| &value.selection) != Some(pin)
-            {
-                return Err(invalid("Lock does not satisfy requested pin"));
-            }
-            for file in selected.files.as_slice() {
-                match (&dep.source, &file.acquisition) {
-                    (SourceIntent::Url(expected), AcquisitionSpec::Url(actual))
-                        if expected == actual => {}
-                    (SourceIntent::Local(expected), AcquisitionSpec::Local(actual))
-                        if expected == actual => {}
-                    (SourceIntent::Url(_) | SourceIntent::Local(_), _) => {
-                        return Err(invalid("Lock changed declared acquisition source"));
-                    }
-                    _ => {}
-                }
-                if let VersionIntent::ContentPinned(expected) = &dep.version
-                    && file.expected.digests.as_ref() != Some(expected)
-                {
-                    return Err(invalid("Lock changed declared source digests"));
-                }
-            }
-            if let PlacementIntent::Explicit(expected) = &dep.placement {
-                let actual: Vec<_> = selected
-                    .files
-                    .as_slice()
-                    .iter()
-                    .flat_map(|file| file.placements.as_slice())
-                    .collect();
-                if actual.len() != expected.as_slice().len()
-                    || expected
-                        .as_slice()
-                        .iter()
-                        .any(|p| actual.iter().filter(|a| *a == &p).count() != 1)
-                {
-                    return Err(invalid("Lock changed explicit placements or requirements"));
-                }
-            } else if selected
-                .files
-                .as_slice()
-                .iter()
-                .flat_map(|file| file.placements.as_slice())
-                .any(|p| p.requirements != dep.requirements)
-            {
-                return Err(invalid("Lock changed root requirements"));
-            }
+            dep.validate_selection(key, selected)?;
         }
         lock.validate_structure()?;
         Ok(Self { intent, lock })

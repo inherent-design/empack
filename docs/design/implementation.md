@@ -429,7 +429,7 @@ lost when a weaker observation arrives for the same exact selection. Compatible 
 sets merge; contradictory complete evidence requires explicit resolution. A changed
 pin cannot silently invalidate retained dependents. `AdditionCandidate` binds raw
 source revisions and computes coherent next documents without publication authority.
-Changed-intent sync, adoption, acquisition hosts and foreign-identity replacement remain
+Adoption, acquisition hosts and foreign-identity replacement remain
 implementation work; this planner alone does not replace a CLI command. Eight focused
 contract tests and all-feature Clippy pass for this planning boundary.
 
@@ -533,6 +533,31 @@ The advanced API still accepts acquired bytes for every locked slot; this change
 not claim to eliminate acquisition by a future host. The corrections pass 106 affected
 tests and all-feature Clippy, including empty no-op staging, late selected-file edits,
 malformed and symlinked metadata, bounded discovery and publication recovery.
+
+## Changed-intent synchronization
+
+`SynchronizationResolution` checks fresh resolution against the previous lock and current
+authoring intent. Valid unpinned selections and runtime versions remain exact; new or
+changed roots may introduce only their required closure. Unlisted records remain, and
+known retained dependents cannot be invalidated. One root-conformance check now serves
+both project validation and reconciliation, including allowed search providers.
+A changed unresolved search requires fresh resolution rather than silently reusing a
+selection for an unknown previous query.
+
+Unique provider-label changes preserve the same installation and rebind required edges.
+`SyncRequest.resolution` carries a coherent fresh candidate through the existing engine
+lifecycle. The native plan captures old and new placements, refuses untracked occupied
+destinations, and verifies obsolete bytes before removal. A first lock can be created
+from fresh resolution when its destinations are absent; matching existing bytes do not
+authorize adoption. Raw authoring documents remain unchanged.
+
+Tests cover changed pins, fresh required dependencies, retained selections/dependents,
+aliases, search policy, placement publication/conflicts and first-lock creation. The
+composed engine sequence now exercises explicit update, no-op sync, an author-edited
+pin, fresh synchronization and another no-op. The combined revision passes 1,795 default
+tests and eleven doctests without pipe-leak warnings, all-feature Clippy and Windows
+cross-compilation. Earlier targeted runs passed 103 affected tests and all 23 core tests;
+the final 23 sync/API tests passed cleanly. Native CI and review remain separate gates.
 
 ## Semantic removal planning
 

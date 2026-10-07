@@ -14,5 +14,6 @@ pub mod model;
 pub mod path;
 pub mod projection;
 pub mod removal;
+pub mod synchronization;
 
 pub mod requirements;
