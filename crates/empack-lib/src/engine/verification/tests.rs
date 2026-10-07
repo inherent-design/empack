@@ -271,3 +271,38 @@ fn archive_preflight_honors_captured_budgets_without_widening_source_limits() {
             .contains("read budget")
     );
 }
+
+#[test]
+fn filtered_membership_cannot_prove_an_excluded_file_is_absent() {
+    let project = tempfile::tempdir().unwrap();
+    fs::create_dir(project.path().join("pack")).unwrap();
+    fs::write(
+        project.path().join("pack/unselected.jar"),
+        b"existing content",
+    )
+    .unwrap();
+    let root = ProjectReadRoot::open(project.path()).unwrap();
+    let filter =
+        crate::engine::source::CaptureFilter::mutation(&[path("pack/selected.jar")]).unwrap();
+    let captured = root
+        .capture_filtered(
+            &[path("pack")],
+            SnapshotLimits::default(),
+            Some(&filter),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    let target = |name| ManagedPath::Content {
+        layer: empack_core::model::ContentLayer::Common,
+        path: path(name),
+    };
+    assert!(
+        observed_mutation_for(&captured, [target("unselected.jar")]).is_err(),
+        "excluded bytes are not an absence observation"
+    );
+    assert!(matches!(
+        observed_mutation_for(&captured, [target("selected.jar")]).unwrap()
+            [&target("selected.jar")],
+        ObservedPath::Absent
+    ));
+}

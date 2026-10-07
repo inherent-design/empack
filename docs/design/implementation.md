@@ -647,3 +647,8 @@ combined tree, along with 53 affected tests, all-feature Clippy and Windows
 cross-compilation. The full run includes backend-index publication and preserves
 raw logical documents. Native CI and Greptile at the next pushed revision remain
 separate release evidence.
+
+Filtered directory membership proves absence only for destinations included in its
+captured scopes and traversal policy. An excluded file is neither absent nor an
+implicit overwrite target. A regression reproduced that incorrect inference; 78
+affected capture, verification and public Engine tests pass after correction.

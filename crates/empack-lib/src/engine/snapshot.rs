@@ -197,6 +197,22 @@ pub struct NativeSnapshot {
     entries: BTreeMap<PortableRelPath, Observation>,
 }
 impl NativeSnapshot {
+    /// Filtered directory membership establishes absence only for included destinations.
+    /// A missing ancestor observed directly remains independent evidence of absence.
+    pub(super) fn membership_covers(&self, path: &PortableRelPath) -> Result<bool> {
+        for group in &self.groups {
+            if !group.scopes.iter().any(|scope| {
+                path == scope || path.as_str().starts_with(&format!("{}/", scope.as_str()))
+            }) {
+                continue;
+            }
+            match &group.filter {
+                Some(policy) if !policy.includes(&policy.matcher()?, path, false) => {}
+                _ => return Ok(true),
+            }
+        }
+        Ok(false)
+    }
     pub(super) fn groups(&self) -> impl Iterator<Item = &CaptureGroup> {
         self.groups.iter()
     }

@@ -156,7 +156,9 @@ fn extend_observations(
             let next = path.as_str()[index + 1..].split('/').next().unwrap();
             match snapshot.entries().get(&prefix) {
                 Some(Observation::Absent) => absent = true,
-                Some(Observation::Directory { members, .. }) if !members.contains(next) => {
+                Some(Observation::Directory { members, .. })
+                    if !members.contains(next) && snapshot.membership_covers(&path)? =>
+                {
                     absent = true
                 }
                 _ => {}

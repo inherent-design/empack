@@ -139,7 +139,8 @@ mutation authority. Shared Engine addition and native materialization remain pen
 `ProjectReader::capture_removal` resolves user selections from document/metadata
 observations and captures their exact managed placements into a `MutationSnapshot`.
 `capture_mutation` supports callers needing every locked placement. Both exclude
-unrelated payloads; backend discovery retains finite traversal and metadata limits. `prepare_removal` consumes that snapshot and explicit logical keys
+unrelated payloads; backend discovery retains finite traversal and metadata limits.
+Excluded directory members cannot establish target absence for another request. `prepare_removal` consumes that snapshot and explicit logical keys
 with `RemovalMode::ForgetRoots` or `RemoveContent`. Its read-only file plan precedes
 any publication. `PreparedRemoval::publish` consumes verified documents and file
 changes through the common publisher, returning the selected keys, actual removal
