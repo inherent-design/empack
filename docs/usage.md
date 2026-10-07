@@ -17,7 +17,9 @@ content, mutate project documents or publish artifacts directly.
 Preview uses the same resolver and planner with read-only durable storage
 capabilities. Normal execution prepares, answers typed decisions, stages, verifies
 and publishes. Batches default to all requested items verifying before publication.
-The engine reports partial completion only under an explicit independent-batch policy.
+Project batches report partial completion only under an explicit independent-batch policy.
+Disposable cache eviction reports any completed removals if later maintenance fails;
+it does not claim an atomic transaction across cache objects.
 
 Provider MD5 compatibility retains weaker-integrity evidence. It never labels an
 internally computed SHA-256 as authentication of the source. Optional requirements,

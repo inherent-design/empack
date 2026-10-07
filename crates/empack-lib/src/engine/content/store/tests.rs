@@ -7,7 +7,7 @@ use crate::engine::{
 use empack_core::digest::{DigestSet, IntegrityEvidence};
 use std::{collections::BTreeMap, fs, io::Read};
 
-fn request(content: &AcquiredContent) -> CachedFileRequest {
+pub(super) fn request(content: &AcquiredContent) -> CachedFileRequest {
     CachedFileRequest {
         id: content.lease().id(),
         expected: expected(),
@@ -16,7 +16,9 @@ fn request(content: &AcquiredContent) -> CachedFileRequest {
         initial: InitialObservation::RequireEvidence,
     }
 }
-fn footprint(path: &Path) -> BTreeMap<std::ffi::OsString, (Vec<u8>, std::time::SystemTime)> {
+pub(super) fn footprint(
+    path: &Path,
+) -> BTreeMap<std::ffi::OsString, (Vec<u8>, std::time::SystemTime)> {
     fs::read_dir(path)
         .unwrap()
         .map(|entry| {

@@ -44,7 +44,11 @@ pub(super) async fn prepare(
     };
     ensure!(project.is_absolute(), "Project selection must be absolute");
     let state = config.state_root.clone();
-    let limits = config.snapshot;
+    // Artifacts are archive containers, not individual source members. Their size limit
+    // must cover every archive the engine accepts while keeping aggregate capture bounded.
+    let mut limits = config.snapshot;
+    limits.file_bytes = limits.file_bytes.max(config.archive.compressed_bytes);
+    limits.total_bytes = limits.total_bytes.max(limits.file_bytes);
     let work = scope.spawn_blocking(
         config.resources.capture,
         config.resources.prepared,

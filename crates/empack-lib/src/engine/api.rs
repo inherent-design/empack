@@ -47,7 +47,9 @@ use tokio::sync::oneshot;
 struct PublicationWorkerFailed(#[source] RuntimeError);
 pub use super::dependency_content::{DependencyContent, DependencyContents};
 mod addition;
+mod cache_cleanup;
 mod cleanup;
+pub use cache_cleanup::{CacheCleanPreview, CacheCleanReceipt, CacheCleanRequest};
 pub use cleanup::{CleanPreview, CleanReceipt, CleanRequest};
 mod recovery;
 pub use addition::{
@@ -250,6 +252,7 @@ impl From<ImportRequest> for Request {
 }
 #[derive(Clone)]
 pub enum OperationPreview {
+    CacheClean(CacheCleanPreview),
     Clean(CleanPreview),
     Recovery(RecoverPreview),
     Build(BuildPreview),
@@ -264,6 +267,7 @@ pub enum OperationPreview {
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
+            Self::CacheClean(view) => view.plan,
             Self::Clean(view) => view.plan,
             Self::Recovery(view) => view.plan,
             Self::Build(view) => view.plan,
@@ -273,6 +277,12 @@ impl OperationPreview {
             Self::AdoptObserved(view) => view.plan,
             Self::Sync(view) => view.plan,
             Self::Import(view) | Self::Initialize(view) => view.plan,
+        }
+    }
+    pub fn cache_clean(&self) -> Option<&CacheCleanPreview> {
+        match self {
+            Self::CacheClean(view) => Some(view),
+            _ => None,
         }
     }
     pub fn clean(&self) -> Option<&CleanPreview> {
@@ -338,6 +348,7 @@ impl OperationPreview {
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
+            Self::CacheClean(view) => Some(view.replacement),
             Self::Clean(view) => Some(view.replacement),
             Self::Recovery(view) => Some(view.replacement),
             Self::Remove(view) => Some(view.replacement),
@@ -356,6 +367,7 @@ impl OperationPreview {
     }
 }
 enum PreparedKind {
+    CacheClean(Box<cache_cleanup::PreparedCacheCleanup>),
     Clean(Box<cleanup::PreparedCleanup>),
     Recovery(Box<recovery::PreparedRecoveryOperation>),
     Build(Box<PreparedBuild>),
@@ -369,6 +381,7 @@ enum PreparedKind {
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
+            Self::CacheClean(value) => OperationPreview::CacheClean(value.view.clone()),
             Self::Clean(value) => OperationPreview::Clean(value.view.clone()),
             Self::Recovery(value) => OperationPreview::Recovery(value.view.clone()),
             Self::Build(value) => OperationPreview::Build(value.view.clone()),
@@ -448,6 +461,7 @@ impl PreparedOperation {
     }
 }
 pub enum ExecutionReceipt {
+    CacheClean(Box<CacheCleanReceipt>),
     Clean(Box<RetainedOutput<CleanReceipt>>),
     Recovery(Box<RetainedOutput<RecoveryReceipt>>),
     Build(Box<RetainedOutput<BuildReceipt>>),
@@ -462,6 +476,11 @@ pub enum ExecutionReceipt {
 /// Accurate publication outcome: a failed preparation and a hot durable journal are distinct.
 pub enum ExecutionOutcome {
     Completed(ExecutionReceipt),
+    /// Host maintenance completed only the effects described in this receipt.
+    PartiallyCompleted {
+        receipt: ExecutionReceipt,
+        cause: anyhow::Error,
+    },
     NeedsInput(Vec<ContentRequirement>),
     FailedBeforePublication(anyhow::Error),
     InterruptedBeforePublication,
@@ -507,6 +526,7 @@ pub struct Engine {
     config: EngineConfig,
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
+    content_store: Option<super::content::store::FileContentStore>,
     preparations: OperationRuntime<()>,
     operations: OperationRuntime<ExecutionOutcome>,
 }
@@ -521,6 +541,7 @@ impl Engine {
             owner: Arc::new(()),
             transport: HttpAcquisition::new()?,
             catalog: None,
+            content_store: None,
             preparations: OperationRuntime::new(governor.clone(), config.retained_operations),
             operations: OperationRuntime::new(governor, config.retained_operations),
             config,
@@ -571,14 +592,23 @@ impl Engine {
                         }
                         Request::Build(request) => {
                             if let Some(prior) = &request.prior {
-                                ensure!(Arc::ptr_eq(&owner, &prior.prepared.owner), "Continuation belongs to another engine");
+                                ensure!(
+                                    Arc::ptr_eq(&owner, &prior.prepared.owner),
+                                    "Continuation belongs to another engine"
+                                );
                             }
                             let ProjectTarget::Existing(project) = project else {
                                 anyhow::bail!("Build requires an existing project");
                             };
-                            Ok(prepare_build(project, *request, config, provider_access, &mut scope)
-                                .await?
-                                .map(|value| PreparedKind::Build(Box::new(value))))
+                            Ok(prepare_build(
+                                project,
+                                *request,
+                                config,
+                                provider_access,
+                                &mut scope,
+                            )
+                            .await?
+                            .map(|value| PreparedKind::Build(Box::new(value))))
                         }
                         Request::Sync(request) => Ok(synchronization::prepare(
                             project, *request, &config, &mut scope,
@@ -648,7 +678,9 @@ impl Engine {
         {
             Ok(Preparation::Ready(prepared))
         } else {
-            Ok(Preparation::NeedsInput(Box::new(PreparationContinuation { prepared })))
+            Ok(Preparation::NeedsInput(Box::new(PreparationContinuation {
+                prepared,
+            })))
         }
     }
     /// Revalidate a suspended build and merge additional explicit inputs before making a new plan.
@@ -657,7 +689,10 @@ impl Engine {
         pending: PreparationContinuation,
         supplied: BuildAcquisitions,
     ) -> Result<Preparation> {
-        ensure!(Arc::ptr_eq(&self.owner, &pending.prepared.owner), "Continuation belongs to another engine");
+        ensure!(
+            Arc::ptr_eq(&self.owner, &pending.prepared.owner),
+            "Continuation belongs to another engine"
+        );
         let PreparedKind::Build(build) = &**pending.prepared.data else {
             anyhow::bail!("Continuation is not a build preparation");
         };
@@ -688,9 +723,22 @@ impl Engine {
         let config = self.config.clone();
         let transport = self.transport.clone();
         let catalog = self.catalog.clone();
+        let content_store = self.content_store.clone();
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
+                PreparedKind::CacheClean(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::CacheClean(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    cache_cleanup::run(
+                        prepared,
+                        content_store.expect("engine-bound cache preparation"),
+                        scope,
+                    )
+                    .await
+                }
                 PreparedKind::Clean(_) => {
                     let prepared = data.map(|kind| match kind {
                         PreparedKind::Clean(value) => *value,

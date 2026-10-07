@@ -27,6 +27,11 @@ pub struct ImportRequest {
 /// A stable digest of this exact native file-change summary, not a reusable deletion capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReplacementSummary([u8; 32]);
+impl ReplacementSummary {
+    pub(super) fn from_digest(digest: [u8; 32]) -> Self {
+        Self(digest)
+    }
+}
 #[derive(Clone)]
 pub struct ProjectChangePreview {
     pub plan: PlanId,

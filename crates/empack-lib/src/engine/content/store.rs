@@ -13,6 +13,9 @@ use empack_core::{
 };
 use std::{fs::File, path::Path, sync::Arc};
 
+mod cleanup;
+pub use cleanup::{CacheCleanupPlan, CacheCleanupReceipt, CacheObject};
+
 #[derive(Clone, Copy)]
 pub struct ContentStoreLimits {
     pub file_bytes: u64,

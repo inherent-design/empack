@@ -893,7 +893,10 @@ pack/template content cannot block artifact cleanup. The preview names every reg
 file to remove; changed bytes or new entries invalidate execution. Symlinked roots
 and members are rejected. Recovery can finish or restore an interrupted cleanup.
 Directories and unrelated namespaces remain, and recovery preimages retain their
-separate storage policy. Cache maintenance and CLI routing remain integration work.
+separate storage policy. Capture uses the archive-container size limit rather than the
+smaller source-member limit. A scaled regression reproduces Greptile 98's oversized
+artifact failure and verifies deletion after the correction. CLI routing remains
+integration work.
 
 Review 97's resume admission failure reproduced with a governor sized for one capture.
 Resume now keeps the prior preparation reservation charged and admits only additional
@@ -917,8 +920,30 @@ admission and exclusive revalidation before insertion.
 Native tests cover reopen/read-only behavior, corruption, conflicting assertions,
 limits, cancellation, coordination, links/special files, privacy and retained reader
 lifetimes. A composed file-addition test reopens cached content, publishes its declared
-placement and requirements, then synchronizes twice. Cache maintenance, durable
-continuation and normal Engine/CLI cache selection remain separate integration work.
+placement and requirements, then synchronizes twice. Durable continuation and normal
+Engine/CLI cache selection remain separate integration work.
+
+## Host cache maintenance
+
+`CacheCleanRequest::All` inspects only canonical content-object names in the selected
+private store. Preparation binds its native root and every selected regular file;
+execution revalidates all selections under the exclusive store lock before deletion.
+It never recursively removes storage, unknown neighbors or recovery data. A new
+object inserted after preparation is retained. Corrupt regular cache content can be
+removed without reading it as authenticated data. Symlinks and changed objects fail.
+
+`Engine::prepare_cache_cleanup` and `preview_cache_cleanup` require explicit store
+wiring, not a project. Exact approval, engine ownership, resource admission,
+cancellation and owned operation handles reuse the shared lifecycle. The opaque plan
+and receipt retain their metadata reservation. If deletion fails or is cancelled
+partway through, the receipt records removed and retained objects with the failure;
+only complete eviction returns `Completed`. Independent verified leases remain
+readable after their cache object is removed.
+
+All 18 focused native-store, artifact-cleanup and public-maintenance tests pass,
+including review 98's reproduced archive-size mismatch. The combined snapshot passes all 1,868 tests and eleven doctests. All-feature
+Clippy and Windows cross-compilation also pass. Combined CLI cleanup and persistent acquisition
+integration remain unfinished; this is not a transaction across project and cache.
 
 ## Remaining integration and limits
 

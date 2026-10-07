@@ -206,7 +206,7 @@ async fn interrupted_artifact_cleanup_uses_shared_finish_and_restore_recovery() 
                 prepared.verified,
                 PublicationPoint::TargetChanged,
             )
-                .is_err()
+            .is_err()
         );
         assert!(
             engine
@@ -266,4 +266,28 @@ async fn interrupted_artifact_cleanup_uses_shared_finish_and_restore_recovery() 
         drop((outcome, handle));
         engine.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn cleanup_accepts_artifacts_larger_than_source_file_limit() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let (engine, _) = tests::engine(host.path().join("state"));
+    // Scale the production 8 GiB source / 64 GiB archive mismatch down to fixture limits.
+    let size = engine.config.snapshot.file_bytes + 1;
+    assert!(size <= engine.config.archive.compressed_bytes);
+    tests::put(root.path(), "dist/large.zip", &vec![0; size as usize]);
+    let prepared = ready(&engine, root.path()).await;
+    assert_eq!(prepared.view().clean().unwrap().removed_bytes, size);
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+    ));
+    assert!(!root.path().join("dist/large.zip").exists());
+    engine.shutdown().await;
 }

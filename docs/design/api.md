@@ -8,6 +8,16 @@ and `prepare` accept an absolute `ProjectTarget` and a typed request for build,
 import, initialization, addition, update, adoption, removal, synchronization, artifact
 cleanup or recovery.
 Each captures and plans without live-project writes.
+Host-only cache maintenance uses `preview_cache_cleanup(CacheCleanRequest::All)`
+and `prepare_cache_cleanup` after explicit `with_content_store` wiring. Preparation
+receives only a read-only lookup. The returned operation uses the same exact grant,
+engine ownership and operation handle as project requests, without a fabricated
+project root or access to its recovery journal. Unknown cache neighbors remain.
+Changed native objects invalidate the selection before deletion. Newly inserted
+objects are outside its authority. Active verified leases retain private copies.
+Eviction reports removed and retained objects; a later failure returns
+`PartiallyCompleted` with the cause, while a lost worker returns `ExecutionUncertain`.
+This maintenance outcome does not implement independent dependency batches.
 `OperationPreview` carries the operation-specific view. A build view includes exact artifact destinations,
 runtime, missing content, network/tool requirements and the complete requested
 options. It has no conversion into an executable operation. A ready preparation
@@ -22,8 +32,8 @@ execution. Preparation sees only provider availability and performs no API looku
 The refresh retains every locked byte assertion and placement; changed declarations
 fail, and a restricted file without a locator becomes explicit manual input. Missing
 provider credentials remain preparation input. The build API does not invent a
-provider result or download association. Normal cache selection, durable continuation,
-cleanup and CLI composition remain completion work. The broader interface below
+provider result or download association. Normal cache selection, durable continuation
+and CLI composition remain completion work. The broader interface below
 remains the target where the implementation ledger identifies an outstanding API.
 
 `BuildRequest::with_content` attaches explicit `BuildAcquisitions` without putting
