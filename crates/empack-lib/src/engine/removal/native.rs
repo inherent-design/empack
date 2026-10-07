@@ -32,6 +32,7 @@ pub struct RemovalReceipt {
     pub project: ResolvedProject,
     pub mode: RemovalMode,
     pub selected: BTreeSet<DependencyKey>,
+    pub incomplete_evidence: Vec<DependencyKey>,
 }
 impl PreparedRemoval {
     pub fn files(&self) -> &FilePlan {
@@ -46,6 +47,7 @@ impl PreparedRemoval {
             publication,
             project: self.candidate.project,
             mode: self.candidate.plan.mode(),
+            incomplete_evidence: self.candidate.plan.incomplete_evidence().to_vec(),
             selected: self.candidate.plan.selected().keys().cloned().collect(),
         })
     }
@@ -122,13 +124,20 @@ pub(in crate::engine) fn plan_removal(
             .map(RemovalSelector::Key)
             .collect(),
     )?;
-    plan_selected_removal(workspace, &selectors, mode, cancel)
+    plan_selected_removal(
+        workspace,
+        &selectors,
+        mode,
+        RemovalEvidencePolicy::RequireComplete,
+        cancel,
+    )
 }
 
 pub(in crate::engine) fn plan_selected_removal(
     workspace: MutationSnapshot,
     selectors: &NonEmpty<RemovalSelector>,
     mode: RemovalMode,
+    evidence: RemovalEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<RemovalPreparation> {
     cancel.check()?;
@@ -136,13 +145,14 @@ pub(in crate::engine) fn plan_selected_removal(
     let current = workspace.require_resolved()?;
     let records = workspace.backend_files(cancel)?;
     let selections = selection::resolve(&current, &records, selectors)?;
-    let candidate = RemovalCandidate::prepare(
+    let candidate = RemovalCandidate::prepare_with_policy(
         workspace.intent(),
         workspace
             .prior_lock()
             .context("Removal requires an exact lock")?,
         &selections,
         mode,
+        evidence,
     )?;
     let mut removals = BTreeSet::new();
     if mode == RemovalMode::RemoveContent {

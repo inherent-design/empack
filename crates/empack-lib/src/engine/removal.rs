@@ -3,7 +3,7 @@ use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, PreparedDocume
 use anyhow::Result;
 use empack_core::{
     model::{DependencyKey, NonEmpty, ResolvedProject},
-    removal::{RemovalMode, RemovalPlan},
+    removal::{RemovalEvidencePolicy, RemovalMode, RemovalPlan},
 };
 
 mod native;
@@ -31,8 +31,24 @@ impl RemovalCandidate {
         selections: &NonEmpty<DependencyKey>,
         mode: RemovalMode,
     ) -> Result<Self> {
+        Self::prepare_with_policy(
+            source,
+            lock,
+            selections,
+            mode,
+            RemovalEvidencePolicy::RequireComplete,
+        )
+    }
+    /// Explicit acknowledgement changes only the incomplete-dependency check.
+    pub fn prepare_with_policy(
+        source: &DecodedIntent,
+        lock: &DecodedLock,
+        selections: &NonEmpty<DependencyKey>,
+        mode: RemovalMode,
+        evidence: RemovalEvidencePolicy,
+    ) -> Result<Self> {
         let current = lock.bind(source)?;
-        let plan = RemovalPlan::prepare(&current, selections, mode)?;
+        let plan = RemovalPlan::prepare_with_policy(&current, selections, mode, evidence)?;
         let intent = DocumentCodec.replace_intent(source, plan.intent())?;
         let next = DocumentCodec.decode_intent(&intent.bytes, "removal candidate")?;
         let project = plan.clone().resolve(next.semantic_revision())?;
@@ -325,6 +341,57 @@ mod tests {
                 RemovalMode::RemoveContent
             )
             .is_err()
+        );
+    }
+    #[test]
+    fn acknowledging_unknown_dependents_retains_uncertainty_but_never_bypasses_known_edges() {
+        let (source, lock) = fixture(&[], &["alias-b"]);
+        let candidate = RemovalCandidate::prepare_with_policy(
+            &source,
+            &lock,
+            &keys(&["alias-a"]),
+            RemovalMode::RemoveContent,
+            RemovalEvidencePolicy::AcknowledgeUnknown,
+        )
+        .unwrap();
+        assert_eq!(candidate.plan().incomplete_evidence(), &[key("alias-b")]);
+        assert_eq!(
+            candidate.project().lock().coverage[&key("alias-b")],
+            Coverage::Partial
+        );
+        assert!(
+            !candidate
+                .project()
+                .lock()
+                .dependencies
+                .contains_key(&key("alias-a"))
+        );
+        let (source, lock) = fixture(&[("alias-b", "alias-a")], &["alias-b"]);
+        let error = RemovalCandidate::prepare_with_policy(
+            &source,
+            &lock,
+            &keys(&["alias-a"]),
+            RemovalMode::RemoveContent,
+            RemovalEvidencePolicy::AcknowledgeUnknown,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(
+            error.downcast_ref::<RemovalError>(),
+            Some(&RemovalError::RequiredBy(vec![key("alias-b")]))
+        );
+        let candidate = RemovalCandidate::prepare_with_policy(
+            &source,
+            &lock,
+            &keys(&["alias-a"]),
+            RemovalMode::ForgetRoots,
+            RemovalEvidencePolicy::AcknowledgeUnknown,
+        )
+        .unwrap();
+        assert!(candidate.plan().incomplete_evidence().is_empty());
+        assert_eq!(
+            candidate.project().lock().required_edges,
+            lock.lock().required_edges
         );
     }
 }

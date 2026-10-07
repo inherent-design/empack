@@ -9,7 +9,7 @@ use crate::engine::{
 use empack_core::{
     files::{FileChange, FilePlan, ObservedPath},
     model::{DependencyKey, ResolvedIdentity, ResolvedPin, ResolvedProject},
-    removal::RemovalMode,
+    removal::{RemovalEvidencePolicy, RemovalMode},
 };
 use std::collections::BTreeSet;
 
@@ -17,6 +17,7 @@ use std::collections::BTreeSet;
 pub struct RemoveRequest {
     pub selections: NonEmpty<RemovalSelector>,
     pub mode: RemovalMode,
+    pub evidence: RemovalEvidencePolicy,
 }
 /// Display identity excludes secret-bearing acquisition locators.
 #[derive(Clone)]
@@ -31,6 +32,7 @@ pub struct RemovePreview {
     pub plan: PlanId,
     pub mode: RemovalMode,
     pub selected: Vec<RemovalSelection>,
+    pub incomplete_evidence: Vec<DependencyKey>,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
 }
@@ -40,6 +42,7 @@ pub struct RemoveReceipt {
     pub project: ResolvedProject,
     pub mode: RemovalMode,
     pub selected: BTreeSet<DependencyKey>,
+    pub incomplete_evidence: Vec<DependencyKey>,
 }
 pub(super) struct PreparedRemovalOperation {
     pub(super) view: RemovePreview,
@@ -65,6 +68,7 @@ pub(super) async fn prepare(
                 &project,
                 &request.selections,
                 request.mode,
+                request.evidence,
                 limits,
                 &cancel,
             )?;
@@ -72,6 +76,7 @@ pub(super) async fn prepare(
                 snapshot,
                 &request.selections,
                 request.mode,
+                request.evidence,
                 &cancel,
             )
         },
@@ -89,6 +94,7 @@ pub(super) async fn prepare(
                     .map_err(|_| anyhow::anyhow!("Plan identifier exhausted"))?,
             ),
             mode: removal.candidate().plan().mode(),
+            incomplete_evidence: removal.candidate().plan().incomplete_evidence().to_vec(),
             selected: removal
                 .candidate()
                 .plan()
@@ -172,6 +178,7 @@ async fn execute(
             project: receipt.project,
             mode: receipt.mode,
             selected: receipt.selected,
+            incomplete_evidence: receipt.incomplete_evidence,
         })
     })?;
     scope

@@ -577,10 +577,11 @@ impl ProjectReader {
         selected: &Path,
         selectors: &empack_core::model::NonEmpty<super::removal::RemovalSelector>,
         mode: empack_core::removal::RemovalMode,
+        evidence: empack_core::removal::RemovalEvidencePolicy,
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
-        self.capture_removal_inputs(selected, Some((selectors, mode)), limits, cancel)
+        self.capture_removal_inputs(selected, Some((selectors, mode, evidence)), limits, cancel)
     }
     fn capture_removal_inputs(
         &self,
@@ -588,6 +589,7 @@ impl ProjectReader {
         selection: Option<(
             &empack_core::model::NonEmpty<super::removal::RemovalSelector>,
             empack_core::removal::RemovalMode,
+            empack_core::removal::RemovalEvidencePolicy,
         )>,
         limits: SnapshotLimits,
         cancel: &Cancellation,
@@ -598,13 +600,15 @@ impl ProjectReader {
             self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
         let project = documents.require_resolved()?;
         let selected_keys = selection
-            .map(|(selectors, mode)| {
+            .map(|(selectors, mode, evidence)| {
                 let keys = super::removal::resolve_selections(
                     &project,
                     &documents.backend_files(cancel)?,
                     selectors,
                 )?;
-                let plan = empack_core::removal::RemovalPlan::prepare(&project, &keys, mode)?;
+                let plan = empack_core::removal::RemovalPlan::prepare_with_policy(
+                    &project, &keys, mode, evidence,
+                )?;
                 Ok::<_, anyhow::Error>(plan.removed())
             })
             .transpose()?;

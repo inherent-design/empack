@@ -418,8 +418,8 @@ loader runtime contracts must join this boundary before CLI `all` can cut over.
 ## Semantic removal planning
 
 `RemovalPlan` in the pure core selects exact logical keys from a coherent resolution.
-`RemoveContent` rejects retained required dependents and incomplete retained dependency
-evidence. Selecting an entire required cycle is valid; no unrequested selection is
+`RemoveContent` rejects retained required dependents. Incomplete retained dependency
+evidence is refused by default and requires explicit acknowledgement to proceed. Selecting an entire required cycle is valid; no unrequested selection is
 collected. `ForgetRoots` removes explicit authoring roots while retaining exact files,
 pins and graph evidence. It is a distinct outcome, not successful content deletion.
 
@@ -604,3 +604,16 @@ filename was treated as absence. Mutation capture now includes portable aliases 
 checks their spelling against selected destinations before planning. After this
 correction, 42 affected tests pass. The 1,746-test full run above predates this final
 regression; native CI must exercise the combined pushed revision.
+
+### Explicit removal uncertainty
+
+`RemovalEvidencePolicy` distinguishes the default `RequireComplete` policy from
+`AcknowledgeUnknown`. Known retained required edges always block deletion. An
+acknowledged plan, Engine preview and terminal receipt retain the incomplete
+dependency keys, and the resulting lock keeps their original coverage. No source,
+path or publication check is relaxed. Root demotion retains content and requires
+no uncertainty acknowledgement. Untracked installed-record selection and its
+dependency evidence still need integration before CLI cutover.
+
+Validation: 32 focused removal tests pass, including default refusal, explicit
+acknowledgement, preserved uncertainty in the lock/receipt and known-edge rejection.

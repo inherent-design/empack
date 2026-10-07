@@ -138,7 +138,11 @@ with `RemovalMode::ForgetRoots` or `RemoveContent`. Its read-only file plan prec
 any publication. `PreparedRemoval::publish` consumes verified documents and file
 changes through the common publisher, returning the selected keys, actual removal
 mode, resulting project and publication receipt. The shared `Engine` accepts `RemoveRequest` with exact logical keys or user queries and an explicit
-mode. `RemovePreview` lists canonical selections and the exact file footprint;
+mode. `RemovalEvidencePolicy` defaults to `RequireComplete`; explicit
+`AcknowledgeUnknown` permits incomplete retained dependency evidence while recording
+it in `RemovePreview::incomplete_evidence` and `RemoveReceipt::incomplete_evidence`.
+Known required dependents still block removal. `RemovePreview` lists canonical
+selections and the exact file footprint;
 authorization requires its plan and replacement digest. `RemoveReceipt` distinguishes
 demotion from physical removal. Source verification streams without retaining payload
 copies, then staging reserves the actual candidate-document bytes. Publication reserves

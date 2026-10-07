@@ -148,8 +148,13 @@ pub enum PlannedAction {
 `RemovalSelection` contains the selected logical key, canonical identity, observed metadata key, expected version/content, and exact managed destinations. A user string is not a backend removal target.
 
 Removal distinguishes dropping an explicit root from deleting content. Root demotion
-retains its exact selection and dependency evidence. Content removal requires complete
-retained dependency evidence and no incoming required edge from a retained selection.
+retains its exact selection and dependency evidence. Content removal refuses incomplete
+retained dependency evidence by default. An explicit `AcknowledgeUnknown` policy can
+accept that uncertainty for the selected content; preview and receipt list the
+retained selections whose edges remain incomplete. Their coverage is not upgraded.
+A known incoming required edge from a retained selection always blocks deletion.
+This acknowledgement does not weaken file ownership, content verification, path
+confinement or publication checks, and never permits automatic orphan collection.
 A whole cycle can be selected explicitly; unrequested content is never inferred to be
 removable. Unknown, duplicate or blocked selections reject an AllRequested batch.
 

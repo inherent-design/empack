@@ -426,10 +426,16 @@ fn installed_stem_removal_publishes_the_canonical_owner_and_preserves_label_coll
         RemovalSelector::Query("Assets".into()),
     ])
     .unwrap();
-    let prepared = plan_selected_removal(snapshot, &selectors, RemovalMode::RemoveContent, &cancel)
-        .unwrap()
-        .stage(&cancel)
-        .unwrap();
+    let prepared = plan_selected_removal(
+        snapshot,
+        &selectors,
+        RemovalMode::RemoveContent,
+        RemovalEvidencePolicy::RequireComplete,
+        &cancel,
+    )
+    .unwrap()
+    .stage(&cancel)
+    .unwrap();
     assert_eq!(prepared.candidate().plan().selected().len(), 1);
     let receipt = prepared
         .publish(

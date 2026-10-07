@@ -19,6 +19,16 @@ pub enum RemovalMode {
     /// Unrequested selections, including unreachable ones, remain installed.
     RemoveContent,
 }
+/// Unknown dependency evidence is distinct from a known requirement.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RemovalEvidencePolicy {
+    /// Refuse deletion while retained dependencies have incomplete edge information.
+    #[default]
+    RequireComplete,
+    /// Explicitly accept unknown dependents for the selected content. Known required edges,
+    /// content assertions, ownership and publication safeguards remain mandatory.
+    AcknowledgeUnknown,
+}
 /// Evidence that prevents an all-requested removal plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemovalError {
@@ -53,6 +63,7 @@ pub struct RemovalPlan {
     lock: ResolutionLock,
     selected: BTreeMap<DependencyKey, LockedDependency>,
     mode: RemovalMode,
+    incomplete: Vec<DependencyKey>,
 }
 impl RemovalPlan {
     /// Plan every selection or return no candidate. Known dependents take precedence over
@@ -63,6 +74,22 @@ impl RemovalPlan {
         selections: &NonEmpty<DependencyKey>,
         mode: RemovalMode,
     ) -> Result<Self, RemovalError> {
+        Self::prepare_with_policy(
+            project,
+            selections,
+            mode,
+            RemovalEvidencePolicy::RequireComplete,
+        )
+    }
+    /// Plan with an explicit uncertainty policy. Acknowledgement never overrides known
+    /// required edges, and the plan retains every unresolved dependent for its receipt.
+    pub fn prepare_with_policy(
+        project: &ResolvedProject,
+        selections: &NonEmpty<DependencyKey>,
+        mode: RemovalMode,
+        evidence: RemovalEvidencePolicy,
+    ) -> Result<Self, RemovalError> {
+        let mut incomplete = Vec::new();
         let mut selected = BTreeMap::new();
         for key in selections.as_slice() {
             let value = project
@@ -90,7 +117,7 @@ impl RemovalPlan {
             if !dependents.is_empty() {
                 return Err(RemovalError::RequiredBy(dependents));
             }
-            let incomplete: Vec<_> = project
+            incomplete = project
                 .lock()
                 .coverage
                 .iter()
@@ -99,7 +126,7 @@ impl RemovalPlan {
                 })
                 .map(|(key, _)| key.clone())
                 .collect();
-            if !incomplete.is_empty() {
+            if !incomplete.is_empty() && evidence == RemovalEvidencePolicy::RequireComplete {
                 return Err(RemovalError::IncompleteEvidence(incomplete));
             }
         }
@@ -121,6 +148,7 @@ impl RemovalPlan {
             lock,
             selected,
             mode,
+            incomplete,
         })
     }
     /// Updated authoring meaning. The codec must compute its canonical revision before binding.
@@ -134,6 +162,11 @@ impl RemovalPlan {
     /// Explicit deletion/demotion semantics retained for the preview and receipt.
     pub fn mode(&self) -> RemovalMode {
         self.mode
+    }
+    /// Retained selections whose dependency edges remain uncertain after explicit acknowledgement.
+    /// Empty for root demotion, which deletes no content.
+    pub fn incomplete_evidence(&self) -> &[DependencyKey] {
+        &self.incomplete
     }
     /// Logical keys that will leave the lock. This never includes inferred orphans.
     pub fn removed(&self) -> BTreeSet<DependencyKey> {

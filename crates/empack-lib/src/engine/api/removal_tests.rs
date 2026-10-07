@@ -1,6 +1,9 @@
 use super::tests::{engine, fixture, path, put};
 use super::*;
-use empack_core::{model::DependencyKey, removal::RemovalMode};
+use empack_core::{
+    model::DependencyKey,
+    removal::{RemovalEvidencePolicy, RemovalMode},
+};
 use std::{fs, path::Path};
 fn request(mode: RemovalMode) -> RemoveRequest {
     RemoveRequest {
@@ -9,6 +12,7 @@ fn request(mode: RemovalMode) -> RemoveRequest {
         )])
         .unwrap(),
         mode,
+        evidence: RemovalEvidencePolicy::RequireComplete,
     }
 }
 fn grant(prepared: &PreparedOperation) -> ExecutionGrant {
@@ -314,7 +318,7 @@ async fn unselected_locked_bytes_are_not_removal_inputs() {
     file.placements = NonEmpty::new(vec![placement]).unwrap();
     dependency.files = NonEmpty::new(vec![file]).unwrap();
     lock.dependencies.insert(other.clone(), dependency);
-    lock.coverage.insert(other, Coverage::CompleteForSelection);
+    lock.coverage.insert(other.clone(), Coverage::Unknown);
     let resolved = ResolvedProject::validate(
         original.intent().clone(),
         lock.clone(),
@@ -332,17 +336,38 @@ async fn unselected_locked_bytes_are_not_removal_inputs() {
         &vec![0; 3 << 20],
     );
     let (engine, _) = engine(state.path().join("state"));
-    let prepared = ready(&engine, root.path(), RemovalMode::RemoveContent).await;
+    let mut removal = request(RemovalMode::RemoveContent);
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), removal.clone())
+            .await
+            .is_err()
+    );
+    removal.evidence = RemovalEvidencePolicy::AcknowledgeUnknown;
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_path_buf(), removal)
+        .await
+        .unwrap()
+    else {
+        panic!("unexpected input request")
+    };
+    assert_eq!(
+        prepared.view().remove().unwrap().incomplete_evidence,
+        vec![other.clone()]
+    );
     assert_eq!(prepared.view().remove().unwrap().selected.len(), 1);
     let permission = grant(&prepared);
     let mut handle = engine
         .start(prepared.authorize(permission).unwrap())
         .unwrap();
     let outcome = handle.wait().await;
-    assert!(matches!(
-        &*outcome,
-        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Remove(_)))
-    ));
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Remove(receipt))) =
+        &*outcome
+    else {
+        panic!("removal failed")
+    };
+    assert_eq!(receipt.incomplete_evidence, vec![other.clone()]);
+    assert_eq!(receipt.project.lock().coverage[&other], Coverage::Unknown);
     assert_eq!(
         fs::metadata(root.path().join("pack/retained/oversized.zip"))
             .unwrap()
