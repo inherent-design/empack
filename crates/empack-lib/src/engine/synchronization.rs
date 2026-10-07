@@ -1,7 +1,9 @@
 //! Synchronization restores exact recorded selections; it never resolves an implicit upgrade.
+mod native;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, DocumentEdit, PreparedDocument};
 use anyhow::Result;
 use empack_core::model::ResolvedProject;
+pub use native::{PreparedSynchronization, SynchronizationReceipt, prepare_synchronization};
 
 /// Intent edits requiring new provider/content/runtime evidence cannot reuse the old lock.
 #[derive(Debug, thiserror::Error)]

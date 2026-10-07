@@ -440,8 +440,8 @@ directories, selected links and extra input slots fail the whole preparation. Mi
 tracked files can be restored without changing their logical selection. No-op re-adds
 preserve raw intent and lock documents, including cosmetic edits.
 
-Updates retire exact owned derivative metadata and invalidate affected direct index
-entries while preserving unrelated entries and fields. The shared index adapter
+Updates retire exact owned derivative metadata and rebind affected direct index
+entries while preserving unrelated entries, aliases and fields. The shared index adapter
 rebinds the pack digest. Staged content, documents and explicit removals publish through
 the existing journal; changed inputs after preparation prevent publication. Native
 regressions cover first addition, repeated addition, alias binding, restoration,
@@ -468,8 +468,24 @@ Authoring-only changes can rebind the lock without new acquisition or version ch
 Raw intent remains unchanged; an already bound lock requests raw-byte preservation.
 Unlisted selections and original source assertions remain. Changed pins, sources,
 placements or runtime requirements that the old lock cannot satisfy produce a typed
-`ResolutionRequired` outcome. This candidate does not yet restore native files or wire
-the shared Engine sync request. Four focused contracts and all-feature Clippy pass.
+`ResolutionRequired` outcome. The shared Engine sync request and changed-intent
+resolution remain pending. Four focused contracts and all-feature Clippy pass.
+
+Native synchronization captures recorded placements and restores missing or modified
+files from verified exact bytes. It retains unrelated content, checks directory/link
+conflicts, preserves raw no-op documents, and rebinds authoring-only edits. Stale
+metadata at selected destinations is removed explicitly; existing pack metadata and
+runtime fields follow the coherent project. Addition, removal and synchronization
+share frozen mutation staging and independent final inventory verification.
+
+The review 79 index-loss regression reproduced before correction. The shared index
+adapter now separates deletion from direct-file updates, preserves aliased entries and
+extension fields, and honors disabled internal hashes. Per-entry digest algorithms
+follow the [pinned backend wire contract](https://github.com/mannie-exe/packwiz-tx/blob/v0.2.0/core/indexfiles.go), so changing one entry does not reinterpret retained hashes.
+
+The combined native synchronization and index correction passes 107 affected tests and
+all-feature Clippy. One pure addition test reported a nextest pipe-leak warning; its
+isolated repeat passed cleanly. The broader final-head suite remains a later gate.
 
 ## Semantic removal planning
 

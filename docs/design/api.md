@@ -134,8 +134,11 @@ Engine recovery/continuation composition and CLI cutover remain unfinished.
 resolution without selecting newer files. It preserves all exact selections, original
 source evidence and dependency edges, including installations no longer listed as
 roots. Pin, source, placement or runtime edits that invalidate that resolution return
-`ResolutionRequired`. Native restoration and shared Engine synchronization remain
-pending; a document candidate has no write authority.
+`ResolutionRequired`. `capture_synchronization` and `prepare_synchronization` bind
+recorded placements and verified supplied bytes to a restoration plan. Modified files
+are explicit replacements; unrelated content remains. Shared Engine synchronization
+and changed-intent resolution remain pending; the document candidate alone has no
+write authority.
 
 `AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical
@@ -144,8 +147,8 @@ requested-to-canonical key bindings and changed exact entries; neither grants fi
 mutation authority. `ProjectReader::capture_addition` captures old and new selected
 placements. `prepare_addition` binds supplied request slots to canonical keys, verifies
 original byte assertions, and prepares exact content/document changes. Untracked
-collisions require a separate adoption decision. Changed selections invalidate only
-owned derivative metadata and affected index entries. `PreparedAddition::publish`
+collisions require a separate adoption decision. Changed selections retire owned stale derivative metadata; existing direct index
+entries retain their fields and aliases while their byte digests are updated. `PreparedAddition::publish`
 uses the shared recovery journal. The shared Engine accepts `AddRequest` with a resolved
 group and immutable acquired content, defaults to rejecting existing requested roots,
 and supports explicit same-identity updates. `AddPreview` exposes canonical bindings,

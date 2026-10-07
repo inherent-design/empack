@@ -208,6 +208,11 @@ fn selected_links_fail_but_unrelated_links_remain_outside_the_read_set() {
 }
 #[test]
 fn updated_bytes_retire_only_owned_derivatives_and_rebind_the_index() {
+    for no_hashes in [false, true] {
+        updated_index_case(no_hashes);
+    }
+}
+fn updated_index_case(no_hashes: bool) {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     let current = project(false, false);
@@ -228,12 +233,15 @@ fn updated_bytes_retire_only_owned_derivatives_and_rebind_the_index() {
         "pack/resourcepacks/assets.pw.toml",
         metadata.as_bytes(),
     );
-    put(root.path(), "pack/index.toml", b"hash-format = 'sha256'\nuser-field = 'keep'\n[[files]]\nfile = 'resourcepacks/assets.pw.toml'\nmetafile = true\n[[files]]\nfile = 'resourcepacks/b.zip'\n[[files]]\nfile = 'unrelated.bin'\n");
+    put(root.path(), "pack/index.toml", b"hash-format = 'sha1'\nuser-field = 'keep'\n[[files]]\nfile = 'resourcepacks/assets.pw.toml'\nmetafile = true\n[[files]]\nfile = 'resourcepacks/b.zip'\npreserve = true\nuser-entry-field = 'keep entry'\n[[files]]\nfile = 'resourcepacks/b.zip'\nalias = 'resourcepacks/aliased.zip'\npreserve = true\nuser-entry-field = 'keep entry'\n[[files]]\nfile = 'unrelated.bin'\n");
     let index = fs::read(root.path().join("pack/index.toml")).unwrap();
-    let pack = format!(
+    let mut pack = format!(
         "name = 'test'\n[index]\nfile = 'index.toml'\nhash-format = 'sha256'\nhash = '{}'\n",
         empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(&index).into()).hex()
     );
+    if no_hashes {
+        pack.push_str("\n[options]\nno-internal-hashes = true\n");
+    }
     put(root.path(), "pack/pack.toml", pack.as_bytes());
     let mut lock = current.lock().clone();
     for dependency in lock.dependencies.values_mut() {
@@ -272,15 +280,44 @@ fn updated_bytes_retire_only_owned_derivatives_and_rebind_the_index() {
     );
     let bytes = fs::read(root.path().join("pack/index.toml")).unwrap();
     let index: toml::Value = toml::from_str(std::str::from_utf8(&bytes).unwrap()).unwrap();
-    assert_eq!(index["files"].as_array().unwrap().len(), 1);
-    assert_eq!(index["files"][0]["file"].as_str(), Some("unrelated.bin"));
+    let entries = index["files"].as_array().unwrap();
+    assert_eq!(entries.len(), 3);
+    let direct: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry["file"].as_str() == Some("resourcepacks/b.zip"))
+        .collect();
+    assert_eq!(direct.len(), 2, "both index aliases must remain");
+    for direct in direct {
+        assert_eq!(index["hash-format"].as_str(), Some("sha1"));
+        assert_eq!(direct["hash-format"].as_str(), Some("sha256"));
+        assert_eq!(direct["preserve"].as_bool(), Some(true));
+        assert_eq!(direct["user-entry-field"].as_str(), Some("keep entry"));
+        if no_hashes {
+            assert!(direct.get("hash").is_none());
+        } else {
+            assert_eq!(
+                direct["hash"].as_str().unwrap(),
+                empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(b"updated").into())
+                    .hex()
+            );
+        }
+    }
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["file"].as_str() == Some("unrelated.bin"))
+    );
     assert_eq!(index["user-field"].as_str(), Some("keep"));
     let pack: toml::Value =
         toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap()).unwrap();
-    assert_eq!(
-        pack["index"]["hash"].as_str().unwrap(),
-        empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(&bytes).into()).hex()
-    );
+    if no_hashes {
+        assert!(pack["index"].get("hash").is_none());
+    } else {
+        assert_eq!(
+            pack["index"]["hash"].as_str().unwrap(),
+            empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(&bytes).into()).hex()
+        );
+    }
     assert_eq!(
         fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
         b"updated"

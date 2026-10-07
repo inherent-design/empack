@@ -7,7 +7,6 @@ use crate::{
         project::{MutationSnapshot, WorkspaceSnapshot},
         publication::{PublicationReceipt, Publisher},
         snapshot::ProjectReadRoot,
-        staging::MutableStage,
         verification::{self, VerifiedFileChange},
     },
 };
@@ -125,21 +124,8 @@ impl RemovalPreparation {
             observed,
             untracked_evidence,
         } = self;
-        let limits = verification::candidate_stage_limits(workspace.observations(), &plan)?;
-        let mut stage = MutableStage::empty()?;
-        for (target, bytes) in &documents {
-            let native = ProjectLayout::path(target)?;
-            stage.write_attributed(
-                &native,
-                &mut bytes.as_slice(),
-                bytes.len() as u64,
-                plan.expected()[target].permissions,
-                cancel,
-            )?;
-        }
-        let stage = stage.freeze(limits, cancel)?;
-        let (root, base) = workspace.into_native();
-        let change = VerifiedFileChange::verify_mutation(base, plan, stage)?;
+        let (root, change) =
+            verification::stage_mutation(workspace, plan, &documents, &BTreeMap::new(), cancel)?;
         Ok(PreparedRemoval {
             root,
             change,

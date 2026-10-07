@@ -1,4 +1,4 @@
-//! Exact derivative index invalidation shared by dependency mutations.
+//! Exact derivative index updates shared by dependency mutations.
 use crate::{
     application::process_runtime::Cancellation,
     engine::{content::SourceEvidencePolicy, project::WorkspaceSnapshot, snapshot::Observation},
@@ -23,6 +23,17 @@ pub(in crate::engine) fn refresh_index(
     documents: &mut BTreeMap<ManagedPath, Vec<u8>>,
     cancel: &Cancellation,
 ) -> Result<()> {
+    refresh_index_with_updates(workspace, removals, &BTreeMap::new(), documents, cancel)
+}
+/// Update existing direct entries without losing their extension fields or changing the default
+/// algorithm for retained entries. Selected removed metadata remains an explicit removal.
+pub(in crate::engine) fn refresh_index_with_updates(
+    workspace: &WorkspaceSnapshot,
+    removals: &BTreeSet<ManagedPath>,
+    updates: &BTreeMap<PortableRelPath, ExpectedDigest>,
+    documents: &mut BTreeMap<ManagedPath, Vec<u8>>,
+    cancel: &Cancellation,
+) -> Result<()> {
     let removed: BTreeSet<_> = removals
         .iter()
         .filter_map(|target| match target {
@@ -34,7 +45,11 @@ pub(in crate::engine) fn refresh_index(
             _ => None,
         })
         .collect();
-    if removed.is_empty() {
+    ensure!(
+        updates.keys().all(|path| !removed.contains(path)),
+        "Index target is both updated and removed"
+    );
+    if removed.is_empty() && updates.is_empty() {
         return Ok(());
     }
     let index_path = path("pack/index.toml")?;
@@ -118,21 +133,60 @@ pub(in crate::engine) fn refresh_index(
         .context("Index file entries must be an array")?;
     let mut paths = crate::engine::layout::CollisionIndex::default();
     let mut retained = Vec::new();
-    for entry in files.drain(..) {
+    let mut names = BTreeSet::new();
+    let mut aliases = BTreeSet::new();
+    for mut entry in files.drain(..) {
         let name = path(
             entry
                 .get("file")
                 .and_then(toml::Value::as_str)
                 .context("Index entry lacks a file")?,
         )?;
-        paths.insert_file(&name)?;
+        let alias = entry
+            .get("alias")
+            .map(|value| value.as_str().context("Index alias must be text"))
+            .transpose()?
+            .unwrap_or("");
+        ensure!(
+            aliases.insert((name.clone(), alias.to_owned())),
+            "Repeated index file alias"
+        );
+        if names.insert(name.clone()) {
+            paths.insert_file(&name)?;
+        }
         if !removed.contains(&name) {
-            for target in &removed {
+            for target in removed
+                .iter()
+                .chain(updates.keys())
+                .filter(|target| **target != name)
+            {
                 let mut collision = crate::engine::layout::CollisionIndex::default();
                 collision.insert_file(target)?;
                 collision
                     .insert_file(&name)
                     .context("Index aliases a selected removal target")?;
+            }
+            if let Some(digest) = updates.get(&name) {
+                let entry = entry
+                    .as_table_mut()
+                    .context("Index entry must be a table")?;
+                ensure!(
+                    !entry
+                        .get("metafile")
+                        .map(|value| value.as_bool().context("Invalid metafile flag"))
+                        .transpose()?
+                        .unwrap_or(false),
+                    "Direct content is indexed as metadata"
+                );
+                if no_hashes {
+                    entry.remove("hash");
+                } else {
+                    entry.insert("hash".into(), toml::Value::String(digest.hex()));
+                }
+                entry.insert(
+                    "hash-format".into(),
+                    toml::Value::String(digest.algorithm().name().into()),
+                );
             }
             retained.push(entry);
         }

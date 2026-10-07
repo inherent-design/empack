@@ -689,6 +689,38 @@ impl ProjectReader {
         }
         self.capture_mutation_paths(selected, documents, required, limits, cancel)
     }
+    /// Bind every recorded placement for exact restoration, retaining unrelated payloads.
+    pub fn capture_synchronization(
+        &self,
+        selected: &Path,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
+        let metadata = super::source::CaptureFilter::mutation(&[])?;
+        let documents =
+            self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
+        let candidate = super::synchronization::SynchronizationCandidate::prepare(
+            documents.intent(),
+            documents
+                .prior_lock()
+                .context("Synchronization requires a lock")?,
+        )?;
+        let mut required = Vec::new();
+        for dependency in candidate.project().lock().dependencies.values() {
+            for file in dependency.files.as_slice() {
+                for placement in file.placements.as_slice() {
+                    required.push(super::layout::ProjectLayout::path(
+                        &empack_core::files::ManagedPath::Content {
+                            layer: placement.layer,
+                            path: placement.destination.relative().clone(),
+                        },
+                    )?);
+                }
+            }
+        }
+        self.capture_mutation_paths(selected, documents, required, limits, cancel)
+    }
     fn capture_mutation_paths(
         &self,
         selected: &Path,

@@ -9,7 +9,6 @@ use crate::{
         project::{MutationSnapshot, WorkspaceSnapshot},
         publication::{PublicationReceipt, Publisher},
         snapshot::ProjectReadRoot,
-        staging::MutableStage,
         verification::{self, VerifiedFileChange},
     },
 };
@@ -78,30 +77,13 @@ impl AdditionPreparation {
         })
     }
     pub(in crate::engine) fn stage(self, cancel: &Cancellation) -> Result<PreparedAddition> {
-        let limits =
-            verification::candidate_stage_limits(self.workspace.observations(), &self.plan)?;
-        let mut stage = MutableStage::empty()?;
-        for (target, bytes) in &self.documents {
-            stage.write_attributed(
-                &ProjectLayout::path(target)?,
-                &mut bytes.as_slice(),
-                bytes.len() as u64,
-                self.plan.expected()[target].permissions,
-                cancel,
-            )?;
-        }
-        for (target, file) in &self.content {
-            stage.write_attributed(
-                &ProjectLayout::path(target)?,
-                &mut file.content.lease().open(),
-                file.content.lease().len(),
-                file.permissions,
-                cancel,
-            )?;
-        }
-        let stage = stage.freeze(limits, cancel)?;
-        let (root, base) = self.workspace.into_native();
-        let change = VerifiedFileChange::verify_mutation(base, self.plan, stage)?;
+        let (root, change) = verification::stage_mutation(
+            self.workspace,
+            self.plan,
+            &self.documents,
+            &self.content,
+            cancel,
+        )?;
         Ok(PreparedAddition {
             root,
             change,
@@ -280,14 +262,27 @@ pub(in crate::engine) fn plan_addition(
                 .context("Captured lock disappeared")?,
         );
     }
-    let mut invalidated = removals.clone();
+    let mut updated_index = BTreeMap::new();
     for (target, file) in &content {
         if !matches!(&observed_content[target], ObservedPath::File(before) if before.content == file.content.lease().id())
+            && let ManagedPath::Content {
+                layer: empack_core::model::ContentLayer::Common,
+                path,
+            } = target
         {
-            invalidated.insert(target.clone());
+            updated_index.insert(
+                path.clone(),
+                empack_core::digest::ExpectedDigest::Sha256(*file.content.lease().id().bytes()),
+            );
         }
     }
-    crate::engine::backend::index::refresh_index(&workspace, &invalidated, &mut documents, cancel)?;
+    crate::engine::backend::index::refresh_index_with_updates(
+        &workspace,
+        &removals,
+        &updated_index,
+        &mut documents,
+        cancel,
+    )?;
     let observed = verification::observed_mutation_for(
         workspace.observations(),
         documents

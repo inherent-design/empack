@@ -4,7 +4,7 @@ use super::{
     snapshot::{FileObservation, NativeSnapshot, Observation, SnapshotLimits},
     staging::FrozenStage,
 };
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::ContentId,
     files::{
@@ -14,6 +14,51 @@ use empack_core::{
     path::PortableRelPath,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Freeze and independently verify a prepared document/content mutation. Semantic ownership
+/// belongs to the operation planner; no publisher is available at this staging boundary.
+pub(super) fn stage_mutation(
+    workspace: super::project::WorkspaceSnapshot,
+    plan: FilePlan,
+    documents: &BTreeMap<ManagedPath, Vec<u8>>,
+    content: &BTreeMap<ManagedPath, super::mrpack::AcquiredBuildFile>,
+    cancel: &crate::application::process_runtime::Cancellation,
+) -> Result<(super::snapshot::ProjectReadRoot, VerifiedFileChange)> {
+    let limits = candidate_stage_limits(workspace.observations(), &plan)?;
+    let mut stage = super::staging::MutableStage::empty()?;
+    for (target, bytes) in documents {
+        let expected = plan
+            .expected()
+            .get(target)
+            .context("Document is outside the mutation plan")?;
+        stage.write_attributed(
+            &ProjectLayout::path(target)?,
+            &mut bytes.as_slice(),
+            bytes.len() as u64,
+            expected.permissions,
+            cancel,
+        )?;
+    }
+    for (target, file) in content {
+        ensure!(
+            plan.expected().contains_key(target),
+            "Content is outside the mutation plan"
+        );
+        stage.write_attributed(
+            &ProjectLayout::path(target)?,
+            &mut file.content.lease().open(),
+            file.content.lease().len(),
+            file.permissions,
+            cancel,
+        )?;
+    }
+    let stage = stage.freeze(limits, cancel)?;
+    let (root, base) = workspace.into_native();
+    Ok((
+        root,
+        VerifiedFileChange::verify_mutation(base, plan, stage)?,
+    ))
+}
 
 /// Native storage capabilities are independent of archive-format permission support.
 pub fn native_capabilities() -> FileCapabilities {
