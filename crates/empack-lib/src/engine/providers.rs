@@ -12,7 +12,9 @@ use empack_core::{
 };
 use std::{sync::Arc, time::Duration};
 
+mod addition;
 mod batch;
+pub use addition::{ProviderAddInput, ProviderAddition, ProviderAdditionOutcome, ProviderFiles};
 pub use batch::ExactBatch;
 mod closure;
 pub use closure::{

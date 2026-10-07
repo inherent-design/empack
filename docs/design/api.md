@@ -63,6 +63,21 @@ records, canonical required edges and `ClosureIssue` values. Its
 `complete_for_required()` query applies only to the observed exact selections; it is
 not a deletion grant or proof that another version assignment cannot work.
 
+`ProviderCatalog::resolve_addition` connects `ProviderAddInput` selectors to canonical
+dependency groups. Slugs, IDs and project URLs use the same catalog boundary. Requested
+pins remain exact intent; compatible selection remains unpinned. Selector lookup,
+compatible selection and required-closure expansion share one byte/deadline budget.
+`ProviderAdditionOutcome::NeedsInput` retains unresolved closure evidence without
+producing a publishable subset. `Ready` retains provider records, the normalized
+project and `AdditionGroup` for native preparation. It has no payload downloader or
+project writer. Root requirements propagate through required edges; incompatible
+optional choices require an explicit conversion. Default placement follows content
+kind and configured layout; datapacks/worlds require a selected folder when none is
+configured. `ProviderFiles::Placed` preserves per-file destinations and participation
+for companion files, recording the explicit conversion. Required companions cannot
+be omitted. CLI selection, existing-compatible dependency reuse and local/URL hosts
+remain separate integration work.
+
 The compiled `ImportContentPlan::resolve` accepts retained import declarations and a
 catalog, then resolves all exact provider references under one allowance.
 `ImportContentPlan::acquire` accepts explicit supplied files keyed by

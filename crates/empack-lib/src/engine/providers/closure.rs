@@ -89,6 +89,21 @@ impl ProviderCatalog {
         request: ClosureRequest,
         limits: ClosureLimits,
     ) -> Result<ProviderClosure> {
+        self.resolve_required_closure_budget(
+            scope,
+            request,
+            limits,
+            transport::RequestBudget::new(limits.selection.catalog)?,
+        )
+        .await
+    }
+    pub(super) async fn resolve_required_closure_budget(
+        &self,
+        scope: &mut WorkScope,
+        request: ClosureRequest,
+        limits: ClosureLimits,
+        mut budget: transport::RequestBudget,
+    ) -> Result<ProviderClosure> {
         ensure!(
             limits.projects > 0
                 && limits.edges > 0
@@ -107,7 +122,6 @@ impl ProviderCatalog {
             issues: Vec::new(),
             _graph: Vec::new(),
         };
-        let mut budget = transport::RequestBudget::new(limits.selection.catalog)?;
         let mut queue = Vec::new();
         // Resolve explicit roots first so a transitive choice cannot displace a requested pin.
         for root in request.roots.as_slice() {

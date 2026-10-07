@@ -65,6 +65,21 @@ restricted file keeps its identity, size and original hashes even without a loca
 project. It verifies the exact response ID, resolves the declared owner, then validates
 all file evidence. CurseForge lookup rejects multiple or foreign-game records.
 This supports version-only dependency references without guessing their owner.
+The provider addition adapter now composes selector lookup, explicit or compatible
+selection and required-closure resolution into normalized dependency groups. Its
+requests share one transport budget. Canonical labels, exact requested pins, content
+kind, file slots, placements, original assertions and required edges reach the native
+addition path. An incomplete closure returns input requirements, not a successful
+subset. Optional participation is combined independently of traversal order; a
+required root takes precedence over optional roots for their shared dependency.
+Companion file roles require explicit placements and participation, with conversions
+retained in provenance. The primary-file fallback follows the [Modrinth schema](https://github.com/modrinth/docs/blob/master/static/openapi.yaml).
+The 62-test affected provider suite and full 1,811-test suite plus eleven doctests
+pass, including a catalog-resolution → reference-addition → repeated-sync workflow.
+All-feature Clippy and Windows cross-compilation pass. Final review also made
+non-primary file choices retain explicit placement intent; its regression and the
+seven-test adapter suite pass separately from that full-suite run. This service does not yet replace CLI selection or provide
+local/URL input hosts and compatible installed-dependency reuse.
 Internal catalog composition can carry one request budget through selector, pin and
 compatible lookups; it does not restart the deadline between dependencies.
 Transient signed URLs are execution data; the document codec still rejects them in

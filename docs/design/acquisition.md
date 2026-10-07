@@ -88,6 +88,14 @@ wall-clock rounding must not let a request resume before the declared interval. 
 
 Only send a credential to its intended provider origin. Strip sensitive headers on cross-origin redirects unless an explicit credential rule allows them. Log redacted locators and stable provider/file IDs, not bearer tokens or signed query strings.
 
+CurseForge CDN acquisition needs a separate, fixed credential rule for HTTPS
+`edge.forgecdn.net` downloads. Its [June 2026 announcement](https://blog.curseforge.com/introducing-api-key-authentication-for-curseforge-file-downloads/)
+sets July 16 as the start of API-key enforcement. Supply `x-api-key` through the
+configured host credential, never a persisted URL or project document. Re-evaluate
+the rule for every redirect; arbitrary mirrors and alternate origins do not inherit
+the key. A rejected or missing key remains an authentication failure, not evidence
+that a file is absent or that its declared digest may be changed.
+
 ### 9.4 Import adapters produce data, not project changes
 
 The compiled inspection boundary is documented in [the implementation ledger](implementation.md#normalized-import-inspection).
