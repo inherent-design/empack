@@ -175,6 +175,12 @@ the exact document changes; execution requires their plan-specific grant and ret
 `AdoptObservedReceipt`. Selected payloads remain publication preconditions even though
 only intent, lock and affected index/pack documents may change. Repeated adoption is
 a no-op. Adoption without a coherent existing lock and CLI selection remain pending.
+Adoption intentionally accepts selected drift after review: existing bytes must
+match the proposed complete assertions, not the superseded lock's byte assertions.
+The old documents remain captured publication preconditions and recovery preimages;
+retained dependency constraints still bind. Requiring the old bytes would turn this
+operation into sync and prevent adoption of external edits. Indexed metadata keeps
+its metadata role, aliases and extension fields when its digest is refreshed.
 
 `AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical
@@ -191,6 +197,17 @@ and supports explicit same-identity updates. `AddPreview` exposes canonical bind
 existing roots, file changes and the exact replacement summary; `AddReceipt` retains
 the resulting project and publication result. Provider/local/URL request resolution,
 explicit foreign-identity replacement and ContinueIndependent integration remain pending.
+
+`AddRequest`, `UpdateRequest` and `SyncRequest` describe every file slot with
+`DependencyContent::Materialized` or `DependencyContent::Reference`. Omitting a slot
+is an error. A reference records an exact provider, URL or manual byte obligation;
+it does not certify acquired bytes. Local and archive-member inputs require
+materialization. Previews and receipts expose canonical reference slots. Matching
+existing payloads remain unchanged; a reference-only update may retire verified old
+payloads through its explicit replacement plan. Modified user files cannot be
+discarded this way. The lock carries the obligation, and each build target decides
+which bytes or generated backend references it needs. No new dependency metadata
+must be generated in `pack/` merely to register an obligation.
 
 `ProjectReader::capture_removal` resolves user selections from document/metadata
 observations and captures their exact managed placements into a `MutationSnapshot`.

@@ -443,6 +443,27 @@ retains a typed adoption receipt. Native and public tests cover explicit adoptio
 wrong/missing bytes, changed observations, provider pin mismatch, repeated adoption,
 unchanged modification times and a subsequent no-op sync. This implementation requires
 a coherent existing lock; missing-lock adoption and host/CLI resolution remain pending.
+Adoption deliberately verifies the proposed description of selected observed drift,
+rather than requiring the previous lock's bytes. Its old documents still participate
+in concurrency checks and recovery. A native regression reproduced rejection of valid
+indexed metadata; the shared index adapter now separates payload and metadata updates
+and preserves their roles, aliases and extension fields.
+
+Dependency requests now distinguish materialized payloads from explicit references.
+Every selected slot must be supplied, including deferred provider/manual obligations.
+References retain original assertions and expose their canonical slots in previews
+and receipts. Local and archive-member content cannot be deferred. Native planning
+preserves matching existing bytes, refuses modified user content, and explicitly
+retires verified old materializations when their requested reference changes. The
+lock supplies build obligations; backend metadata remains a derived representation.
+Cross-command tests exercise reference addition, repeated sync, reference export,
+later materialization, restricted CurseForge evidence and scoped index retirement.
+Validation: 75 affected dependency/removal/API tests pass, followed by the expanded
+indexed-metadata regression including rejection of a wrong index role. All-feature
+Clippy and Windows cross-compilation pass. The most recent full run is `f0cdfd2`:
+1,799 default tests and eleven doctests; that run predates reference inputs and the
+indexed-metadata correction. Fresh native CI and final combined live checks remain
+separate release gates.
 
 The native addition adapter captures old and new selected placements, binds supplied
 request slots to canonical aliases, and verifies original digest/size/observation

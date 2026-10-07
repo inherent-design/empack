@@ -34,6 +34,33 @@ pub(in crate::engine) fn refresh_index_with_updates(
     documents: &mut BTreeMap<ManagedPath, Vec<u8>>,
     cancel: &Cancellation,
 ) -> Result<()> {
+    refresh_index_with_metadata_updates(
+        workspace,
+        removals,
+        updates,
+        &BTreeMap::new(),
+        documents,
+        cancel,
+    )
+}
+/// Adoption may rebind hashes of captured, semantically checked metadata. Keep that authority
+/// distinct from payload updates: neither kind may silently change an index entry's role.
+pub(in crate::engine) fn refresh_index_with_metadata_updates(
+    workspace: &WorkspaceSnapshot,
+    removals: &BTreeSet<ManagedPath>,
+    content_updates: &BTreeMap<PortableRelPath, ExpectedDigest>,
+    metadata_updates: &BTreeMap<PortableRelPath, ExpectedDigest>,
+    documents: &mut BTreeMap<ManagedPath, Vec<u8>>,
+    cancel: &Cancellation,
+) -> Result<()> {
+    let mut combined = content_updates.clone();
+    for (path, digest) in metadata_updates {
+        ensure!(
+            combined.insert(path.clone(), digest.clone()).is_none(),
+            "Index update has conflicting content and metadata roles"
+        );
+    }
+    let updates = &combined;
     let removed: BTreeSet<_> = removals
         .iter()
         .filter_map(|target| match target {
@@ -171,12 +198,13 @@ pub(in crate::engine) fn refresh_index_with_updates(
                     .as_table_mut()
                     .context("Index entry must be a table")?;
                 ensure!(
-                    !entry
+                    entry
                         .get("metafile")
                         .map(|value| value.as_bool().context("Invalid metafile flag"))
                         .transpose()?
-                        .unwrap_or(false),
-                    "Direct content is indexed as metadata"
+                        .unwrap_or(false)
+                        == metadata_updates.contains_key(&name),
+                    "Index entry role differs from the selected content or metadata"
                 );
                 if no_hashes {
                     entry.remove("hash");

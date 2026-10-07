@@ -17,6 +17,7 @@ pub(in crate::engine) fn plan_adoption(
     )?;
     let mut observed = BTreeMap::new();
     let mut updates = BTreeMap::new();
+    let mut metadata_updates = BTreeMap::new();
     for key in candidate.plan().bindings().values() {
         for file in candidate.project().lock().dependencies[key]
             .files
@@ -70,7 +71,7 @@ pub(in crate::engine) fn plan_adoption(
         else {
             anyhow::bail!("Adoption metadata is not a captured regular file")
         };
-        updates.insert(record.metadata_path, ExpectedDigest::Sha256(file.content));
+        metadata_updates.insert(record.metadata_path, ExpectedDigest::Sha256(file.content));
     }
     let mut documents = BTreeMap::from([
         (
@@ -93,10 +94,11 @@ pub(in crate::engine) fn plan_adoption(
                 .context("Captured adoption lock disappeared")?,
         );
     }
-    crate::engine::backend::index::refresh_index_with_updates(
+    crate::engine::backend::index::refresh_index_with_metadata_updates(
         &workspace,
         &BTreeSet::new(),
         &updates,
+        &metadata_updates,
         &mut documents,
         cancel,
     )?;
@@ -125,6 +127,119 @@ pub(in crate::engine) fn plan_adoption(
         plan,
         documents,
         content: BTreeMap::new(),
+        references: BTreeSet::new(),
     })
 }
-        references: BTreeSet::new(),
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{
+        documents::DocumentCodec, mrpack::tests::project, project::ProjectReader,
+        publication::RecoveryReader, snapshot::SnapshotLimits,
+    };
+    use std::fs;
+
+    #[test]
+    fn adoption_refreshes_metadata_index_entries_without_changing_their_role() {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let project = project(false, false);
+        fs::write(
+            root.path().join("empack.yml"),
+            DocumentCodec.encode_intent(project.intent()).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("empack.lock"),
+            DocumentCodec.encode_lock(&project).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(root.path().join("pack/resourcepacks")).unwrap();
+        for name in ["a.zip", "copy.zip", "b.zip"] {
+            fs::write(
+                root.path().join(format!("pack/resourcepacks/{name}")),
+                b"payload",
+            )
+            .unwrap();
+        }
+        let metadata = format!(
+            "filename='a.zip'\nside='client'\n[download]\nurl='https://example.com/unrelated-name.jar'\nhash-format='sha256'\nhash='{}'\n",
+            ExpectedDigest::Sha256(Sha256::digest(b"payload").into()).hex()
+        );
+        fs::write(
+            root.path().join("pack/resourcepacks/a.pw.toml"),
+            metadata.as_bytes(),
+        )
+        .unwrap();
+        let index = format!(
+            "hash-format='sha1'\n[[files]]\nfile='resourcepacks/a.pw.toml'\nmetafile=true\nalias='retained'\ncustom='kept'\nhash='{}'\n",
+            ExpectedDigest::Sha1(sha1::Sha1::digest(metadata.as_bytes()).into()).hex()
+        );
+        fs::write(root.path().join("pack/index.toml"), index.as_bytes()).unwrap();
+        fs::write(
+            root.path().join("pack/pack.toml"),
+            b"name='Test'\n[index]\nfile='index.toml'\n",
+        )
+        .unwrap();
+        let group = AdditionGroup::from_resolved(&project).unwrap();
+        let cancel = Cancellation::default();
+        let reader = ProjectReader::new(RecoveryReader::new(state.path().join("state")));
+        let snapshot = reader
+            .capture_addition(root.path(), &group, SnapshotLimits::default(), &cancel)
+            .unwrap();
+        plan_adoption(snapshot, &group, &cancel)
+            .unwrap()
+            .stage(&cancel)
+            .unwrap()
+            .publish(
+                &Publisher::open(&state.path().join("state")).unwrap(),
+                &cancel,
+            )
+            .unwrap();
+        let index: toml::Value =
+            toml::from_str(&fs::read_to_string(root.path().join("pack/index.toml")).unwrap())
+                .unwrap();
+        let entry = &index["files"][0];
+        assert_eq!(entry["metafile"].as_bool(), Some(true));
+        assert_eq!(entry["alias"].as_str(), Some("retained"));
+        assert_eq!(entry["custom"].as_str(), Some("kept"));
+        assert_eq!(entry["hash-format"].as_str(), Some("sha256"));
+        assert_eq!(
+            entry["hash"].as_str(),
+            Some(
+                ExpectedDigest::Sha256(Sha256::digest(metadata.as_bytes()).into())
+                    .hex()
+                    .as_str()
+            )
+        );
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/a.pw.toml")).unwrap(),
+            metadata.as_bytes()
+        );
+        let snapshot = reader
+            .capture_addition(root.path(), &group, SnapshotLimits::default(), &cancel)
+            .unwrap();
+        assert!(
+            plan_adoption(snapshot, &group, &cancel)
+                .unwrap()
+                .plan
+                .changes()
+                .is_empty()
+        );
+        let mut index = index;
+        index["files"][0]["metafile"] = toml::Value::Boolean(false);
+        fs::write(
+            root.path().join("pack/index.toml"),
+            toml::to_string(&index).unwrap(),
+        )
+        .unwrap();
+        let snapshot = reader
+            .capture_addition(root.path(), &group, SnapshotLimits::default(), &cancel)
+            .unwrap();
+        assert!(
+            plan_adoption(snapshot, &group, &cancel).is_err(),
+            "a metadata update must not reinterpret a direct-file entry"
+        );
+    }
+}
