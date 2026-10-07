@@ -76,6 +76,10 @@ impl<T> NonEmpty<T> {
         }
         Ok(Self(values))
     }
+    /// Consume the wrapper without cloning its elements.
+    pub fn into_vec(self) -> Vec<T> {
+        self.0
+    }
     /// Append without weakening the nonempty invariant.
     pub fn push(&mut self, value: T) {
         self.0.push(value);

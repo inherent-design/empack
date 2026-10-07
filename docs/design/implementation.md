@@ -109,6 +109,10 @@ participation while companion files retain their separate sides. A negative case
 ensures a companion cannot satisfy an absent main-content requirement. The 106-test
 affected provider, acquisition, addition and build-refresh suite passes, with
 all-feature Clippy. This is targeted evidence after the 1,819-test full run.
+Review 89's pending-input loss also reproduced. Provider content preflight now
+returns required input before starting automatic downloads; postponed slots remain
+visible separately. A failing ordinary endpoint is not contacted while a restricted
+slot still needs a decision.
 Internal catalog composition can carry one request budget through selector, pin and
 compatible lookups; it does not restart the deadline between dependencies.
 Transient signed URLs are execution data; the document codec still rejects them in
@@ -465,6 +469,19 @@ original backend evidence, conversions and expected archive members. Remaining
 CLI composition must route every supported target through this boundary.
 
 ## Canonical addition planning
+
+Direct local and URL files now normalize through `FileAddition::from_acquired`.
+Declared digests or explicitly accepted observations remain distinct; optional and
+side-specific placements, URL alternatives and portable source permissions reach
+native publication. Local source intent points at the published first placement.
+A direct file retains unknown dependency coverage rather than claiming no required
+content. Three focused tests pass, including local/URL publication followed by two
+no-op syncs and rejection of mismatched evidence, duplicate keys, persistent secrets
+and attempted promotion of observations to strong source authenticity. The host
+still supplies acquired bytes and explicit type/placement choices.
+The combined snapshot passes all 1,827 default tests and eleven doctests, all-feature
+Clippy and Windows cross-compilation. One legacy Forge test reported an output-pipe
+leak in the full run; its isolated rerun passed without that warning.
 
 `AdditionGroup` contains a resolved request whose selections are all reachable from
 explicit roots. `AdditionPlan` binds provider identities to existing logical keys,

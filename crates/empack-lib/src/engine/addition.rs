@@ -1,4 +1,5 @@
 //! Bind canonical dependency additions to captured document revisions before native preparation.
+mod file_input;
 mod native;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, PreparedDocument};
 use anyhow::Result;
@@ -6,6 +7,7 @@ use empack_core::{
     addition::{AdditionGroup, AdditionPlan},
     model::ResolvedProject,
 };
+pub use file_input::{AcquiredFileInput, AcquiredFileSource, FileAddition, FileEvidence};
 pub use native::{AdditionReceipt, PreparedAddition, prepare_addition};
 pub(in crate::engine) use native::{plan_addition, plan_adoption, plan_update};
 

@@ -29,6 +29,7 @@ pub struct ProviderContentInput {
 pub struct ProviderContent {
     content: DependencyContents,
     pending: BTreeMap<LockedFileKey, ProviderContentInput>,
+    deferred_downloads: BTreeSet<LockedFileKey>,
     _index: AdmissionPermit,
 }
 impl ProviderContent {
@@ -39,8 +40,12 @@ impl ProviderContent {
     pub fn pending(&self) -> &BTreeMap<LockedFileKey, ProviderContentInput> {
         &self.pending
     }
+    /// Automatic transfers deliberately not started while another slot needs user input.
+    pub fn deferred_downloads(&self) -> &BTreeSet<LockedFileKey> {
+        &self.deferred_downloads
+    }
     pub fn complete(&self) -> bool {
-        self.pending.is_empty()
+        self.pending.is_empty() && self.deferred_downloads.is_empty()
     }
 }
 impl ProviderAddition {
@@ -180,6 +185,14 @@ impl ProviderAddition {
             }
         }
         ensure!(choices.is_empty(), "Unexpected provider content decision");
+        if !pending.is_empty() {
+            return Ok(ProviderContent {
+                content,
+                pending,
+                deferred_downloads: keys.into_iter().collect(),
+                _index: index,
+            });
+        }
         if !requests.is_empty() {
             let acquired = transport.acquire_batch(scope, requests, limits).await?;
             for (key, acquired) in keys.into_iter().zip(acquired) {
@@ -199,6 +212,7 @@ impl ProviderAddition {
         Ok(ProviderContent {
             content,
             pending,
+            deferred_downloads: BTreeSet::new(),
             _index: index,
         })
     }

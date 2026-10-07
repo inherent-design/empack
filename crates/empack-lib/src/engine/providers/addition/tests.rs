@@ -1220,3 +1220,101 @@ async fn retained_companion_participation_is_preserved_without_satisfying_the_ma
         );
     }
 }
+
+#[tokio::test]
+async fn restricted_input_is_reported_before_unrelated_download_failure() {
+    use crate::engine::{
+        acquisition::{HttpAcquisition, TransferLimits},
+        content::SourceEvidencePolicy,
+    };
+    use empack_core::identity::CurseForgeFileId;
+    let mut server = Server::new_async().await;
+    server.mock("GET", "/mods/123").with_body(json!({"data":{"id":123,"gameId":432,"classId":6,"slug":"restricted","name":"Restricted"}}).to_string()).create_async().await;
+    server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"restricted.jar","fileLength":7,"downloadUrl":null,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"gameVersions":["1.20.1","Fabric"],"dependencies":[],"isAvailable":true,"releaseType":1,"fileDate":"2026-01-01T00:00:00Z"}}).to_string()).create_async().await;
+    let mut regular = version("project1", "version1", json!([]));
+    regular["files"][0]["url"] = json!(format!("{}/unavailable", server.url()));
+    records(&mut server, "project1", "renderer", "mod", &regular).await;
+    let unavailable = server
+        .mock("GET", "/unavailable")
+        .with_status(503)
+        .expect(0)
+        .create_async()
+        .await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into()));
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 8 << 20,
+        scratch_bytes: 1 << 20,
+        open_files: 20,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let result = async {
+                let mut restricted = input("renderer", false);
+                restricted.selector = ProjectSelector::parse(ProviderKind::CurseForge, "123")?;
+                restricted.pin = Some(PinSelector::CurseForgeFile(CurseForgeFileId::parse("456")?));
+                restricted.key = Some(DependencyKey::parse("restricted")?);
+                let ProviderAdditionOutcome::Ready(addition) = catalog
+                    .resolve_addition(
+                        &mut scope,
+                        &current(),
+                        NonEmpty::new(vec![input("renderer", true), restricted])?,
+                        ReleasePolicy::PreferStable,
+                        limits(),
+                    )
+                    .await?
+                else {
+                    anyhow::bail!("incomplete")
+                };
+                let choices = references(addition.project())
+                    .into_keys()
+                    .map(|key| (key, ProviderContentChoice::Acquire))
+                    .collect();
+                addition
+                    .acquire_content(
+                        &mut scope,
+                        &HttpAcquisition::for_loopback_tests(),
+                        choices,
+                        SourceEvidencePolicy::Compatibility,
+                        TransferLimits {
+                            file_bytes: 32,
+                            transfer_bytes: 32,
+                            deadline: Duration::from_secs(3),
+                            redirects: 2,
+                        },
+                    )
+                    .await
+            }
+            .await;
+            Ok(result)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(Ok(content)) = &*outcome else {
+        panic!("ordinary failure hid required input")
+    };
+    assert!(!content.complete());
+    assert_eq!(content.pending().len(), 1);
+    assert_eq!(content.deferred_downloads().len(), 1);
+    assert_eq!(
+        content
+            .deferred_downloads()
+            .first()
+            .unwrap()
+            .dependency
+            .as_str(),
+        "chosen-alias"
+    );
+    assert!(content.content().is_empty());
+    assert_eq!(
+        content.pending().values().next().unwrap().reason,
+        ProviderInputReason::RestrictedDownload
+    );
+    unavailable.assert_async().await;
+    runtime.release_completed(handle.id());
+    runtime.shutdown().await;
+    drop(handle);
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

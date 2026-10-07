@@ -90,11 +90,23 @@ CLI selection and local/URL hosts remain separate integration work.
 per locked file: reference, acquisition, or supplied verified bytes. It validates the
 whole decision set before downloading, reuses retained exact catalog records and
 shares one transfer allowance across HTTP files. Restricted or unsupported
-acquisition returns `ProviderContent::pending` with original assertions. Only a
+acquisition returns `ProviderContent::pending` with original assertions before
+starting automatic transfers. `deferred_downloads` identifies those postponed slots
+for a later request; a remote failure cannot hide the user-input requirement. Only a
 complete inventory can pass native addition preparation; pending content is never
 counted as a successful requested item. Supplied files are matched by exact logical
 slot and every locked assertion, preserving their portable permissions. This is
 in-memory preparation; durable manual continuation remains separate work.
+
+`FileAddition::from_acquired` normalizes direct local and URL files into the same
+`AdditionGroup` and per-slot content inventory. Explicit destinations, environment
+requirements and source permissions are preserved. Local intent tracks the first
+published placement; it never persists the source's absolute host path. URL input
+retains ordered credential-free alternatives and source digests. `FileEvidence`
+distinguishes declared expectations from explicitly accepted initial observations;
+computed addresses do not manufacture independent source authenticity. Direct files
+retain unknown dependency coverage until identification establishes more. Host file
+selection, type identification and archive interpretation precede this boundary.
 
 The compiled `ImportContentPlan::resolve` accepts retained import declarations and a
 catalog, then resolves all exact provider references under one allowance.
