@@ -895,3 +895,17 @@ fn recovery_preview_preserves_journal_siblings_until_approved_execution() {
         }
     }
 }
+
+pub(in crate::engine) fn interrupt_publication(
+    publisher: &Publisher,
+    root: &ProjectReadRoot,
+    verified: VerifiedFileChange,
+    point: PublicationPoint,
+) -> Result<PublicationReceipt> {
+    publisher.publish_with_hook(root, verified, &Cancellation::default(), &mut |actual| {
+        if actual == point {
+            anyhow::bail!("injected publication interruption");
+        }
+        Ok(())
+    })
+}

@@ -5,7 +5,8 @@ Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
 
 The compiled entry point is `empack_lib::engine::api::Engine`. Its `preview`
 and `prepare` accept an absolute `ProjectTarget` and a typed request for build,
-import, initialization, addition, update, adoption, removal, synchronization or recovery.
+import, initialization, addition, update, adoption, removal, synchronization, artifact
+cleanup or recovery.
 Each captures and plans without live-project writes.
 `OperationPreview` carries the operation-specific view. A build view includes exact artifact destinations,
 runtime, missing content, network/tool requirements and the complete requested
@@ -37,6 +38,9 @@ new plan. Another engine, changed inputs, a retargeted project selection or dupl
 supplied keys invalidate the resume. Dropping the continuation releases retained preparation and content resources.
 This does not persist a continuation or grant publication authority. Explicit grants
 remain required after every obligation is satisfied.
+Resume keeps its previous preparation reservation charged and admits only the extra
+capacity needed for capture. The worker returns the replacement under the same retained
+reservation; a host sized for one capture does not need to budget for two preparations.
 
 Preparation, acquired content and retained receipts own explicit host admission
 estimates. Those estimates are separate from enforced stream/snapshot byte limits.
@@ -332,6 +336,15 @@ links. Preview and receipt expose `observed` selections without download locator
 Untracked or conflicting retained metadata appears in `untracked_evidence` and
 requires the same explicit uncertainty acknowledgement. Observed-only removal keeps
 both logical documents byte-for-byte unchanged. CLI wiring remains integration work.
+
+`CleanRequest::Artifacts` captures only the managed `dist` namespace. It exposes every
+regular file and its removal size in `CleanPreview`; approval names that exact footprint.
+Cleanup does not parse authoring files or read unrelated pack/template bytes. Changed
+artifact bytes or directory membership invalidate execution. Links and special files
+are refused, and interrupted removal uses the ordinary finish/restore journal. Empty
+directories remain. `removed_bytes` reports logical bytes removed from `dist`, not
+physical space reclaimed from recovery storage. Cache maintenance has separate host
+authority and remains outside this project request.
 
 ## 17. Public engine API and application wiring
 

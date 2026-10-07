@@ -885,6 +885,23 @@ review 96's duplicate-cache scratch admission. All 33 affected checks then passe
 including the formerly leaky reference-input test; Clippy and Windows cross-compilation
 pass. Resume checks the selected native root before and after fresh capture.
 
+## Scoped artifact cleanup
+
+`CleanRequest::Artifacts` uses captured native inputs, exact replacement approval and
+the common publisher. Its read set covers only `dist`, so damaged authoring or unrelated
+pack/template content cannot block artifact cleanup. The preview names every regular
+file to remove; changed bytes or new entries invalidate execution. Symlinked roots
+and members are rejected. Recovery can finish or restore an interrupted cleanup.
+Directories and unrelated namespaces remain, and recovery preimages retain their
+separate storage policy. Cache maintenance and CLI routing remain integration work.
+
+Review 97's resume admission failure reproduced with a governor sized for one capture.
+Resume now keeps the prior preparation reservation charged and admits only additional
+capacity; the resulting preparation retains that same reservation. All 25 affected
+cleanup, continuation, runtime and resource tests pass, including tight-budget resume
+and interruption after a cleanup target changes. All-feature Clippy and Windows
+cross-compilation pass.
+
 ## Persistent content storage
 
 `FileContentStore` publishes verified content-addressed objects into private host

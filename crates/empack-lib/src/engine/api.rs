@@ -47,6 +47,8 @@ use tokio::sync::oneshot;
 struct PublicationWorkerFailed(#[source] RuntimeError);
 pub use super::dependency_content::{DependencyContent, DependencyContents};
 mod addition;
+mod cleanup;
+pub use cleanup::{CleanPreview, CleanReceipt, CleanRequest};
 mod recovery;
 pub use addition::{
     AddPreview, AddReceipt, AddRequest, AdoptObservedPreview, AdoptObservedReceipt,
@@ -169,6 +171,7 @@ struct PreparedBuild {
     acquisition: BuildAcquisitionResult,
 }
 pub enum Request {
+    Clean(CleanRequest),
     Recover(RecoverRequest),
     Build(Box<BuildPreparationRequest>),
     Import(Box<ImportRequest>),
@@ -188,6 +191,11 @@ pub enum ProjectTarget {
 impl From<PathBuf> for ProjectTarget {
     fn from(path: PathBuf) -> Self {
         Self::Existing(path)
+    }
+}
+impl From<CleanRequest> for Request {
+    fn from(request: CleanRequest) -> Self {
+        Self::Clean(request)
     }
 }
 impl From<BuildRequest> for Request {
@@ -242,6 +250,7 @@ impl From<ImportRequest> for Request {
 }
 #[derive(Clone)]
 pub enum OperationPreview {
+    Clean(CleanPreview),
     Recovery(RecoverPreview),
     Build(BuildPreview),
     Import(ProjectChangePreview),
@@ -255,6 +264,7 @@ pub enum OperationPreview {
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
+            Self::Clean(view) => view.plan,
             Self::Recovery(view) => view.plan,
             Self::Build(view) => view.plan,
             Self::Remove(view) => view.plan,
@@ -263,6 +273,12 @@ impl OperationPreview {
             Self::AdoptObserved(view) => view.plan,
             Self::Sync(view) => view.plan,
             Self::Import(view) | Self::Initialize(view) => view.plan,
+        }
+    }
+    pub fn clean(&self) -> Option<&CleanPreview> {
+        match self {
+            Self::Clean(view) => Some(view),
+            _ => None,
         }
     }
     pub fn recovery(&self) -> Option<&RecoverPreview> {
@@ -322,6 +338,7 @@ impl OperationPreview {
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
+            Self::Clean(view) => Some(view.replacement),
             Self::Recovery(view) => Some(view.replacement),
             Self::Remove(view) => Some(view.replacement),
             Self::Add(view) => Some(view.replacement),
@@ -339,6 +356,7 @@ impl OperationPreview {
     }
 }
 enum PreparedKind {
+    Clean(Box<cleanup::PreparedCleanup>),
     Recovery(Box<recovery::PreparedRecoveryOperation>),
     Build(Box<PreparedBuild>),
     ProjectChange(Box<project_change::PreparedProjectChange>),
@@ -351,6 +369,7 @@ enum PreparedKind {
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
+            Self::Clean(value) => OperationPreview::Clean(value.view.clone()),
             Self::Recovery(value) => OperationPreview::Recovery(value.view.clone()),
             Self::Build(value) => OperationPreview::Build(value.view.clone()),
             Self::Remove(value) => OperationPreview::Remove(value.view.clone()),
@@ -429,6 +448,7 @@ impl PreparedOperation {
     }
 }
 pub enum ExecutionReceipt {
+    Clean(Box<RetainedOutput<CleanReceipt>>),
     Recovery(Box<RetainedOutput<RecoveryReceipt>>),
     Build(Box<RetainedOutput<BuildReceipt>>),
     Import(Box<RetainedOutput<ProjectChangeReceipt>>),
@@ -539,6 +559,11 @@ impl Engine {
             .start_ephemeral(move |mut scope| async move {
                 let prepared: Result<RetainedOutput<PreparedKind>> = async {
                     match request {
+                        Request::Clean(request) => {
+                            Ok(cleanup::prepare(project, request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Clean(Box::new(value))))
+                        }
                         Request::Recover(request) => {
                             Ok(recovery::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -551,16 +576,8 @@ impl Engine {
                             let ProjectTarget::Existing(project) = project else {
                                 anyhow::bail!("Build requires an existing project");
                             };
-                            let work = scope.spawn_blocking(
-                                config.resources.capture,
-                                config.resources.prepared,
-                                move |cancel| {
-                                    capture(project, *request, &config, provider_access, &cancel)
-                                },
-                            )?;
-                            Ok(scope
-                                .accept(work.wait().await?)?
-                                .transpose()?
+                            Ok(prepare_build(project, *request, config, provider_access, &mut scope)
+                                .await?
                                 .map(|value| PreparedKind::Build(Box::new(value))))
                         }
                         Request::Sync(request) => Ok(synchronization::prepare(
@@ -674,6 +691,13 @@ impl Engine {
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
+                PreparedKind::Clean(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::Clean(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    cleanup::run(prepared, config, scope).await
+                }
                 PreparedKind::Recovery(_) => {
                     let prepared = data.map(|kind| match kind {
                         PreparedKind::Recovery(value) => *value,
@@ -755,22 +779,89 @@ fn describe(need: &super::build::acquisition::AcquisitionNeed) -> ContentRequire
         },
     }
 }
+async fn prepare_build(
+    project: PathBuf,
+    mut input: BuildPreparationRequest,
+    config: EngineConfig,
+    provider_access: ProviderAvailability,
+    scope: &mut super::runtime::WorkScope,
+) -> Result<RetainedOutput<PreparedBuild>> {
+    if let Some(prior) = input.prior.take() {
+        let retained = *prior.prepared.data;
+        let held = retained.reserved();
+        let required = config.resources.capture;
+        // Keep the original reservation charged throughout recapture. Admit only its top-up;
+        // the worker returns its replacement under that same retained preparation permit.
+        ensure!(
+            held == config.resources.prepared,
+            "Continuation reservation changed"
+        );
+        let additional = ResourceRequest {
+            jobs: required
+                .jobs
+                .checked_sub(held.jobs)
+                .context("Capture reservation is smaller than retained preparation")?,
+            memory_bytes: required
+                .memory_bytes
+                .checked_sub(held.memory_bytes)
+                .context("Capture reservation is smaller than retained preparation")?,
+            scratch_bytes: required
+                .scratch_bytes
+                .checked_sub(held.scratch_bytes)
+                .context("Capture reservation is smaller than retained preparation")?,
+            open_files: required
+                .open_files
+                .checked_sub(held.open_files)
+                .context("Capture reservation is smaller than retained preparation")?,
+        };
+        let work = scope.spawn_blocking(additional, ResourceRequest::default(), move |cancel| {
+            retained.map(|prior| {
+                let PreparedKind::Build(prior) = prior else {
+                    anyhow::bail!("Continuation is not a build preparation");
+                };
+                capture(
+                    project,
+                    input,
+                    Some(*prior),
+                    &config,
+                    provider_access,
+                    &cancel,
+                )
+            })
+        })?;
+        scope.accept(work.wait().await?)?.into_parts().0.transpose()
+    } else {
+        let work = scope.spawn_blocking(
+            config.resources.capture,
+            config.resources.prepared,
+            move |cancel| capture(project, input, None, &config, provider_access, &cancel),
+        )?;
+        scope.accept(work.wait().await?)?.transpose()
+    }
+}
 fn capture(
     project: PathBuf,
     input: BuildPreparationRequest,
+    prior: Option<PreparedBuild>,
     config: &EngineConfig,
     provider_access: ProviderAvailability,
     cancel: &crate::application::process_runtime::Cancellation,
 ) -> Result<PreparedBuild> {
-    let BuildPreparationRequest { request, mut supplied, prior } = input;
+    let BuildPreparationRequest {
+        request,
+        mut supplied,
+        prior: _,
+    } = input;
     let mut prior_root = None;
     if let Some(prior) = prior {
-        let (prior, _reservation) = prior.prepared.data.into_parts();
-        let PreparedKind::Build(prior) = prior else {
-            anyhow::bail!("Continuation is not a build preparation");
-        };
-        ensure!(prior.project == project, "Continuation selected another project");
-        prior.workspace.root().revalidate(prior.workspace.observations(), cancel)?;
+        ensure!(
+            prior.project == project,
+            "Continuation selected another project"
+        );
+        prior
+            .workspace
+            .root()
+            .revalidate(prior.workspace.observations(), cancel)?;
         let binding = prior.workspace.root().binding;
         ensure!(
             super::snapshot::ProjectReadRoot::open(&project)?.binding == binding,
@@ -778,10 +869,16 @@ fn capture(
         );
         prior_root = Some(binding);
         for (key, file) in prior.acquisition.acquired.locked {
-            ensure!(supplied.locked.insert(key, file).is_none(), "Continuation repeats a supplied locked file");
+            ensure!(
+                supplied.locked.insert(key, file).is_none(),
+                "Continuation repeats a supplied locked file"
+            );
         }
         for (path, file) in prior.acquisition.acquired.observed {
-            ensure!(supplied.observed.insert(path, file).is_none(), "Continuation repeats a supplied observed file");
+            ensure!(
+                supplied.observed.insert(path, file).is_none(),
+                "Continuation repeats a supplied observed file"
+            );
         }
     }
     ensure!(project.is_absolute(), "Project selection must be absolute");
@@ -825,7 +922,8 @@ fn capture(
             cancel,
         )?);
     }
-    let acquisition = BuildAcquisitionPlan::combine(plans)?.supply(supplied, request.evidence, cancel)?;
+    let acquisition =
+        BuildAcquisitionPlan::combine(plans)?.supply(supplied, request.evidence, cancel)?;
     let unresolved = acquisition
         .pending
         .iter()

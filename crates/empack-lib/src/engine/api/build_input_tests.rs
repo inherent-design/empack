@@ -274,3 +274,27 @@ async fn continuation_cannot_follow_a_retargeted_project_selection() {
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn resume_reuses_the_prior_preparation_reservation() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), false);
+    let (template, _) = tests::engine(host.path().join("state"));
+    let config = template.config.clone();
+    template.shutdown().await;
+    let governor = ResourceGovernor::new(config.resources.capture);
+    let engine = Engine::new(config, governor.clone()).unwrap();
+    let initial = pending(&engine, root.path()).await;
+    let next = match engine.resume(*initial, supplied("first", b"payload")).await {
+        Ok(Preparation::NeedsInput(value)) => value,
+        Err(error) => panic!("resume double-reserved preparation: {error:#}"),
+        _ => panic!("second file remains required"),
+    };
+    let prepared = engine.resume(*next, supplied("second", b"payload")).await.unwrap();
+    assert!(matches!(prepared, Preparation::Ready(_)));
+    drop(prepared);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    assert!(!root.path().join("dist").exists());
+    engine.shutdown().await;
+}

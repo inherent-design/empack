@@ -530,6 +530,10 @@ impl<T> Deref for RetainedOutput<T> {
     }
 }
 impl<T> RetainedOutput<T> {
+    pub(super) fn reserved(&self) -> ResourceRequest {
+        self._permit.reserved()
+    }
+
     pub(super) fn into_parts(self) -> (T, AdmissionPermit) {
         (self.value, self._permit)
     }
