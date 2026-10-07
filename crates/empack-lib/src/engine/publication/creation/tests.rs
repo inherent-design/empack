@@ -7,7 +7,7 @@ use crate::engine::{
 use empack_core::{digest::ContentId, files::FilePermissions};
 use std::fs;
 
-fn prepare(selected: &Path, state: &Path) -> PreparedRootCreation {
+pub(super) fn prepare(selected: &Path, state: &Path) -> PreparedRootCreation {
     prepare_with_permissions(
         selected,
         state,

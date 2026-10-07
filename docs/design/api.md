@@ -181,16 +181,21 @@ Creation journals bind the native candidate/root identity, with a parent/name in
 for recovery before the root exists. Ordinary reads use the root identity to gate
 unfinished creation, including after a move or through an alias. The lower-level
 `Publisher::recover_new` completes retained creation without tools or downloads.
-Existing-root publication recovery is available through `Engine::inspect_recovery`
-and `RecoverRequest`. Inspection reads only host-owned journals and does not require
+Publication and creation recovery are available through `Engine::inspect_recovery`
+and `RecoverRequest`. `RecoveryStatus::kind` distinguishes the two journal types. Inspection reads only host-owned journals and does not require
 valid project documents. Preparation verifies retained images and exposes the exact
 remaining file changes for finishing or restoring the operation. The ordinary
 plan-specific grant and engine ownership checks apply. Execution rechecks journal
 revision and observed files under exclusive publication ownership; stale approval
 cannot recover a different operation or overwrite a later edit. The retained
 `RecoveryReceipt` distinguishes published from restored state. Failed preparation or
-execution leaves the prior recovery record available for inspection. New-root
-creation recovery, durable continuation and CLI composition remain unfinished.
+execution leaves the prior recovery record available for inspection. Creation recovery
+finishes either an absent destination or an already visible retained root, including
+a moved root. Its approval binds the parent, selected name, native identity and journal
+revision. It refuses a new occupant or progress since preparation. Creation has no
+restore action: deleting a project root requires separate authority. Recovery preview
+preserves journal scratch; only approved execution cleans it. Durable continuation
+and CLI composition remain unfinished.
 
 `SynchronizationCandidate::prepare` rebinds authoring-only edits to the recorded
 resolution without selecting newer files. It preserves all exact selections, original

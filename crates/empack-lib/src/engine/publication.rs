@@ -28,8 +28,8 @@ use std::{
 const JOURNAL_SCHEMA: u32 = 4;
 mod creation;
 mod recovery;
-pub use creation::PreparedRootCreation;
-pub use recovery::{PreparedRecovery, RecoveryAction, RecoveryStatus};
+pub use creation::{PreparedCreationRecovery, PreparedRootCreation};
+pub use recovery::{PreparedRecovery, RecoveryAction, RecoveryKind, RecoveryStatus};
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -502,6 +502,7 @@ impl Publisher {
         if !journal.restoring {
             // Restoring a corrupt pending candidate needs before-images, not valid after-images.
             preflight_recovery(root, &retained, &journal, false)?;
+            discard_recovery_siblings(root, &journal)?;
             let mut inverse = Vec::new();
             let mut expected = journal.expected.clone();
             for (index, change) in journal.changes.iter().enumerate() {
@@ -623,6 +624,7 @@ impl Publisher {
         hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
     ) -> Result<PublicationReceipt> {
         preflight_recovery(root, retained, journal, true)?;
+        discard_recovery_siblings(root, journal)?;
         for index in 0..journal.changes.len() {
             root.check_binding()?;
             let change = &journal.changes[index];
@@ -751,6 +753,27 @@ fn discard_sibling(parent: &Dir, name: &str) -> Result<()> {
     Ok(())
 }
 
+fn discard_recovery_siblings(root: &ProjectReadRoot, journal: &Journal) -> Result<()> {
+    // Rebuild journal-owned scratch only after every retained candidate verifies.
+    for change in &journal.changes {
+        if let Some(sibling) = &change.sibling {
+            let path = PortableRelPath::parse(&change.target, PathSyntax::ProjectContent)?;
+            match native::parent(&root.directory, &path) {
+                Ok((parent, _)) => {
+                    discard_sibling(&parent, sibling)?;
+                    sync_directory(&parent)?;
+                }
+                Err(error)
+                    if error
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) => {}
+                Err(error) => return Err(error),
+            }
+        }
+    }
+    Ok(())
+}
+
 fn preflight_recovery(
     root: &ProjectReadRoot,
     retained: &Dir,
@@ -781,24 +804,15 @@ fn preflight_recovery(
             );
         }
     }
-    // Rebuild journal-owned scratch only after every retained candidate verifies.
-    for change in &journal.changes {
-        if let Some(sibling) = &change.sibling {
-            let path = PortableRelPath::parse(&change.target, PathSyntax::ProjectContent)?;
-            match native::parent(&root.directory, &path) {
-                Ok((parent, _)) => {
-                    discard_sibling(&parent, sibling)?;
-                    sync_directory(&parent)?;
-                }
-                Err(error)
-                    if error
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) => {}
-                Err(error) => return Err(error),
+    let omitted = journal.changes.iter().filter_map(|change| {
+        change.sibling.as_ref().map(|sibling| {
+            match change.target.rsplit_once('/') {
+                Some((parent, _)) => format!("{parent}/{sibling}"),
+                None => sibling.clone(),
             }
-        }
-    }
-    let snapshot = capture_journal(root, journal)?;
+        })
+    }).collect();
+    let snapshot = capture_journal_omitting(root, journal, &omitted)?;
     let changing: BTreeSet<_> = journal
         .changes
         .iter()
@@ -1099,6 +1113,13 @@ fn capture_journal(
     root: &ProjectReadRoot,
     journal: &Journal,
 ) -> Result<super::snapshot::NativeSnapshot> {
+    capture_journal_omitting(root, journal, &BTreeSet::new())
+}
+fn capture_journal_omitting(
+    root: &ProjectReadRoot,
+    journal: &Journal,
+    omitted: &BTreeSet<String>,
+) -> Result<super::snapshot::NativeSnapshot> {
     let mut captured = None;
     for group in &journal.groups {
         let scopes = group
@@ -1106,10 +1127,11 @@ fn capture_journal(
             .iter()
             .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let next = root.capture_filtered(
+        let next = root.capture_filtered_omitting(
             &scopes,
             group.limits,
             group.filter.as_ref(),
+            omitted,
             &Cancellation::default(),
         )?;
         captured = Some(match captured {
@@ -1176,3 +1198,6 @@ fn receipt(journal: &Journal) -> PublicationReceipt {
 
 #[cfg(test)]
 pub(in crate::engine) mod tests;
+
+#[cfg(test)]
+pub(in crate::engine) use creation::interrupted_creation_fixture;

@@ -1,7 +1,9 @@
 //! Publish a complete new root with one no-replace directory rename.
+mod recovery;
 use super::*;
 use crate::engine::{project::NewProjectSnapshot, staging::FrozenStage};
 use empack_core::files::{FilePlan, ManagedPath, ObservedPath};
+pub use recovery::PreparedCreationRecovery;
 use sha2::{Digest, Sha256};
 
 struct CandidateCleanup(Option<Dir>);
@@ -203,6 +205,13 @@ impl Publisher {
 
     /// Complete retained new-root publication without reacquiring bytes or rerunning tools.
     pub fn recover_new(&self, selected: &Path) -> Result<PublicationReceipt> {
+        self.recover_new_checked(selected, None)
+    }
+    fn recover_new_checked(
+        &self,
+        selected: &Path,
+        expected: Option<&PreparedCreationRecovery>,
+    ) -> Result<PublicationReceipt> {
         let (parent, child) = creation_selection(selected)?;
         // An already visible root may have moved after publication but before journal commit.
         // Its native identity, not the old parent/name index, owns the authoritative record.
@@ -212,6 +221,9 @@ impl Publisher {
             let _root_lock = lock(&root_state)?;
             if let Some(mut journal) = load_creation(&root_state)? {
                 validate_creation_structure(&journal)?;
+                if let Some(expected) = expected {
+                    expected.check(&parent, &child, &journal)?;
+                }
                 ensure!(
                     journal.binding == Binding::from(root.binding),
                     "Creation root identity changed"
@@ -231,6 +243,9 @@ impl Publisher {
         let _lock = lock(&state)?;
         let initial = load_creation(&state)?.context("No retained project creation")?;
         validate_creation(&parent, &child, &initial)?;
+        if let Some(expected) = expected {
+            expected.check(&parent, &child, &initial)?;
+        }
         let root_state = bound_state(self, &initial.binding, true)?.unwrap();
         let _root_lock = lock(&root_state)?;
         let mut journal = match load_creation(&root_state)? {
@@ -243,6 +258,9 @@ impl Publisher {
                 initial
             }
         };
+        if let Some(expected) = expected {
+            expected.check(&parent, &child, &journal)?;
+        }
         finish_creation(&parent, &root_state, &mut journal, &mut |_| Ok(())).with_context(|| {
             RecoveryRequired {
                 operation: journal.operation.clone(),
@@ -614,3 +632,27 @@ fn creation_receipt(journal: &CreationJournal) -> PublicationReceipt {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(in crate::engine) fn interrupted_creation_fixture(
+    selected: &Path,
+    state: &Path,
+    point: PublicationPoint,
+) -> RecoveryStatus {
+    let prepared = tests::prepare(selected, state);
+    let publisher = Publisher::open(state).unwrap();
+    assert!(
+        publisher
+            .publish_new_with_hook(prepared, &Cancellation::default(), &mut |actual| {
+                if actual == point {
+                    anyhow::bail!("interrupted creation fixture");
+                }
+                Ok(())
+            })
+            .is_err()
+    );
+    publisher
+        .inspect_creation_recovery(selected)
+        .unwrap()
+        .unwrap()
+}

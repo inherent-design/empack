@@ -381,11 +381,25 @@ retains a typed recovery receipt. Restoration reserves space for both retained i
 images and publication siblings. Native tests verify read-only plans, both recovery
 directions, stale journal progress and late user edits. All 18 publication/recovery
 tests pass, including process-crash boundaries and the public approval lifecycle;
-all-feature Clippy and Windows cross-compilation pass. Creation-journal recovery
-through this public surface is the next integration step.
+all-feature Clippy and Windows cross-compilation pass at `8bfcbe1`.
 
-`Publisher::recover_new` is a lower-level creation recovery entry point. Engine recovery,
-continuation and CLI composition remain required.
+Creation recovery now uses the same inspection, approval and receipt surface. It
+finishes an absent destination or an already visible retained root, including a moved
+root. Preparation verifies the complete retained inventory and binds the selected
+parent/name, native identity and journal revision. A new occupant or intervening
+recovery invalidates approval. Restore is refused because creation approval does not
+authorize root deletion. Durable continuation and CLI composition remain required.
+
+Review 94 reproduced a recovery-preview mutation after a real child-process crash:
+preflight removed the recorded publication sibling. Read-only recovery capture now
+omits only exact validated journal scratch paths; approved finish or restore performs
+cleanup after preflight. Final inventory verification still observes the full tree.
+The regression covers both recovery directions, root and nested siblings, preserved
+bytes and modification times, and conflicts from unrelated additions.
+The combined run passed 1,844 tests and exposed one missing-directory error in the
+new test fixture. After correcting that fixture, all 38 affected tests and eleven
+doctests pass. All-feature Clippy and Windows cross-compilation also pass; native CI
+will verify the final combined revision.
 
 `InitializeCandidate` validates empty intent and an exact runtime across all loader
 families. It preserves metadata, compatibility alternatives, layout, distribution

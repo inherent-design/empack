@@ -54,7 +54,7 @@ pub use addition::{
     UpdateReceipt, UpdateRequest,
 };
 pub use recovery::{
-    RecoverPreview, RecoverRequest, RecoveryAction, RecoveryReceipt, RecoveryStatus,
+    RecoverPreview, RecoverRequest, RecoveryAction, RecoveryKind, RecoveryReceipt, RecoveryStatus,
 };
 mod execution;
 mod project_change;

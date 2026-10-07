@@ -1,8 +1,8 @@
 //! Recovery uses the same prepared-plan approval and owned execution lifecycle as other effects.
 use super::*;
-pub use crate::engine::publication::{RecoveryAction, RecoveryStatus};
+pub use crate::engine::publication::{RecoveryAction, RecoveryKind, RecoveryStatus};
 use crate::engine::{
-    publication::{PreparedRecovery, Publisher, RecoveryRequired},
+    publication::{PreparedCreationRecovery, PreparedRecovery, Publisher, RecoveryRequired},
     runtime::WorkScope,
     snapshot::ProjectReadRoot,
 };
@@ -27,8 +27,45 @@ pub struct RecoveryReceipt {
 }
 pub(super) struct PreparedRecoveryOperation {
     pub(super) view: RecoverPreview,
-    root: ProjectReadRoot,
-    recovery: PreparedRecovery,
+    recovery: RecoveryOperation,
+}
+enum RecoveryOperation {
+    Publication {
+        root: ProjectReadRoot,
+        prepared: PreparedRecovery,
+    },
+    Creation {
+        path: PathBuf,
+        prepared: PreparedCreationRecovery,
+    },
+}
+impl RecoveryOperation {
+    fn status(&self) -> &RecoveryStatus {
+        match self {
+            Self::Publication { prepared, .. } => prepared.status(),
+            Self::Creation { prepared, .. } => prepared.status(),
+        }
+    }
+    fn files(&self) -> &FilePlan {
+        match self {
+            Self::Publication { prepared, .. } => prepared.files(),
+            Self::Creation { prepared, .. } => prepared.files(),
+        }
+    }
+    fn scratch_bytes(&self) -> u64 {
+        match self {
+            Self::Publication { prepared, .. } => prepared.scratch_bytes(),
+            Self::Creation { .. } => 0,
+        }
+    }
+    fn execute(self, publisher: &Publisher) -> Result<PublicationReceipt> {
+        match self {
+            Self::Publication { root, prepared } => publisher.recover_prepared(&root, prepared),
+            Self::Creation { path, prepared } => {
+                publisher.recover_prepared_creation(&path, prepared)
+            }
+        }
+    }
 }
 impl Engine {
     /// Inspect host-owned recovery state without parsing project documents or creating state.
@@ -48,16 +85,24 @@ impl Engine {
                         ResourceRequest::default(),
                         move |cancel| {
                             cancel.check()?;
-                            let ProjectTarget::Existing(path) = target else {
-                                anyhow::bail!("Creation recovery requires its creation journal")
+                            let path = match &target {
+                                ProjectTarget::Existing(path) | ProjectTarget::New(path) => path,
                             };
                             ensure!(path.is_absolute(), "Recovery selection must be absolute");
-                            let root = ProjectReadRoot::open(&path)?;
                             let Some(publisher) = Publisher::open_existing(&config.state_root)?
                             else {
                                 return Ok(None);
                             };
-                            publisher.inspect_recovery(&root)
+                            if matches!(&target, ProjectTarget::Existing(_)) {
+                                let root = ProjectReadRoot::open(path)?;
+                                if let Some(status) = publisher.inspect_recovery(&root)? {
+                                    return Ok(Some(status));
+                                }
+                                if !publisher.recovery_required(&root)? {
+                                    return Ok(None);
+                                }
+                            }
+                            publisher.inspect_creation_recovery(path)
                         },
                     )?;
                     Ok(scope
@@ -85,8 +130,9 @@ pub(super) async fn prepare(
     config: &EngineConfig,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedRecoveryOperation>> {
-    let ProjectTarget::Existing(path) = target else {
-        anyhow::bail!("Creation recovery requires its creation journal")
+    let existing = matches!(&target, ProjectTarget::Existing(_));
+    let path = match target {
+        ProjectTarget::Existing(path) | ProjectTarget::New(path) => path,
     };
     ensure!(path.is_absolute(), "Recovery selection must be absolute");
     let state = config.state_root.clone();
@@ -95,12 +141,35 @@ pub(super) async fn prepare(
         config.resources.prepared,
         move |cancel| {
             cancel.check()?;
-            let root = ProjectReadRoot::open(&path)?;
             let publisher =
                 Publisher::open_existing(&state)?.context("No publication recovery exists")?;
-            let recovery = publisher
-                .prepare_recovery(&root, request.action)?
-                .context("No pending publication recovery exists")?;
+            let root = if existing {
+                Some(ProjectReadRoot::open(&path)?)
+            } else {
+                None
+            };
+            let has_publication = root
+                .as_ref()
+                .map(|root| publisher.inspect_recovery(root))
+                .transpose()?
+                .flatten()
+                .is_some();
+            let recovery = if has_publication {
+                let root = root.context("Publication recovery requires an existing root")?;
+                let prepared = publisher
+                    .prepare_recovery(&root, request.action)?
+                    .context("No pending publication recovery exists")?;
+                RecoveryOperation::Publication { root, prepared }
+            } else {
+                ensure!(
+                    request.action == RecoveryAction::Finish,
+                    "Creation recovery supports finishing only; root deletion is not authorized"
+                );
+                let prepared = publisher
+                    .prepare_creation_recovery(&path)?
+                    .context("No pending creation recovery exists")?;
+                RecoveryOperation::Creation { path, prepared }
+            };
             ensure!(
                 recovery.status().operation == request.operation,
                 "Pending recovery operation changed"
@@ -117,11 +186,7 @@ pub(super) async fn prepare(
                 replacement: project_change::summary(&files)?,
                 files,
             };
-            Ok::<_, anyhow::Error>(PreparedRecoveryOperation {
-                root,
-                recovery,
-                view,
-            })
+            Ok::<_, anyhow::Error>(PreparedRecoveryOperation { recovery, view })
         },
     )?;
     scope.accept(work.wait().await?)?.transpose()
@@ -142,7 +207,7 @@ pub(super) async fn run(
             let (prepared, _reservation) = prepared.into_parts();
             let publisher = Publisher::open_existing(&config.state_root)?
                 .context("Recovery state disappeared")?;
-            let publication = publisher.recover_prepared(&prepared.root, prepared.recovery)?;
+            let publication = prepared.recovery.execute(&publisher)?;
             Ok::<_, anyhow::Error>(RecoveryReceipt {
                 plan: prepared.view.plan,
                 publication,

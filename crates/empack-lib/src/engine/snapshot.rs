@@ -96,6 +96,19 @@ impl ProjectReadRoot {
         filter: Option<&super::source::CaptureFilter>,
         cancel: &Cancellation,
     ) -> Result<NativeSnapshot> {
+        self.capture_filtered_omitting(scopes, limits, filter, &BTreeSet::new(), cancel)
+    }
+
+    /// Recovery compares project inputs without journal-owned publication scratch.
+    /// Omitted paths must come from a validated journal, never caller selection.
+    pub(super) fn capture_filtered_omitting(
+        &self,
+        scopes: &[PortableRelPath],
+        limits: SnapshotLimits,
+        filter: Option<&super::source::CaptureFilter>,
+        omitted: &BTreeSet<String>,
+        cancel: &Cancellation,
+    ) -> Result<NativeSnapshot> {
         self.check_binding()?;
         let selected: BTreeSet<_> = scopes.iter().cloned().collect();
         ensure!(selected.len() == scopes.len(), "Duplicate snapshot scope");
@@ -112,6 +125,7 @@ impl ProjectReadRoot {
             total: 0,
             limits,
             cancel,
+            omitted,
             filter: filter
                 .map(|policy| Ok::<_, anyhow::Error>((policy, policy.matcher()?)))
                 .transpose()?,
@@ -251,6 +265,7 @@ struct Capture<'a> {
     total: u64,
     limits: SnapshotLimits,
     cancel: &'a Cancellation,
+    omitted: &'a BTreeSet<String>,
     filter: Option<(
         &'a super::source::CaptureFilter,
         super::source::SourceFilter,
@@ -313,6 +328,9 @@ impl Capture<'_> {
     ) -> Result<()> {
         self.cancel.check()?;
         ensure!(depth <= self.limits.depth, "Snapshot exceeds depth limit");
+        if self.omitted.contains(path.as_str()) {
+            return Ok(());
+        }
         let metadata = match parent.symlink_metadata(leaf) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -337,13 +355,20 @@ impl Capture<'_> {
             native::reject_reparse(&directory.try_clone()?.into_std_file())?;
             let binding = DirectoryBinding(native::directory_identity(&directory)?);
             let mut members = BTreeSet::new();
-            for (seen, entry) in directory.entries()?.enumerate() {
+            let mut seen = 0;
+            for entry in directory.entries()? {
                 self.cancel.check()?;
+                let name = entry?.file_name();
+                if name.to_str().is_some_and(|name| {
+                    self.omitted.contains(&format!("{}/{}", path.as_str(), name))
+                }) {
+                    continue;
+                }
                 ensure!(
                     seen < self.limits.entries.saturating_sub(self.entries.len()),
                     "Snapshot exceeds entry limit"
                 );
-                let name = entry?.file_name();
+                seen += 1;
                 if let Some((policy, matcher)) = &self.filter {
                     let metadata = directory.symlink_metadata(&name)?;
                     let child = std::path::Path::new(path.as_str()).join(&name);

@@ -12,8 +12,14 @@ pub enum RecoveryAction {
     Finish,
     Restore,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryKind {
+    Publication,
+    Creation,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecoveryStatus {
+    pub kind: RecoveryKind,
     pub operation: String,
     /// Finishing this journal already means completing a previously requested restoration.
     pub restoring: bool,
@@ -61,7 +67,7 @@ impl PreparedRecovery {
 fn revision(journal: &Journal) -> Result<[u8; 32]> {
     Ok(Sha256::digest(serde_json::to_vec(journal)?).into())
 }
-fn file_content(value: &Fingerprint) -> FileContent {
+pub(in crate::engine::publication) fn file_content(value: &Fingerprint) -> FileContent {
     FileContent {
         content: ContentId::from_sha256(value.sha256),
         bytes: value.bytes,
@@ -85,10 +91,6 @@ impl Publisher {
         lock.try_lock_shared()
             .context("Project publication is busy")?;
         let Some(journal) = load_journal(&state)? else {
-            ensure!(
-                !creation::requires_root_recovery(&state, root)?,
-                "Project requires creation recovery"
-            );
             return Ok(None);
         };
         validate_journal(&journal, root)?;
@@ -101,6 +103,7 @@ impl Publisher {
         Ok(self
             .read_recovery(root)?
             .map(|(_, _lock, journal)| RecoveryStatus {
+                kind: RecoveryKind::Publication,
                 operation: journal.operation,
                 restoring: journal.restoring,
             }))
@@ -169,6 +172,7 @@ impl Publisher {
             root: root.binding,
             revision: revision(&journal)?,
             status: RecoveryStatus {
+                kind: RecoveryKind::Publication,
                 operation: journal.operation,
                 restoring: journal.restoring,
             },

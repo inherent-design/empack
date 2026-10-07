@@ -821,3 +821,77 @@ pub(in crate::engine) fn interrupted_fixture(project: &Path, state: &Path) -> Re
     );
     publisher.inspect_recovery(&root).unwrap().unwrap()
 }
+
+#[test]
+fn recovery_preview_preserves_journal_siblings_until_approved_execution() {
+    for action in [RecoveryAction::Finish, RecoveryAction::Restore] {
+        for occurrence in [1, 2] {
+            let project = tempfile::tempdir().unwrap();
+            fixture(project.path());
+            let state = tempfile::tempdir().unwrap();
+            let publisher = Publisher::open(&state.path().join("private")).unwrap();
+            let root = ProjectReadRoot::open(project.path()).unwrap();
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "engine::publication::tests::crash_worker",
+                    "--nocapture",
+                ])
+                .env("EMPACK_PUBLICATION_CRASH_PROJECT", project.path())
+                .env(
+                    "EMPACK_PUBLICATION_CRASH_STATE",
+                    state.path().join("private"),
+                )
+                .env("EMPACK_PUBLICATION_CRASH_POINT", "SiblingWritten")
+                .env(
+                    "EMPACK_PUBLICATION_CRASH_OCCURRENCE",
+                    occurrence.to_string(),
+                )
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::inherit())
+                .status()
+                .unwrap();
+            assert_eq!(status.code(), Some(86));
+            let directory = publisher
+                .host
+                .open_dir_nofollow(root_key(&root).unwrap())
+                .unwrap();
+            let journal = load_journal(&directory).unwrap().unwrap();
+            let siblings: Vec<_> = journal
+                .changes
+                .iter()
+                .filter_map(|change| {
+                    let path = project
+                        .path()
+                        .join(&change.target)
+                        .parent()
+                        .unwrap()
+                        .join(change.sibling.as_ref()?);
+                    path.is_file().then(|| {
+                        let bytes = fs::read(&path).unwrap();
+                        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+                        (path, bytes, modified)
+                    })
+                })
+                .collect();
+            assert_eq!(siblings.len(), 1);
+            // Only exact journal scratch is excluded; unrelated additions still conflict.
+            let unrelated = project.path().join("pack/unrelated.txt");
+            fs::create_dir_all(unrelated.parent().unwrap()).unwrap();
+            fs::write(&unrelated, b"user content").unwrap();
+            assert!(publisher.prepare_recovery(&root, action).is_err());
+            assert!(siblings[0].0.exists());
+            fs::remove_file(unrelated).unwrap();
+            let planned = publisher.prepare_recovery(&root, action).unwrap().unwrap();
+            for (path, bytes, modified) in &siblings {
+                assert!(path.exists(), "preview removed journal sibling");
+                assert_eq!(&fs::read(path).unwrap(), bytes);
+                assert_eq!(&fs::metadata(path).unwrap().modified().unwrap(), modified);
+            }
+            publisher.recover_prepared(&root, planned).unwrap();
+            for (path, _, _) in siblings {
+                assert!(!path.exists());
+            }
+        }
+    }
+}
