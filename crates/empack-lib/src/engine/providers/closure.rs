@@ -1,7 +1,7 @@
 //! Required dependency evidence, independent of placement, installation and garbage collection.
 use super::*;
 use crate::engine::resources::AdmissionPermit;
-use empack_core::model::{GameVersion, LoaderKind};
+use empack_core::model::{GameVersion, LoaderKind, ResolvedIdentity, ResolvedProject};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -94,6 +94,7 @@ impl ProviderCatalog {
             request,
             limits,
             transport::RequestBudget::new(limits.selection.catalog)?,
+            None,
         )
         .await
     }
@@ -103,6 +104,7 @@ impl ProviderCatalog {
         request: ClosureRequest,
         limits: ClosureLimits,
         mut budget: transport::RequestBudget,
+        preferred: Option<&ResolvedProject>,
     ) -> Result<ProviderClosure> {
         ensure!(
             limits.projects > 0
@@ -270,42 +272,57 @@ impl ProviderCatalog {
                             value
                         }
                         (Some(project), None) => {
-                            let (project_record, next) = self
-                                .resolve_selector_budget(
-                                    scope,
-                                    ProjectSelector::canonical(project.clone()),
-                                    limits.selection.catalog,
-                                    budget,
-                                )
-                                .await?;
-                            budget = next;
-                            let Some(kind) =
-                                choose_kind(project_record.kinds.as_slice(), parent_kind)
-                            else {
-                                result.issues.push(ClosureIssue {
-                                    from: from.clone(),
-                                    dependency: Some(dependency.clone()),
-                                    kind: ClosureIssueKind::AmbiguousContentKind,
-                                });
-                                continue;
-                            };
-                            drop(project_record);
-                            let (value, next) = self
-                                .resolve_compatible_budget(
-                                    scope,
-                                    CompatibleRequest {
-                                        project: project.clone(),
-                                        kind,
-                                        game_versions: request.game_versions.clone(),
-                                        loader: request.loader,
-                                        releases: request.releases,
-                                    },
-                                    limits.selection,
-                                    budget,
-                                )
-                                .await?;
-                            budget = next;
-                            value.map(|selected| selected.resolution)
+                            if let Some(previous) = preferred_dependency(preferred, project) {
+                                let pin =
+                                    previous.selected.clone().ok_or(CatalogError::Identity)?;
+                                let (value, next) = self
+                                    .resolve_exact_budget(
+                                        scope,
+                                        pin,
+                                        limits.selection.catalog,
+                                        budget,
+                                    )
+                                    .await?;
+                                budget = next;
+                                value
+                            } else {
+                                let (project_record, next) = self
+                                    .resolve_selector_budget(
+                                        scope,
+                                        ProjectSelector::canonical(project.clone()),
+                                        limits.selection.catalog,
+                                        budget,
+                                    )
+                                    .await?;
+                                budget = next;
+                                let Some(kind) =
+                                    choose_kind(project_record.kinds.as_slice(), parent_kind)
+                                else {
+                                    result.issues.push(ClosureIssue {
+                                        from: from.clone(),
+                                        dependency: Some(dependency.clone()),
+                                        kind: ClosureIssueKind::AmbiguousContentKind,
+                                    });
+                                    continue;
+                                };
+                                drop(project_record);
+                                let (value, next) = self
+                                    .resolve_compatible_budget(
+                                        scope,
+                                        CompatibleRequest {
+                                            project: project.clone(),
+                                            kind,
+                                            game_versions: request.game_versions.clone(),
+                                            loader: request.loader,
+                                            releases: request.releases,
+                                        },
+                                        limits.selection,
+                                        budget,
+                                    )
+                                    .await?;
+                                budget = next;
+                                value.map(|selected| selected.resolution)
+                            }
                         }
                         (None, None) => {
                             result.issues.push(ClosureIssue {
@@ -330,7 +347,10 @@ impl ProviderCatalog {
                         }
                         previous.resolution.pin.clone()
                     } else {
-                        let Some(kind) = choose_kind(selected.kinds.as_slice(), parent_kind) else {
+                        let Some(kind) = preferred_dependency(preferred, &selected.pin.project)
+                            .map(|dependency| dependency.kind)
+                            .or_else(|| choose_kind(selected.kinds.as_slice(), parent_kind))
+                        else {
                             result.issues.push(ClosureIssue {
                                 from: from.clone(),
                                 dependency: Some(dependency.clone()),
@@ -407,6 +427,14 @@ impl ProviderCatalog {
         budget.check_deadline()?;
         Ok(result)
     }
+}
+fn preferred_dependency<'a>(
+    project: Option<&'a ResolvedProject>,
+    identity: &ProviderProjectId,
+) -> Option<&'a empack_core::model::LockedDependency> {
+    project?.lock().dependencies.values().find(|dependency| {
+        matches!(&dependency.identity, ResolvedIdentity::Provider(id) if id == identity)
+    })
 }
 fn graph_reservation(scope: &WorkScope, bytes: u64) -> Result<AdmissionPermit> {
     Ok(scope.reserve_storage(ResourceRequest {

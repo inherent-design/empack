@@ -79,7 +79,15 @@ pass, including a catalog-resolution → reference-addition → repeated-sync wo
 All-feature Clippy and Windows cross-compilation pass. Final review also made
 non-primary file choices retain explicit placement intent; its regression and the
 seven-test adapter suite pass separately from that full-suite run. This service does not yet replace CLI selection or provide
-local/URL input hosts and compatible installed-dependency reuse.
+local/URL input hosts. Required-closure composition now prefers compatible locked
+selections without querying a newer version. It preserves original byte assertions,
+aliases, placements and participation, rejecting incompatible or changed obligations.
+Generated labels reserve explicit and retained records before disambiguation.
+The prior shared-selection conflict and review 87 label collision both reproduced;
+the combined 1,819-test suite and eleven doctests pass, with all-feature Clippy
+and Windows cross-compilation. The native-filesystem and CLI smoke cases are part
+of that suite; live provider/CDN checks are separate. Explicit root environment conflicts remain
+a refusal: the host must submit the broadened participation as a new request.
 The catalog now configures the acquisition transport with the fixed CurseForge
 CDN credential rule; Engine attachment applies both together. Origin, port,
 redirect, mirror and redaction regressions pass in the 74-test affected suite,

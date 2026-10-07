@@ -141,6 +141,7 @@ impl ProviderCatalog {
                 },
                 limits,
                 budget,
+                Some(current),
             )
             .await?;
         if !closure.complete_for_required() {
@@ -197,18 +198,49 @@ fn normalize(
     let mut intent = current.intent().clone();
     intent.roots.clear();
     let mut keys = BTreeMap::new();
-    let mut labels = BTreeSet::new();
+    let mut labels: BTreeMap<_, _> = current
+        .lock()
+        .dependencies
+        .iter()
+        .map(|(key, dependency)| (key.clone(), dependency.identity.clone()))
+        .collect();
+    // Reserve all explicit labels first, regardless of provider traversal order.
+    for (id, root) in roots {
+        if let Some(key) = &root.key {
+            let identity = ResolvedIdentity::Provider(id.clone());
+            ensure!(
+                labels.get(key).is_none_or(|owner| owner == &identity),
+                "Explicit dependency key belongs to another identity"
+            );
+            labels.insert(key.clone(), identity);
+        }
+    }
     let mut origins = BTreeMap::new();
     for (id, selected) in &closure.selections {
-        let key = roots
-            .get(id)
-            .and_then(|root| root.key.clone())
+        let identity = ResolvedIdentity::Provider(id.clone());
+        let explicit = roots.get(id).and_then(|root| root.key.clone());
+        let retained = current
+            .lock()
+            .dependencies
+            .iter()
+            .find(|(_, dependency)| dependency.identity == identity)
+            .map(|(key, _)| key.clone());
+        let mut key = explicit
+            .or(retained)
             .map(Ok)
             .unwrap_or_else(|| DependencyKey::parse(&selected.resolution.project.slug))?;
-        ensure!(
-            labels.insert(key.clone()),
-            "Provider labels collide; choose explicit dependency keys"
-        );
+        if labels.get(&key).is_some_and(|owner| owner != &identity) {
+            let base = format!("{}-{id}", selected.resolution.project.slug);
+            key = DependencyKey::parse(&base)?;
+            let mut suffix = 2usize;
+            while labels.get(&key).is_some_and(|owner| owner != &identity) {
+                key = DependencyKey::parse(&format!("{base}-{suffix}"))?;
+                suffix = suffix
+                    .checked_add(1)
+                    .context("Dependency label space exhausted")?;
+            }
+        }
+        labels.insert(key.clone(), identity);
         keys.insert(id.clone(), key);
         origins.insert(
             id.clone(),
@@ -277,6 +309,53 @@ fn normalize(
                 &root.requirements == requirements,
                 "Required closure conflicts with an explicit root's environment"
             );
+        }
+        if root.is_none()
+            && let Some(existing) =
+                current.lock().dependencies.values().find(|dependency| {
+                    dependency.identity == ResolvedIdentity::Provider(id.clone())
+                })
+        {
+            ensure!(
+                existing.kind == selected.kind
+                    && existing.selected.as_ref() == Some(&selected.resolution.pin),
+                "A required selection conflicts with retained content; update it explicitly"
+            );
+            for file in existing.files.as_slice() {
+                // Refresh checks overlapping provider assertions; the original complete evidence
+                // remains binding, even if a provider stops publishing an old digest algorithm.
+                selected
+                    .resolution
+                    .download_alternatives(&file.slot, &file.expected)?;
+                ensure!(
+                    [(&requirements.client, true), (&requirements.server, false)]
+                        .into_iter()
+                        .all(|(needed, client)| {
+                            matches!(needed, Requirement::Unsupported)
+                                || file.placements.as_slice().iter().any(|placement| {
+                                    let actual = if client {
+                                        &placement.requirements.client
+                                    } else {
+                                        &placement.requirements.server
+                                    };
+                                    actual == needed || matches!(actual, Requirement::Required)
+                                })
+                        }),
+                    "Retained dependency participation needs an explicit change"
+                );
+            }
+            dependencies.insert(key.clone(), existing.clone());
+            coverage.insert(key.clone(), selected.resolution.coverage);
+            if let Some(required) = closure.required_edges.get(&selected.resolution.pin) {
+                edges.insert(
+                    key.clone(),
+                    required
+                        .iter()
+                        .map(|pin| keys[&pin.project].clone())
+                        .collect(),
+                );
+            }
+            continue;
         }
         let folder = root
             .and_then(|root| root.folder.as_ref())

@@ -91,6 +91,14 @@ async fn resolve(
     inputs: Vec<ProviderAddInput>,
     limits: ClosureLimits,
 ) -> (Outcome, ResourceGovernor) {
+    resolve_with_current(server, current(), inputs, limits).await
+}
+async fn resolve_with_current(
+    server: &Server,
+    current: ResolvedProject,
+    inputs: Vec<ProviderAddInput>,
+    limits: ClosureLimits,
+) -> (Outcome, ResourceGovernor) {
     let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
     let governor = ResourceGovernor::new(ResourceRequest {
         jobs: 2,
@@ -104,7 +112,7 @@ async fn resolve(
             Ok(catalog
                 .resolve_addition(
                     &mut scope,
-                    &current(),
+                    &current,
                     NonEmpty::new(inputs).unwrap(),
                     ReleasePolicy::PreferStable,
                     limits,
@@ -457,4 +465,314 @@ async fn explicit_file_selection_retains_placement_intent() {
                 .as_slice()
         );
     }
+}
+
+#[tokio::test]
+async fn required_dependencies_reuse_compatible_locked_pins_aliases_and_placements() {
+    let mut server = Server::new_async().await;
+    records(
+        &mut server,
+        "project2",
+        "library",
+        "mod",
+        &version("project2", "version2", json!([])),
+    )
+    .await;
+    let mut library = input("library", false);
+    library.key = Some(DependencyKey::parse("kept-alias").unwrap());
+    library.pin = Some(PinSelector::ModrinthVersion(
+        ModrinthVersionId::parse("version2").unwrap(),
+    ));
+    library.folder = Some(
+        PortableRelPath::parse(
+            "custom/libraries",
+            empack_core::path::PathSyntax::ProjectContent,
+        )
+        .unwrap(),
+    );
+    library.requirements.server = Requirement::Required;
+    let (prior, _) = resolve(&server, vec![library], limits()).await;
+    let prior = ready(&prior).project().clone();
+    let retained_key = DependencyKey::parse("kept-alias").unwrap();
+    let before = prior.lock().dependencies[&retained_key].clone();
+    server.reset();
+    let mut newest = version("project2", "version3", json!([]));
+    newest["date_published"] = json!("2026-07-01T00:00:00Z");
+    records(&mut server, "project2", "library", "mod", &newest).await;
+    server
+        .mock("GET", "/version/version2")
+        .with_body(version("project2", "version2", json!([])).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    records(
+        &mut server,
+        "project1",
+        "renderer",
+        "mod",
+        &version(
+            "project1",
+            "version1",
+            json!([{"project_id":"project2","dependency_type":"required"}]),
+        ),
+    )
+    .await;
+    let (outcome, _) = resolve_with_current(
+        &server,
+        prior.clone(),
+        vec![input("renderer", true)],
+        limits(),
+    )
+    .await;
+    let addition = ready(&outcome);
+    let plan = empack_core::addition::AdditionPlan::prepare(&prior, addition.group()).unwrap();
+    let source = DocumentCodec
+        .decode_intent(
+            &DocumentCodec.encode_intent(plan.intent()).unwrap(),
+            "merged",
+        )
+        .unwrap();
+    let merged = plan.resolve(source.semantic_revision()).unwrap();
+    assert_eq!(merged.lock().dependencies[&retained_key], before);
+    assert_eq!(
+        merged.intent().roots[&retained_key],
+        prior.intent().roots[&retained_key]
+    );
+    assert_eq!(
+        merged.lock().required_edges[&DependencyKey::parse("chosen-alias").unwrap()],
+        BTreeSet::from([retained_key])
+    );
+    assert_eq!(merged.lock().dependencies.len(), 2);
+}
+
+#[tokio::test]
+async fn transitive_labels_do_not_collide_with_explicit_roots() {
+    let mut server = Server::new_async().await;
+    records(
+        &mut server,
+        "project1",
+        "renderer",
+        "mod",
+        &version(
+            "project1",
+            "version1",
+            json!([{"project_id":"project2","version_id":"version2","dependency_type":"required"}]),
+        ),
+    )
+    .await;
+    records(
+        &mut server,
+        "project2",
+        "library",
+        "mod",
+        &version("project2", "version2", json!([])),
+    )
+    .await;
+    let mut root = input("renderer", true);
+    root.key = Some(DependencyKey::parse("library").unwrap());
+    let (outcome, _) = resolve(&server, vec![root], limits()).await;
+    let project = ready(&outcome).project();
+    let key = DependencyKey::parse("library").unwrap();
+    assert_eq!(
+        project.intent().roots.keys().collect::<Vec<_>>(),
+        vec![&key]
+    );
+    let required = &project.lock().required_edges[&key];
+    assert_eq!(required.len(), 1);
+    assert!(!required.contains(&key));
+    let dependency = &project.lock().dependencies[required.first().unwrap()];
+    assert_eq!(
+        dependency.identity,
+        ResolvedIdentity::Provider(ProviderProjectId::Modrinth(
+            ModrinthProjectId::parse("project2").unwrap()
+        ))
+    );
+}
+
+#[tokio::test]
+async fn explicit_root_participation_cannot_be_expanded_by_another_root() {
+    let mut server = Server::new_async().await;
+    records(
+        &mut server,
+        "project1",
+        "renderer",
+        "mod",
+        &version(
+            "project1",
+            "version1",
+            json!([{"project_id":"project2","version_id":"version2","dependency_type":"required"}]),
+        ),
+    )
+    .await;
+    records(
+        &mut server,
+        "project2",
+        "library",
+        "mod",
+        &version("project2", "version2", json!([])),
+    )
+    .await;
+    let mut parent = input("renderer", true);
+    parent.requirements = Requirements {
+        client: Requirement::Unsupported,
+        server: Requirement::Required,
+    };
+    let mut child = input("library", false);
+    child.key = Some(DependencyKey::parse("library").unwrap());
+    child.pin = Some(PinSelector::ModrinthVersion(
+        ModrinthVersionId::parse("version2").unwrap(),
+    ));
+    let (outcome, _) = resolve(&server, vec![parent.clone(), child.clone()], limits()).await;
+    let OperationOutcome::Completed(Err(error)) = &*outcome else {
+        panic!("unsupported side was silently enabled")
+    };
+    assert!(error.to_string().contains("explicit root's environment"));
+    // The host can explicitly authorize both sides; it must not make that choice itself.
+    child.requirements.server = Requirement::Required;
+    let (outcome, _) = resolve(&server, vec![parent, child], limits()).await;
+    assert_eq!(
+        ready(&outcome).project().intent().roots[&DependencyKey::parse("library").unwrap()]
+            .requirements
+            .server,
+        Requirement::Required
+    );
+}
+
+#[tokio::test]
+async fn retained_dependency_reuse_refuses_incompatible_pins_assertions_and_participation() {
+    let mut server = Server::new_async().await;
+    records(
+        &mut server,
+        "project2",
+        "library",
+        "mod",
+        &version("project2", "version2", json!([])),
+    )
+    .await;
+    let mut child = input("library", false);
+    child.key = Some(DependencyKey::parse("library").unwrap());
+    child.pin = Some(PinSelector::ModrinthVersion(
+        ModrinthVersionId::parse("version2").unwrap(),
+    ));
+    let (prior, _) = resolve(&server, vec![child], limits()).await;
+    let prior = ready(&prior).project().clone();
+    for fault in ["compatibility", "assertions", "participation", "exact pin"] {
+        server.reset();
+        let mut existing = version("project2", "version2", json!([]));
+        if fault == "compatibility" {
+            existing["game_versions"] = json!(["1.21.1"]);
+        }
+        if fault == "assertions" {
+            existing["files"][0]["hashes"]["sha1"] =
+                json!("0000000000000000000000000000000000000000");
+        }
+        if fault == "exact pin" {
+            existing["id"] = json!("version3");
+        }
+        records(&mut server, "project2", "library", "mod", &existing).await;
+        let mut edge = json!({"project_id":"project2","dependency_type":"required"});
+        if fault == "exact pin" {
+            edge["version_id"] = json!("version3");
+        }
+        records(
+            &mut server,
+            "project1",
+            "renderer",
+            "mod",
+            &version("project1", "version1", json!([edge])),
+        )
+        .await;
+        let mut root = input("renderer", true);
+        if fault == "participation" {
+            root.requirements.server = Requirement::Required;
+        }
+        let (outcome, governor) =
+            resolve_with_current(&server, prior.clone(), vec![root], limits()).await;
+        match &*outcome {
+            OperationOutcome::Completed(Ok(ProviderAdditionOutcome::NeedsInput(evidence)))
+                if fault == "compatibility" =>
+            {
+                assert!(evidence.issues.iter().any(|issue| matches!(
+                    issue.kind,
+                    ClosureIssueKind::IncompatibleRequirement { .. }
+                )));
+            }
+            OperationOutcome::Completed(Err(error)) => {
+                let expected = match fault {
+                    "assertions" => "assertions changed",
+                    "participation" => "participation needs",
+                    "exact pin" => "conflicts with retained",
+                    _ => panic!("unexpected error: {error}"),
+                };
+                assert!(error.to_string().contains(expected), "{error}");
+            }
+            _ => panic!("{fault} was silently accepted"),
+        }
+        drop(outcome);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}
+
+#[tokio::test]
+async fn generated_labels_preserve_unrelated_retained_records() {
+    let mut server = Server::new_async().await;
+    records(
+        &mut server,
+        "project3",
+        "unrelated",
+        "mod",
+        &version("project3", "version3", json!([])),
+    )
+    .await;
+    let mut unrelated = input("unrelated", false);
+    unrelated.key = Some(DependencyKey::parse("library").unwrap());
+    let (prior, _) = resolve(&server, vec![unrelated], limits()).await;
+    let prior = ready(&prior).project().clone();
+    records(
+        &mut server,
+        "project1",
+        "renderer",
+        "mod",
+        &version(
+            "project1",
+            "version1",
+            json!([{"project_id":"project2","version_id":"version2","dependency_type":"required"}]),
+        ),
+    )
+    .await;
+    records(
+        &mut server,
+        "project2",
+        "library",
+        "mod",
+        &version("project2", "version2", json!([])),
+    )
+    .await;
+    let (outcome, _) = resolve_with_current(
+        &server,
+        prior.clone(),
+        vec![input("renderer", true)],
+        limits(),
+    )
+    .await;
+    let plan =
+        empack_core::addition::AdditionPlan::prepare(&prior, ready(&outcome).group()).unwrap();
+    let source = DocumentCodec
+        .decode_intent(
+            &DocumentCodec.encode_intent(plan.intent()).unwrap(),
+            "merged",
+        )
+        .unwrap();
+    let merged = plan.resolve(source.semantic_revision()).unwrap();
+    let key = DependencyKey::parse("library").unwrap();
+    assert_eq!(merged.intent().roots[&key], prior.intent().roots[&key]);
+    assert_eq!(
+        merged.lock().dependencies[&key],
+        prior.lock().dependencies[&key]
+    );
+    assert_eq!(merged.lock().dependencies.len(), 3);
+    assert!(
+        !merged.lock().required_edges[&DependencyKey::parse("chosen-alias").unwrap()]
+            .contains(&key)
+    );
 }

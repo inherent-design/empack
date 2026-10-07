@@ -304,6 +304,11 @@ base, and the matching side layer takes precedence over both. Common overrides l
 under `overrides/common/`; this retains a declared download and an overriding file
 without flattening either into the other's source identity. Same-layer destination collisions fail unless the source format explicitly defines an ordering that is represented in the model. Case-collision checks run on the final projected namespace as well as each layer.
 
+An explicitly unsupported side remains unsupported. Required-closure expansion may
+combine participation for a generated transitive record, but it cannot broaden an
+explicit root or change its optional choice. A conflict needs a revised, explicit
+request before publication; automatic conversion to both sides would change intent.
+
 A file being client-only does not say whether it is optional. The internal model retains both dimensions. Mrpack and packwiz encode these dimensions differently; adapters must establish representability before execution. [F1](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack), [F2](https://packwiz.infra.link/reference/pack-format/mod-toml/)
 
 A common file and an environment-specific replacement are two placements with documented precedence, not an accidental “last copy wins.” Optional omission follows the target's explicit choice policy. Optional metadata that a target can preserve stays in the output rather than being silently resolved away.

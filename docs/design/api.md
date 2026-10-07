@@ -80,8 +80,11 @@ optional choices require an explicit conversion. Default placement follows conte
 kind and configured layout; datapacks/worlds require a selected folder when none is
 configured. `ProviderFiles::Placed` preserves per-file destinations and participation
 for companion files, recording the explicit conversion. Required companions cannot
-be omitted. CLI selection, existing-compatible dependency reuse and local/URL hosts
-remain separate integration work.
+be omitted. Required dependencies reuse valid current exact selections and retain
+their original assertions, aliases and placements. A changed pin, incompatible
+runtime or insufficient participation needs an explicit change. Generated labels
+reserve explicit roots and current records before choosing a disambiguated label.
+CLI selection and local/URL hosts remain separate integration work.
 
 The compiled `ImportContentPlan::resolve` accepts retained import declarations and a
 catalog, then resolves all exact provider references under one allowance.
