@@ -534,6 +534,15 @@ no-op syncs, missing/wrong bytes and late payload/lock collisions. Present stale
 still require reconciliation. The combined snapshot passes all 1,834 default tests
 and eleven doctests without output-pipe leak warnings, plus all-feature Clippy and
 Windows cross-compilation. Host/CLI resolution remains integration work.
+Review 92 reproduced an existing authored root being overwritten during first-lock
+adoption. Existing roots now remain intact and constrain validation; regressions
+reject mismatched identity, pin and placement, while a matching authored pin remains
+unchanged. Review 91 also identified unnecessary UTF-8 source-name validation. Native
+file acquisition now retains OS strings. Its non-UTF-8 filesystem regression runs on
+Linux; the local macOS filesystem itself rejects such names. The 91-test affected
+suite passes, followed by five focused tests after the native helper refinement.
+All-feature Clippy and Windows cross-compilation pass. Linux filename execution
+remains a CI check rather than locally executed evidence.
 Adoption deliberately verifies the proposed description of selected observed drift,
 rather than requiring the previous lock's bytes. Its old documents still participate
 in concurrency checks and recovery. A native regression reproduced rejection of valid

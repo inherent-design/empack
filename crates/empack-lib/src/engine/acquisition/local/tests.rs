@@ -186,3 +186,26 @@ async fn selected_symlink_and_fifo_are_rejected_without_reading_the_target() {
     assert!(!failed(&outcome).is_empty());
     assert_eq!(fs::read(target).unwrap(), b"payload");
 }
+
+// The local macOS filesystem rejects invalid UTF-8 names before empack can open them.
+// Linux CI exercises the native name, independently from its portable install destination.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn native_non_utf8_source_names_do_not_require_portable_encoding() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+    let root = tempfile::tempdir().unwrap();
+    let source = root
+        .path()
+        .join(OsString::from_vec(b"source-\xff.bin".to_vec()));
+    fs::write(&source, b"payload").unwrap();
+    let (outcome, governor) = run(request(source.clone())).await;
+    let OperationOutcome::Completed(Ok(file)) = &*outcome else {
+        panic!("{}", failed(&outcome));
+    };
+    let mut bytes = vec![];
+    file.content.lease().open().read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"payload");
+    assert_eq!(fs::read(source).unwrap(), b"payload");
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

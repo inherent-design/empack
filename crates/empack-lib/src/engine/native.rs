@@ -81,6 +81,11 @@ pub(super) fn parent(root: &Dir, path: &PortableRelPath) -> Result<(Dir, String)
 }
 
 pub(super) fn open_file(parent: &Dir, name: &str) -> Result<File> {
+    open_native_file(parent, std::ffi::OsStr::new(name))
+}
+
+pub(super) fn open_native_file(parent: &Dir, name: &std::ffi::OsStr) -> Result<File> {
+    let name = std::path::Path::new(name);
     let mut options = OpenOptions::new();
     options.read(true).follow(FollowSymlinks::No);
     #[cfg(unix)]
@@ -93,7 +98,8 @@ pub(super) fn open_file(parent: &Dir, name: &str) -> Result<File> {
     reject_reparse(&file)?;
     ensure!(
         file.metadata()?.is_file(),
-        "Managed input is not a regular file: {name}"
+        "Managed input is not a regular file: {}",
+        name.display()
     );
     Ok(file)
 }

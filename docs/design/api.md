@@ -112,7 +112,8 @@ selection, type identification and archive interpretation precede this boundary.
 verified lease. It captures only that regular file, rejects symbolic links and special
 files, checks source identity and content across copying, and preserves portable
 permissions. Scratch admission uses observed size rather than the configured maximum.
-Initial bytes without source evidence require explicit acceptance; their computed
+Source names remain native OS strings; UTF-8 and portable destination rules do not
+apply to the selected host basename. Initial bytes without source evidence require explicit acceptance; their computed
 address remains an observation. The source path is not durable project intent.
 
 The compiled `ImportContentPlan::resolve` accepts retained import declarations and a
@@ -229,7 +230,9 @@ only intent, lock and affected index/pack documents may change. Repeated adoptio
 a no-op. A missing lock can be created when the selected group resolves all retained
 authoring roots and runtime requirements. Missing-lock adoption verifies every
 selected placement; an unresolved retained root or a newly occupied lock destination
-blocks publication. A present stale/invalid lock is not treated as absence. CLI
+blocks publication. Existing authored roots remain unchanged: their source identity,
+pin and placement constrain the proposed resolution. Only newly adopted root keys
+are inserted. A present stale/invalid lock is not treated as absence. CLI
 selection remains integration work.
 Adoption intentionally accepts selected drift after review: existing bytes must
 match the proposed complete assertions, not the superseded lock's byte assertions.

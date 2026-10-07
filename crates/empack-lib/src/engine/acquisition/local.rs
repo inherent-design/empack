@@ -9,7 +9,7 @@ use crate::engine::{
 };
 use anyhow::{Context, Result, ensure};
 use empack_core::{files::FilePermissions, model::ExpectedContent};
-use std::{fs::File, io::Seek, path::PathBuf};
+use std::{ffi::OsString, fs::File, io::Seek, path::PathBuf};
 
 pub struct LocalFileRequest {
     /// An explicitly selected absolute host path, never persisted as project intent.
@@ -21,7 +21,7 @@ pub struct LocalFileRequest {
 }
 struct SelectedFile {
     root: ProjectReadRoot,
-    name: String,
+    name: OsString,
     file: File,
     observed: FileObservation,
 }
@@ -38,11 +38,10 @@ impl SelectedFile {
         );
         let name = source
             .file_name()
-            .and_then(|name| name.to_str())
-            .context("Local source must name a UTF-8 file")?
+            .context("Local source must name a file")?
             .to_owned();
         let root = ProjectReadRoot::open(source.parent().context("Local source has no parent")?)?;
-        let mut file = native::open_file(&root.directory, &name)?;
+        let mut file = native::open_native_file(&root.directory, &name)?;
         let observed = observe_file(&mut file, maximum, cancel)?;
         root.check_binding()?;
         file.rewind()?;
@@ -60,7 +59,7 @@ impl SelectedFile {
     ) -> Result<AcquiredBuildFile> {
         self.root.check_binding()?;
         ensure!(
-            native::identity(&native::open_file(&self.root.directory, &self.name)?)?
+            native::identity(&native::open_native_file(&self.root.directory, &self.name)?)?
                 == self.observed.object,
             "Selected local file was replaced before acquisition"
         );
@@ -77,7 +76,7 @@ impl SelectedFile {
                 && content.lease().len() == self.observed.bytes,
             "Selected local file changed during acquisition"
         );
-        let mut current = native::open_file(&self.root.directory, &self.name)?;
+        let mut current = native::open_native_file(&self.root.directory, &self.name)?;
         ensure!(
             observe_file(&mut current, self.observed.bytes, cancel)? == self.observed,
             "Selected local file changed during acquisition"

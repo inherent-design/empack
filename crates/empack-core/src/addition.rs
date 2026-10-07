@@ -126,7 +126,12 @@ impl AdditionPlan {
         group: &AdditionGroup,
     ) -> Result<Self, AdditionError> {
         let mut intent = source.clone();
-        intent.roots.extend(group.roots.clone());
+        for (key, root) in &group.roots {
+            intent
+                .roots
+                .entry(key.clone())
+                .or_insert_with(|| root.clone());
+        }
         let lock = group.lock.clone();
         ResolvedProject::validate(intent.clone(), lock.clone(), lock.intent_revision)
             .map_err(AdditionError::InvalidProject)?;

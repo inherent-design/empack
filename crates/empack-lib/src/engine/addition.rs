@@ -258,6 +258,65 @@ pub(in crate::engine) mod tests {
             }
         }
     }
+    #[test]
+    fn first_lock_adoption_preserves_authored_identity_pin_and_placement() {
+        let resolved = fixture(&[("root", "ProjectA", "VersionA")], &["root"], &[], true);
+        let group = AdditionGroup::from_resolved(&resolved).unwrap();
+        for mode in ["identity", "pin", "placement"] {
+            let mut intent = resolved.intent().clone();
+            let root = intent.roots.get_mut(&key("root")).unwrap();
+            match mode {
+                "identity" => {
+                    root.source = SourceIntent::Provider(ProviderProjectId::Modrinth(
+                        ModrinthProjectId::parse("ProjectB").unwrap(),
+                    ))
+                }
+                "pin" => {
+                    root.version = VersionIntent::Exact(
+                        ProviderProjectId::Modrinth(ModrinthProjectId::parse("ProjectA").unwrap())
+                            .parse_pin("VersionB")
+                            .unwrap(),
+                    )
+                }
+                "placement" => {
+                    let mut placement = resolved.lock().dependencies[&key("root")].files.as_slice()
+                        [0]
+                    .placements
+                    .as_slice()[0]
+                        .clone();
+                    placement.destination = InstallDestination::parse("mods/another.jar").unwrap();
+                    root.placement =
+                        PlacementIntent::Explicit(NonEmpty::new(vec![placement]).unwrap());
+                }
+                _ => unreachable!(),
+            }
+            let source = DocumentCodec
+                .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "authored")
+                .unwrap();
+            assert!(
+                AdditionCandidate::prepare_adoption(&source, None, &group).is_err(),
+                "{mode}"
+            );
+        }
+        let mut intent = resolved.intent().clone();
+        intent.roots.get_mut(&key("root")).unwrap().version = VersionIntent::Exact(
+            resolved.lock().dependencies[&key("root")]
+                .selected
+                .as_ref()
+                .unwrap()
+                .selection
+                .clone(),
+        );
+        let source = DocumentCodec
+            .decode_intent(
+                &DocumentCodec.encode_intent(&intent).unwrap(),
+                "matching pin",
+            )
+            .unwrap();
+        let candidate = AdditionCandidate::prepare_adoption(&source, None, &group).unwrap();
+        assert_eq!(candidate.project().intent(), &intent);
+        assert_eq!(candidate.intent_document().bytes, source.original());
+    }
     fn key(value: &str) -> DependencyKey {
         DependencyKey::parse(value).unwrap()
     }
