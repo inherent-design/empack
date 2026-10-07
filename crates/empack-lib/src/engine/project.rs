@@ -657,20 +657,53 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
+        self.capture_addition_mode(selected, group, limits, false, cancel)
+    }
+    /// Adoption may establish the first lock, after verifying every proposed payload.
+    pub fn capture_adoption(
+        &self,
+        selected: &Path,
+        group: &empack_core::addition::AdditionGroup,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        self.capture_addition_mode(selected, group, limits, true, cancel)
+    }
+    fn capture_addition_mode(
+        &self,
+        selected: &Path,
+        group: &empack_core::addition::AdditionGroup,
+        limits: SnapshotLimits,
+        adoption: bool,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
         let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
         let metadata = super::source::CaptureFilter::selected_mutation(&[])?;
         let documents =
             self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
-        let current = documents.require_resolved()?;
-        let candidate = super::addition::AdditionCandidate::prepare(
-            documents.intent(),
-            documents.prior_lock().context("Addition requires a lock")?,
-            group,
-        )?;
+        let current = documents
+            .prior_lock()
+            .map(|lock| lock.bind(documents.intent()))
+            .transpose()?;
+        let candidate = if adoption {
+            super::addition::AdditionCandidate::prepare_adoption(
+                documents.intent(),
+                documents.prior_lock(),
+                group,
+            )?
+        } else {
+            super::addition::AdditionCandidate::prepare(
+                documents.intent(),
+                documents.prior_lock().context("Addition requires a lock")?,
+                group,
+            )?
+        };
         let mut required = Vec::new();
         for key in candidate.plan().bindings().values() {
             for dependency in [
-                current.lock().dependencies.get(key),
+                current
+                    .as_ref()
+                    .and_then(|current| current.lock().dependencies.get(key)),
                 candidate.project().lock().dependencies.get(key),
             ]
             .into_iter()

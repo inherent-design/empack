@@ -912,3 +912,138 @@ async fn adoption_publishes_observed_intent_without_payload_writes_then_sync_ret
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn adoption_creates_first_lock_without_rewriting_observed_payloads() {
+    use empack_core::files::ManagedPath;
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    fs::remove_file(root.path().join("empack.lock")).unwrap();
+    let resolved = project(false, false);
+    let intent = fs::read(root.path().join("empack.yml")).unwrap();
+    let payload = root.path().join("pack/resourcepacks/a.zip");
+    let before = fs::metadata(&payload).unwrap().modified().unwrap();
+    let (engine, governor) = engine(state.path().join("state"));
+    let request = || AdoptObservedRequest {
+        group: AdditionGroup::from_resolved(&resolved).unwrap(),
+    };
+    let view = engine
+        .preview(root.path().to_path_buf(), request())
+        .await
+        .unwrap();
+    assert!(
+        view.adoption()
+            .unwrap()
+            .files
+            .changes()
+            .iter()
+            .any(|change| *change.target() == ManagedPath::LockDocument)
+    );
+    assert!(
+        view.adoption()
+            .unwrap()
+            .files
+            .changes()
+            .iter()
+            .all(|change| !matches!(change.target(), ManagedPath::Content { .. }))
+    );
+    assert!(!root.path().join("empack.lock").exists());
+    assert!(!state.path().join("state").exists());
+    let prepared = ready(&engine, root.path(), request()).await;
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(
+            ExecutionReceipt::AdoptObserved(_)
+        ))
+    ));
+    engine.release_completed(handle.id());
+    drop((outcome, handle));
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), intent);
+    assert_eq!(fs::metadata(&payload).unwrap().modified().unwrap(), before);
+    for _ in 0..2 {
+        let view = engine
+            .preview(
+                root.path().to_path_buf(),
+                SyncRequest {
+                    resolution: None,
+                    content: crate::engine::dependency_content::materialized(acquired_project(
+                        &resolved,
+                    )),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(view.sync().unwrap().files.changes().is_empty());
+    }
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn initial_adoption_refuses_missing_changed_or_late_conflicting_inputs() {
+    for mode in ["missing", "mismatch", "late-payload", "late-lock"] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        fs::remove_file(root.path().join("empack.lock")).unwrap();
+        let intent = fs::read(root.path().join("empack.yml")).unwrap();
+        let payload = root.path().join("pack/resourcepacks/a.zip");
+        let resolved = project(false, false);
+        let (engine, governor) = engine(state.path().join("state"));
+        let request = || AdoptObservedRequest {
+            group: AdditionGroup::from_resolved(&resolved).unwrap(),
+        };
+        if mode == "missing" {
+            fs::remove_file(&payload).unwrap();
+        }
+        if mode == "mismatch" {
+            fs::write(&payload, b"changed").unwrap();
+        }
+        if mode.starts_with("late-") {
+            let prepared = ready(&engine, root.path(), request()).await;
+            let permission = grant(&prepared);
+            if mode == "late-lock" {
+                fs::write(root.path().join("empack.lock"), b"another writer").unwrap();
+            } else {
+                fs::write(&payload, b"changed").unwrap();
+            }
+            let mut handle = engine
+                .start(prepared.authorize(permission).unwrap())
+                .unwrap();
+            let outcome = handle.wait().await;
+            assert!(
+                matches!(
+                    &*outcome,
+                    OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+                ),
+                "{mode}"
+            );
+            engine.release_completed(handle.id());
+            drop((outcome, handle));
+        } else {
+            assert!(
+                engine
+                    .preview(root.path().to_path_buf(), request())
+                    .await
+                    .is_err()
+            );
+        }
+        assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), intent);
+        if mode == "late-lock" {
+            assert_eq!(
+                fs::read(root.path().join("empack.lock")).unwrap(),
+                b"another writer"
+            );
+        } else {
+            assert!(!root.path().join("empack.lock").exists());
+        }
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        engine.shutdown().await;
+    }
+}

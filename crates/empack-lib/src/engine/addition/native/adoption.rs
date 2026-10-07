@@ -9,12 +9,12 @@ pub(in crate::engine) fn plan_adoption(
 ) -> Result<AdditionPreparation> {
     cancel.check()?;
     let workspace = workspace.into_workspace();
-    let current = workspace.require_resolved()?;
-    let candidate = AdditionCandidate::prepare(
-        workspace.intent(),
-        workspace.prior_lock().context("Adoption requires a lock")?,
-        group,
-    )?;
+    let current = workspace
+        .prior_lock()
+        .map(|lock| lock.bind(workspace.intent()))
+        .transpose()?;
+    let candidate =
+        AdditionCandidate::prepare_adoption(workspace.intent(), workspace.prior_lock(), group)?;
     let mut observed = BTreeMap::new();
     let mut updates = BTreeMap::new();
     let mut metadata_updates = BTreeMap::new();
@@ -83,7 +83,10 @@ pub(in crate::engine) fn plan_adoption(
             candidate.lock_document().to_vec(),
         ),
     ]);
-    if candidate.project().lock() == current.lock() {
+    if current
+        .as_ref()
+        .is_some_and(|current| candidate.project().lock() == current.lock())
+    {
         documents.insert(
             ManagedPath::LockDocument,
             workspace
@@ -106,15 +109,22 @@ pub(in crate::engine) fn plan_adoption(
         verification::observed_mutation_for(workspace.observations(), documents.keys().cloned())?;
     let mut desired = BTreeMap::new();
     for (target, bytes) in &documents {
-        let ObservedPath::File(before) = &observed[target] else {
-            anyhow::bail!("Adoption document is not an existing regular file")
+        let permissions = match &observed[target] {
+            ObservedPath::File(before) => before.permissions,
+            ObservedPath::Absent if *target == ManagedPath::LockDocument => {
+                empack_core::files::FilePermissions {
+                    readonly: false,
+                    executable: false,
+                }
+            }
+            _ => anyhow::bail!("Adoption document is not a regular file"),
         };
         desired.insert(
             target.clone(),
             FileContent {
                 content: ContentId::from_sha256(Sha256::digest(bytes).into()),
                 bytes: bytes.len() as u64,
-                permissions: before.permissions,
+                permissions,
             },
         );
     }

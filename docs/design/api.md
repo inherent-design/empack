@@ -219,14 +219,18 @@ canonical bindings, selected records and the exact replacement footprint; the re
 CLI wiring remain separate work.
 
 `AdoptObservedRequest` supplies a resolved group describing selected files already
-present in a coherent project. Preparation verifies their original digest, size and
+present in a project. Preparation verifies their original digest, size and
 accepted-observation assertions, plus applicable backend identity and requirements.
 It does not acquire missing files or rewrite payloads. Canonical aliases and retained
 dependency constraints use the same addition planner. `AdoptObservedPreview` exposes
 the exact document changes; execution requires their plan-specific grant and returns
 `AdoptObservedReceipt`. Selected payloads remain publication preconditions even though
 only intent, lock and affected index/pack documents may change. Repeated adoption is
-a no-op. Adoption without a coherent existing lock and CLI selection remain pending.
+a no-op. A missing lock can be created when the selected group resolves all retained
+authoring roots and runtime requirements. Missing-lock adoption verifies every
+selected placement; an unresolved retained root or a newly occupied lock destination
+blocks publication. A present stale/invalid lock is not treated as absence. CLI
+selection remains integration work.
 Adoption intentionally accepts selected drift after review: existing bytes must
 match the proposed complete assertions, not the superseded lock's byte assertions.
 The old documents remain captured publication preconditions and recovery preimages;

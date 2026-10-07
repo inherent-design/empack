@@ -515,8 +515,14 @@ payload bytes. Missing or mismatched content fails before publication; late edit
 the captured read set. The public lifecycle requires exact plan authorization and
 retains a typed adoption receipt. Native and public tests cover explicit adoption,
 wrong/missing bytes, changed observations, provider pin mismatch, repeated adoption,
-unchanged modification times and a subsequent no-op sync. This implementation requires
-a coherent existing lock; missing-lock adoption and host/CLI resolution remain pending.
+unchanged modification times and a subsequent no-op sync. Adoption can now establish
+a first lock from a group resolving all retained authoring roots and runtime
+requirements. The missing-lock failure reproduced through the public API before the
+change. Public regressions verify read-only preview, unchanged payload times, two
+no-op syncs, missing/wrong bytes and late payload/lock collisions. Present stale locks
+still require reconciliation. The combined snapshot passes all 1,834 default tests
+and eleven doctests without output-pipe leak warnings, plus all-feature Clippy and
+Windows cross-compilation. Host/CLI resolution remains integration work.
 Adoption deliberately verifies the proposed description of selected observed drift,
 rather than requiring the previous lock's bytes. Its old documents still participate
 in concurrency checks and recovery. A native regression reproduced rejection of valid

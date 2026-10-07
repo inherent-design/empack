@@ -35,6 +35,20 @@ impl AdditionCandidate {
     ) -> Result<Self> {
         Self::prepare_mode(source, lock, group, true)
     }
+    /// A first observed lock requires a complete coherent description of retained intent.
+    pub fn prepare_adoption(
+        source: &DecodedIntent,
+        lock: Option<&DecodedLock>,
+        group: &AdditionGroup,
+    ) -> Result<Self> {
+        if let Some(lock) = lock {
+            return Self::prepare(source, lock, group);
+        }
+        Self::from_plan(
+            source,
+            AdditionPlan::prepare_initial_adoption(source.intent(), group)?,
+        )
+    }
     fn prepare_mode(
         source: &DecodedIntent,
         lock: &DecodedLock,
@@ -47,6 +61,9 @@ impl AdditionCandidate {
         } else {
             AdditionPlan::prepare(&current, group)?
         };
+        Self::from_plan(source, plan)
+    }
+    fn from_plan(source: &DecodedIntent, plan: AdditionPlan) -> Result<Self> {
         let intent = DocumentCodec.replace_intent(source, plan.intent())?;
         let next = DocumentCodec.decode_intent(&intent.bytes, "addition candidate")?;
         let project = plan.clone().resolve(next.semantic_revision())?;
@@ -79,6 +96,46 @@ pub(in crate::engine) mod tests {
     use empack_core::{addition::AdditionError, identity::*, model::*, path::InstallDestination};
     use std::collections::{BTreeMap, BTreeSet};
 
+    #[test]
+    fn initial_adoption_requires_resolution_of_retained_roots_and_runtime() {
+        let complete = fixture(
+            &[("a", "ProjectA", "VersionA"), ("b", "ProjectB", "VersionB")],
+            &["a", "b"],
+            &[],
+            true,
+        );
+        let subset = fixture(&[("a", "ProjectA", "VersionA")], &["a"], &[], true);
+        let source = DocumentCodec
+            .decode_intent(
+                &DocumentCodec.encode_intent(complete.intent()).unwrap(),
+                "source",
+            )
+            .unwrap();
+        assert!(
+            AdditionCandidate::prepare_adoption(
+                &source,
+                None,
+                &AdditionGroup::from_resolved(&subset).unwrap()
+            )
+            .is_err()
+        );
+        let group = AdditionGroup::from_resolved(&complete).unwrap();
+        let candidate = AdditionCandidate::prepare_adoption(&source, None, &group).unwrap();
+        assert_eq!(candidate.project().intent(), complete.intent());
+        assert_eq!(
+            candidate.project().lock().dependencies,
+            complete.lock().dependencies
+        );
+        let mut other = complete.intent().clone();
+        other.runtime.minecraft = GameVersion::parse("0.0.0").unwrap();
+        let other = DocumentCodec
+            .decode_intent(
+                &DocumentCodec.encode_intent(&other).unwrap(),
+                "other runtime",
+            )
+            .unwrap();
+        assert!(AdditionCandidate::prepare_adoption(&other, None, &group).is_err());
+    }
     fn key(value: &str) -> DependencyKey {
         DependencyKey::parse(value).unwrap()
     }

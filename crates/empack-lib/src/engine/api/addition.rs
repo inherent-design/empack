@@ -180,7 +180,11 @@ async fn prepare_change(
     let limits = config.snapshot;
     let policy = request.existing;
     let work = scope.spawn_blocking(config.resources.capture, config.resources.prepared, move |cancel| {
-        let snapshot = ProjectReader::new(RecoveryReader::new(state)).capture_addition(&project, &request.group, limits, &cancel)?;
+        let reader = ProjectReader::new(RecoveryReader::new(state));
+        let snapshot = match kind {
+            DependencyChange::Adopt => reader.capture_adoption(&project, &request.group, limits, &cancel)?,
+            _ => reader.capture_addition(&project, &request.group, limits, &cancel)?,
+        };
         let planned = match kind {
             DependencyChange::Add => native_addition::plan_addition(snapshot, &request.group, request.content, &cancel)?,
             DependencyChange::Update => native_addition::plan_update(snapshot, &request.group, request.content, &cancel)?,

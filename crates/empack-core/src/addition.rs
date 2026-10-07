@@ -98,6 +98,30 @@ pub struct AdditionPlan {
     existing_roots: BTreeSet<DependencyKey>,
 }
 impl AdditionPlan {
+    /// Describe selected observed installations when no prior lock exists. Existing authoring
+    /// roots remain; the complete resulting intent must be resolved by the proposed group.
+    /// Native adoption still has to verify every selected placement before publication.
+    pub fn prepare_initial_adoption(
+        source: &ProjectIntent,
+        group: &AdditionGroup,
+    ) -> Result<Self, AdditionError> {
+        let mut intent = source.clone();
+        intent.roots.extend(group.roots.clone());
+        let lock = group.lock.clone();
+        ResolvedProject::validate(intent.clone(), lock.clone(), lock.intent_revision)
+            .map_err(AdditionError::InvalidProject)?;
+        Ok(Self {
+            intent,
+            bindings: lock
+                .dependencies
+                .keys()
+                .map(|key| (key.clone(), key.clone()))
+                .collect(),
+            changed: lock.dependencies.keys().cloned().collect(),
+            existing_roots: BTreeSet::new(),
+            lock,
+        })
+    }
     /// Resolve canonical identities before any label or file mutation. Existing aliases win.
     /// Unlisted selections remain; differing shared dependencies require explicit resolution.
     pub fn prepare(
