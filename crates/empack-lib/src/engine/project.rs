@@ -651,6 +651,13 @@ impl ProjectReader {
                     == workspace.prior_lock.as_ref().map(DecodedLock::raw_revision),
             "Project documents changed while selecting mutation inputs"
         );
+        // Captured aliases must not turn into false absence on a case-sensitive host or
+        // select differently spelled native objects on a case-insensitive one. This index
+        // checks spelling only; actual file kinds remain subject to removal verification.
+        let mut spelling = super::layout::CollisionIndex::default();
+        for path in workspace.native.entries().keys().chain(required.iter()) {
+            spelling.insert_directory(path)?;
+        }
         documents.root.revalidate(&documents.native, cancel)?;
         Ok(MutationSnapshot { workspace })
     }

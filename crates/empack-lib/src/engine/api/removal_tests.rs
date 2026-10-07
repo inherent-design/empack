@@ -351,3 +351,31 @@ async fn unselected_locked_bytes_are_not_removal_inputs() {
     );
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn selected_portable_alias_is_not_mistaken_for_absent_content() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    fs::rename(
+        root.path().join("pack/resourcepacks/a.zip"),
+        root.path().join("pack/resourcepacks/A.zip"),
+    )
+    .unwrap();
+    let (engine, _) = engine(state.path().join("state"));
+    let result = engine
+        .prepare(
+            root.path().to_path_buf(),
+            request(RemovalMode::RemoveContent),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "a portable alias cannot be proof that selected content is absent"
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/A.zip")).unwrap(),
+        b"payload"
+    );
+    engine.shutdown().await;
+}

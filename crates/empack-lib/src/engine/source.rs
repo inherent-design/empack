@@ -173,9 +173,18 @@ impl CaptureFilter {
             });
         }
         if self.managed_only {
-            if self.required.iter().any(|required| {
-                let required = std::path::Path::new(required);
-                required == path || required.starts_with(path)
+            let spelling: Option<Vec<_>> = path
+                .components()
+                .map(|part| match part {
+                    std::path::Component::Normal(value) => value.to_str(),
+                    _ => None,
+                })
+                .collect();
+            if spelling.is_some_and(|parts| {
+                let path = parts.join("/");
+                self.required
+                    .iter()
+                    .any(|required| template_overlap(&path, required))
             }) {
                 return true;
             }

@@ -598,3 +598,9 @@ names, source edits and durable publication recovery. All-feature Clippy and Win
 cross-compilation pass. The full suite passes 1,746 tests and eleven doctests. Native CI at `c5b6e06`
 also passed on Linux, macOS and Windows; these new changes still require their own
 pushed-revision CI and Greptile review.
+
+The final portable-alias regression also reproduced: a differently cased selected
+filename was treated as absence. Mutation capture now includes portable aliases and
+checks their spelling against selected destinations before planning. After this
+correction, 42 affected tests pass. The 1,746-test full run above predates this final
+regression; native CI must exercise the combined pushed revision.
