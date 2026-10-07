@@ -4,12 +4,12 @@ mod native;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, PreparedDocument};
 use anyhow::Result;
 use empack_core::{
-    addition::{AdditionGroup, AdditionPlan},
+    addition::{AdditionGroup, AdditionPlan, ReplacementSelection},
     model::ResolvedProject,
 };
 pub use file_input::{AcquiredFileInput, AcquiredFileSource, FileAddition, FileEvidence};
 pub use native::{AdditionReceipt, PreparedAddition, prepare_addition};
-pub(in crate::engine) use native::{plan_addition, plan_adoption, plan_update};
+pub(in crate::engine) use native::{plan_addition, plan_adoption, plan_replacement, plan_update};
 
 /// A coherent document candidate, not authority to replace installed bytes.
 pub struct AdditionCandidate {
@@ -34,6 +34,18 @@ impl AdditionCandidate {
         group: &AdditionGroup,
     ) -> Result<Self> {
         Self::prepare_mode(source, lock, group, true)
+    }
+    /// Bind an explicitly selected foreign-identity replacement into one document candidate.
+    pub fn prepare_replacement(
+        source: &DecodedIntent,
+        lock: &DecodedLock,
+        group: &AdditionGroup,
+        selection: &ReplacementSelection,
+    ) -> Result<Self> {
+        Self::from_plan(
+            source,
+            AdditionPlan::prepare_replacement(&lock.bind(source)?, group, selection)?,
+        )
     }
     /// A first observed lock requires a complete coherent description of retained intent.
     pub fn prepare_adoption(
@@ -135,6 +147,116 @@ pub(in crate::engine) mod tests {
             )
             .unwrap();
         assert!(AdditionCandidate::prepare_adoption(&other, None, &group).is_err());
+    }
+    #[test]
+    fn explicit_replacement_preserves_retained_records_and_requires_exact_selection() {
+        use empack_core::removal::{RemovalError, RemovalEvidencePolicy};
+        let current = fixture(
+            &[
+                ("root", "Project1", "Version1"),
+                ("keep", "Project2", "Version2"),
+            ],
+            &["root", "keep"],
+            &[],
+            true,
+        );
+        let replacement = fixture(&[("root", "Project3", "Version3")], &["root"], &[], true);
+        let source = DocumentCodec
+            .decode_intent(
+                &DocumentCodec.encode_intent(current.intent()).unwrap(),
+                "source",
+            )
+            .unwrap();
+        let prior = DocumentCodec
+            .decode_prior_lock(&DocumentCodec.encode_lock(&current).unwrap(), "prior")
+            .unwrap();
+        let group = AdditionGroup::from_resolved(&replacement).unwrap();
+        let mut selection = ReplacementSelection {
+            keys: NonEmpty::new(vec![key("root")]).unwrap(),
+            evidence: RemovalEvidencePolicy::RequireComplete,
+        };
+        assert!(AdditionCandidate::prepare(&source, &prior, &group).is_err());
+        let planned =
+            AdditionCandidate::prepare_replacement(&source, &prior, &group, &selection).unwrap();
+        assert_eq!(
+            planned.project().lock().dependencies[&key("keep")],
+            current.lock().dependencies[&key("keep")]
+        );
+        assert_eq!(
+            planned.project().lock().dependencies[&key("root")],
+            replacement.lock().dependencies[&key("root")]
+        );
+        assert_eq!(
+            planned.plan().replaced()[&key("root")],
+            current.lock().dependencies[&key("root")]
+        );
+        for (request, keys) in [
+            (replacement.clone(), vec![key("keep")]),
+            (replacement.clone(), vec![key("root"), key("root")]),
+            (
+                fixture(&[("root", "Project2", "Version2")], &["root"], &[], true),
+                vec![key("root")],
+            ),
+            (
+                fixture(
+                    &[
+                        ("root", "Project3", "Version3"),
+                        ("keep", "Project2", "Version4"),
+                    ],
+                    &["root", "keep"],
+                    &[],
+                    true,
+                ),
+                vec![key("root")],
+            ),
+        ] {
+            selection.keys = NonEmpty::new(keys).unwrap();
+            assert!(
+                AdditionCandidate::prepare_replacement(
+                    &source,
+                    &prior,
+                    &AdditionGroup::from_resolved(&request).unwrap(),
+                    &selection
+                )
+                .is_err()
+            );
+        }
+        selection.keys = NonEmpty::new(vec![key("root")]).unwrap();
+        for known in [false, true] {
+            let edges = if known {
+                vec![("keep", "root")]
+            } else {
+                vec![]
+            };
+            let uncertain = fixture(
+                &[
+                    ("root", "Project1", "Version1"),
+                    ("keep", "Project2", "Version2"),
+                ],
+                &["root", "keep"],
+                &edges,
+                false,
+            );
+            let prior = DocumentCodec
+                .decode_prior_lock(&DocumentCodec.encode_lock(&uncertain).unwrap(), "uncertain")
+                .unwrap();
+            selection.evidence = RemovalEvidencePolicy::RequireComplete;
+            assert!(
+                AdditionCandidate::prepare_replacement(&source, &prior, &group, &selection)
+                    .is_err()
+            );
+            selection.evidence = RemovalEvidencePolicy::AcknowledgeUnknown;
+            let result =
+                AdditionCandidate::prepare_replacement(&source, &prior, &group, &selection);
+            if known {
+                assert!(matches!(
+                    result.err().unwrap().downcast_ref::<AdditionError>(),
+                    Some(AdditionError::Replacement(RemovalError::RequiredBy(_)))
+                ));
+            } else {
+                assert_eq!(result.unwrap().plan().incomplete_evidence(), &[key("keep")]);
+            }
+        }
     }
     fn key(value: &str) -> DependencyKey {
         DependencyKey::parse(value).unwrap()

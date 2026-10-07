@@ -9,15 +9,18 @@ use crate::engine::{
 use empack_core::{
     addition::AdditionGroup,
     files::{FileChange, FilePlan, ObservedPath},
-    model::{DependencyKey, ResolvedProject},
+    model::{DependencyKey, LockedDependency, ResolvedProject},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub use empack_core::addition::ReplacementSelection;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ExistingDependencyPolicy {
     #[default]
     RejectExisting,
     UpdateSameIdentity,
+    ReplaceSelected(ReplacementSelection),
 }
 /// Resolved request and explicit per-slot materialization. Provider/local/URL hosts resolve before
 /// this boundary; neither the group nor its references grant project publication authority.
@@ -32,6 +35,8 @@ pub struct AddPreview {
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
     pub existing_roots: BTreeSet<DependencyKey>,
     pub existing: ExistingDependencyPolicy,
+    pub replaced: BTreeMap<DependencyKey, LockedDependency>,
+    pub incomplete_evidence: Vec<DependencyKey>,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
     /// Canonical slots explicitly recorded as references, not claimed as newly acquired bytes.
@@ -40,6 +45,8 @@ pub struct AddPreview {
 pub struct AddReceipt {
     pub plan: PlanId,
     pub publication: PublicationReceipt,
+    pub replaced: BTreeMap<DependencyKey, LockedDependency>,
+    pub incomplete_evidence: Vec<DependencyKey>,
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
     /// Canonical slots explicitly recorded as references, not claimed as newly acquired bytes.
@@ -178,19 +185,26 @@ async fn prepare_change(
     ensure!(project.is_absolute(), "Project selection must be absolute");
     let state = config.state_root.clone();
     let limits = config.snapshot;
-    let policy = request.existing;
+    let policy = request.existing.clone();
     let work = scope.spawn_blocking(config.resources.capture, config.resources.prepared, move |cancel| {
         let reader = ProjectReader::new(RecoveryReader::new(state));
         let snapshot = match kind {
             DependencyChange::Adopt => reader.capture_adoption(&project, &request.group, limits, &cancel)?,
+            DependencyChange::Add if matches!(&request.existing, ExistingDependencyPolicy::ReplaceSelected(_)) => {
+                let ExistingDependencyPolicy::ReplaceSelected(selection) = &request.existing else { unreachable!() };
+                reader.capture_dependency_replacement(&project, &request.group, selection, limits, &cancel)?
+            }
             _ => reader.capture_addition(&project, &request.group, limits, &cancel)?,
         };
         let planned = match kind {
-            DependencyChange::Add => native_addition::plan_addition(snapshot, &request.group, request.content, &cancel)?,
+            DependencyChange::Add => match &request.existing {
+                ExistingDependencyPolicy::ReplaceSelected(selection) => native_addition::plan_replacement(snapshot, &request.group, request.content, selection, &cancel)?,
+                _ => native_addition::plan_addition(snapshot, &request.group, request.content, &cancel)?,
+            },
             DependencyChange::Update => native_addition::plan_update(snapshot, &request.group, request.content, &cancel)?,
             DependencyChange::Adopt => native_addition::plan_adoption(snapshot, &request.group, &cancel)?,
         };
-        ensure!(policy == ExistingDependencyPolicy::UpdateSameIdentity || planned.candidate().plan().existing_roots().is_empty(), "Requested dependency already exists; updating the same identity requires explicit authorization");
+        ensure!(request.existing != ExistingDependencyPolicy::RejectExisting || planned.candidate().plan().existing_roots().is_empty(), "Requested dependency already exists; updating the same identity requires explicit authorization");
         Ok::<_, anyhow::Error>(planned)
     })?;
     let planned = scope.accept(work.wait().await?)?.transpose()?;
@@ -207,6 +221,8 @@ async fn prepare_change(
             ),
             bindings: addition.candidate().plan().bindings().clone(),
             existing_roots: addition.candidate().plan().existing_roots().clone(),
+            replaced: addition.candidate().plan().replaced().clone(),
+            incomplete_evidence: addition.candidate().plan().incomplete_evidence().to_vec(),
             existing: policy,
             references: addition.references().clone(),
             replacement: project_change::summary(&files)?,
@@ -317,6 +333,8 @@ async fn execute(
             project: receipt.project,
             bindings: prepared.view.bindings,
             references: prepared.view.references,
+            replaced: prepared.view.replaced,
+            incomplete_evidence: prepared.view.incomplete_evidence,
         })
     })?;
     scope

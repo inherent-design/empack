@@ -17,7 +17,7 @@ use crate::{
 pub(in crate::engine) use adoption::plan_adoption;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
-    addition::AdditionGroup,
+    addition::{AdditionGroup, ReplacementSelection},
     digest::ContentId,
     files::{FileContent, FilePlan, ManagedPath, ObservedPath},
     model::ResolvedProject,
@@ -111,7 +111,7 @@ pub(in crate::engine) fn plan_addition(
     acquired: DependencyContents,
     cancel: &Cancellation,
 ) -> Result<AdditionPreparation> {
-    plan_change(workspace, group, acquired, false, cancel)
+    plan_change(workspace, group, acquired, ChangeMode::Add, cancel)
 }
 pub(in crate::engine) fn plan_update(
     workspace: MutationSnapshot,
@@ -119,28 +119,46 @@ pub(in crate::engine) fn plan_update(
     acquired: DependencyContents,
     cancel: &Cancellation,
 ) -> Result<AdditionPreparation> {
-    plan_change(workspace, group, acquired, true, cancel)
+    plan_change(workspace, group, acquired, ChangeMode::Update, cancel)
+}
+pub(in crate::engine) fn plan_replacement(
+    workspace: MutationSnapshot,
+    group: &AdditionGroup,
+    acquired: DependencyContents,
+    selection: &ReplacementSelection,
+    cancel: &Cancellation,
+) -> Result<AdditionPreparation> {
+    plan_change(
+        workspace,
+        group,
+        acquired,
+        ChangeMode::Replace(selection),
+        cancel,
+    )
+}
+enum ChangeMode<'a> {
+    Add,
+    Update,
+    Replace(&'a ReplacementSelection),
 }
 fn plan_change(
     workspace: MutationSnapshot,
     group: &AdditionGroup,
     acquired: DependencyContents,
-    update: bool,
+    mode: ChangeMode<'_>,
     cancel: &Cancellation,
 ) -> Result<AdditionPreparation> {
     cancel.check()?;
     let workspace = workspace.into_workspace();
     let current = workspace.require_resolved()?;
-    let prepare = if update {
-        AdditionCandidate::prepare_update
-    } else {
-        AdditionCandidate::prepare
+    let prior = workspace.prior_lock().context("Addition requires a lock")?;
+    let candidate = match mode {
+        ChangeMode::Add => AdditionCandidate::prepare(workspace.intent(), prior, group)?,
+        ChangeMode::Update => AdditionCandidate::prepare_update(workspace.intent(), prior, group)?,
+        ChangeMode::Replace(selection) => {
+            AdditionCandidate::prepare_replacement(workspace.intent(), prior, group, selection)?
+        }
     };
-    let candidate = prepare(
-        workspace.intent(),
-        workspace.prior_lock().context("Addition requires a lock")?,
-        group,
-    )?;
     let mut bound = BTreeMap::new();
     for (slot, content) in acquired {
         let key = candidate

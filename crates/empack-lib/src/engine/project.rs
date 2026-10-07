@@ -387,6 +387,11 @@ impl WorkspaceSnapshot {
 pub struct ProjectReader {
     recovery: RecoveryReader,
 }
+enum AdditionCapture<'a> {
+    Add,
+    Adopt,
+    Replace(&'a empack_core::addition::ReplacementSelection),
+}
 impl ProjectReader {
     pub fn new(recovery: RecoveryReader) -> Self {
         Self { recovery }
@@ -657,7 +662,7 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
-        self.capture_addition_mode(selected, group, limits, false, cancel)
+        self.capture_addition_mode(selected, group, limits, AdditionCapture::Add, cancel)
     }
     /// Adoption may establish the first lock, after verifying every proposed payload.
     pub fn capture_adoption(
@@ -667,14 +672,31 @@ impl ProjectReader {
         limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
-        self.capture_addition_mode(selected, group, limits, true, cancel)
+        self.capture_addition_mode(selected, group, limits, AdditionCapture::Adopt, cancel)
+    }
+    /// Replacement binds both the selected prior objects and every requested new placement.
+    pub fn capture_dependency_replacement(
+        &self,
+        selected: &Path,
+        group: &empack_core::addition::AdditionGroup,
+        selection: &empack_core::addition::ReplacementSelection,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        self.capture_addition_mode(
+            selected,
+            group,
+            limits,
+            AdditionCapture::Replace(selection),
+            cancel,
+        )
     }
     fn capture_addition_mode(
         &self,
         selected: &Path,
         group: &empack_core::addition::AdditionGroup,
         limits: SnapshotLimits,
-        adoption: bool,
+        mode: AdditionCapture<'_>,
         cancel: &Cancellation,
     ) -> Result<MutationSnapshot> {
         let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
@@ -685,18 +707,27 @@ impl ProjectReader {
             .prior_lock()
             .map(|lock| lock.bind(documents.intent()))
             .transpose()?;
-        let candidate = if adoption {
-            super::addition::AdditionCandidate::prepare_adoption(
+        let candidate = match mode {
+            AdditionCapture::Adopt => super::addition::AdditionCandidate::prepare_adoption(
                 documents.intent(),
                 documents.prior_lock(),
                 group,
-            )?
-        } else {
-            super::addition::AdditionCandidate::prepare(
+            )?,
+            AdditionCapture::Add => super::addition::AdditionCandidate::prepare(
                 documents.intent(),
                 documents.prior_lock().context("Addition requires a lock")?,
                 group,
-            )?
+            )?,
+            AdditionCapture::Replace(selection) => {
+                super::addition::AdditionCandidate::prepare_replacement(
+                    documents.intent(),
+                    documents
+                        .prior_lock()
+                        .context("Replacement requires a lock")?,
+                    group,
+                    selection,
+                )?
+            }
         };
         let mut required = Vec::new();
         for key in candidate.plan().bindings().values() {

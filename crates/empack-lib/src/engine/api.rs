@@ -49,7 +49,8 @@ pub use super::dependency_content::{DependencyContent, DependencyContents};
 mod addition;
 pub use addition::{
     AddPreview, AddReceipt, AddRequest, AdoptObservedPreview, AdoptObservedReceipt,
-    AdoptObservedRequest, ExistingDependencyPolicy, UpdatePreview, UpdateReceipt, UpdateRequest,
+    AdoptObservedRequest, ExistingDependencyPolicy, ReplacementSelection, UpdatePreview,
+    UpdateReceipt, UpdateRequest,
 };
 mod execution;
 mod project_change;

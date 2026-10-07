@@ -249,10 +249,17 @@ collisions require a separate adoption decision. Changed selections retire owned
 entries retain their fields and aliases while their byte digests are updated. `PreparedAddition::publish`
 uses the shared recovery journal. The shared Engine accepts `AddRequest` with a resolved
 group and immutable acquired content, defaults to rejecting existing requested roots,
-and supports explicit same-identity updates. `AddPreview` exposes canonical bindings,
+and supports explicit same-identity updates or `ReplaceSelected(ReplacementSelection)`.
+Replacement requires exact installed keys, each supplied as an explicit new root. It
+composes removal safety and addition into one candidate; no intermediate deletion is
+published. A replacement cannot redirect to another retained alias or modify an
+existing root outside the selection. Known retained dependents block replacement;
+unknown evidence requires explicit acknowledgement. `AddPreview` exposes prior exact
+records and acknowledged incomplete evidence, and the receipt retains both.
+`AddPreview` also exposes canonical bindings,
 existing roots, file changes and the exact replacement summary; `AddReceipt` retains
 the resulting project and publication result. Provider/local/URL request resolution,
-explicit foreign-identity replacement and ContinueIndependent integration remain pending.
+and ContinueIndependent integration remain pending.
 
 `AddRequest`, `UpdateRequest` and `SyncRequest` describe every file slot with
 `DependencyContent::Materialized` or `DependencyContent::Reference`. Omitting a slot

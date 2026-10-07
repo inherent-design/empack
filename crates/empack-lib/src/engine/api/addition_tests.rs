@@ -393,7 +393,7 @@ async fn remove_add_readd_sync_twice_build_share_logical_and_byte_postconditions
         ExistingDependencyPolicy::RejectExisting,
         ExistingDependencyPolicy::UpdateSameIdentity,
     ] {
-        let prepared = ready(&engine, root.path(), request(policy)).await;
+        let prepared = ready(&engine, root.path(), request(policy.clone())).await;
         if policy == ExistingDependencyPolicy::UpdateSameIdentity {
             assert!(prepared.view().add().unwrap().files.changes().is_empty());
         }
@@ -1042,6 +1042,171 @@ async fn initial_adoption_refuses_missing_changed_or_late_conflicting_inputs() {
             );
         } else {
             assert!(!root.path().join("empack.lock").exists());
+        }
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        engine.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn selected_identity_replacement_publishes_one_candidate_then_sync_converges() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let previous = project(false, false);
+    let replacement = crate::engine::addition::tests::fixture(
+        &[("assets", "Project3", "Version3")],
+        &["assets"],
+        &[],
+        true,
+    );
+    let (engine, governor) = engine(state.path().join("state"));
+    let request = || AddRequest {
+        group: AdditionGroup::from_resolved(&replacement).unwrap(),
+        content: crate::engine::dependency_content::materialized(acquired_project(&replacement)),
+        existing: ExistingDependencyPolicy::ReplaceSelected(ReplacementSelection {
+            keys: NonEmpty::new(vec![DependencyKey::parse("assets").unwrap()]).unwrap(),
+            evidence: RemovalEvidencePolicy::RequireComplete,
+        }),
+    };
+    let before = fs::read(root.path().join("empack.lock")).unwrap();
+    let prepared = ready(&engine, root.path(), request()).await;
+    assert_eq!(
+        prepared.view().add().unwrap().replaced,
+        previous.lock().dependencies
+    );
+    assert_eq!(fs::read(root.path().join("empack.lock")).unwrap(), before);
+    let mut permission = grant(&prepared);
+    permission.replacement = None;
+    assert!(prepared.authorize(permission).is_err());
+    let prepared = ready(&engine, root.path(), request()).await;
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Add(
+            receipt,
+        ))) => {
+            assert_eq!(receipt.replaced, previous.lock().dependencies);
+            assert_eq!(
+                receipt.project.lock().dependencies,
+                replacement.lock().dependencies
+            );
+        }
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("replacement failed"),
+    }
+    engine.release_completed(handle.id());
+    drop((outcome, handle));
+    for file in ["a.zip", "copy.zip", "b.zip"] {
+        assert!(
+            !root
+                .path()
+                .join(format!("pack/resourcepacks/{file}"))
+                .exists()
+        );
+        assert_eq!(
+            fs::read(
+                root.path()
+                    .join(format!("pack/Project3/resourcepacks/{file}"))
+            )
+            .unwrap(),
+            b"payload"
+        );
+    }
+    assert_eq!(
+        fs::read(root.path().join("pack/config/value")).unwrap(),
+        b"current config"
+    );
+    for _ in 0..2 {
+        let view = engine
+            .preview(
+                root.path().to_path_buf(),
+                SyncRequest {
+                    resolution: None,
+                    content: crate::engine::dependency_content::materialized(acquired_project(
+                        &replacement,
+                    )),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(view.sync().unwrap().files.changes().is_empty());
+    }
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn selected_replacement_refuses_unverified_or_unowned_effects() {
+    for mode in ["old-drift", "new-collision", "missing-slot", "late-drift"] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        let replacement = crate::engine::addition::tests::fixture(
+            &[("assets", "Project3", "Version3")],
+            &["assets"],
+            &[],
+            true,
+        );
+        let old = root.path().join("pack/resourcepacks/a.zip");
+        if mode == "old-drift" {
+            fs::write(&old, b"changed").unwrap();
+        }
+        if mode == "new-collision" {
+            super::tests::put(root.path(), "pack/Project3/resourcepacks/a.zip", b"payload");
+        }
+        let (engine, governor) = engine(state.path().join("state"));
+        let mut request = AddRequest {
+            group: AdditionGroup::from_resolved(&replacement).unwrap(),
+            content: crate::engine::dependency_content::materialized(acquired_project(
+                &replacement,
+            )),
+            existing: ExistingDependencyPolicy::ReplaceSelected(ReplacementSelection {
+                keys: NonEmpty::new(vec![DependencyKey::parse("assets").unwrap()]).unwrap(),
+                evidence: RemovalEvidencePolicy::RequireComplete,
+            }),
+        };
+        if mode == "missing-slot" {
+            request.content.pop_first();
+        }
+        let intent = fs::read(root.path().join("empack.yml")).unwrap();
+        let lock = fs::read(root.path().join("empack.lock")).unwrap();
+        if mode == "late-drift" {
+            let prepared = ready(&engine, root.path(), request).await;
+            let permission = grant(&prepared);
+            fs::write(&old, b"changed").unwrap();
+            let mut handle = engine
+                .start(prepared.authorize(permission).unwrap())
+                .unwrap();
+            let outcome = handle.wait().await;
+            assert!(matches!(
+                &*outcome,
+                OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_))
+            ));
+            engine.release_completed(handle.id());
+            drop((outcome, handle));
+        } else {
+            assert!(
+                engine
+                    .prepare(root.path().to_path_buf(), request)
+                    .await
+                    .is_err(),
+                "{mode}"
+            );
+        }
+        assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), intent);
+        assert_eq!(fs::read(root.path().join("empack.lock")).unwrap(), lock);
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/b.zip")).unwrap(),
+            b"payload"
+        );
+        if mode.ends_with("drift") {
+            assert_eq!(fs::read(old).unwrap(), b"changed");
         }
         assert_eq!(governor.status().reserved, ResourceRequest::default());
         engine.shutdown().await;

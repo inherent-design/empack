@@ -503,9 +503,20 @@ lost when a weaker observation arrives for the same exact selection. Compatible 
 sets merge; contradictory complete evidence requires explicit resolution. A changed
 pin cannot silently invalidate retained dependents. `AdditionCandidate` binds raw
 source revisions and computes coherent next documents without publication authority.
-Acquisition hosts and foreign-identity replacement remain
-implementation work; this planner alone does not replace a CLI command. Eight focused
+Host request composition remains implementation work; this planner alone does not
+replace a CLI command. Eight focused
 contract tests and all-feature Clippy pass for this planning boundary.
+
+Explicit foreign-identity replacement now composes the existing removal safety rules
+and addition planner into one native publication. Every selected installed key needs
+an explicit replacement root. Retained aliases cannot redirect the selected target;
+changes to unselected existing roots fail. Known incoming dependencies remain binding,
+and acknowledged incomplete evidence is visible with the old exact records in the
+preview and receipt. Native verification still requires original bytes, a complete
+new inventory, and unoccupied untracked destinations. Composed tests replace the
+identity, retain unrelated content and synchronize twice without changes. All 76
+affected addition, adoption, capture and sync tests pass, with all-feature Clippy and
+Windows cross-compilation. This is targeted evidence after the full `dec0d33` run.
 
 Observed adoption now uses the same resolved group, canonical binding and selected
 capture. `AdoptObservedRequest` verifies present payloads against the proposed source

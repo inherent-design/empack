@@ -1,5 +1,8 @@
 //! Merge a resolved dependency request without renaming existing identities or collecting content.
-use crate::model::*;
+use crate::{
+    model::*,
+    removal::{RemovalError, RemovalEvidencePolicy, RemovalMode, RemovalPlan},
+};
 use alloc::{
     collections::{BTreeMap, BTreeSet},
     vec::Vec,
@@ -49,11 +52,24 @@ impl AdditionGroup {
     }
 }
 
+/// Exact logical records authorized for replacement by explicitly requested roots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplacementSelection {
+    /// Every key must be installed and appear as an explicit replacement root.
+    pub keys: NonEmpty<DependencyKey>,
+    /// Missing dependency evidence requires an explicit policy choice.
+    pub evidence: RemovalEvidencePolicy,
+}
+
 /// A resolved addition cannot silently displace another logical record or retained requirement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdditionError {
     /// No explicit root requested an installation.
     EmptyRequest,
+    /// The old selection cannot safely leave the resulting project.
+    Replacement(RemovalError),
+    /// Replacement must explicitly supply the selected logical record.
+    MissingReplacementRoot(DependencyKey),
     /// An update selected an identity that is not installed.
     UpdateMissing(DependencyKey),
     /// The proposed closure includes an unjustified selection.
@@ -75,6 +91,8 @@ impl fmt::Display for AdditionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UpdateMissing(key) => write!(f, "Cannot update an uninstalled identity: {}", key.as_str()),
+            Self::Replacement(error) => error.fmt(f),
+            Self::MissingReplacementRoot(key) => write!(f, "Replacement requires an explicit root for {}", key.as_str()),
             Self::EmptyRequest => f.write_str("Addition requires an explicit dependency root"),
             Self::UnrequestedSelection(key) => write!(f, "Unrequested installation in addition: {}", key.as_str()),
             Self::RuntimeMismatch => f.write_str("Addition was resolved for a different runtime"),
@@ -96,6 +114,8 @@ pub struct AdditionPlan {
     bindings: BTreeMap<DependencyKey, DependencyKey>,
     changed: BTreeSet<DependencyKey>,
     existing_roots: BTreeSet<DependencyKey>,
+    replaced: BTreeMap<DependencyKey, LockedDependency>,
+    incomplete: Vec<DependencyKey>,
 }
 impl AdditionPlan {
     /// Describe selected observed installations when no prior lock exists. Existing authoring
@@ -119,6 +139,8 @@ impl AdditionPlan {
                 .collect(),
             changed: lock.dependencies.keys().cloned().collect(),
             existing_roots: BTreeSet::new(),
+            replaced: BTreeMap::new(),
+            incomplete: Vec::new(),
             lock,
         })
     }
@@ -232,11 +254,64 @@ impl AdditionPlan {
             lock,
             bindings,
             changed,
+            replaced: BTreeMap::new(),
+            incomplete: Vec::new(),
             existing_roots: roots
                 .into_iter()
                 .filter(|key| current.lock().dependencies.contains_key(key))
                 .collect(),
         })
+    }
+    /// Compose removal safety and addition as one semantic candidate, never a published
+    /// intermediate deletion. Canonical alias matching cannot redirect a selected replacement.
+    pub fn prepare_replacement(
+        current: &ResolvedProject,
+        group: &AdditionGroup,
+        selection: &ReplacementSelection,
+    ) -> Result<Self, AdditionError> {
+        for key in selection.keys.as_slice() {
+            if !group.roots.contains_key(key) {
+                return Err(AdditionError::MissingReplacementRoot(key.clone()));
+            }
+        }
+        let removal = RemovalPlan::prepare_with_policy(
+            current,
+            &selection.keys,
+            RemovalMode::RemoveContent,
+            selection.evidence,
+        )
+        .map_err(AdditionError::Replacement)?;
+        let replaced = removal.selected().clone();
+        let incomplete = removal.incomplete_evidence().to_vec();
+        let retained = removal
+            .resolve(current.lock().intent_revision)
+            .map_err(AdditionError::InvalidProject)?;
+        let mut plan = Self::prepare(&retained, group)?;
+        for key in &plan.existing_roots {
+            if plan.changed.contains(key)
+                || plan.intent.roots.get(key) != current.intent().roots.get(key)
+            {
+                return Err(AdditionError::OccupiedKey(key.clone()));
+            }
+        }
+        for key in selection.keys.as_slice() {
+            if plan.bindings.get(key) != Some(key) {
+                return Err(AdditionError::OccupiedKey(key.clone()));
+            }
+            plan.existing_roots.insert(key.clone());
+            plan.changed.insert(key.clone());
+        }
+        plan.replaced = replaced;
+        plan.incomplete = incomplete;
+        Ok(plan)
+    }
+    /// Prior exact identities and placements explicitly selected for replacement.
+    pub fn replaced(&self) -> &BTreeMap<DependencyKey, LockedDependency> {
+        &self.replaced
+    }
+    /// Retained records whose unknown dependency evidence was explicitly acknowledged.
+    pub fn incomplete_evidence(&self) -> &[DependencyKey] {
+        &self.incomplete
     }
     /// Refresh selected installed identities without rewriting authoring intent. Temporary roots
     /// in the resolved group identify the requested selections, including transitive records;
