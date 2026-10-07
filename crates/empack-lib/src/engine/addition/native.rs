@@ -1,0 +1,332 @@
+//! Addition authorizes only verified selected placements and coherent logical documents.
+use super::AdditionCandidate;
+use crate::{
+    application::process_runtime::Cancellation,
+    engine::{
+        content::{InitialObservation, SourceEvidencePolicy, verify_observation},
+        layout::ProjectLayout,
+        mrpack::{AcquiredBuildFile, LockedFileKey},
+        project::{MutationSnapshot, WorkspaceSnapshot},
+        publication::{PublicationReceipt, Publisher},
+        snapshot::ProjectReadRoot,
+        staging::MutableStage,
+        verification::{self, VerifiedFileChange},
+    },
+};
+use anyhow::{Context, Result, ensure};
+use empack_core::{
+    addition::AdditionGroup,
+    digest::ContentId,
+    files::{FileContent, FilePlan, ManagedPath, ObservedPath},
+    model::ResolvedProject,
+    path::{PathSyntax, PortableRelPath},
+};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+
+pub struct PreparedAddition {
+    root: ProjectReadRoot,
+    change: VerifiedFileChange,
+    candidate: AdditionCandidate,
+}
+pub struct AdditionReceipt {
+    pub publication: PublicationReceipt,
+    pub project: ResolvedProject,
+}
+impl PreparedAddition {
+    pub fn files(&self) -> &FilePlan {
+        self.change.plan()
+    }
+    pub fn candidate(&self) -> &AdditionCandidate {
+        &self.candidate
+    }
+    pub fn publish(self, publisher: &Publisher, cancel: &Cancellation) -> Result<AdditionReceipt> {
+        let publication = publisher.publish(&self.root, self.change, cancel)?;
+        Ok(AdditionReceipt {
+            publication,
+            project: self.candidate.project,
+        })
+    }
+}
+/// Supplied content is keyed by the resolved request; canonical aliases are bound here.
+/// Same-identity updates require the caller's replacement authorization before publication.
+pub fn prepare_addition(
+    workspace: MutationSnapshot,
+    group: &AdditionGroup,
+    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    cancel: &Cancellation,
+) -> Result<PreparedAddition> {
+    let planned = plan_addition(workspace, group, acquired, cancel)?;
+    planned.bytes()?;
+    planned.stage(cancel)
+}
+pub(in crate::engine) struct AdditionPreparation {
+    workspace: WorkspaceSnapshot,
+    candidate: AdditionCandidate,
+    plan: FilePlan,
+    documents: BTreeMap<ManagedPath, Vec<u8>>,
+    content: BTreeMap<ManagedPath, AcquiredBuildFile>,
+}
+impl AdditionPreparation {
+    pub(in crate::engine) fn bytes(&self) -> Result<u64> {
+        self.plan.expected().values().try_fold(0u64, |n, f| {
+            n.checked_add(f.bytes)
+                .context("Addition staging size overflow")
+        })
+    }
+    pub(in crate::engine) fn stage(self, cancel: &Cancellation) -> Result<PreparedAddition> {
+        let limits =
+            verification::candidate_stage_limits(self.workspace.observations(), &self.plan)?;
+        let mut stage = MutableStage::empty()?;
+        for (target, bytes) in &self.documents {
+            stage.write_attributed(
+                &ProjectLayout::path(target)?,
+                &mut bytes.as_slice(),
+                bytes.len() as u64,
+                self.plan.expected()[target].permissions,
+                cancel,
+            )?;
+        }
+        for (target, file) in &self.content {
+            stage.write_attributed(
+                &ProjectLayout::path(target)?,
+                &mut file.content.lease().open(),
+                file.content.lease().len(),
+                file.permissions,
+                cancel,
+            )?;
+        }
+        let stage = stage.freeze(limits, cancel)?;
+        let (root, base) = self.workspace.into_native();
+        let change = VerifiedFileChange::verify_mutation(base, self.plan, stage)?;
+        Ok(PreparedAddition {
+            root,
+            change,
+            candidate: self.candidate,
+        })
+    }
+}
+pub(in crate::engine) fn plan_addition(
+    workspace: MutationSnapshot,
+    group: &AdditionGroup,
+    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    cancel: &Cancellation,
+) -> Result<AdditionPreparation> {
+    cancel.check()?;
+    let workspace = workspace.into_workspace();
+    let current = workspace.require_resolved()?;
+    let candidate = AdditionCandidate::prepare(
+        workspace.intent(),
+        workspace.prior_lock().context("Addition requires a lock")?,
+        group,
+    )?;
+    let mut bound = BTreeMap::new();
+    for (slot, content) in acquired {
+        let key = candidate
+            .plan()
+            .bindings()
+            .get(&slot.dependency)
+            .context("Addition received unrequested content")?;
+        ensure!(
+            bound
+                .insert(
+                    LockedFileKey {
+                        dependency: key.clone(),
+                        slot: slot.slot
+                    },
+                    content
+                )
+                .is_none(),
+            "Addition repeats a canonical file"
+        );
+    }
+    let acquired = bound;
+    let selected: BTreeSet<_> = candidate.plan().bindings().values().cloned().collect();
+    let mut expected_slots = BTreeSet::new();
+    let mut content = BTreeMap::new();
+    let mut old = BTreeMap::new();
+    for key in &selected {
+        if let Some(dependency) = current.lock().dependencies.get(key) {
+            for file in dependency.files.as_slice() {
+                for placement in file.placements.as_slice() {
+                    old.insert(
+                        ManagedPath::Content {
+                            layer: placement.layer,
+                            path: placement.destination.relative().clone(),
+                        },
+                        &file.expected,
+                    );
+                }
+            }
+        }
+        for file in candidate.project().lock().dependencies[key]
+            .files
+            .as_slice()
+        {
+            let slot = LockedFileKey {
+                dependency: key.clone(),
+                slot: file.slot.clone(),
+            };
+            let bytes = acquired
+                .get(&slot)
+                .context("Addition is missing an exact acquired file")?;
+            expected_slots.insert(slot);
+            verify_observation(
+                &mut bytes.content.lease().open(),
+                &file.expected,
+                bytes.content.lease().len(),
+                SourceEvidencePolicy::Compatibility,
+                InitialObservation::RequireEvidence,
+                cancel,
+            )?;
+            for placement in file.placements.as_slice() {
+                let target = ManagedPath::Content {
+                    layer: placement.layer,
+                    path: placement.destination.relative().clone(),
+                };
+                ensure!(
+                    content.insert(target, bytes.clone()).is_none(),
+                    "Addition has duplicate placements"
+                );
+            }
+        }
+    }
+    ensure!(
+        acquired.keys().all(|slot| expected_slots.contains(slot)),
+        "Addition received unrequested content"
+    );
+    let mut removals: BTreeSet<_> = old
+        .keys()
+        .filter(|target| !content.contains_key(*target))
+        .cloned()
+        .collect();
+    let observed_content = verification::observed_mutation_for(
+        workspace.observations(),
+        old.keys().chain(content.keys()).cloned(),
+    )?;
+    for (target, observed) in &observed_content {
+        match observed {
+            ObservedPath::File(_) => {
+                // A matching hash alone does not authorize adoption of untracked user files.
+                let expected = old
+                    .get(target)
+                    .context("Addition destination contains untracked content")?;
+                workspace.verify_file(&ProjectLayout::path(target)?, expected, cancel)?;
+            }
+            ObservedPath::Directory => anyhow::bail!("Addition destination is a directory"),
+            ObservedPath::Absent => {}
+        }
+    }
+    // Derivative backend records for changed selections cannot continue claiming the old pin.
+    // Preserve unrelated metadata; known ownership conflicts at affected destinations fail.
+    for record in workspace.backend_files(cancel)? {
+        let target = ManagedPath::Content {
+            layer: empack_core::model::ContentLayer::Common,
+            path: record.destination.relative().clone(),
+        };
+        if !old.contains_key(&target) && !content.contains_key(&target) {
+            continue;
+        }
+        let (key, file) = record
+            .locked_owner(&current)?
+            .context("Addition destination has untracked backend ownership")?;
+        ensure!(
+            selected.contains(key),
+            "Addition overlaps retained backend ownership"
+        );
+        if !candidate.plan().changed().contains(key) {
+            continue;
+        }
+        if let Some(digest) = file.expected.digests.as_ref().and_then(|set| {
+            set.values()
+                .iter()
+                .find(|digest| digest.algorithm() == record.digest.algorithm())
+        }) {
+            ensure!(
+                *digest == record.digest,
+                "Backend digest differs from selected content"
+            );
+        } else {
+            let digests =
+                workspace.verify_file(&ProjectLayout::path(&target)?, &file.expected, cancel)?;
+            ensure!(
+                digests.values().contains(&record.digest),
+                "Backend digest differs from selected bytes"
+            );
+        }
+        removals.insert(ManagedPath::BackendDocument(record.metadata_path));
+    }
+    let mut documents = BTreeMap::from([
+        (
+            ManagedPath::IntentDocument,
+            candidate.intent_document().bytes.clone(),
+        ),
+        (
+            ManagedPath::LockDocument,
+            candidate.lock_document().to_vec(),
+        ),
+    ]);
+    if candidate.project().lock() == current.lock() {
+        documents.insert(
+            ManagedPath::LockDocument,
+            workspace
+                .read_document(
+                    &PortableRelPath::parse("empack.lock", PathSyntax::ProjectContent)?,
+                    cancel,
+                )?
+                .context("Captured lock disappeared")?,
+        );
+    }
+    let mut invalidated = removals.clone();
+    for (target, file) in &content {
+        if !matches!(&observed_content[target], ObservedPath::File(before) if before.content == file.content.lease().id())
+        {
+            invalidated.insert(target.clone());
+        }
+    }
+    crate::engine::backend::index::refresh_index(&workspace, &invalidated, &mut documents, cancel)?;
+    let observed = verification::observed_mutation_for(
+        workspace.observations(),
+        documents
+            .keys()
+            .chain(content.keys())
+            .chain(removals.iter())
+            .cloned(),
+    )?;
+    let mut desired = BTreeMap::new();
+    for (target, bytes) in &documents {
+        let ObservedPath::File(before) = &observed[target] else {
+            anyhow::bail!("Addition document is not an existing regular file")
+        };
+        desired.insert(
+            target.clone(),
+            FileContent {
+                content: ContentId::from_sha256(Sha256::digest(bytes).into()),
+                bytes: bytes.len() as u64,
+                permissions: before.permissions,
+            },
+        );
+    }
+    for (target, file) in &content {
+        desired.insert(
+            target.clone(),
+            FileContent {
+                content: file.content.lease().id(),
+                bytes: file.content.lease().len(),
+                permissions: file.permissions,
+            },
+        );
+    }
+    let plan = verification::plan_files(&observed, &desired, &removals)?;
+    verification::candidate_stage_limits(workspace.observations(), &plan)?;
+    Ok(AdditionPreparation {
+        workspace,
+        candidate,
+        plan,
+        documents,
+        content,
+    })
+}
+
+#[cfg(test)]
+mod tests;

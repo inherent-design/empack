@@ -646,6 +646,57 @@ impl ProjectReader {
                 }
             }
         }
+        self.capture_mutation_paths(selected, documents, required, limits, cancel)
+    }
+    /// Bind old and new placements for the canonical addition without reading unrelated payloads.
+    pub fn capture_addition(
+        &self,
+        selected: &Path,
+        group: &empack_core::addition::AdditionGroup,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
+        let metadata = super::source::CaptureFilter::mutation(&[])?;
+        let documents =
+            self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
+        let current = documents.require_resolved()?;
+        let candidate = super::addition::AdditionCandidate::prepare(
+            documents.intent(),
+            documents.prior_lock().context("Addition requires a lock")?,
+            group,
+        )?;
+        let mut required = Vec::new();
+        for key in candidate.plan().bindings().values() {
+            for dependency in [
+                current.lock().dependencies.get(key),
+                candidate.project().lock().dependencies.get(key),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                for file in dependency.files.as_slice() {
+                    for placement in file.placements.as_slice() {
+                        required.push(super::layout::ProjectLayout::path(
+                            &empack_core::files::ManagedPath::Content {
+                                layer: placement.layer,
+                                path: placement.destination.relative().clone(),
+                            },
+                        )?);
+                    }
+                }
+            }
+        }
+        self.capture_mutation_paths(selected, documents, required, limits, cancel)
+    }
+    fn capture_mutation_paths(
+        &self,
+        selected: &Path,
+        documents: WorkspaceSnapshot,
+        required: Vec<PortableRelPath>,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
         let scopes = [
             "pack",
             "overrides/common",

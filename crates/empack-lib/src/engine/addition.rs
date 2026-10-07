@@ -1,10 +1,12 @@
 //! Bind canonical dependency additions to captured document revisions before native preparation.
+mod native;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, PreparedDocument};
 use anyhow::Result;
 use empack_core::{
     addition::{AdditionGroup, AdditionPlan},
     model::ResolvedProject,
 };
+pub use native::{AdditionReceipt, PreparedAddition, prepare_addition};
 
 /// A coherent document candidate, not authority to replace installed bytes.
 pub struct AdditionCandidate {
@@ -57,7 +59,7 @@ mod tests {
     fn key(value: &str) -> DependencyKey {
         DependencyKey::parse(value).unwrap()
     }
-    fn fixture(
+    pub(super) fn fixture(
         entries: &[(&str, &str, &str)],
         roots: &[&str],
         edges: &[(&str, &str)],

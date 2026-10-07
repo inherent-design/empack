@@ -134,7 +134,13 @@ Engine recovery/continuation composition and CLI cutover remain unfinished.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical
 aliases and rejects conflicts with retained selections. Its `AdditionPlan` exposes
 requested-to-canonical key bindings and changed exact entries; neither grants file
-mutation authority. Shared Engine addition and native materialization remain pending.
+mutation authority. `ProjectReader::capture_addition` captures old and new selected
+placements. `prepare_addition` binds supplied request slots to canonical keys, verifies
+original byte assertions, and prepares exact content/document changes. Untracked
+collisions require a separate adoption decision. Changed selections invalidate only
+owned derivative metadata and affected index entries. `PreparedAddition::publish`
+uses the shared recovery journal. Shared Engine addition and provider/local/URL host
+integration remain pending.
 
 `ProjectReader::capture_removal` resolves user selections from document/metadata
 observations and captures their exact managed placements into a `MutationSnapshot`.

@@ -429,9 +429,23 @@ lost when a weaker observation arrives for the same exact selection. Compatible 
 sets merge; contradictory complete evidence requires explicit resolution. A changed
 pin cannot silently invalidate retained dependents. `AdditionCandidate` binds raw
 source revisions and computes coherent next documents without publication authority.
-Native acquisition/publication and shared Engine add/sync/update/adoption wiring remain
+Shared Engine add/sync/update/adoption wiring and acquisition hosts remain
 implementation work; this planner alone does not replace a CLI command. Eight focused
 contract tests and all-feature Clippy pass for this planning boundary.
+
+The native addition adapter captures old and new selected placements, binds supplied
+request slots to canonical aliases, and verifies original digest/size/observation
+assertions. Present old bytes must still match the prior lock. Untracked files,
+directories, selected links and extra input slots fail the whole preparation. Missing
+tracked files can be restored without changing their logical selection. No-op re-adds
+preserve raw intent and lock documents, including cosmetic edits.
+
+Updates retire exact owned derivative metadata and invalidate affected direct index
+entries while preserving unrelated entries and fields. The shared index adapter
+rebinds the pack digest. Staged content, documents and explicit removals publish through
+the existing journal; changed inputs after preparation prevent publication. Native
+regressions cover first addition, repeated addition, alias binding, restoration,
+wrong bytes, collisions, links, update/index publication and post-preview changes.
 
 ## Semantic removal planning
 

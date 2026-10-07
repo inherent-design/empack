@@ -1,4 +1,5 @@
 //! Packwiz wire observations. Metadata describes an installation; it is not a byte proof.
+pub(in crate::engine) mod index;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::ExpectedDigest,
