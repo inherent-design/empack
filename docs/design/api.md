@@ -130,6 +130,12 @@ unfinished creation, including after a move or through an alias. The lower-level
 `Publisher::recover_new` completes retained creation without tools or downloads.
 Engine recovery/continuation composition and CLI cutover remain unfinished.
 
+`AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
+`AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical
+aliases and rejects conflicts with retained selections. Its `AdditionPlan` exposes
+requested-to-canonical key bindings and changed exact entries; neither grants file
+mutation authority. Shared Engine addition and native materialization remain pending.
+
 `ProjectReader::capture_removal` resolves user selections from document/metadata
 observations and captures their exact managed placements into a `MutationSnapshot`.
 `capture_mutation` supports callers needing every locked placement. Both exclude

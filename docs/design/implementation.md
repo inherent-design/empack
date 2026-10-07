@@ -68,7 +68,7 @@ This supports version-only dependency references without guessing their owner.
 Internal catalog composition can carry one request budget through selector, pin and
 compatible lookups; it does not restart the deadline between dependencies.
 Transient signed URLs are execution data; the document codec still rejects them in
-persistent alternatives. Import composition and command cutover remain completion gates. The build Engine can
+persistent alternatives. Command cutover remains a completion gate. The build Engine can
 use this catalog after authorization to refresh a locked file's locator. It selects
 a declared role or unique matching source evidence, rejects changed assertions and
 retains all original expectations during acquisition. Missing credentials and
@@ -122,8 +122,8 @@ no solution exists. The host must resolve choices before publication. Explicit r
 cannot be displaced by a transitive selection.
 
 This is dependency evidence, not an installation plan or authority to delete unlisted
-content. Import and mutation preparation still need to assign roles/placements, resolve
-requirements and compose this evidence with verified publication.
+content. Mutation preparation still needs to assign roles/placements, resolve requirements
+and compose this evidence with verified publication.
 
 ## Provider search
 
@@ -413,7 +413,25 @@ changes block the whole publication, and output collisions fail preflight. One
 recoverable journal owns the combined artifact changes; this does not claim an
 atomic filesystem-wide visibility switch. Each result retains exact resolution,
 original backend evidence, conversions and expected archive members. Remaining
-loader runtime contracts must join this boundary before CLI `all` can cut over.
+CLI composition must route every supported target through this boundary.
+
+## Canonical addition planning
+
+`AdditionGroup` contains a resolved request whose selections are all reachable from
+explicit roots. `AdditionPlan` binds provider identities to existing logical keys,
+retains unrequested installations and settings, and carries explicit pin intent into
+the next project. An existing alias wins over a proposed new label. Occupied labels,
+changed shared selections, mismatched runtimes and unjustified installations fail the
+whole request before native preparation.
+
+Repeated exact additions preserve the logical state. Known required edges are not
+lost when a weaker observation arrives for the same exact selection. Compatible edge
+sets merge; contradictory complete evidence requires explicit resolution. A changed
+pin cannot silently invalidate retained dependents. `AdditionCandidate` binds raw
+source revisions and computes coherent next documents without publication authority.
+Native acquisition/publication and shared Engine add/sync/update/adoption wiring remain
+implementation work; this planner alone does not replace a CLI command. Eight focused
+contract tests and all-feature Clippy pass for this planning boundary.
 
 ## Semantic removal planning
 

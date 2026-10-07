@@ -5,6 +5,7 @@
 
 extern crate alloc;
 
+pub mod addition;
 pub mod digest;
 pub mod files;
 pub mod identity;
