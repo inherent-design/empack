@@ -45,6 +45,7 @@ fn test_config_merging() {
     let base = AppConfig::default();
     let override_config = AppConfig {
         workdir: Some(PathBuf::from("/tmp/override-workdir")),
+        state_dir: Some(PathBuf::from("/tmp/override-state")),
         modrinth_api_client_id: Some("modrinth-id".to_string()),
         modrinth_api_client_key: Some("modrinth-key".to_string()),
         curseforge_api_client_key: Some("curseforge-key".to_string()),
@@ -59,6 +60,7 @@ fn test_config_merging() {
     };
 
     let merged = base.merge_with(override_config);
+    assert_eq!(merged.state_dir, Some(PathBuf::from("/tmp/override-state")));
     assert_eq!(
         merged.workdir,
         Some(PathBuf::from("/tmp/override-workdir"))

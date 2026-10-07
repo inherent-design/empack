@@ -223,7 +223,7 @@ a moved root. Its approval binds the parent, selected name, native identity and 
 revision. It refuses a new occupant or progress since preparation. Creation has no
 restore action: deleting a project root requires separate authority. Recovery preview
 preserves journal scratch; only approved execution cleans it. Durable continuation
-and CLI composition remain unfinished.
+and the remaining CLI composition remain unfinished.
 
 `SynchronizationCandidate::prepare` rebinds authoring-only edits to the recorded
 resolution without selecting newer files. It preserves all exact selections, original
@@ -508,6 +508,16 @@ pub fn assemble(config: HostConfig) -> Result<Engine, SetupError> {
 Only `assemble` sees all dependencies. `PreparationService` does not receive `Publisher` or a capability factory that can grant itself cache writes. `Engine::preview` passes read-only per-call acquisition authority; `Engine::prepare` derives only the cache authority the caller allowed. Root factories are projected into scratch, staging, reader, and publisher interfaces, and snapshotting receives only the journal reader. A snapshotter therefore cannot delete stale recovery state. `PackwizAdapter` does not receive project-document publication. `VerificationService` does not trust a backend-provided expected inventory.
 
 The constructor names are proposed concrete adapters. In implementation, prefer grouped typed configuration objects when a constructor grows too large, but do not introduce `services: Arc<Everything>` to shorten the signature.
+
+### Implemented recovery host
+
+The CLI `recover [inspect|finish|restore]` composes the existing inspection and approved
+recovery APIs. Inspection is the default. `--operation` can bind the selected journal;
+preview and declined confirmation remain read-only. Execution uses the normal owned
+handle and drains workers on cancellation or error. `--state-dir` / `EMPACK_STATE_DIR`
+select durable host state independently of disposable caches. Existing and absent
+project selections support publication and creation recovery respectively. This host
+does not parse project intent or bootstrap packwiz.
 
 ### 17.4 CLI usage
 

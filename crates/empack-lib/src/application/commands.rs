@@ -71,7 +71,10 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
     let _mutation_lock = if !session.config().app_config().dry_run
         && !matches!(
             &command,
-            Commands::Init(_) | Commands::Version | Commands::Requirements
+            Commands::Init(_)
+                | Commands::Version
+                | Commands::Requirements
+                | Commands::Recover { .. }
         ) {
         let workdir = session
             .config()
@@ -85,6 +88,9 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
     };
 
     match command {
+        Commands::Recover { action, operation } => {
+            super::engine_host::recover(session, action, operation).await
+        },
         Commands::Requirements => handle_requirements(session).await,
         Commands::Version => handle_version(session).await,
         Commands::Init(args) => handle_init(session, &args).await,

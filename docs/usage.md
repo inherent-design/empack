@@ -29,3 +29,26 @@ The [API contract](design/api.md) defines requests and outcomes. Exact CLI spell
 and normalized document examples are finalized with the implementation; proposed
 requests must not be advertised as working commands before their tests pass.
 There is no requirement to retain old flags or manifest formats.
+
+## Implemented recovery command
+
+`empack recover` inspects interrupted engine publication without requiring valid
+project documents. `empack recover finish` completes its approved changes;
+`empack recover restore` restores retained preimages. A new-project creation can be
+finished, but restore cannot authorize deleting that project root.
+
+Use `--dry-run` to inspect the exact recovery footprint before execution. Recovery
+requires confirmation or `--yes`. `--operation <id>` binds automation to the operation
+reported by inspection; a different or no-longer-pending operation fails.
+
+```sh
+empack --workdir ./pack recover
+empack --workdir ./pack --dry-run recover finish --operation <id>
+empack --workdir ./pack --yes recover finish --operation <id>
+```
+
+`--state-dir` / `EMPACK_STATE_DIR` selects durable engine operation storage. Its
+default is the platform application-data directory's `operations` child, separate
+from disposable caches. Relative selections resolve from the invocation directory.
+Inspecting missing state creates neither host state nor a project directory. This
+command handles engine journals; it does not reinterpret older interruption markers.

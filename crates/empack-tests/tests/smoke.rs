@@ -905,3 +905,32 @@ fn assert_forced_import_rejects_invalid_input(corrupt_crc: bool) {
         );
     }
 }
+
+#[test]
+fn smoke_recovery_inspection_needs_no_pack_and_creates_no_state() {
+    let project = TestProject::new();
+    // Engine recovery owns journal coordination and must not acquire the legacy mutation lock.
+    let _legacy_lock = empack_lib::application::persistence::ProjectLock::acquire(project.dir()).unwrap();
+    let host = tempfile::tempdir().unwrap();
+    let state = host.path().join("state");
+    std::fs::write(project.dir().join("empack.yml"), b"invalid authoring is unrelated").unwrap();
+    command(&project)
+        .arg("--state-dir").arg(&state)
+        .args(["recover", "inspect"])
+        .assert().success();
+    assert!(!state.exists());
+    assert!(!project.dir().join(".empack-state").exists());
+    assert_eq!(std::fs::read(project.dir().join("empack.yml")).unwrap(), b"invalid authoring is unrelated");
+    command(&project)
+        .arg("--state-dir").arg(&state)
+        .args(["recover", "finish", "--operation", "not-pending"])
+        .assert().failure();
+    assert!(!state.exists());
+    command(&project)
+        .arg("--state-dir").arg(&state)
+        .arg("--workdir").arg(project.dir().join("absent-project"))
+        .args(["recover", "inspect"])
+        .assert().success();
+    assert!(!project.dir().join("absent-project").exists());
+    assert!(!state.exists());
+}

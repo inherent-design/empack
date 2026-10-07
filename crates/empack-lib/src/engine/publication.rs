@@ -1197,7 +1197,7 @@ fn receipt(journal: &Journal) -> PublicationReceipt {
 }
 
 #[cfg(test)]
-pub(in crate::engine) mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 pub(in crate::engine) use creation::interrupted_creation_fixture;

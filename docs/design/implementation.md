@@ -945,6 +945,24 @@ including review 98's reproduced archive-size mismatch. The combined snapshot pa
 Clippy and Windows cross-compilation also pass. Combined CLI cleanup and persistent acquisition
 integration remain unfinished; this is not a transaction across project and cache.
 
+## Recovery CLI
+
+`recover` routes the real CLI dispatcher through the engine. The default `inspect`
+action is read-only; `finish` and `restore` prepare the exact journal-bound footprint
+and require confirmation or `--yes`. `--dry-run` returns before authorization.
+`--operation` rejects a different or no-longer-pending journal. Recovery works without
+valid project documents, supports absent creation destinations, and never acquires
+the old project-mutation lock. The host drains engine workers before returning.
+
+Durable state uses platform application data, with explicit `--state-dir` /
+`EMPACK_STATE_DIR` selection. Relative paths use the invocation root. Construction and
+inspection do not create it. Native dispatcher tests inject interrupted publication,
+compare project and journal bytes through inspect/preview/decline, and verify both
+finish and restore. Configuration parsing and merging preserve state-directory
+selection. All 27 focused CLI/configuration/host tests and 24 offline executable smoke
+tests pass, along with all-feature Clippy and Windows cross-compilation. Existing
+command migration and global-display removal remain separate work.
+
 ## Remaining integration and limits
 
 - Extend the compiled build/import `Engine` lifecycle to the remaining semantic

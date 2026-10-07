@@ -23,7 +23,7 @@ fn expected(bytes: &[u8]) -> FileContent {
         },
     }
 }
-fn prepare(root: &ProjectReadRoot) -> VerifiedFileChange {
+pub(crate) fn prepare(root: &ProjectReadRoot) -> VerifiedFileChange {
     let cancel = Cancellation::default();
     let snapshot = root
         .capture(
@@ -896,7 +896,7 @@ fn recovery_preview_preserves_journal_siblings_until_approved_execution() {
     }
 }
 
-pub(in crate::engine) fn interrupt_publication(
+pub(crate) fn interrupt_publication(
     publisher: &Publisher,
     root: &ProjectReadRoot,
     verified: VerifiedFileChange,

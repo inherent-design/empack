@@ -291,12 +291,28 @@ pub enum Commands {
         deps: bool,
     },
 
+    /// Inspect or recover an interrupted engine operation
+    Recover {
+        #[arg(value_enum, default_value = "inspect")]
+        action: CliRecoveryAction,
+        /// Require the exact operation reported by inspection
+        #[arg(long)]
+        operation: Option<String>,
+    },
+
     /// Clean build directories
     Clean {
         /// What to clean
         #[arg(help = "What to clean: builds, cache, all")]
         targets: Vec<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CliRecoveryAction {
+    Inspect,
+    Finish,
+    Restore,
 }
 
 /// Search platform preference for project resolution
@@ -374,6 +390,7 @@ impl Commands {
     /// Check if command requires an initialized modpack directory
     pub fn requires_modpack(&self) -> bool {
         match self {
+            Commands::Recover { .. } => false,
             Commands::Requirements => false,
             Commands::Version => false,
             Commands::Init(..) => false,
@@ -388,6 +405,7 @@ impl Commands {
     /// Get execution order for command
     pub fn execution_order(&self) -> u8 {
         match self {
+            Commands::Recover { .. } => 0,
             Commands::Requirements => 0,
             Commands::Version => 0,
             Commands::Init(..) => 1,

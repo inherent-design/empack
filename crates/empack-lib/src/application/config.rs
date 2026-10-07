@@ -56,7 +56,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub workdir: Option<PathBuf>,
 
-    /// Reserved parallelism setting (currently unused)
+    /// Durable operation and recovery storage, separate from disposable caches
+    #[arg(long, env = "EMPACK_STATE_DIR", global = true)]
+    #[serde(default)]
+    pub state_dir: Option<PathBuf>,
+
+    /// Maximum admitted engine workers (legacy commands may not use this limit)
     #[arg(short = 'j', long, env = "EMPACK_CPU_JOBS", default_value = defaults::CPU_PARALLELS)]
     #[serde(default = "default_fns::cpu_parallels")]
     pub cpu_jobs: usize,
@@ -127,6 +132,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             workdir: None,
+            state_dir: None,
             cpu_jobs: default_fns::cpu_parallels(),
             net_timeout: default_fns::net_timeout(),
             modrinth_api_client_id: None,
@@ -158,6 +164,9 @@ impl AppConfig {
 
     /// Merge this config with another, taking non-default values from other
     pub fn merge_with(mut self, other: Self) -> Self {
+        if other.state_dir.is_some() {
+            self.state_dir = other.state_dir;
+        }
         if other.workdir.is_some() {
             self.workdir = other.workdir;
         }
