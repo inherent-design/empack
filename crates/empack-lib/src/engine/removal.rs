@@ -9,9 +9,12 @@ use empack_core::{
 mod native;
 mod selection;
 pub(super) use native::plan_selected_removal;
-pub use native::{PreparedRemoval, RemovalReceipt, prepare_removal};
-pub(super) use selection::resolve as resolve_selections;
+pub use native::{
+    ObservedRemovalSelection, PreparedRemoval, RemovalReceipt, prepare_removal,
+    prepare_removal_with_policy,
+};
 pub use selection::{RemovalSelector, SelectionError};
+pub(super) use selection::{ResolvedSelections, resolve as resolve_selections};
 
 /// Coherent next documents and explicit exact selections. This is not permission to delete files.
 /// Native preparation must still bind placements and metadata to captured regular files and
@@ -49,6 +52,20 @@ impl RemovalCandidate {
     ) -> Result<Self> {
         let current = lock.bind(source)?;
         let plan = RemovalPlan::prepare_with_policy(&current, selections, mode, evidence)?;
+        Self::from_plan(source, plan)
+    }
+    pub(super) fn prepare_selected(
+        source: &DecodedIntent,
+        lock: &DecodedLock,
+        selections: &ResolvedSelections,
+        mode: RemovalMode,
+        evidence: RemovalEvidencePolicy,
+    ) -> Result<Self> {
+        let current = lock.bind(source)?;
+        let plan = logical_plan(&current, selections, mode, evidence)?;
+        Self::from_plan(source, plan)
+    }
+    fn from_plan(source: &DecodedIntent, plan: RemovalPlan) -> Result<Self> {
         let intent = DocumentCodec.replace_intent(source, plan.intent())?;
         let next = DocumentCodec.decode_intent(&intent.bytes, "removal candidate")?;
         let project = plan.clone().resolve(next.semantic_revision())?;
@@ -71,6 +88,65 @@ impl RemovalCandidate {
     }
     pub fn lock_document(&self) -> &[u8] {
         &self.lock
+    }
+}
+
+/// Installed metadata lacks the complete graph facts retained in the exact lock.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Untracked installed metadata has incomplete dependency evidence; explicitly acknowledge unknown dependents before removing content"
+)]
+pub struct UntrackedDependencyEvidence(pub Vec<empack_core::path::PortableRelPath>);
+
+pub(super) fn untracked_evidence(
+    project: &ResolvedProject,
+    records: &[super::backend::BackendFile],
+    mode: RemovalMode,
+    evidence: RemovalEvidencePolicy,
+) -> Result<Vec<empack_core::path::PortableRelPath>> {
+    if mode == RemovalMode::ForgetRoots {
+        return Ok(vec![]);
+    }
+    let unknown: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            // An unrelated stale claim is unknown evidence, not ownership of another file.
+            // Selected destinations are checked strictly in native preparation.
+            record.locked_owner(project).ok().flatten().is_none()
+        })
+        .map(|record| record.metadata_path.clone())
+        .collect();
+    anyhow::ensure!(
+        unknown.is_empty() || evidence == RemovalEvidencePolicy::AcknowledgeUnknown,
+        UntrackedDependencyEvidence(unknown.clone())
+    );
+    Ok(unknown)
+}
+
+/// Observation cardinality and demotion semantics are checked before native preparation.
+pub(super) fn logical_plan(
+    project: &ResolvedProject,
+    selections: &ResolvedSelections,
+    mode: RemovalMode,
+    evidence: RemovalEvidencePolicy,
+) -> Result<RemovalPlan> {
+    anyhow::ensure!(
+        !selections.locked.is_empty() || !selections.observed.is_empty(),
+        "Removal requires at least one selection"
+    );
+    anyhow::ensure!(
+        selections.observed.is_empty() || mode == RemovalMode::RemoveContent,
+        "An untracked installation is not an explicit root to forget"
+    );
+    if selections.locked.is_empty() {
+        Ok(RemovalPlan::prepare_observed(project, evidence)?)
+    } else {
+        Ok(RemovalPlan::prepare_with_policy(
+            project,
+            &NonEmpty::new(selections.locked.clone())?,
+            mode,
+            evidence,
+        )?)
     }
 }
 

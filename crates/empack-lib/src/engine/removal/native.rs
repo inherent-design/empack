@@ -16,16 +16,26 @@ use anyhow::{Context, ensure};
 use empack_core::{
     digest::{ContentId, ExpectedDigest},
     files::{FileContent, FilePlan, ManagedPath, ObservedPath},
-    model::ContentLayer,
+    model::{ContentLayer, ExpectedContent},
     path::{PathSyntax, PortableRelPath},
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Exact observed metadata and byte assertions, without secret-bearing locators.
+#[derive(Debug, Clone)]
+pub struct ObservedRemovalSelection {
+    pub metadata_path: PortableRelPath,
+    pub destination: empack_core::path::InstallDestination,
+    pub provider: Option<crate::engine::backend::ProviderObservation>,
+    pub digest: ExpectedDigest,
+}
 pub struct PreparedRemoval {
     root: ProjectReadRoot,
     change: VerifiedFileChange,
     candidate: RemovalCandidate,
+    observed: Vec<ObservedRemovalSelection>,
+    untracked_evidence: Vec<PortableRelPath>,
 }
 pub struct RemovalReceipt {
     pub publication: PublicationReceipt,
@@ -33,6 +43,8 @@ pub struct RemovalReceipt {
     pub mode: RemovalMode,
     pub selected: BTreeSet<DependencyKey>,
     pub incomplete_evidence: Vec<DependencyKey>,
+    pub observed: Vec<ObservedRemovalSelection>,
+    pub untracked_evidence: Vec<PortableRelPath>,
 }
 impl PreparedRemoval {
     pub fn files(&self) -> &FilePlan {
@@ -41,10 +53,18 @@ impl PreparedRemoval {
     pub fn candidate(&self) -> &RemovalCandidate {
         &self.candidate
     }
+    pub fn observed(&self) -> &[ObservedRemovalSelection] {
+        &self.observed
+    }
+    pub fn untracked_evidence(&self) -> &[PortableRelPath] {
+        &self.untracked_evidence
+    }
     pub fn publish(self, publisher: &Publisher, cancel: &Cancellation) -> Result<RemovalReceipt> {
         let publication = publisher.publish(&self.root, self.change, cancel)?;
         Ok(RemovalReceipt {
             publication,
+            observed: self.observed,
+            untracked_evidence: self.untracked_evidence,
             project: self.candidate.project,
             mode: self.candidate.plan.mode(),
             incomplete_evidence: self.candidate.plan.incomplete_evidence().to_vec(),
@@ -63,7 +83,22 @@ pub fn prepare_removal(
     mode: RemovalMode,
     cancel: &Cancellation,
 ) -> Result<PreparedRemoval> {
-    plan_removal(workspace, selections, mode, cancel)?.stage(cancel)
+    prepare_removal_with_policy(
+        workspace,
+        selections,
+        mode,
+        RemovalEvidencePolicy::RequireComplete,
+        cancel,
+    )
+}
+pub fn prepare_removal_with_policy(
+    workspace: MutationSnapshot,
+    selections: &NonEmpty<DependencyKey>,
+    mode: RemovalMode,
+    evidence: RemovalEvidencePolicy,
+    cancel: &Cancellation,
+) -> Result<PreparedRemoval> {
+    plan_removal(workspace, selections, mode, evidence, cancel)?.stage(cancel)
 }
 
 pub(in crate::engine) struct RemovalPreparation {
@@ -71,6 +106,8 @@ pub(in crate::engine) struct RemovalPreparation {
     candidate: RemovalCandidate,
     plan: FilePlan,
     documents: BTreeMap<ManagedPath, Vec<u8>>,
+    observed: Vec<ObservedRemovalSelection>,
+    untracked_evidence: Vec<PortableRelPath>,
 }
 impl RemovalPreparation {
     pub(in crate::engine) fn bytes(&self) -> Result<u64> {
@@ -86,6 +123,8 @@ impl RemovalPreparation {
             candidate,
             plan,
             documents,
+            observed,
+            untracked_evidence,
         } = self;
         let limits = verification::candidate_stage_limits(workspace.observations(), &plan)?;
         let mut stage = MutableStage::empty()?;
@@ -106,6 +145,8 @@ impl RemovalPreparation {
             root,
             change,
             candidate,
+            observed,
+            untracked_evidence,
         })
     }
 }
@@ -114,6 +155,7 @@ pub(in crate::engine) fn plan_removal(
     workspace: MutationSnapshot,
     selections: &NonEmpty<DependencyKey>,
     mode: RemovalMode,
+    evidence: RemovalEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<RemovalPreparation> {
     let selectors = NonEmpty::new(
@@ -124,13 +166,7 @@ pub(in crate::engine) fn plan_removal(
             .map(RemovalSelector::Key)
             .collect(),
     )?;
-    plan_selected_removal(
-        workspace,
-        &selectors,
-        mode,
-        RemovalEvidencePolicy::RequireComplete,
-        cancel,
-    )
+    plan_selected_removal(workspace, &selectors, mode, evidence, cancel)
 }
 
 pub(in crate::engine) fn plan_selected_removal(
@@ -145,7 +181,7 @@ pub(in crate::engine) fn plan_selected_removal(
     let current = workspace.require_resolved()?;
     let records = workspace.backend_files(cancel)?;
     let selections = selection::resolve(&current, &records, selectors)?;
-    let candidate = RemovalCandidate::prepare_with_policy(
+    let candidate = RemovalCandidate::prepare_selected(
         workspace.intent(),
         workspace
             .prior_lock()
@@ -154,6 +190,8 @@ pub(in crate::engine) fn plan_selected_removal(
         mode,
         evidence,
     )?;
+    let untracked_evidence = super::untracked_evidence(&current, &records, mode, evidence)?;
+    let mut selected_observed = Vec::new();
     let mut removals = BTreeSet::new();
     if mode == RemovalMode::RemoveContent {
         for dependency in candidate.plan.selected().values() {
@@ -185,6 +223,50 @@ pub(in crate::engine) fn plan_selected_removal(
                     }
                 }
             }
+        }
+        for metadata_path in &selections.observed {
+            let record = records
+                .iter()
+                .find(|record| record.metadata_path == *metadata_path)
+                .context("Selected metadata disappeared")?;
+            ensure!(
+                record.locked_owner(&current)?.is_none(),
+                "Observed selection acquired a locked owner"
+            );
+            let target = ManagedPath::Content {
+                layer: ContentLayer::Common,
+                path: record.destination.relative().clone(),
+            };
+            let native = ProjectLayout::path(&target)?;
+            let observed =
+                verification::observed_mutation_for(workspace.observations(), [target.clone()])?;
+            match &observed[&target] {
+                ObservedPath::File(_) => {
+                    workspace.verify_file(
+                        &native,
+                        &ExpectedContent {
+                            digests: Some(empack_core::digest::DigestSet::new(vec![
+                                record.digest.clone(),
+                            ])?),
+                            size: None,
+                            accepted_observation: None,
+                        },
+                        cancel,
+                    )?;
+                    removals.insert(target);
+                }
+                ObservedPath::Absent => {}
+                ObservedPath::Directory => {
+                    anyhow::bail!("Observed removal destination is a directory")
+                }
+            }
+            removals.insert(ManagedPath::BackendDocument(record.metadata_path.clone()));
+            selected_observed.push(ObservedRemovalSelection {
+                metadata_path: record.metadata_path.clone(),
+                destination: record.destination.clone(),
+                provider: record.provider.clone(),
+                digest: record.digest.clone(),
+            });
         }
         for record in records {
             if !candidate.plan.selected().values().any(|dependency| {
@@ -232,6 +314,15 @@ pub(in crate::engine) fn plan_selected_removal(
         (ManagedPath::IntentDocument, candidate.intent.bytes.clone()),
         (ManagedPath::LockDocument, candidate.lock.clone()),
     ]);
+    if candidate.plan.selected().is_empty() {
+        // Observed-only removal changes no logical documents, including user formatting.
+        documents.insert(
+            ManagedPath::LockDocument,
+            workspace
+                .read_document(&path("empack.lock")?, cancel)?
+                .context("Captured lock disappeared")?,
+        );
+    }
     if mode == RemovalMode::RemoveContent {
         refresh_index(&workspace, &removals, &mut documents, cancel)?;
     }
@@ -260,6 +351,8 @@ pub(in crate::engine) fn plan_selected_removal(
         candidate,
         plan,
         documents,
+        observed: selected_observed,
+        untracked_evidence,
     })
 }
 

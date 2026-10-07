@@ -89,9 +89,26 @@ impl RemovalPlan {
         mode: RemovalMode,
         evidence: RemovalEvidencePolicy,
     ) -> Result<Self, RemovalError> {
+        Self::prepare_keys(project, selections.as_slice(), mode, evidence)
+    }
+    /// Preserve logical records while an adapter plans explicitly selected untracked files.
+    /// This grants no file authority: the adapter must verify nonempty observed selections,
+    /// their ownership and bytes, and disclose incomplete external dependency evidence.
+    pub fn prepare_observed(
+        project: &ResolvedProject,
+        evidence: RemovalEvidencePolicy,
+    ) -> Result<Self, RemovalError> {
+        Self::prepare_keys(project, &[], RemovalMode::RemoveContent, evidence)
+    }
+    fn prepare_keys(
+        project: &ResolvedProject,
+        selections: &[DependencyKey],
+        mode: RemovalMode,
+        evidence: RemovalEvidencePolicy,
+    ) -> Result<Self, RemovalError> {
         let mut incomplete = Vec::new();
         let mut selected = BTreeMap::new();
-        for key in selections.as_slice() {
+        for key in selections {
             let value = project
                 .lock()
                 .dependencies

@@ -150,8 +150,14 @@ its before-images separately. Missing selections, stale inputs or failed admissi
 cannot produce a successful subset. Exact logical keys win over colliding metadata stems. Queries otherwise combine
 ASCII-case-insensitive titles and exact installed stems, bind metadata to an exact
 locked file, and reject ambiguous or missing selections. Equivalent queries collapse
-to one logical selection. Untracked installed-content removal and CLI wiring remain
-host integration work.
+to one logical selection. An untracked installed stem remains an observed selection;
+`RemovalSelector::Metadata` disambiguates exact pack-relative metadata paths. It
+cannot be demoted as an authoring root. Native preparation verifies its regular file
+against the captured declared digest and rejects document roles, directories and
+links. Preview and receipt expose `observed` selections without download locators.
+Untracked or conflicting retained metadata appears in `untracked_evidence` and
+requires the same explicit uncertainty acknowledgement. Observed-only removal keeps
+both logical documents byte-for-byte unchanged. CLI wiring remains integration work.
 
 ## 17. Public engine API and application wiring
 

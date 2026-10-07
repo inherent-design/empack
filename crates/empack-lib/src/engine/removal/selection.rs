@@ -1,7 +1,10 @@
 //! User selectors nominate logical selections; they never authorize backend filenames.
 use crate::engine::backend::BackendFile;
 use anyhow::{Result, ensure};
-use empack_core::model::{DependencyKey, NonEmpty, ResolvedProject};
+use empack_core::{
+    model::{DependencyKey, NonEmpty, ResolvedProject},
+    path::PortableRelPath,
+};
 use std::collections::BTreeSet;
 
 #[derive(Debug, Clone)]
@@ -10,31 +13,43 @@ pub enum RemovalSelector {
     Key(DependencyKey),
     /// Exact logical key first, otherwise an ASCII-case-insensitive title or exact metadata stem.
     Query(String),
+    /// Exact pack-relative metadata path, useful when installed stems are ambiguous.
+    Metadata(PortableRelPath),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum SelectionError {
-    #[error("No locked dependency matches '{0}'")]
+    #[error("No tracked or observed dependency matches '{0}'")]
     Missing(String),
     #[error("Ambiguous removal selector '{query}'; use an exact logical key")]
     Ambiguous {
         query: String,
         candidates: Vec<DependencyKey>,
         untracked: bool,
+        metadata: Vec<PortableRelPath>,
     },
-    #[error(
-        "Installed name '{0}' has no locked owner; explicit observed-content removal is required"
-    )]
-    Untracked(String),
+}
+
+#[derive(Debug)]
+pub(in crate::engine) struct ResolvedSelections {
+    pub locked: Vec<DependencyKey>,
+    pub observed: Vec<PortableRelPath>,
+}
+impl ResolvedSelections {
+    #[cfg(test)]
+    fn as_slice(&self) -> &[DependencyKey] {
+        &self.locked
+    }
 }
 
 pub(in crate::engine) fn resolve(
     project: &ResolvedProject,
     records: &[BackendFile],
     selectors: &NonEmpty<RemovalSelector>,
-) -> Result<NonEmpty<DependencyKey>> {
+) -> Result<ResolvedSelections> {
     let dependencies = &project.lock().dependencies;
     let mut selected = BTreeSet::new();
+    let mut observed = BTreeSet::new();
     for selector in selectors.as_slice() {
         let query = match selector {
             RemovalSelector::Key(key) => {
@@ -43,6 +58,21 @@ pub(in crate::engine) fn resolve(
                     SelectionError::Missing(key.as_str().into())
                 );
                 selected.insert(key.clone());
+                continue;
+            }
+            RemovalSelector::Metadata(path) => {
+                let record = records
+                    .iter()
+                    .find(|record| record.metadata_path == *path)
+                    .ok_or_else(|| SelectionError::Missing(path.as_str().into()))?;
+                match record.locked_owner(project)? {
+                    Some((key, _)) => {
+                        selected.insert(key.clone());
+                    }
+                    None => {
+                        observed.insert(path.clone());
+                    }
+                }
                 continue;
             }
             RemovalSelector::Query(query) => query,
@@ -60,7 +90,7 @@ pub(in crate::engine) fn resolve(
             .filter(|(_, value)| value.title.eq_ignore_ascii_case(query))
             .map(|(key, _)| key.clone())
             .collect();
-        let mut untracked = false;
+        let mut untracked = BTreeSet::new();
         for record in records.iter().filter(|record| {
             record
                 .metadata_path
@@ -74,27 +104,35 @@ pub(in crate::engine) fn resolve(
                 Some((key, _)) => {
                     candidates.insert(key.clone());
                 }
-                None => untracked = true,
+                None => {
+                    untracked.insert(record.metadata_path.clone());
+                }
             }
         }
-        if candidates.len() > 1 || (untracked && !candidates.is_empty()) {
+        if candidates.len() + untracked.len() > 1 {
             return Err(SelectionError::Ambiguous {
                 query: query.clone(),
                 candidates: candidates.into_iter().collect(),
-                untracked,
+                untracked: !untracked.is_empty(),
+                metadata: untracked.into_iter().collect(),
             }
             .into());
         }
-        if untracked {
-            return Err(SelectionError::Untracked(query.clone()).into());
+        if let Some(path) = untracked.into_iter().next() {
+            observed.insert(path);
+        } else {
+            selected.insert(
+                candidates
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| SelectionError::Missing(query.clone()))?,
+            );
         }
-        let key = candidates
-            .into_iter()
-            .next()
-            .ok_or_else(|| SelectionError::Missing(query.clone()))?;
-        selected.insert(key);
     }
-    Ok(NonEmpty::new(selected.into_iter().collect())?)
+    Ok(ResolvedSelections {
+        locked: selected.into_iter().collect(),
+        observed: observed.into_iter().collect(),
+    })
 }
 
 #[cfg(test)]
@@ -221,15 +259,12 @@ mod tests {
         ));
     }
     #[test]
-    fn unknown_or_untracked_selection_cannot_return_a_successful_subset() {
+    fn unknown_selectors_fail_all_requested_and_observed_items_keep_their_namespace() {
         let project = project(false, false);
         let records = [record("untracked", "untracked.zip")];
-        assert!(matches!(
-            resolve(&project, &records, &queries(&["assets", "untracked"]))
-                .unwrap_err()
-                .downcast_ref(),
-            Some(SelectionError::Untracked(_))
-        ));
+        let choices = resolve(&project, &records, &queries(&["assets", "untracked"])).unwrap();
+        assert_eq!(choices.locked, vec![key("assets")]);
+        assert_eq!(choices.observed, vec![records[0].metadata_path.clone()]);
         assert!(resolve(&project, &records, &queries(&["assets", "missing"])).is_err());
         assert!(resolve(&project, &records, &queries(&[""])).is_err());
         assert!(resolve(&project, &records, &queries(&[&"a".repeat(4097)])).is_err());
@@ -242,5 +277,30 @@ mod tests {
         let mut record = record("installed-name", "a.zip");
         record.environments = empack_core::requirements::Environments::Both;
         assert!(resolve(&project, &[record], &queries(&["installed-name"])).is_err());
+    }
+    #[test]
+    fn repeated_untracked_stems_require_an_exact_metadata_choice() {
+        let project = project(false, false);
+        let first = record("extra", "untracked.zip");
+        let mut second = record("extra", "other.zip");
+        second.metadata_path =
+            PortableRelPath::parse("another/extra.pw.toml", PathSyntax::ProjectContent).unwrap();
+        let records = [first, second];
+        let error = resolve(&project, &records, &queries(&["extra"])).unwrap_err();
+        let Some(SelectionError::Ambiguous { metadata, .. }) = error.downcast_ref() else {
+            panic!("{error:#}")
+        };
+        assert_eq!(metadata.len(), 2);
+        let selected = resolve(
+            &project,
+            &records,
+            &NonEmpty::new(vec![RemovalSelector::Metadata(
+                records[1].metadata_path.clone(),
+            )])
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(selected.locked.is_empty());
+        assert_eq!(selected.observed, vec![records[1].metadata_path.clone()]);
     }
 }

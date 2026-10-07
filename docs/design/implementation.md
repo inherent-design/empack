@@ -463,8 +463,13 @@ selector resolves exact keys first, then ASCII-case-insensitive titles and exact
 installed stems. Metadata ownership includes the exact pin, placement and requirements.
 Ambiguous matches return candidate keys; equivalent aliases select one dependency.
 A different installation from the same provider project does not claim another
-locked destination. Observed-only removal and CLI integration remain implementation
-work.
+locked destination. Untracked stems and exact metadata paths select observed files
+without inventing logical roots or provider identity. Their declared hashes must
+match regular managed content before removal; directories, links and backend-control
+roles remain forbidden. Preview and receipt retain observed selections and untracked
+dependency evidence without acquisition locators. Ambiguous stems require an exact
+metadata choice. Observed-only removal preserves raw intent/lock bytes. CLI integration
+remains implementation work.
 
 ## Existing command guarantees
 
@@ -612,8 +617,15 @@ regression; native CI must exercise the combined pushed revision.
 acknowledged plan, Engine preview and terminal receipt retain the incomplete
 dependency keys, and the resulting lock keeps their original coverage. No source,
 path or publication check is relaxed. Root demotion retains content and requires
-no uncertainty acknowledgement. Untracked installed-record selection and its
-dependency evidence still need integration before CLI cutover.
+no uncertainty acknowledgement. Untracked metadata has no complete locked graph;
+its presence also requires explicit acknowledgement for content removal and remains
+listed in preview/receipt evidence. Selected ownership checks still run strictly.
 
 Validation: 32 focused removal tests pass, including default refusal, explicit
 acknowledgement, preserved uncertainty in the lock/receipt and known-edge rejection.
+
+Observed-removal validation: 1,753 default tests and eleven doctests pass on the
+combined tree, along with 53 affected tests, all-feature Clippy and Windows
+cross-compilation. The full run includes backend-index publication and preserves
+raw logical documents. Native CI and Greptile at the next pushed revision remain
+separate release evidence.

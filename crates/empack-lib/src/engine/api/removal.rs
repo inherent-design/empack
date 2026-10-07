@@ -1,6 +1,6 @@
 //! Removal uses the same captured-plan approval, resource ownership and terminal outcomes.
 use super::*;
-pub use crate::engine::removal::RemovalSelector;
+pub use crate::engine::removal::{ObservedRemovalSelection, RemovalSelector};
 use crate::engine::{
     publication::{Publisher, RecoveryRequired},
     removal::{self as native_removal, PreparedRemoval},
@@ -33,6 +33,8 @@ pub struct RemovePreview {
     pub mode: RemovalMode,
     pub selected: Vec<RemovalSelection>,
     pub incomplete_evidence: Vec<DependencyKey>,
+    pub observed: Vec<ObservedRemovalSelection>,
+    pub untracked_evidence: Vec<PortableRelPath>,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
 }
@@ -43,6 +45,8 @@ pub struct RemoveReceipt {
     pub mode: RemovalMode,
     pub selected: BTreeSet<DependencyKey>,
     pub incomplete_evidence: Vec<DependencyKey>,
+    pub observed: Vec<ObservedRemovalSelection>,
+    pub untracked_evidence: Vec<PortableRelPath>,
 }
 pub(super) struct PreparedRemovalOperation {
     pub(super) view: RemovePreview,
@@ -94,6 +98,8 @@ pub(super) async fn prepare(
                     .map_err(|_| anyhow::anyhow!("Plan identifier exhausted"))?,
             ),
             mode: removal.candidate().plan().mode(),
+            observed: removal.observed().to_vec(),
+            untracked_evidence: removal.untracked_evidence().to_vec(),
             incomplete_evidence: removal.candidate().plan().incomplete_evidence().to_vec(),
             selected: removal
                 .candidate()
@@ -179,6 +185,8 @@ async fn execute(
             mode: receipt.mode,
             selected: receipt.selected,
             incomplete_evidence: receipt.incomplete_evidence,
+            observed: receipt.observed,
+            untracked_evidence: receipt.untracked_evidence,
         })
     })?;
     scope

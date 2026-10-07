@@ -404,3 +404,222 @@ async fn selected_portable_alias_is_not_mistaken_for_absent_content() {
     );
     engine.shutdown().await;
 }
+
+fn untracked(root: &Path, stem: &str, destination: &str) {
+    use sha2::{Digest, Sha256};
+    let digest =
+        empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(b"observed bytes").into()).hex();
+    put(root, &format!("pack/resourcepacks/{stem}.pw.toml"), format!("filename = '{destination}'\nside = 'client'\n[download]\nurl = 'https://example.com/untracked.zip'\nhash-format = 'sha256'\nhash = '{digest}'\n[update.modrinth]\nmod-id = 'Project1'\nversion = 'Version1'\n").as_bytes());
+    put(
+        root,
+        &format!("pack/resourcepacks/{destination}"),
+        b"observed bytes",
+    );
+}
+fn observed_request(stem: &str) -> RemoveRequest {
+    RemoveRequest {
+        selections: NonEmpty::new(vec![RemovalSelector::Query(stem.into())]).unwrap(),
+        mode: RemovalMode::RemoveContent,
+        evidence: RemovalEvidencePolicy::AcknowledgeUnknown,
+    }
+}
+#[tokio::test]
+async fn observed_removal_requires_acknowledgement_and_preserves_logical_documents() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    untracked(root.path(), "untracked", "separate.zip");
+    use sha2::{Digest, Sha256};
+    let metadata = fs::read(root.path().join("pack/resourcepacks/untracked.pw.toml")).unwrap();
+    let hash = |bytes: &[u8]| {
+        empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(bytes).into()).hex()
+    };
+    let index = format!(
+        "hash-format = 'sha256'\nuser-field = 'keep'\n[[files]]\nfile = 'resourcepacks/untracked.pw.toml'\nhash = '{}'\nmetafile = true\n",
+        hash(&metadata)
+    );
+    put(root.path(), "pack/index.toml", index.as_bytes());
+    put(root.path(), "pack/pack.toml", format!("name = 'kept backend'\n[index]\nfile = 'index.toml'\nhash-format = 'sha256'\nhash = '{}'\n", hash(index.as_bytes())).as_bytes());
+    let mut intent = b"# user formatting\n".to_vec();
+    intent.extend(fs::read(root.path().join("empack.yml")).unwrap());
+    put(root.path(), "empack.yml", &intent);
+    let mut lock = fs::read(root.path().join("empack.lock")).unwrap();
+    lock.extend(b"\n\n");
+    put(root.path(), "empack.lock", &lock);
+    let (engine, _) = engine(state.path().join("state"));
+    let mut request = observed_request("untracked");
+    request.evidence = RemovalEvidencePolicy::RequireComplete;
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), request.clone())
+            .await
+            .is_err()
+    );
+    request.evidence = RemovalEvidencePolicy::AcknowledgeUnknown;
+    request.mode = RemovalMode::ForgetRoots;
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), request.clone())
+            .await
+            .is_err()
+    );
+    request.mode = RemovalMode::RemoveContent;
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_path_buf(), request)
+        .await
+        .unwrap()
+    else {
+        panic!("unexpected input request")
+    };
+    let view = prepared.view().remove().unwrap();
+    assert!(view.selected.is_empty());
+    assert_eq!(view.observed.len(), 1);
+    assert_eq!(
+        view.observed[0].destination.relative().as_str(),
+        "resourcepacks/separate.zip"
+    );
+    assert!(view.observed[0].provider.is_some());
+    assert_eq!(
+        view.untracked_evidence,
+        vec![path("resourcepacks/untracked.pw.toml")]
+    );
+    assert_eq!(
+        view.incomplete_evidence,
+        vec![DependencyKey::parse("assets").unwrap()]
+    );
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Remove(receipt))) =
+        &*outcome
+    else {
+        panic!("observed removal failed")
+    };
+    assert!(receipt.selected.is_empty());
+    assert_eq!(receipt.observed.len(), 1);
+    assert_eq!(receipt.untracked_evidence.len(), 1);
+    assert!(
+        receipt
+            .project
+            .intent()
+            .roots
+            .contains_key(&DependencyKey::parse("assets").unwrap())
+    );
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), intent);
+    assert_eq!(fs::read(root.path().join("empack.lock")).unwrap(), lock);
+    assert!(!root.path().join("pack/resourcepacks/separate.zip").exists());
+    assert!(
+        !root
+            .path()
+            .join("pack/resourcepacks/untracked.pw.toml")
+            .exists()
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+        b"payload"
+    );
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), observed_request("untracked"))
+            .await
+            .is_err()
+    );
+    let index = fs::read(root.path().join("pack/index.toml")).unwrap();
+    let parsed: toml::Value = toml::from_str(std::str::from_utf8(&index).unwrap()).unwrap();
+    assert!(parsed["files"].as_array().unwrap().is_empty());
+    assert_eq!(parsed["user-field"].as_str(), Some("keep"));
+    let pack: toml::Value =
+        toml::from_str(&fs::read_to_string(root.path().join("pack/pack.toml")).unwrap()).unwrap();
+    assert_eq!(pack["index"]["hash"].as_str(), Some(hash(&index).as_str()));
+    engine.shutdown().await;
+}
+#[tokio::test]
+async fn observed_content_checks_survive_explicit_uncertainty_acknowledgement() {
+    for directory in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        untracked(root.path(), "untracked", "separate.zip");
+        let before = fs::read(root.path().join("empack.yml")).unwrap();
+        let target = root.path().join("pack/resourcepacks/separate.zip");
+        fs::remove_file(&target).unwrap();
+        if directory {
+            fs::create_dir(&target).unwrap();
+        } else {
+            fs::write(&target, b"wrong bytes").unwrap();
+        }
+        let (engine, _) = engine(state.path().join("state"));
+        let mut removal = observed_request("untracked");
+        removal.selections.push(RemovalSelector::Key(
+            DependencyKey::parse("assets").unwrap(),
+        ));
+        assert!(
+            engine
+                .prepare(root.path().to_path_buf(), removal)
+                .await
+                .is_err()
+        );
+        assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), before);
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+            b"payload"
+        );
+        assert!(
+            root.path()
+                .join("pack/resourcepacks/untracked.pw.toml")
+                .exists()
+        );
+        engine.shutdown().await;
+    }
+}
+#[tokio::test]
+async fn untracked_metadata_cannot_authorize_deleting_a_backend_control_document() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    untracked(root.path(), "untracked", "../pack.toml");
+    let (engine, _) = engine(state.path().join("state"));
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), observed_request("untracked"))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(root.path().join("pack/pack.toml")).unwrap(),
+        b"observed bytes"
+    );
+    engine.shutdown().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn observed_removal_cannot_follow_a_selected_link() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    untracked(root.path(), "untracked", "separate.zip");
+    let selected = root.path().join("pack/resourcepacks/separate.zip");
+    fs::rename(&selected, outside.path().join("sentinel")).unwrap();
+    std::os::unix::fs::symlink(outside.path().join("sentinel"), &selected).unwrap();
+    let (engine, _) = engine(state.path().join("state"));
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), observed_request("untracked"))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(outside.path().join("sentinel")).unwrap(),
+        b"observed bytes"
+    );
+    assert!(
+        root.path()
+            .join("pack/resourcepacks/untracked.pw.toml")
+            .exists()
+    );
+    engine.shutdown().await;
+}

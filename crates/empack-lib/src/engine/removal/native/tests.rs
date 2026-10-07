@@ -39,7 +39,13 @@ fn prepare(root: &Path, state: &Path, mode: RemovalMode) -> Result<PreparedRemov
         SnapshotLimits::default(),
         &cancel,
     )?;
-    prepare_removal(snapshot, &selected(), mode, &cancel)
+    prepare_removal_with_policy(
+        snapshot,
+        &selected(),
+        mode,
+        RemovalEvidencePolicy::AcknowledgeUnknown,
+        &cancel,
+    )
 }
 fn kept(root: &Path) {
     for (name, bytes) in [
@@ -430,7 +436,7 @@ fn installed_stem_removal_publishes_the_canonical_owner_and_preserves_label_coll
         snapshot,
         &selectors,
         RemovalMode::RemoveContent,
-        RemovalEvidencePolicy::RequireComplete,
+        RemovalEvidencePolicy::AcknowledgeUnknown,
         &cancel,
     )
     .unwrap()
