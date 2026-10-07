@@ -47,10 +47,14 @@ use tokio::sync::oneshot;
 struct PublicationWorkerFailed(#[source] RuntimeError);
 pub use super::dependency_content::{DependencyContent, DependencyContents};
 mod addition;
+mod recovery;
 pub use addition::{
     AddPreview, AddReceipt, AddRequest, AdoptObservedPreview, AdoptObservedReceipt,
     AdoptObservedRequest, ExistingDependencyPolicy, ReplacementSelection, UpdatePreview,
     UpdateReceipt, UpdateRequest,
+};
+pub use recovery::{
+    RecoverPreview, RecoverRequest, RecoveryAction, RecoveryReceipt, RecoveryStatus,
 };
 mod execution;
 mod project_change;
@@ -149,6 +153,7 @@ struct PreparedBuild {
     acquisition: BuildAcquisitionPlan,
 }
 pub enum Request {
+    Recover(RecoverRequest),
     Build(BuildRequest),
     Import(Box<ImportRequest>),
     Initialize(Box<InitializeRequest>),
@@ -189,6 +194,11 @@ impl From<AddRequest> for Request {
         Self::Add(request)
     }
 }
+impl From<RecoverRequest> for Request {
+    fn from(request: RecoverRequest) -> Self {
+        Self::Recover(request)
+    }
+}
 impl From<AdoptObservedRequest> for Request {
     fn from(request: AdoptObservedRequest) -> Self {
         Self::AdoptObserved(request)
@@ -211,6 +221,7 @@ impl From<ImportRequest> for Request {
 }
 #[derive(Clone)]
 pub enum OperationPreview {
+    Recovery(RecoverPreview),
     Build(BuildPreview),
     Import(ProjectChangePreview),
     Initialize(ProjectChangePreview),
@@ -223,6 +234,7 @@ pub enum OperationPreview {
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
+            Self::Recovery(view) => view.plan,
             Self::Build(view) => view.plan,
             Self::Remove(view) => view.plan,
             Self::Add(view) => view.plan,
@@ -230,6 +242,12 @@ impl OperationPreview {
             Self::AdoptObserved(view) => view.plan,
             Self::Sync(view) => view.plan,
             Self::Import(view) | Self::Initialize(view) => view.plan,
+        }
+    }
+    pub fn recovery(&self) -> Option<&RecoverPreview> {
+        match self {
+            Self::Recovery(view) => Some(view),
+            _ => None,
         }
     }
     pub fn build(&self) -> Option<&BuildPreview> {
@@ -283,6 +301,7 @@ impl OperationPreview {
     pub fn replacement(&self) -> Option<ReplacementSummary> {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
+            Self::Recovery(view) => Some(view.replacement),
             Self::Remove(view) => Some(view.replacement),
             Self::Add(view) => Some(view.replacement),
             Self::Update(view) => Some(view.replacement),
@@ -299,6 +318,7 @@ impl OperationPreview {
     }
 }
 enum PreparedKind {
+    Recovery(Box<recovery::PreparedRecoveryOperation>),
     Build(Box<PreparedBuild>),
     ProjectChange(Box<project_change::PreparedProjectChange>),
     Remove(Box<removal::PreparedRemovalOperation>),
@@ -310,6 +330,7 @@ enum PreparedKind {
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
+            Self::Recovery(value) => OperationPreview::Recovery(value.view.clone()),
             Self::Build(value) => OperationPreview::Build(value.view.clone()),
             Self::Remove(value) => OperationPreview::Remove(value.view.clone()),
             Self::Add(value) => OperationPreview::Add(value.view.clone()),
@@ -372,6 +393,7 @@ impl PreparedOperation {
     }
 }
 pub enum ExecutionReceipt {
+    Recovery(Box<RetainedOutput<RecoveryReceipt>>),
     Build(Box<RetainedOutput<BuildReceipt>>),
     Import(Box<RetainedOutput<ProjectChangeReceipt>>),
     Initialize(Box<RetainedOutput<ProjectChangeReceipt>>),
@@ -481,6 +503,11 @@ impl Engine {
             .start_ephemeral(move |mut scope| async move {
                 let prepared: Result<RetainedOutput<PreparedKind>> = async {
                     match request {
+                        Request::Recover(request) => {
+                            Ok(recovery::prepare(project, request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Recovery(Box::new(value))))
+                        }
                         Request::Build(request) => {
                             let ProjectTarget::Existing(project) = project else {
                                 anyhow::bail!("Build requires an existing project");
@@ -590,6 +617,13 @@ impl Engine {
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
+                PreparedKind::Recovery(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::Recovery(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    recovery::run(prepared, config, scope).await
+                }
                 PreparedKind::Build(_) => {
                     let prepared = data.map(|kind| match kind {
                         PreparedKind::Build(value) => *value,
@@ -774,3 +808,6 @@ mod removal_tests;
 
 #[cfg(test)]
 mod addition_tests;
+
+#[cfg(test)]
+mod recovery_tests;

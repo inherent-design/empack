@@ -372,6 +372,18 @@ wrapper when given a relative destination and root handle; the native call follo
 [relative-name contract](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information)
 directly. Cross-compilation verifies the bindings; native CI must verify execution.
 
+Existing-root recovery now enters the shared Engine lifecycle. Read-only inspection
+returns the interrupted operation without reading potentially damaged authoring
+files. `RecoverRequest` selects finish or restore; preparation binds the journal
+revision, current native objects and exact remaining effects. Execution requires the
+normal plan-specific grant, validates that binding under publication ownership and
+retains a typed recovery receipt. Restoration reserves space for both retained inverse
+images and publication siblings. Native tests verify read-only plans, both recovery
+directions, stale journal progress and late user edits. All 18 publication/recovery
+tests pass, including process-crash boundaries and the public approval lifecycle;
+all-feature Clippy and Windows cross-compilation pass. Creation-journal recovery
+through this public surface is the next integration step.
+
 `Publisher::recover_new` is a lower-level creation recovery entry point. Engine recovery,
 continuation and CLI composition remain required.
 

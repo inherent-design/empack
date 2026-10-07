@@ -691,3 +691,133 @@ fn separate_source_and_artifact_budgets_survive_interrupted_publication() {
         );
     }
 }
+
+#[test]
+fn recovery_plans_are_read_only_and_bind_journal_and_visible_effects() {
+    for action in [RecoveryAction::Finish, RecoveryAction::Restore] {
+        for point in [
+            PublicationPoint::IntentDurable,
+            PublicationPoint::TargetChanged,
+        ] {
+            let project = tempfile::tempdir().unwrap();
+            fixture(project.path());
+            let state = tempfile::tempdir().unwrap();
+            let publisher = Publisher::open(&state.path().join("private")).unwrap();
+            let root = ProjectReadRoot::open(project.path()).unwrap();
+            assert!(publisher.inspect_recovery(&root).unwrap().is_none());
+            assert!(!publisher.host.exists(root_key(&root).unwrap()));
+            assert!(
+                publisher
+                    .publish_with_hook(
+                        &root,
+                        prepare(&root),
+                        &Cancellation::default(),
+                        &mut |actual| {
+                            if actual == point {
+                                anyhow::bail!("interrupted fixture");
+                            }
+                            Ok(())
+                        }
+                    )
+                    .is_err()
+            );
+            let before = fs::read(project.path().join("empack.yml")).unwrap();
+            let journal_dir = publisher
+                .host
+                .open_dir_nofollow(root_key(&root).unwrap())
+                .unwrap();
+            let old_journal = serde_json::to_vec(&load_journal(&journal_dir).unwrap()).unwrap();
+            let status = publisher.inspect_recovery(&root).unwrap().unwrap();
+            let plan = publisher.prepare_recovery(&root, action).unwrap().unwrap();
+            assert_eq!(plan.status(), &status);
+            assert_eq!(fs::read(project.path().join("empack.yml")).unwrap(), before);
+            assert_eq!(
+                serde_json::to_vec(&load_journal(&journal_dir).unwrap()).unwrap(),
+                old_journal
+            );
+            let receipt = publisher.recover_prepared(&root, plan).unwrap();
+            assert_eq!(
+                receipt.disposition,
+                if action == RecoveryAction::Finish {
+                    PublicationDisposition::Published
+                } else {
+                    PublicationDisposition::Restored
+                }
+            );
+            assert_eq!(
+                fs::read(project.path().join("empack.yml")).unwrap(),
+                if action == RecoveryAction::Finish {
+                    b"new intent"
+                } else {
+                    b"old intent"
+                }
+            );
+            assert!(publisher.inspect_recovery(&root).unwrap().is_none());
+        }
+    }
+}
+#[test]
+fn approved_recovery_rejects_late_edits_and_journal_progress() {
+    for changed_journal in [false, true] {
+        let project = tempfile::tempdir().unwrap();
+        fixture(project.path());
+        let state = tempfile::tempdir().unwrap();
+        let publisher = Publisher::open(&state.path().join("private")).unwrap();
+        let root = ProjectReadRoot::open(project.path()).unwrap();
+        assert!(
+            publisher
+                .publish_with_hook(
+                    &root,
+                    prepare(&root),
+                    &Cancellation::default(),
+                    &mut |point| {
+                        if point == PublicationPoint::IntentDurable {
+                            anyhow::bail!("interrupted fixture");
+                        }
+                        Ok(())
+                    }
+                )
+                .is_err()
+        );
+        let prepared = publisher
+            .prepare_recovery(&root, RecoveryAction::Finish)
+            .unwrap()
+            .unwrap();
+        if changed_journal {
+            publisher.recover(&root).unwrap();
+        } else {
+            fs::write(project.path().join("empack.yml"), b"user edit!").unwrap();
+        }
+        assert!(publisher.recover_prepared(&root, prepared).is_err());
+        assert_eq!(
+            fs::read(project.path().join("empack.yml")).unwrap(),
+            if changed_journal {
+                b"new intent"
+            } else {
+                b"user edit!"
+            }
+        );
+    }
+}
+
+pub(in crate::engine) fn interrupted_fixture(project: &Path, state: &Path) -> RecoveryStatus {
+    fixture(project);
+    let publisher = Publisher::open(state).unwrap();
+    let root = ProjectReadRoot::open(project).unwrap();
+    assert!(
+        publisher
+            .publish_with_hook(
+                &root,
+                prepare(&root),
+                &Cancellation::default(),
+                &mut |point| {
+                    if point == PublicationPoint::TargetChanged {
+                        anyhow::bail!("interrupted fixture");
+                    }
+                    Ok(())
+                }
+            )
+            .is_err()
+    );
+    publisher.inspect_recovery(&root).unwrap().unwrap()
+}

@@ -27,7 +27,9 @@ use std::{
 
 const JOURNAL_SCHEMA: u32 = 4;
 mod creation;
+mod recovery;
 pub use creation::PreparedRootCreation;
+pub use recovery::{PreparedRecovery, RecoveryAction, RecoveryStatus};
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -437,10 +439,20 @@ impl Publisher {
 
     /// Roll forward retained verified bytes. Conflicting external edits are never overwritten.
     pub fn recover(&self, root: &ProjectReadRoot) -> Result<PublicationReceipt> {
+        self.recover_checked(root, None)
+    }
+    fn recover_checked(
+        &self,
+        root: &ProjectReadRoot,
+        expected: Option<&PreparedRecovery>,
+    ) -> Result<PublicationReceipt> {
         let state = self.project_state(root)?;
         let _lock = lock(&state)?;
         let mut journal = load_journal(&state)?.context("No publication journal exists")?;
         validate_journal(&journal, root)?;
+        if let Some(expected) = expected {
+            expected.check(root, &journal)?;
+        }
         if journal.committed {
             return Ok(receipt(&journal));
         }
@@ -463,10 +475,21 @@ impl Publisher {
         root: &ProjectReadRoot,
         hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
     ) -> Result<PublicationReceipt> {
+        self.restore_checked(root, None, hook)
+    }
+    fn restore_checked(
+        &self,
+        root: &ProjectReadRoot,
+        expected: Option<&PreparedRecovery>,
+        hook: &mut dyn FnMut(PublicationPoint) -> Result<()>,
+    ) -> Result<PublicationReceipt> {
         let state = self.project_state(root)?;
         let _lock = lock(&state)?;
         let mut journal = load_journal(&state)?.context("No publication journal exists")?;
         validate_journal(&journal, root)?;
+        if let Some(expected) = expected {
+            expected.check(root, &journal)?;
+        }
         if journal.committed {
             ensure!(
                 journal.restoring,
@@ -1152,4 +1175,4 @@ fn receipt(journal: &Journal) -> PublicationReceipt {
 }
 
 #[cfg(test)]
-mod tests;
+pub(in crate::engine) mod tests;
