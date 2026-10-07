@@ -68,6 +68,9 @@ pub(in crate::engine) struct AdditionPreparation {
     content: BTreeMap<ManagedPath, AcquiredBuildFile>,
 }
 impl AdditionPreparation {
+    pub(in crate::engine) fn candidate(&self) -> &AdditionCandidate {
+        &self.candidate
+    }
     pub(in crate::engine) fn bytes(&self) -> Result<u64> {
         self.plan.expected().values().try_fold(0u64, |n, f| {
             n.checked_add(f.bytes)

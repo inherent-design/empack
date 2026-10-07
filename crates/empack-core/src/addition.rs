@@ -92,6 +92,7 @@ pub struct AdditionPlan {
     lock: ResolutionLock,
     bindings: BTreeMap<DependencyKey, DependencyKey>,
     changed: BTreeSet<DependencyKey>,
+    existing_roots: BTreeSet<DependencyKey>,
 }
 impl AdditionPlan {
     /// Resolve canonical identities before any label or file mutation. Existing aliases win.
@@ -204,7 +205,15 @@ impl AdditionPlan {
             lock,
             bindings,
             changed,
+            existing_roots: roots
+                .into_iter()
+                .filter(|key| current.lock().dependencies.contains_key(key))
+                .collect(),
         })
+    }
+    /// Explicitly requested roots which already have a locked installation.
+    pub fn existing_roots(&self) -> &BTreeSet<DependencyKey> {
+        &self.existing_roots
     }
     /// Next authoring intent; unrelated settings and roots retain their meaning.
     pub fn intent(&self) -> &ProjectIntent {

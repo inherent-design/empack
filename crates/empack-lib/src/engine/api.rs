@@ -45,6 +45,8 @@ use tokio::sync::oneshot;
 #[derive(Debug, thiserror::Error)]
 #[error("Publication worker failed; inspect recovery before retrying")]
 struct PublicationWorkerFailed(#[source] RuntimeError);
+mod addition;
+pub use addition::{AddPreview, AddReceipt, AddRequest, ExistingDependencyPolicy};
 mod execution;
 mod project_change;
 mod removal;
@@ -144,6 +146,7 @@ pub enum Request {
     Import(Box<ImportRequest>),
     Initialize(Box<InitializeRequest>),
     Remove(RemoveRequest),
+    Add(AddRequest),
 }
 /// A selected existing root or one absent child of an existing selected parent.
 #[derive(Clone)]
@@ -166,6 +169,11 @@ impl From<InitializeRequest> for Request {
         Self::Initialize(Box::new(request))
     }
 }
+impl From<AddRequest> for Request {
+    fn from(request: AddRequest) -> Self {
+        Self::Add(request)
+    }
+}
 impl From<RemoveRequest> for Request {
     fn from(request: RemoveRequest) -> Self {
         Self::Remove(request)
@@ -182,12 +190,14 @@ pub enum OperationPreview {
     Import(ProjectChangePreview),
     Initialize(ProjectChangePreview),
     Remove(RemovePreview),
+    Add(AddPreview),
 }
 impl OperationPreview {
     pub fn plan(&self) -> PlanId {
         match self {
             Self::Build(view) => view.plan,
             Self::Remove(view) => view.plan,
+            Self::Add(view) => view.plan,
             Self::Import(view) | Self::Initialize(view) => view.plan,
         }
     }
@@ -209,6 +219,12 @@ impl OperationPreview {
             _ => None,
         }
     }
+    pub fn add(&self) -> Option<&AddPreview> {
+        match self {
+            Self::Add(view) => Some(view),
+            _ => None,
+        }
+    }
     pub fn remove(&self) -> Option<&RemovePreview> {
         match self {
             Self::Remove(view) => Some(view),
@@ -219,6 +235,7 @@ impl OperationPreview {
         match self {
             Self::Import(view) | Self::Initialize(view) => view.replacement,
             Self::Remove(view) => Some(view.replacement),
+            Self::Add(view) => Some(view.replacement),
             _ => None,
         }
     }
@@ -233,12 +250,14 @@ enum PreparedKind {
     Build(Box<PreparedBuild>),
     ProjectChange(Box<project_change::PreparedProjectChange>),
     Remove(Box<removal::PreparedRemovalOperation>),
+    Add(Box<addition::PreparedAdditionOperation>),
 }
 impl PreparedKind {
     fn view(&self) -> OperationPreview {
         match self {
             Self::Build(value) => OperationPreview::Build(value.view.clone()),
             Self::Remove(value) => OperationPreview::Remove(value.view.clone()),
+            Self::Add(value) => OperationPreview::Add(value.view.clone()),
             Self::ProjectChange(value) => {
                 if value.initialize {
                     OperationPreview::Initialize(value.view.clone())
@@ -299,6 +318,7 @@ pub enum ExecutionReceipt {
     Import(Box<RetainedOutput<ProjectChangeReceipt>>),
     Initialize(Box<RetainedOutput<ProjectChangeReceipt>>),
     Remove(Box<RetainedOutput<RemoveReceipt>>),
+    Add(Box<RetainedOutput<AddReceipt>>),
 }
 /// Accurate publication outcome: a failed preparation and a hot durable journal are distinct.
 pub enum ExecutionOutcome {
@@ -415,6 +435,11 @@ impl Engine {
                                 .transpose()?
                                 .map(|value| PreparedKind::Build(Box::new(value))))
                         }
+                        Request::Add(request) => {
+                            Ok(addition::prepare(project, request, &config, &mut scope)
+                                .await?
+                                .map(|value| PreparedKind::Add(Box::new(value))))
+                        }
                         Request::Remove(request) => {
                             Ok(removal::prepare(project, request, &config, &mut scope)
                                 .await?
@@ -501,6 +526,13 @@ impl Engine {
                         _ => unreachable!(),
                     });
                     project_change::run(prepared, config, scope).await
+                }
+                PreparedKind::Add(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::Add(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    addition::run(prepared, config, scope).await
                 }
                 PreparedKind::Remove(_) => {
                     let prepared = data.map(|kind| match kind {
@@ -641,3 +673,6 @@ mod initialize_tests;
 
 #[cfg(test)]
 mod removal_tests;
+
+#[cfg(test)]
+mod addition_tests;

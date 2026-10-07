@@ -297,7 +297,7 @@ The trusted host can publish the verified plan through the journaled publisher.
 Concurrent source edits, added files and cancellation before publication prevent the
 whole replacement. Tests publish into an empty existing directory and replace a
 broken project, preserve unrelated files, and re-export the correct layered bytes.
-The shared Engine accepts build, import, initialization and removal requests. Import preparation stages
+The shared Engine accepts build, import, initialization, resolved addition and removal requests. Import preparation stages
 the full candidate under admission, exposes its file plan and requires an exact
 replacement-summary acknowledgement before existing managed files can change.
 All three operation kinds use the same engine-bound approval, owned runtime, cancellation
@@ -429,7 +429,7 @@ lost when a weaker observation arrives for the same exact selection. Compatible 
 sets merge; contradictory complete evidence requires explicit resolution. A changed
 pin cannot silently invalidate retained dependents. `AdditionCandidate` binds raw
 source revisions and computes coherent next documents without publication authority.
-Shared Engine add/sync/update/adoption wiring and acquisition hosts remain
+Sync/update/adoption, addition acquisition hosts and foreign-identity replacement remain
 implementation work; this planner alone does not replace a CLI command. Eight focused
 contract tests and all-feature Clippy pass for this planning boundary.
 
@@ -446,6 +446,20 @@ rebinds the pack digest. Staged content, documents and explicit removals publish
 the existing journal; changed inputs after preparation prevent publication. Native
 regressions cover first addition, repeated addition, alias binding, restoration,
 wrong bytes, collisions, links, update/index publication and post-preview changes.
+
+Resolved additions now enter the shared Engine lifecycle through `AddRequest`. Existing
+requested identities are refused by default; same-identity updates require an explicit
+policy. Preparation returns a read-only preview with exact canonical bindings and file
+changes. Plan identity, replacement acknowledgement and engine ownership remain required
+at execution. Resource reservations and terminal outcomes follow the same rules as
+other mutations. A composed removal/addition/re-add/build test checks durable intent,
+bytes, no-op behavior and release of retained resources. This API currently takes
+resolved, acquired inputs; it does not yet replace the CLI's selector/acquisition host.
+
+The combined addition revision passes 1,770 default tests and eleven doctests, plus
+52 focused engine tests, all-feature Clippy and Windows cross-compilation. Native
+cross-platform CI and review remain separate gates; these counts do not establish
+completion of the remaining request hosts or lifecycle services.
 
 ## Semantic removal planning
 

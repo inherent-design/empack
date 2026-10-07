@@ -6,6 +6,7 @@ use empack_core::{
     addition::{AdditionGroup, AdditionPlan},
     model::ResolvedProject,
 };
+pub(in crate::engine) use native::plan_addition;
 pub use native::{AdditionReceipt, PreparedAddition, prepare_addition};
 
 /// A coherent document candidate, not authority to replace installed bytes.

@@ -139,8 +139,12 @@ placements. `prepare_addition` binds supplied request slots to canonical keys, v
 original byte assertions, and prepares exact content/document changes. Untracked
 collisions require a separate adoption decision. Changed selections invalidate only
 owned derivative metadata and affected index entries. `PreparedAddition::publish`
-uses the shared recovery journal. Shared Engine addition and provider/local/URL host
-integration remain pending.
+uses the shared recovery journal. The shared Engine accepts `AddRequest` with a resolved
+group and immutable acquired content, defaults to rejecting existing requested roots,
+and supports explicit same-identity updates. `AddPreview` exposes canonical bindings,
+existing roots, file changes and the exact replacement summary; `AddReceipt` retains
+the resulting project and publication result. Provider/local/URL request resolution,
+explicit foreign-identity replacement and ContinueIndependent integration remain pending.
 
 `ProjectReader::capture_removal` resolves user selections from document/metadata
 observations and captures their exact managed placements into a `MutationSnapshot`.
