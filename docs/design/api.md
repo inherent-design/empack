@@ -149,6 +149,9 @@ belong to the changed roots' required closure. Known retained dependents remain 
 A missing lock requires fresh resolution and cannot authorize adoption of existing
 files. Changed placements capture both paths; obsolete files must still match their
 old declarations before removal. Native publication preserves authoring bytes.
+If an obsolete payload is absent, immutable acquired bytes may supply a missing
+digest algorithm only when they satisfy every old digest, size and accepted
+observation. Without that evidence, obsolete metadata remains untouched.
 Resolution/acquisition hosts and CLI routing remain pending; a supplied candidate
 alone has no write authority.
 
@@ -162,6 +165,16 @@ closure entries remain justified by the resolved group. `UpdatePreview` exposes
 canonical bindings, selected records and the exact replacement footprint; the retained
 `UpdateReceipt` contains the published project. Compatible selection by the host and
 CLI wiring remain separate work.
+
+`AdoptObservedRequest` supplies a resolved group describing selected files already
+present in a coherent project. Preparation verifies their original digest, size and
+accepted-observation assertions, plus applicable backend identity and requirements.
+It does not acquire missing files or rewrite payloads. Canonical aliases and retained
+dependency constraints use the same addition planner. `AdoptObservedPreview` exposes
+the exact document changes; execution requires their plan-specific grant and returns
+`AdoptObservedReceipt`. Selected payloads remain publication preconditions even though
+only intent, lock and affected index/pack documents may change. Repeated adoption is
+a no-op. Adoption without a coherent existing lock and CLI selection remain pending.
 
 `AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical

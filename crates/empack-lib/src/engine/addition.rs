@@ -7,7 +7,7 @@ use empack_core::{
     model::ResolvedProject,
 };
 pub use native::{AdditionReceipt, PreparedAddition, prepare_addition};
-pub(in crate::engine) use native::{plan_addition, plan_update};
+pub(in crate::engine) use native::{plan_addition, plan_adoption, plan_update};
 
 /// A coherent document candidate, not authority to replace installed bytes.
 pub struct AdditionCandidate {

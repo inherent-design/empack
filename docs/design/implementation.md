@@ -429,9 +429,20 @@ lost when a weaker observation arrives for the same exact selection. Compatible 
 sets merge; contradictory complete evidence requires explicit resolution. A changed
 pin cannot silently invalidate retained dependents. `AdditionCandidate` binds raw
 source revisions and computes coherent next documents without publication authority.
-Adoption, acquisition hosts and foreign-identity replacement remain
+Acquisition hosts and foreign-identity replacement remain
 implementation work; this planner alone does not replace a CLI command. Eight focused
 contract tests and all-feature Clippy pass for this planning boundary.
+
+Observed adoption now uses the same resolved group, canonical binding and selected
+capture. `AdoptObservedRequest` verifies present payloads against the proposed source
+assertions and validates relevant backend records against exact selections and
+requirements. It publishes descriptions and refreshed index digests without rewriting
+payload bytes. Missing or mismatched content fails before publication; late edits fail
+the captured read set. The public lifecycle requires exact plan authorization and
+retains a typed adoption receipt. Native and public tests cover explicit adoption,
+wrong/missing bytes, changed observations, provider pin mismatch, repeated adoption,
+unchanged modification times and a subsequent no-op sync. This implementation requires
+a coherent existing lock; missing-lock adoption and host/CLI resolution remain pending.
 
 The native addition adapter captures old and new selected placements, binds supplied
 request slots to canonical aliases, and verifies original digest/size/observation

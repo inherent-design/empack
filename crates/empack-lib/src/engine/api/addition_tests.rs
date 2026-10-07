@@ -528,3 +528,155 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn adoption_publishes_observed_intent_without_payload_writes_then_sync_retains_it() {
+    use empack_core::{
+        digest::{DigestSet, ExpectedDigest},
+        files::ManagedPath,
+        model::{NonEmpty, ResolvedProject},
+    };
+    use sha2::{Digest, Sha256};
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let previous = project(false, false);
+    let mut lock = previous.lock().clone();
+    let digest = DigestSet::new(vec![ExpectedDigest::Sha256(
+        Sha256::digest(b"adopted").into(),
+    )])
+    .unwrap();
+    for dependency in lock.dependencies.values_mut() {
+        dependency.files = NonEmpty::new(
+            dependency
+                .files
+                .as_slice()
+                .iter()
+                .cloned()
+                .map(|mut file| {
+                    file.expected.digests = Some(digest.clone());
+                    file.provenance.declared_digests = Some(digest.clone());
+                    file
+                })
+                .collect(),
+        )
+        .unwrap();
+    }
+    let proposed = ResolvedProject::validate(
+        previous.intent().clone(),
+        lock,
+        previous.lock().intent_revision,
+    )
+    .unwrap();
+    for name in ["a.zip", "b.zip", "copy.zip"] {
+        fs::write(
+            root.path().join(format!("pack/resourcepacks/{name}")),
+            b"adopted",
+        )
+        .unwrap();
+    }
+    let before = fs::metadata(root.path().join("pack/resourcepacks/a.zip"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    let old_lock = fs::read(root.path().join("empack.lock")).unwrap();
+    let (engine, governor) = engine(state.path().join("state"));
+    let make_request = || AdoptObservedRequest {
+        group: AdditionGroup::from_resolved(&proposed).unwrap(),
+    };
+    let view = engine
+        .preview(root.path().to_path_buf(), make_request())
+        .await
+        .unwrap();
+    assert!(
+        view.adoption()
+            .unwrap()
+            .files
+            .changes()
+            .iter()
+            .all(|change| !matches!(change.target(), ManagedPath::Content { .. }))
+    );
+    assert_eq!(fs::read(root.path().join("empack.lock")).unwrap(), old_lock);
+    assert!(!state.path().join("state").exists());
+    let prepared = ready(&engine, root.path(), make_request()).await;
+    let mut wrong = grant(&prepared);
+    wrong.replacement = None;
+    assert!(prepared.authorize(wrong).is_err());
+    let prepared = ready(&engine, root.path(), make_request()).await;
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(
+            ExecutionReceipt::AdoptObserved(receipt),
+        )) => assert_eq!(receipt.project.lock(), proposed.lock()),
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("adoption did not publish"),
+    }
+    engine.release_completed(handle.id());
+    drop(outcome);
+    drop(handle);
+    assert_eq!(
+        fs::metadata(root.path().join("pack/resourcepacks/a.zip"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        before
+    );
+    let observed = verify_stream(
+        &mut b"adopted".as_slice(),
+        &proposed
+            .lock()
+            .dependencies
+            .values()
+            .next()
+            .unwrap()
+            .files
+            .as_slice()[0]
+            .expected,
+        100,
+        SourceEvidencePolicy::Compatibility,
+        InitialObservation::RequireEvidence,
+        &crate::application::process_runtime::Cancellation::default(),
+    )
+    .unwrap();
+    let content = proposed
+        .lock()
+        .dependencies
+        .iter()
+        .flat_map(|(key, dependency)| {
+            dependency.files.as_slice().iter().map(|file| {
+                (
+                    LockedFileKey {
+                        dependency: key.clone(),
+                        slot: file.slot.clone(),
+                    },
+                    AcquiredBuildFile {
+                        content: observed.clone(),
+                        permissions: FilePermissions {
+                            readonly: false,
+                            executable: false,
+                        },
+                    },
+                )
+            })
+        })
+        .collect();
+    let no_op = engine
+        .preview(
+            root.path().to_path_buf(),
+            SyncRequest {
+                resolution: None,
+                content,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(no_op.sync().unwrap().files.changes().is_empty());
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}

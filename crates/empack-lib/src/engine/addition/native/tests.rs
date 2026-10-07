@@ -428,3 +428,193 @@ fn unrelated_malformed_metadata_does_not_authorize_or_block_addition() {
         b"payload"
     );
 }
+
+fn observe_all(root: &Path, value: &ResolvedProject, bytes: &[u8]) {
+    for dependency in value.lock().dependencies.values() {
+        for file in dependency.files.as_slice() {
+            for placement in file.placements.as_slice() {
+                let path = ProjectLayout::path(&ManagedPath::Content {
+                    layer: placement.layer,
+                    path: placement.destination.relative().clone(),
+                })
+                .unwrap();
+                put(root, path.as_str(), bytes);
+            }
+        }
+    }
+}
+fn observed_proposal(value: &ResolvedProject, bytes: &[u8]) -> ResolvedProject {
+    let digests =
+        empack_core::digest::DigestSet::new(vec![empack_core::digest::ExpectedDigest::Sha256(
+            Sha256::digest(bytes).into(),
+        )])
+        .unwrap();
+    let mut lock = value.lock().clone();
+    for dependency in lock.dependencies.values_mut() {
+        dependency.files = NonEmpty::new(
+            dependency
+                .files
+                .as_slice()
+                .iter()
+                .cloned()
+                .map(|mut file| {
+                    file.expected.digests = Some(digests.clone());
+                    file.expected.size = Some(bytes.len() as u64);
+                    file.expected.accepted_observation = None;
+                    file.provenance.declared_digests = Some(digests.clone());
+                    file
+                })
+                .collect(),
+        )
+        .unwrap();
+    }
+    ResolvedProject::validate(value.intent().clone(), lock, value.lock().intent_revision).unwrap()
+}
+fn adopt(root: &Path, state: &Path, value: &ResolvedProject) -> Result<PreparedAddition> {
+    let cancel = Cancellation::default();
+    let group = AdditionGroup::from_resolved(value)?;
+    let snapshot = ProjectReader::new(RecoveryReader::new(state.join("state"))).capture_addition(
+        root,
+        &group,
+        SnapshotLimits::default(),
+        &cancel,
+    )?;
+    plan_adoption(snapshot, &group, &cancel)?.stage(&cancel)
+}
+#[test]
+fn adoption_records_existing_files_without_rewriting_or_implicitly_adding_them() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let value = project(false, false);
+    save(root.path(), &empty());
+    observe_all(root.path(), &value, b"payload");
+    let file = root.path().join("pack/resourcepacks/a.zip");
+    let before = fs::metadata(&file).unwrap().modified().unwrap();
+    assert!(prepare(root.path(), state.path(), &value, b"payload").is_err());
+    let adopted = adopt(root.path(), state.path(), &value).unwrap();
+    assert!(
+        adopted
+            .files()
+            .changes()
+            .iter()
+            .all(|change| !matches!(change.target(), ManagedPath::Content { .. }))
+    );
+    let receipt = adopted
+        .publish(
+            &Publisher::open(&state.path().join("state")).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        receipt.project.lock().dependencies,
+        value.lock().dependencies
+    );
+    assert_eq!(fs::read(&file).unwrap(), b"payload");
+    assert_eq!(fs::metadata(&file).unwrap().modified().unwrap(), before);
+    assert!(
+        adopt(root.path(), state.path(), &value)
+            .unwrap()
+            .files()
+            .changes()
+            .is_empty()
+    );
+}
+#[test]
+fn adoption_of_changed_bytes_requires_complete_evidence_and_current_observations() {
+    for failure in ["none", "missing", "wrong", "late"] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let previous = project(false, false);
+        save(root.path(), &previous);
+        let proposed = observed_proposal(&previous, b"observed");
+        observe_all(root.path(), &proposed, b"observed");
+        let before_lock = fs::read(root.path().join("empack.lock")).unwrap();
+        if failure == "missing" {
+            fs::remove_file(root.path().join("pack/resourcepacks/b.zip")).unwrap();
+        }
+        if failure == "wrong" {
+            put(root.path(), "pack/resourcepacks/b.zip", b"wrong");
+        }
+        let planned = adopt(root.path(), state.path(), &proposed);
+        if matches!(failure, "missing" | "wrong") {
+            assert!(planned.is_err());
+            assert_eq!(
+                fs::read(root.path().join("empack.lock")).unwrap(),
+                before_lock
+            );
+            continue;
+        }
+        if failure == "late" {
+            put(
+                root.path(),
+                "pack/resourcepacks/a.zip",
+                b"edited after preview",
+            );
+        }
+        let result = planned.unwrap().publish(
+            &Publisher::open(&state.path().join("state")).unwrap(),
+            &Cancellation::default(),
+        );
+        if failure == "late" {
+            assert!(result.is_err());
+            assert_eq!(
+                fs::read(root.path().join("empack.lock")).unwrap(),
+                before_lock
+            );
+        } else {
+            assert_eq!(
+                result.unwrap().project.lock().dependencies,
+                proposed.lock().dependencies
+            );
+            assert_eq!(
+                fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+                b"observed"
+            );
+        }
+    }
+}
+#[test]
+fn adoption_checks_observed_provider_metadata_against_the_proposed_pin() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let previous = crate::engine::addition::tests::fixture(
+        &[("root", "Project1", "Version1")],
+        &["root"],
+        &[],
+        true,
+    );
+    let proposed = crate::engine::addition::tests::fixture(
+        &[("root", "Project1", "Version2")],
+        &["root"],
+        &[],
+        true,
+    );
+    save(root.path(), &previous);
+    observe_all(root.path(), &proposed, b"payload");
+    let metadata = format!(
+        "filename = 'a.zip'\nside = 'client'\n[download]\nurl = 'https://example.com/a.zip'\nhash-format = 'sha256'\nhash = '{}'\n[update.modrinth]\nmod-id = 'Project1'\nversion = 'Version1'\n",
+        empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(b"payload").into()).hex()
+    );
+    put(
+        root.path(),
+        "pack/Project1/resourcepacks/a.pw.toml",
+        metadata.as_bytes(),
+    );
+    assert!(adopt(root.path(), state.path(), &proposed).is_err());
+    put(
+        root.path(),
+        "pack/Project1/resourcepacks/a.pw.toml",
+        metadata.replace("Version1", "Version2").as_bytes(),
+    );
+    let receipt = adopt(root.path(), state.path(), &proposed)
+        .unwrap()
+        .publish(
+            &Publisher::open(&state.path().join("state")).unwrap(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        receipt.project.lock().dependencies,
+        proposed.lock().dependencies
+    );
+}

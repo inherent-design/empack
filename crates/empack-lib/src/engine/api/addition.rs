@@ -72,6 +72,40 @@ pub struct UpdateReceipt {
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
 }
+/// Selected observed content and its proposed durable description. Every selected payload must
+/// already exist and satisfy the supplied evidence. Adoption does not install missing bytes.
+pub struct AdoptObservedRequest {
+    pub group: AdditionGroup,
+}
+#[derive(Clone)]
+pub struct AdoptObservedPreview {
+    pub plan: PlanId,
+    pub bindings: BTreeMap<DependencyKey, DependencyKey>,
+    pub files: FilePlan,
+    pub replacement: ReplacementSummary,
+}
+impl From<&AddPreview> for AdoptObservedPreview {
+    fn from(value: &AddPreview) -> Self {
+        Self {
+            plan: value.plan,
+            bindings: value.bindings.clone(),
+            files: value.files.clone(),
+            replacement: value.replacement,
+        }
+    }
+}
+pub struct AdoptObservedReceipt {
+    pub plan: PlanId,
+    pub publication: PublicationReceipt,
+    pub project: ResolvedProject,
+    pub bindings: BTreeMap<DependencyKey, DependencyKey>,
+}
+#[derive(Clone, Copy)]
+enum DependencyChange {
+    Add,
+    Update,
+    Adopt,
+}
 pub(super) struct PreparedAdditionOperation {
     pub(super) view: AddPreview,
     addition: PreparedAddition,
@@ -82,7 +116,7 @@ pub(super) async fn prepare(
     config: &EngineConfig,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedAdditionOperation>> {
-    prepare_change(project, request, false, config, scope).await
+    prepare_change(project, request, DependencyChange::Add, config, scope).await
 }
 pub(super) async fn prepare_update(
     project: ProjectTarget,
@@ -97,7 +131,26 @@ pub(super) async fn prepare_update(
             content: request.content,
             existing: ExistingDependencyPolicy::UpdateSameIdentity,
         },
-        true,
+        DependencyChange::Update,
+        config,
+        scope,
+    )
+    .await
+}
+pub(super) async fn prepare_adoption(
+    project: ProjectTarget,
+    request: AdoptObservedRequest,
+    config: &EngineConfig,
+    scope: &mut WorkScope,
+) -> Result<RetainedOutput<PreparedAdditionOperation>> {
+    prepare_change(
+        project,
+        AddRequest {
+            group: request.group,
+            content: BTreeMap::new(),
+            existing: ExistingDependencyPolicy::UpdateSameIdentity,
+        },
+        DependencyChange::Adopt,
         config,
         scope,
     )
@@ -106,7 +159,7 @@ pub(super) async fn prepare_update(
 async fn prepare_change(
     project: ProjectTarget,
     request: AddRequest,
-    update: bool,
+    kind: DependencyChange,
     config: &EngineConfig,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedAdditionOperation>> {
@@ -119,8 +172,11 @@ async fn prepare_change(
     let policy = request.existing;
     let work = scope.spawn_blocking(config.resources.capture, config.resources.prepared, move |cancel| {
         let snapshot = ProjectReader::new(RecoveryReader::new(state)).capture_addition(&project, &request.group, limits, &cancel)?;
-        let plan = if update { native_addition::plan_update } else { native_addition::plan_addition };
-        let planned = plan(snapshot, &request.group, request.content, &cancel)?;
+        let planned = match kind {
+            DependencyChange::Add => native_addition::plan_addition(snapshot, &request.group, request.content, &cancel)?,
+            DependencyChange::Update => native_addition::plan_update(snapshot, &request.group, request.content, &cancel)?,
+            DependencyChange::Adopt => native_addition::plan_adoption(snapshot, &request.group, &cancel)?,
+        };
         ensure!(policy == ExistingDependencyPolicy::UpdateSameIdentity || planned.candidate().plan().existing_roots().is_empty(), "Requested dependency already exists; updating the same identity requires explicit authorization");
         Ok::<_, anyhow::Error>(planned)
     })?;
@@ -188,6 +244,23 @@ pub(super) async fn run_update(
                 }
             }))))
         }
+        other => other,
+    })
+}
+pub(super) async fn run_adoption(
+    prepared: RetainedOutput<PreparedAdditionOperation>,
+    config: EngineConfig,
+    scope: WorkScope,
+) -> Result<ExecutionOutcome, RuntimeError> {
+    Ok(match run(prepared, config, scope).await? {
+        ExecutionOutcome::Completed(ExecutionReceipt::Add(receipt)) => ExecutionOutcome::Completed(
+            ExecutionReceipt::AdoptObserved(Box::new(receipt.map(|value| AdoptObservedReceipt {
+                plan: value.plan,
+                publication: value.publication,
+                project: value.project,
+                bindings: value.bindings,
+            }))),
+        ),
         other => other,
     })
 }

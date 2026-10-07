@@ -1,4 +1,5 @@
 //! Addition authorizes only verified selected placements and coherent logical documents.
+mod adoption;
 use super::AdditionCandidate;
 use crate::{
     application::process_runtime::Cancellation,
@@ -12,6 +13,7 @@ use crate::{
         verification::{self, VerifiedFileChange},
     },
 };
+pub(in crate::engine) use adoption::plan_adoption;
 use anyhow::{Context, Result, ensure};
 use empack_core::{
     addition::AdditionGroup,

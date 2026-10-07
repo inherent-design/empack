@@ -47,8 +47,8 @@ use tokio::sync::oneshot;
 struct PublicationWorkerFailed(#[source] RuntimeError);
 mod addition;
 pub use addition::{
-    AddPreview, AddReceipt, AddRequest, ExistingDependencyPolicy, UpdatePreview, UpdateReceipt,
-    UpdateRequest,
+    AddPreview, AddReceipt, AddRequest, AdoptObservedPreview, AdoptObservedReceipt,
+    AdoptObservedRequest, ExistingDependencyPolicy, UpdatePreview, UpdateReceipt, UpdateRequest,
 };
 mod execution;
 mod project_change;
@@ -153,6 +153,7 @@ pub enum Request {
     Remove(RemoveRequest),
     Add(AddRequest),
     Update(UpdateRequest),
+    AdoptObserved(AdoptObservedRequest),
     Sync(Box<SyncRequest>),
 }
 /// A selected existing root or one absent child of an existing selected parent.
@@ -186,6 +187,11 @@ impl From<AddRequest> for Request {
         Self::Add(request)
     }
 }
+impl From<AdoptObservedRequest> for Request {
+    fn from(request: AdoptObservedRequest) -> Self {
+        Self::AdoptObserved(request)
+    }
+}
 impl From<UpdateRequest> for Request {
     fn from(request: UpdateRequest) -> Self {
         Self::Update(request)
@@ -209,6 +215,7 @@ pub enum OperationPreview {
     Remove(RemovePreview),
     Add(AddPreview),
     Update(UpdatePreview),
+    AdoptObserved(AdoptObservedPreview),
     Sync(SyncPreview),
 }
 impl OperationPreview {
@@ -218,6 +225,7 @@ impl OperationPreview {
             Self::Remove(view) => view.plan,
             Self::Add(view) => view.plan,
             Self::Update(view) => view.plan,
+            Self::AdoptObserved(view) => view.plan,
             Self::Sync(view) => view.plan,
             Self::Import(view) | Self::Initialize(view) => view.plan,
         }
@@ -252,6 +260,12 @@ impl OperationPreview {
             _ => None,
         }
     }
+    pub fn adoption(&self) -> Option<&AdoptObservedPreview> {
+        match self {
+            Self::AdoptObserved(view) => Some(view),
+            _ => None,
+        }
+    }
     pub fn update(&self) -> Option<&UpdatePreview> {
         match self {
             Self::Update(view) => Some(view),
@@ -270,6 +284,7 @@ impl OperationPreview {
             Self::Remove(view) => Some(view.replacement),
             Self::Add(view) => Some(view.replacement),
             Self::Update(view) => Some(view.replacement),
+            Self::AdoptObserved(view) => Some(view.replacement),
             Self::Sync(view) => Some(view.replacement),
             _ => None,
         }
@@ -287,6 +302,7 @@ enum PreparedKind {
     Remove(Box<removal::PreparedRemovalOperation>),
     Add(Box<addition::PreparedAdditionOperation>),
     Update(Box<addition::PreparedAdditionOperation>),
+    AdoptObserved(Box<addition::PreparedAdditionOperation>),
     Sync(Box<synchronization::PreparedSynchronizationOperation>),
 }
 impl PreparedKind {
@@ -296,6 +312,7 @@ impl PreparedKind {
             Self::Remove(value) => OperationPreview::Remove(value.view.clone()),
             Self::Add(value) => OperationPreview::Add(value.view.clone()),
             Self::Update(value) => OperationPreview::Update((&value.view).into()),
+            Self::AdoptObserved(value) => OperationPreview::AdoptObserved((&value.view).into()),
             Self::Sync(value) => OperationPreview::Sync(value.view.clone()),
             Self::ProjectChange(value) => {
                 if value.initialize {
@@ -359,6 +376,7 @@ pub enum ExecutionReceipt {
     Remove(Box<RetainedOutput<RemoveReceipt>>),
     Add(Box<RetainedOutput<AddReceipt>>),
     Update(Box<RetainedOutput<UpdateReceipt>>),
+    AdoptObserved(Box<RetainedOutput<AdoptObservedReceipt>>),
     Sync(Box<RetainedOutput<SyncReceipt>>),
 }
 /// Accurate publication outcome: a failed preparation and a hot durable journal are distinct.
@@ -481,6 +499,11 @@ impl Engine {
                         )
                         .await?
                         .map(|value| PreparedKind::Sync(Box::new(value)))),
+                        Request::AdoptObserved(request) => Ok(addition::prepare_adoption(
+                            project, request, &config, &mut scope,
+                        )
+                        .await?
+                        .map(|value| PreparedKind::AdoptObserved(Box::new(value)))),
                         Request::Update(request) => Ok(addition::prepare_update(
                             project, request, &config, &mut scope,
                         )
@@ -584,6 +607,13 @@ impl Engine {
                         _ => unreachable!(),
                     });
                     synchronization::run(prepared, config, scope).await
+                }
+                PreparedKind::AdoptObserved(_) => {
+                    let prepared = data.map(|kind| match kind {
+                        PreparedKind::AdoptObserved(value) => *value,
+                        _ => unreachable!(),
+                    });
+                    addition::run_adoption(prepared, config, scope).await
                 }
                 PreparedKind::Update(_) => {
                     let prepared = data.map(|kind| match kind {
