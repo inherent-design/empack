@@ -465,6 +465,11 @@ Clippy and Windows cross-compilation pass. The most recent full run is `f0cdfd2`
 indexed-metadata correction. Fresh native CI and final combined live checks remain
 separate release gates.
 
+A further native regression reproduced stale direct index entries when a referenced
+payload was already absent. Add/update and sync now retire those owned entries even
+when there is no payload left to delete. Both focused regressions pass, including
+retention of a neighboring present file and a second no-op synchronization.
+
 The native addition adapter captures old and new selected placements, binds supplied
 request slots to canonical aliases, and verifies original digest/size/observation
 assertions. Present old bytes must still match the prior lock. Untracked files,

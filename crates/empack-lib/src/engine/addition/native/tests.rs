@@ -107,7 +107,7 @@ fn references(value: &ResolvedProject) -> DependencyContents {
 
 #[test]
 fn reference_updates_retire_only_verified_old_materializations_and_index_entries() {
-    for edited in [false, true] {
+    for (edited, missing) in [(false, false), (false, true), (true, false)] {
         let root = tempfile::tempdir().unwrap();
         let state = tempfile::tempdir().unwrap();
         let current = project(false, false);
@@ -157,6 +157,11 @@ fn reference_updates_retire_only_verified_old_materializations_and_index_entries
         let group = AdditionGroup::from_resolved(&requested).unwrap();
         if edited {
             put(root.path(), "pack/resourcepacks/a.zip", b"user edit");
+        }
+        if missing {
+            for name in ["a.zip", "b.zip", "copy.zip"] {
+                fs::remove_file(root.path().join(format!("pack/resourcepacks/{name}"))).unwrap();
+            }
         }
         let snapshot = ProjectReader::new(RecoveryReader::new(state.path().join("state")))
             .capture_addition(root.path(), &group, SnapshotLimits::default(), &cancel)

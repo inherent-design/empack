@@ -232,6 +232,8 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
             } else {
                 removals.insert(target.clone());
             }
+        } else if previous.contains_key(target) {
+            removals.insert(target.clone());
         }
     }
     for (target, (_, file, _)) in &previous {

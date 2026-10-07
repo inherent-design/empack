@@ -72,6 +72,58 @@ fn prepare(
     prepare_synchronization(snapshot, acquired(project, wrong), &cancel)
 }
 #[test]
+fn reference_sync_retires_absent_direct_entries_and_retains_present_content() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let project = fixture(root.path());
+    fs::remove_file(root.path().join("pack/resourcepacks/a.zip")).unwrap();
+    put(root.path(), "pack/resourcepacks/b.zip", b"payload");
+    let hash = empack_core::digest::ExpectedDigest::Sha256(Sha256::digest(b"payload").into()).hex();
+    put(root.path(), "pack/index.toml", format!("hash-format='sha256'\n[[files]]\nfile='resourcepacks/a.zip'\nhash='{hash}'\n[[files]]\nfile='resourcepacks/b.zip'\nhash='{hash}'\n").as_bytes());
+    put(
+        root.path(),
+        "pack/pack.toml",
+        b"name='Test'\n[index]\nfile='index.toml'\n",
+    );
+    let cancel = Cancellation::default();
+    let reader = ProjectReader::new(RecoveryReader::new(state.path().join("state")));
+    for again in [false, true] {
+        let snapshot = reader
+            .capture_synchronization(root.path(), SnapshotLimits::default(), &cancel)
+            .unwrap();
+        let references = acquired(&project, false)
+            .into_keys()
+            .map(|key| (key, DependencyContent::Reference))
+            .collect();
+        let prepared = plan_synchronization_with_resolution(snapshot, references, None, &cancel)
+            .unwrap()
+            .stage(&cancel)
+            .unwrap();
+        if again {
+            assert!(prepared.files().changes().is_empty());
+        }
+        prepared
+            .publish(
+                &Publisher::open(&state.path().join("state")).unwrap(),
+                &cancel,
+            )
+            .unwrap();
+        let index: toml::Value =
+            toml::from_str(&fs::read_to_string(root.path().join("pack/index.toml")).unwrap())
+                .unwrap();
+        assert_eq!(index["files"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            index["files"][0]["file"].as_str(),
+            Some("resourcepacks/b.zip")
+        );
+        assert_eq!(
+            fs::read(root.path().join("pack/resourcepacks/b.zip")).unwrap(),
+            b"payload"
+        );
+        assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
+    }
+}
+#[test]
 fn restores_modified_and_missing_locked_files_then_syncs_without_changes() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();

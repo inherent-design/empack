@@ -268,6 +268,9 @@ fn plan_change(
                 // old materialization rather than silently treating it as the new pin.
                 removals.insert(target.clone());
             }
+        } else if old.contains_key(target) {
+            // Absence needs no file mutation, but any owned direct index entry is stale.
+            removals.insert(target.clone());
         }
     }
     // Derivative backend records for changed selections cannot continue claiming the old pin.
