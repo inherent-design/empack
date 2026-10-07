@@ -246,3 +246,44 @@ fn cache_refuses_links_special_files_and_public_roots() {
     assert!(FileContentLookup::open_existing(&path, ContentStoreLimits::default()).is_err());
     assert!(FileContentStore::open(&path, ContentStoreLimits::default()).is_err());
 }
+
+#[tokio::test]
+async fn verified_cache_hit_needs_no_second_scratch_allocation() {
+    let host = tempfile::tempdir().unwrap();
+    let path = host.path().join("content");
+    let store = FileContentStore::open(&path, ContentStoreLimits::default()).unwrap();
+    let content = acquire(b"payload", &expected()).unwrap();
+    store.0.publish(&content, &Cancellation::default()).unwrap();
+    let before = footprint(&path);
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 1 << 20,
+        scratch_bytes: 7,
+        open_files: 12,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let retained = store
+                .lookup()
+                .retain(&mut scope, request(&content))
+                .await
+                .unwrap()
+                .unwrap();
+            Ok(store.publish_verified(&mut scope, retained).await)
+        })
+        .unwrap();
+    let result = handle.wait().await;
+    match &*result {
+        OperationOutcome::Completed(Ok(receipt)) => assert!(receipt.already_present),
+        OperationOutcome::Completed(Err(error)) => {
+            panic!("cached hit requested unnecessary scratch: {error:#}")
+        }
+        _ => panic!("cache hit failed"),
+    }
+    runtime.release_completed(handle.id());
+    drop((result, handle));
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    assert_eq!(footprint(&path), before);
+    runtime.shutdown().await;
+}

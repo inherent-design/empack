@@ -4,8 +4,9 @@ Target contract for v0.5.0-alpha.1. Code blocks are design sketches unless the
 [implementation ledger](implementation.md) identifies a compiled API.
 
 The compiled entry point is `empack_lib::engine::api::Engine`. Its `preview`
-and `prepare` accept an absolute `ProjectTarget` and a `Request`: `BuildRequest`,
-`ImportRequest` or `InitializeRequest`. Each captures and plan without live-project writes.
+and `prepare` accept an absolute `ProjectTarget` and a typed request for build,
+import, initialization, addition, update, adoption, removal, synchronization or recovery.
+Each captures and plans without live-project writes.
 `OperationPreview` carries the operation-specific view. A build view includes exact artifact destinations,
 runtime, missing content, network/tool requirements and the complete requested
 options. It has no conversion into an executable operation. A ready preparation
@@ -20,9 +21,22 @@ execution. Preparation sees only provider availability and performs no API looku
 The refresh retains every locked byte assertion and placement; changed declarations
 fail, and a restricted file without a locator becomes explicit manual input. Missing
 provider credentials remain preparation input. The build API does not invent a
-provider result or download association. Persistent content lookup and the APIs for
-other operation kinds remain completion work. The broader interface below remains
-the target for those operations.
+provider result or download association. Normal cache selection, durable continuation,
+cleanup and CLI composition remain completion work. The broader interface below
+remains the target where the implementation ledger identifies an outstanding API.
+
+`BuildRequest::with_content` attaches explicit `BuildAcquisitions` without putting
+leases in a display-only preview. Supplied keys must match current acquisition
+obligations. Preparation streams those bytes through the unchanged locked/backend
+assertions and evidence policy; unrelated keys and mismatches fail before approval.
+
+A build `Preparation::NeedsInput` retains an in-memory `PreparationContinuation`.
+Its view contains only display data. `Engine::resume` accepts additional verified
+files, revalidates the captured project, retains earlier supplied files and issues a
+new plan. Another engine, changed inputs, a retargeted project selection or duplicate
+supplied keys invalidate the resume. Dropping the continuation releases retained preparation and content resources.
+This does not persist a continuation or grant publication authority. Explicit grants
+remain required after every obligation is satisfied.
 
 Preparation, acquired content and retained receipts own explicit host admission
 estimates. Those estimates are separate from enforced stream/snapshot byte limits.

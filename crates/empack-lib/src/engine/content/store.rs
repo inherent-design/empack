@@ -7,7 +7,10 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
 use cap_std::fs::{Dir, OpenOptions};
-use empack_core::{digest::{ContentId, ExpectedDigest}, model::ExpectedContent};
+use empack_core::{
+    digest::{ContentId, ExpectedDigest},
+    model::ExpectedContent,
+};
 use std::{fs::File, path::Path, sync::Arc};
 
 #[derive(Clone, Copy)]
@@ -164,8 +167,32 @@ impl FileContentStore {
         scope: &mut WorkScope,
         content: AcquiredContent,
     ) -> Result<ContentStored> {
-        let store = self.clone();
         let bytes = content.lease().len();
+        let id = content.lease().id();
+        let probe = self.clone();
+        let work = scope.spawn_blocking(
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 128 << 10,
+                open_files: 4,
+                ..Default::default()
+            },
+            ResourceRequest::default(),
+            move |cancel| {
+                cancel.check()?;
+                let _guard = probe.0.lock(false)?;
+                probe.0.existing(&id, bytes, &cancel)
+            },
+        )?;
+        if let Some(receipt) = scope
+            .accept(work.wait().await?)?
+            .transpose()?
+            .into_parts()
+            .0
+        {
+            return Ok(receipt);
+        }
+        let store = self.clone();
         let work = scope.spawn_blocking(
             ResourceRequest {
                 jobs: 1,
@@ -235,6 +262,34 @@ impl Store {
         }
         Ok((count, bytes))
     }
+    // Caller holds shared or exclusive store coordination for the complete verification.
+    fn existing(
+        &self,
+        id: &ContentId,
+        bytes: u64,
+        cancel: &Cancellation,
+    ) -> Result<Option<ContentStored>> {
+        ensure!(
+            bytes <= self.limits.file_bytes,
+            "Content exceeds store file limit"
+        );
+        let mut file = match native::open_file(&self.root, &name(id)) {
+            Ok(file) => file,
+            Err(error) if missing(&error) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let (digest, count) =
+            crate::engine::io::copy_bounded(&mut file, &mut std::io::sink(), bytes, cancel)?;
+        ensure!(
+            digest == *id.bytes() && count == bytes,
+            "Existing cache object is corrupt"
+        );
+        Ok(Some(ContentStored {
+            id: id.clone(),
+            bytes,
+            already_present: true,
+        }))
+    }
     fn publish(&self, content: &AcquiredContent, cancel: &Cancellation) -> Result<ContentStored> {
         cancel.check()?;
         let bytes = content.lease().len();
@@ -245,26 +300,8 @@ impl Store {
         let id = content.lease().id();
         let target = name(&id);
         let _lock = self.lock(true)?;
-        match native::open_file(&self.root, &target) {
-            Ok(mut file) => {
-                let (digest, count) = crate::engine::io::copy_bounded(
-                    &mut file,
-                    &mut std::io::sink(),
-                    bytes,
-                    cancel,
-                )?;
-                ensure!(
-                    digest == *id.bytes() && count == bytes,
-                    "Existing cache object is corrupt"
-                );
-                return Ok(ContentStored {
-                    id,
-                    bytes,
-                    already_present: true,
-                });
-            }
-            Err(error) if missing(&error) => {}
-            Err(error) => return Err(error),
+        if let Some(receipt) = self.existing(&id, bytes, cancel)? {
+            return Ok(receipt);
         }
         let (count, used) = self.usage(cancel)?;
         ensure!(

@@ -6,7 +6,7 @@ use super::{
     build::{
         BuildAcquisitions,
         acquisition::{
-            AcquisitionKey, BuildAcquisitionPlan, BuildContentSource,
+            AcquisitionKey, BuildAcquisitionPlan, BuildAcquisitionResult, BuildContentSource,
             plan_target_build_acquisitions,
         },
     },
@@ -89,6 +89,21 @@ pub struct BuildRequest {
     pub evidence: SourceEvidencePolicy,
     pub interaction: InstallerInteraction,
 }
+/// Explicitly supplied bytes stay private to preparation, never in a display-only preview.
+pub struct BuildPreparationRequest {
+    pub request: BuildRequest,
+    pub supplied: BuildAcquisitions,
+    prior: Option<Box<PreparationContinuation>>,
+}
+impl BuildRequest {
+    pub fn with_content(self, supplied: BuildAcquisitions) -> BuildPreparationRequest {
+        BuildPreparationRequest {
+            request: self,
+            supplied,
+            prior: None,
+        }
+    }
+}
 /// Host estimates used for admission, separate from actual stream and snapshot limits.
 #[derive(Clone, Copy)]
 pub struct OperationResources {
@@ -147,14 +162,15 @@ impl BuildPreview {
     }
 }
 struct PreparedBuild {
+    project: PathBuf,
     view: BuildPreview,
     workspace: WorkspaceSnapshot,
     request: BuildRequest,
-    acquisition: BuildAcquisitionPlan,
+    acquisition: BuildAcquisitionResult,
 }
 pub enum Request {
     Recover(RecoverRequest),
-    Build(BuildRequest),
+    Build(Box<BuildPreparationRequest>),
     Import(Box<ImportRequest>),
     Initialize(Box<InitializeRequest>),
     Remove(RemoveRequest),
@@ -176,7 +192,12 @@ impl From<PathBuf> for ProjectTarget {
 }
 impl From<BuildRequest> for Request {
     fn from(request: BuildRequest) -> Self {
-        Self::Build(request)
+        Self::Build(Box::new(request.with_content(BuildAcquisitions::default())))
+    }
+}
+impl From<BuildPreparationRequest> for Request {
+    fn from(request: BuildPreparationRequest) -> Self {
+        Self::Build(Box::new(request))
     }
 }
 impl From<InitializeRequest> for Request {
@@ -357,7 +378,22 @@ pub struct ApprovedOperation {
 }
 pub enum Preparation {
     Ready(PreparedOperation),
-    NeedsInput(Box<OperationPreview>),
+    NeedsInput(Box<PreparationContinuation>),
+}
+/// In-memory suspension retains supplied leases and captured inputs, but cannot authorize effects.
+pub struct PreparationContinuation {
+    prepared: PreparedOperation,
+}
+impl PreparationContinuation {
+    pub fn view(&self) -> &OperationPreview {
+        self.prepared.view()
+    }
+}
+impl std::ops::Deref for PreparationContinuation {
+    type Target = OperationPreview;
+    fn deref(&self) -> &Self::Target {
+        self.view()
+    }
 }
 #[derive(Debug, Clone, Copy)]
 pub struct ExecutionGrant {
@@ -509,6 +545,9 @@ impl Engine {
                                 .map(|value| PreparedKind::Recovery(Box::new(value))))
                         }
                         Request::Build(request) => {
+                            if let Some(prior) = &request.prior {
+                                ensure!(Arc::ptr_eq(&owner, &prior.prepared.owner), "Continuation belongs to another engine");
+                            }
                             let ProjectTarget::Existing(project) = project else {
                                 anyhow::bail!("Build requires an existing project");
                             };
@@ -516,7 +555,7 @@ impl Engine {
                                 config.resources.capture,
                                 config.resources.prepared,
                                 move |cancel| {
-                                    capture(project, request, &config, provider_access, &cancel)
+                                    capture(project, *request, &config, provider_access, &cancel)
                                 },
                             )?;
                             Ok(scope
@@ -592,8 +631,26 @@ impl Engine {
         {
             Ok(Preparation::Ready(prepared))
         } else {
-            Ok(Preparation::NeedsInput(Box::new(prepared.view().clone())))
+            Ok(Preparation::NeedsInput(Box::new(PreparationContinuation { prepared })))
         }
+    }
+    /// Revalidate a suspended build and merge additional explicit inputs before making a new plan.
+    pub async fn resume(
+        &self,
+        pending: PreparationContinuation,
+        supplied: BuildAcquisitions,
+    ) -> Result<Preparation> {
+        ensure!(Arc::ptr_eq(&self.owner, &pending.prepared.owner), "Continuation belongs to another engine");
+        let PreparedKind::Build(build) = &**pending.prepared.data else {
+            anyhow::bail!("Continuation is not a build preparation");
+        };
+        let project = build.project.clone();
+        let request = BuildPreparationRequest {
+            request: build.request.clone(),
+            supplied,
+            prior: Some(Box::new(pending)),
+        };
+        self.prepare(project, request).await
     }
     /// Preview has no authority-bearing output even when its plan requires no additional input.
     pub async fn preview(
@@ -603,7 +660,7 @@ impl Engine {
     ) -> Result<OperationPreview> {
         Ok(match self.prepare(project, request).await? {
             Preparation::Ready(prepared) => prepared.view().clone(),
-            Preparation::NeedsInput(report) => *report,
+            Preparation::NeedsInput(pending) => pending.view().clone(),
         })
     }
     pub fn start(&self, approved: ApprovedOperation) -> Result<OperationHandle<ExecutionOutcome>> {
@@ -700,11 +757,33 @@ fn describe(need: &super::build::acquisition::AcquisitionNeed) -> ContentRequire
 }
 fn capture(
     project: PathBuf,
-    request: BuildRequest,
+    input: BuildPreparationRequest,
     config: &EngineConfig,
     provider_access: ProviderAvailability,
     cancel: &crate::application::process_runtime::Cancellation,
 ) -> Result<PreparedBuild> {
+    let BuildPreparationRequest { request, mut supplied, prior } = input;
+    let mut prior_root = None;
+    if let Some(prior) = prior {
+        let (prior, _reservation) = prior.prepared.data.into_parts();
+        let PreparedKind::Build(prior) = prior else {
+            anyhow::bail!("Continuation is not a build preparation");
+        };
+        ensure!(prior.project == project, "Continuation selected another project");
+        prior.workspace.root().revalidate(prior.workspace.observations(), cancel)?;
+        let binding = prior.workspace.root().binding;
+        ensure!(
+            super::snapshot::ProjectReadRoot::open(&project)?.binding == binding,
+            "Continuation project selection now refers to another root"
+        );
+        prior_root = Some(binding);
+        for (key, file) in prior.acquisition.acquired.locked {
+            ensure!(supplied.locked.insert(key, file).is_none(), "Continuation repeats a supplied locked file");
+        }
+        for (path, file) in prior.acquisition.acquired.observed {
+            ensure!(supplied.observed.insert(path, file).is_none(), "Continuation repeats a supplied observed file");
+        }
+    }
     ensure!(project.is_absolute(), "Project selection must be absolute");
     let mut collisions = CollisionIndex::default();
     for output in request.outputs.as_slice() {
@@ -725,6 +804,10 @@ fn capture(
         .collect();
     let workspace = ProjectReader::new(RecoveryReader::new(config.state_root.clone()))
         .capture_build(&project, &outputs, config.snapshot, cancel)?;
+    ensure!(
+        prior_root.is_none_or(|binding| workspace.root().binding == binding),
+        "Continuation project selection changed during capture"
+    );
     let runtime = workspace.require_resolved()?.lock().runtime.clone();
     let mut plans = Vec::new();
     for output in request.outputs.as_slice() {
@@ -742,9 +825,9 @@ fn capture(
             cancel,
         )?);
     }
-    let acquisition = BuildAcquisitionPlan::combine(plans)?;
+    let acquisition = BuildAcquisitionPlan::combine(plans)?.supply(supplied, request.evidence, cancel)?;
     let unresolved = acquisition
-        .needs()
+        .pending
         .iter()
         .filter(|need| match &need.source {
             BuildContentSource::Provider { pin, .. } => !provider_access.supports(&pin.project),
@@ -775,10 +858,10 @@ fn capture(
         ),
         outputs: request.outputs.as_slice().to_vec(),
         runtime: runtime.clone(),
-        content: acquisition.needs().iter().map(describe).collect(),
+        content: acquisition.pending.iter().map(describe).collect(),
         needs_network: server
             || bootstrap
-            || acquisition.needs().iter().any(|need| {
+            || acquisition.pending.iter().any(|need| {
                 matches!(
                     need.source,
                     BuildContentSource::Download(_) | BuildContentSource::Provider { .. }
@@ -790,6 +873,7 @@ fn capture(
         options: request.clone(),
     };
     Ok(PreparedBuild {
+        project,
         view,
         workspace,
         request,
@@ -811,3 +895,6 @@ mod addition_tests;
 
 #[cfg(test)]
 mod recovery_tests;
+
+#[cfg(test)]
+mod build_input_tests;

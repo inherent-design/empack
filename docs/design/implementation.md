@@ -864,6 +864,27 @@ both project documents remain byte-for-byte unchanged. Deterministic cases cover
 changed provider assertions, failed acquisition, missing credentials and restricted
 files before publication.
 
+## Supplied build input and in-memory continuation
+
+The public build API accepts `BuildRequest::with_content`. Every supplied locked or
+observed key must satisfy a current acquisition obligation, including every original
+digest, expected size, accepted observation and source-evidence policy. Preparation
+reads the retained bytes rather than trusting their label. Missing inputs retain a
+`PreparationContinuation` with prior supplied leases and captured project evidence.
+`Engine::resume` revalidates that evidence and combines new inputs before issuing a
+new plan. It refuses another engine, changed inputs and duplicate selections. Views
+contain no leases or conversion into approval; preview drops its temporary continuation.
+
+The composed test supplies two manual files across separate decisions, builds mrpack
+and full-client archives offline, checks every declared placement and verifies that
+intent/lock bytes remain unchanged. Durable suspension after process exit and the
+execution-time restricted-provider path still need continuation integration.
+The full combined snapshot passed 1,853 tests and eleven doctests. Subsequent native
+regressions reproduced and fixed continuation through a retargeted project alias and
+review 96's duplicate-cache scratch admission. All 33 affected checks then passed,
+including the formerly leaky reference-input test; Clippy and Windows cross-compilation
+pass. Resume checks the selected native root before and after fresh capture.
+
 ## Persistent content storage
 
 `FileContentStore` publishes verified content-addressed objects into private host
@@ -871,7 +892,10 @@ storage. Its separate lookup capability is read-only. Both operations use admitt
 workers; lookup charges the observed byte size and retains that reservation on the
 returned lease. Every cache hit checks the request's unchanged source declarations
 and the stored address. MD5 evidence stays weaker, and strong-source policy still
-refuses it. Copies survive cache eviction without persistent pin writes.
+refuses it. Copies survive cache eviction without persistent pin writes. Existing-object verification
+runs before requesting space for another copy; a cache hit works even when the source
+lease occupies the remaining scratch budget. A cache miss still requires full copy
+admission and exclusive revalidation before insertion.
 
 Native tests cover reopen/read-only behavior, corruption, conflicting assertions,
 limits, cancellation, coordination, links/special files, privacy and retained reader

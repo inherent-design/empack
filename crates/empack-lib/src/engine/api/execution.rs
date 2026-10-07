@@ -54,6 +54,7 @@ async fn execute(
         workspace,
         request,
         acquisition,
+        project: _,
     } = prepared;
     let archive = config.archive;
     let evidence = request.evidence;
@@ -65,7 +66,6 @@ async fn execute(
                 .root()
                 .revalidate(workspace.observations(), &cancel)?;
             let result = acquisition
-                .begin()
                 .acquire_embedded(&workspace, archive, evidence, &cancel)?;
             Ok::<_, anyhow::Error>((workspace, result, prepared_permit))
         },

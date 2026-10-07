@@ -85,6 +85,47 @@ impl BuildAcquisitionPlan {
     pub fn needs(&self) -> &[AcquisitionNeed] {
         &self.needs
     }
+    /// Bind explicit supplied bytes to current obligations. Extra selections and changed
+    /// source assertions fail before approval; accepted inputs retain their owned leases.
+    pub fn supply(
+        self,
+        mut supplied: BuildAcquisitions,
+        evidence: SourceEvidencePolicy,
+        cancel: &Cancellation,
+    ) -> Result<BuildAcquisitionResult> {
+        let mut acquired = BuildAcquisitions::default();
+        let mut pending = Vec::new();
+        for need in self.needs {
+            let input = match &need.key {
+                AcquisitionKey::Locked(key) => supplied.locked.remove(key),
+                AcquisitionKey::Observed(path) => supplied.observed.remove(path),
+            };
+            if let Some(file) = input {
+                let observed = crate::engine::content::verify_observation(
+                    &mut file.content.lease().open(),
+                    &need.expected,
+                    file.content.lease().len(),
+                    evidence,
+                    InitialObservation::RequireEvidence,
+                    cancel,
+                )?;
+                ensure!(
+                    observed.observed.values().contains(
+                        &empack_core::digest::ExpectedDigest::Sha256(*file.content.lease().id().bytes())
+                    ),
+                    "Supplied build content changed after acquisition"
+                );
+                insert_acquired(&mut acquired, need.key, file)?;
+            } else {
+                pending.push(need);
+            }
+        }
+        ensure!(
+            supplied.locked.is_empty() && supplied.observed.is_empty(),
+            "Supplied content does not match a pending build obligation"
+        );
+        Ok(BuildAcquisitionResult { acquired, pending })
+    }
     pub fn begin(self) -> BuildAcquisitionResult {
         BuildAcquisitionResult {
             acquired: BuildAcquisitions::default(),
