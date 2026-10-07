@@ -390,6 +390,11 @@ host-supplied exact runtime is checked for internal coherence, not online availa
 
 ## Composed build behavior
 
+Build HTTP acquisition now uses the same cumulative batch transfer as provider
+additions and imports. All declarations validate before the first request; multiple
+files cannot reset byte or time allowances. The per-file reset reproduced; 22
+affected acquisition/build-refresh tests and all-feature Clippy pass after correction.
+
 `prepare_mrpack_build` retains one workspace read set through publication. Preparation
 writes private candidates only. Source changes block publication before the previous
 artifact is replaced. Unrelated distributions are outside the read set. Existing and

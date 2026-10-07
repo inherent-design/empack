@@ -279,3 +279,8 @@ An existing clone of the original lease retains its original reservation until i
 retires. Synchronous build assembly covers pools with its enclosing worker budget;
 async acquisition owns explicit handle, metadata and byte reservations. This is
 operation-private storage, not the persistent content cache.
+
+The compiled build acquisition path validates the entire HTTP request inventory
+before transfer and uses one cumulative byte/deadline budget, including alternatives.
+It returns no acquired subset after a failed request. Manual and embedded obligations
+remain explicit pending input.

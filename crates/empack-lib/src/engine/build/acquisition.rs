@@ -226,41 +226,37 @@ impl BuildAcquisitionResult {
             pending: needs,
         } = self;
         let mut pending = Vec::new();
-        let mut pool = None;
+        let mut keys = Vec::new();
+        let mut requests = Vec::new();
         for need in needs {
             match need.source {
                 BuildContentSource::Download(alternatives) => {
-                    if pool.is_none() {
-                        let maximum = scope.available_scratch_bytes();
-                        pool = Some(ContentPool::owned(scope, maximum).await?);
-                    }
-                    let content = transport
-                        .acquire(
-                            scope,
-                            DownloadRequest {
-                                alternatives,
-                                expected: need.expected,
-                                limits,
-                                evidence,
-                                initial: InitialObservation::RequireEvidence,
-                            },
-                        )
-                        .await?;
-                    let content = pool
-                        .as_mut()
-                        .unwrap()
-                        .consolidate_owned(scope, content)
-                        .await?;
-                    let file = AcquiredBuildFile {
+                    keys.push(need.key);
+                    requests.push(DownloadRequest {
+                        alternatives,
+                        expected: need.expected,
+                        limits,
+                        evidence,
+                        initial: InitialObservation::RequireEvidence,
+                    });
+                }
+                _ => pending.push(need),
+            }
+        }
+        if !requests.is_empty() {
+            let content = transport.acquire_batch(scope, requests, limits).await?;
+            for (key, content) in keys.into_iter().zip(content) {
+                insert_acquired(
+                    &mut acquired,
+                    key,
+                    AcquiredBuildFile {
                         content,
                         permissions: FilePermissions {
                             readonly: false,
                             executable: false,
                         },
-                    };
-                    insert_acquired(&mut acquired, need.key, file)?;
-                }
-                _ => pending.push(need),
+                    },
+                )?;
             }
         }
         Ok(BuildAcquisitionResult { acquired, pending })

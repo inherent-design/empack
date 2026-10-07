@@ -746,3 +746,89 @@ async fn provider_slots_share_one_exact_resolution_and_keep_their_assertions() {
     runtime.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn build_downloads_share_the_batch_budget_and_validate_all_declarations_first() {
+    for invalid_later_declaration in [false, true] {
+        let mut server = mockito::Server::new_async().await;
+        let first = server
+            .mock("GET", "/first")
+            .with_body("payload")
+            .expect(usize::from(!invalid_later_declaration))
+            .create_async()
+            .await;
+        let second = server
+            .mock("GET", "/second")
+            .with_body("payload")
+            .expect(usize::from(!invalid_later_declaration))
+            .create_async()
+            .await;
+        let expected = || ExpectedContent {
+            digests: Some(
+                DigestSet::new(vec![
+                    empack_core::digest::ExpectedDigest::parse(
+                        "md5",
+                        "321c3cf486ed509164edec1e1981fec8",
+                    )
+                    .unwrap(),
+                ])
+                .unwrap(),
+            ),
+            size: Some(7),
+            accepted_observation: None,
+        };
+        let needs = ["first", "second"]
+            .into_iter()
+            .map(|name| {
+                let mut expected = expected();
+                if invalid_later_declaration && name == "second" {
+                    expected.size = Some(100);
+                }
+                AcquisitionNeed {
+                    key: AcquisitionKey::Observed(path(name)),
+                    reason: AcquisitionReason::MaterializedTarget,
+                    expected,
+                    source: BuildContentSource::Download(
+                        NonEmpty::new(vec![format!("{}/{name}", server.url())]).unwrap(),
+                    ),
+                }
+            })
+            .collect();
+        let plan = BuildAcquisitionPlan { needs };
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            memory_bytes: 1 << 20,
+            scratch_bytes: 64,
+            open_files: 10,
+        });
+        let runtime = OperationRuntime::new(governor.clone(), 1);
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                Ok(plan
+                    .acquire_http(
+                        &HttpAcquisition::for_loopback_tests(),
+                        &mut scope,
+                        SourceEvidencePolicy::Compatibility,
+                        TransferLimits {
+                            file_bytes: 16,
+                            transfer_bytes: 10,
+                            ..TransferLimits::default()
+                        },
+                    )
+                    .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        assert!(
+            matches!(&*outcome, OperationOutcome::Completed(Err(_))),
+            "each file passed, but the combined byte budget was exceeded"
+        );
+        first.assert_async().await;
+        second.assert_async().await;
+        runtime.release_completed(handle.id());
+        runtime.shutdown().await;
+        drop(handle);
+        drop(outcome);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}
