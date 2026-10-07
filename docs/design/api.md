@@ -63,6 +63,11 @@ records, canonical required edges and `ClosureIssue` values. Its
 `complete_for_required()` query applies only to the observed exact selections; it is
 not a deletion grant or proof that another version assignment cannot work.
 
+`ProviderCatalog::configure_acquisition` projects configured credentials into fixed
+CDN origin rules without returning the key. `Engine::with_provider_catalog` applies
+that configuration automatically. Neither method makes requests or grants network
+authority.
+
 `ProviderCatalog::resolve_addition` connects `ProviderAddInput` selectors to canonical
 dependency groups. Slugs, IDs and project URLs use the same catalog boundary. Requested
 pins remain exact intent; compatible selection remains unpinned. Selector lookup,

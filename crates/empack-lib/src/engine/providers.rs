@@ -129,6 +129,16 @@ pub struct ProviderCatalog {
     transport: transport::CatalogTransport,
 }
 impl ProviderCatalog {
+    /// Configure fixed provider CDN credentials without exposing them to a caller or locator.
+    /// This grants no network authority and performs no requests. Reconfiguration replaces
+    /// previous credentials, including clearing a key absent from this catalog.
+    pub fn configure_acquisition(
+        &self,
+        transport: super::acquisition::HttpAcquisition,
+    ) -> super::acquisition::HttpAcquisition {
+        self.transport.configure_acquisition(transport)
+    }
+
     /// Read-only capability description; it makes no network request or authentication claim.
     pub fn availability(&self) -> ProviderAvailability {
         ProviderAvailability {

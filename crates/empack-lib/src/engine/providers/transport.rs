@@ -83,6 +83,13 @@ impl RequestBudget {
     }
 }
 impl CatalogTransport {
+    pub(super) fn configure_acquisition(
+        &self,
+        transport: crate::engine::acquisition::HttpAcquisition,
+    ) -> crate::engine::acquisition::HttpAcquisition {
+        transport.with_curseforge_key(self.curseforge_key.clone())
+    }
+
     pub(super) fn has_curseforge_key(&self) -> bool {
         self.curseforge_key.is_some()
     }

@@ -381,3 +381,102 @@ async fn small_files_share_a_tight_scratch_budget_with_or_without_declared_sizes
         response.assert_async().await;
     }
 }
+
+#[test]
+fn provider_download_credentials_are_scoped_to_the_exact_https_origin() {
+    use crate::engine::providers::ProviderCatalog;
+    // Catalog configuration transfers a rule, not an arbitrary default header.
+    let catalog =
+        ProviderCatalog::for_loopback_tests("http://127.0.0.1:1", Some("fixture-key".into()));
+    let transport = catalog.configure_acquisition(transport());
+    for (url, authenticated) in [
+        ("https://edge.forgecdn.net/files/1/2/mod.jar", true),
+        ("https://edge.forgecdn.net:443/files/1/2/mod.jar", true),
+        ("https://EDGE.FORGECDN.NET/files/1/2/mod.jar", true),
+        ("http://edge.forgecdn.net/files/1/2/mod.jar", false),
+        ("https://edge.forgecdn.net:8443/files/1/2/mod.jar", false),
+        (
+            "https://edge.forgecdn.net.example.com/files/1/2/mod.jar",
+            false,
+        ),
+        ("https://sub.edge.forgecdn.net/files/1/2/mod.jar", false),
+        ("https://edge.forgecdn.net./files/1/2/mod.jar", false),
+        ("https://api.curseforge.com/v1/mods/1", false),
+        ("https://mediafilez.forgecdn.net/files/1/2/mod.jar", false),
+        ("https://cdn.modrinth.com/data/file.jar", false),
+        ("http://127.0.0.1:1/file", false),
+    ] {
+        let request = transport
+            .request(&Url::parse(url).unwrap())
+            .build()
+            .unwrap();
+        let key = request.headers().get("x-api-key");
+        assert_eq!(key.is_some(), authenticated, "{url}");
+        if let Some(key) = key {
+            assert!(key.is_sensitive());
+            assert_eq!(key, "fixture-key");
+        }
+        assert!(!request.url().as_str().contains("fixture-key"));
+        assert!(!format!("{request:?}").contains("fixture-key"));
+    }
+    let anonymous = ProviderCatalog::for_loopback_tests("http://127.0.0.1:1", None);
+    let transport = anonymous.configure_acquisition(transport);
+    assert!(
+        transport
+            .request(&Url::parse("https://edge.forgecdn.net/file").unwrap())
+            .build()
+            .unwrap()
+            .headers()
+            .get("x-api-key")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn configured_provider_downloads_do_not_leak_keys_to_redirects_or_alternatives() {
+    use crate::engine::providers::ProviderCatalog;
+    let mut source = mockito::Server::new_async().await;
+    let mut mirror = mockito::Server::new_async().await;
+    let missing = source
+        .mock("GET", "/missing")
+        .match_header("x-api-key", mockito::Matcher::Missing)
+        .with_status(404)
+        .create_async()
+        .await;
+    let redirect = source
+        .mock("GET", "/redirect")
+        .match_header("x-api-key", mockito::Matcher::Missing)
+        .with_status(302)
+        .with_header("location", &format!("{}/file", mirror.url()))
+        .create_async()
+        .await;
+    let file = mirror
+        .mock("GET", "/file")
+        .match_header("x-api-key", mockito::Matcher::Missing)
+        .with_body("payload")
+        .create_async()
+        .await;
+    let catalog = ProviderCatalog::for_loopback_tests(&source.url(), Some("fixture-key".into()));
+    let transport = catalog.configure_acquisition(transport());
+    let request = request(
+        vec![
+            format!("{}/missing", source.url()),
+            format!("{}/redirect", source.url()),
+        ],
+        32,
+    );
+    let (runtime, governor) = runtime();
+    let mut handle = runtime
+        .start(move |mut scope| async move { Ok(transport.acquire(&mut scope, request).await) })
+        .unwrap();
+    let outcome = handle.wait().await;
+    assert!(matches!(&*outcome, OperationOutcome::Completed(Ok(_))));
+    runtime.release_completed(handle.id());
+    runtime.shutdown().await;
+    drop(handle);
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    missing.assert_async().await;
+    redirect.assert_async().await;
+    file.assert_async().await;
+}

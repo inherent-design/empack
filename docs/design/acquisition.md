@@ -96,6 +96,13 @@ the rule for every redirect; arbitrary mirrors and alternate origins do not inhe
 the key. A rejected or missing key remains an authentication failure, not evidence
 that a file is absent or that its declared digest may be changed.
 
+The compiled `ProviderCatalog::configure_acquisition` applies this rule to an
+`HttpAcquisition` without exposing the credential. `Engine::with_provider_catalog`
+configures both catalog and acquisition together. Only HTTPS on port 443 at the
+exact CDN hostname receives the header; alternate ports, subdomains and other
+origins do not. Replacing the catalog also replaces or clears that credential.
+Standalone import/acquisition hosts apply the same configuration explicitly.
+
 ### 9.4 Import adapters produce data, not project changes
 
 The compiled inspection boundary is documented in [the implementation ledger](implementation.md#normalized-import-inspection).

@@ -454,6 +454,7 @@ impl Engine {
         catalog: ProviderCatalog,
         limits: CatalogLimits,
     ) -> Self {
+        self.transport = catalog.configure_acquisition(self.transport);
         self.catalog = Some((catalog, limits));
         self
     }

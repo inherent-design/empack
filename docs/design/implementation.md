@@ -80,6 +80,14 @@ All-feature Clippy and Windows cross-compilation pass. Final review also made
 non-primary file choices retain explicit placement intent; its regression and the
 seven-test adapter suite pass separately from that full-suite run. This service does not yet replace CLI selection or provide
 local/URL input hosts and compatible installed-dependency reuse.
+The catalog now configures the acquisition transport with the fixed CurseForge
+CDN credential rule; Engine attachment applies both together. Origin, port,
+redirect, mirror and redaction regressions pass in the 74-test affected suite,
+alongside provider resolution and approved build refresh. All-feature Clippy
+passes. The first fixture run retained its completed handle during the reservation
+assertion; dropping that final owner corrected the test. No production resource
+release behavior was changed. Live authenticated CDN verification remains a
+combined-candidate gate.
 Internal catalog composition can carry one request budget through selector, pin and
 compatible lookups; it does not restart the deadline between dependencies.
 Transient signed URLs are execution data; the document codec still rejects them in

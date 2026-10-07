@@ -10,7 +10,7 @@ use super::{
 use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
 use empack_core::model::{ExpectedContent, NonEmpty};
-use reqwest::{Client, StatusCode, Url};
+use reqwest::{Client, StatusCode, Url, header::HeaderValue};
 use std::{
     io::{self, Read},
     time::Duration,
@@ -85,11 +85,12 @@ impl TransferBudget {
         })
     }
 }
-/// No credentials, automatic redirects, cookies or response decompression. Provider API transport
-/// supplies authentication separately; this port acquires the exact downloadable representation.
+/// No automatic redirects, cookies or response decompression. Optional provider credentials
+/// have fixed HTTPS origin rules, re-evaluated at every hop; no locator grants credential access.
 #[derive(Clone)]
 pub struct HttpAcquisition {
     client: Client,
+    curseforge_key: Option<HeaderValue>,
     #[cfg(test)]
     allow_loopback_http: bool,
 }
@@ -97,6 +98,7 @@ impl HttpAcquisition {
     pub fn new() -> Result<Self> {
         Ok(Self {
             client: Self::client_builder().build()?,
+            curseforge_key: None,
             #[cfg(test)]
             allow_loopback_http: false,
         })
@@ -109,8 +111,27 @@ impl HttpAcquisition {
                 .tls_certs_only([])
                 .build()
                 .unwrap(),
+            curseforge_key: None,
             allow_loopback_http: true,
         }
+    }
+    pub(in crate::engine) fn with_curseforge_key(mut self, key: Option<HeaderValue>) -> Self {
+        self.curseforge_key = key.map(|mut key| {
+            key.set_sensitive(true);
+            key
+        });
+        self
+    }
+    fn request(&self, url: &Url) -> reqwest::RequestBuilder {
+        let mut request = self.client.get(url.clone());
+        if url.scheme() == "https"
+            && url.host_str() == Some("edge.forgecdn.net")
+            && url.port_or_known_default() == Some(443)
+            && let Some(key) = &self.curseforge_key
+        {
+            request = request.header("x-api-key", key.clone());
+        }
+        request
     }
     fn client_builder() -> reqwest::ClientBuilder {
         Client::builder()
@@ -319,8 +340,7 @@ impl HttpAcquisition {
             let mut redirects = 0;
             let mut response = loop {
                 let response = self
-                    .client
-                    .get(url.clone())
+                    .request(&url)
                     .send()
                     .await
                     .map_err(|_| TransferError::Network)?;
