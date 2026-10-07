@@ -6,8 +6,8 @@ use empack_core::{
     addition::{AdditionGroup, AdditionPlan},
     model::ResolvedProject,
 };
-pub(in crate::engine) use native::plan_addition;
 pub use native::{AdditionReceipt, PreparedAddition, prepare_addition};
+pub(in crate::engine) use native::{plan_addition, plan_update};
 
 /// A coherent document candidate, not authority to replace installed bytes.
 pub struct AdditionCandidate {
@@ -23,8 +23,28 @@ impl AdditionCandidate {
         lock: &DecodedLock,
         group: &AdditionGroup,
     ) -> Result<Self> {
+        Self::prepare_mode(source, lock, group, false)
+    }
+    /// Refresh only selected installed identities, preserving current authoring intent and pins.
+    pub fn prepare_update(
+        source: &DecodedIntent,
+        lock: &DecodedLock,
+        group: &AdditionGroup,
+    ) -> Result<Self> {
+        Self::prepare_mode(source, lock, group, true)
+    }
+    fn prepare_mode(
+        source: &DecodedIntent,
+        lock: &DecodedLock,
+        group: &AdditionGroup,
+        update: bool,
+    ) -> Result<Self> {
         let current = lock.bind(source)?;
-        let plan = AdditionPlan::prepare(&current, group)?;
+        let plan = if update {
+            AdditionPlan::prepare_update(&current, group)?
+        } else {
+            AdditionPlan::prepare(&current, group)?
+        };
         let intent = DocumentCodec.replace_intent(source, plan.intent())?;
         let next = DocumentCodec.decode_intent(&intent.bytes, "addition candidate")?;
         let project = plan.clone().resolve(next.semantic_revision())?;
@@ -373,3 +393,6 @@ pub(in crate::engine) mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod update_tests;

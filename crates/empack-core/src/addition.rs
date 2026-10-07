@@ -54,6 +54,8 @@ impl AdditionGroup {
 pub enum AdditionError {
     /// No explicit root requested an installation.
     EmptyRequest,
+    /// An update selected an identity that is not installed.
+    UpdateMissing(DependencyKey),
     /// The proposed closure includes an unjustified selection.
     UnrequestedSelection(DependencyKey),
     /// Dependency resolution used another game or loader runtime.
@@ -72,6 +74,7 @@ pub enum AdditionError {
 impl fmt::Display for AdditionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UpdateMissing(key) => write!(f, "Cannot update an uninstalled identity: {}", key.as_str()),
             Self::EmptyRequest => f.write_str("Addition requires an explicit dependency root"),
             Self::UnrequestedSelection(key) => write!(f, "Unrequested installation in addition: {}", key.as_str()),
             Self::RuntimeMismatch => f.write_str("Addition was resolved for a different runtime"),
@@ -210,6 +213,29 @@ impl AdditionPlan {
                 .filter(|key| current.lock().dependencies.contains_key(key))
                 .collect(),
         })
+    }
+    /// Refresh selected installed identities without rewriting authoring intent. Temporary roots
+    /// in the resolved group identify the requested selections, including transitive records;
+    /// they do not promote those records or relax exact pins in the published project.
+    pub fn prepare_update(
+        current: &ResolvedProject,
+        group: &AdditionGroup,
+    ) -> Result<Self, AdditionError> {
+        let mut plan = Self::prepare(current, group)?;
+        for key in group.roots.keys() {
+            let bound = &plan.bindings[key];
+            if !current.lock().dependencies.contains_key(bound) {
+                return Err(AdditionError::UpdateMissing(bound.clone()));
+            }
+        }
+        plan.intent = current.intent().clone();
+        ResolvedProject::validate(
+            plan.intent.clone(),
+            plan.lock.clone(),
+            plan.lock.intent_revision,
+        )
+        .map_err(AdditionError::InvalidProject)?;
+        Ok(plan)
     }
     /// Explicitly requested roots which already have a locked installation.
     pub fn existing_roots(&self) -> &BTreeSet<DependencyKey> {

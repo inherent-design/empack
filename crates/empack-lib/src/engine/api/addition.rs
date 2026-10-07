@@ -41,6 +41,37 @@ pub struct AddReceipt {
     pub project: ResolvedProject,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
 }
+/// Exact replacement selections for explicitly requested installed identities. Resolution hosts
+/// supply the group; the engine preserves current authoring intent, including explicit pins.
+pub struct UpdateRequest {
+    pub group: AdditionGroup,
+    pub content: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+}
+#[derive(Clone)]
+pub struct UpdatePreview {
+    pub plan: PlanId,
+    pub bindings: BTreeMap<DependencyKey, DependencyKey>,
+    pub selected: BTreeSet<DependencyKey>,
+    pub files: FilePlan,
+    pub replacement: ReplacementSummary,
+}
+impl From<&AddPreview> for UpdatePreview {
+    fn from(value: &AddPreview) -> Self {
+        Self {
+            plan: value.plan,
+            bindings: value.bindings.clone(),
+            selected: value.existing_roots.clone(),
+            files: value.files.clone(),
+            replacement: value.replacement,
+        }
+    }
+}
+pub struct UpdateReceipt {
+    pub plan: PlanId,
+    pub publication: PublicationReceipt,
+    pub project: ResolvedProject,
+    pub bindings: BTreeMap<DependencyKey, DependencyKey>,
+}
 pub(super) struct PreparedAdditionOperation {
     pub(super) view: AddPreview,
     addition: PreparedAddition,
@@ -48,6 +79,34 @@ pub(super) struct PreparedAdditionOperation {
 pub(super) async fn prepare(
     project: ProjectTarget,
     request: AddRequest,
+    config: &EngineConfig,
+    scope: &mut WorkScope,
+) -> Result<RetainedOutput<PreparedAdditionOperation>> {
+    prepare_change(project, request, false, config, scope).await
+}
+pub(super) async fn prepare_update(
+    project: ProjectTarget,
+    request: UpdateRequest,
+    config: &EngineConfig,
+    scope: &mut WorkScope,
+) -> Result<RetainedOutput<PreparedAdditionOperation>> {
+    prepare_change(
+        project,
+        AddRequest {
+            group: request.group,
+            content: request.content,
+            existing: ExistingDependencyPolicy::UpdateSameIdentity,
+        },
+        true,
+        config,
+        scope,
+    )
+    .await
+}
+async fn prepare_change(
+    project: ProjectTarget,
+    request: AddRequest,
+    update: bool,
     config: &EngineConfig,
     scope: &mut WorkScope,
 ) -> Result<RetainedOutput<PreparedAdditionOperation>> {
@@ -60,7 +119,8 @@ pub(super) async fn prepare(
     let policy = request.existing;
     let work = scope.spawn_blocking(config.resources.capture, config.resources.prepared, move |cancel| {
         let snapshot = ProjectReader::new(RecoveryReader::new(state)).capture_addition(&project, &request.group, limits, &cancel)?;
-        let planned = native_addition::plan_addition(snapshot, &request.group, request.content, &cancel)?;
+        let plan = if update { native_addition::plan_update } else { native_addition::plan_addition };
+        let planned = plan(snapshot, &request.group, request.content, &cancel)?;
         ensure!(policy == ExistingDependencyPolicy::UpdateSameIdentity || planned.candidate().plan().existing_roots().is_empty(), "Requested dependency already exists; updating the same identity requires explicit authorization");
         Ok::<_, anyhow::Error>(planned)
     })?;
@@ -110,6 +170,25 @@ pub(super) async fn run(
         }
         Err(_) if cancel.is_cancelled() => ExecutionOutcome::InterruptedBeforePublication,
         Err(error) => ExecutionOutcome::FailedBeforePublication(error),
+    })
+}
+pub(super) async fn run_update(
+    prepared: RetainedOutput<PreparedAdditionOperation>,
+    config: EngineConfig,
+    scope: WorkScope,
+) -> Result<ExecutionOutcome, RuntimeError> {
+    Ok(match run(prepared, config, scope).await? {
+        ExecutionOutcome::Completed(ExecutionReceipt::Add(receipt)) => {
+            ExecutionOutcome::Completed(ExecutionReceipt::Update(Box::new(receipt.map(|value| {
+                UpdateReceipt {
+                    plan: value.plan,
+                    publication: value.publication,
+                    project: value.project,
+                    bindings: value.bindings,
+                }
+            }))))
+        }
+        other => other,
     })
 }
 async fn execute(

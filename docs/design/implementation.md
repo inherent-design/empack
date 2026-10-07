@@ -429,7 +429,7 @@ lost when a weaker observation arrives for the same exact selection. Compatible 
 sets merge; contradictory complete evidence requires explicit resolution. A changed
 pin cannot silently invalidate retained dependents. `AdditionCandidate` binds raw
 source revisions and computes coherent next documents without publication authority.
-Sync/update/adoption, addition acquisition hosts and foreign-identity replacement remain
+Changed-intent sync, adoption, acquisition hosts and foreign-identity replacement remain
 implementation work; this planner alone does not replace a CLI command. Eight focused
 contract tests and all-feature Clippy pass for this planning boundary.
 
@@ -460,6 +460,28 @@ The combined addition revision passes 1,770 default tests and eleven doctests, p
 52 focused engine tests, all-feature Clippy and Windows cross-compilation. Native
 cross-platform CI and review remain separate gates; these counts do not establish
 completion of the remaining request hosts or lifecycle services.
+
+## Explicit dependency updates
+
+`AdditionPlan::prepare_update` reuses canonical identity and dependency-closure checks
+while preserving current authoring intent. Requested identities must already be
+installed. Resolved group roots select work; they do not promote transitive content,
+change source declarations or relax explicit pins. Retained required dependents remain
+binding, and unrelated installations are preserved.
+
+`UpdateRequest` runs this contract through shared capture, private staging, exact-plan
+approval and publication. Its preview lists requested canonical records and replacements;
+its typed receipt retains the coherent published project. Raw authoring comments remain
+unchanged. Addition and update now stage only changed files, with unchanged observations
+retained as publication preconditions. Provider selection and acquisition hosts, batch
+continuation and CLI routing remain unfinished.
+
+The affected update/addition tests pass, including aliases, unknown identities, pins,
+transitive root preservation and update followed by two no-op sync previews. All-feature
+Clippy and Windows cross-compilation pass. The combined revision passes 1,786 default
+tests and eleven doctests. One pure legacy-coordinate test reported a nextest pipe-leak
+warning; the check contains no subprocess or I/O operation. Its isolated repeat passed
+cleanly. Native CI and Greptile for this update revision remain separate gates.
 
 ## Recorded synchronization candidate
 

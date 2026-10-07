@@ -97,10 +97,32 @@ pub(in crate::engine) fn plan_addition(
     acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
     cancel: &Cancellation,
 ) -> Result<AdditionPreparation> {
+    plan_change(workspace, group, acquired, false, cancel)
+}
+pub(in crate::engine) fn plan_update(
+    workspace: MutationSnapshot,
+    group: &AdditionGroup,
+    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    cancel: &Cancellation,
+) -> Result<AdditionPreparation> {
+    plan_change(workspace, group, acquired, true, cancel)
+}
+fn plan_change(
+    workspace: MutationSnapshot,
+    group: &AdditionGroup,
+    acquired: BTreeMap<LockedFileKey, AcquiredBuildFile>,
+    update: bool,
+    cancel: &Cancellation,
+) -> Result<AdditionPreparation> {
     cancel.check()?;
     let workspace = workspace.into_workspace();
     let current = workspace.require_resolved()?;
-    let candidate = AdditionCandidate::prepare(
+    let prepare = if update {
+        AdditionCandidate::prepare_update
+    } else {
+        AdditionCandidate::prepare
+    };
+    let candidate = prepare(
         workspace.intent(),
         workspace.prior_lock().context("Addition requires a lock")?,
         group,
@@ -315,7 +337,9 @@ pub(in crate::engine) fn plan_addition(
             },
         );
     }
-    let plan = verification::plan_files(&observed, &desired, &removals)?;
+    let plan = verification::plan_mutation_files(&observed, &desired, &removals)?;
+    documents.retain(|target, _| plan.expected().contains_key(target));
+    content.retain(|target, _| plan.expected().contains_key(target));
     verification::candidate_stage_limits(workspace.observations(), &plan)?;
     Ok(AdditionPreparation {
         workspace,

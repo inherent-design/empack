@@ -293,3 +293,151 @@ async fn synchronization_requires_grants_and_new_resolution_for_runtime_changes(
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     engine.shutdown().await;
 }
+
+fn acquired_project(
+    project: &empack_core::model::ResolvedProject,
+) -> BTreeMap<LockedFileKey, AcquiredBuildFile> {
+    project
+        .lock()
+        .dependencies
+        .iter()
+        .flat_map(|(key, dependency)| {
+            dependency.files.as_slice().iter().map(|file| {
+                (
+                    LockedFileKey {
+                        dependency: key.clone(),
+                        slot: file.slot.clone(),
+                    },
+                    AcquiredBuildFile {
+                        content: verify_stream(
+                            &mut b"payload".as_slice(),
+                            &file.expected,
+                            100,
+                            SourceEvidencePolicy::Compatibility,
+                            InitialObservation::RequireEvidence,
+                            &crate::application::process_runtime::Cancellation::default(),
+                        )
+                        .unwrap(),
+                        permissions: FilePermissions {
+                            readonly: false,
+                            executable: false,
+                        },
+                    },
+                )
+            })
+        })
+        .collect()
+}
+#[tokio::test]
+async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
+    use crate::engine::{
+        addition::tests::fixture as provider_fixture, documents::DocumentCodec,
+        layout::ProjectLayout,
+    };
+    use empack_core::files::ManagedPath;
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let current = provider_fixture(
+        &[
+            ("existing", "Project1", "Version1"),
+            ("unlisted", "Project2", "Version1"),
+        ],
+        &["existing"],
+        &[],
+        true,
+    );
+    let requested = provider_fixture(
+        &[("selector", "Project1", "Version2")],
+        &["selector"],
+        &[],
+        true,
+    );
+    let mut intent = b"# author comment\n".to_vec();
+    intent.extend(DocumentCodec.encode_intent(current.intent()).unwrap());
+    fs::write(root.path().join("empack.yml"), &intent).unwrap();
+    fs::write(
+        root.path().join("empack.lock"),
+        DocumentCodec.encode_lock(&current).unwrap(),
+    )
+    .unwrap();
+    for dependency in current.lock().dependencies.values() {
+        for file in dependency.files.as_slice() {
+            for placement in file.placements.as_slice() {
+                let path = ProjectLayout::path(&ManagedPath::Content {
+                    layer: placement.layer,
+                    path: placement.destination.relative().clone(),
+                })
+                .unwrap();
+                let path = root.path().join(path.as_str());
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, b"payload").unwrap();
+            }
+        }
+    }
+    let (engine, governor) = engine(state.path().join("state"));
+    let make_request = || UpdateRequest {
+        group: AdditionGroup::from_resolved(&requested).unwrap(),
+        content: acquired_project(&requested),
+    };
+    let preview = engine
+        .preview(root.path().to_path_buf(), make_request())
+        .await
+        .unwrap();
+    assert_eq!(
+        preview.update().unwrap().selected,
+        std::collections::BTreeSet::from([DependencyKey::parse("existing").unwrap()])
+    );
+    assert!(preview.add().is_none());
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), intent);
+    assert!(!state.path().join("state").exists());
+    let unapproved = ready(&engine, root.path(), make_request()).await;
+    let mut wrong = grant(&unapproved);
+    wrong.replacement = None;
+    assert!(unapproved.authorize(wrong).is_err());
+    let prepared = ready(&engine, root.path(), make_request()).await;
+    let permission = grant(&prepared);
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    let updated = match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Update(
+            receipt,
+        ))) => {
+            assert_eq!(receipt.project.intent(), current.intent());
+            assert_eq!(
+                receipt.project.lock().dependencies[&DependencyKey::parse("existing").unwrap()]
+                    .selected,
+                requested.lock().dependencies[&DependencyKey::parse("selector").unwrap()].selected
+            );
+            assert_eq!(
+                receipt.project.lock().dependencies[&DependencyKey::parse("unlisted").unwrap()],
+                current.lock().dependencies[&DependencyKey::parse("unlisted").unwrap()]
+            );
+            receipt.project.clone()
+        }
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("update did not publish"),
+    };
+    engine.release_completed(handle.id());
+    drop(outcome);
+    drop(handle);
+    assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), intent);
+    for _ in 0..2 {
+        let view = engine
+            .preview(
+                root.path().to_path_buf(),
+                SyncRequest {
+                    content: acquired_project(&updated),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(view.sync().unwrap().files.changes().is_empty());
+        assert!(view.sync().unwrap().files.expected().is_empty());
+    }
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}

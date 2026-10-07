@@ -144,6 +144,17 @@ No-op content remains a publication precondition without being staged again.
 `SyncReceipt` retains the coherent published project. Changed-intent resolution and
 acquisition hosts remain pending; the document candidate alone has no write authority.
 
+`UpdateRequest` supplies exact resolved selections and acquired content for requested
+installed identities. It shares dependency capture, staging and publication with add,
+but preserves current authoring intent byte-for-byte. Explicit pins remain binding.
+Temporary request roots may select transitive installations without promoting them;
+known retained dependents must be included when their required selection changes.
+Uninstalled requested identities fail rather than becoming additions. New required
+closure entries remain justified by the resolved group. `UpdatePreview` exposes
+canonical bindings, selected records and the exact replacement footprint; the retained
+`UpdateReceipt` contains the published project. Compatible selection by the host and
+CLI wiring remain separate work.
+
 `AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical
 aliases and rejects conflicts with retained selections. Its `AdditionPlan` exposes
