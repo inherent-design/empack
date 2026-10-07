@@ -130,6 +130,13 @@ unfinished creation, including after a move or through an alias. The lower-level
 `Publisher::recover_new` completes retained creation without tools or downloads.
 Engine recovery/continuation composition and CLI cutover remain unfinished.
 
+`SynchronizationCandidate::prepare` rebinds authoring-only edits to the recorded
+resolution without selecting newer files. It preserves all exact selections, original
+source evidence and dependency edges, including installations no longer listed as
+roots. Pin, source, placement or runtime edits that invalidate that resolution return
+`ResolutionRequired`. Native restoration and shared Engine synchronization remain
+pending; a document candidate has no write authority.
+
 `AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical
 aliases and rejects conflicts with retained selections. Its `AdditionPlan` exposes

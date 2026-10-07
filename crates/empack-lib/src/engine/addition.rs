@@ -51,7 +51,7 @@ impl AdditionCandidate {
 }
 
 #[cfg(test)]
-mod tests {
+pub(in crate::engine) mod tests {
     use super::*;
     use crate::engine::{documents::DocumentEdit, mrpack::tests::project};
     use empack_core::{addition::AdditionError, identity::*, model::*, path::InstallDestination};
@@ -60,7 +60,7 @@ mod tests {
     fn key(value: &str) -> DependencyKey {
         DependencyKey::parse(value).unwrap()
     }
-    pub(super) fn fixture(
+    pub(in crate::engine) fn fixture(
         entries: &[(&str, &str, &str)],
         roots: &[&str],
         edges: &[(&str, &str)],

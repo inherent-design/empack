@@ -461,6 +461,16 @@ The combined addition revision passes 1,770 default tests and eleven doctests, p
 cross-platform CI and review remain separate gates; these counts do not establish
 completion of the remaining request hosts or lifecycle services.
 
+## Recorded synchronization candidate
+
+`SynchronizationCandidate` validates current intent against the prior exact resolution.
+Authoring-only changes can rebind the lock without new acquisition or version choice.
+Raw intent remains unchanged; an already bound lock requests raw-byte preservation.
+Unlisted selections and original source assertions remain. Changed pins, sources,
+placements or runtime requirements that the old lock cannot satisfy produce a typed
+`ResolutionRequired` outcome. This candidate does not yet restore native files or wire
+the shared Engine sync request. Four focused contracts and all-feature Clippy pass.
+
 ## Semantic removal planning
 
 `RemovalPlan` in the pure core selects exact logical keys from a coherent resolution.

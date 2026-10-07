@@ -28,6 +28,7 @@ pub mod server_runtime;
 pub mod snapshot;
 pub mod source;
 pub mod staging;
+pub mod synchronization;
 pub mod templates;
 pub mod verification;
 
