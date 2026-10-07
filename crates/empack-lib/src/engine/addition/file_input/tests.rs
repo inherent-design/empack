@@ -80,42 +80,60 @@ async fn prepare(
     let mut handle = runtime
         .start(move |mut scope| async move {
             let result = async {
-                let work = scope.spawn_blocking(
-                    ResourceRequest {
-                        jobs: 1,
-                        memory_bytes: 1 << 16,
-                        scratch_bytes: 32,
-                        open_files: 3,
-                    },
-                    ResourceRequest {
-                        scratch_bytes: 32,
-                        open_files: 3,
-                        ..Default::default()
-                    },
-                    |cancel| {
-                        verify_stream(
-                            &mut &b"payload"[..],
-                            &declared(),
-                            32,
-                            SourceEvidencePolicy::Compatibility,
-                            InitialObservation::RequireEvidence,
-                            &cancel,
-                        )
-                    },
-                )?;
-                let content = AcquiredContent::retain_resources(
-                    scope.accept(work.wait().await?)?.transpose()?,
-                )?;
-                let mut value = input(
+                let file = if mode == "local" {
+                    let host = tempfile::tempdir()?;
+                    let source = host.path().join("original-name.bin");
+                    fs::write(&source, b"payload")?;
+                    let mut permissions = fs::metadata(&source)?.permissions();
+                    permissions.set_readonly(true);
+                    fs::set_permissions(&source, permissions)?;
+                    crate::engine::acquisition::acquire_local_file(
+                        &mut scope,
+                        crate::engine::acquisition::LocalFileRequest {
+                            source,
+                            expected: declared(),
+                            maximum: 8 << 30,
+                            evidence: SourceEvidencePolicy::Compatibility,
+                            initial: InitialObservation::RequireEvidence,
+                        },
+                    )
+                    .await?
+                } else {
+                    let work = scope.spawn_blocking(
+                        ResourceRequest {
+                            jobs: 1,
+                            memory_bytes: 1 << 16,
+                            scratch_bytes: 32,
+                            open_files: 3,
+                        },
+                        ResourceRequest {
+                            scratch_bytes: 32,
+                            open_files: 3,
+                            ..Default::default()
+                        },
+                        |cancel| {
+                            verify_stream(
+                                &mut &b"payload"[..],
+                                &declared(),
+                                32,
+                                SourceEvidencePolicy::Compatibility,
+                                InitialObservation::RequireEvidence,
+                                &cancel,
+                            )
+                        },
+                    )?;
+                    let content = AcquiredContent::retain_resources(
+                        scope.accept(work.wait().await?)?.transpose()?,
+                    )?;
                     AcquiredBuildFile {
                         content,
                         permissions: FilePermissions {
                             readonly: true,
                             executable: false,
                         },
-                    },
-                    mode != "url",
-                );
+                    }
+                };
+                let mut value = input(file, mode != "url");
                 let policy = if mode == "strong" {
                     SourceEvidencePolicy::StrongSourceRequired
                 } else {

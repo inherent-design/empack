@@ -470,6 +470,14 @@ CLI composition must route every supported target through this boundary.
 
 ## Canonical addition planning
 
+Native local-file acquisition now feeds direct-file normalization and publication.
+The reader captures only the selected regular file, preserves portable attributes,
+rejects changed or replaced input and charges actual retained bytes. Four reader
+tests plus three direct-file tests pass, including real file acquisition through
+publication and two no-op syncs. All 48 affected acquisition/addition/API tests,
+all-feature Clippy and Windows cross-compilation pass. CLI selection, content
+identification and archive interpretation remain integration work.
+
 Direct local and URL files now normalize through `FileAddition::from_acquired`.
 Declared digests or explicitly accepted observations remain distinct; optional and
 side-specific placements, URL alternatives and portable source permissions reach

@@ -108,6 +108,13 @@ computed addresses do not manufacture independent source authenticity. Direct fi
 retain unknown dependency coverage until identification establishes more. Host file
 selection, type identification and archive interpretation precede this boundary.
 
+`acquire_local_file` reads an explicitly selected absolute host file into a private
+verified lease. It captures only that regular file, rejects symbolic links and special
+files, checks source identity and content across copying, and preserves portable
+permissions. Scratch admission uses observed size rather than the configured maximum.
+Initial bytes without source evidence require explicit acceptance; their computed
+address remains an observation. The source path is not durable project intent.
+
 The compiled `ImportContentPlan::resolve` accepts retained import declarations and a
 catalog, then resolves all exact provider references under one allowance.
 `ImportContentPlan::acquire` accepts explicit supplied files keyed by

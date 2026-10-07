@@ -17,6 +17,9 @@ use std::{
 };
 use tokio::{sync::mpsc, time::Instant};
 
+mod local;
+pub use local::{LocalFileRequest, acquire_local_file};
+
 const CHUNK_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Copy)]
