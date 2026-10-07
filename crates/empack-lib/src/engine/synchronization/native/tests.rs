@@ -365,10 +365,55 @@ fn metadata_discovery_remains_bounded_and_cancellable() {
 fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_bytes() {
     use crate::engine::layout::ProjectLayout;
     use empack_core::{model::*, path::InstallDestination};
-    for conflict in ["none", "old-edited", "new-occupied"] {
+    for conflict in [
+        "none",
+        "old-edited",
+        "new-occupied",
+        "missing-old",
+        "missing-old-wrong-digest",
+        "missing-old-source-mismatch",
+        "missing-old-size-mismatch",
+        "missing-old-observation-mismatch",
+    ] {
         let root = tempfile::tempdir().unwrap();
         let state = tempfile::tempdir().unwrap();
-        let current = fixture(root.path());
+        let mut current = fixture(root.path());
+        if conflict.starts_with("missing-old") {
+            let mut lock = current.lock().clone();
+            for dependency in lock.dependencies.values_mut() {
+                dependency.files = NonEmpty::new(
+                    dependency
+                        .files
+                        .as_slice()
+                        .iter()
+                        .cloned()
+                        .map(|mut file| {
+                            let digest = empack_core::digest::DigestSet::new(vec![
+                                empack_core::digest::ExpectedDigest::Sha256(
+                                    Sha256::digest(b"payload").into(),
+                                ),
+                            ])
+                            .unwrap();
+                            file.expected.digests = Some(digest.clone());
+                            file.provenance.declared_digests = Some(digest);
+                            file
+                        })
+                        .collect(),
+                )
+                .unwrap();
+            }
+            current = ResolvedProject::validate(
+                current.intent().clone(),
+                lock,
+                current.lock().intent_revision,
+            )
+            .unwrap();
+            put(
+                root.path(),
+                "empack.lock",
+                &DocumentCodec.encode_lock(&current).unwrap(),
+            );
+        }
         for dependency in current.lock().dependencies.values() {
             for file in dependency.files.as_slice() {
                 for placement in file.placements.as_slice() {
@@ -419,11 +464,80 @@ fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_b
         lock.intent_revision = source.semantic_revision();
         let proposed = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
         put(root.path(), "empack.yml", &encoded);
+        if conflict.ends_with("mismatch") {
+            // The fresh selection is valid, but cannot authenticate different old bytes.
+            let mut prior = current.lock().clone();
+            for dependency in prior.dependencies.values_mut() {
+                dependency.files = NonEmpty::new(
+                    dependency
+                        .files
+                        .as_slice()
+                        .iter()
+                        .cloned()
+                        .map(|mut file| {
+                            match conflict {
+                                "missing-old-source-mismatch" => {
+                                    let digests = empack_core::digest::DigestSet::new(vec![
+                                        empack_core::digest::ExpectedDigest::Sha256(
+                                            Sha256::digest(b"old bytes").into(),
+                                        ),
+                                    ])
+                                    .unwrap();
+                                    file.expected.digests = Some(digests.clone());
+                                    file.provenance.declared_digests = Some(digests);
+                                }
+                                "missing-old-size-mismatch" => file.expected.size = Some(999),
+                                "missing-old-observation-mismatch" => {
+                                    file.expected.accepted_observation = Some(
+                                        ContentId::from_sha256(Sha256::digest(b"old bytes").into()),
+                                    )
+                                }
+                                _ => unreachable!(),
+                            }
+                            file
+                        })
+                        .collect(),
+                )
+                .unwrap();
+            }
+            let prior = ResolvedProject::validate(
+                current.intent().clone(),
+                prior,
+                current.lock().intent_revision,
+            )
+            .unwrap();
+            put(
+                root.path(),
+                "empack.lock",
+                &DocumentCodec.encode_lock(&prior).unwrap(),
+            );
+        }
         if conflict == "old-edited" {
             put(root.path(), "pack/resourcepacks/a.zip", b"user edit");
         }
         if conflict == "new-occupied" {
             put(root.path(), "pack/resourcepacks/renamed.zip", b"user edit");
+        }
+        if conflict.starts_with("missing-old") {
+            fs::remove_file(root.path().join("pack/resourcepacks/a.zip")).unwrap();
+            use sha1::Digest;
+            let metadata = format!(
+                "filename = 'a.zip'\nside = 'client'\n[download]\nurl = 'https://example.com/unrelated-name.jar'\nhash-format = 'sha1'\nhash = '{}'\n",
+                empack_core::digest::ExpectedDigest::Sha1(
+                    sha1::Sha1::digest(if conflict == "missing-old-wrong-digest" {
+                        b"different".as_slice()
+                    } else {
+                        b"payload"
+                    })
+                    .into()
+                )
+                .hex()
+            );
+            put(
+                root.path(),
+                "pack/resourcepacks/a.pw.toml",
+                metadata.as_bytes(),
+            );
         }
         let cancel = Cancellation::default();
         let reader = ProjectReader::new(RecoveryReader::new(state.path().join("state")));
@@ -446,7 +560,14 @@ fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_b
             Some(&proposed),
             &cancel,
         );
-        if conflict != "none" {
+        if conflict == "missing-old-wrong-digest" || conflict.ends_with("mismatch") {
+            assert!(planned.is_err());
+            assert!(root.path().join("pack/resourcepacks/a.pw.toml").exists());
+            assert!(!root.path().join("pack/resourcepacks/renamed.zip").exists());
+            assert!(!state.path().join("state").exists());
+            continue;
+        }
+        if matches!(conflict, "old-edited" | "new-occupied") {
             assert!(planned.is_err(), "{conflict}");
             assert_eq!(
                 fs::read(root.path().join(if conflict == "old-edited" {
@@ -470,6 +591,7 @@ fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_b
             )
             .unwrap();
         assert!(!root.path().join("pack/resourcepacks/a.zip").exists());
+        assert!(!root.path().join("pack/resourcepacks/a.pw.toml").exists());
         assert_eq!(
             fs::read(root.path().join("pack/resourcepacks/renamed.zip")).unwrap(),
             b"payload"

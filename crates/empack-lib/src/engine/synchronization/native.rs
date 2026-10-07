@@ -218,11 +218,37 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
                         "Obsolete metadata has different source bytes"
                     );
                 } else {
-                    let observed = workspace.verify_file(
-                        &crate::engine::layout::ProjectLayout::path(&target)?,
-                        &file.expected,
-                        cancel,
-                    )?;
+                    let observed = if matches!(observed_content[&target], ObservedPath::File(_)) {
+                        workspace.verify_file(
+                            &crate::engine::layout::ProjectLayout::path(&target)?,
+                            &file.expected,
+                            cancel,
+                        )?
+                    } else {
+                        // A missing old payload cannot supply another algorithm's digest.
+                        // Immutable acquired bytes can, but only if every old assertion
+                        // also matches; the new selection alone does not prove ownership.
+                        acquired
+                            .values()
+                            .find(|bytes| {
+                                let content = &bytes.content;
+                                file.expected
+                                    .size
+                                    .is_none_or(|size| size == content.lease().len())
+                                    && file.expected.digests.as_ref().is_none_or(|digests| {
+                                        digests.check(content.observed_digests().values()).is_ok()
+                                    })
+                                    && file
+                                        .expected
+                                        .accepted_observation
+                                        .as_ref()
+                                        .is_none_or(|prior| prior == &content.lease().id())
+                            })
+                            .context("Missing obsolete payload has no matching content evidence")?
+                            .content
+                            .observed_digests()
+                            .clone()
+                    };
                     ensure!(
                         observed.values().contains(&record.digest),
                         "Obsolete metadata has different observed bytes"
