@@ -14,6 +14,8 @@ use empack_core::{
     path::PortableRelPath,
 };
 use std::collections::{BTreeMap, BTreeSet};
+mod sources;
+pub(super) use sources::retain_acquisition_sources;
 
 /// Freeze and independently verify a prepared document/content mutation. Semantic ownership
 /// belongs to the operation planner; no publisher is available at this staging boundary.
@@ -22,8 +24,10 @@ pub(super) fn stage_mutation(
     plan: FilePlan,
     documents: &BTreeMap<ManagedPath, Vec<u8>>,
     content: &BTreeMap<ManagedPath, super::mrpack::AcquiredBuildFile>,
+    project: &empack_core::model::ResolvedProject,
     cancel: &crate::application::process_runtime::Cancellation,
 ) -> Result<(super::snapshot::ProjectReadRoot, VerifiedFileChange)> {
+    sources::verify_source_changes(&plan, project, documents, content, cancel)?;
     let limits = candidate_stage_limits(workspace.observations(), &plan)?;
     let mut stage = super::staging::MutableStage::empty()?;
     for (target, bytes) in documents {

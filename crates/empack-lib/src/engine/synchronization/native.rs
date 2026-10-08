@@ -86,6 +86,7 @@ impl SynchronizationPreparation {
             self.plan,
             &self.documents,
             &self.content,
+            self.candidate.project(),
             cancel,
         )?;
         Ok(PreparedSynchronization {
@@ -360,6 +361,12 @@ pub(in crate::engine) fn plan_synchronization_with_resolution(
             removals.insert(ManagedPath::BackendDocument(record.metadata_path));
         }
     }
+    verification::retain_acquisition_sources(
+        workspace.observations(),
+        candidate.project(),
+        &mut removals,
+        content.keys().chain(referenced.keys()),
+    )?;
     let mut documents = BTreeMap::from([
         (
             ManagedPath::IntentDocument,

@@ -149,6 +149,8 @@ modules remains open.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Source lifetime correction | 87 affected add/remove/sync/verification cases and all-feature Clippy passed | Reproduced source deletion before fixing it; moved/removed placements retain shared sources, conflicting replacement fails before publication |
+| `3060149` combined candidate | `mise run test`: 1,646 tests and eleven doctests passed; 99 opt-in cases skipped | No inherited-pipe warnings; strict live matrix and final coverage remain open; obsolete graph/mock tests account for the lower count |
 | `f30e6e1` combined candidate | 1,677 default tests and eleven doctests passed; no inherited-pipe warnings | Strict E2E baseline: 25 passed, 50 failed; failures include stale v0.4 fixtures and known workflow gaps |
 | Fresh synchronization frontend | 64 affected resolver/sync/CLI/smoke cases passed, including 16 offline executable smoke tests | Missing locks, exact pin changes, retained assertions, source confinement, preview and failed-batch preservation; remote materialization remains open |
 | Native initialization scaffolding | 40 affected initialization/layout/replacement/publication cases and nine executable initialization cases passed | Includes user-file preservation, changed-source rejection, symlink confinement and live runtime discovery; all-feature Clippy passed |

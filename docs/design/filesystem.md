@@ -32,6 +32,15 @@ The root maps managed paths to native paths through one layout object. Relative 
 
 A local dependency removal is a file removal with an expected observation. It never chooses `remove_dir_all` merely because the observed target happens to be a directory. Creation of directories and removal of empty owned directories are separate operations.
 
+An installed placement and an acquisition source have separate lifetimes. Moving or
+removing a placement must preserve its file while another surviving lock record
+still uses that path as a local source or archive. Retained sources remain captured
+read inputs, not new writes. Replacing a local source must satisfy every surviving
+record's original content assertions. Replacing an archive still used for embedded
+members requires verified member resolution; a placement change alone cannot
+authorize it. Unreferenced user sources do not acquire deletion authority merely
+because a dependency was removed.
+
 A cache cleanup has cache-root authority, not project-root authority. The engine journal lives outside the editable project and is not included in ordinary cache cleanup. If cleanup affects an active operation, it reports retained objects rather than breaking their leases.
 
 ### 11.2 Native filesystem policy

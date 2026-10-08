@@ -124,8 +124,14 @@ impl RemovalPreparation {
             observed,
             untracked_evidence,
         } = self;
-        let (root, change) =
-            verification::stage_mutation(workspace, plan, &documents, &BTreeMap::new(), cancel)?;
+        let (root, change) = verification::stage_mutation(
+            workspace,
+            plan,
+            &documents,
+            &BTreeMap::new(),
+            candidate.project(),
+            cancel,
+        )?;
         Ok(PreparedRemoval {
             root,
             change,
@@ -295,6 +301,12 @@ pub(in crate::engine) fn plan_selected_removal(
             removals.insert(ManagedPath::BackendDocument(record.metadata_path));
         }
     }
+    verification::retain_acquisition_sources(
+        workspace.observations(),
+        candidate.project(),
+        &mut removals,
+        std::iter::empty(),
+    )?;
     let mut documents = BTreeMap::from([
         (ManagedPath::IntentDocument, candidate.intent.bytes.clone()),
         (ManagedPath::LockDocument, candidate.lock.clone()),

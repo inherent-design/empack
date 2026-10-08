@@ -287,3 +287,106 @@ async fn authored_local_sources_cannot_traverse_symlinked_ancestors() {
         b"outside"
     );
 }
+
+#[tokio::test]
+async fn moved_or_removed_placement_cannot_delete_a_retained_acquisition_source() {
+    use crate::engine::api::{RemovalSelector, RemoveRequest};
+    use empack_core::removal::{RemovalEvidencePolicy, RemovalMode};
+    for remove in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        let mut intent = project(root.path()).intent().clone();
+        let key = DependencyKey::parse("settings").unwrap();
+        let selected = DependencyIntent {
+            source: SourceIntent::Local(
+                PortableRelPath::parse("seed.toml", PathSyntax::ProjectContent).unwrap(),
+            ),
+            kind: ContentKind::Config,
+            version: VersionIntent::FollowCompatible,
+            placement: placed("config/settings.toml"),
+            requirements: required(),
+        };
+        intent.roots.insert(key.clone(), selected.clone());
+        fs::write(root.path().join("project/seed.toml"), b"keep source").unwrap();
+        write_intent(root.path(), &intent);
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+        let mut moved = selected;
+        moved.source = SourceIntent::Local(
+            PortableRelPath::parse("pack/config/settings.toml", PathSyntax::ProjectContent)
+                .unwrap(),
+        );
+        moved.placement = placed("config/moved.toml");
+        if remove {
+            intent
+                .roots
+                .insert(DependencyKey::parse("other").unwrap(), moved);
+        } else {
+            intent.roots.insert(key.clone(), moved);
+        }
+        write_intent(root.path(), &intent);
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+        if remove {
+            fs::write(root.path().join("replacement.toml"), b"different source").unwrap();
+            let before = snapshot(root.path());
+            assert!(
+                dependencies::add(
+                    &session(root.path(), false),
+                    NonEmpty::new(vec![AddHostInput::File(DirectFileInput {
+                        key: key.clone(),
+                        title: "settings".into(),
+                        source: DirectFileSource::Local(root.path().join("replacement.toml")),
+                        evidence: FileEvidence::AcceptObserved,
+                        kind: ContentKind::Config,
+                        kind_policy: FileKindPolicy::AcceptUnrecognized,
+                        requirements: required(),
+                        placements: NonEmpty::new(vec![Placement {
+                            destination: InstallDestination::parse("config/settings.toml").unwrap(),
+                            layer: ContentLayer::Common,
+                            requirements: required()
+                        }])
+                        .unwrap(),
+                    })])
+                    .unwrap(),
+                    ReleasePolicy::PreferStable,
+                    SourceEvidencePolicy::Compatibility,
+                    ExistingDependencyPolicy::UpdateSameIdentity,
+                )
+                .await
+                .is_err(),
+                "Replacing one owner must not invalidate another source reference"
+            );
+            assert_eq!(snapshot(root.path()), before);
+            dependencies::remove(
+                &session(root.path(), false),
+                RemoveRequest {
+                    selections: NonEmpty::new(vec![RemovalSelector::Key(key)]).unwrap(),
+                    mode: RemovalMode::RemoveContent,
+                    evidence: RemovalEvidencePolicy::AcknowledgeUnknown,
+                },
+            )
+            .await
+            .unwrap();
+        }
+        assert!(
+            root.path()
+                .join("project/pack/config/settings.toml")
+                .exists(),
+            "A source still used by the published lock was deleted"
+        );
+        assert_eq!(
+            fs::read(root.path().join("project/pack/config/moved.toml")).unwrap(),
+            b"keep source"
+        );
+        let before = snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            sync(root.path(), "http://127.0.0.1:9", false)
+                .await
+                .unwrap();
+        }
+        assert_eq!(snapshot(&root.path().join("project")), before);
+    }
+}
