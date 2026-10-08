@@ -1131,3 +1131,15 @@ request; this capability does not make the old command dispatcher transactional.
 All 126 affected build, project, API and host tests pass. A separate combined-publication
 interruption test passes for both finish and restore. All-feature Clippy and Windows
 cross-compilation pass on the combined worktree.
+
+## Loader-menu limits and explicit pins
+
+Review 104's two findings reproduced: each family restarted the timeout, and a
+loader pin still allowed an invalid Vanilla selection. Family discovery now carries
+one deadline across requests. A stalled provider cannot restart the allowance for
+later families; earlier verified choices remain available. With a requested pin,
+the menu contains only families whose retained catalog includes that version.
+Missing pins fail without publication. All 17 affected host/catalog tests pass,
+including a stalled-response fixture that verifies no later request starts after
+the shared deadline expires.
+All-feature Clippy and Windows cross-compilation also pass for these menu changes.

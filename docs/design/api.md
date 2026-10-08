@@ -538,8 +538,10 @@ their executable availability and bytes. Missing runtime choices use bounded off
 catalogs. Without an explicit loader family, the host selects Minecraft first and
 offers only families with observed compatible versions, alongside Vanilla. Failed
 family lookups are disclosed and do not become selectable compatibility claims.
-The chosen family reuses its retained catalog. No failed lookup is replaced with
-an invented version.
+Family discovery shares one network deadline, preserving earlier successful
+choices when the allowance expires. A requested loader pin excludes Vanilla and
+other families that lack that exact version. The chosen family reuses its retained
+catalog. No failed lookup is replaced with an invented version.
 
 The host displays native file changes before confirmation. Preview, declined plans
 and invalid options cannot create a project or durable host state. Forced replacement

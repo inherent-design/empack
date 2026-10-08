@@ -113,7 +113,16 @@ async fn initialize_with_catalog(
     };
     let (loader, available) = match requested_family {
         Some(loader) => (loader, None),
-        None => compatible_loader(session, catalog.clone(), game.clone(), limits).await?,
+        None => {
+            compatible_loader(
+                session,
+                catalog.clone(),
+                game.clone(),
+                requested_loader.clone(),
+                limits,
+            )
+            .await?
+        }
     };
     ensure!(
         loader != LoaderKind::Vanilla || requested_loader.is_none(),
@@ -222,9 +231,13 @@ async fn compatible_loader(
     session: &dyn Session,
     catalog: RuntimeCatalog,
     game: GameVersion,
+    pin: Option<LoaderVersion>,
     limits: RuntimeCatalogLimits,
 ) -> Result<LoaderChoice> {
     let choices = discover(session, move |mut scope| async move {
+        let deadline = std::time::Instant::now()
+            .checked_add(limits.transfer.deadline)
+            .context("Loader discovery deadline overflow")?;
         let mut choices = Vec::new();
         for family in [
             LoaderKind::NeoForge,
@@ -233,18 +246,34 @@ async fn compatible_loader(
             LoaderKind::Quilt,
         ] {
             scope.cancellation().check()?;
-            let versions = catalog
-                .loaders(&mut scope, game.clone(), family, limits)
-                .await;
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            let versions = if remaining.is_zero() {
+                Err(crate::engine::acquisition::TransferError::Deadline.into())
+            } else {
+                let mut request_limits = limits;
+                request_limits.transfer.deadline = remaining;
+                catalog
+                    .loaders(&mut scope, game.clone(), family, request_limits)
+                    .await
+            };
             choices.push((family, versions));
         }
         Ok(choices)
     })
     .await?;
-    let mut supported = vec![(LoaderKind::Vanilla, None)];
+    let mut supported = if pin.is_none() {
+        vec![(LoaderKind::Vanilla, None)]
+    } else {
+        Vec::new()
+    };
     for (family, result) in choices {
         match result {
-            Ok(versions) if !versions.versions().is_empty() => {
+            Ok(versions)
+                if !versions.versions().is_empty()
+                    && pin
+                        .as_ref()
+                        .is_none_or(|pin| versions.resolve(Some(pin)).is_ok()) =>
+            {
                 supported.push((family, Some(versions)))
             }
             Ok(_) => {}
@@ -256,6 +285,10 @@ async fn compatible_loader(
     choose_loader(session, supported)
 }
 fn choose_loader(session: &dyn Session, mut supported: Vec<LoaderChoice>) -> Result<LoaderChoice> {
+    ensure!(
+        !supported.is_empty(),
+        "No compatible loader family supports the requested selection"
+    );
     let names = supported
         .iter()
         .map(|(family, _)| match family {

@@ -438,3 +438,138 @@ async fn historical_initialization_menu_offers_only_catalog_supported_loaders() 
         response.assert_async().await;
     }
 }
+
+#[tokio::test]
+async fn loader_pin_menu_excludes_vanilla_and_families_without_the_requested_pin() {
+    let mut server = mockito::Server::new_async().await;
+    let mut responses = Vec::new();
+    for (path, body) in [
+        ("/neoforge", r#"{"versions":["21.1.1"]}"#),
+        (
+            "/fabric/1.7.10",
+            r#"[{"loader":{"version":"0.16.0","stable":true},"intermediary":{"version":"1.7.10"}}]"#,
+        ),
+        ("/quilt/1.7.10", "[]"),
+        ("/forge", r#"{"1.7.10":["1.7.10-10.13.4.1614-1.7.10"]}"#),
+    ] {
+        responses.push(
+            server
+                .mock("GET", path)
+                .with_status(200)
+                .with_body(body)
+                .expect(2)
+                .create_async()
+                .await,
+        );
+    }
+    let root = tempfile::tempdir().unwrap();
+    let mut options = args();
+    options.modloader = None;
+    options.mc_version = Some("1.7.10".into());
+    options.loader_version = Some("10.13.4.1614-1.7.10".into());
+    let host = session(root.path(), false, false).with_interactive(
+        MockInteractiveProvider::new()
+            .queue_select(0)
+            .queue_confirm(true),
+    );
+    initialize_with_catalog(
+        &host,
+        &options,
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap();
+    let project = read(&root.path().join("pack"));
+    assert_eq!(project.lock().runtime.loader, LoaderKind::Forge);
+    assert_eq!(
+        project
+            .intent()
+            .runtime
+            .loader_version
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "10.13.4.1614"
+    );
+    let before = snapshot(root.path());
+    options.dir = Some("unavailable-pin".into());
+    options.loader_version = Some("unknown-pin".into());
+    let error = initialize_with_catalog(
+        &host,
+        &options,
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("No compatible loader family"));
+    assert_eq!(snapshot(root.path()), before);
+    for response in responses {
+        response.assert_async().await;
+    }
+}
+
+#[tokio::test]
+async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family() {
+    let mut server = mockito::Server::new_async().await;
+    let neo = server
+        .mock("GET", "/neoforge")
+        .with_status(200)
+        .with_body(r#"{"versions":["21.1.1"]}"#)
+        .create_async()
+        .await;
+    let fabric = server
+        .mock("GET", "/fabric/1.21.1")
+        .with_status(200)
+        .with_chunked_body(|writer| {
+            std::thread::sleep(Duration::from_millis(300));
+            writer.write_all(b"[]")
+        })
+        .create_async()
+        .await;
+    let mut skipped = Vec::new();
+    for path in ["/forge", "/quilt/1.21.1"] {
+        skipped.push(
+            server
+                .mock("GET", path)
+                .with_status(200)
+                .with_chunked_body(|writer| {
+                    std::thread::sleep(Duration::from_millis(300));
+                    writer.write_all(b"{}")
+                })
+                .expect(0)
+                .create_async()
+                .await,
+        );
+    }
+    let root = tempfile::tempdir().unwrap();
+    let host = session(root.path(), false, false)
+        .with_interactive(MockInteractiveProvider::new().queue_select(1));
+    let mut limits = RuntimeCatalogLimits::default();
+    limits.transfer.deadline = Duration::from_millis(150);
+    let (family, choices) = compatible_loader(
+        &host,
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+        GameVersion::parse("1.21.1").unwrap(),
+        None,
+        limits,
+    )
+    .await
+    .unwrap();
+    assert_eq!(family, LoaderKind::NeoForge);
+    assert_eq!(
+        choices
+            .unwrap()
+            .resolve(None)
+            .unwrap()
+            .loader_version
+            .unwrap()
+            .as_str(),
+        "21.1.1"
+    );
+    neo.assert_async().await;
+    fabric.assert_async().await;
+    for response in skipped {
+        response.assert_async().await;
+    }
+    assert!(snapshot(root.path()).is_empty());
+}
