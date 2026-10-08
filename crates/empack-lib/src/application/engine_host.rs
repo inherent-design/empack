@@ -269,6 +269,12 @@ fn approve(session: &dyn Session, label: &str) -> Result<bool> {
             .complete("Dry run complete - no changes applied");
         return Ok(false);
     }
+    ensure!(
+        session.config().app_config().yes || session.interactive().can_choose(),
+        super::cli::CommandInputRequired(
+            "Noninteractive execution requires --yes; use --dry-run to inspect the plan"
+        )
+    );
     if !session.config().app_config().yes
         && !session.interactive().confirm(
             &format!("Apply this {} plan?", label.to_ascii_lowercase()),

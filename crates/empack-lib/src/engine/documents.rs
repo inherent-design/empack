@@ -15,6 +15,14 @@ use std::collections::{BTreeMap, BTreeSet};
 mod intent;
 mod lock;
 
+/// Malformed authored documents are usage failures, distinct from filesystem failures.
+#[derive(Debug, thiserror::Error)]
+#[error("Invalid {kind} document: {origin}")]
+pub struct InvalidDocument {
+    kind: &'static str,
+    origin: String,
+}
+
 /// Maximum encoded document length, before YAML allocation.
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 /// Normalized authoring schema. It is separate from the program version.
@@ -93,9 +101,14 @@ pub struct DocumentCodec;
 impl DocumentCodec {
     /// Parse intent with a named origin for diagnostics. No legacy fallback is attempted.
     pub fn decode_intent(&self, bytes: &[u8], origin: &str) -> Result<DecodedIntent> {
-        let value = parse(bytes).with_context(|| format!("Invalid intent document: {origin}"))?;
-        let intent =
-            intent::decode(&value).with_context(|| format!("Invalid intent document: {origin}"))?;
+        let value = parse(bytes).with_context(|| InvalidDocument {
+            kind: "intent",
+            origin: origin.into(),
+        })?;
+        let intent = intent::decode(&value).with_context(|| InvalidDocument {
+            kind: "intent",
+            origin: origin.into(),
+        })?;
         intent.validate()?;
         let canonical = intent::encode(&intent);
         // Validate programmatic values through the same wire boundary as loaded values.
@@ -148,9 +161,14 @@ impl DocumentCodec {
     }
     /// Preserve exact previous selections for planning after an authoring edit; never call them current.
     pub fn decode_prior_lock(&self, bytes: &[u8], origin: &str) -> Result<DecodedLock> {
-        let value = parse(bytes).with_context(|| format!("Invalid lock document: {origin}"))?;
-        let lock =
-            lock::decode(&value).with_context(|| format!("Invalid lock document: {origin}"))?;
+        let value = parse(bytes).with_context(|| InvalidDocument {
+            kind: "lock",
+            origin: origin.into(),
+        })?;
+        let lock = lock::decode(&value).with_context(|| InvalidDocument {
+            kind: "lock",
+            origin: origin.into(),
+        })?;
         lock.validate_structure()?;
         Ok(DecodedLock {
             lock,

@@ -41,7 +41,9 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
     ) {
         return EmpackExitCode::Interrupted;
     }
-    if find_chain_error::<crate::engine::project::ProjectDocumentsError>(error).is_some()
+    if find_chain_error::<super::cli::CommandInputRequired>(error).is_some()
+        || find_chain_error::<crate::engine::documents::InvalidDocument>(error).is_some()
+        || find_chain_error::<crate::engine::project::ProjectDocumentsError>(error).is_some()
         || find_chain_error::<empack_core::model::ModelError>(error).is_some()
         || find_chain_error::<empack_core::path::PathError>(error).is_some()
         || find_chain_error::<empack_core::identity::IdentityError>(error).is_some()

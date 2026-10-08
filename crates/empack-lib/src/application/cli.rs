@@ -236,6 +236,11 @@ pub struct BuildArgs {
     pub allow_optional_metadata_loss: bool,
 }
 
+/// An explicit user choice is needed before the command can execute.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct CommandInputRequired(pub &'static str);
+
 /// Available empack commands
 #[derive(Debug, Clone, Subcommand)]
 pub enum Commands {

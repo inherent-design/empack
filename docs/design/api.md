@@ -1004,3 +1004,13 @@ publication. Unknown identities, ambiguous matches, multiple matching file roles
 changed provider assertions fail the complete request. Omitting `--platform` explicitly
 retains the direct-file representation. Multi-role and companion-file choices remain
 separate placement decisions.
+
+### Unattended execution and failure classes
+
+A prepared CLI mutation requires `--yes` when no interactive choice is available.
+Without it, the command exits with usage status 2 and leaves the plan unapplied.
+`--dry-run` remains read-only and successful; an interactive user may explicitly decline.
+Malformed intent and lock documents also retain usage status 2 through contextual errors.
+Provider network failure remains status 3, and interruption retires the native request
+before returning status 130. The executable tests exercise these boundaries with native
+projects, a blocked HTTP proxy and no external packwiz process.

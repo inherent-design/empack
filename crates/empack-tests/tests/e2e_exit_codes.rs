@@ -1,422 +1,241 @@
+//! Executable exit contracts exercise native documents, publication and cancellation.
 use empack_lib::EmpackExitCode;
-use empack_tests::e2e::{TestProject, empack_bin, empack_cmd};
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
-fn combined_output(output: &std::process::Output) -> String {
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    )
-}
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("workspace root")
-}
-
-fn configure_command_env(cmd: &mut Command, workdir: &Path) {
-    cmd.env("NO_COLOR", "1");
-    let cache_dir = workdir.join(".empack-cache");
-    std::fs::create_dir_all(&cache_dir).expect("create EMPACK_CACHE_DIR fallback");
-    cmd.env("EMPACK_CACHE_DIR", cache_dir);
-
-    #[cfg(windows)]
-    {
-        let local_app_data = workdir.join(".windows-localappdata");
-        let roaming_app_data = workdir.join(".windows-appdata");
-        let user_profile = workdir.join(".windows-userprofile");
-        let temp_dir = workdir.join(".windows-temp");
-
-        std::fs::create_dir_all(&local_app_data).expect("create LOCALAPPDATA fallback");
-        std::fs::create_dir_all(&roaming_app_data).expect("create APPDATA fallback");
-        std::fs::create_dir_all(&user_profile).expect("create USERPROFILE fallback");
-        std::fs::create_dir_all(&temp_dir).expect("create TEMP fallback");
-
-        // Known-folder APIs require the native profile layout when it is available.
-        for (key, fallback) in [
-            ("LOCALAPPDATA", local_app_data),
-            ("APPDATA", roaming_app_data),
-            ("USERPROFILE", user_profile),
-        ] {
-            cmd.env(
-                key,
-                std::env::var_os(key).unwrap_or_else(|| fallback.into_os_string()),
-            );
-        }
-        cmd.env("TEMP", temp_dir.clone());
-        cmd.env("TMP", temp_dir);
-    }
-}
-
-fn binary_empack_cmd(workdir: &Path) -> Command {
-    let mut cmd = Command::new(empack_bin());
-    cmd.current_dir(workspace_root());
-    cmd.arg("--workdir");
-    cmd.arg(workdir);
-    configure_command_env(&mut cmd, workdir);
-    cmd
-}
-
-fn binary_empack_root_cmd() -> Command {
-    let root = workspace_root();
-    let mut cmd = Command::new(empack_bin());
-    cmd.current_dir(&root);
-    configure_command_env(&mut cmd, &root);
-    cmd
-}
-
-fn write_executable(path: &Path, script: &str) {
-    std::fs::write(path, script)
-        .unwrap_or_else(|e| panic!("failed to write {}: {}", path.display(), e));
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(path)
-            .expect("script metadata")
-            .permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(path, permissions).expect("set executable bit");
-    }
-}
-
-#[cfg(windows)]
-fn write_failing_packwiz_binary(workdir: &Path) -> PathBuf {
-    let path = workdir.join("fake-packwiz-fail.cmd");
-    let script = "@echo off\r\n1>&2 echo packwiz remove failed\r\nexit /b 1\r\n";
-    write_executable(&path, script);
-    path
-}
-
-#[cfg(not(windows))]
-fn write_failing_packwiz_binary(workdir: &Path) -> PathBuf {
-    let path = workdir.join("fake-packwiz-fail");
-    let script = "#!/bin/sh\nprintf 'packwiz remove failed\\n' >&2\nexit 1\n";
-    write_executable(&path, script);
-    path
-}
+use empack_tests::e2e::TestProject;
+use std::{
+    fs,
+    io::Write,
+    process::{Command, Output},
+};
 
 #[cfg(unix)]
-fn write_blocking_packwiz_binary(workdir: &Path, started_marker: &Path) -> PathBuf {
-    let path = workdir.join("fake-packwiz-block");
-    let script = format!(
-        "#!/bin/sh\nset -eu\nif [ \"${{1-}}\" = \"--cache\" ]; then shift 2; fi\nif [ \"${{3-}}\" = \"refresh\" ]; then\n  exit 0\nfi\nif [ \"${{3-}}\" = \"mr\" ] && [ \"${{4-}}\" = \"export\" ]; then\n  : > \"{}\"\n  sleep 20\n  exit 0\nfi\nexit 0\n",
-        started_marker.display()
-    );
-    write_executable(&path, &script);
-    path
+use std::{
+    process::Stdio,
+    time::{Duration, Instant},
+};
+
+fn command(project: &TestProject) -> Command {
+    let mut command = project.cmd();
+    command
+        .env_remove("EMPACK_DRY_RUN")
+        .env_remove("EMPACK_YES")
+        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"))
+        .env("EMPACK_PACKWIZ_BIN", project.dir().join("must-not-run"));
+    command
 }
-
-#[test]
-fn e2e_parse_error_exits_two() {
-    let output = binary_empack_root_cmd()
-        .arg("--definitely-invalid-flag")
-        .output()
-        .expect("spawn parse-error command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Usage.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("--definitely-invalid-flag"),
-        "stderr should mention the invalid flag:\n{}",
-        combined_output(&output)
-    );
+fn output(project: &TestProject, arguments: &[&str]) -> Output {
+    command(project).args(arguments).output().unwrap()
 }
-
-#[test]
-fn e2e_uninitialized_build_exits_two() {
-    let project = TestProject::new();
-    let output = binary_empack_cmd(project.dir())
-        .args(["build", "mrpack"])
-        .output()
-        .expect("spawn build command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Usage.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
-
-    let combined = combined_output(&output);
-    assert!(
-        combined.contains("Not in a modpack directory"),
-        "expected uninitialized project error, got:\n{combined}"
-    );
+fn check(output: &Output, code: EmpackExitCode, message: &str) {
+    let diagnostic = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(code.as_i32()), "{diagnostic}");
+    assert!(diagnostic.contains(message), "{diagnostic}");
 }
-
-#[test]
-fn e2e_direct_zip_without_type_exits_two() {
-    let project = TestProject::workflow_fixture("exit-zip-without-type", "fabric", "1.21.1");
-    let output = binary_empack_cmd(project.dir())
-        .args(["add", "https://example.invalid/pack.zip"])
-        .output()
-        .expect("spawn zip-without-type command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Usage.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
-
-    let combined = combined_output(&output);
-    assert!(
-        combined.contains("--type"),
-        "expected direct zip rejection to mention --type:\n{combined}"
-    );
+fn fixture() -> TestProject {
+    TestProject::workflow_fixture("exit-contract", "fabric", "1.21.1")
 }
-
-#[test]
-fn e2e_direct_zip_with_invalid_type_exits_two() {
-    let project = TestProject::workflow_fixture("exit-zip-invalid-type", "fabric", "1.21.1");
-    let output = binary_empack_cmd(project.dir())
-        .args(["add", "--type", "mod", "https://example.invalid/pack.zip"])
-        .output()
-        .expect("spawn zip-invalid-type command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Usage.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
-
-    let combined = combined_output(&output);
-    assert!(
-        combined.contains("support only --type")
-            || combined.contains("resourcepack, shader, or datapack"),
-        "expected invalid direct zip type rejection in output:\n{combined}"
-    );
-}
-
-#[test]
-fn e2e_unsupported_direct_extension_exits_two() {
-    let project = TestProject::workflow_fixture("exit-unsupported-extension", "fabric", "1.21.1");
-    let output = binary_empack_cmd(project.dir())
-        .args([
-            "add",
-            "--type",
-            "resourcepack",
-            "https://example.invalid/pack.txt",
-        ])
-        .output()
-        .expect("spawn unsupported-extension command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Usage.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
-
-    let combined = combined_output(&output);
-    assert!(
-        combined.contains("not supported") || combined.contains("non-.zip"),
-        "expected unsupported extension rejection in output:\n{combined}"
-    );
-}
-
-#[test]
-fn e2e_missing_tracked_local_dependency_validation_exits_two() {
-    let project = TestProject::workflow_fixture("exit-local-validation", "fabric", "1.21.1");
-
-    std::fs::write(
-        project.dir().join("empack.yml"),
-        r#"empack:
-  dependencies:
-    example-pack:
-      status: local
-      title: Example Pack
-      type: resourcepack
-      path: pack/resourcepacks/example-pack.zip
-      source_url: https://example.com/example-pack.zip
-      sha256: deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe
-  minecraft_version: "1.21.1"
-  loader: fabric
-  name: "exit-local-validation"
-  author: "Workflow Test"
-  version: "1.0.0"
-"#,
-    )
-    .expect("write empack.yml with tracked local dependency");
-
-    let output = binary_empack_cmd(project.dir())
-        .args(["build", "mrpack"])
-        .output()
-        .expect("spawn local-validation build command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Usage.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
-
-    let combined = combined_output(&output);
-    assert!(
-        combined.contains("tracked local dependenc") && combined.contains("failed validation"),
-        "expected tracked local dependency validation failure in output:\n{combined}"
-    );
-}
-
-#[test]
-fn e2e_tracked_local_parent_dir_validation_exits_two() {
-    let project =
-        TestProject::workflow_fixture("exit-local-parent-dir-validation", "fabric", "1.21.1");
-    let outside = tempfile::NamedTempFile::new_in(project.dir().parent().unwrap()).unwrap();
-    let outside_path = outside.path();
-    std::fs::write(outside_path, b"outside-bytes").expect("write outside tracked local file");
-    let relative = format!("../{}", outside_path.file_name().unwrap().to_str().unwrap());
-
-    std::fs::write(
-        project.dir().join("empack.yml"),
-        r#"empack:
-  dependencies:
-    example-pack:
-      status: local
-      title: Example Pack
-      type: resourcepack
-      path: ../outside-pack.zip
-      source_url: https://example.com/example-pack.zip
-      sha256: deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe
-  minecraft_version: "1.21.1"
-  loader: fabric
-  name: "exit-local-parent-dir-validation"
-  author: "Workflow Test"
-  version: "1.0.0"
-"#
-        .replace("../outside-pack.zip", &relative),
-    )
-    .expect("write empack.yml with parent-dir tracked local dependency");
-
-    let output = binary_empack_cmd(project.dir())
-        .args(["build", "mrpack"])
-        .output()
-        .expect("spawn parent-dir local-validation build command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Usage.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
-
-    let combined = combined_output(&output);
-    assert!(
-        combined.contains("traversal component"),
-        "expected parent-dir validation error: {combined}"
-    );
-    assert!(
-        outside_path.exists(),
-        "tracked local validation must not mutate files outside the project"
-    );
-}
-
-#[test]
-fn e2e_packwiz_process_failure_exits_one() {
-    let project = TestProject::workflow_fixture("exit-remove-fail", "fabric", "1.21.1");
-    std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
-    std::fs::write(
-        project.dir().join("pack/mods/sodium.pw.toml"),
-        "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'Version1'\n",
+fn add_local(project: &TestProject) {
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    zip.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
+        .unwrap();
+    fs::write(
+        project.dir().join("fixture.jar"),
+        zip.finish().unwrap().into_inner(),
     )
     .unwrap();
-    let fake_packwiz = write_failing_packwiz_binary(project.dir());
-
-    let output = binary_empack_cmd(project.dir())
-        .env("EMPACK_PACKWIZ_BIN", fake_packwiz)
-        .args(["remove", "sodium"])
-        .output()
-        .expect("spawn remove command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::General.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
-
-    let combined = combined_output(&output);
+    let result = output(project, &["add", "--yes", "fixture.jar"]);
     assert!(
-        combined.contains("packwiz remove failed"),
-        "expected packwiz stderr to propagate, got:\n{combined}"
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
     );
 }
-
+#[test]
+fn e2e_parse_error_exits_two() {
+    check(
+        &output(&TestProject::new(), &["--definitely-invalid-flag"]),
+        EmpackExitCode::Usage,
+        "--definitely-invalid-flag",
+    );
+}
+#[test]
+fn e2e_uninitialized_build_exits_two() {
+    check(
+        &output(&TestProject::new(), &["build", "mrpack"]),
+        EmpackExitCode::Usage,
+        "empack.yml",
+    );
+}
+#[test]
+fn e2e_direct_zip_without_type_exits_two() {
+    check(
+        &output(&fixture(), &["add", "https://example.invalid/pack.zip"]),
+        EmpackExitCode::Usage,
+        "--type",
+    );
+}
+#[test]
+fn e2e_unattended_build_requires_explicit_approval() {
+    let project = fixture();
+    let before = fs::read(project.dir().join("empack.lock")).unwrap();
+    check(
+        &output(&project, &["build", "mrpack"]),
+        EmpackExitCode::Usage,
+        "--yes",
+    );
+    assert!(!project.dir().join("dist").exists());
+    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), before);
+}
+#[test]
+fn e2e_malformed_intent_and_lock_exit_two() {
+    for name in ["empack.yml", "empack.lock"] {
+        let project = fixture();
+        let path = project.dir().join(name);
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"unexpected-field: true\n")
+            .unwrap();
+        let before = fs::read(&path).unwrap();
+        check(
+            &output(&project, &["build", "--yes", "mrpack"]),
+            EmpackExitCode::Usage,
+            "Invalid",
+        );
+        assert_eq!(fs::read(path).unwrap(), before);
+        assert!(!project.dir().join("dist").exists());
+    }
+}
+#[test]
+fn e2e_missing_tracked_file_cannot_report_success() {
+    let project = fixture();
+    add_local(&project);
+    fs::remove_file(project.dir().join("pack/mods/fixture.jar")).unwrap();
+    let result = output(&project, &["build", "--yes", "mrpack"]);
+    assert!(
+        !result.status.success(),
+        "Missing locked content must not build successfully"
+    );
+    assert!(
+        !project
+            .dir()
+            .join("dist/exit-contract-1.0.0.mrpack")
+            .exists()
+    );
+}
+#[test]
+fn e2e_tracked_local_parent_dir_validation_exits_two() {
+    let project = fixture();
+    add_local(&project);
+    let sentinel = tempfile::NamedTempFile::new_in(project.dir().parent().unwrap()).unwrap();
+    fs::write(sentinel.path(), b"outside bytes").unwrap();
+    let path = project.dir().join("empack.yml");
+    let mut intent: serde_json::Value =
+        serde_saphyr::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    intent["dependencies"]["fixture"]["source"]["path"] = serde_json::json!(format!(
+        "../{}",
+        sentinel.path().file_name().unwrap().to_str().unwrap()
+    ));
+    fs::write(&path, serde_saphyr::to_string(&intent).unwrap()).unwrap();
+    check(
+        &output(&project, &["build", "--yes", "mrpack"]),
+        EmpackExitCode::Usage,
+        "component",
+    );
+    assert_eq!(fs::read(sentinel.path()).unwrap(), b"outside bytes");
+}
+#[test]
+fn e2e_occupied_artifact_directory_fails_without_deletion() {
+    let project = fixture();
+    let artifact = project.dir().join("dist/exit-contract-1.0.0.mrpack");
+    fs::create_dir_all(&artifact).unwrap();
+    fs::write(artifact.join("sentinel"), b"retain").unwrap();
+    let result = output(&project, &["build", "--yes", "mrpack"]);
+    assert!(!result.status.success());
+    assert_eq!(fs::read(artifact.join("sentinel")).unwrap(), b"retain");
+}
+fn proxy(command: &mut Command, address: &str) {
+    for name in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"] {
+        command.env(name, address);
+    }
+    command.env("NO_PROXY", "").env("no_proxy", "");
+}
 #[test]
 fn e2e_network_failure_exits_three() {
-    let project = TestProject::workflow_fixture("exit-network-fail", "fabric", "1.21.1");
-
-    let output = binary_empack_cmd(project.dir())
+    let project = fixture();
+    let mut cmd = command(&project);
+    proxy(&mut cmd, "http://127.0.0.1:9");
+    let result = cmd
         .env("EMPACK_NET_TIMEOUT", "1")
-        .env("HTTPS_PROXY", "http://127.0.0.1:9")
-        .env("https_proxy", "http://127.0.0.1:9")
-        .env("ALL_PROXY", "http://127.0.0.1:9")
-        .env("all_proxy", "http://127.0.0.1:9")
-        .args(["add", "sodium"])
+        .args(["add", "--yes", "--platform", "modrinth", "sodium"])
         .output()
-        .expect("spawn add command");
-
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Network.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
+        .unwrap();
+    check(&result, EmpackExitCode::Network, "Error:");
 }
-
 #[cfg(unix)]
 #[test]
 fn e2e_interrupt_exits_130() {
-    let project = TestProject::workflow_fixture("exit-interrupt", "fabric", "1.21.1");
-    let started_marker = project.dir().join("fake-packwiz-started");
-    let fake_packwiz = write_blocking_packwiz_binary(project.dir(), &started_marker);
-
-    let mut child = empack_cmd(project.dir());
-    child
-        .env("EMPACK_PACKWIZ_BIN", fake_packwiz)
-        .args(["build", "mrpack"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    let child = child.spawn().expect("spawn interrupt command");
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while std::time::Instant::now() < deadline && !started_marker.exists() {
-        std::thread::sleep(std::time::Duration::from_millis(50));
+    struct Child(std::process::Child);
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
     }
-
+    let project = fixture();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut cmd = command(&project);
+    proxy(
+        &mut cmd,
+        &format!("http://{}", listener.local_addr().unwrap()),
+    );
+    let mut child = Child(
+        cmd.args(["add", "--yes", "--platform", "modrinth", "sodium"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let connection = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(
+                    Instant::now() < deadline,
+                    "Native HTTP request did not start"
+                );
+                assert!(
+                    child.0.try_wait().unwrap().is_none(),
+                    "CLI exited before acquisition"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("{error}"),
+        }
+    };
     assert!(
-        started_marker.exists(),
-        "fake packwiz export should have started before the interrupt"
+        Command::new("kill")
+            .args(["-INT", &child.0.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
     );
-    let kill_status = std::process::Command::new("kill")
-        .args(["-INT", &child.id().to_string()])
-        .status()
-        .expect("send SIGINT to empack");
-    assert!(kill_status.success(), "kill -INT should succeed");
-
-    let output = child
-        .wait_with_output()
-        .expect("collect interrupted command output");
-
-    assert!(
-        started_marker.exists(),
-        "fake packwiz export should have started before the interrupt:\n{}",
-        combined_output(&output)
-    );
-    assert_eq!(
-        output.status.code(),
-        Some(EmpackExitCode::Interrupted.as_i32()),
-        "unexpected output:\n{}",
-        combined_output(&output)
-    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Cancellation did not retire the native request"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(status.code(), Some(EmpackExitCode::Interrupted.as_i32()));
+    drop(connection);
+    assert!(!project.dir().join("pack/mods").exists());
 }

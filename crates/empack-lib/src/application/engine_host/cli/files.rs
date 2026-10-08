@@ -75,7 +75,9 @@ pub(super) fn input(
         None => {
             ensure!(
                 !session.config().app_config().yes && session.interactive().can_choose(),
-                "Direct archive kind is ambiguous; supply --project-type"
+                crate::application::cli::CommandInputRequired(
+                    "Direct archive kind is ambiguous; supply --type"
+                )
             );
             let kinds = [
                 ContentKind::Mod,
