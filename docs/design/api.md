@@ -189,6 +189,11 @@ selection, type identification and archive interpretation precede this boundary.
 `DirectFileInput` records. Every record declares its logical key, content kind,
 requirements, placements and source-evidence policy. Download alternatives may be
 transient; separately declared credential-free HTTPS origins become durable intent.
+`DirectFileSource::DownloadAsLocal` explicitly publishes verified downloaded bytes
+as a tracked local file at the first placement. No download locator enters the
+documents; provenance records the conversion and retains original digest assertions.
+Later synchronization and builds use the local bytes without contacting that source.
+This representation requires an explicit choice, never a fallback after failed identification.
 All HTTP files share one byte/deadline allowance. The overall byte allowance also
 bounds the combined local/downloaded inventory. No successful subset is returned.
 

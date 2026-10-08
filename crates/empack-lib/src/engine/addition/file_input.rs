@@ -17,6 +17,8 @@ pub enum AcquiredFileSource {
     /// The first selected placement becomes the tracked local source. The original host path
     /// does not become a project read/write capability or an absolute path in the manifest.
     Local,
+    /// Explicit download-as-local conversion. No transient locator enters durable state.
+    DownloadedLocal,
     Url(NonEmpty<String>),
 }
 #[derive(Clone)]
@@ -135,7 +137,11 @@ impl FileAddition {
                 "Acquired file differs from declared content"
             );
             let (source, identity, acquisition, provenance) = match input.source {
-                AcquiredFileSource::Local => {
+                source @ (AcquiredFileSource::Local | AcquiredFileSource::DownloadedLocal) => {
+                    let provenance = match source {
+                        AcquiredFileSource::DownloadedLocal => "downloaded-local-file",
+                        _ => "local-file",
+                    };
                     let first = &input.placements.as_slice()[0];
                     let source = ProjectLayout::path(&ManagedPath::Content {
                         layer: first.layer,
@@ -145,7 +151,7 @@ impl FileAddition {
                         SourceIntent::Local(source.clone()),
                         ResolvedIdentity::Local(input.key.clone()),
                         AcquisitionSpec::Local(source),
-                        "local-file",
+                        provenance,
                     )
                 }
                 AcquiredFileSource::Url(urls) => (

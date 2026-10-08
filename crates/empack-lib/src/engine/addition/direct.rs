@@ -26,6 +26,10 @@ pub enum DirectFileSource {
         origins: NonEmpty<String>,
         alternatives: NonEmpty<String>,
     },
+    /// Explicitly retain verified bytes as a local file, without persisting any locator.
+    DownloadAsLocal {
+        alternatives: NonEmpty<String>,
+    },
 }
 #[derive(Clone, Copy, Default)]
 pub enum FileKindPolicy {
@@ -92,17 +96,17 @@ impl FileAddition {
             );
             let (expected, initial) = expectation(&input.evidence);
             validate_expectation(&expected, limits.transfer.file_bytes, policy, initial)?;
+            if let DirectFileSource::Download { origins, .. } = &input.source {
+                for origin in origins.as_slice() {
+                    validate_download_url(origin)?;
+                }
+            }
             match &input.source {
                 DirectFileSource::Local(path) => {
                     ensure!(path.is_absolute(), "Local source must be absolute")
                 }
-                DirectFileSource::Download {
-                    origins,
-                    alternatives,
-                } => {
-                    for origin in origins.as_slice() {
-                        validate_download_url(origin)?;
-                    }
+                DirectFileSource::Download { alternatives, .. }
+                | DirectFileSource::DownloadAsLocal { alternatives } => {
                     download_keys.push(input.key.clone());
                     downloads.push(DownloadRequest {
                         alternatives: alternatives.clone(),
@@ -152,8 +156,14 @@ impl FileAddition {
                     )
                     .await?,
                 ),
-                DirectFileSource::Download { origins, .. } => (
-                    AcquiredFileSource::Url(origins),
+                source @ (DirectFileSource::Download { .. }
+                | DirectFileSource::DownloadAsLocal { .. }) => (
+                    match source {
+                        DirectFileSource::Download { origins, .. } => {
+                            AcquiredFileSource::Url(origins)
+                        }
+                        _ => AcquiredFileSource::DownloadedLocal,
+                    },
                     AcquiredBuildFile {
                         content: downloaded
                             .remove(&input.key)

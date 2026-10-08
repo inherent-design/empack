@@ -1523,3 +1523,17 @@ Greptile 120 cleared `f63c98f`. At `85802fe`, the corrected CI coverage task pas
 2,051 tests and reported 93.66% workspace line coverage, including inline tests. That
 measurement is not a production-only percentage or evidence of CLI feature completion.
 The latest full local suite remains pinned to `05ac71f` (1,955 tests and eleven doctests).
+
+## Explicit transient downloads as local content
+
+`DirectFileSource::DownloadAsLocal` acquires under the shared direct-file byte,
+transport and archive limits, then records verified bytes at the selected local
+placement. Original digest assertions and conversion provenance survive; execution
+locators never enter project documents. This requires an explicit representation
+choice and does not follow automatically from failed provider identification.
+
+Two native regressions verify preview/decline isolation, repeated addition, original
+evidence, redacted failure and AllRequested publication. After the source server is
+stopped, two recorded syncs preserve the tree and mrpack/full-client outputs contain
+the selected bytes. All 22 affected tests, all-feature Clippy and Windows
+cross-compilation pass. CLI representation selection remains integration work.

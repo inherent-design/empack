@@ -253,6 +253,179 @@ async fn direct_files_publish_one_batch_preserve_provenance_and_build_current_by
     remote.assert_async().await;
 }
 #[tokio::test]
+async fn transient_download_as_local_preserves_evidence_without_persisting_locators() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let bytes = archive(&[("pack.mcmeta", b"{}"), ("assets/demo/current", b"current")]);
+    let mut server = mockito::Server::new_async().await;
+    let remote = server
+        .mock("GET", "/chosen")
+        .match_query(mockito::Matcher::UrlEncoded(
+            "token".into(),
+            "execution-only-secret".into(),
+        ))
+        .with_body(&bytes)
+        .expect(4)
+        .create_async()
+        .await;
+    let inputs = || {
+        vec![input(
+            "downloaded",
+            DirectFileSource::DownloadAsLocal {
+                alternatives: NonEmpty::new(vec![format!(
+                    "{}/chosen?token=execution-only-secret",
+                    server.url()
+                )])
+                .unwrap(),
+            },
+            &bytes,
+            ContentKind::ResourcePack,
+            "resourcepacks/chosen.zip",
+        )]
+    };
+    let before = snapshot(root.path());
+    for (yes, dry) in [(true, true), (false, false)] {
+        add(root.path(), inputs(), yes, dry, DirectFileLimits::default())
+            .await
+            .unwrap();
+        assert_eq!(snapshot(root.path()), before);
+    }
+    add(
+        root.path(),
+        inputs(),
+        true,
+        false,
+        DirectFileLimits::default(),
+    )
+    .await
+    .unwrap();
+    let project = root.path().join("project");
+    let intent_bytes = fs::read(project.join("empack.yml")).unwrap();
+    let lock_bytes = fs::read(project.join("empack.lock")).unwrap();
+    let intent = DocumentCodec.decode_intent(&intent_bytes, "test").unwrap();
+    let resolved = DocumentCodec
+        .decode_lock(&lock_bytes, &intent, "test")
+        .unwrap();
+    let key = DependencyKey::parse("downloaded").unwrap();
+    let file = &resolved.lock().dependencies[&key].files.as_slice()[0];
+    assert!(
+        matches!(&resolved.intent().roots[&key].source, SourceIntent::Local(path)
+        if path.as_str() == "overrides/client/resourcepacks/chosen.zip")
+    );
+    assert_eq!(file.expected, expected(&bytes));
+    assert_eq!(file.provenance.source, "downloaded-local-file");
+    assert_eq!(file.provenance.declared_digests, expected(&bytes).digests);
+    for document in [&intent_bytes, &lock_bytes] {
+        let text = String::from_utf8_lossy(document);
+        assert!(!text.contains("execution-only-secret"));
+        assert!(!text.contains(&server.url()));
+    }
+    let before = snapshot(&project);
+    add(
+        root.path(),
+        inputs(),
+        true,
+        false,
+        DirectFileLimits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&project), before);
+    remote.assert_async().await;
+    drop(server);
+    for _ in 0..2 {
+        synchronize(
+            &session(root.path(), true, false),
+            crate::engine::api::SyncRequest::Recorded {
+                resolution: None,
+                evidence: SourceEvidencePolicy::Compatibility,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(snapshot(&project), before);
+    }
+    build(
+        &session(root.path(), true, false),
+        &BuildArgs {
+            targets: vec!["mrpack".into(), "client-full".into()],
+            ..Default::default()
+        },
+        BuildDecisions::default(),
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    for (name, member) in [
+        (
+            "File Pack-1.0.mrpack",
+            "client-overrides/resourcepacks/chosen.zip",
+        ),
+        (
+            "File Pack-1.0-client-full.zip",
+            ".minecraft/resourcepacks/chosen.zip",
+        ),
+    ] {
+        let mut zip =
+            zip::ZipArchive::new(fs::File::open(project.join("dist").join(name)).unwrap()).unwrap();
+        let mut actual = Vec::new();
+        zip.by_name(member)
+            .unwrap()
+            .read_to_end(&mut actual)
+            .unwrap();
+        assert_eq!(actual, bytes);
+    }
+}
+
+#[tokio::test]
+async fn transient_download_failure_never_publishes_a_successful_subset() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    fs::write(root.path().join("local"), b"retained").unwrap();
+    let before = snapshot(root.path());
+    let mut server = mockito::Server::new_async().await;
+    let remote = server
+        .mock("GET", "/chosen")
+        .match_query(mockito::Matcher::Any)
+        .with_body(b"wrong")
+        .create_async()
+        .await;
+    let error = add(
+        root.path(),
+        vec![
+            input(
+                "local",
+                DirectFileSource::Local("local".into()),
+                b"retained",
+                ContentKind::Config,
+                "config/local",
+            ),
+            input(
+                "remote",
+                DirectFileSource::DownloadAsLocal {
+                    alternatives: NonEmpty::new(vec![format!(
+                        "{}/chosen?token=execution-only-secret",
+                        server.url()
+                    )])
+                    .unwrap(),
+                },
+                b"right",
+                ContentKind::Config,
+                "config/remote",
+            ),
+        ],
+        true,
+        false,
+        DirectFileLimits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(!format!("{error:#}").contains("execution-only-secret"));
+    assert_eq!(snapshot(root.path()), before);
+    remote.assert_async().await;
+}
+
+#[tokio::test]
 async fn direct_file_failures_preserve_the_entire_project_and_do_not_accept_a_subset() {
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
