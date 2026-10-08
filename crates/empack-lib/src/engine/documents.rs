@@ -442,7 +442,7 @@ fn urls(value: &Value) -> Result<Vec<String>> {
     }
     Ok(urls)
 }
-pub(super) fn validate_download_url(value: &str) -> Result<()> {
+pub(crate) fn validate_download_url(value: &str) -> Result<()> {
     let url = reqwest::Url::parse(value)?;
     ensure!(
         url.scheme() == "https"

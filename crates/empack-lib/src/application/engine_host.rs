@@ -404,3 +404,5 @@ where
 
 mod files;
 pub use files::add_files;
+
+pub mod cli;

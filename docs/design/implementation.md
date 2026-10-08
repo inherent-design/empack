@@ -64,9 +64,17 @@ Tests may invoke hosts independently while that coordinated dispatcher change is
 
 `ProviderCatalog::search_projects` offers bounded windows by provider preference and
 accepted game version. Ranking does not authorize a choice. Pagination, unsupported
-kinds, provider failures and original rank remain explicit. Selection still needs
-canonical lookup and version/closure resolution. CLI search composition is open.
+kinds, provider failures and original rank remain explicit. The new CLI add adapter
+composes pagination and deliberate selection with canonical lookup and closure resolution.
+Headless search requires an explicit project URL or provider selector; `--yes` never
+selects the first search hit. The dispatcher cutover remains open.
 [Search tests](../../crates/empack-lib/src/engine/providers/search/tests.rs).
+
+The [CLI adapter tests](../../crates/empack-lib/src/application/engine_host/cli/tests.rs)
+exercise equivalent slug/ID/URL additions followed by two unchanged syncs, preview,
+conflicting pins/providers, deliberate search selection and all-requested direct-file
+failure against native temporary projects. These are host-adapter tests, not executable
+cutover evidence. Provider identification and world interpretation remain open.
 
 ### Content identification
 

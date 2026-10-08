@@ -309,6 +309,11 @@ impl ArchiveProvider for LiveArchiveProvider {
 }
 
 pub trait InteractiveProvider {
+    /// Whether this host can obtain a deliberate choice. Defaulted answers are not choices.
+    fn can_choose(&self) -> bool {
+        false
+    }
+
     fn text_input(&self, prompt: &str, default: String) -> Result<String>;
 
     fn confirm(&self, prompt: &str, default: bool) -> Result<bool>;
@@ -963,6 +968,10 @@ impl LiveInteractiveProvider {
 }
 
 impl InteractiveProvider for LiveInteractiveProvider {
+    fn can_choose(&self) -> bool {
+        !self.yes_mode && Self::is_tty()
+    }
+
     fn text_input(&self, prompt: &str, default: String) -> Result<String> {
         // Check yes_mode first (--yes flag), then TTY
         if self.yes_mode || !Self::is_tty() {

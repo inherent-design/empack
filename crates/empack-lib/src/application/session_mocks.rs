@@ -1556,6 +1556,10 @@ impl Default for MockInteractiveProvider {
 }
 
 impl InteractiveProvider for MockInteractiveProvider {
+    fn can_choose(&self) -> bool {
+        !self.yes_mode
+    }
+
     fn text_input(&self, prompt: &str, default: String) -> Result<String> {
         self.text_input_calls
             .lock()
