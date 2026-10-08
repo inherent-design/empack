@@ -223,8 +223,38 @@ fn selections(
                 }));
             }
             ResolvedIdentity::Local(_) | ResolvedIdentity::Url(_) => {
-                if let Some(root) =
-                    root.filter(|root| matches!(root.source, SourceIntent::LocalFiles(_)))
+                // A retained group keeps its exact member map even after its root is forgotten.
+                // This temporary request does not authorize promoting it back into intent.
+                let retained = if root.is_none()
+                    && selected.files.as_slice().len() > 1
+                    && matches!(selected.identity, ResolvedIdentity::Local(_))
+                {
+                    let members = selected.files.as_slice().iter().map(|file| {
+                        let AcquisitionSpec::Local(path) = &file.acquisition else {
+                            anyhow::bail!("Retained member requires an explicit acquisition choice: {value}");
+                        };
+                        Ok((file.slot.clone(), path.clone()))
+                    }).collect::<Result<_>>()?;
+                    Some(empack_core::model::DependencyIntent {
+                        source: SourceIntent::LocalFiles(members),
+                        kind: selected.kind,
+                        version: VersionIntent::FollowCompatible,
+                        requirements: requirements.clone(),
+                        placement: PlacementIntent::Explicit(NonEmpty::new(
+                            selected
+                                .files
+                                .as_slice()
+                                .iter()
+                                .flat_map(|file| file.placements.as_slice().iter().cloned())
+                                .collect(),
+                        )?),
+                    })
+                } else {
+                    None
+                };
+                if let Some(root) = root
+                    .or(retained.as_ref())
+                    .filter(|root| matches!(root.source, SourceIntent::LocalFiles(_)))
                 {
                     inputs.extend(
                         super::synchronization::member_inputs(

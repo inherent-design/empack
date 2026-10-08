@@ -946,6 +946,33 @@ async fn world_archive_members_remain_one_identity_across_commands() {
         )
         .is_err()
     );
+    crate::application::execute_command_with_session(
+        crate::application::Commands::Remove {
+            mods: vec!["adventure".into()],
+            deps: false,
+            forget: true,
+            acknowledge_unknown: false,
+        },
+        &session(root.path(), false),
+    )
+    .await
+    .unwrap();
+    assert!(project(root.path()).intent().roots.is_empty());
+    update(&session(root.path(), false), vec!["adventure".into()])
+        .await
+        .unwrap();
+    fs::write(world.join("region/r.0.0.mca"), b"demoted edit").unwrap();
+    adopt(&session(root.path(), false), vec!["adventure".into()])
+        .await
+        .unwrap();
+    assert!(project(root.path()).intent().roots.is_empty());
+    let retained = super::super::tests::snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+    }
+    assert!(super::super::tests::snapshot(&root.path().join("project")) == retained);
     fs::write(world.join("untracked.txt"), b"keep me").unwrap();
     crate::application::execute_command_with_session(
         crate::application::Commands::Remove {

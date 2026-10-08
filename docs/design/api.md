@@ -1153,3 +1153,9 @@ role and one consistent exact pin across members. Unknown, ambiguous, different-
 and different-role results fail. Every placement verifies again against that exact
 provider selection before document publication. Adoption never queries a latest version
 to guess which bytes are installed.
+
+Demotion removes the explicit root but retains the locked identity, member inventory
+and source paths. Selected update/adoption reconstructs a temporary member request
+from that exact retained inventory. It does not promote the dependency back into intent
+or infer new files from neighboring directories. Non-local retained acquisition kinds
+continue to require their corresponding explicit acquisition contract.

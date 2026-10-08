@@ -147,6 +147,14 @@ modules remains open.
 
 ## Verification evidence
 
+Combined `6895f84`: `mise run test` passed 1,659 tests and eleven doctests;
+102 opt-in tests were excluded. No inherited-pipe warning occurred. This includes
+direct world interpretation and tracked URL/provider-side adoption, not final live parity.
+
+Demoted local groups: reproduced the multi-file update refusal, then passed the extended
+world lifecycle and two related native update tests. Update and adoption retain the
+non-root role and exact member set; two subsequent syncs preserve the project.
+
 Provider side-layer adoption: 34 affected adoption, identification and native-command
 tests plus all-feature Clippy passed. The reproduced refusal is replaced by exact
 byte identification; wrong-project bytes and inconsistent copies preserve the project.
