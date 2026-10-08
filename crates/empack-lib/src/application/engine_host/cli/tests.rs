@@ -47,6 +47,7 @@ fn options(value: &str) -> AddOptions {
         kind: None,
         version_id: Some("RootVer1".into()),
         file_id: None,
+        file_plan: None,
     }
 }
 pub(super) fn project(root: &Path) -> ResolvedProject {
@@ -336,6 +337,7 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
             kind: None,
             version_id: None,
             file_id: None,
+            file_plan: None,
         };
         let before = super::super::tests::snapshot(root.path());
         let result = add_with_catalog(
@@ -575,6 +577,7 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
         kind: None,
         version_id: None,
         file_id: None,
+        file_plan: None,
     };
     let before = super::super::tests::snapshot(root.path());
     add_with_catalog(
@@ -625,4 +628,143 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
         super::super::tests::snapshot(&root.path().join("project")),
         before
     );
+}
+
+#[tokio::test]
+async fn provider_file_plan_preserves_companions_destinations_and_optional_choices() {
+    let mut server = mockito::Server::new_async().await;
+    server.mock("GET", "/project/renderer")
+        .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+    server.mock("GET", "/project/Root0001")
+        .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+    let file = |name: &str, primary: bool, role: Option<&str>| {
+        json!({
+            "filename":name,"primary":primary,"size":7,"file_type":role,
+            "hashes":{"sha512":empack_core::digest::ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},
+            "url":format!("https://example.invalid/{name}")
+        })
+    };
+    server.mock("GET", "/version/RootVer1").with_body(json!({
+        "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+        "files":[file("renderer.jar",true,None),file("assets.zip",false,Some("required-resource-pack")),file("extras.zip",false,Some("optional-resource-pack"))],
+        "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+    }).to_string()).create_async().await;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let environment = json!({"client":"required","server":"unsupported"});
+    let placement = |path: &str, environment: serde_json::Value| {
+        json!([{
+            "destination":path,"layer":"common","environment":environment
+        }])
+    };
+    let mut plan = json!({"schema":1,"environment":environment,"files":{
+        "renderer.jar":placement("mods/renamed.jar",environment.clone()),
+        "assets.zip":placement("resourcepacks/required.zip",environment.clone()),
+        "extras.zip":placement("resourcepacks/extra.zip",json!({"client":{"optional":"extra-art","default-enabled":false,"description":"Extra artwork"},"server":"unsupported"}))
+    }});
+    let selected = || {
+        let mut options = options("renderer");
+        options.file_plan = Some("files.yml".into());
+        options
+    };
+    // Missing required companions fail the whole request before publication.
+    let companion = plan["files"]
+        .as_object_mut()
+        .unwrap()
+        .remove("assets.zip")
+        .unwrap();
+    fs::write(root.path().join("files.yml"), plan.to_string()).unwrap();
+    let before = super::super::tests::snapshot(root.path());
+    let error = add_with_catalog(
+        &session(root.path(), false),
+        selected(),
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("required companion"));
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    plan["files"]["assets.zip"] = companion;
+    fs::write(root.path().join("files.yml"), plan.to_string()).unwrap();
+    let before = super::super::tests::snapshot(root.path());
+    add_with_catalog(
+        &session(root.path(), true),
+        selected(),
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+    )
+    .await
+    .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    add_with_catalog(
+        &session(root.path(), false),
+        selected(),
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+    )
+    .await
+    .unwrap();
+    let resolved = project(root.path());
+    let record = resolved.lock().dependencies.values().next().unwrap();
+    assert_eq!(record.files.as_slice().len(), 3);
+    let extra = record
+        .files
+        .as_slice()
+        .iter()
+        .find(|file| file.slot.as_str() == "extras.zip")
+        .unwrap();
+    let placement = &extra.placements.as_slice()[0];
+    assert_eq!(
+        placement.destination.relative().as_str(),
+        "resourcepacks/extra.zip"
+    );
+    assert_eq!(placement.requirements.server, Requirement::Unsupported);
+    let Requirement::Optional(choice) = &placement.requirements.client else {
+        panic!("lost optional requirement")
+    };
+    assert_eq!(choice.key.as_str(), "extra-art");
+    assert!(!choice.default_enabled);
+    for _ in 0..2 {
+        let before = super::super::tests::snapshot(&root.path().join("project"));
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+        assert_eq!(
+            super::super::tests::snapshot(&root.path().join("project")),
+            before
+        );
+    }
+}
+
+#[tokio::test]
+async fn file_plans_reject_unbounded_unsafe_and_unrecognized_selections() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let path = root.path().join("files.yml");
+    for bytes in [
+        b"schema: 1\nfiles: {}\nenvironment: {client: required, server: unsupported}\ntypo: true"
+            .to_vec(),
+        vec![b'x'; (1 << 20) + 1],
+    ] {
+        fs::write(&path, bytes).unwrap();
+        let before = super::super::tests::snapshot(root.path());
+        assert!(
+            file_plan::read(&session(root.path(), false), path.clone())
+                .await
+                .is_err()
+        );
+        assert_eq!(super::super::tests::snapshot(root.path()), before);
+    }
+    #[cfg(unix)]
+    {
+        let linked = root.path().join("linked.yml");
+        std::os::unix::fs::symlink(&path, &linked).unwrap();
+        assert!(
+            file_plan::read(&session(root.path(), false), linked)
+                .await
+                .is_err()
+        );
+    }
+    let mut selected = options("renderer");
+    selected.file_plan = Some("files.yml".into());
+    selected.inputs.push("other".into());
+    assert!(selected.pin().is_err());
 }

@@ -84,6 +84,7 @@ pub enum AddHostInput {
     IdentifiedFile {
         source: DirectFileSource,
         kind: Option<empack_core::model::ContentKind>,
+        file_plan: Option<crate::engine::documents::ProviderFileSelection>,
         providers: NonEmpty<empack_core::model::ProviderKind>,
     },
 }
@@ -210,6 +211,7 @@ async fn change_with_services(
             AddHostInput::IdentifiedFile {
                 mut source,
                 kind,
+                file_plan,
                 providers,
             } => {
                 if let DirectFileSource::Local(path) = &mut source {
@@ -218,6 +220,7 @@ async fn change_with_services(
                 identify.push(identification::Input {
                     source,
                     kind,
+                    file_plan,
                     providers,
                 });
             }

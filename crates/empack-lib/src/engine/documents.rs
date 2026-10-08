@@ -96,9 +96,60 @@ pub struct PreparedDocument {
     /// Explicit syntax-preservation result.
     pub edit: DocumentEdit,
 }
+/// Explicit file-role choices for one provider project; destinations carry no mutation authority.
+#[derive(Clone)]
+pub struct ProviderFileSelection {
+    pub requirements: Requirements,
+    pub files: BTreeMap<String, NonEmpty<Placement>>,
+}
 /// Stateless normalized YAML codec. Unknown fields fail outside `extensions`.
 pub struct DocumentCodec;
 impl DocumentCodec {
+    /// Decode per-file destinations using the same strict placement/requirement wire contract.
+    pub fn decode_provider_files(
+        &self,
+        bytes: &[u8],
+        origin: &str,
+    ) -> Result<ProviderFileSelection> {
+        (|| {
+            ensure!(
+                bytes.len() <= 1 << 20,
+                "Provider file plan exceeds size limit"
+            );
+            let value = parse(bytes)?;
+            fields(&value, &["schema", "environment", "files"])?;
+            ensure!(
+                required(&value, "schema")? == &json!(1),
+                "Unsupported file plan schema"
+            );
+            let requirements = requirements(required(&value, "environment")?)?;
+            let values = object(required(&value, "files")?)?;
+            ensure!(
+                !values.is_empty() && values.len() <= 128,
+                "Select between one and 128 provider files"
+            );
+            let mut files = BTreeMap::new();
+            for (name, values) in values {
+                FileSlot::parse(name)?;
+                let values = values
+                    .as_array()
+                    .context("File placements must be a list")?;
+                ensure!(values.len() <= 128, "Too many file placements");
+                files.insert(
+                    name.clone(),
+                    NonEmpty::new(values.iter().map(placement).collect::<Result<Vec<_>>>()?)?,
+                );
+            }
+            Ok(ProviderFileSelection {
+                requirements,
+                files,
+            })
+        })()
+        .with_context(|| InvalidDocument {
+            kind: "provider file plan",
+            origin: origin.into(),
+        })
+    }
     /// Parse intent with a named origin for diagnostics. No legacy fallback is attempted.
     pub fn decode_intent(&self, bytes: &[u8], origin: &str) -> Result<DecodedIntent> {
         let value = parse(bytes).with_context(|| InvalidDocument {

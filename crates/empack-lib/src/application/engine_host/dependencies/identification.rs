@@ -21,6 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct Input {
     pub source: DirectFileSource,
     pub kind: Option<ContentKind>,
+    pub file_plan: Option<crate::engine::documents::ProviderFileSelection>,
     pub providers: NonEmpty<ProviderKind>,
 }
 
@@ -205,9 +206,16 @@ pub(super) async fn resolve(
             key: None,
             kind: Some(kind),
             pin: Some(pin.selection.clone()),
-            requirements,
+            requirements: input
+                .file_plan
+                .as_ref()
+                .map(|plan| plan.requirements.clone())
+                .unwrap_or(requirements),
             folder: None,
-            files: ProviderFiles::Named(BTreeSet::from([role])),
+            files: input
+                .file_plan
+                .map(|plan| ProviderFiles::Placed(plan.files))
+                .unwrap_or_else(|| ProviderFiles::Named(BTreeSet::from([role]))),
         });
     }
     Ok(supplied)

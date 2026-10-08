@@ -107,3 +107,33 @@ choosing their content type and destination. A unique provider kind supplies the
 The published file keeps the supplied bytes and exact provider pin. Unknown or ambiguous
 identities fail without changing the project. Omit `--platform` to choose direct-file
 tracking deliberately; direct ZIP inputs still require a type.
+
+## Select companion files
+
+Use `empack add --platform modrinth PROJECT --file-plan ./files.yml` when a provider
+selection contains companion files or needs explicit destinations. A plan applies to
+one project and uses provider filenames as exact role names. It can also accompany
+supplied-file identification. Paths resolve from the invocation directory.
+
+```yaml
+schema: 1
+environment: {client: required, server: unsupported}
+files:
+  renderer.jar:
+    - destination: mods/renderer.jar
+      layer: common
+      environment: {client: required, server: unsupported}
+  resources.zip:
+    - destination: resourcepacks/renderer-assets.zip
+      layer: common
+      environment: {client: required, server: unsupported}
+```
+
+Each file can have several placements. Layers are `common`, `common-override`,
+`client`, or `server`; destinations are relative to that layer. A side requirement
+is `required`, `unsupported`, or an optional choice such as
+`{optional: extra-art, default-enabled: false, description: Extra artwork}`.
+The top-level environment declares the dependency's participation; individual files
+retain their own requirements. Required companions cannot be omitted. Unknown filenames,
+unsafe paths, conflicting participation and publication collisions fail the batch.
+`--dry-run` resolves and previews the plan without publishing project changes.

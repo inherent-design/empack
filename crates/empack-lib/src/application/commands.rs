@@ -62,6 +62,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
             project_type,
             version_id,
             file_id,
+            file_plan,
         } => {
             engine_host::cli::add(
                 session,
@@ -72,6 +73,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
                     kind: project_type,
                     version_id,
                     file_id,
+                    file_plan,
                 },
             )
             .await

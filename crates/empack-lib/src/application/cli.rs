@@ -1,6 +1,6 @@
 use crate::primitives::ConfigError;
 use clap::{Args, Parser, Subcommand};
-use std::ffi::OsString;
+use std::{ffi::OsString, path::PathBuf};
 
 use super::config::AppConfig;
 
@@ -310,6 +310,10 @@ pub enum Commands {
         /// Pin a specific CurseForge file ID (skips version selection)
         #[arg(long, value_name = "ID")]
         file_id: Option<String>,
+
+        /// YAML file-role destinations and environment choices for one provider project
+        #[arg(long, value_name = "PATH")]
+        file_plan: Option<PathBuf>,
     },
 
     /// Remove projects from the modpack
@@ -483,6 +487,7 @@ mod tests {
                 project_type: None,
                 version_id: None,
                 file_id: None,
+                file_plan: None,
             }
             .execution_order(),
             6
@@ -760,4 +765,22 @@ mod tests {
         assert_eq!(args.targets, vec!["client-full"]);
         assert_eq!(args.downloads_dir.as_deref(), Some("/tmp/from-env"));
     }
+}
+
+#[cfg(test)]
+#[test]
+fn provider_file_plan_flag_selects_an_explicit_document() {
+    let cli = Cli::try_parse_from([
+        "empack",
+        "add",
+        "--platform",
+        "modrinth",
+        "renderer",
+        "--file-plan",
+        "choices.yml",
+    ])
+    .unwrap();
+    assert!(
+        matches!(cli.command, Some(Commands::Add { file_plan: Some(path), .. }) if path == std::path::Path::new("choices.yml"))
+    );
 }

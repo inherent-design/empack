@@ -418,3 +418,44 @@ fn shared_override_placements_survive_both_wire_documents() {
         .unwrap();
     assert_eq!(locked.lock(), project.lock());
 }
+
+#[test]
+fn provider_file_plan_uses_strict_placement_and_requirement_contracts() {
+    let base = json!({"schema":1,"environment":{"client":"required","server":"unsupported"},"files":{
+        "main.jar":[{"destination":"mods/main.jar","layer":"common","environment":{"client":"required","server":"unsupported"}}]
+    }});
+    let mut cases = vec![];
+    let mut invalid = base.clone();
+    invalid["files"]["main.jar"][0]["destination"] = json!("../outside.jar");
+    cases.push(invalid);
+    let mut invalid = base.clone();
+    invalid["files"]["main.jar"][0]["environment"]["typo"] = json!(true);
+    cases.push(invalid);
+    let mut invalid = base.clone();
+    invalid["files"]["main.jar"] = json!([]);
+    cases.push(invalid);
+    let mut invalid = base.clone();
+    invalid["schema"] = json!(2);
+    cases.push(invalid);
+    let mut invalid = base.clone();
+    invalid["files"]["main.jar"][0]["environment"]["client"] =
+        json!({"optional":"x","default-enabled":"false"});
+    cases.push(invalid);
+    for invalid in cases {
+        let error = DocumentCodec
+            .decode_provider_files(&serde_json::to_vec(&invalid).unwrap(), "fixture")
+            .err()
+            .expect("accepted invalid file plan");
+        assert!(error.downcast_ref::<InvalidDocument>().is_some());
+    }
+    assert!(
+        DocumentCodec
+            .decode_provider_files(&serde_json::to_vec(&base).unwrap(), "fixture")
+            .is_ok()
+    );
+    assert!(
+        DocumentCodec
+            .decode_provider_files(b"schema: 1\nschema: 1\n", "duplicate")
+            .is_err()
+    );
+}

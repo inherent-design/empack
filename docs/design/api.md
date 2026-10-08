@@ -1078,3 +1078,19 @@ project-relative paths, independently of installation destinations.
 The CLI currently records remote references and materializes local/member sources.
 It does not yet expose optional remote materialization. World/member choices and
 ambiguous companion placements remain explicit implementation gates.
+
+### Explicit provider file plans
+
+`DocumentCodec::decode_provider_files` reads schema-1 file plans using the same strict
+placement and environment representation as intent and lock documents. It returns
+`ProviderFileSelection`, containing root requirements and a nonempty map from exact
+provider filenames to nonempty placement lists. Input is limited to 1 MiB and 128 files,
+with at most 128 placements per file. Unknown fields and malformed requirements fail.
+
+The CLI's `add --file-plan PATH` reads one explicitly selected regular file through
+bounded native acquisition and retains decode admission during resolution. The plan
+applies to exactly one provider project or identified supplied file. It becomes
+`ProviderFiles::Placed`; catalog resolution checks role membership, required companions
+and participation before the shared addition planner checks ownership and collisions.
+File-plan paths are invocation-relative. A file plan is source intent for this request,
+not approval or filesystem mutation authority. Preview remains read-only.

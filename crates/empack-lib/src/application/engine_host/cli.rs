@@ -23,6 +23,7 @@ use empack_core::{
 };
 use std::{collections::BTreeSet, sync::Arc};
 
+mod file_plan;
 mod files;
 mod import;
 mod synchronization;
@@ -39,10 +40,15 @@ pub struct AddOptions {
     pub kind: Option<CliProjectType>,
     pub version_id: Option<String>,
     pub file_id: Option<String>,
+    pub file_plan: Option<PathBuf>,
 }
 impl AddOptions {
     fn pin(&self) -> Result<Option<PinSelector>> {
         ensure!(!self.inputs.is_empty(), "Specify at least one dependency");
+        ensure!(
+            self.file_plan.is_none() || self.inputs.len() == 1,
+            "A file plan requires exactly one provider input"
+        );
         ensure!(
             self.version_id.is_none() || self.file_id.is_none(),
             "--version-id and --file-id select different providers"
@@ -158,6 +164,10 @@ async fn add_with_catalog(
     let preferred = provider(options.platform.as_ref(), pin.as_ref());
     let current = current(session).await?;
     let invocation = session.filesystem().current_dir()?;
+    let file_plan = match &options.file_plan {
+        Some(path) => Some(file_plan::read(session, absolute(&invocation, path)).await?),
+        None => None,
+    };
     let mut inputs = Vec::new();
     for value in &options.inputs {
         session.process().check_cancelled()?;
@@ -174,6 +184,10 @@ async fn add_with_catalog(
                 pin.is_none(),
                 "Provider pins cannot be applied to a direct file"
             );
+            ensure!(
+                file_plan.is_none() || options.platform.is_some(),
+                "A file plan requires provider identification for supplied files"
+            );
             inputs.push(match &options.platform {
                 None => AddHostInput::File(files::input(
                     session,
@@ -185,6 +199,7 @@ async fn add_with_catalog(
                 Some(platform) => AddHostInput::IdentifiedFile {
                     source,
                     kind: options.kind.as_ref().map(kind),
+                    file_plan: file_plan.as_ref().map(|plan| (**plan).clone()),
                     providers: NonEmpty::new(match platform {
                         SearchPlatform::Modrinth => vec![ProviderKind::Modrinth],
                         SearchPlatform::Curseforge => vec![ProviderKind::CurseForge],
@@ -217,9 +232,15 @@ async fn add_with_catalog(
             key: None,
             kind: selected_kind,
             pin: pin.clone(),
-            requirements: required(),
+            requirements: file_plan
+                .as_ref()
+                .map(|plan| plan.requirements.clone())
+                .unwrap_or_else(required),
             folder: None,
-            files: ProviderFiles::Primary,
+            files: file_plan
+                .as_ref()
+                .map(|plan| ProviderFiles::Placed(plan.files.clone()))
+                .unwrap_or_default(),
         }));
     }
     let transport = catalog.configure_acquisition(HttpAcquisition::new()?);

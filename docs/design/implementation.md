@@ -9,7 +9,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
 new route, not full feature completion: worlds, complete adoption
-frontends, companion-file choices, browser assistance and remaining library retirement
+frontends, browser assistance and remaining library retirement
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
@@ -30,7 +30,7 @@ a passing review and line coverage do not change that state by themselves.
 | --- | --- | --- |
 | Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix; headless loader/latest choices are now explicit |
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
-| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | World members and full companion-file choices; explicit provider identification is wired |
+| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | World members and broader live provider parity; explicit file plans and provider identification are wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
 | Adopt observed content | **CLI wired for tracked local files and common-layer providers:** verified document-only acceptance of observed bytes and exact pins | URL/side-layer evidence, missing-lock selection and new untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
@@ -154,6 +154,7 @@ modules remains open.
 | Native exit classification | 15 affected host/classifier tests, 12 executable exit tests and all-feature Clippy passed | Reproduced incorrect transfer status; removed v0.4 classifiers and substring heuristics; native download and invalid-target diagnostics retain typed status |
 | Remote synchronization materialization | 41 affected sync/native CLI/smoke cases and all-feature Clippy passed; rebuilt executable passed all 16 offline smoke cases | Bad remote bytes publish nothing; pins and lock bytes stay unchanged; previews do not download; supplied references cannot override local sources |
 | Source lifetime correction | 87 affected add/remove/sync/verification cases and all-feature Clippy passed | Reproduced source deletion before fixing it; moved/removed placements retain shared sources, conflicting replacement fails before publication |
+| Explicit provider file plans | 62 affected CLI/document/provider/native-command tests and all-feature Clippy passed | Required companions, per-role destinations, optional participation, strict bounded input, preview preservation and two unchanged syncs |
 | Supplied ZIP identification | 86 affected CLI/addition/acquisition/provider tests and all-feature Clippy passed | Reproduced premature type refusal; provider kind now precedes placement, shared archive validation and aggregate remote transfer limits retained; renamed resource pack and two unchanged syncs |
 | Native build/restricted fixture retirement | Six strict build E2E cases, two strict restricted-build cases, 22 CLI/archive tests and all-feature Clippy passed | Removed legacy config/archive fixture dependencies and unused CLI conversions; initial broad filter also exposed three unported browser cases and two restricted cases now replaced |
 | Execution-time continuation | 107 affected API/build cases and all-feature Clippy passed | Repeated input decisions retain exact recipe and verified files; durable reload completes offline after supplied bytes; reservations release; legacy pipe-warning case passed clean in this run |
