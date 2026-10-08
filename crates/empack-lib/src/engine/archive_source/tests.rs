@@ -214,3 +214,33 @@ fn linked_and_nonportable_directory_members_are_refused_without_panicking() {
         .is_err()
     );
 }
+
+#[test]
+fn whole_archive_verification_checks_crc_and_consumes_one_bounded_read_pass() {
+    let cancel = Cancellation::default();
+    let bytes = archive(&[("one", b"payload"), ("two", b"second")]);
+    let limits = ArchiveLimits {
+        total_bytes: 13,
+        ..Default::default()
+    };
+    let mut zip = ZipContentSource::open(&content(&bytes), limits, &cancel).unwrap();
+    zip.verify_members(&cancel).unwrap();
+    assert!(
+        zip.verify_members(&cancel).is_err(),
+        "another full read cannot reset the allowance"
+    );
+    let mut damaged = bytes.clone();
+    let index = damaged.windows(6).position(|b| b == b"second").unwrap();
+    damaged[index] ^= 1;
+    let mut zip = ZipContentSource::open(&content(&damaged), limits, &cancel).unwrap();
+    assert!(zip.verify_members(&cancel).is_err());
+    assert_eq!(
+        zip.extracted, 13,
+        "CRC failure charges the failed member too"
+    );
+    assert!(zip.verify_members(&cancel).is_err());
+    let mut zip = ZipContentSource::open(&content(&bytes), limits, &cancel).unwrap();
+    cancel.cancel();
+    assert!(zip.verify_members(&cancel).is_err());
+    assert_eq!(zip.extracted, 0);
+}

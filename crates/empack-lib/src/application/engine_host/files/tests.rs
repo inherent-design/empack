@@ -544,3 +544,61 @@ async fn direct_file_resolution_preserves_a_concurrent_document_edit() {
     );
     assert_eq!(snapshot(root.path()), before);
 }
+
+#[tokio::test]
+async fn typed_archives_reject_bad_member_crc_even_when_the_archive_hash_matches() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, bytes) in [
+        ("pack.mcmeta", &b"{}"[..]),
+        ("assets/demo/file.txt", &b"original content"[..]),
+    ] {
+        writer
+            .start_file(
+                name,
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(bytes).unwrap();
+    }
+    let mut bytes = writer.finish().unwrap().into_inner();
+    let offset = {
+        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        zip.by_name("assets/demo/file.txt")
+            .unwrap()
+            .data_start()
+            .unwrap() as usize
+    };
+    bytes[offset] ^= 1;
+    fs::write(root.path().join("source.zip"), &bytes).unwrap();
+    let before = snapshot(root.path());
+    for policy in [
+        FileKindPolicy::RequireRecognized,
+        FileKindPolicy::AcceptUnrecognized,
+    ] {
+        // The independently asserted archive digest matches these damaged container bytes.
+        let mut selected = input(
+            "assets",
+            DirectFileSource::Local("source.zip".into()),
+            &bytes,
+            ContentKind::ResourcePack,
+            "resourcepacks/assets.zip",
+        );
+        selected.kind_policy = policy;
+        assert!(
+            add(
+                root.path(),
+                vec![selected],
+                true,
+                false,
+                DirectFileLimits::default()
+            )
+            .await
+            .is_err(),
+            "member integrity must be checked independently of the outer archive digest"
+        );
+        assert_eq!(snapshot(root.path()), before);
+    }
+}

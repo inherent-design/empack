@@ -190,7 +190,9 @@ transient; separately declared credential-free HTTPS origins become durable inte
 All HTTP files share one byte/deadline allowance. The overall byte allowance also
 bounds the combined local/downloaded inventory. No successful subset is returned.
 
-Typed ZIP/JAR inputs receive bounded archive structure and layout checks. Recognized
+Typed ZIP/JAR inputs receive bounded archive structure, member CRC and layout checks.
+Every member is decoded under the cumulative expanded-byte allowance before addition;
+matching the outer archive digest cannot substitute for valid member data. Recognized
 mod, resource-pack, datapack and shader layouts support the selected kind; unrecognized
 layouts require `FileKindPolicy::AcceptUnrecognized`. These markers do not establish
 game compatibility or provider ownership. Unsafe archive paths remain errors under

@@ -113,6 +113,42 @@ impl ZipContentSource {
     pub fn files(&self) -> impl Iterator<Item = (&PortableRelPath, &ArchiveMember)> {
         self.files.iter()
     }
+    /// Read every member through the decoder and CRC verifier without extracting to disk.
+    /// These reads share the extraction allowance; an error cannot reset consumed work.
+    pub fn verify_members(&mut self, cancel: &Cancellation) -> Result<()> {
+        for member in self.files.values() {
+            cancel.check()?;
+            ensure!(
+                member.bytes <= self.limits.total_bytes.saturating_sub(self.extracted),
+                "Source archive verification allowance exhausted"
+            );
+            let mut entry = self.archive.by_index(member.index)?;
+            let mut input = CountedRead {
+                input: &mut entry,
+                count: 0,
+            };
+            let result = super::io::copy_bounded(&mut input, &mut io::sink(), member.bytes, cancel);
+            let charged = if result.is_err() {
+                input.count.max(member.bytes)
+            } else {
+                input.count
+            };
+            self.extracted = self
+                .extracted
+                .checked_add(charged)
+                .context("Source archive verified-size overflow")?;
+            ensure!(
+                self.extracted <= self.limits.total_bytes,
+                "Source archive exceeds actual verification allowance"
+            );
+            let (_, bytes) = result?;
+            ensure!(
+                bytes == member.bytes,
+                "Source member size differs from its directory record"
+            );
+        }
+        Ok(())
+    }
     /// Actual reads, including failed attempts, consume the extraction allowance. A member is
     /// usable only after CRC, all source declarations and size checks pass in private storage.
     pub fn acquire(

@@ -181,10 +181,11 @@ impl FileAddition {
                 let archive = limits.archive;
                 let worker = scope.spawn_blocking(ResourceRequest {
                     jobs: 1, open_files: 2,
-                    memory_bytes: (archive.entries as u64).checked_mul(2048).context("Archive estimate overflow")?,
+                    memory_bytes: (archive.entries as u64).checked_mul(2048).and_then(|bytes| bytes.checked_add(128 << 10)).context("Archive estimate overflow")?,
                     ..Default::default()
                 }, ResourceRequest::default(), move |cancel| {
-                    let archive = ZipContentSource::open(&source, archive, &cancel)?;
+                    let mut archive = ZipContentSource::open(&source, archive, &cancel)?;
+                    archive.verify_members(&cancel)?;
                     let mut pack = false;
                     let mut data = false;
                     let mut assets = false;

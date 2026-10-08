@@ -1409,3 +1409,21 @@ The CLI remains on its existing path until coordinated parity verifies. Provider
 identification/representation selection, world archive interpretation, mixed provider/direct
 batches and automatic synchronization still need host composition. This change does not
 claim those features are complete or remove their existing CLI implementations.
+
+## Direct archive member verification
+
+At `7857098`, the frozen combined revision passed all 1,947 default tests and eleven
+doctests without pipe warnings; 124 opt-in tests were skipped. PR CI also passed lint,
+coverage and native Linux tests at that revision; the other native jobs were still running
+when recorded. These results predate the following correction.
+
+Greptile 115's corrupt-member fixture reproduced despite a matching declared archive hash.
+Typed direct additions now decode every ZIP member and enforce CRC, actual size and the
+cumulative expanded-byte allowance before normalization. Explicit unidentified-kind acceptance
+does not bypass these checks. Verification writes no extracted files, checks cancellation
+between bounded reads and charges failed reads so retries cannot reset their allowance.
+
+All 40 affected archive/import/direct-file tests pass. The final twelve focused tests pass
+serially without the earlier parallel pipe warning. Final all-feature Clippy and Windows
+cross-compilation also pass.
+The last complete suite remains pinned to `7857098`; this correction has targeted evidence.
