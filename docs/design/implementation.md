@@ -8,8 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: provider-owned worlds, complete adoption
-frontends, browser assistance and remaining library retirement
+new route, not full feature completion: provider-owned worlds, browser assistance and remaining library retirement
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
@@ -32,7 +31,7 @@ a passing review and line coverage do not change that state by themselves.
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
 | Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Provider-owned world members and broader live provider parity; direct world groups, explicit file plans and provider identification are wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
-| Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption of declared roots:** verified document-only acceptance of observed bytes and exact pins | New untracked groups |
+| Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption and explicit new source groups:** verified document-only acceptance of observed bytes and exact pins | Broaden live provider/member parity |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
 | Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Broaden runtime, search and multi-file placement matrices; manual acquisition continuation |
 | Build / continue | **CLI wired:** native build and saved recipe continuation | Browser assistance and live target/runtime matrix; execution-time missing inputs retain resumable state |
@@ -119,7 +118,7 @@ re-export. Restricted-import continuation remains open.
 | Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Open verification | Intermittent inherited-pipe warning | Combined cutover and template/runtime checks were clean; subsequent concurrent host subsets reported a retained output pipe despite passing assertions; investigate process retirement before final acceptance |
-| Cutover | Complete adoption frontends and provider-owned world interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
+| Cutover | Provider-owned world interpretation and live adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and manual-input continuation remain open; automatic layout and accepted-game-version policy changes use explicit revalidation |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
 | Cutover | Ordinary cache integration and cleanup | Cache use does not change source evidence; cleanup preserves leases, recovery and saved requests |
@@ -148,12 +147,19 @@ modules remains open.
 
 ## Verification evidence
 
+Explicit new-source adoption: 44 affected CLI/adoption/file-plan tests, eight native
+and executable cases, and all-feature Clippy passed. Real CLI coverage rejects missing
+payloads, preserves previews, creates/restores locks and requires two unchanged syncs.
+Provider fixtures cover exact selectors and supplied-file identification, named side-layer
+copies, missing-copy refusal and no latest query or companion-payload download. The
+parser regression exposed and fixed ignored source flags combined with tracked keys.
+
 First-lock adoption: the CLI refusal reproduced before correction. Then 44 affected
 adoption, observation and synchronization tests passed; the extended invalid-lock and
 symlink regression passed separately, and all-feature Clippy passed. Local members,
 URL content and provider metadata/side-layer identification preserve intent and bytes,
 reject partial selections, and converge through two subsequent syncs. No latest-version
-query is permitted by those provider fixtures. New untracked groups remain open.
+query is permitted by those provider fixtures. Those checks cover declared roots.
 
 Named file roles and tracked sources: 669 affected tests and all-feature Clippy
 passed. A subsequent normalization optimization passed 16 affected tests and

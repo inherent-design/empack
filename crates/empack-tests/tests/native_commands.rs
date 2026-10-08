@@ -390,6 +390,8 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     assert_eq!(project.snapshot(), changed);
     let adopt = || Commands::Adopt {
         dependencies: vec!["fixture".into()],
+        from: vec![],
+        selection: Default::default(),
     };
     execute_command_with_session(adopt(), &project.session(true, true)).await?;
     assert_eq!(project.snapshot(), changed);

@@ -339,7 +339,7 @@ async fn change_with_services(
                 }
             };
             let provider_content = match &provider {
-                Some(provider) if !supplied.is_empty() => Some(identification::content(
+                Some(provider) if !supplied.is_empty() && !adopt => Some(identification::content(
                     &mut scope, provider, supplied, &services, evidence
                 ).await?),
                 _ => None,

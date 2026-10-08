@@ -408,8 +408,17 @@ lock, the CLI requires every authored root in the selection and an exact non-van
 loader version. Direct files retain declared sources and named roles. URL files are
 observed at their declared placements without remote acquisition. Provider selection
 uses authored pins, discovered backend metadata, or explicit placement byte identification.
-Search roots require a canonical identity before adoption. Newly selected untracked
-file groups still need frontend choices.
+Search roots require a canonical identity before adoption.
+
+`adopt --from INPUT...` reuses add's source classification and explicit file-plan parser
+for newly selected installed groups. Provider selectors require exact pins; supplied local
+files can establish a pin through provider byte identification. The latter retains provider
+assertions without fetching companion payloads: native adoption verifies each declared
+placement directly. Direct URL inputs observe the selected installed destination and
+retain their URL identity without downloading replacement content. Sources and tracked
+logical keys are separate selection modes. Missing bytes, disagreement across copies,
+conflicting intent and unsupported kinds reject the complete request. No force flag or
+implicit ownership conversion belongs to this operation.
 
 `AdoptObservedRequest` supplies a resolved group describing selected files already
 present in a project. Preparation verifies their original digest, size and

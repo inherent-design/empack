@@ -1490,3 +1490,204 @@ async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement
     );
     latest.assert_async().await;
 }
+
+#[tokio::test]
+async fn new_adoption_inputs_verify_installed_bytes_without_adding_or_downloading_payloads() {
+    use std::io::Write;
+    for missing_lock in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        if missing_lock {
+            fs::remove_file(root.path().join("project/empack.lock")).unwrap();
+        }
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        archive
+            .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive
+            .write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
+            .unwrap();
+        let bytes = archive.finish().unwrap().into_inner();
+        fs::write(root.path().join("fixture.jar"), &bytes).unwrap();
+        fs::create_dir_all(root.path().join("project/pack/mods")).unwrap();
+        fs::write(root.path().join("project/pack/mods/fixture.jar"), b"wrong").unwrap();
+        fs::write(root.path().join("project/pack/mods/remote.jar"), &bytes).unwrap();
+        let host = root.path();
+        let adopt = |dry| async move {
+            let mut selected = options("fixture.jar");
+            selected.platform = None;
+            selected.version_id = None;
+            selected
+                .inputs
+                .push("https://example.invalid/remote.jar".into());
+            selected_with_catalog(
+                &session(host, dry),
+                selected,
+                ProviderCatalog::for_loopback_tests("http://127.0.0.1:9", None),
+                InputOperation::Adopt,
+            )
+            .await
+        };
+        let before = super::super::tests::snapshot(root.path());
+        assert!(adopt(false).await.is_err());
+        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        fs::write(root.path().join("project/pack/mods/fixture.jar"), &bytes).unwrap();
+        let before = super::super::tests::snapshot(root.path());
+        adopt(true).await.unwrap();
+        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        adopt(false).await.unwrap();
+        let current = project(root.path());
+        assert_eq!(current.intent().roots.len(), 2);
+        assert!(matches!(
+            current.intent().roots[&empack_core::model::DependencyKey::parse("remote").unwrap()]
+                .source,
+            empack_core::model::SourceIntent::Url(_)
+        ));
+        for name in ["fixture.jar", "remote.jar"] {
+            assert_eq!(
+                fs::read(root.path().join("project/pack/mods").join(name)).unwrap(),
+                bytes
+            );
+        }
+        let adopted = super::super::tests::snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            synchronize(&session(root.path(), false), false)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            super::super::tests::snapshot(&root.path().join("project")),
+            adopted
+        );
+        let mut latest = options("renderer");
+        latest.version_id = None;
+        assert!(
+            selected_with_catalog(
+                &session(root.path(), false),
+                latest,
+                ProviderCatalog::for_loopback_tests("http://127.0.0.1:9", None),
+                InputOperation::Adopt
+            )
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("exact --version-id")
+        );
+        assert_eq!(
+            super::super::tests::snapshot(&root.path().join("project")),
+            adopted
+        );
+    }
+}
+
+#[tokio::test]
+async fn new_provider_adoption_reuses_explicit_file_plans_and_rejects_incomplete_copies() {
+    use empack_core::digest::ExpectedDigest;
+    use std::io::Write;
+    for identify in [false, true] {
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        archive
+            .start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive
+            .write_all(br#"{"schemaVersion":1,"id":"renderer","version":"1"}"#)
+            .unwrap();
+        let payload = archive.finish().unwrap().into_inner();
+        let hash = ExpectedDigest::Sha512(Sha512::digest(&payload).into()).hex();
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        let mut server = mockito::Server::new_async().await;
+        for selector in ["renderer", "Root0001"] {
+            server.mock("GET", format!("/project/{selector}").as_str()).with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+        }
+        let version = json!({
+            "id":"RootVer1","project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":payload.len(),"hashes":{"sha512":hash},"url":"https://example.invalid/no-download.jar"}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        });
+        server
+            .mock("GET", "/version/RootVer1")
+            .with_body(version.to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", format!("/version_file/{hash}").as_str())
+            .match_query(mockito::Matcher::Any)
+            .with_body(version.to_string())
+            .create_async()
+            .await;
+        fs::write(root.path().join("renderer.jar"), &payload).unwrap();
+        let latest = server
+            .mock("GET", "/project/Root0001/version")
+            .match_query(mockito::Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+        let environment = json!({"client":"required","server":"unsupported"});
+        fs::write(
+            root.path().join("files.yml"),
+            json!({"schema":1,"environment":environment,"files":{"renderer.jar":[
+                {"destination":"mods/renamed.jar","layer":"client","environment":environment},
+                {"destination":"mods/copy.jar","layer":"client","environment":environment}
+            ]}})
+            .to_string(),
+        )
+        .unwrap();
+        fs::create_dir_all(root.path().join("project/overrides/client/mods")).unwrap();
+        fs::write(
+            root.path()
+                .join("project/overrides/client/mods/renamed.jar"),
+            &payload,
+        )
+        .unwrap();
+        let host = root.path();
+        let endpoint = server.url();
+        let adopt = |dry| {
+            let endpoint = endpoint.clone();
+            async move {
+                let mut selected = options(if identify { "renderer.jar" } else { "renderer" });
+                if identify {
+                    selected.version_id = None;
+                }
+                selected.file_plan = Some("files.yml".into());
+                selected_with_catalog(
+                    &session(host, dry),
+                    selected,
+                    ProviderCatalog::for_loopback_tests(&endpoint, None),
+                    InputOperation::Adopt,
+                )
+                .await
+            }
+        };
+        let incomplete = super::super::tests::snapshot(root.path());
+        assert!(adopt(false).await.is_err());
+        assert_eq!(super::super::tests::snapshot(root.path()), incomplete);
+        fs::write(
+            root.path().join("project/overrides/client/mods/copy.jar"),
+            &payload,
+        )
+        .unwrap();
+        let before = super::super::tests::snapshot(root.path());
+        adopt(true).await.unwrap();
+        assert_eq!(super::super::tests::snapshot(root.path()), before);
+        adopt(false).await.unwrap();
+        let resolved = project(root.path());
+        let selected = resolved.lock().dependencies.values().next().unwrap();
+        assert_eq!(
+            selected.selected.as_ref().unwrap().selection,
+            PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer1").unwrap())
+        );
+        assert_eq!(selected.files.as_slice()[0].placements.as_slice().len(), 2);
+        let committed = super::super::tests::snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            synchronize(&session(root.path(), false), false)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            super::super::tests::snapshot(&root.path().join("project")),
+            committed
+        );
+        latest.assert_async().await;
+    }
+}

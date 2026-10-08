@@ -120,6 +120,12 @@ fn url_provider(input: &str) -> Result<Option<ProviderKind>> {
 async fn current(
     session: &dyn Session,
 ) -> Result<crate::engine::runtime::RetainedOutput<ResolvedProject>> {
+    current_for(session, InputOperation::Add).await
+}
+async fn current_for(
+    session: &dyn Session,
+    operation: InputOperation,
+) -> Result<crate::engine::runtime::RetainedOutput<ResolvedProject>> {
     let (invocation, project) = project_path(session)?;
     let state = state_root(session.config().app_config(), &invocation)?;
     initialize::discover(session, move |mut scope| async move {
@@ -135,9 +141,17 @@ async fn current(
                 ..Default::default()
             },
             move |cancel| {
-                ProjectReader::new(RecoveryReader::new(state))
-                    .capture(&project, &[], SnapshotLimits::default(), &cancel)?
-                    .require_resolved()
+                let snapshot = ProjectReader::new(RecoveryReader::new(state)).capture(
+                    &project,
+                    &[],
+                    SnapshotLimits::default(),
+                    &cancel,
+                )?;
+                if operation == InputOperation::Adopt && snapshot.prior_lock().is_none() {
+                    dependencies::adoption_context(snapshot.intent())
+                } else {
+                    snapshot.require_resolved()
+                }
             },
         )?;
         scope.accept(work.wait().await?)?.transpose()
@@ -161,9 +175,32 @@ async fn add_with_catalog(
     options: AddOptions,
     catalog: ProviderCatalog,
 ) -> Result<()> {
+    selected_with_catalog(session, options, catalog, InputOperation::Add).await
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputOperation {
+    Add,
+    Adopt,
+}
+
+/// Describe new installed content, then use the same native observed-adoption publisher.
+pub async fn adopt_inputs(session: &dyn Session, options: AddOptions) -> Result<()> {
+    let catalog = dependencies::configured_services(session)?.catalog;
+    selected_with_catalog(session, options, catalog, InputOperation::Adopt).await
+}
+async fn selected_with_catalog(
+    session: &dyn Session,
+    options: AddOptions,
+    catalog: ProviderCatalog,
+    operation: InputOperation,
+) -> Result<()> {
+    ensure!(
+        operation != InputOperation::Adopt || (!options.force && !options.download_as_local),
+        "Adoption cannot force updates or convert downloads to local ownership"
+    );
     let pin = options.pin()?;
     let preferred = provider(options.platform.as_ref(), pin.as_ref());
-    let current = current(session).await?;
+    let current = current_for(session, operation).await?;
     let invocation = session.filesystem().current_dir()?;
     let file_plan = match &options.file_plan {
         Some(path) => Some(file_plan::read(session, absolute(&invocation, path)).await?),
@@ -226,6 +263,10 @@ async fn add_with_catalog(
             });
             continue;
         }
+        ensure!(
+            operation != InputOperation::Adopt || pin.is_some(),
+            "New provider adoption needs an exact --version-id/--file-id or a local file for provider identification"
+        );
         let selected_kind = options.kind.as_ref().map(kind);
         let search_text =
             from_url.is_none() && pin.is_none() && value.chars().any(char::is_whitespace);
@@ -258,9 +299,42 @@ async fn add_with_catalog(
                 .unwrap_or_default(),
         }));
     }
+    if operation == InputOperation::Adopt {
+        for input in &mut inputs {
+            if let AddHostInput::File(input) = input {
+                if let DirectFileSource::Download { origins, .. } = &input.source {
+                    let placement = &input.placements.as_slice()[0];
+                    let path = crate::engine::layout::ProjectLayout::path(
+                        &empack_core::files::ManagedPath::Content {
+                            layer: placement.layer,
+                            path: placement.destination.relative().clone(),
+                        },
+                    )?;
+                    let (_, project) = project_path(session)?;
+                    input.source = DirectFileSource::ObservedUrl {
+                        path: project.join(path.as_str()),
+                        origins: origins.clone(),
+                    };
+                }
+            } else if let AddHostInput::IdentifiedFile { source, .. } = input {
+                ensure!(
+                    matches!(source, DirectFileSource::Local(_)),
+                    "Adoption identifies installed local bytes; use a local file instead of a download URL"
+                );
+            }
+        }
+    }
     let transport = catalog.configure_acquisition(HttpAcquisition::new()?);
     let mut limits = DirectFileLimits::default();
     limits.transfer.deadline = Duration::from_secs(session.config().app_config().net_timeout);
+    let services = dependencies::AdditionServices {
+        catalog,
+        transport,
+        files: limits,
+    };
+    if operation == InputOperation::Adopt {
+        return dependencies::adopt_with_services(session, NonEmpty::new(inputs)?, services).await;
+    }
     dependencies::add_with_services(
         session,
         NonEmpty::new(inputs)?,
@@ -271,11 +345,7 @@ async fn add_with_catalog(
         } else {
             ExistingDependencyPolicy::RejectExisting
         },
-        dependencies::AdditionServices {
-            catalog,
-            transport,
-            files: limits,
-        },
+        services,
     )
     .await
 }

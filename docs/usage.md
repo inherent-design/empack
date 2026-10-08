@@ -98,7 +98,21 @@ root declared in `empack.yml`. Each placement must already contain the verified 
 adoption creates the first lock without installing payloads. Non-vanilla runtimes need
 an exact authored loader version. Provider roots need an authored pin, exact observed
 metadata, or explicit placements that provider byte identification can verify. A malformed
-or stale existing lock remains an error. Newly selected untracked groups still need frontend support.
+or stale existing lock remains an error.
+
+Use `empack adopt --from INPUT...` to describe content that is already installed but
+not tracked. Local files use the same content-type and folder rules as add. A direct
+HTTPS URL records that origin while verifying bytes at the expected installed destination;
+it does not download a replacement. Provider selectors require `--version-id` or
+`--file-id`. A supplied local file with `--platform` can instead establish the provider
+selection through byte identification. `--file-plan` preserves explicit provider roles,
+renamed destinations, side layers and optional requirements. Missing or differing copies
+fail the whole operation. Source options cannot be combined with tracked-key selection.
+
+```sh
+empack adopt --from pack/mods/example.jar --dry-run
+empack adopt --from renderer --platform modrinth --version-id VERSION --file-plan files.yml --yes
+```
 
 Use `empack clean continuation --dry-run` to inspect saved-build cleanup, then
 `empack clean continuation --yes` to discard that project's recipe. This works for

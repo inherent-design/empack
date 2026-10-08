@@ -4,6 +4,26 @@ use std::{ffi::OsString, path::PathBuf};
 
 use super::config::AppConfig;
 
+/// Explicit source decisions for adopting previously untracked installed content.
+#[derive(Debug, Clone, Args, Default)]
+pub struct AdoptionSourceArgs {
+    /// Provider for a project selector or supplied-file identification
+    #[arg(long, requires = "from", conflicts_with = "dependencies")]
+    pub platform: Option<SearchPlatform>,
+    /// Kind of the selected installed content
+    #[arg(long = "type", requires = "from", conflicts_with = "dependencies")]
+    pub project_type: Option<CliProjectType>,
+    /// Exact Modrinth selection; adoption never requests latest
+    #[arg(long, requires = "from", conflicts_with_all = ["dependencies", "file_id"])]
+    pub version_id: Option<String>,
+    /// Exact CurseForge selection; adoption never requests latest
+    #[arg(long, requires = "from", conflicts_with_all = ["dependencies", "version_id"])]
+    pub file_id: Option<String>,
+    /// Explicit provider file roles, placements and environment requirements
+    #[arg(long, requires = "from", conflicts_with = "dependencies")]
+    pub file_plan: Option<PathBuf>,
+}
+
 /// empack CLI - Minecraft modpack management
 #[derive(Debug, Clone, Parser, Default)]
 #[command(name = "empack")]
@@ -269,9 +289,14 @@ pub enum Commands {
 
     /// Accept verified installed changes without rewriting payloads
     Adopt {
-        /// Exact logical keys of installed provider or tracked local content
-        #[arg(required = true)]
+        /// Exact logical keys already declared or tracked by the project
+        #[arg(required_unless_present = "from", conflicts_with = "from")]
         dependencies: Vec<String>,
+        /// Describe new installed content using local files, URLs, or provider selectors
+        #[arg(long, num_args = 1.., conflicts_with = "dependencies")]
+        from: Vec<String>,
+        #[command(flatten)]
+        selection: AdoptionSourceArgs,
     },
 
     /// Build modpack targets
@@ -788,4 +813,43 @@ fn provider_file_plan_flag_selects_an_explicit_document() {
     assert!(
         matches!(cli.command, Some(Commands::Add { file_plan: Some(path), .. }) if path == std::path::Path::new("choices.yml"))
     );
+}
+
+#[test]
+fn adoption_source_choices_are_explicit_and_cannot_mix_with_tracked_keys() {
+    for args in [
+        vec!["empack", "adopt", "--from", "project/pack/mods/example.jar"],
+        vec![
+            "empack",
+            "adopt",
+            "--from",
+            "renderer",
+            "--platform",
+            "modrinth",
+            "--version-id",
+            "RootVer1",
+            "--file-plan",
+            "files.yml",
+        ],
+        vec!["empack", "adopt", "tracked-key"],
+    ] {
+        Cli::try_parse_from(args).unwrap();
+    }
+    for args in [
+        vec!["empack", "adopt"],
+        vec!["empack", "adopt", "tracked-key", "--from", "other.jar"],
+        vec!["empack", "adopt", "tracked-key", "--platform", "modrinth"],
+        vec![
+            "empack",
+            "adopt",
+            "--from",
+            "renderer",
+            "--version-id",
+            "RootVer1",
+            "--file-id",
+            "123",
+        ],
+    ] {
+        assert!(Cli::try_parse_from(&args).is_err(), "accepted {args:?}");
+    }
 }

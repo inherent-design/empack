@@ -566,3 +566,52 @@ fn smoke_recovery_inspection_needs_no_pack_and_creates_no_state() {
     assert!(!project.dir().join("absent-project").exists());
     assert!(!state.exists());
 }
+
+#[test]
+fn smoke_adopt_sources_and_restore_missing_lock_without_installing_files() {
+    let project = initialized();
+    jar(&project, "fixture.jar");
+    let before = snapshot(&project);
+    command(&project)
+        .args(["adopt", "--from", "fixture.jar", "--yes"])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&project), before);
+    fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
+    fs::copy(
+        project.dir().join("fixture.jar"),
+        project.dir().join("pack/mods/fixture.jar"),
+    )
+    .unwrap();
+    let before = snapshot(&project);
+    command(&project)
+        .args(["adopt", "--from", "fixture.jar", "--dry-run", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&project), before);
+    command(&project)
+        .args(["adopt", "--from", "fixture.jar", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(read_project(&project).intent().roots.len(), 1);
+    fs::remove_file(project.dir().join("empack.lock")).unwrap();
+    let before = snapshot(&project);
+    command(&project)
+        .args(["adopt", "fixture", "--dry-run", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&project), before);
+    command(&project)
+        .args(["adopt", "fixture", "--yes"])
+        .assert()
+        .success();
+    let adopted = project_snapshot(&project);
+    for _ in 0..2 {
+        command(&project).args(["sync", "--yes"]).assert().success();
+    }
+    assert_eq!(project_snapshot(&project), adopted);
+    assert_eq!(
+        fs::read(project.dir().join("fixture.jar")).unwrap(),
+        fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap()
+    );
+}

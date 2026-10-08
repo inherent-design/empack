@@ -106,7 +106,42 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             .await
         }
         Commands::Update { dependencies } => engine_host::cli::update(session, dependencies).await,
-        Commands::Adopt { dependencies } => engine_host::cli::adopt(session, dependencies).await,
+        Commands::Adopt {
+            dependencies,
+            from,
+            selection,
+        } => {
+            if from.is_empty() {
+                anyhow::ensure!(
+                    selection.platform.is_none()
+                        && selection.project_type.is_none()
+                        && selection.version_id.is_none()
+                        && selection.file_id.is_none()
+                        && selection.file_plan.is_none(),
+                    "Source choices require --from"
+                );
+                engine_host::cli::adopt(session, dependencies).await
+            } else {
+                anyhow::ensure!(
+                    dependencies.is_empty(),
+                    "Choose tracked keys or new source inputs for adoption"
+                );
+                engine_host::cli::adopt_inputs(
+                    session,
+                    engine_host::cli::AddOptions {
+                        inputs: from,
+                        force: false,
+                        platform: selection.platform,
+                        kind: selection.project_type,
+                        version_id: selection.version_id,
+                        file_id: selection.file_id,
+                        file_plan: selection.file_plan,
+                        download_as_local: false,
+                    },
+                )
+                .await
+            }
+        }
         Commands::Remove {
             mods,
             deps,
