@@ -603,7 +603,7 @@ async fn derived_build_choices_reject_changed_intent_before_preparation() {
     .unwrap();
     let before = snapshot(root.path());
     let owner = engine(&host.config_provider.app_config, root.path()).unwrap();
-    let result = build_with_engine(&host, &owner, project, old_request, None).await;
+    let result = build_with_engine(&host, &owner, project, old_request, None, None).await;
     owner.shutdown().await;
     assert!(
         result.is_err(),
@@ -628,7 +628,7 @@ async fn derived_build_choices_allow_comment_edits_without_changing_the_output_p
     raw.extend_from_slice(b"\n# A comment changes bytes but not build choices\n");
     fs::write(project.join("empack.yml"), &raw).unwrap();
     let owner = engine(&host.config_provider.app_config, root.path()).unwrap();
-    build_with_engine(&host, &owner, project.clone(), selected, None)
+    build_with_engine(&host, &owner, project.clone(), selected, None, None)
         .await
         .unwrap();
     owner.shutdown().await;

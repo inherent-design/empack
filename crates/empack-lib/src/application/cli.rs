@@ -231,6 +231,10 @@ pub struct BuildArgs {
     #[arg(long, env = "EMPACK_DOWNLOADS_DIR")]
     pub downloads_dir: Option<String>,
 
+    /// Wait for verified downloads, then present a fresh build plan
+    #[arg(long, value_name = "SECONDS", requires = "downloads_dir", value_parser = clap::value_parser!(u64).range(1..=3600))]
+    pub wait_downloads: Option<u64>,
+
     /// Explicitly associate a local download with a pending filename
     #[arg(
         long = "associate-download",

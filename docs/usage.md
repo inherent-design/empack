@@ -61,6 +61,15 @@ builds. Missing, busy or corrupt cache objects leave the original content obliga
 in place. Cache hits preserve the source's original integrity evidence, including
 MD5 compatibility evidence. `clean cache` uses this same selected root.
 
+For a build waiting on manual content, `--downloads-dir PATH --wait-downloads SECONDS`
+scans the selected directory for at most 1–3600 seconds. The wait starts after approving
+saved continuation state. It accepts renamed files only when their original assertions
+verify, retains new verified inputs, then presents the resulting build plan for approval.
+`--yes` answers both approvals. Timeout or interruption leaves the saved recipe intact;
+`build --continue` resumes it. Replacing the recipe or changing captured project inputs
+stops the wait. Dry runs and declined prompts do not wait or save state. Scans share a
+cumulative byte allowance; unrelated files cannot reset it on each poll.
+
 ## Synchronization and remote content
 
 `empack sync` reconciles authored intent and exact recorded selections. It restores

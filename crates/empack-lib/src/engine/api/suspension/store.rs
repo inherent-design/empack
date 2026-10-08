@@ -7,6 +7,7 @@ use crate::engine::{
     staging::create_temporary,
 };
 use cap_std::fs::{Dir, OpenOptions};
+use sha2::{Digest, Sha256};
 use std::{
     fs::File,
     io::{self, Write},
@@ -146,8 +147,9 @@ pub(super) fn save(
     state: &Path,
     workspace: &WorkspaceSnapshot,
     value: &record::Record,
+    saved: Option<SavedBuildRecord>,
     cancel: &Cancellation,
-) -> Result<bool> {
+) -> Result<(bool, String, [u8; 32])> {
     cancel.check()?;
     workspace
         .root()
@@ -160,12 +162,32 @@ pub(super) fn save(
         Err(error) if missing(&error) => false,
         Err(error) => return Err(error),
     };
+    if let Some(saved) = saved {
+        ensure!(
+            saved.name == name,
+            "Saved build observation selects another project"
+        );
+        let mut current = native::open_file(&directory, &name)
+            .context("Saved build disappeared before retaining new inputs")?;
+        let (content, _) = crate::engine::io::copy_bounded(
+            &mut current,
+            &mut io::sink(),
+            record::MAX_RECORD,
+            cancel,
+        )?;
+        ensure!(
+            content == saved.content,
+            "Saved build changed before retaining new inputs"
+        );
+    }
     let (temporary, mut file) = create_temporary(&directory)?;
     let result = (|| {
+        let mut digest = Sha256::new();
         serde_json::to_writer(
             BoundedWriter {
                 file: &mut file,
                 remaining: record::MAX_RECORD,
+                digest: &mut digest,
             },
             value,
         )?;
@@ -177,7 +199,7 @@ pub(super) fn save(
             .revalidate(workspace.observations(), cancel)?;
         directory.rename(&temporary, &directory, &name)?;
         sync(&directory)?;
-        Ok(replaced)
+        Ok((replaced, name, digest.finalize().into()))
     })();
     if result.is_err() {
         let _ = directory.remove_file(&temporary);
@@ -219,6 +241,7 @@ fn sync(directory: &Dir) -> Result<()> {
 struct BoundedWriter<'a> {
     file: &'a mut File,
     remaining: u64,
+    digest: &'a mut Sha256,
 }
 impl Write for BoundedWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
@@ -227,6 +250,7 @@ impl Write for BoundedWriter<'_> {
         }
         let count = self.file.write(bytes)?;
         self.remaining -= count as u64;
+        self.digest.update(&bytes[..count]);
         Ok(count)
     }
     fn flush(&mut self) -> io::Result<()> {

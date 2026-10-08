@@ -713,3 +713,66 @@ async fn ordinary_cache_hits_do_not_invalidate_saved_content_slots() {
     owner.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn retaining_new_input_requires_the_exact_saved_recipe_observation() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let state = host.path().join("state");
+    let (owner, governor) = engine(state.clone());
+    let receipt = suspend_first(&owner, root.path()).await;
+    let observed = owner
+        .observe_saved_build(root.path().to_owned())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(receipt.saved, observed);
+    let SavedBuildResume::Prepared(resumed) = owner
+        .resume_saved_build(root.path().to_owned())
+        .await
+        .unwrap()
+    else {
+        panic!("saved recipe")
+    };
+    assert_eq!(receipt.saved, resumed.saved);
+    let Preparation::NeedsInput(pending) = resumed.preparation else {
+        panic!("second input remains")
+    };
+    let record = records(&state).pop().unwrap();
+    let mut changed = fs::read(&record).unwrap();
+    changed.push(b' ');
+    fs::write(&record, &changed).unwrap();
+    assert!(
+        owner
+            .extend_saved_build(*pending, receipt.saved)
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(&record).unwrap(), changed);
+    let SavedBuildResume::Prepared(resumed) = owner
+        .resume_saved_build(root.path().to_owned())
+        .await
+        .unwrap()
+    else {
+        panic!("changed recipe is still valid")
+    };
+    let Preparation::NeedsInput(pending) = resumed.preparation else {
+        panic!("second input remains")
+    };
+    let retained = owner
+        .extend_saved_build(*pending, resumed.saved)
+        .await
+        .unwrap();
+    assert_eq!(
+        retained.saved,
+        owner
+            .observe_saved_build(root.path().to_owned())
+            .await
+            .unwrap()
+            .unwrap()
+    );
+    assert!(retained.replaced);
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

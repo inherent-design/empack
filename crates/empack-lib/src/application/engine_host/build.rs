@@ -74,6 +74,16 @@ pub async fn build_with_local_files(
     )
     .await
 }
+mod assistance;
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "Build was not published: supply the displayed missing content before approving a new plan; continuation was saved"
+)]
+struct PendingBuildSaved {
+    saved: crate::engine::api::SavedBuildRecord,
+}
+
 async fn build_with_inputs(
     session: &dyn Session,
     args: &BuildArgs,
@@ -85,6 +95,7 @@ async fn build_with_inputs(
         !args.continue_build && args.associate_downloads.is_empty(),
         "Use the continuation entry point for a saved build and its file associations"
     );
+    assistance::validate(args)?;
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let config = session.config().app_config();
@@ -131,7 +142,15 @@ async fn build_with_inputs(
         .downloads_dir
         .as_ref()
         .map(|path| absolute(&invocation, Path::new(path)));
-    let result = build_with_engine(session, &engine, project, request, downloads).await;
+    let result = build_with_engine(
+        session,
+        &engine,
+        project,
+        request,
+        downloads,
+        args.wait_downloads,
+    )
+    .await;
     engine.shutdown().await;
     result
 }
@@ -164,6 +183,7 @@ pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<(
             && !args.allow_optional_metadata_loss,
         "Continuation uses its saved recipe; targets, archive overrides and clean require a new build"
     );
+    assistance::validate(args)?;
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let engine = configured_engine(session.config().app_config(), &invocation)?;
@@ -198,8 +218,9 @@ pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<(
             .downloads_dir
             .as_ref()
             .map(|path| absolute(&invocation, Path::new(path)));
-        let published = finish_build(session, &engine, prepared, downloads).await?;
-        if published {
+        let (published, cleaned) =
+            assistance::finish(session, &engine, prepared, downloads, args.wait_downloads).await?;
+        if published && !cleaned {
             cancellable(session, engine.discard_saved_build(resumed.saved))
                 .await
                 .context("Build completed, but saved-state cleanup failed")?;
@@ -350,60 +371,27 @@ async fn build_with_engine(
     project: PathBuf,
     request: BuildPreparationRequest,
     downloads: Option<PathBuf>,
+    wait_seconds: Option<u64>,
 ) -> Result<()> {
     let prepared = cancellable(session, engine.prepare(project, request)).await?;
-    finish_build(session, engine, prepared, downloads)
+    assistance::finish(session, engine, prepared, downloads, wait_seconds)
         .await
         .map(|_| ())
 }
-async fn finish_build(
+async fn finish_once(
     session: &dyn Session,
     engine: &Engine,
     prepared: Preparation,
     downloads: Option<PathBuf>,
 ) -> Result<bool> {
-    let prepared = match (prepared, downloads) {
-        (Preparation::NeedsInput(pending), Some(downloads)) => {
-            let view = pending.view().build().context("Missing build preview")?;
-            let evidence = view.request().evidence;
-            let requirements = view
-                .content
-                .iter()
-                .filter(|need| view.unresolved.contains(&need.key))
-                .map(|need| (need.key.clone(), need.expected.clone()))
-                .collect();
-            let found = initialize::discover(session, move |mut scope| async move {
-                discover_downloads(
-                    &mut scope,
-                    vec![downloads],
-                    requirements,
-                    evidence,
-                    DiscoveryLimits::default(),
-                )
-                .await
-            })
-            .await?;
-            let files = found.unique_files();
-            session.display().status().info(&format!(
-                "Download scan: {} verified associations; {} candidates inspected; {} entries skipped",
-                files.len(), found.inspected_files, found.skipped_files
-            ));
-            if found
-                .matches
-                .values()
-                .any(|candidates| candidates.len() > 1)
-            {
-                session.display().status().warning("Different candidate bytes match an obligation; explicit association is required");
-            }
-            drop(found);
-            if files.is_empty() {
-                Preparation::NeedsInput(pending)
-            } else {
-                cancellable(session, engine.resume_with_local_files(*pending, files)).await?
-            }
-        }
-        (prepared, _) => prepared,
-    };
+    let (prepared, _) = assistance::scan(
+        session,
+        engine,
+        prepared,
+        downloads,
+        DiscoveryLimits::default(),
+    )
+    .await?;
     let view = match &prepared {
         Preparation::Ready(value) => value.view(),
         Preparation::NeedsInput(value) => value.view(),
@@ -470,9 +458,7 @@ async fn finish_build(
         }
         let saved = cancellable(session, engine.suspend_build(*pending)).await?;
         session.display().status().info(&format!("Saved pending build with {} verified files; continue after supplying the missing downloads",saved.retained_files));
-        anyhow::bail!(
-            "Build was not published: supply the displayed missing content before approving a new plan; continuation was saved"
-        );
+        return Err(PendingBuildSaved { saved: saved.saved }.into());
     }
     let Preparation::Ready(prepared) = prepared else {
         unreachable!()
@@ -528,8 +514,5 @@ pub(super) async fn save_execution_input(
         "Saved pending build with {} verified files; resume with build --continue",
         saved.retained_files
     ));
-    anyhow::bail!(
-        "Build was not published: {} content obligations need input; continuation was saved",
-        input.len()
-    )
+    Err(PendingBuildSaved { saved: saved.saved }.into())
 }

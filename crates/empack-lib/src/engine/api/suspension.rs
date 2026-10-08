@@ -17,6 +17,8 @@ mod record;
 mod store;
 
 pub struct SuspendedBuildReceipt {
+    /// Exact published recipe observation for later resume and conditional cleanup
+    pub saved: SavedBuildRecord,
     pub retained_files: usize,
     pub retained_bytes: u64,
     pub pending_files: usize,
@@ -33,11 +35,21 @@ pub struct ResumedBuild {
     pub saved: SavedBuildRecord,
 }
 /// Exact read-only observation, not serialized authority. Deletion is a separate host action.
+#[derive(Debug)]
 pub struct SavedBuildRecord {
     owner: Arc<()>,
     name: String,
     content: [u8; 32],
 }
+impl PartialEq for SavedBuildRecord {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.owner, &other.owner)
+            && self.name == other.name
+            && self.content == other.content
+    }
+}
+impl Eq for SavedBuildRecord {}
+
 fn record_memory(bytes: u64) -> Result<u64> {
     bytes
         .checked_mul(8)
@@ -60,6 +72,25 @@ impl Engine {
         &self,
         pending: PreparationContinuation,
     ) -> Result<SuspendedBuildReceipt> {
+        self.suspend_build_selected(pending, None).await
+    }
+    /// Retain newly verified inputs only if the caller's saved recipe is still current.
+    pub async fn extend_saved_build(
+        &self,
+        pending: PreparationContinuation,
+        saved: SavedBuildRecord,
+    ) -> Result<SuspendedBuildReceipt> {
+        ensure!(
+            Arc::ptr_eq(&self.owner, &saved.owner),
+            "Saved build observation belongs to another engine"
+        );
+        self.suspend_build_selected(pending, Some(saved)).await
+    }
+    async fn suspend_build_selected(
+        &self,
+        pending: PreparationContinuation,
+        saved: Option<SavedBuildRecord>,
+    ) -> Result<SuspendedBuildReceipt> {
         ensure!(
             Arc::ptr_eq(&self.owner, &pending.prepared.owner),
             "Continuation belongs to another engine"
@@ -73,11 +104,12 @@ impl Engine {
             _ => unreachable!(),
         });
         let config = self.config.clone();
+        let owner = self.owner.clone();
         let (sender, receiver) = oneshot::channel();
         let mut handle = self
             .preparations
             .start_ephemeral(move |mut scope| async move {
-                let result = suspend(retained, config, &mut scope).await;
+                let result = suspend(retained, config, owner, saved, &mut scope).await;
                 let _ = sender.send(result);
                 Ok(())
             })?;
@@ -305,6 +337,8 @@ impl Engine {
 async fn suspend(
     retained: RetainedOutput<PreparedBuild>,
     config: EngineConfig,
+    owner: Arc<()>,
+    saved: Option<SavedBuildRecord>,
     scope: &mut WorkScope,
 ) -> Result<SuspendedBuildReceipt> {
     let work = scope.spawn_blocking(
@@ -382,10 +416,24 @@ async fn suspend(
     let work = scope.spawn_blocking(
         record_resources(0)?,
         ResourceRequest::default(),
-        move |cancel| store::save(&config.state_root, &build.workspace, &record, &cancel),
+        move |cancel| {
+            store::save(
+                &config.state_root,
+                &build.workspace,
+                &record,
+                saved,
+                &cancel,
+            )
+        },
     )?;
-    let (replaced, _) = scope.accept(work.wait().await?)?.transpose()?.into_parts();
+    let ((replaced, name, content), _) =
+        scope.accept(work.wait().await?)?.transpose()?.into_parts();
     Ok(SuspendedBuildReceipt {
+        saved: SavedBuildRecord {
+            owner,
+            name,
+            content,
+        },
         retained_files,
         retained_bytes,
         pending_files,

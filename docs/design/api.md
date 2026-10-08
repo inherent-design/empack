@@ -1223,3 +1223,18 @@ full caches do not authorize eviction and do not fail otherwise valid execution.
 Cancellation still stops the operation. Cache handles and copied bytes remain charged
 to the operation's resource allowance. This integration currently covers builds;
 other acquisition callers must not be described as cache-backed until wired and tested.
+
+
+### Bound download waiting to its saved recipe
+
+Suspension returns the exact `SavedBuildRecord` written under store coordination.
+The token compares by engine owner, selected native record name and published byte
+digest; it contains no new publication grant. `extend_saved_build` retains newly
+verified inputs only while that exact record still exists. A competing saved recipe
+is preserved and reported, never adopted silently by a background wait. Unchanged
+polls are read-only. Successful completion removes only the record used to reconstruct
+the approved build; cancellation and timeout retain it. The CLI's bounded wait uses
+normal discovery, resume, preview and approval paths, with one cumulative scan-byte
+allowance and a fixed wait deadline. Metadata inspection and cancellation drain their
+owned work before returning; the deadline does not promise preemption of arbitrary
+blocking filesystem calls.
