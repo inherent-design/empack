@@ -1,7 +1,7 @@
 use empack_tests::e2e::{
-    TestProject, assert_locked_minecraft_version, assert_project_initialized,
-    assert_project_loader, assert_project_loader_absent, assert_project_minecraft_version,
-    empack_assert_cmd,
+    TestProject, assert_dist_artifact_suffix, assert_locked_minecraft_version,
+    assert_project_initialized, assert_project_loader, assert_project_loader_absent,
+    assert_project_minecraft_version, empack_assert_cmd,
 };
 use predicates::prelude::*;
 
@@ -143,7 +143,7 @@ macro_rules! e2e_build_target {
             let project = TestProject::initialized("test-pack", "fabric", "1.21.1");
             let output = project
                 .cmd()
-                .args(["build", $target])
+                .args(["--yes", "build", $target])
                 .output()
                 .expect("failed to spawn");
             assert!(
@@ -155,6 +155,37 @@ macro_rules! e2e_build_target {
 
             let dist = project.dir().join("dist");
             assert!(dist.exists(), "dist/ should exist after build {}", $target);
+            let suffix = if $target == "mrpack" {
+                ".mrpack".to_owned()
+            } else {
+                format!("-{}.zip", $target)
+            };
+            let artifact = assert_dist_artifact_suffix(project.dir(), &suffix);
+            let mut archive = zip::ZipArchive::new(std::fs::File::open(artifact).unwrap()).unwrap();
+            if $target == "mrpack" {
+                let manifest: serde_json::Value =
+                    serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap())
+                        .unwrap();
+                assert_eq!(manifest["dependencies"]["minecraft"], "1.21.1");
+                assert_eq!(manifest["name"], "test-pack");
+            } else {
+                for member in [
+                    "pack/pack.toml",
+                    "packwiz-installer.jar",
+                    "packwiz-installer-bootstrap.jar",
+                ] {
+                    let destination = if $target == "client" {
+                        format!(".minecraft/{member}")
+                    } else {
+                        member.to_owned()
+                    };
+                    assert!(
+                        archive.by_name(&destination).unwrap().size() > 0,
+                        "missing output bytes for {}",
+                        member
+                    );
+                }
+            }
         }
     };
 }

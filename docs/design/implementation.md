@@ -252,6 +252,8 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Native live fixture cutover | Six strict executable cases and all-feature Clippy passed | Three build targets inspect exported bytes; live Modrinth import preserves documents across two syncs and re-export verifies hashes and sizes |
+| `773c4ad` strict baseline | 81 executable cases: 73 passed, eight failed; 31 nonmatching tests excluded | Five stale-fixture failures corrected in the next row; three restricted CurseForge import cases still require durable continuation; no missing-prerequisite skips accepted |
 | Display ownership | Reproduced first-session terminal policy leakage; 26 affected tests, concurrent in-process display suite, seven library doctests and all-feature Clippy passed | Removed global display/palette initialization and error-suppression flags; executable boundary renders returned errors |
 | `2ea6a3e` combined candidate | `mise run test`: 898 tests and eight doctests passed; 103 opt-in cases excluded | No inherited-pipe warnings; 151.72 seconds; strict live matrix and coverage remain open |
 | Acquisition cache capabilities | 69 affected acquisition/runtime/build/sync tests, expanded negative regression and all-feature Clippy passed | Read-only preparation does not create storage; approved runtime assets retain original assertions; unknown catalogs remain fresh; corrupt bytes, strict MD5 refusal, failed batches and aggregate/per-request limits covered |
