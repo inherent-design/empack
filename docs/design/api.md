@@ -352,8 +352,8 @@ finishes either an absent destination or an already visible retained root, inclu
 a moved root. Its approval binds the parent, selected name, native identity and journal
 revision. It refuses a new occupant or progress since preparation. Creation has no
 restore action: deleting a project root requires separate authority. Recovery preview
-preserves journal scratch; only approved execution cleans it. Durable continuation
-and the remaining CLI composition remain unfinished.
+preserves journal scratch; only approved execution cleans it. The CLI exposes recovery inspection and approved execution. Build, import and sync
+continuations retain their own source-bound records and require fresh approval on resume.
 
 `SynchronizationCandidate::prepare` rebinds authoring-only edits to the recorded
 resolution without selecting newer files. It preserves all exact selections, original

@@ -1,6 +1,6 @@
 # v0.5 delivery ledger
 
-Combined baseline: `b076760`, 2026-10-08. Target: **v0.5.0-alpha.1**.
+Combined baseline: `b076760`; latest default suite: `b3b17e8`, 2026-10-08. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full release validation: remaining resolution conformance and combined live/platform acceptance still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
+new route, not full release validation: curated import/build acceptance, final platform checks and review remain open. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
 ## Delivery states
@@ -132,7 +132,7 @@ re-export. Restricted imports retain exact source bytes and verified association
 | --- | --- | --- |
 | Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
-| Open verification | Intermittent inherited-pipe warning | Host Nextest upgraded from 0.9.124 to 0.9.148 after identifying its documented macOS capture-pipe fix; 226 affected tests pass without warnings; final combined acceptance remains required |
+| Verified | Intermittent inherited-pipe warning | Host Nextest upgraded to 0.9.148; both subsequent combined default runs passed without inherited-pipe warnings |
 | Cutover | Broader live world/update/adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Implemented | Synchronization resolution and manual acquisition | Authored per-file placements preserve companion roles and optional choices; missing required companions reject publication; exact manual-input continuation, layout and accepted-game-version revalidation are wired |
 | Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
@@ -176,26 +176,9 @@ and an obsolete smoke driver. The parser regression reproduced before correction
 13 import tests and Clippy pass with omitted flags treated as required and explicit
 null/type errors rejected. The driver now uses native import continuation, isolated
 state/cache roots, exact supplied inputs, two no-op syncs and verified full-client
-archives. Its five offline contracts pass. The new live curated run and final combined
-acceptance remain open; the earlier frozen results do not cover these corrections.
-
-
-At `a96d2bc`, the default combined run passed **912 tests and eight doctests**
-in 171.45 seconds; 103 opt-in cases were excluded. This does not establish live/platform
-acceptance or acceptance of subsequent changes. Synchronization continuation passed 91 affected CLI, executable smoke, import-record,
-cleanup and recorded-sync tests, plus all-target/all-feature Clippy. The executable
-was rebuilt before the final run. Tests cover repeated inputs across restart, wrong
-bytes, symlinks, stale previews, exact cleanup and two unchanged subsequent syncs.
-The cache-admission issue reported against `5fe32bc` reproduced with no spare inventory
-memory. Optional inventory/copy/writer capacity exhaustion now skips caching without
-consuming the prepared mutation. Cancellation, closed admission and byte-verification
-failures still fail. The correction passed 49 affected runtime, mutation and store tests
-and all-target/all-feature Clippy; it has not received final combined acceptance.
-
-Restricted import/provider cache lookup reproduced the missing-hit refusal, then passed
-50 affected acquisition/import/provider tests and all-feature Clippy. Compatibility hits
-preserve MD5 evidence; strict-source policy, equal-length corruption and aggregate limits
-remain enforced. Final same-head executable/live acceptance remains open.
+archives. Its six offline contracts pass. At `b3b17e8`, all 929 default Rust tests and eight
+doctests also passed. The new live curated run and final combined acceptance remain
+open; the earlier frozen results do not cover these corrections.
 
 ## Storage ownership inventory
 
@@ -211,78 +194,6 @@ Unused v0.4 bin/JAR/version/HTTP/packwiz cache-path APIs and their exclusive tes
 removed. They had no runtime callers. Installer JARs remain supported through verified
 native acquisition and the shared content cache; distribution packwiz metadata remains
 part of the build formats.
-
-Retained-input cleanup: 48 affected cleanup/suspension tests, the rebuilt executable
-manual-sync lifecycle test and all-target/all-feature Clippy passed. Tests exercise
-preview preservation, pending and unknown records, active save exclusion, record and
-blob changes after preparation, active private leases and unrelated recovery data.
-This is targeted evidence after `e24dfc4`, not a new combined release-validation run.
-
-Dependency batch API: 78 affected addition/cache tests passed, followed by six focused
-component/API tests after tightening alias footprints and moving graph analysis into the
-admitted worker. Coverage includes default refusal, partial addition/update receipts,
-connected failures, declined preparation, stale approval and unchanged subsequent sync.
-The CLI adapter subsequently passed 26 affected tests, two rebuilt executable partial-batch
-cases and all-target/all-feature Clippy. Executable checks cover default refusal, preview,
-preserved existing content and unowned directories, nonzero partial status, repeated sync
-and an unchanged explicit batch update. Source resolution still precedes grouping.
-
-Provider world document contracts now distinguish the exact provider archive, its original
-source assertions, extracted member observations and stable destination roots. Private
-extraction evidence binds a member to a verified archive without turning an observed
-member hash into a provider assertion. Codec and extraction tests cover round trips,
-foreign selections, invalid roots, altered member declarations, wrong members and weaker
-archive evidence. This establishes the representation; later slices below wire acquisition and the initial
-command lifecycle. The representation change passed 38 affected
-model/document/archive tests and all-target/all-feature Clippy.
-
-World-member build acquisition now refreshes the exact archive role, shares one transfer
-among its members and extracts through a bounded reader. Strong-source builds require
-verified archive extraction even when installed member bytes already match their recorded
-observations. Cached member bytes alone do not supply archive permissions or source proof.
-Thirty affected build/acquisition/API tests passed; focused tests also cover one catalog
-lookup, changed source/member bytes, weaker evidence, expansion limits and actual mrpack
-contents. Provider addition is covered by the next implementation slice.
-
-Provider-world addition now returns an archive-interpretation phase before any publishable
-group. The shared world reader verifies all members, retains exact provider ownership and
-publishes them through the normal addition path. Recorded sync verifies installed members;
-update and adoption select the archive rather than looking up individual member names.
-The host lifecycle test covers unchanged preview, add, two no-op syncs, unchanged update,
-adoption, actual client archive bytes, removal and subsequent sync. Removal preserves an
-untracked neighbor. The slice passed 122 affected core/host/addition/sync tests and
-all-target/all-feature Clippy. The subsequent slice below covers changed versions and
-supplied/restricted inputs.
-
-Provider-world input completion adds identified local archives and restricted-source cache
-lookup, retaining original archive assertions. Tests reject mismatched input, missing
-input, exhausted byte budgets and MD5-only strong verification. Host tests exercise
-unpin → no-upgrade sync → changed-version update, renamed source archives, changed member
-inventories, stable destination roots, supplied-file identification and fresh-resolution
-sync previews. A seeded archive-cache fixture reproduced a missing cache adapter in CLI
-selector preparation; that path now attaches verified cache lookup. This slice passed
-60 affected tests and all-target/all-feature Clippy. These are deterministic fixtures,
-not live-provider acceptance.
-
-Provider-world pack imports now use the shared bounded member reader before returning
-an import candidate. `init --world-folder` chooses the parent destination explicitly.
-Native fixtures verify preview preservation, restricted supplied bytes, source MD5
-retention, two unchanged syncs and actual mrpack member bytes; ambiguous world roots,
-wrong supplied bytes and missing destinations leave the whole project untouched.
-The affected import, initialization and publication suites passed 93 tests and
-all-target/all-feature Clippy.
-
-At `3987ba6`, default test binaries passed 927 tests (103 opt-in excluded). The strict
-live run passed 75 of 81; six acquisition-deadline failures occurred with the inherited 30-second default.
-All six passed a diagnostic rerun with an explicit 300-second allowance and two test
-workers. The host default now matches the engine's 300-second phase budget; explicit
-short-deadline tests remain unchanged. The 55 affected configuration/acquisition tests
-and all-feature Clippy pass. A full default-concurrency rerun remains required.
-Doctest compilation overlapped later source changes, so those results are not presented
-as one frozen combined revision.
-
-Combined `d8b790e` validation passed 919 tests and eight doctests, with 103 opt-in cases
-excluded. Live/platform acceptance and fresh coverage remain open.
 
 ## Historical verification evidence
 
