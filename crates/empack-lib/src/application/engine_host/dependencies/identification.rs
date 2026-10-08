@@ -47,6 +47,9 @@ pub(super) async fn resolve(
     for (index, input) in inputs.iter().enumerate() {
         let alternatives = match &input.source {
             DirectFileSource::Local(_) => continue,
+            DirectFileSource::ObservedUrl { .. } => {
+                anyhow::bail!("Observed URL content cannot become implicit provider identification")
+            }
             DirectFileSource::Download {
                 origins,
                 alternatives,

@@ -32,7 +32,7 @@ a passing review and line coverage do not change that state by themselves.
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
 | Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Provider-owned world members and broader live provider parity; direct world groups, explicit file plans and provider identification are wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
-| Adopt observed content | **CLI wired for tracked local files and common-layer providers:** verified document-only acceptance of observed bytes and exact pins | URL/side-layer evidence, missing-lock selection and new untracked groups |
+| Adopt observed content | **CLI wired for tracked local/member files, URL files and common-layer providers:** verified document-only acceptance of observed bytes and exact pins | Provider side-layer evidence, missing-lock selection and new untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
 | Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Broaden runtime, search and multi-file placement matrices; manual acquisition continuation |
 | Build / continue | **CLI wired:** native build and saved recipe continuation | Browser assistance and live target/runtime matrix; execution-time missing inputs retain resumable state |
@@ -146,6 +146,11 @@ The unused legacy removal planner, slug-based dependency graph and obsolete mock
 modules remains open.
 
 ## Verification evidence
+
+Tracked URL adoption: 59 affected tests and all-feature Clippy passed. The regression
+first reproduced the CLI refusal, then verified preserved URL identity, unchanged
+payloads, side placements, read-only preview, two unchanged syncs, binding authored
+digests and rejection of a selected symlink.
 
 Direct world groups: nine focused tests and all-feature Clippy pass after reproducing
 and correcting retained metadata over-reservation across two archives. Coverage includes

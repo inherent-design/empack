@@ -1130,3 +1130,18 @@ It is required for remote world interpretation and rejected for local or provide
 inputs. Verified archive bytes are interpreted before publication; transient download
 locators do not enter durable documents. Provider-owned worlds require a separate
 member representation and are currently refused before an opaque ZIP can be published.
+
+### Adoption of tracked URL content
+
+`DirectFileSource::ObservedUrl` acquires an explicitly selected installed regular file
+while retaining credential-free durable origins. It is distinct from downloading a URL
+or converting that dependency to local ownership. The adoption CLI derives the observed
+path from the tracked placement and captures it under project-root confinement before
+acquisition. Each declared placement must verify against the proposed observation.
+
+The ordinary adoption planner verifies the installed bytes again and publishes only
+descriptions and index changes. It preserves authored intent, optionality, side layers
+and logical URL identity. Authored digest pins cannot be relaxed by adoption. For an
+unpinned file, accepted local changes become explicit observations with retained
+provenance; they do not authenticate whatever the URL may serve later. Preview changes
+no durable files, and adoption performs no remote payload acquisition.

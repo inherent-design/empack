@@ -87,12 +87,13 @@ content `4`, and interruption `130`. Wrapping an error with operation context do
 not change its status. Incidental words in a diagnostic or imported metadata do not
 select an exit code.
 
-`empack adopt KEY...` accepts installed changes for tracked local files and provider files
-with common-layer metadata. It verifies bytes before changing the lock and leaves payloads
+`empack adopt KEY...` accepts installed changes for tracked local/member files, URL files
+and provider files with common-layer metadata. It verifies bytes before changing the lock and leaves payloads
 untouched. Provider metadata must name the same project and an exact version; adoption
 does not choose the newest release or override an authored pin. Use `--dry-run` to inspect
-the proposed document changes. URL, side-layer and untracked adoption need further frontend
-support.
+the proposed document changes. URL adoption keeps its declared origins and side placements without downloading remote
+bytes; authored content pins remain binding. Provider side-layer and untracked adoption
+need further frontend support.
 
 Use `empack clean continuation --dry-run` to inspect saved-build cleanup, then
 `empack clean continuation --yes` to discard that project's recipe. This works for

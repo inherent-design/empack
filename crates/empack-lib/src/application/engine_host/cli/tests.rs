@@ -1063,3 +1063,177 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
             .all(|dependency| dependency.files.as_slice().len() == 131)
     );
 }
+
+#[tokio::test]
+async fn url_adoption_preserves_origins_and_side_placements_without_remote_acquisition() {
+    use crate::engine::addition::{
+        DirectFileInput, DirectFileSource, FileEvidence, FileKindPolicy,
+    };
+    use empack_core::{
+        model::*,
+        path::InstallDestination,
+        requirements::{Requirement, Requirements},
+    };
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    let download = server
+        .mock("GET", "/original")
+        .with_body("original")
+        .expect(1)
+        .create_async()
+        .await;
+    let services = || dependencies::AdditionServices {
+        catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
+        transport: HttpAcquisition::for_loopback_tests(),
+        files: DirectFileLimits::default(),
+    };
+    let key = DependencyKey::parse("url-config").unwrap();
+    let origins = NonEmpty::new(vec!["https://example.invalid/original".into()]).unwrap();
+    let requirements = Requirements {
+        client: Requirement::Required,
+        server: Requirement::Unsupported,
+    };
+    dependencies::add_with_services(
+        &session(root.path(), false),
+        NonEmpty::new(vec![AddHostInput::File(DirectFileInput {
+            member: None,
+            key: key.clone(),
+            title: "URL config".into(),
+            source: DirectFileSource::Download {
+                origins: origins.clone(),
+                alternatives: NonEmpty::new(vec![format!("{}/original", server.url())]).unwrap(),
+            },
+            evidence: FileEvidence::AcceptObserved,
+            kind: ContentKind::Config,
+            kind_policy: FileKindPolicy::AcceptUnrecognized,
+            requirements: requirements.clone(),
+            placements: NonEmpty::new(vec![Placement {
+                destination: InstallDestination::parse("config/custom.txt").unwrap(),
+                layer: ContentLayer::Client,
+                requirements,
+            }])
+            .unwrap(),
+        })])
+        .unwrap(),
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        ExistingDependencyPolicy::RejectExisting,
+        services(),
+    )
+    .await
+    .unwrap();
+    let payload = root
+        .path()
+        .join("project/overrides/client/config/custom.txt");
+    assert_eq!(fs::read(&payload).unwrap(), b"original");
+    let before = project(root.path());
+    fs::write(&payload, b"changed locally").unwrap();
+    let changed = super::super::tests::snapshot(root.path());
+    update::adopt_with_services(
+        &session(root.path(), true),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), changed);
+    update::adopt_with_services(
+        &session(root.path(), false),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    let after = project(root.path());
+    assert_eq!(after.intent(), before.intent());
+    let dependency = &after.lock().dependencies[&key];
+    assert_eq!(dependency.identity, ResolvedIdentity::Url(key.clone()));
+    assert_eq!(
+        dependency.files.as_slice()[0].acquisition,
+        AcquisitionSpec::Url(origins)
+    );
+    assert_eq!(
+        dependency.files.as_slice()[0].placements,
+        before.lock().dependencies[&key].files.as_slice()[0].placements
+    );
+    assert_ne!(
+        dependency.files.as_slice()[0].expected,
+        before.lock().dependencies[&key].files.as_slice()[0].expected
+    );
+    assert_eq!(fs::read(&payload).unwrap(), b"changed locally");
+    let adopted = super::super::tests::snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        super::super::tests::snapshot(&root.path().join("project")),
+        adopted
+    );
+    // Explicit source pins still bind adoption; accepting local drift cannot silently relax them.
+    let mut intent = after.intent().clone();
+    let mut lock = after.lock().clone();
+    let digest = empack_core::digest::ExpectedDigest::Sha256(
+        *dependency.files.as_slice()[0]
+            .expected
+            .accepted_observation
+            .as_ref()
+            .unwrap()
+            .bytes(),
+    );
+    let digests = empack_core::digest::DigestSet::new(vec![digest]).unwrap();
+    intent.roots.get_mut(&key).unwrap().version = VersionIntent::ContentPinned(digests.clone());
+    let mut files = lock.dependencies[&key].files.as_slice().to_vec();
+    files[0].expected.digests = Some(digests);
+    lock.dependencies.get_mut(&key).unwrap().files = NonEmpty::new(files).unwrap();
+    let wire = DocumentCodec.encode_intent(&intent).unwrap();
+    let decoded = DocumentCodec
+        .decode_intent(&wire, "pinned fixture")
+        .unwrap();
+    lock.intent_revision = decoded.semantic_revision();
+    let pinned = ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap();
+    fs::write(root.path().join("project/empack.yml"), wire).unwrap();
+    fs::write(
+        root.path().join("project/empack.lock"),
+        DocumentCodec.encode_lock(&pinned).unwrap(),
+    )
+    .unwrap();
+    fs::write(&payload, b"conflicts with authored pin").unwrap();
+    let before_failure = super::super::tests::snapshot(root.path());
+    assert!(
+        update::adopt_with_services(
+            &session(root.path(), false),
+            vec![key.as_str().into()],
+            services()
+        )
+        .await
+        .is_err()
+    );
+    assert!(super::super::tests::snapshot(root.path()) == before_failure);
+    #[cfg(unix)]
+    {
+        let outside = root.path().join("outside");
+        fs::write(&outside, b"outside sentinel").unwrap();
+        fs::remove_file(&payload).unwrap();
+        std::os::unix::fs::symlink(&outside, &payload).unwrap();
+        assert!(
+            update::adopt_with_services(
+                &session(root.path(), false),
+                vec![key.as_str().into()],
+                services()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(fs::read(&outside).unwrap(), b"outside sentinel");
+        assert!(
+            fs::symlink_metadata(&payload)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+    download.assert_async().await;
+}

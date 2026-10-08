@@ -59,18 +59,23 @@ pub(super) async fn adopt_with_services(
     .await?;
     let (current, records) = &*captured;
     let mut inputs = selections(current, &project, keys)?.into_vec();
-    ensure!(
-        !inputs.iter().any(|input| matches!(
-            input,
-            AddHostInput::File(DirectFileInput {
-                member: None,
-                source: DirectFileSource::Download { .. },
-                ..
-            })
-        )),
-        "URL adoption requires explicit verified source declarations"
-    );
     for input in &mut inputs {
+        if let AddHostInput::File(input) = input {
+            if let DirectFileSource::Download { origins, .. } = &input.source {
+                let placement = &input.placements.as_slice()[0];
+                let relative = crate::engine::layout::ProjectLayout::path(
+                    &empack_core::files::ManagedPath::Content {
+                        layer: placement.layer,
+                        path: placement.destination.relative().clone(),
+                    },
+                )?;
+                input.source = DirectFileSource::ObservedUrl {
+                    path: project.join(relative.as_str()),
+                    origins: origins.clone(),
+                };
+            }
+            continue;
+        }
         let AddHostInput::Provider(input) = input else {
             continue;
         };

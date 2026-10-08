@@ -25,6 +25,8 @@ pub enum AcquiredFileSource {
         member: empack_core::path::PortableRelPath,
     },
     Url(NonEmpty<String>),
+    /// Explicitly accepted installed bytes; durable ownership remains URL-backed.
+    ObservedUrl(NonEmpty<String>),
 }
 #[derive(Clone)]
 pub enum FileEvidence {
@@ -84,7 +86,9 @@ impl FileAddition {
                     .checked_add(placement.destination.relative().as_str().len())
                     .context("File input size overflow")?;
             }
-            if let AcquiredFileSource::Url(urls) = &input.source {
+            if let AcquiredFileSource::Url(urls) | AcquiredFileSource::ObservedUrl(urls) =
+                &input.source
+            {
                 for url in urls.as_slice() {
                     crate::engine::documents::validate_download_url(url)?;
                     bytes = bytes
@@ -143,8 +147,9 @@ impl FileAddition {
                         .is_none_or(|id| *id == input.file.content.lease().id()),
                 "Acquired file differs from declared content"
             );
-            let refresh_member =
-                input.member.is_some() && matches!(input.source, AcquiredFileSource::Local);
+            let refresh_observation = (input.member.is_some()
+                && matches!(input.source, AcquiredFileSource::Local))
+                || matches!(input.source, AcquiredFileSource::ObservedUrl(_));
             let location = match &input.source {
                 AcquiredFileSource::ArchiveMember { archive, member } => Some(format!(
                     "sha256:{}!/{}",
@@ -180,7 +185,7 @@ impl FileAddition {
                         provenance,
                     )
                 }
-                AcquiredFileSource::Url(urls) => {
+                AcquiredFileSource::Url(urls) | AcquiredFileSource::ObservedUrl(urls) => {
                     ensure!(
                         input.member.is_none(),
                         "Member groups require tracked local sources"
@@ -249,7 +254,7 @@ impl FileAddition {
                 declared_digests: expected.digests.clone(),
                 conversions: vec![],
             };
-            if refresh_member
+            if refresh_observation
                 && let Some(prior) =
                     current
                         .lock()
@@ -268,7 +273,7 @@ impl FileAddition {
                     file_provenance.declared_digests = expected.digests.clone();
                     file_provenance
                         .conversions
-                        .push("Explicit acceptance of changed tracked member bytes".into());
+                        .push("Explicit acceptance of changed tracked bytes".into());
                 }
             }
             let next = LockedDependency {

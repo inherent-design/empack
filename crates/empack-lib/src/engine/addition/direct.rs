@@ -23,6 +23,11 @@ use std::{
 #[derive(Clone)]
 pub enum DirectFileSource {
     Local(PathBuf),
+    /// Observe installed bytes while retaining explicit URL ownership and origin assertions.
+    ObservedUrl {
+        path: PathBuf,
+        origins: NonEmpty<String>,
+    },
     Download {
         origins: NonEmpty<String>,
         alternatives: NonEmpty<String>,
@@ -114,13 +119,15 @@ impl FileAddition {
             );
             let (expected, initial) = expectation(&input.evidence);
             validate_expectation(&expected, limits.transfer.file_bytes, policy, initial)?;
-            if let DirectFileSource::Download { origins, .. } = &input.source {
+            if let DirectFileSource::Download { origins, .. }
+            | DirectFileSource::ObservedUrl { origins, .. } = &input.source
+            {
                 for origin in origins.as_slice() {
                     validate_download_url(origin)?;
                 }
             }
             match &input.source {
-                DirectFileSource::Local(path) => {
+                DirectFileSource::Local(path) | DirectFileSource::ObservedUrl { path, .. } => {
                     ensure!(path.is_absolute(), "Local source must be absolute")
                 }
                 DirectFileSource::Download { alternatives, .. }
@@ -156,7 +163,10 @@ impl FileAddition {
         );
         for input in inputs.into_vec() {
             let (expected, initial) = expectation(&input.evidence);
-            let local = matches!(input.source, DirectFileSource::Local(_));
+            let local = matches!(
+                input.source,
+                DirectFileSource::Local(_) | DirectFileSource::ObservedUrl { .. }
+            );
             let (source, file) = match input.source.clone() {
                 DirectFileSource::Local(source) => (
                     AcquiredFileSource::Local,
@@ -164,6 +174,23 @@ impl FileAddition {
                         scope,
                         LocalFileRequest {
                             source,
+                            expected,
+                            maximum: limits
+                                .transfer
+                                .file_bytes
+                                .min(limits.transfer.transfer_bytes.saturating_sub(total)),
+                            evidence: policy,
+                            initial,
+                        },
+                    )
+                    .await?,
+                ),
+                DirectFileSource::ObservedUrl { path, origins } => (
+                    AcquiredFileSource::ObservedUrl(origins),
+                    acquire_local_file(
+                        scope,
+                        LocalFileRequest {
+                            source: path,
                             expected,
                             maximum: limits
                                 .transfer

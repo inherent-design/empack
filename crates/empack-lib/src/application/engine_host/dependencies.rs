@@ -225,7 +225,9 @@ async fn change_with_services(
                 });
             }
             AddHostInput::File(mut input) => {
-                if let DirectFileSource::Local(path) = &mut input.source {
+                if let DirectFileSource::Local(path) | DirectFileSource::ObservedUrl { path, .. } =
+                    &mut input.source
+                {
                     *path = absolute(&invocation, path);
                 }
                 files.push(input);
