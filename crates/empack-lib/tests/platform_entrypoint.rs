@@ -1,6 +1,6 @@
 use empack_lib::application::{AppConfig, Commands, cli::CliConfig};
+use empack_lib::platform::cache::cache_root;
 use empack_lib::platform::{browser_open_command, config_dir, data_dir, home_dir};
-use empack_lib::platform::{cache::cache_root, packwiz_bin::resolve_packwiz_binary};
 use empack_lib::run_main_loop;
 use std::ffi::OsString;
 use std::future::ready;
@@ -22,14 +22,6 @@ impl EnvVarGuard {
         let previous = std::env::var_os(key);
         unsafe {
             std::env::set_var(key, value);
-        }
-        Self { key, previous }
-    }
-
-    unsafe fn remove(key: &'static str) -> Self {
-        let previous = std::env::var_os(key);
-        unsafe {
-            std::env::remove_var(key);
         }
         Self { key, previous }
     }
@@ -91,31 +83,6 @@ fn clear_cli_env() {
         std::env::remove_var("EMPACK_PACK_VERSION");
         std::env::remove_var("EMPACK_DATAPACK_FOLDER");
         std::env::remove_var("EMPACK_GAME_VERSIONS");
-    }
-}
-
-fn write_executable_script(path: &Path) {
-    #[cfg(target_os = "windows")]
-    {
-        std::fs::copy(std::env::current_exe().expect("current exe"), path).expect("copy exe");
-        return;
-    }
-
-    std::fs::write(path, b"#!/bin/sh\nexit 0\n").expect("write script");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(path).expect("metadata").permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(path, perms).expect("set executable");
-    }
-}
-
-fn packwiz_bin_name() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "packwiz-tx.exe"
-    } else {
-        "packwiz-tx"
     }
 }
 
@@ -227,61 +194,6 @@ fn cache_root_uses_env_override() {
     let _env = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", temp.path()) };
 
     assert_eq!(cache_root().expect("cache root"), temp.path());
-}
-
-#[test]
-fn resolve_packwiz_binary_uses_explicit_env_override() {
-    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-    let temp = tempfile::TempDir::new().expect("temp dir");
-    let override_path = temp.path().join(packwiz_bin_name());
-    write_executable_script(&override_path);
-
-    let _env = unsafe { EnvVarGuard::set("EMPACK_PACKWIZ_BIN", &override_path) };
-    assert_eq!(
-        resolve_packwiz_binary().expect("resolve override"),
-        override_path
-    );
-}
-
-#[test]
-fn resolve_packwiz_binary_uses_path_lookup_before_cache() {
-    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-    let temp = tempfile::TempDir::new().expect("temp dir");
-    let packwiz_bin = temp.path().join(packwiz_bin_name());
-    write_executable_script(&packwiz_bin);
-    let isolated_cache = tempfile::TempDir::new().expect("cache dir");
-
-    let _path = unsafe { EnvVarGuard::set("PATH", temp.path()) };
-    let _cache = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", isolated_cache.path()) };
-    let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
-
-    assert_eq!(
-        resolve_packwiz_binary().expect("resolve from path"),
-        PathBuf::from(packwiz_bin_name())
-    );
-}
-
-#[test]
-fn resolve_packwiz_binary_uses_cached_binary_when_present() {
-    let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-    let temp = tempfile::TempDir::new().expect("temp dir");
-    let cache_dir = temp.path().join("bin").join(format!(
-        "packwiz-tx-{}",
-        empack_lib::platform::packwiz_bin::PACKWIZ_TX_VERSION
-    ));
-    std::fs::create_dir_all(&cache_dir).expect("create cache dir");
-    let cached_bin = cache_dir.join(packwiz_bin_name());
-    write_executable_script(&cached_bin);
-
-    let empty_path = tempfile::TempDir::new().expect("empty path dir");
-    let _path = unsafe { EnvVarGuard::set("PATH", empty_path.path()) };
-    let _cache = unsafe { EnvVarGuard::set("EMPACK_CACHE_DIR", temp.path()) };
-    let _override = unsafe { EnvVarGuard::remove("EMPACK_PACKWIZ_BIN") };
-
-    assert_eq!(
-        resolve_packwiz_binary().expect("resolve cached binary"),
-        cached_bin
-    );
 }
 
 #[tokio::test]

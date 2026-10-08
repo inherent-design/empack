@@ -2,8 +2,9 @@
 
 # empack
 
-empack manages Minecraft packs across Modrinth, CurseForge and local content,
-using packwiz as its backend.
+empack manages Minecraft packs across Modrinth, CurseForge and local content.
+Its native engine reads and writes packwiz metadata and produces verified distributions;
+the CLI does not require the packwiz-tx executable.
 
 The development target is **v0.5.0-alpha.1**: a typed pack engine that separates
 intent, exact resolution, observation, staging, verification and recoverable

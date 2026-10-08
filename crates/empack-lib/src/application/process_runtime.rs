@@ -1,6 +1,6 @@
 //! Child lifetime and pipe drainage share one deadline, including after either stream closes.
 
-use super::session::{ProcessObserver, ProcessOutput, ProcessStream, decode_process_output_chunk};
+use super::session::{ProcessOutput, ProcessStream, decode_process_output_chunk};
 use anyhow::{Context, Result};
 use std::sync::{
     Arc,
@@ -94,30 +94,6 @@ async fn read_stream(
         let _ = sender.try_send((stream, pending));
     }
     Ok(all)
-}
-
-pub(crate) fn execute(
-    command: std::process::Command,
-    timeout: Duration,
-    cancellation: Cancellation,
-    observer: &dyn ProcessObserver,
-) -> Result<ProcessOutput> {
-    cancellation.check()?;
-    let (sender, receiver) = mpsc::sync_channel(32);
-    let worker = std::thread::spawn(move || -> Result<ProcessOutput> {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-        runtime.block_on(execute_async(command, timeout, cancellation, Some(sender)))
-    });
-    for (stream, bytes) in receiver {
-        for line in decode_process_output_chunk(&bytes).lines() {
-            observer.on_line(stream, line.trim_end_matches('\r'));
-        }
-    }
-    worker
-        .join()
-        .map_err(|_| anyhow::anyhow!("Process worker panicked"))?
 }
 
 /// Supervise an owned process on the host runtime. Progress is bounded and nonblocking.

@@ -141,6 +141,9 @@ pub(crate) mod test_support {
     }
 
     impl EnvLock {
+        pub async fn lock_async(&'static self) -> EnvLockGuard<'static> {
+            self.inner.lock().await
+        }
         pub fn lock(&'static self) -> Result<EnvLockGuard<'static>, Infallible> {
             Ok(self.inner.blocking_lock())
         }

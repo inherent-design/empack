@@ -54,8 +54,6 @@ fn e2e_init_from_cobblemon_updated() {
 /// Runtime: 30-120s depending on network conditions.
 #[test]
 fn e2e_init_from_fabulously_optimized() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
     let start = Instant::now();
     let output = empack_cmd(project.dir())
@@ -99,8 +97,6 @@ fn e2e_init_from_fabulously_optimized() {
 /// Runtime: 60-180s depending on network conditions.
 #[test]
 fn e2e_import_and_build_fabulously_optimized() {
-    empack_tests::skip_if_no_packwiz!();
-
     let project = TestProject::new();
 
     let import = empack_cmd(project.dir())

@@ -49,29 +49,17 @@ pub enum ProcessStream {
     Stderr,
 }
 
-/// Receives output on the calling thread. Callbacks must return promptly and must
-/// not block: process deadlines bound the owned child, not user callback execution.
-pub trait ProcessObserver {
-    fn on_line(&self, stream: ProcessStream, line: &str);
-}
-
 pub trait ProcessProvider {
     fn check_cancelled(&self) -> Result<()> {
         Ok(())
     }
 
-    fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput>;
-
-    fn execute_streaming(
+    fn execute(
         &self,
         command: &str,
         args: &[&str],
         working_dir: &Path,
-        observer: &dyn ProcessObserver,
-    ) -> Result<ProcessOutput> {
-        let _ = observer;
-        self.execute(command, args, working_dir)
-    }
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProcessOutput>> + Send>>;
 
     /// Returns the program path if found. Uses platform-appropriate lookup.
     fn find_program(&self, program: &str) -> Option<String>;
@@ -81,7 +69,7 @@ pub trait ConfigProvider {
     fn app_config(&self) -> &AppConfig;
 }
 
-/// Provider trait for archive operations (zip extraction, archive creation)
+/// Host prompts and deliberate selection; no project mutation authority.
 pub trait InteractiveProvider {
     /// Whether this host can obtain a deliberate choice. Defaulted answers are not choices.
     fn can_choose(&self) -> bool {
@@ -328,23 +316,12 @@ impl ProcessProvider for LiveProcessProvider {
         self.cancellation.check()
     }
 
-    fn execute(&self, command: &str, args: &[&str], working_dir: &Path) -> Result<ProcessOutput> {
-        struct NoopProcessObserver;
-
-        impl ProcessObserver for NoopProcessObserver {
-            fn on_line(&self, _stream: ProcessStream, _line: &str) {}
-        }
-
-        self.execute_streaming(command, args, working_dir, &NoopProcessObserver)
-    }
-
-    fn execute_streaming(
+    fn execute(
         &self,
         command: &str,
         args: &[&str],
         working_dir: &Path,
-        observer: &dyn ProcessObserver,
-    ) -> Result<ProcessOutput> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProcessOutput>> + Send>> {
         use std::process::Command;
 
         #[cfg(windows)]
@@ -366,7 +343,12 @@ impl ProcessProvider for LiveProcessProvider {
             cmd.env("PATHEXT", self.effective_pathext());
         }
 
-        super::process_runtime::execute(cmd, process_timeout(), self.cancellation.clone(), observer)
+        Box::pin(super::process_runtime::execute_async(
+            cmd,
+            process_timeout(),
+            self.cancellation.clone(),
+            None,
+        ))
     }
 
     fn find_program(&self, program: &str) -> Option<String> {
@@ -379,14 +361,27 @@ impl ProcessProvider for LiveProcessProvider {
 
         #[cfg(not(windows))]
         {
+            use std::os::unix::fs::PermissionsExt;
             let cwd = std::env::current_dir().ok()?;
-            let output = self.execute("which", &[program], &cwd).ok()?;
-            if output.success {
-                let path = output.stdout.trim().lines().next()?.to_string();
-                if path.is_empty() { None } else { Some(path) }
+            let path = Path::new(program);
+            let candidates = if path.components().count() > 1 || path.is_absolute() {
+                vec![cwd.join(path)]
             } else {
-                None
-            }
+                let search = self
+                    .effective_path()
+                    .unwrap_or_else(|| "/usr/bin:/bin".into());
+                std::env::split_paths(&search)
+                    .map(|directory| cwd.join(directory).join(program))
+                    .collect()
+            };
+            candidates
+                .into_iter()
+                .find(|candidate| {
+                    std::fs::metadata(candidate).is_ok_and(|metadata| {
+                        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+                    })
+                })
+                .map(|path| path.to_string_lossy().into_owned())
         }
     }
 }
@@ -629,6 +624,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn write_empack_boundary(root: &Path) {
         std::fs::create_dir_all(root.join("pack")).expect("create pack dir");
         std::fs::write(root.join("empack.yml"), "name: test-pack\n").expect("write empack.yml");
@@ -639,6 +635,7 @@ mod tests {
         .expect("write pack.toml");
     }
 
+    #[cfg(unix)]
     fn write_state_marker(root: &Path) -> std::path::PathBuf {
         let marker = root.join("operation-evidence");
         std::fs::write(&marker, "active\n").expect("write state marker");
@@ -692,12 +689,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn live_process_provider_execute_and_find_program_work() {
+    #[tokio::test]
+    async fn live_process_provider_execute_and_find_program_work() {
         let provider = LiveProcessProvider::default();
 
         let output = provider
             .execute("rustc", &["--version"], Path::new("."))
+            .await
             .expect("execute rustc");
         assert!(output.success);
         assert!(output.stdout.contains("rustc"));
@@ -709,19 +707,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn live_process_provider_reports_spawn_failure_for_missing_command() {
+    #[tokio::test]
+    async fn live_process_provider_reports_spawn_failure_for_missing_command() {
         let provider = LiveProcessProvider::new();
         let error = provider
             .execute("definitely-not-a-real-program-empack", &[], Path::new("."))
+            .await
             .expect_err("missing command should fail");
 
         assert!(error.to_string().contains("Failed to spawn command"));
     }
 
     #[cfg(unix)]
-    #[test]
-    fn live_process_provider_uses_custom_path_for_execution_and_lookup() {
+    #[tokio::test]
+    async fn live_process_provider_uses_custom_path_for_execution_and_lookup() {
         let temp = TempDir::new().expect("temp dir");
         let command = temp.path().join("hello-tool");
         write_script(&command, "#!/bin/sh\nprintf 'custom path works'\n");
@@ -730,6 +729,7 @@ mod tests {
             LiveProcessProvider::new_for_test(Some(temp.path().to_string_lossy().into_owned()));
         let output = provider
             .execute("hello-tool", &[], temp.path())
+            .await
             .expect("execute custom tool");
 
         assert_eq!(output.stdout, "custom path works");
@@ -742,9 +742,9 @@ mod tests {
     }
 
     #[cfg(windows)]
-    #[test]
-    fn live_process_provider_uses_custom_path_for_execution_and_lookup() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+    #[tokio::test]
+    async fn live_process_provider_uses_custom_path_for_execution_and_lookup() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let temp = TempDir::new().expect("temp dir");
         let command = temp.path().join("hello-tool.cmd");
         write_script(&command, "@echo off\r\necho custom path works\r\n");
@@ -754,6 +754,7 @@ mod tests {
             LiveProcessProvider::new_for_test(Some(temp.path().to_string_lossy().into_owned()));
         let output = provider
             .execute("hello-tool", &[], temp.path())
+            .await
             .expect("execute custom tool");
 
         assert!(output.stdout.contains("custom path works"));
@@ -765,9 +766,9 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn live_process_provider_times_out_with_override() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+    #[tokio::test]
+    async fn live_process_provider_times_out_with_override() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let temp = TempDir::new().expect("temp dir");
         let command = temp.path().join("sleepy");
         write_script(&command, "#!/bin/sh\nsleep 2\n");
@@ -777,6 +778,7 @@ mod tests {
 
         let error = provider
             .execute(command.to_str().expect("command path"), &[], temp.path())
+            .await
             .expect_err("command should time out");
 
         assert!(error.to_string().contains("timed out after 1 seconds"));
@@ -807,9 +809,9 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn subprocess_deadline_covers_closed_and_inherited_pipes() {
-        let _guard = crate::test_support::env_lock().lock().unwrap();
+    #[tokio::test]
+    async fn subprocess_deadline_covers_closed_and_inherited_pipes() {
+        let _guard = crate::test_support::env_lock().lock_async().await;
         let previous = std::env::var_os("EMPACK_PROCESS_TIMEOUT_SECS");
         unsafe {
             std::env::set_var("EMPACK_PROCESS_TIMEOUT_SECS", "1");
@@ -817,7 +819,9 @@ mod tests {
         let mut results = Vec::new();
         for script in ["exec 1>&-; exec 2>&-; sleep 4", "sleep 4 & wait"] {
             let start = std::time::Instant::now();
-            let result = LiveProcessProvider::new().execute("sh", &["-c", script], Path::new("."));
+            let result = LiveProcessProvider::new()
+                .execute("sh", &["-c", script], Path::new("."))
+                .await;
             results.push((result, start.elapsed()));
         }
         unsafe {
@@ -835,8 +839,8 @@ mod tests {
         }
     }
     #[cfg(unix)]
-    #[test]
-    fn cancelling_one_process_preserves_markers_and_other_sessions() {
+    #[tokio::test]
+    async fn cancelling_one_process_preserves_markers_and_other_sessions() {
         let dir = TempDir::new().unwrap();
         write_empack_boundary(dir.path());
         let marker = write_state_marker(dir.path());
@@ -849,7 +853,8 @@ mod tests {
         let start = std::time::Instant::now();
         let result = LiveProcessProvider::new()
             .with_cancellation(cancellation)
-            .execute("sh", &["-c", "sleep 10 & wait"], dir.path());
+            .execute("sh", &["-c", "sleep 10 & wait"], dir.path())
+            .await;
         trigger.join().unwrap();
         assert_eq!(
             crate::application::classify_error(&result.unwrap_err()),
@@ -860,8 +865,37 @@ mod tests {
         assert!(
             LiveProcessProvider::new()
                 .execute("sh", &["-c", "exit 0"], dir.path())
+                .await
                 .unwrap()
                 .success
         );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn program_lookup_checks_files_without_running_a_locator() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = TempDir::new().unwrap();
+        let marker = root.path().join("unexpected");
+        let trap = format!("#!/bin/sh\ntouch '{}'\n", marker.display());
+        write_script(&root.path().join("which"), &trap);
+        write_script(&root.path().join("selected"), "#!/bin/sh\nexit 0\n");
+        let not_executable = root.path().join("data");
+        std::fs::write(&not_executable, "data").unwrap();
+        std::fs::set_permissions(&not_executable, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::create_dir(root.path().join("directory")).unwrap();
+        let provider =
+            LiveProcessProvider::with_custom_path(root.path().to_string_lossy().into_owned());
+        assert_eq!(
+            provider.find_program("selected"),
+            Some(root.path().join("selected").to_string_lossy().into_owned())
+        );
+        assert_eq!(
+            provider.find_program(root.path().join("selected").to_str().unwrap()),
+            provider.find_program("selected")
+        );
+        for name in ["data", "directory", "absent"] {
+            assert!(provider.find_program(name).is_none());
+        }
+        assert!(!marker.exists());
     }
 }

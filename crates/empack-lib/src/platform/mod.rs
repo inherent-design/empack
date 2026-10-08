@@ -1,5 +1,4 @@
 pub mod cache;
-pub mod packwiz_bin;
 
 use std::sync::OnceLock;
 use thiserror::Error;

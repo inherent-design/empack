@@ -1276,6 +1276,7 @@ Test sessions substitute invocation and interaction decisions while project oper
 still use real temporary filesystems. The old filesystem, network, archive, packwiz and
 project-state provider methods are removed.
 
-The remaining synchronous process facade is used for Git author discovery. Its retirement
-and independent embedded display state remain implementation work; normal engine child
-execution already uses the host Tokio runtime.
+Process services return owned asynchronous work on the host Tokio runtime, including
+Git author discovery. There is no private process runtime or synchronous output-observer
+bridge. Unix program discovery inspects executable PATH entries without spawning `which`.
+Independent embedded display state remains implementation work.

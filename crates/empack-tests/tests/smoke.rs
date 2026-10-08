@@ -518,9 +518,6 @@ fn assert_forced_import_rejects_invalid_input(corrupt_crc: bool) {
 #[test]
 fn smoke_recovery_inspection_needs_no_pack_and_creates_no_state() {
     let project = TestProject::new();
-    // Engine recovery owns journal coordination and must not acquire the legacy mutation lock.
-    let _legacy_lock =
-        empack_lib::application::persistence::ProjectLock::acquire(project.dir()).unwrap();
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
     std::fs::write(

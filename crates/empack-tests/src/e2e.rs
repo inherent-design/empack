@@ -43,10 +43,6 @@ fn find_empack_bin(target_root: &Path, exe: &str, coverage_active: bool) -> Opti
         .find(|candidate| candidate.is_file())
 }
 
-pub fn has_packwiz() -> bool {
-    empack_lib::platform::packwiz_bin::resolve_packwiz_binary().is_ok()
-}
-
 pub fn has_java() -> bool {
     command_succeeds(Command::new("java").arg("-version"))
 }
@@ -121,19 +117,6 @@ fn configure_command_env(cmd: &mut Command, workdir: &Path) {
     let _ = workdir;
 }
 
-/// Return early from a test when packwiz is not in PATH.
-#[macro_export]
-macro_rules! skip_if_no_packwiz {
-    () => {
-        if !$crate::e2e::prerequisite_available(
-            $crate::e2e::has_packwiz(),
-            "packwiz-tx unavailable",
-        ) {
-            return;
-        }
-    };
-}
-
 /// Return early from a test when Java is not in PATH.
 #[macro_export]
 macro_rules! skip_if_no_java {
@@ -148,7 +131,6 @@ macro_rules! skip_if_no_java {
 #[macro_export]
 macro_rules! skip_if_no_cf_key {
     () => {
-        $crate::skip_if_no_packwiz!();
         if !$crate::e2e::prerequisite_available(
             $crate::e2e::has_cf_key(),
             "CurseForge API key unavailable",

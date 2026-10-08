@@ -44,7 +44,9 @@ The previous synchronization planner, project-state/config/build/import machiner
 HTTP cache/manager and mock filesystem/network/backend implementations are deleted.
 `Session` now exposes invocation, configuration, display, interaction and process services.
 Project effects use native engine capabilities in both production and tests.
-The managed legacy tool bootstrap and synchronous Git discovery bridge still need retirement.
+The managed Go-tool bootstrap and synchronous process bridge are also removed.
+Git author discovery awaits the host process runtime; test prerequisites no longer
+resolve or install a packwiz executable.
 
 The legacy command handler file is replaced. Its tests asserting subprocess arguments,
 legacy YAML/state flags, simulated backend responses and cache-seeded searches are
@@ -144,7 +146,7 @@ known implementation, CLI cutover, test rewrites and old-code removal are comple
 
 ## Backend release
 
-The retained compatibility backend is pinned to packwiz-tx **v0.2.1**, synced with upstream
+The separate packwiz-tx fork was released as **v0.2.1**, synced with upstream
 main through `ef87d96`. Upstream publishes no release tag through GitHub Releases;
 the fork integration preserves offline metadata and deferred refresh. Two upstream
 Modrinth environment defects reproduced and were corrected before release. Fork
@@ -152,8 +154,9 @@ CI, race tests, vet, module installation and executable offline smoke passed. Al
 published platform archives match their release checksums; the macOS ARM64 release
 binary passes the same offline batch smoke. Ordinary native CLI commands no longer
 require this executable. Native builds now own embedded-template rendering and pure Forge coordinate interpretation.
-The unused legacy removal planner, slug-based dependency graph and obsolete mock-command test builder are deleted. Retirement of the remaining compatibility
-modules remains open.
+The fork remains a separately released tool. The native engine owns project metadata,
+acquisition, templates and distribution assembly; the executable bootstrap and the
+old library implementations are deleted.
 
 ## Verification evidence
 
@@ -249,6 +252,7 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Async host and bootstrap retirement | `mise run test`: 897 tests and eight doctests passed; 103 opt-in cases excluded; 30 affected tests, all-feature Clippy and Windows cross-compilation passed | Git lookup uses the host runtime; process cancellation/deadlines remain covered; two Windows test-only warnings remain; strict live matrix and coverage are still open |
 | Legacy library retirement candidate | `mise run test`: 921 tests and eight doctests passed; 103 opt-in cases excluded; 15 selected executable cases, all-feature Clippy and Windows cross-compilation passed | Windows retains test-only warnings; removed old implementations and their exclusive suites; native filesystem, identity, publication, cancellation and smoke checks remain; live browser and Modrinth import/build pass; two restricted CurseForge cases remain open |
 | `f322477` combined candidate | `mise run test`: 1,678 tests and eleven doctests passed; 103 opt-in cases excluded | No inherited-pipe warnings; 118.96 seconds; strict live matrix and final coverage remain open |
 | CurseForge optional metadata | Twelve import inspection tests, two native executable import/build cases and all-feature Clippy passed | Reproduced blank display-version rejection with a live archive; controls and required runtime identifiers stay invalid; local and live Modrinth import/build pass; restricted CurseForge continuation remains open |
@@ -309,8 +313,8 @@ an obsolete implementation green.
 ## Explicit limits
 
 - Resource reservations are scheduling estimates, not a physical-memory sandbox.
-- Blocking work must cooperate with cancellation; the old synchronous observer bridge
-  can still block its caller. Engine batch assembly remains sequential.
+- Blocking work must cooperate with cancellation. Engine batch assembly remains sequential;
+  owned subprocesses run asynchronously on the host runtime.
 - Multi-file publication is recoverable, not simultaneously visible to external readers.
   Windows reports file synchronization rather than Unix directory synchronization.
 - Unknown dependency evidence does not authorize automatic pruning. Explicit acknowledged

@@ -30,8 +30,8 @@ not hide dependencies on helpers needed by ordinary unit tests.
 Strict E2E requires the prerequisites of the selected fixtures: native archive and
 restricted-continuation cases need the built executable; live bootstrap/runtime cases
 need network access and sometimes Java; provider cases need their declared credentials.
-Native Java checks no longer bootstrap packwiz. Legacy compatibility fixtures still
-request that backend explicitly until their replacement. Missing prerequisites fail
+Native workflows and their fixtures do not bootstrap or require packwiz-tx.
+Missing prerequisites fail
 strict execution. Never store credentials in test reports.
 
 Run the live normalized-runtime checks explicitly:

@@ -93,7 +93,7 @@ async fn initialize_with_catalog(
         .iter()
         .map(|value| GameVersion::parse(value))
         .collect::<Result<Vec<_>, _>>()?;
-    let metadata = metadata(session, args, &selected)?;
+    let metadata = metadata(session, args, &selected).await?;
     let limits = RuntimeCatalogLimits {
         transfer: TransferLimits {
             deadline: Duration::from_secs(config.net_timeout),
@@ -354,7 +354,7 @@ fn choose_loader(session: &dyn Session, mut supported: Vec<LoaderChoice>) -> Res
     ensure!(index < supported.len(), "Loader selection is out of range");
     Ok(supported.remove(index))
 }
-fn metadata(session: &dyn Session, args: &InitArgs, selected: &Path) -> Result<PackMetadata> {
+async fn metadata(session: &dyn Session, args: &InitArgs, selected: &Path) -> Result<PackMetadata> {
     let default_name = selected
         .file_name()
         .and_then(|value| value.to_str())
@@ -376,11 +376,13 @@ fn metadata(session: &dyn Session, args: &InitArgs, selected: &Path) -> Result<P
             let default = session
                 .process()
                 .execute("git", &["config", "user.name"], cwd)
+                .await
                 .ok()
                 .filter(|output| output.success)
                 .map(|output| output.stdout.trim().to_owned())
                 .filter(|value| !value.is_empty())
                 .unwrap_or_default();
+            session.process().check_cancelled()?;
             session.interactive().text_input("Author", default)?
         }
     };
