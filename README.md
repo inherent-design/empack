@@ -9,15 +9,15 @@ the CLI does not require the packwiz-tx executable.
 The development target is **v0.5.0-alpha.1**: a typed pack engine that separates
 intent, exact resolution, observation, staging, verification and recoverable
 publication. The [design](docs/design/README.md) is the target contract; the
-[implementation ledger](docs/design/implementation.md) records what has landed.
-The full engine is not implemented yet.
+[implementation ledger](docs/design/implementation.md) records delivered capabilities,
+revision-specific validation and explicit runtime limits.
 
 ## Development status
 
-The target architecture replaces the experimental implementation. Old formats
-and flags are not compatibility obligations. The [command contract](docs/usage.md)
-describes the intended workflows; the implementation ledger identifies what is
-available. Useful provider integrations and pack fixtures remain inputs to the rewrite.
+The accepted v0.5 engine and CLI workflows are implemented, and the old project
+orchestration is removed. The package remains an alpha. The
+[command contract](docs/usage.md) describes available workflows; the
+[verification guide](docs/testing.md) explains how their behavior is tested.
 
 ## Design and implementation
 
@@ -25,9 +25,9 @@ available. Useful provider integrations and pack fixtures remain inputs to the r
 | --- | --- |
 | [Target design](docs/design/README.md) | Guarantees, domain model, ports and publication lifecycle |
 | [Decisions](docs/design/decisions.md) | Accepted policy and verified implementation qualifications |
-| [Implementation ledger](docs/design/implementation.md) | Landed work and remaining gates |
-| [Feature requirements](docs/design/parity.md) | Intended pack-management capabilities |
-| [CLI contract](docs/usage.md) | Target operations and outcomes |
+| [Implementation ledger](docs/design/implementation.md) | Delivered behavior, validation evidence and limits |
+| [Feature requirements](docs/design/parity.md) | Preserved pack-management capabilities |
+| [CLI contract](docs/usage.md) | Available operations and outcomes |
 | [Verification](docs/testing.md) | Contract suites and native failure tests |
 | [Contributing](CONTRIBUTING.md) | Build and review workflow |
 

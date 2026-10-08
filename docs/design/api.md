@@ -175,7 +175,8 @@ selections, removal mode and missing evidence. `engine_host::synchronize` accept
 sources and preserves remote references; its `Supplied` mode accepts explicit content decisions.
 Changed intent still needs a fresh resolution candidate. These
 compiled entry points share preview, approval, cancellation, shutdown and receipt handling.
-CLI search/selection and dispatcher cutover remain pending.
+Ordinary commands dispatch through the native host; CLI search and explicit
+selection are wired.
 
 `ProviderAddition::acquire_content` accepts one explicit `ProviderContentChoice`
 per locked file: reference, acquisition, or supplied verified bytes. It validates the
@@ -395,8 +396,8 @@ old declarations before removal. Native publication preserves authoring bytes.
 If an obsolete payload is absent, immutable acquired bytes may supply a missing
 digest algorithm only when they satisfy every old digest, size and accepted
 observation. Without that evidence, obsolete metadata remains untouched.
-Resolution/acquisition hosts and CLI routing remain pending; a supplied candidate
-alone has no write authority.
+Resolution/acquisition hosts feed these request variants through the CLI. A supplied
+candidate alone has no write authority.
 
 `UpdateRequest` supplies exact resolved selections and acquired content for requested
 installed identities. It shares dependency capture, staging and publication with add,
@@ -1169,8 +1170,8 @@ project-relative paths, independently of installation destinations.
 
 The CLI records remote references and materializes local/member sources. Explicit
 `sync --materialize` also verifies remote payloads before publication. Provider file
-plans carry companion placement choices. Provider-owned world interpretation and
-multi-file decision completion remain implementation gates. Manual-input continuation
+plans carry complete companion placement choices. Provider-owned worlds retain
+the exact archive identity and verified member placements. Manual-input continuation
 is available through `sync --continue --file DEPENDENCY/SLOT=PATH`.
 
 ### Explicit provider file plans
