@@ -21,6 +21,15 @@ mod creation;
 mod synchronization;
 pub use creation::NewProjectSnapshot;
 
+/// Required authoring state is distinct from an I/O or publication failure.
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectDocumentsError {
+    #[error("Project has no empack.yml")]
+    MissingIntent,
+    #[error("Project has no exact resolution lock")]
+    MissingLock,
+}
+
 /// Managed replacement inputs may be empty or contain an invalid prior document.
 /// Capturing them grants no authority to remove or overwrite files.
 pub struct ReplacementSnapshot {
@@ -230,7 +239,7 @@ impl WorkspaceSnapshot {
     pub fn require_resolved(&self) -> Result<ResolvedProject> {
         self.prior_lock
             .as_ref()
-            .context("Project has no exact resolution lock")?
+            .context(ProjectDocumentsError::MissingLock)?
             .bind(&self.intent)
     }
     fn source_filter(&self, cancel: &Cancellation) -> Result<super::source::SourceFilter> {
@@ -883,7 +892,7 @@ impl ProjectReader {
         }
         let native = root.capture_filtered(&scopes, limits, filter, cancel)?;
         let intent_bytes = read_document(&root, &native, "empack.yml", cancel)?
-            .context("Project has no empack.yml")?;
+            .context(ProjectDocumentsError::MissingIntent)?;
         let intent = DocumentCodec.decode_intent(&intent_bytes, "empack.yml")?;
         let prior_lock = read_document(&root, &native, "empack.lock", cancel)?
             .map(|bytes| DocumentCodec.decode_prior_lock(&bytes, "empack.lock"))

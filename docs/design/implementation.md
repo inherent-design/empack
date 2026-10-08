@@ -1,16 +1,17 @@
 # v0.5 delivery ledger
 
-Source baseline: `e0d5083`, with the resource/cleanup corrections below, 2026-10-08. Target: **v0.5.0-alpha.1**.
+Source baseline: native CLI cutover after `48bfc5d`, 2026-10-08. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
 remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/e0d5083/docs/design/implementation.md).
 
-**The engine is implemented substantially further than the CLI integration.**
-The executable still routes ordinary project commands through repaired v0.4 handlers.
-Only `recover` dispatches directly to the new engine host. Native hosts for the other
-operations are callable and tested, but this does not establish executable parity.
-The [dispatcher](../../crates/empack-lib/src/application/commands.rs) is the source of truth.
+**Ordinary project commands now dispatch to the v0.5 engine.** The old command
+handlers and their outer mutation lock have been deleted. This establishes the
+new route, not full feature completion: identification, worlds, update/adoption
+frontends, fresh resolution, browser assistance and remaining library retirement
+still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
+and executable tests are the source of truth.
 
 ## Delivery states
 
@@ -25,23 +26,33 @@ a passing review and line coverage do not change that state by themselves.
 
 ## Command routing and cutover
 
-| Workflow | Current executable route | New implementation | Work before deleting the old route |
-| --- | --- | --- | --- |
-| Initialize / forced replacement | Existing `handle_init` | [Native initialization host](../../crates/empack-lib/src/application/engine_host/initialize.rs); [tests](../../crates/empack-lib/src/application/engine_host/initialize/tests.rs) | Route empty/source initialization, runtime choices and replacement approval; prove preview/decline/failure preserve the project |
-| Import local/remote packs | Existing init/import orchestration | [Native import host](../../crates/empack-lib/src/application/engine_host/import.rs); [tests](../../crates/empack-lib/src/application/engine_host/import/tests.rs) | Connect CLI classification and representation decisions; test provider URLs, local archives, overrides and optional conversion |
-| Add | Existing `handle_add` | [Mixed provider/file host](../../crates/empack-lib/src/application/engine_host/dependencies.rs); [tests](../../crates/empack-lib/src/application/engine_host/dependencies/tests.rs) | Connect search, exact selectors, identification, pins and explicit local acceptance; finish world-member interpretation |
-| Update | No command | Selected-update host in the dependency module | Expose explicit selection and retain pins, aliases and root/transitive roles |
-| Adopt observed content | No command | [Adoption host](../../crates/empack-lib/src/application/engine_host/dependencies/adoption.rs) and dependency host tests | Construct proposed groups from inspected content; show the precise intent/selection changes |
-| Remove | Existing `handle_remove` | Exact identity/ownership removal host | Connect aliases, titles, installed names and explicit incomplete-evidence decisions; no automatic orphan inference |
-| Sync | Existing `handle_sync` | Recorded/supplied synchronization host and engine | Add fresh-resolution decisions and optional remote materialization; wire lock-preserving sync |
-| Build / continue | Existing `handle_build` | [Native build host](../../crates/empack-lib/src/application/engine_host/build.rs); [tests](../../crates/empack-lib/src/application/engine_host/build/tests.rs) | Wire all target/options, browser assistance, continuation and association; retain continuation for execution-time missing input |
-| Clean | Existing `handle_clean` | [Scoped cleanup host](../../crates/empack-lib/src/application/engine_host/cleanup.rs); [tests](../../crates/empack-lib/src/application/engine_host/cleanup/tests.rs) | Cover remaining disposable stores and explicit stale-record cleanup; preserve recovery and unrelated files |
-| Recover | **CLI wired** | [Engine host](../../crates/empack-lib/src/application/engine_host.rs); [tests](../../crates/empack-lib/src/application/engine_host/tests.rs) | Retain inspect/preview/finish/restore tests through the remaining cutover |
-| Requirements / version | Existing handlers | Host concern | Make requirements capability-specific; inspection must not bootstrap unrelated tools |
+| Workflow | Executable route | Remaining acceptance work |
+| --- | --- | --- |
+| Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix and headless runtime selection audit |
+| Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
+| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Provider identification of supplied files, world members, full companion-file choices |
+| Update | Host implemented; no command yet | Expose selected updates without changing pins, aliases or root/transitive roles |
+| Adopt observed content | Host implemented; no command yet | Construct reviewed groups from inspected content |
+| Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
+| Sync | **CLI wired:** recorded exact selections | Fresh resolution for changed intent; optional remote materialization |
+| Build / continue | **CLI wired:** native build and saved recipe continuation | Browser assistance, execution-time missing-input retention, live target/runtime matrix |
+| Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores and explicit stale/invalid-record cleanup |
+| Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
+| Requirements / version | Host inspection; no managed-tool bootstrap | Capability-specific live prerequisites |
 
-Switch schema-producing and schema-consuming commands together once their missing
-frontend choices are implemented. Do not introduce a long-lived dual-schema mode.
-Tests may invoke hosts independently while that coordinated dispatcher change is prepared.
+The legacy command handler file is replaced. Its tests asserting subprocess arguments,
+legacy YAML/state flags, simulated backend responses and cache-seeded searches are
+retired with it. Their safety and semantic obligations continue in native engine,
+provider, import, process and publication suites. New dispatcher tests exercise the
+initialize → add → sync twice → rebuild current bytes → remove → sync → clean
+sequence. Offline executable smoke now uses real native projects and intentionally
+unavailable tooling/network, including whole-tree previews, failed batches, deletion
+confinement, invalid forced imports, configuration precedence and recovery inspection.
+The eleven mock-command integration files are consolidated into `native_commands.rs`,
+which exercises loader families, content kinds, format writers, previews, demotion,
+unknown-evidence acknowledgment and failure preservation. Provider alias/pin/closure
+checks remain in the native adapter fixtures; live executable
+parity is still a final gate, not inferred from those fixtures.
 
 ## Implemented engine contracts
 
@@ -67,14 +78,14 @@ accepted game version. Ranking does not authorize a choice. Pagination, unsuppor
 kinds, provider failures and original rank remain explicit. The new CLI add adapter
 composes pagination and deliberate selection with canonical lookup and closure resolution.
 Headless search requires an explicit project URL or provider selector; `--yes` never
-selects the first search hit. The dispatcher cutover remains open.
+selects the first search hit. The dispatcher now uses this adapter.
 [Search tests](../../crates/empack-lib/src/engine/providers/search/tests.rs).
 
 The [CLI adapter tests](../../crates/empack-lib/src/application/engine_host/cli/tests.rs)
 exercise equivalent slug/ID/URL additions followed by two unchanged syncs, preview,
 conflicting pins/providers, deliberate search selection and all-requested direct-file
-failure against native temporary projects. These are host-adapter tests, not executable
-cutover evidence. Provider identification and world interpretation remain open.
+failure against native temporary projects. Provider network fixtures exercise the adapter; offline lifecycle tests also
+exercise the executable. Provider identification and world interpretation remain open.
 
 ### Content identification
 
@@ -97,7 +108,7 @@ pages into that pipeline. It preserves paths, environment layers and runtime pin
 additional accepted game versions remain explicit intent. Optional defaults,
 auxiliary-member exclusion and download-to-local conversion have explicit flags.
 Native tests cover preview, runtime mismatch, auxiliary refusal, layer bytes and
-re-export. Dispatcher wiring and restricted-import continuation remain open.
+re-export. Restricted-import continuation remains open.
 
 ## Open defects and delivery gates
 
@@ -121,18 +132,22 @@ known implementation, CLI cutover, test rewrites and old-code removal are comple
 
 ## Backend release
 
-The existing CLI backend is pinned to packwiz-tx **v0.2.1**, synced with upstream
+The retained compatibility backend is pinned to packwiz-tx **v0.2.1**, synced with upstream
 main through `ef87d96`. Upstream publishes no release tag through GitHub Releases;
 the fork integration preserves offline metadata and deferred refresh. Two upstream
 Modrinth environment defects reproduced and were corrected before release. Fork
 CI, race tests, vet, module installation and executable offline smoke passed. All six
 published platform archives match their release checksums; the macOS ARM64 release
-binary passes the same offline batch smoke. This does not replace CLI cutover.
+binary passes the same offline batch smoke. Ordinary native CLI commands no longer
+require this executable. Retirement of unused compatibility modules remains open.
 
 ## Verification evidence
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Native dispatcher cutover | 1,676 default tests and eleven doctests passed; workspace all-feature Clippy, formatting and Windows cross-compilation passed | 98 opt-in tests skipped; no inherited-pipe warnings; Windows retains seven existing test-only warnings; live parity and new coverage remain open |
+| `48bfc5d` | 94 affected host/import tests and all-feature Clippy passed | One inherited-pipe warning; isolated affected cleanup test passed clean |
+| `9893353` | Five CLI adapter regressions and all-feature Clippy passed | Canonical selectors, deliberate search, direct files and repeated sync |
 | This resource/cleanup correction | 38 affected tests and all-target/all-feature Clippy passed | Includes both pre-fix reproductions and changed-candidate refusal; no combined full-suite rerun |
 | `e0d5083` | `mise run test`: 1,989 tests and eleven doctests passed | 124 opt-in tests skipped; one inherited-pipe warning in the template test named above; no final live/CLI parity claim |
 | `e0d5083` implementation snapshot | 43 affected tests; all-target/all-feature Clippy; Windows cross-compilation passed | Windows retains seven existing test-only configuration warnings; targeted run was clean |

@@ -35,6 +35,48 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
     if find_chain_error::<super::process_runtime::Interrupted>(error).is_some() {
         return EmpackExitCode::Interrupted;
     }
+    if matches!(
+        find_chain_error::<crate::engine::runtime::RuntimeError>(error),
+        Some(crate::engine::runtime::RuntimeError::Cancelled)
+    ) {
+        return EmpackExitCode::Interrupted;
+    }
+    if find_chain_error::<crate::engine::project::ProjectDocumentsError>(error).is_some()
+        || find_chain_error::<empack_core::model::ModelError>(error).is_some()
+        || find_chain_error::<empack_core::path::PathError>(error).is_some()
+        || find_chain_error::<empack_core::identity::IdentityError>(error).is_some()
+    {
+        return EmpackExitCode::Usage;
+    }
+    if let Some(catalog) = find_chain_error::<crate::engine::providers::CatalogError>(error) {
+        use crate::engine::providers::CatalogError;
+        return match catalog {
+            CatalogError::NotFound | CatalogError::NoCompatibleSelection => {
+                EmpackExitCode::NotFound
+            }
+            CatalogError::InvalidSelector
+            | CatalogError::Limit
+            | CatalogError::Unauthorized
+            | CatalogError::ContentKindMismatch
+            | CatalogError::UnsupportedKind
+            | CatalogError::Ambiguous => EmpackExitCode::Usage,
+            CatalogError::Deadline
+            | CatalogError::RateLimited
+            | CatalogError::Server(_)
+            | CatalogError::Status(_)
+            | CatalogError::Network
+            | CatalogError::Redirect
+            | CatalogError::InvalidRecord
+            | CatalogError::IncompleteLookup
+            | CatalogError::Identity => EmpackExitCode::Network,
+        };
+    }
+    if let Some(selection) = find_chain_error::<crate::engine::removal::SelectionError>(error) {
+        return match selection {
+            crate::engine::removal::SelectionError::Missing(_) => EmpackExitCode::NotFound,
+            crate::engine::removal::SelectionError::Ambiguous { .. } => EmpackExitCode::Usage,
+        };
+    }
     if let Some(search_error) = find_chain_error::<SearchError>(error) {
         return match search_error {
             SearchError::NoResults { .. } => EmpackExitCode::NotFound,
@@ -124,9 +166,13 @@ fn classify_state_error(error: &StateError) -> EmpackExitCode {
 
 fn find_chain_error<T>(error: &Error) -> Option<&T>
 where
-    T: std::error::Error + 'static,
+    T: std::error::Error + Send + Sync + 'static,
 {
-    error.chain().find_map(|cause| cause.downcast_ref::<T>())
+    // Anyhow retains typed context as well as source errors. Iterating std::error::Error
+    // sources alone loses context values created by Option::context.
+    error
+        .downcast_ref::<T>()
+        .or_else(|| error.chain().find_map(|cause| cause.downcast_ref::<T>()))
 }
 
 fn classify_message(message: &str) -> EmpackExitCode {
@@ -245,5 +291,67 @@ mod tests {
 
         let plural = anyhow::anyhow!("2 tracked local dependencies failed validation");
         assert_eq!(classify_error(&plural), EmpackExitCode::Usage);
+    }
+}
+
+#[cfg(test)]
+mod engine_errors {
+    use super::*;
+    use crate::engine::{
+        project::ProjectDocumentsError, providers::CatalogError, runtime::RuntimeError,
+    };
+    #[test]
+    fn native_error_classes_survive_host_context() {
+        use anyhow::Context;
+        let missing = Option::<()>::None
+            .context(ProjectDocumentsError::MissingIntent)
+            .unwrap_err();
+        assert_eq!(
+            classify_error(&missing.context("Read native project")),
+            EmpackExitCode::Usage
+        );
+        for (error, expected) in [
+            (
+                anyhow::Error::new(ProjectDocumentsError::MissingIntent),
+                EmpackExitCode::Usage,
+            ),
+            (
+                anyhow::Error::new(ProjectDocumentsError::MissingLock),
+                EmpackExitCode::Usage,
+            ),
+            (
+                anyhow::Error::new(CatalogError::Network),
+                EmpackExitCode::Network,
+            ),
+            (
+                anyhow::Error::new(CatalogError::Server(503)),
+                EmpackExitCode::Network,
+            ),
+            (
+                anyhow::Error::new(CatalogError::Unauthorized),
+                EmpackExitCode::Usage,
+            ),
+            (
+                anyhow::Error::new(CatalogError::NotFound),
+                EmpackExitCode::NotFound,
+            ),
+            (
+                anyhow::Error::new(CatalogError::NoCompatibleSelection),
+                EmpackExitCode::NotFound,
+            ),
+            (
+                anyhow::Error::new(CatalogError::Ambiguous),
+                EmpackExitCode::Usage,
+            ),
+            (
+                anyhow::Error::new(RuntimeError::Cancelled),
+                EmpackExitCode::Interrupted,
+            ),
+        ] {
+            assert_eq!(
+                classify_error(&error.context("Host operation failed")),
+                expected
+            );
+        }
     }
 }

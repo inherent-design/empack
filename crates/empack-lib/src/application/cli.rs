@@ -218,6 +218,22 @@ pub struct BuildArgs {
         requires = "continue_build"
     )]
     pub associate_downloads: Vec<String>,
+
+    /// Use authored defaults for optional files in materialized distributions.
+    #[arg(long, conflicts_with = "continue_build")]
+    pub optional_defaults: bool,
+
+    /// Decide one optional choice explicitly.
+    #[arg(
+        long = "optional",
+        value_name = "CHOICE=true|false",
+        conflicts_with = "continue_build"
+    )]
+    pub optional_choices: Vec<String>,
+
+    /// Allow mrpack to omit optional choice keys, defaults and descriptions.
+    #[arg(long, conflicts_with = "continue_build")]
+    pub allow_optional_metadata_loss: bool,
 }
 
 /// Available empack commands
@@ -232,7 +248,7 @@ pub enum Commands {
     /// Initialize modpack development environment
     Init(InitArgs),
 
-    /// Synchronize empack.yml dependencies with pack.toml reality
+    /// Reconcile installed content with recorded intent and exact selections
     Sync {},
 
     /// Build modpack targets
@@ -244,11 +260,11 @@ pub enum Commands {
         #[arg(help = "Mod names, URLs, or project IDs")]
         mods: Vec<String>,
 
-        /// Force add even if conflicts exist
+        /// Update an existing selection of the same identity
         #[arg(
             short,
             long,
-            help = "Force add projects even if version conflicts exist"
+            help = "Update an existing selection of the same identity"
         )]
         force: bool,
 
@@ -257,7 +273,7 @@ pub enum Commands {
         platform: Option<SearchPlatform>,
 
         /// Project type to search for (skips tiered search when specified)
-        #[arg(long = "type", value_enum)]
+        #[arg(long = "type", visible_alias = "project-type", value_enum)]
         project_type: Option<CliProjectType>,
 
         /// Pin a specific Modrinth version ID (skips version selection)
@@ -283,6 +299,14 @@ pub enum Commands {
             help = "Reserved: automatic orphan cleanup requires complete dependency metadata"
         )]
         deps: bool,
+
+        /// Remove authoring roots while retaining their exact installed selections.
+        #[arg(long)]
+        forget: bool,
+
+        /// Accept unknown dependents; known requirements still prevent deletion.
+        #[arg(long, conflicts_with = "forget")]
+        acknowledge_unknown: bool,
     },
 
     /// Inspect or recover an interrupted engine operation
@@ -496,7 +520,9 @@ mod tests {
         assert_eq!(
             Commands::Remove {
                 mods: vec![],
-                deps: false
+                deps: false,
+                forget: false,
+                acknowledge_unknown: false,
             }
             .execution_order(),
             7
@@ -738,7 +764,7 @@ mod tests {
     fn cli_config_load_from_supports_remove_alias() {
         let config = CliConfig::load_from(["empack", "rm", "sodium"]).expect("parse remove alias");
 
-        let Some(Commands::Remove { mods, deps }) = config.command else {
+        let Some(Commands::Remove { mods, deps, .. }) = config.command else {
             panic!("expected remove command");
         };
 

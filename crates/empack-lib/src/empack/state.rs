@@ -34,10 +34,6 @@ impl ProjectLayoutProbe {
     pub(crate) fn is_configured(self) -> bool {
         self.has_empack_yml && self.has_pack_metadata
     }
-
-    pub(crate) fn is_partial_configuration(self) -> bool {
-        self.has_empack_yml ^ self.has_pack_metadata
-    }
 }
 
 fn has_config_file<P: crate::application::session::FileSystemProvider + ?Sized>(
@@ -565,23 +561,6 @@ pub fn reset_project_configuration_for_init<
     }
 
     Ok(())
-}
-
-pub(crate) fn reset_project_for_init<
-    P: crate::application::session::FileSystemProvider + ?Sized,
->(
-    provider: &P,
-    workdir: &Path,
-) -> Result<(), StateError> {
-    let marker_path = workdir.join(STATE_MARKER_FILE);
-    if provider.exists(&marker_path) {
-        provider
-            .remove_file(&marker_path)
-            .context("Failed to remove state marker file")?;
-    }
-
-    clean_build_artifacts(provider, workdir)?;
-    reset_project_configuration_for_init(provider, workdir)
 }
 
 /// Filesystem state machine for modpack development

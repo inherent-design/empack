@@ -31,7 +31,7 @@ policy choices live in [decisions](decisions.md).
 and compatibility guides are removed; Git history retains their evidence.
 
 The engine now includes the semantic core, snapshots, resolution locks, staged
-execution, inventory verification and journaled publication. Ordinary CLI command
-cutover remains open; consult the current routing table before claiming a feature
-is available through the executable. No implementation may claim a guarantee before
+execution, inventory verification and journaled publication. Ordinary CLI commands
+now use the engine. Consult the current routing table for unfinished features and
+remaining library retirement; dispatch wiring alone does not establish full parity. No implementation may claim a guarantee before
 it passes its acceptance gates.

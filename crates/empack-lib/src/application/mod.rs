@@ -1,8 +1,8 @@
 pub mod cli;
 pub mod commands;
 pub mod config;
-pub mod env;
 pub mod engine_host;
+pub mod env;
 pub mod exit;
 pub mod loader;
 pub mod session;

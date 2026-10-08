@@ -30,8 +30,8 @@ pub use compatible::{
 };
 mod identify;
 mod modpack;
-pub use modpack::{ModpackArchive, ModpackProject, ModpackSelector};
 pub use identify::{Identification, IdentificationLimits, IdentifiedSelection};
+pub use modpack::{ModpackArchive, ModpackProject, ModpackSelector};
 mod curseforge;
 mod modrinth;
 mod pin;

@@ -1,65 +1,22 @@
-use empack_lib::networking::cache::CachedResponse;
-use empack_tests::e2e::{TestProject, configure_fake_packwiz};
-use std::collections::HashMap;
-use std::time::{Duration, SystemTime};
-
-const SEARCH_URL: &str = concat!(
-    "https://api.modrinth.com/v2/search?query=Sodium&facets=",
-    "%5B%5B%22project%5Ftype%3Amod%22%5D%2C",
-    "%5B%22versions%3A1%2E21%2E1%22%5D%2C",
-    "%5B%22categories%3Afabric%22%5D%5D"
-);
-
-const MANIFEST: &str = r#"# A preview must retain comments and formatting.
-empack:
-  minecraft_version: "1.21.1"
-  loader: fabric
-  dependencies:
-    sodium:
-      title: Sodium
-      type: mod
-      platform: modrinth
-"#;
-
-fn search_project(status: u16) -> TestProject {
-    let project = TestProject::workflow_fixture("smoke", "fabric", "1.21.1");
-    std::fs::write(project.dir().join("empack.yml"), MANIFEST).unwrap();
-    let response = CachedResponse {
-        data: serde_json::to_vec(&serde_json::json!({"hits": [{
-            "project_id": "AANobbMI",
-            "slug": "sodium",
-            "title": "Sodium",
-            "downloads": 100,
-            "categories": ["fabric"],
-            "versions": ["1.21.1"]
-        }]}))
-        .unwrap(),
-        etag: None,
-        expires: SystemTime::now() + Duration::from_secs(300),
-        status,
-    };
-    let cache = project.dir().join(".empack-cache/http");
-    std::fs::create_dir_all(&cache).unwrap();
-    std::fs::write(
-        cache.join("http_cache.json"),
-        serde_json::to_vec(&HashMap::from([(SEARCH_URL, response)])).unwrap(),
-    )
-    .unwrap();
-    project
-}
-
-fn snapshot(project: &TestProject) -> Vec<String> {
-    ["empack.yml", "pack/pack.toml", "pack/index.toml"]
-        .into_iter()
-        .map(|path| std::fs::read_to_string(project.dir().join(path)).unwrap())
-        .collect()
-}
+//! Offline executable contracts for the native engine. No fake backend or cache-seeded API.
+use empack_tests::e2e::TestProject;
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{Cursor, Read, Write},
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 fn command(project: &TestProject) -> assert_cmd::Command {
     let mut cmd = project.cmd();
-    configure_fake_packwiz(&mut cmd, project.dir());
     cmd.env_remove("EMPACK_WORKDIR")
         .env_remove("EMPACK_DRY_RUN")
+        .env("EMPACK_STATE_DIR", project.dir().join(".host-state"))
+        .env(
+            "EMPACK_PACKWIZ_BIN",
+            project.dir().join("must-not-be-executed"),
+        )
         .env("EMPACK_COLOR", "never")
         .env("EMPACK_NET_TIMEOUT", "1")
         .env("HTTP_PROXY", "http://127.0.0.1:9")
@@ -67,54 +24,234 @@ fn command(project: &TestProject) -> assert_cmd::Command {
         .env("ALL_PROXY", "http://127.0.0.1:9")
         .env("NO_PROXY", "");
     let mut cmd = assert_cmd::Command::from_std(cmd);
-    cmd.timeout(Duration::from_secs(10));
+    cmd.timeout(Duration::from_secs(15));
     cmd
 }
-
-#[test]
-fn smoke_sync_search_preview_preserves_project_and_shows_add() {
-    let project = search_project(200);
-    let before = snapshot(&project);
-    let result = command(&project)
-        .args(["sync", "--dry-run"])
+fn initialized() -> TestProject {
+    let project = TestProject::new();
+    command(&project)
+        .args([
+            "init",
+            "--yes",
+            "--modloader",
+            "none",
+            "--mc-version",
+            "1.21.1",
+            "--pack-name",
+            "smoke",
+            "--pack-version",
+            "1",
+        ])
         .assert()
         .success();
-    let output = result.get_output();
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(text.contains("Add: Sodium"), "{text}");
-    assert!(text.contains("--project-id AANobbMI"), "{text}");
-    assert_eq!(snapshot(&project), before, "preview changed project files");
+    project
 }
-
-#[test]
-fn smoke_sync_provider_failure_is_nonzero_and_preserves_project() {
-    for dry_run in [false, true] {
-        let project = search_project(503);
-        let before = snapshot(&project);
-        let mut cmd = command(&project);
-        cmd.arg("sync");
-        if dry_run {
-            cmd.arg("--dry-run");
+fn snapshot(project: &TestProject) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn visit(root: &Path, at: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(at).unwrap() {
+            let entry = entry.unwrap();
+            let kind = entry.file_type().unwrap();
+            if kind.is_dir() {
+                visit(root, &entry.path(), files);
+            } else if kind.is_symlink() {
+                files.insert(
+                    entry.path().strip_prefix(root).unwrap().into(),
+                    fs::read_link(entry.path())
+                        .unwrap()
+                        .as_os_str()
+                        .as_encoded_bytes()
+                        .to_vec(),
+                );
+            } else {
+                files.insert(
+                    entry.path().strip_prefix(root).unwrap().into(),
+                    fs::read(entry.path()).unwrap(),
+                );
+            }
         }
-        cmd.assert()
-            .code(3)
-            .stderr(predicates::str::contains("status 503"));
+    }
+    let mut files = BTreeMap::new();
+    visit(project.dir(), project.dir(), &mut files);
+    files
+}
+fn project_snapshot(project: &TestProject) -> BTreeMap<PathBuf, Vec<u8>> {
+    snapshot(project)
+        .into_iter()
+        .filter(|(path, _)| !path.starts_with(".host-state"))
+        .collect()
+}
+fn jar(project: &TestProject, name: &str) {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(br#"{"schemaVersion":1,"id":"fixture","version":"1"}"#)
+        .unwrap();
+    fs::write(project.dir().join(name), zip.finish().unwrap().into_inner()).unwrap();
+}
+fn read_project(project: &TestProject) -> empack_lib::engine::documents::DecodedIntent {
+    empack_lib::engine::documents::DocumentCodec
+        .decode_intent(
+            &fs::read(project.dir().join("empack.yml")).unwrap(),
+            "smoke",
+        )
+        .unwrap()
+}
+#[test]
+fn smoke_native_lifecycle_preserves_exact_files_across_sync_build_remove() {
+    let project = initialized();
+    jar(&project, "fixture.jar");
+    command(&project)
+        .args(["add", "fixture.jar", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(read_project(&project).intent().roots.len(), 1);
+    let before = project_snapshot(&project);
+    for _ in 0..2 {
+        command(&project).args(["sync", "--yes"]).assert().success();
+    }
+    assert_eq!(project_snapshot(&project), before);
+    command(&project)
+        .args(["build", "mrpack", "--yes"])
+        .assert()
+        .success();
+    let mut archive =
+        zip::ZipArchive::new(fs::File::open(project.dir().join("dist/smoke-1.mrpack")).unwrap())
+            .unwrap();
+    let mut bytes = Vec::new();
+    archive
+        .by_name("overrides/mods/fixture.jar")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, fs::read(project.dir().join("fixture.jar")).unwrap());
+    drop(archive);
+    command(&project)
+        .args(["remove", "fixture", "--yes"])
+        .assert()
+        .success();
+    command(&project).args(["sync", "--yes"]).assert().success();
+    assert!(read_project(&project).intent().roots.is_empty());
+    assert!(!project.dir().join("pack/mods/fixture.jar").exists());
+}
+#[test]
+fn smoke_native_preview_and_failed_batch_preserve_every_file() {
+    let project = initialized();
+    jar(&project, "fixture.jar");
+    let before = snapshot(&project);
+    command(&project)
+        .args(["add", "fixture.jar", "--dry-run", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&project), before);
+    command(&project)
+        .args(["add", "fixture.jar", "missing.jar", "--yes"])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&project), before);
+    command(&project)
+        .args([
+            "init",
+            "--force",
+            "--dry-run",
+            "--yes",
+            "--modloader",
+            "none",
+            "--mc-version",
+            "1.21.1",
+        ])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&project), before);
+}
+#[test]
+fn smoke_headless_search_is_not_first_result_authorization() {
+    let project = initialized();
+    let before = snapshot(&project);
+    command(&project)
+        .args(["add", "Sodium", "--yes"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("deliberate choice"));
+    assert_eq!(snapshot(&project), before);
+}
+#[test]
+fn smoke_sync_empty_project_is_successful_and_preserves_project() {
+    let project = initialized();
+    let before = project_snapshot(&project);
+    command(&project).args(["sync", "--yes"]).assert().success();
+    assert_eq!(project_snapshot(&project), before);
+}
+#[test]
+fn smoke_local_removal_cannot_delete_a_directory() {
+    let project = initialized();
+    jar(&project, "fixture.jar");
+    command(&project)
+        .args(["add", "fixture.jar", "--yes"])
+        .assert()
+        .success();
+    let selected = project.dir().join("pack/mods/fixture.jar");
+    fs::remove_file(&selected).unwrap();
+    fs::create_dir(&selected).unwrap();
+    fs::write(selected.join("sentinel"), b"keep").unwrap();
+    let before = snapshot(&project);
+    command(&project)
+        .args(["remove", "fixture", "--yes"])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&project), before);
+}
+#[cfg(unix)]
+#[test]
+fn smoke_local_removal_cannot_follow_a_symlinked_ancestor() {
+    let project = initialized();
+    jar(&project, "fixture.jar");
+    command(&project)
+        .args(["add", "fixture.jar", "--yes"])
+        .assert()
+        .success();
+    let outside = tempfile::tempdir().unwrap();
+    fs::rename(
+        project.dir().join("pack/mods/fixture.jar"),
+        outside.path().join("fixture.jar"),
+    )
+    .unwrap();
+    fs::remove_dir(project.dir().join("pack/mods")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), project.dir().join("pack/mods")).unwrap();
+    let before = snapshot(&project);
+    let outside_before = fs::read(outside.path().join("fixture.jar")).unwrap();
+    command(&project)
+        .args(["remove", "fixture", "--yes"])
+        .assert()
+        .failure();
+    assert_eq!(snapshot(&project), before);
+    assert_eq!(
+        fs::read(outside.path().join("fixture.jar")).unwrap(),
+        outside_before
+    );
+}
+#[test]
+fn smoke_native_requirements_do_not_install_a_backend() {
+    let project = TestProject::new();
+    command(&project)
+        .env("PATH", "")
+        .arg("requirements")
+        .assert()
+        .success();
+    assert!(!project.dir().join(".empack-cache/bin").exists());
+}
+#[test]
+fn smoke_invalid_optional_flags_do_not_mutate_project() {
+    let project = initialized();
+    let before = snapshot(&project);
+    for args in [
+        vec!["build", "mrpack", "--optional", "choice=maybe"],
+        vec!["build", "--continue", "--optional-defaults"],
+        vec!["remove", "fixture", "--forget", "--acknowledge-unknown"],
+    ] {
+        command(&project).args(args).assert().failure();
         assert_eq!(snapshot(&project), before);
     }
 }
-
-#[test]
-fn smoke_sync_empty_project_is_successful_and_preserves_project() {
-    let project = TestProject::workflow_fixture("smoke", "fabric", "1.21.1");
-    let before = snapshot(&project);
-    command(&project).arg("sync").assert().success();
-    assert_eq!(snapshot(&project), before);
-}
-
 #[test]
 fn smoke_dotenv_precedence_reaches_command_execution() {
     for (local, environment, cli, preserved) in [
@@ -123,7 +260,7 @@ fn smoke_dotenv_precedence_reaches_command_execution() {
         (Some(true), Some(false), false, false),
         (Some(true), Some(false), true, true),
     ] {
-        let project = TestProject::workflow_fixture("dotenv", "fabric", "1.21.1");
+        let project = initialized();
         std::fs::write(project.dir().join(".env"), "EMPACK_DRY_RUN=true\n").unwrap();
         if let Some(value) = local {
             std::fs::write(
@@ -139,7 +276,7 @@ fn smoke_dotenv_precedence_reaches_command_execution() {
         if let Some(value) = environment {
             cmd.env("EMPACK_DRY_RUN", value.to_string());
         }
-        cmd.args(["clean", "builds"]);
+        cmd.args(["clean", "builds", "--yes"]);
         if cli {
             cmd.arg("--dry-run");
         }
@@ -157,68 +294,6 @@ fn smoke_malformed_dotenv_is_a_configuration_error() {
     let project = TestProject::new();
     std::fs::write(project.dir().join(".env"), "EMPACK_DRY_RUN='unterminated\n").unwrap();
     command(&project).arg("version").assert().code(2);
-}
-
-#[test]
-fn smoke_sync_recognizes_installed_datapacks() {
-    for (folder, source) in [
-        ("datapacks", "default"),
-        ("config/paxi/datapacks", "yaml"),
-        ("config/openloader/data", "pack"),
-        ("../shared/datapacks", "yaml"),
-        ("../shared/datapacks", "pack"),
-    ] {
-        let project = TestProject::workflow_fixture("datapacks", "fabric", "1.21.1");
-        let mut manifest = MANIFEST
-            .replace(
-                "title: Sodium",
-                "status: resolved\n      project_id: AANobbMI\n      title: Sodium",
-            )
-            .replace("type: mod", "type: datapack");
-        if source == "yaml" {
-            manifest.push_str(&format!("  datapack_folder: {folder}\n"));
-        }
-        std::fs::write(project.dir().join("empack.yml"), manifest).unwrap();
-        if source == "pack" {
-            let path = project.dir().join("pack/pack.toml");
-            let content = std::fs::read_to_string(&path).unwrap();
-            std::fs::write(
-                path,
-                format!("{content}\n[options]\ndatapack-folder = \"{folder}\"\n"),
-            )
-            .unwrap();
-        }
-        let dir = project.dir().join("pack").join(folder);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("sodium.pw.toml"),
-            "name = \"Sodium\"\n[update.modrinth]\nmod-id = \"AANobbMI\"\nversion = \"Install1\"\n",
-        )
-        .unwrap();
-        let before = snapshot(&project);
-        command(&project)
-            .args(["sync", "--dry-run"])
-            .assert()
-            .success()
-            .stdout(predicates::str::contains("No changes needed"));
-        assert_eq!(snapshot(&project), before);
-    }
-}
-
-#[test]
-fn smoke_sync_unreadable_installed_state_fails_closed() {
-    for dry_run in [false, true] {
-        let project = search_project(200);
-        std::fs::write(project.dir().join("pack/mods"), "not a directory").unwrap();
-        let before = snapshot(&project);
-        let mut cmd = command(&project);
-        cmd.arg("sync");
-        if dry_run {
-            cmd.arg("--dry-run");
-        }
-        cmd.assert().failure();
-        assert_eq!(snapshot(&project), before);
-    }
 }
 
 #[test]
@@ -246,136 +321,6 @@ fn smoke_malformed_dotenv_does_not_block_clap_help_or_version() {
 }
 
 #[test]
-fn smoke_sync_rejects_non_string_datapack_option_without_changes() {
-    let project = search_project(200);
-    let path = project.dir().join("pack/pack.toml");
-    let content = std::fs::read_to_string(&path).unwrap();
-    std::fs::write(
-        &path,
-        format!("{content}\n[options]\ndatapack-folder = 42\n"),
-    )
-    .unwrap();
-    let before = snapshot(&project);
-    command(&project)
-        .arg("sync")
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains(
-            "options.datapack-folder must be a string",
-        ));
-    assert_eq!(snapshot(&project), before);
-}
-
-#[test]
-fn smoke_sync_rejects_identity_drift_without_mutation() {
-    for (platform, id, version, success) in [
-        ("modrinth", "AANobbMI", None, true),
-        ("modrinth", "AANobbMI", Some("Install1"), true),
-        ("modrinth", "Other001", None, false),
-        ("curseforge", "12345678", None, false),
-    ] {
-        for dry_run in [true, false] {
-            let project = TestProject::workflow_fixture("drift", "fabric", "1.21.1");
-            let mut manifest = format!(
-                "empack:\n  minecraft_version: '1.21.1'\n  loader: fabric\n  dependencies:\n    sodium:\n      status: resolved\n      title: Sodium\n      platform: {platform}\n      project_id: '{id}'\n"
-            );
-            if let Some(version) = version {
-                manifest.push_str(&format!("      version: '{version}'\n"));
-            }
-            std::fs::write(project.dir().join("empack.yml"), manifest).unwrap();
-            let mods = project.dir().join("pack/mods");
-            std::fs::create_dir_all(&mods).unwrap();
-            let metadata =
-                "name = 'Sodium'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'Install1'\n";
-            std::fs::write(mods.join("sodium.pw.toml"), metadata).unwrap();
-            let before = snapshot(&project);
-            let mut cmd = command(&project);
-            cmd.arg("sync");
-            if dry_run {
-                cmd.arg("--dry-run");
-            }
-            if success {
-                cmd.assert().success();
-            } else {
-                cmd.assert().failure().stderr(predicates::str::contains(
-                    "Automatic replacement is not supported",
-                ));
-            }
-            assert_eq!(snapshot(&project), before);
-            assert_eq!(
-                std::fs::read_to_string(mods.join("sodium.pw.toml")).unwrap(),
-                metadata
-            );
-        }
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn smoke_interrupt_preserves_marker_and_excludes_concurrent_mutation() {
-    use std::os::unix::fs::PermissionsExt;
-    let project = TestProject::workflow_fixture("interrupt", "fabric", "1.21.1");
-    let tool = project.dir().join("slow-packwiz");
-    std::fs::write(
-        &tool,
-        "#!/bin/sh\nprintf started > process-started\nsleep 30 &\nwait\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let mut cmd = project.cmd();
-    cmd.env("EMPACK_PACKWIZ_BIN", &tool)
-        .env("EMPACK_PROCESS_TIMEOUT_SECS", "10")
-        .args(["build", "mrpack"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    let mut child = cmd.spawn().unwrap();
-    let started = std::time::Instant::now();
-    while !project.dir().join("process-started").exists() {
-        if let Some(status) = child.try_wait().unwrap() {
-            panic!("build exited before fake tool: {status}");
-        }
-        if started.elapsed() > Duration::from_secs(8) {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("build did not reach fake tool");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let marker = project.dir().join(".empack-state");
-    assert!(marker.exists());
-    command(&project)
-        .args(["clean", "builds"])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("Project is busy"));
-    assert!(
-        std::process::Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    let interrupted = std::time::Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            break status;
-        }
-        if interrupted.elapsed() > Duration::from_secs(5) {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("interrupted command did not terminate");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    assert_eq!(status.code(), Some(130));
-    assert_eq!(std::fs::read_to_string(marker).unwrap(), "building");
-    command(&project)
-        .args(["clean", "builds"])
-        .assert()
-        .success();
-}
-
-#[test]
 fn smoke_version_does_not_resolve_managed_tooling() {
     let project = TestProject::new();
     command(&project)
@@ -385,424 +330,6 @@ fn smoke_version_does_not_resolve_managed_tooling() {
         .assert()
         .success();
     assert!(!project.dir().join(".empack-cache/bin").exists());
-}
-
-#[test]
-fn smoke_sync_matches_aliases_and_retains_transitive_metadata() {
-    let project = TestProject::workflow_fixture("identity", "fabric", "1.21.1");
-    std::fs::write(project.dir().join("empack.yml"), "empack:\n  minecraft_version: '1.21.1'\n  loader: fabric\n  dependencies:\n    renderer-alias:\n      status: resolved\n      title: Renderer\n      platform: modrinth\n      project_id: AANobbMI\n").unwrap();
-    let mods = project.dir().join("pack/mods");
-    std::fs::create_dir_all(&mods).unwrap();
-    let root = "name = 'Renderer'\n[update.modrinth]\nmod-id = 'AANobbMI'\nversion = 'Version1'\n";
-    let dependency =
-        "name = 'Library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'Version2'\n";
-    std::fs::write(mods.join("canonical.pw.toml"), root).unwrap();
-    std::fs::write(mods.join("required.pw.toml"), dependency).unwrap();
-    let before = snapshot(&project);
-    for _ in 0..2 {
-        command(&project).arg("sync").assert().success();
-        assert_eq!(
-            std::fs::read_to_string(mods.join("canonical.pw.toml")).unwrap(),
-            root
-        );
-        assert_eq!(
-            std::fs::read_to_string(mods.join("required.pw.toml")).unwrap(),
-            dependency
-        );
-        assert_eq!(snapshot(&project), before);
-    }
-}
-
-#[test]
-fn smoke_sync_detects_backend_success_without_reconciliation() {
-    let project = TestProject::workflow_fixture("postcondition", "fabric", "1.21.1");
-    std::fs::write(project.dir().join("empack.yml"), "empack:\n  minecraft_version: '1.21.1'\n  loader: fabric\n  dependencies:\n    missing:\n      status: resolved\n      title: Missing\n      platform: modrinth\n      project_id: AANobbMI\n").unwrap();
-    // The generic fake returns success but creates no dependency metadata.
-    command(&project)
-        .arg("sync")
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains(
-            "Backend reported success but installed dependencies",
-        ));
-}
-
-#[cfg(unix)]
-#[test]
-fn smoke_pinned_add_then_sync_preserves_required_content_and_updates_pin() {
-    use std::os::unix::fs::PermissionsExt;
-    for (platform, pin_flag, first, second) in [
-        ("modrinth", "--version-id", "Version1", "Version2"),
-        ("curseforge", "--file-id", "101", "102"),
-    ] {
-        let project = TestProject::workflow_fixture("root-closure", "fabric", "1.21.1");
-        let responses = if platform == "modrinth" {
-            vec![
-                (
-                    "https://api.modrinth.com/v2/project/12345678".into(),
-                    serde_json::json!({"id":"12345678","title":"Root","project_type":"mod"}),
-                ),
-                (
-                    format!("https://api.modrinth.com/v2/version/{first}"),
-                    serde_json::json!({"id":first,"project_id":"12345678"}),
-                ),
-            ]
-        } else {
-            vec![
-                (
-                    "https://api.curseforge.com/v1/mods/12345678".into(),
-                    serde_json::json!({"data":{"id":12345678,"name":"Root","classId":6}}),
-                ),
-                (
-                    format!("https://api.curseforge.com/v1/mods/12345678/files/{first}"),
-                    serde_json::json!({"data":{"id":first.parse::<u64>().unwrap(),"modId":12345678}}),
-                ),
-            ]
-        };
-        cache_responses(&project, responses);
-        let tool = project.dir().join("install-fixture");
-        std::fs::write(&tool, r#"#!/bin/sh
-provider=$1
-shift
-[ "$1" = add ] || exit 0
-shift
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --project-id|--addon-id) id=$2; shift 2;;
-    --version-id|--file-id) pin=$2; shift 2;;
-    *) shift;;
-  esac
-done
-printf 'add\n' >> ../backend-calls
-mkdir -p mods
-if [ "$provider" = modrinth ]; then
-  printf "name = 'Root'\n[update.modrinth]\nmod-id = '%s'\nversion = '%s'\n" "$id" "$pin" > mods/canonical-root.pw.toml
-else
-  printf "name = 'Root'\n[update.curseforge]\nproject-id = '%s'\nfile-id = '%s'\n" "$id" "$pin" > mods/canonical-root.pw.toml
-fi
-printf "name = 'Required library'\n[update.modrinth]\nmod-id = 'required'\nversion = 'Required'\n" > mods/required.pw.toml
-"#).unwrap();
-        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        command(&project)
-            .env("EMPACK_PACKWIZ_BIN", &tool)
-            .args(["add", "12345678", "--platform", platform, pin_flag, first])
-            .assert()
-            .success();
-        let manifest = project.dir().join("empack.yml");
-        let original = std::fs::read_to_string(&manifest).unwrap();
-        assert!(
-            original.contains(first),
-            "explicit pin must survive: {original}"
-        );
-        for _ in 0..2 {
-            command(&project)
-                .env("EMPACK_PACKWIZ_BIN", &tool)
-                .arg("sync")
-                .assert()
-                .success();
-            assert!(project.dir().join("pack/mods/required.pw.toml").exists());
-        }
-        assert_eq!(
-            std::fs::read_to_string(project.dir().join("backend-calls")).unwrap(),
-            "add\n"
-        );
-        std::fs::write(&manifest, original.replace(first, second)).unwrap();
-        for _ in 0..2 {
-            command(&project)
-                .env("EMPACK_PACKWIZ_BIN", &tool)
-                .arg("sync")
-                .assert()
-                .success();
-        }
-        assert_eq!(
-            std::fs::read_to_string(project.dir().join("backend-calls")).unwrap(),
-            "add\nadd\n"
-        );
-        assert!(
-            std::fs::read_to_string(project.dir().join("pack/mods/canonical-root.pw.toml"))
-                .unwrap()
-                .contains(second)
-        );
-        assert!(project.dir().join("pack/mods/required.pw.toml").exists());
-    }
-}
-
-fn record_local_removal_fixture(project: &TestProject, path: &str) {
-    use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
-    use empack_lib::empack::config::{DependencyEntry, DependencyStatus, LocalDependencyRecord};
-    let manager = LiveFileSystemProvider.config_manager(project.dir().to_path_buf());
-    let mut config = manager.load_empack_config().unwrap();
-    config.empack.dependencies.insert(
-        "local".into(),
-        DependencyEntry::Local(LocalDependencyRecord {
-            status: DependencyStatus::Local,
-            title: "Local".into(),
-            project_type: empack_lib::primitives::ProjectType::Mod,
-            path: path.into(),
-            source_url: None,
-            sha256: "0".repeat(64),
-        }),
-    );
-    std::fs::write(
-        project.dir().join("empack.yml"),
-        serde_saphyr::to_string(&config).unwrap(),
-    )
-    .unwrap();
-}
-
-#[test]
-fn smoke_local_removal_cannot_delete_a_directory() {
-    for path in ["pack", "pack/mods"] {
-        let project = TestProject::workflow_fixture("local-remove", "fabric", "1.21.1");
-        std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
-        let sentinel = project.dir().join("pack/mods/keep.jar");
-        std::fs::write(&sentinel, b"keep").unwrap();
-        record_local_removal_fixture(&project, path);
-        let before = snapshot(&project);
-        command(&project)
-            .args(["remove", "local"])
-            .assert()
-            .failure();
-        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
-        assert_eq!(snapshot(&project), before);
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn smoke_local_removal_cannot_follow_a_symlinked_ancestor() {
-    let project = TestProject::workflow_fixture("local-remove-link", "fabric", "1.21.1");
-    let outside = tempfile::tempdir().unwrap();
-    std::fs::write(outside.path().join("sentinel.jar"), b"keep outside").unwrap();
-    std::os::unix::fs::symlink(outside.path(), project.dir().join("pack/linked")).unwrap();
-    record_local_removal_fixture(&project, "pack/linked/sentinel.jar");
-    let before = snapshot(&project);
-    command(&project)
-        .args(["remove", "local"])
-        .assert()
-        .failure();
-    assert_eq!(
-        std::fs::read(outside.path().join("sentinel.jar")).unwrap(),
-        b"keep outside"
-    );
-    assert_eq!(snapshot(&project), before);
-}
-
-#[cfg(unix)]
-#[test]
-fn smoke_remove_resolves_alias_title_and_stem_without_wrong_target_deletion() {
-    use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
-    use empack_lib::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
-    use empack_lib::primitives::{ProjectPlatform, ProjectType};
-    use std::os::unix::fs::PermissionsExt;
-    for query in ["renderer-alias", "Renderer title", "actual-renderer"] {
-        let project = TestProject::workflow_fixture("removal", "fabric", "1.21.1");
-        let manager = LiveFileSystemProvider.config_manager(project.dir().to_path_buf());
-        manager
-            .add_dependency_entry(
-                "renderer-alias",
-                DependencyEntry::Resolved(DependencyRecord {
-                    environment: None,
-                    status: DependencyStatus::Resolved,
-                    title: "Renderer title".into(),
-                    platform: ProjectPlatform::Modrinth,
-                    project_id: "ProjectP".into(),
-                    project_type: ProjectType::Mod,
-                    version: None,
-                }),
-            )
-            .unwrap();
-        std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
-        for (stem, id) in [
-            ("actual-renderer", "ProjectP"),
-            ("renderer-alias", "ProjectQ"),
-        ] {
-            std::fs::write(
-                project.dir().join(format!("pack/mods/{stem}.pw.toml")),
-                format!(
-                    "name = '{stem}'\n[update.modrinth]\nmod-id = '{id}'\nversion = 'Version1'\n"
-                ),
-            )
-            .unwrap();
-        }
-        let tool = project.dir().join("remove-fixture");
-        std::fs::write(&tool, "#!/bin/sh\nif [ \"$1\" = remove ]; then\n  rm -- \"mods/$3.pw.toml\"\nelse\n  exit 0\nfi\n").unwrap();
-        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        command(&project)
-            .env("EMPACK_PACKWIZ_BIN", &tool)
-            .args(["remove", query])
-            .assert()
-            .success();
-        assert!(
-            !project
-                .dir()
-                .join("pack/mods/actual-renderer.pw.toml")
-                .exists()
-        );
-        assert!(
-            project
-                .dir()
-                .join("pack/mods/renderer-alias.pw.toml")
-                .exists()
-        );
-        assert!(manager.find_dependency("renderer-alias").unwrap().is_none());
-        for _ in 0..2 {
-            command(&project)
-                .env("EMPACK_PACKWIZ_BIN", &tool)
-                .arg("sync")
-                .assert()
-                .success();
-        }
-        assert!(
-            project
-                .dir()
-                .join("pack/mods/renderer-alias.pw.toml")
-                .exists()
-        );
-        assert!(
-            !project
-                .dir()
-                .join("pack/mods/actual-renderer.pw.toml")
-                .exists()
-        );
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn smoke_remove_backend_noop_retains_manifest_intent() {
-    use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
-    use empack_lib::empack::config::{DependencyEntry, DependencyRecord, DependencyStatus};
-    use empack_lib::primitives::{ProjectPlatform, ProjectType};
-    let project = TestProject::workflow_fixture("removal-noop", "fabric", "1.21.1");
-    let manager = LiveFileSystemProvider.config_manager(project.dir().to_path_buf());
-    manager
-        .add_dependency_entry(
-            "alias",
-            DependencyEntry::Resolved(DependencyRecord {
-                environment: None,
-                status: DependencyStatus::Resolved,
-                title: "Renderer".into(),
-                platform: ProjectPlatform::Modrinth,
-                project_id: "ProjectP".into(),
-                project_type: ProjectType::Mod,
-                version: None,
-            }),
-        )
-        .unwrap();
-    std::fs::create_dir_all(project.dir().join("pack/mods")).unwrap();
-    std::fs::write(
-        project.dir().join("pack/mods/actual.pw.toml"),
-        "name = 'Renderer'\n[update.modrinth]\nmod-id = 'ProjectP'\nversion = 'Version1'\n",
-    )
-    .unwrap();
-    let tool = project.dir().join("noop-tool");
-    std::fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let before = snapshot(&project);
-    command(&project)
-        .env("EMPACK_PACKWIZ_BIN", &tool)
-        .args(["remove", "alias"])
-        .assert()
-        .failure();
-    assert_eq!(snapshot(&project), before);
-}
-
-fn cache_responses(project: &TestProject, responses: Vec<(String, serde_json::Value)>) {
-    let cache = project.dir().join(".empack-cache/http");
-    std::fs::create_dir_all(&cache).unwrap();
-    let entries: HashMap<_, _> = responses
-        .into_iter()
-        .map(|(url, data)| {
-            (
-                url,
-                CachedResponse {
-                    data: serde_json::to_vec(&data).unwrap(),
-                    etag: None,
-                    expires: SystemTime::now() + Duration::from_secs(300),
-                    status: 200,
-                },
-            )
-        })
-        .collect();
-    std::fs::write(
-        cache.join("http_cache.json"),
-        serde_json::to_vec(&entries).unwrap(),
-    )
-    .unwrap();
-}
-
-#[cfg(unix)]
-#[test]
-fn smoke_add_slug_id_and_url_persist_one_identity_and_type() {
-    use empack_lib::application::session::{FileSystemProvider, LiveFileSystemProvider};
-    use empack_lib::empack::config::DependencyEntry;
-    use std::os::unix::fs::PermissionsExt;
-    for (project_type, folder) in [
-        ("mod", "mods"),
-        ("resourcepack", "resourcepacks"),
-        ("shader", "shaderpacks"),
-    ] {
-        for selector in [
-            "pretty".to_string(),
-            "Canon001".to_string(),
-            format!("https://modrinth.com/{project_type}/pretty"),
-        ] {
-            let project = TestProject::workflow_fixture("canonical-add", "fabric", "1.21.1");
-            cache_responses(&project, ["pretty", "Canon001"].into_iter().map(|selector| (
-                format!("https://api.modrinth.com/v2/project/{selector}"),
-                serde_json::json!({"id":"Canon001", "title":"Pretty", "project_type":project_type}),
-            )).collect());
-            let tool = project.dir().join("add-fixture");
-            std::fs::write(&tool, format!("#!/bin/sh\n[ \"$2\" = add ] || exit 0\nprintf 'add\\n' >> ../calls\nmkdir -p {folder}\nprintf \"name = 'Pretty'\\n[update.modrinth]\\nmod-id = 'Canon001'\\nversion = 'Version1'\\n\" > {folder}/pretty.pw.toml\n")).unwrap();
-            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-            command(&project)
-                .env("EMPACK_PACKWIZ_BIN", &tool)
-                .args(["add", &selector, "--platform", "modrinth"])
-                .assert()
-                .success();
-            let manager = LiveFileSystemProvider.config_manager(project.dir().to_path_buf());
-            let (_, entry) = manager.find_dependency("pretty").unwrap().unwrap();
-            let DependencyEntry::Resolved(record) = entry else {
-                panic!("resolved record required")
-            };
-            assert_eq!(record.project_id, "Canon001");
-            assert_eq!(
-                empack_lib::application::sync::project_type_arg(record.project_type),
-                project_type
-            );
-            for _ in 0..2 {
-                command(&project)
-                    .env("EMPACK_PACKWIZ_BIN", &tool)
-                    .arg("sync")
-                    .assert()
-                    .success();
-            }
-            assert_eq!(
-                std::fs::read_to_string(project.dir().join("calls")).unwrap(),
-                "add\n"
-            );
-        }
-    }
-}
-
-#[cfg(unix)]
-#[test]
-fn smoke_platform_removal_rejects_symlinked_metadata_ancestors() {
-    let project = TestProject::workflow_fixture("confined-metadata", "fabric", "1.21.1");
-    let outside = tempfile::tempdir().unwrap();
-    let metadata = outside.path().join("target.pw.toml");
-    let bytes = "name = 'Target'\n[update.modrinth]\nmod-id = 'ProjectP'\nversion = 'Version1'\n";
-    std::fs::write(&metadata, bytes).unwrap();
-    std::os::unix::fs::symlink(outside.path(), project.dir().join("pack/mods")).unwrap();
-    let before = snapshot(&project);
-    command(&project)
-        .args(["remove", "target"])
-        .assert()
-        .failure();
-    assert_eq!(snapshot(&project), before);
-    assert_eq!(std::fs::read_to_string(metadata).unwrap(), bytes);
 }
 
 #[test]
@@ -818,7 +345,7 @@ fn smoke_forced_import_bad_crc_preserves_existing_project() {
 fn assert_forced_import_rejects_invalid_input(corrupt_crc: bool) {
     use empack_lib::application::session::{ArchiveProvider, LiveArchiveProvider};
     use empack_lib::empack::archive::ArchiveFormat;
-    let project = TestProject::workflow_fixture("original", "fabric", "1.21.1");
+    let project = initialized();
     for (path, bytes) in [
         ("pack/config/existing.toml", "original config"),
         ("overrides/client/options.txt", "original options"),
@@ -910,27 +437,42 @@ fn assert_forced_import_rejects_invalid_input(corrupt_crc: bool) {
 fn smoke_recovery_inspection_needs_no_pack_and_creates_no_state() {
     let project = TestProject::new();
     // Engine recovery owns journal coordination and must not acquire the legacy mutation lock.
-    let _legacy_lock = empack_lib::application::persistence::ProjectLock::acquire(project.dir()).unwrap();
+    let _legacy_lock =
+        empack_lib::application::persistence::ProjectLock::acquire(project.dir()).unwrap();
     let host = tempfile::tempdir().unwrap();
     let state = host.path().join("state");
-    std::fs::write(project.dir().join("empack.yml"), b"invalid authoring is unrelated").unwrap();
+    std::fs::write(
+        project.dir().join("empack.yml"),
+        b"invalid authoring is unrelated",
+    )
+    .unwrap();
     command(&project)
-        .arg("--state-dir").arg(&state)
+        .arg("--state-dir")
+        .arg(&state)
         .args(["recover", "inspect"])
-        .assert().success();
+        .assert()
+        .success();
     assert!(!state.exists());
     assert!(!project.dir().join(".empack-state").exists());
-    assert_eq!(std::fs::read(project.dir().join("empack.yml")).unwrap(), b"invalid authoring is unrelated");
+    assert_eq!(
+        std::fs::read(project.dir().join("empack.yml")).unwrap(),
+        b"invalid authoring is unrelated"
+    );
     command(&project)
-        .arg("--state-dir").arg(&state)
+        .arg("--state-dir")
+        .arg(&state)
         .args(["recover", "finish", "--operation", "not-pending"])
-        .assert().failure();
+        .assert()
+        .failure();
     assert!(!state.exists());
     command(&project)
-        .arg("--state-dir").arg(&state)
-        .arg("--workdir").arg(project.dir().join("absent-project"))
+        .arg("--state-dir")
+        .arg(&state)
+        .arg("--workdir")
+        .arg(project.dir().join("absent-project"))
         .args(["recover", "inspect"])
-        .assert().success();
+        .assert()
+        .success();
     assert!(!project.dir().join("absent-project").exists());
     assert!(!state.exists());
 }

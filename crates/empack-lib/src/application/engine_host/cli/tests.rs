@@ -247,12 +247,13 @@ async fn interactive_search_preserves_selected_identity_without_publishing() {
         &project(root.path()),
         "renderer",
         Some(ContentKind::Mod),
+        None,
     )
     .await
     .unwrap();
     let resolved = initialize::discover(&selected_session, move |mut scope| async move {
         catalog
-            .resolve_selector(&mut scope, selector, Default::default())
+            .resolve_selector(&mut scope, selector.0, Default::default())
             .await
     })
     .await

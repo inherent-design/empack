@@ -183,22 +183,26 @@ async fn add_with_catalog(
             )?));
             continue;
         }
-        let selector = if let Some(selected) = from_url.or(preferred) {
-            ProjectSelector::parse(selected, value)?
+        let selected_kind = options.kind.as_ref().map(kind);
+        let search_text =
+            from_url.is_none() && pin.is_none() && value.chars().any(char::is_whitespace);
+        let (selector, selected_kind) = if let Some(selected) =
+            from_url.or(preferred).filter(|_| !search_text)
+        {
+            (ProjectSelector::parse(selected, value)?, selected_kind)
         } else {
-            search(
-                session,
-                &catalog,
-                &current,
-                value,
-                options.kind.as_ref().map(kind),
-            )
-            .await?
+            ensure!(
+                options.platform != Some(SearchPlatform::Both) || catalog.availability().curseforge,
+                "Searching both providers requires CurseForge credentials"
+            );
+            let (selector, kind) =
+                search(session, &catalog, &current, value, selected_kind, preferred).await?;
+            (selector, Some(kind))
         };
         inputs.push(AddHostInput::Provider(ProviderAddInput {
             selector,
             key: None,
-            kind: options.kind.as_ref().map(kind),
+            kind: selected_kind,
             pin: pin.clone(),
             requirements: required(),
             folder: None,
@@ -233,7 +237,8 @@ async fn search(
     current: &ResolvedProject,
     text: &str,
     selected_kind: Option<ContentKind>,
-) -> Result<ProjectSelector> {
+    preferred: Option<ProviderKind>,
+) -> Result<(ProjectSelector, ContentKind)> {
     ensure!(
         !session.config().app_config().yes && session.interactive().can_choose(),
         "Search requires a deliberate choice; supply a project URL or --platform with a slug/ID in headless mode"
@@ -241,6 +246,9 @@ async fn search(
     let mut providers = vec![ProviderKind::Modrinth];
     if catalog.availability().curseforge {
         providers.push(ProviderKind::CurseForge);
+    }
+    if let Some(provider) = preferred {
+        providers = vec![provider];
     }
     let kinds = selected_kind.map_or_else(
         || {
@@ -314,7 +322,7 @@ async fn search(
                 .ok_or(crate::application::process_runtime::Interrupted)?;
             ensure!(index < labels.len(), "Search selection is out of range");
             if let Some(candidate) = candidates.get(index) {
-                return Ok(ProjectSelector::canonical(candidate.project.clone()));
+                return Ok((ProjectSelector::canonical(candidate.project.clone()), kind));
             }
             if more && index == candidates.len() {
                 windows = next;
@@ -328,3 +336,55 @@ async fn search(
 
 #[cfg(test)]
 mod tests;
+
+/// Optional participation and lossy export decisions are independent of execution approval.
+pub async fn build(session: &dyn Session, args: &crate::application::BuildArgs) -> Result<()> {
+    if args.continue_build {
+        ensure!(
+            !args.optional_defaults
+                && args.optional_choices.is_empty()
+                && !args.allow_optional_metadata_loss,
+            "Continuation uses saved optional choices; prepare a new build to change them"
+        );
+        return super::continue_build(session, args).await;
+    }
+    let mut choices = std::collections::BTreeMap::new();
+    for selected in &args.optional_choices {
+        let (key, value) = selected
+            .rsplit_once('=')
+            .context("Optional choice requires CHOICE=true|false")?;
+        empack_core::requirements::ChoiceKey::parse(key)?;
+        let value = match value {
+            "true" => true,
+            "false" => false,
+            _ => anyhow::bail!("Optional choice requires true or false"),
+        };
+        ensure!(
+            choices.insert(key.to_owned(), value).is_none(),
+            "Repeated optional choice"
+        );
+    }
+    let optional = if !choices.is_empty() || args.optional_defaults {
+        empack_core::inventory::OptionalPolicy::Resolve {
+            choices,
+            use_defaults: args.optional_defaults,
+        }
+    } else {
+        empack_core::inventory::OptionalPolicy::Preserve
+    };
+    super::build(
+        session,
+        args,
+        BuildDecisions {
+            optional,
+            mrpack_optional: if args.allow_optional_metadata_loss {
+                crate::engine::mrpack::OptionalConversion::AcknowledgedMetadataLoss
+            } else {
+                crate::engine::mrpack::OptionalConversion::RejectMetadataLoss
+            },
+            ..Default::default()
+        },
+        Default::default(),
+    )
+    .await
+}

@@ -357,7 +357,7 @@ async fn execute_approved(
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 mod initialize;
 pub use initialize::initialize;

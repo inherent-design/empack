@@ -17,7 +17,7 @@ use crate::{
 use clap::Parser;
 use std::{collections::BTreeMap, fs};
 
-pub(super) fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+pub(in crate::application) fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();

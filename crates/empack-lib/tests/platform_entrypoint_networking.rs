@@ -268,7 +268,10 @@ fn resolve_packwiz_binary_uses_path_lookup_before_cache() {
 fn resolve_packwiz_binary_uses_cached_binary_when_present() {
     let _guard = env_lock().lock().unwrap_or_else(|e| e.into_inner());
     let temp = tempfile::TempDir::new().expect("temp dir");
-    let cache_dir = temp.path().join("bin").join("packwiz-tx-v0.2.0");
+    let cache_dir = temp.path().join("bin").join(format!(
+        "packwiz-tx-{}",
+        empack_lib::platform::packwiz_bin::PACKWIZ_TX_VERSION
+    ));
     std::fs::create_dir_all(&cache_dir).expect("create cache dir");
     let cached_bin = cache_dir.join(packwiz_bin_name());
     write_executable_script(&cached_bin);

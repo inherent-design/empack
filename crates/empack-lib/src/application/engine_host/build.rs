@@ -83,7 +83,7 @@ async fn build_with_inputs(
 ) -> Result<()> {
     ensure!(
         !args.continue_build && args.associate_downloads.is_empty(),
-        "This host requires explicit verified content; durable continuation and CLI association parsing are not connected yet"
+        "Use the continuation entry point for a saved build and its file associations"
     );
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -155,7 +155,13 @@ fn configured_engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
 /// are rejected, and every file association is checked against current captured obligations.
 pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
     ensure!(
-        args.continue_build && args.targets.is_empty() && args.format.is_none() && !args.clean,
+        args.continue_build
+            && args.targets.is_empty()
+            && args.format.is_none()
+            && !args.clean
+            && !args.optional_defaults
+            && args.optional_choices.is_empty()
+            && !args.allow_optional_metadata_loss,
         "Continuation uses its saved recipe; targets, archive overrides and clean require a new build"
     );
     session.process().check_cancelled()?;

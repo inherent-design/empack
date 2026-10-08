@@ -665,8 +665,8 @@ and invalid options cannot create a project or durable host state. Forced replac
 requires the displayed footprint and preserves user templates and unrelated files.
 Initialization and recovery share approval, cancellation, shutdown and outcome
 classification. The initialization host currently accepts empty projects; source imports
-have a separate normalization path. CLI dispatch cutover remains pending until the
-other command hosts can consume these documents together.
+have a separate normalization path. The CLI adapter selects that path for `--from`;
+ordinary project commands now consume the native documents through engine hosts.
 
 ### Implemented recovery host
 
@@ -875,9 +875,10 @@ explicit association decision. A filename or extension never establishes identit
 
 Fresh requests enter `build`; saved requests enter the separate `continue_build` host.
 The latter accepts `--continue`, a download root and explicit associations, preserving the
-saved recipe. Recipe overrides require a fresh build. Both entry points are compiled;
-the coordinated CLI dispatcher cutover remains pending. Existing CLI workflows remain
-available through the current dispatcher in the meantime.
+saved recipe. Recipe overrides require a fresh build. Both entry points are wired to
+the CLI. `--optional CHOICE=true|false` and `--optional-defaults` supply materialization
+choices; `--allow-optional-metadata-loss` separately authorizes the mrpack conversion.
+Execution confirmation never supplies those semantic decisions implicitly.
 
 ### Native import host
 
