@@ -923,6 +923,9 @@ local file does not downgrade a strong-source policy to an accepted observation.
 A provider source can include an explicit `supplied_archive` native path. Its bytes must
 satisfy that exact provider archive's original digest and size, including when no download
 URL is available. This association is separate from supplied files inside the archive.
+Blank optional CurseForge display fields (name, version and author) become missing
+metadata with a source-located diagnostic, so the host can supply project values.
+Control characters and invalid required runtime/format identifiers remain errors.
 Native paths resolve from the invocation;
 destination paths resolve from the selected workdir. Remote acquisition enforces the
 compressed archive limit while streaming, before parsing or project preparation.

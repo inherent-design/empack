@@ -466,3 +466,35 @@ fn inspection_preserves_transient_downloads_without_authorizing_transport_or_per
         assert!(!format!("{:?}", imported.diagnostics).contains("secret-marker"));
     }
 }
+
+#[test]
+fn curseforge_blank_optional_metadata_is_missing_without_weakening_runtime_validation() {
+    let base = json!({"manifestVersion":1,"manifestType":"minecraftModpack","name":"Pack","version":"1","author":"Author","files":[],"minecraft":{"version":"1.21.1","modLoaders":[]}});
+    for field in ["name", "version", "author"] {
+        for blank in ["", "   "] {
+            let mut value = base.clone();
+            value[field] = json!(blank);
+            let imported = inspect_json("manifest.json", &value, &[]).unwrap();
+            let result = match field {
+                "name" => &imported.metadata.name,
+                "version" => &imported.metadata.version,
+                _ => &imported.metadata.author,
+            };
+            assert!(result.is_none());
+            assert_eq!(imported.diagnostics.len(), 1);
+            assert_eq!(
+                imported.diagnostics[0].location.pointer.as_deref(),
+                Some(format!("/{field}").as_str())
+            );
+        }
+        let mut invalid = base.clone();
+        invalid[field] = json!("\n");
+        assert!(inspect_json("manifest.json", &invalid, &[]).is_err());
+    }
+    let mut invalid = base;
+    invalid["minecraft"]["version"] = json!("");
+    assert!(inspect_json("manifest.json", &invalid, &[]).is_err());
+    let mut invalid = mr();
+    invalid["versionId"] = json!("");
+    assert!(inspect_json("modrinth.index.json", &invalid, &[]).is_err());
+}

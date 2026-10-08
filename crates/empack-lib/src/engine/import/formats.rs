@@ -306,19 +306,32 @@ fn curseforge(
     maximum: usize,
     cancel: &Cancellation,
 ) -> Result<(ImportedProject, Roots)> {
-    let value: CurseForge = decode(bytes)?;
+    let mut value: CurseForge = decode(bytes)?;
     ensure!(
         value.manifest_type == "minecraftModpack" && value.manifest_version.is_none_or(|v| v == 1),
         "Unsupported CurseForge manifest type or version"
     );
     ensure!(value.files.len() <= maximum, "Import exceeds record limit");
+    let mut diagnostics = Vec::new();
     for (name, field) in [
-        ("name", &value.name),
-        ("version", &value.version),
-        ("author", &value.author),
+        ("name", &mut value.name),
+        ("version", &mut value.version),
+        ("author", &mut value.author),
     ] {
         if let Some(value) = field {
-            text(value).with_context(|| format!("/{name}"))?;
+            ensure!(
+                !value.chars().any(char::is_control),
+                "Control-containing metadata field /{name}"
+            );
+            if value.trim().is_empty() {
+                *field = None;
+                diagnostics.push(ImportDiagnostic {
+                    location: location("manifest.json", Some(format!("/{name}")))?,
+                    message: format!(
+                        "Blank optional {name} has no value; supply a project value during import"
+                    ),
+                });
+            }
         }
     }
     let mut loaders = Vec::new();
@@ -361,6 +374,7 @@ fn curseforge(
         runtime,
         source,
     );
+    result.diagnostics.extend(diagnostics);
     let mut projects = BTreeSet::new();
     for (index, file) in value.files.into_iter().enumerate() {
         cancel.check()?;
