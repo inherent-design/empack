@@ -258,6 +258,14 @@ fn template_overlap(path: &str, seed: &str) -> bool {
     loop {
         match (left.next(), right.next()) {
             (Some(a), Some(b)) => {
+                // Most captured paths share literal prefixes. Comparing those does not
+                // require allocating and normalizing both components for every seed.
+                if a == b {
+                    continue;
+                }
+                if a.is_ascii() && b.is_ascii() {
+                    return a.eq_ignore_ascii_case(b);
+                }
                 let folded = |value: &str| {
                     value
                         .chars()
@@ -266,12 +274,7 @@ fn template_overlap(path: &str, seed: &str) -> bool {
                         .nfd()
                         .collect::<String>()
                 };
-                if folded(a) != folded(b) {
-                    return false;
-                }
-                if a != b {
-                    return true;
-                }
+                return folded(a) == folded(b);
             }
             _ => return true,
         }
@@ -282,6 +285,31 @@ fn template_overlap(path: &str, seed: &str) -> bool {
 mod tests {
     use super::*;
     use empack_core::path::PathSyntax;
+    #[test]
+    fn capture_overlap_preserves_component_and_unicode_alias_boundaries() {
+        for (left, right, expected) in [
+            ("pack/config", "pack/config/a.toml", true),
+            ("pack/config/a.toml", "pack/config", true),
+            ("pack/config/a.toml", "pack/config/a.toml", true),
+            ("pack/config/a.toml", "pack/config/b.toml", false),
+            ("pack/config", "pack/configuration/a.toml", false),
+            // An aliased ancestor is itself an observation obligation, even when
+            // the remaining path differs from the selected descendant.
+            ("pack/CONFIG/unrelated", "pack/config/a.toml", true),
+            (
+                "pack/caf\u{00e9}/unrelated",
+                "pack/cafe\u{0301}/a.toml",
+                true,
+            ),
+            ("pack/stra\u{00df}e/unrelated", "pack/STRASSE/a.toml", true),
+            ("pack/\u{212a}/unrelated", "pack/k/a.toml", true),
+            ("pack/caf\u{00e9}/a.toml", "pack/caf\u{00e9}/b.toml", false),
+            ("pack/caf\u{00e9}/a.toml", "pack/cafe/a.toml", false),
+        ] {
+            assert_eq!(template_overlap(left, right), expected, "{left}, {right}");
+            assert_eq!(template_overlap(right, left), expected, "{right}, {left}");
+        }
+    }
     #[test]
     fn template_capture_selects_rendered_collisions_before_opening_user_bytes() {
         let seeds = [PortableRelPath::parse(
