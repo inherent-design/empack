@@ -847,3 +847,130 @@ async fn build_downloads_share_the_batch_budget_and_validate_all_declarations_fi
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
 }
+
+#[tokio::test]
+async fn refreshed_provider_origins_retain_verified_saved_download_fallbacks() {
+    use crate::engine::providers::{CatalogLimits, ProviderCatalog};
+    use empack_core::{
+        identity::{ModrinthProjectId, ProviderProjectId},
+        model::{DependencyKey, FileSlot},
+    };
+    use serde_json::json;
+    use std::io::Read;
+    let mut server = mockito::Server::new_async().await;
+    let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);
+    let project = ProviderProjectId::Modrinth(ModrinthProjectId::parse("AANobbMI").unwrap());
+    let pin = ResolvedPin {
+        selection: project.parse_pin("abcdefgh").unwrap(),
+        project,
+    };
+    let metadata_project = server
+        .mock("GET", "/project/AANobbMI")
+        .with_body(
+            json!({"id":"AANobbMI","slug":"assets","title":"Assets","project_type":"resourcepack"})
+                .to_string(),
+        )
+        .create_async()
+        .await;
+    let metadata_version = server.mock("GET", "/version/abcdefgh").with_body(json!({"id":"abcdefgh","project_id":"AANobbMI","files":[{"filename":"assets.zip","primary":true,"size":7,"hashes":{"md5":"321c3cf486ed509164edec1e1981fec8"},"url":format!("{}/unavailable", server.url())}],"game_versions":["1.20.1"],"loaders":["minecraft"],"dependencies":[]}).to_string()).create_async().await;
+    let refreshed = server
+        .mock("GET", "/unavailable")
+        .with_status(404)
+        .expect(1)
+        .create_async()
+        .await;
+    let saved = server
+        .mock("GET", "/saved")
+        .with_body("payload")
+        .expect(1)
+        .create_async()
+        .await;
+    let plan = BuildAcquisitionResult {
+        acquired: BuildAcquisitions::default(),
+        pending: vec![AcquisitionNeed {
+            key: AcquisitionKey::Locked(LockedFileKey {
+                dependency: DependencyKey::parse("assets").unwrap(),
+                slot: FileSlot::parse("primary").unwrap(),
+            }),
+            reason: AcquisitionReason::MaterializedTarget,
+            expected: ExpectedContent {
+                digests: Some(
+                    DigestSet::parse([("md5", "321c3cf486ed509164edec1e1981fec8")]).unwrap(),
+                ),
+                size: Some(7),
+                accepted_observation: None,
+            },
+            source: BuildContentSource::Provider {
+                pin,
+                slot: FileSlot::parse("primary").unwrap(),
+                alternatives: vec![format!("{}/saved", server.url())],
+            },
+        }],
+    };
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 4 << 20,
+        scratch_bytes: 32,
+        open_files: 16,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let result = async {
+                plan.refresh_provider_locators(
+                    &catalog,
+                    &mut scope,
+                    CatalogLimits {
+                        response_bytes: 4096,
+                        transfer_bytes: 8192,
+                        deadline: std::time::Duration::from_secs(2),
+                    },
+                )
+                .await?
+                .acquire_http(
+                    &HttpAcquisition::for_loopback_tests(),
+                    &mut scope,
+                    SourceEvidencePolicy::Compatibility,
+                    TransferLimits {
+                        file_bytes: 16,
+                        transfer_bytes: 16,
+                        ..Default::default()
+                    },
+                )
+                .await
+            }
+            .await;
+            Ok(result)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    let result = match &*outcome {
+        OperationOutcome::Completed(Ok(result)) => result,
+        OperationOutcome::Completed(Err(error)) => {
+            panic!("Saved fallback was discarded: {error:#}")
+        }
+        _ => panic!("Expected verified acquisition"),
+    };
+    assert!(result.pending.is_empty());
+    let mut bytes = Vec::new();
+    result
+        .acquired
+        .locked
+        .values()
+        .next()
+        .unwrap()
+        .content
+        .lease()
+        .open()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"payload");
+    for mock in [metadata_project, metadata_version, refreshed, saved] {
+        mock.assert_async().await;
+    }
+    drop(handle);
+    drop(runtime);
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

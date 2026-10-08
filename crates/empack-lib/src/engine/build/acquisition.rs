@@ -179,11 +179,11 @@ impl BuildAcquisitionResult {
                     unreachable!("grouped provider obligation")
                 };
                 let mut alternatives = resolution.download_alternatives(slot, &need.expected)?;
-                // An unavailable current locator does not revoke an already declared origin.
-                // The exact selection and original byte assertions were still validated above.
-                if alternatives.is_empty() {
-                    alternatives.clone_from(saved);
-                }
+                // Prefer current locators without revoking declared fallback origins. Every
+                // alternative still has to satisfy the exact original byte assertions.
+                alternatives.extend(saved.iter().cloned());
+                let mut seen = BTreeSet::new();
+                alternatives.retain(|url| seen.insert(url.clone()));
                 need.source = if alternatives.is_empty() {
                     BuildContentSource::Manual {
                         pin: Some(pin.clone()),

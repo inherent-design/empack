@@ -182,6 +182,11 @@ pub enum CacheAccess {
 
 The acquisition layer streams to an owned quarantine file, checks status and origin policy, applies `Content-Length` as an early rejection only, and counts actual received bytes. It hashes incrementally and verifies expected size/digests before returning `AcquiredContent`.
 
+Exact provider refresh prefers current download origins and retains distinct saved origins
+as fallbacks. A returned URL is not evidence that its server will deliver the file. Every
+alternative must satisfy the original content assertions; refresh cannot replace those
+assertions or silently update the locked selection.
+
 An HTML error page with a successful status is not accepted as a JAR solely because of its filename. Content identification and archive parsing remain explicit validation steps. Do not overwrite declared source hashes with hashes of the response.
 
 `CacheAccess` in a request is an upper-bound preference, not authority. `AcquisitionContext` privately contains either `Arc<dyn ContentLookup>`, `Arc<dyn ContentStore>`, or no cache capability, selected by the engine at the public entry point. Helpers cannot upgrade that context. `VerifiedAcquisition` itself stores no global cache writer and receives only a scratch-file factory, never a live project root factory. A write request under read-only authority returns `CapabilityDenied`.

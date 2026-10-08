@@ -1288,3 +1288,14 @@ remain offline. No refreshed locator or changed expectation is written into proj
 All 41 affected API/acquisition/host tests pass, with all-feature Clippy and Windows
 cross-compilation. The six focused refresh/fallback tests pass serially. One parallel
 host test reported an inherited output pipe; its isolated rerun passed without that warning.
+
+## Saved origin fallback after refresh
+
+Greptile 110's failed-fresh/working-saved URL scenario reproduced before correction.
+Exact lookup now keeps distinct saved origins after fresh ones. Downloads still verify
+the original hash and size; successful lookup alone cannot revoke a working origin.
+The regression inspects the acquired bytes and both HTTP requests.
+
+The combined fallback and import-admission changes pass all 57 affected tests,
+all-feature Clippy and Windows cross-compilation. This is targeted evidence; the
+last complete suite remains the 1,918 tests and eleven doctests at `ae63534`.
