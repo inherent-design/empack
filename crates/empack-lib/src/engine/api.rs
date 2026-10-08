@@ -1134,3 +1134,6 @@ mod recovery_tests;
 
 #[cfg(test)]
 mod build_input_tests;
+
+#[cfg(test)]
+mod recorded_sync_tests;

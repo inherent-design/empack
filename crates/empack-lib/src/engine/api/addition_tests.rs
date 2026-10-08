@@ -99,7 +99,7 @@ async fn reference_add_sync_export_and_materialization_keep_distinct_byte_obliga
         let preview = engine
             .preview(
                 root.path().to_path_buf(),
-                SyncRequest {
+                SyncRequest::Supplied {
                     resolution: None,
                     content: references(&resolved),
                 },
@@ -171,7 +171,7 @@ async fn reference_add_sync_export_and_materialization_keep_distinct_byte_obliga
     let preview = engine
         .preview(
             root.path().to_path_buf(),
-            SyncRequest {
+            SyncRequest::Supplied {
                 resolution: None,
                 content: references(&resolved),
             },
@@ -197,7 +197,7 @@ async fn reference_requests_cannot_omit_slots_or_accept_changed_payloads() {
         engine
             .prepare(
                 root.path().to_path_buf(),
-                SyncRequest {
+                SyncRequest::Supplied {
                     resolution: None,
                     content
                 }
@@ -222,7 +222,7 @@ async fn reference_requests_cannot_omit_slots_or_accept_changed_payloads() {
         engine
             .prepare(
                 root.path().to_path_buf(),
-                SyncRequest {
+                SyncRequest::Supplied {
                     resolution: None,
                     content: references(&project(false, false))
                 }
@@ -434,7 +434,7 @@ async fn remove_add_readd_sync_twice_build_share_logical_and_byte_postconditions
     )
     .unwrap();
     for repeat in [false, true] {
-        let sync = SyncRequest {
+        let sync = SyncRequest::Supplied {
             resolution: None,
             content: request(ExistingDependencyPolicy::UpdateSameIdentity).content,
         };
@@ -495,7 +495,7 @@ async fn synchronization_requires_grants_and_new_resolution_for_runtime_changes(
     let state = tempfile::tempdir().unwrap();
     fixture(root.path());
     let (engine, governor) = engine(state.path().join("state"));
-    let sync = || SyncRequest {
+    let sync = || SyncRequest::Supplied {
         resolution: None,
         content: request(ExistingDependencyPolicy::UpdateSameIdentity).content,
     };
@@ -660,7 +660,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
         let view = engine
             .preview(
                 root.path().to_path_buf(),
-                SyncRequest {
+                SyncRequest::Supplied {
                     resolution: None,
                     content: crate::engine::dependency_content::materialized(acquired_project(
                         &updated,
@@ -705,7 +705,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
         engine
             .preview(
                 root.path().to_path_buf(),
-                SyncRequest {
+                SyncRequest::Supplied {
                     resolution: None,
                     content: crate::engine::dependency_content::materialized(acquired_project(
                         &updated
@@ -718,7 +718,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
     let prepared = ready(
         &engine,
         root.path(),
-        SyncRequest {
+        SyncRequest::Supplied {
             resolution: Some(resolved.clone()),
             content: crate::engine::dependency_content::materialized(acquired_project(&resolved)),
         },
@@ -745,7 +745,7 @@ async fn explicit_update_preserves_alias_and_intent_then_sync_is_a_noop() {
     let no_op = engine
         .preview(
             root.path().to_path_buf(),
-            SyncRequest {
+            SyncRequest::Supplied {
                 resolution: None,
                 content: crate::engine::dependency_content::materialized(acquired_project(
                     &resolved,
@@ -903,7 +903,7 @@ async fn adoption_publishes_observed_intent_without_payload_writes_then_sync_ret
     let no_op = engine
         .preview(
             root.path().to_path_buf(),
-            SyncRequest {
+            SyncRequest::Supplied {
                 resolution: None,
                 content: crate::engine::dependency_content::materialized(content),
             },
@@ -972,7 +972,7 @@ async fn adoption_creates_first_lock_without_rewriting_observed_payloads() {
         let view = engine
             .preview(
                 root.path().to_path_buf(),
-                SyncRequest {
+                SyncRequest::Supplied {
                     resolution: None,
                     content: crate::engine::dependency_content::materialized(acquired_project(
                         &resolved,
@@ -1129,7 +1129,7 @@ async fn selected_identity_replacement_publishes_one_candidate_then_sync_converg
         let view = engine
             .preview(
                 root.path().to_path_buf(),
-                SyncRequest {
+                SyncRequest::Supplied {
                     resolution: None,
                     content: crate::engine::dependency_content::materialized(acquired_project(
                         &replacement,

@@ -1453,3 +1453,19 @@ no blocking findings and noted duplicate catalog initialization in the file-only
 That entry point now delegates directly to the mixed addition host. Its native regression
 verifies an exact no-op through the public entry point. The focused regression, all-feature
 Clippy and Windows cross-compilation pass after the correction.
+
+
+## Recorded synchronization inputs
+
+`SyncRequest::Recorded` now captures and verifies local sources and archive members,
+retaining provider/URL/manual slots as exact references. It shares the existing sync planner,
+approval and publisher with `SyncRequest::Supplied`. Changed semantic intent still requires
+fresh resolution; ordinary synchronization does not upgrade selections or download payloads.
+
+Native tests restore missing and modified placements, repeat synchronization without rewriting
+documents, reuse verified installed members when their archive is absent, reject unsafe paths
+and corrupt/missing/weak sources, and invalidate publication after a captured source changes.
+The mixed-add → sync twice → export fixture now uses recorded synchronization without manually
+constructing its file decisions. All 52 affected tests, all-feature Clippy and Windows cross-compilation pass.
+The preceding `75eb4be` revision passed Greptile 118 with no outstanding findings.
+The last completed full suite remains pinned to `e317773` (1,951 tests and eleven doctests).

@@ -159,7 +159,7 @@ fn sync_request(project: &ResolvedProject) -> SyncRequest {
             );
         }
     }
-    SyncRequest {
+    SyncRequest::Supplied {
         resolution: None,
         content,
     }
@@ -525,42 +525,15 @@ async fn mixed_addition_uses_one_publication_and_converges_through_sync_and_expo
         .unwrap();
     assert_eq!(snapshot(&project), before);
     for _ in 0..2 {
-        use crate::{
-            application::process_runtime::Cancellation,
-            engine::{
-                content::{InitialObservation, verify_stream},
-                mrpack::AcquiredBuildFile,
+        synchronize(
+            &session(root.path(), true, false),
+            SyncRequest::Recorded {
+                resolution: None,
+                evidence: SourceEvidencePolicy::Compatibility,
             },
-        };
-        use empack_core::files::FilePermissions;
-        let mut request = sync_request(&installed);
-        let key = DependencyKey::parse("settings").unwrap();
-        let file = &installed.lock().dependencies[&key].files.as_slice()[0];
-        let content = verify_stream(
-            &mut &b"enabled=true"[..],
-            &file.expected,
-            12,
-            SourceEvidencePolicy::Compatibility,
-            InitialObservation::RequireEvidence,
-            &Cancellation::default(),
         )
+        .await
         .unwrap();
-        request.content.insert(
-            LockedFileKey {
-                dependency: key,
-                slot: file.slot.clone(),
-            },
-            DependencyContent::Materialized(AcquiredBuildFile {
-                content,
-                permissions: FilePermissions {
-                    readonly: false,
-                    executable: false,
-                },
-            }),
-        );
-        synchronize(&session(root.path(), true, false), request)
-            .await
-            .unwrap();
         assert_eq!(snapshot(&project), before);
     }
     build(

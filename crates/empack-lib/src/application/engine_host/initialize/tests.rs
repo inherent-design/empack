@@ -206,7 +206,7 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         let prepared = match engine
             .prepare(
                 ProjectTarget::Existing(project.clone()),
-                SyncRequest {
+                SyncRequest::Supplied {
                     resolution: None,
                     content: BTreeMap::new(),
                 },

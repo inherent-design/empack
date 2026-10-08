@@ -163,6 +163,9 @@ pub struct MutationSnapshot {
     workspace: WorkspaceSnapshot,
 }
 impl MutationSnapshot {
+    pub(in crate::engine) fn workspace(&self) -> &WorkspaceSnapshot {
+        &self.workspace
+    }
     pub(in crate::engine) fn require_revision(
         &self,
         revision: Option<ProjectRevision>,

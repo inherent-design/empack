@@ -157,7 +157,9 @@ incomplete evidence and native file changes before approval. It records remote r
 without claiming payload acquisition. A failed requested selection or unresolved required
 edge publishes nothing. `engine_host::remove` similarly displays tracked and observed
 selections, removal mode and missing evidence. `engine_host::synchronize` accepts an explicit
-`SyncRequest`; automatic resolution and materialization remain separate inputs. These
+`SyncRequest`. Its `Recorded` mode derives local and archive-member content from captured
+sources and preserves remote references; its `Supplied` mode accepts explicit content decisions.
+Changed intent still needs a fresh resolution candidate. These
 compiled entry points share preview, approval, cancellation, shutdown and receipt handling.
 CLI search/selection and dispatcher cutover remain pending.
 
@@ -319,10 +321,19 @@ recorded placements and verified supplied bytes to a restoration plan. Modified 
 are explicit replacements; unrelated content remains. Metadata discovery tolerates
 opaque unrelated records and binds only interpretable records naming locked destinations.
 No-op content remains a publication precondition without being staged again.
-`SyncRequest` carries verified exact inputs through the shared Engine lifecycle.
+`SyncRequest::Supplied` carries verified exact inputs through the shared Engine lifecycle.
+`SyncRequest::Recorded` derives those decisions from exact recorded sources: local files
+and embedded members must verify, while provider/URL/manual slots remain deferred references.
+It neither downloads remote payloads nor selects newer versions. The source read set includes
+only declared files plus managed placements and required metadata, including sources outside
+`pack/`. Acquisition is admitted before creating private content; member readers share bounded
+packed storage and process one source archive at a time. Missing archives may use captured
+installed members only after original assertions verify. Missing local sources, unsafe native
+paths, corrupt members and stronger-evidence policy failures prevent the whole publication.
+Captured sources remain publication preconditions, so an edit after approval invalidates it.
 `SyncPreview` lists selected records, lock rebinding and the replacement plan;
-`SyncReceipt` retains the coherent published project. `SyncRequest.resolution` may
-supply fresh resolution for changed or missing intent. The planner preserves valid
+`SyncReceipt` retains the coherent published project. Either request variant
+can carry a fresh `resolution` candidate for changed or missing intent. The planner preserves valid
 exact selections, rejects unrelated upgrades/deletions and requires new records to
 belong to the changed roots' required closure. Known retained dependents remain binding.
 A missing lock requires fresh resolution and cannot authorize adoption of existing
@@ -390,7 +401,7 @@ existing roots, file changes and the exact replacement summary; `AddReceipt` ret
 the resulting project and publication result. Provider/local/URL request resolution,
 and ContinueIndependent integration remain pending.
 
-`AddRequest`, `UpdateRequest` and `SyncRequest` describe every file slot with
+`AddRequest`, `UpdateRequest` and `SyncRequest::Supplied` describe every file slot with
 `DependencyContent::Materialized` or `DependencyContent::Reference`. Omitting a slot
 is an error. A reference records an exact provider, URL or manual byte obligation;
 it does not certify acquired bytes. Local and archive-member inputs require

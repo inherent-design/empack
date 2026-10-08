@@ -6,6 +6,79 @@ use empack_core::{files::ManagedPath, model::ContentLayer};
 use std::collections::BTreeSet;
 
 impl ProjectReader {
+    /// Include exact recorded source files without broadening mutation ownership.
+    pub fn capture_recorded_synchronization(
+        &self,
+        selected: &Path,
+        proposed: Option<&ResolvedProject>,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<MutationSnapshot> {
+        let captured =
+            self.capture_synchronization_with_resolution(selected, proposed, limits, cancel)?;
+        let mut workspace = captured.into_workspace();
+        let candidate = crate::engine::synchronization::SynchronizationCandidate::prepare_input(
+            workspace.intent(),
+            workspace.prior_lock(),
+            proposed,
+        )?;
+        let sources = candidate
+            .project()
+            .lock()
+            .dependencies
+            .values()
+            .flat_map(|dependency| dependency.files.as_slice())
+            .filter_map(|file| match &file.acquisition {
+                AcquisitionSpec::Local(path) | AcquisitionSpec::Embedded { archive: path, .. } => {
+                    Some(path.clone())
+                }
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        let _guard = self.recovery.enter(&workspace.root)?;
+        let sources = sources.into_iter().collect::<Vec<_>>();
+        for path in &sources {
+            cancel.check()?;
+            // A recorded source is a file, never authority to recursively inspect a directory.
+            match native::parent(&workspace.root.directory, path)
+                .and_then(|(parent, leaf)| native::open_file(&parent, &leaf))
+            {
+                Ok(file) => ensure!(file.metadata()?.is_file(), "Recorded source is not a file"),
+                Err(error)
+                    if error
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        if !sources.is_empty() {
+            let next = workspace.root.capture(&sources, limits, cancel)?;
+            workspace.native = workspace.native.merge(next)?;
+        }
+        ensure!(
+            workspace.native.entries().len() <= limits.entries,
+            "Recorded synchronization exceeds entry limit"
+        );
+        let bytes = workspace
+            .native
+            .entries()
+            .values()
+            .try_fold(0u64, |bytes, entry| {
+                bytes
+                    .checked_add(match entry {
+                        Observation::File(file) => file.bytes,
+                        _ => 0,
+                    })
+                    .context("Recorded synchronization size overflow")
+            })?;
+        ensure!(
+            bytes <= limits.total_bytes,
+            "Recorded synchronization exceeds byte limit"
+        );
+        workspace.root.revalidate(&workspace.native, cancel)?;
+        Ok(MutationSnapshot { workspace })
+    }
+
     /// Bind recorded placements and interpretable metadata for those exact destinations.
     pub fn capture_synchronization(
         &self,

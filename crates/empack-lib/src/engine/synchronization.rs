@@ -1,5 +1,6 @@
 //! Synchronization restores exact recorded selections; it never resolves an implicit upgrade.
 mod native;
+pub(in crate::engine) mod recorded;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, DocumentEdit, PreparedDocument};
 use anyhow::{Result, ensure};
 use empack_core::model::ResolvedProject;
