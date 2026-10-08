@@ -680,3 +680,31 @@ fn provider_world_documents_separate_archive_assertions_members_and_destination_
         assert!(validate(&source, changed).is_err(), "{change}");
     }
 }
+
+#[test]
+fn encoding_admission_scales_with_variable_intent_and_lock_data() {
+    let source = decoded();
+    let small = validate(&source, resolution(&source)).unwrap();
+    let baseline = DocumentCodec.encoding_memory(&small).unwrap();
+    assert!(baseline < 8 << 20);
+    let mut expanded = self::source();
+    expanded["pack"]["description"] = json!("description\n\"".repeat(2048));
+    expanded["extensions"]["large"] = json!(["extension".repeat(4096)]);
+    let expanded = DocumentCodec
+        .decode_intent(&serde_json::to_vec(&expanded).unwrap(), "expanded")
+        .unwrap();
+    let mut lock = resolution(&expanded);
+    let root = lock.dependencies.values_mut().next().unwrap();
+    let mut files = root.files.clone().into_vec();
+    files[0]
+        .provenance
+        .conversions
+        .push("conversion".repeat(4096));
+    root.files = NonEmpty::new(files).unwrap();
+    let large = validate(&expanded, lock).unwrap();
+    let estimate = DocumentCodec.encoding_memory(&large).unwrap();
+    assert!(estimate > baseline + (1 << 20));
+    let encoded = DocumentCodec.encode_intent(large.intent()).unwrap().len()
+        + DocumentCodec.encode_lock(&large).unwrap().len();
+    assert!(estimate > encoded as u64 * 8);
+}

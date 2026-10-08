@@ -6,6 +6,7 @@ use crate::engine::{
         store::{CachedFileRequest, ContentStoreLimits, FileContentLookup, FileContentStore},
         validate_expectation,
     },
+    continuation_store::{self as native, Kind},
     runtime::RetainedOutput,
 };
 use empack_core::digest::{ContentId, DigestSet, IntegrityEvidence};
@@ -22,7 +23,7 @@ pub async fn observe_pending_import(
     state: PathBuf,
     target: PathBuf,
 ) -> Result<Option<PendingImportCleanup>> {
-    let work = scope.spawn_blocking(resources(), ResourceRequest::default(), move |cancel| {
+    let work = scope.spawn_blocking(resources(0)?, ResourceRequest::default(), move |cancel| {
         store::observe(&state, &target, &cancel)
     })?;
     Ok(scope
@@ -35,7 +36,7 @@ pub async fn discard_observed_import(
     scope: &mut WorkScope,
     saved: PendingImportCleanup,
 ) -> Result<bool> {
-    let work = scope.spawn_blocking(resources(), ResourceRequest::default(), move |cancel| {
+    let work = scope.spawn_blocking(resources(0)?, ResourceRequest::default(), move |cancel| {
         store::discard(&saved, &cancel)
     })?;
     Ok(scope
@@ -50,13 +51,13 @@ pub struct ResumedImport {
     lookup: RetainedOutput<FileContentLookup>,
     pub saved: SavedImportRecord,
 }
-fn resources() -> ResourceRequest {
-    ResourceRequest {
+fn resources(bytes: u64) -> Result<ResourceRequest> {
+    Ok(ResourceRequest {
         jobs: 1,
-        memory_bytes: 8 * store::MAX_RECORD,
+        memory_bytes: native::record_memory(bytes)?,
         open_files: 12,
         ..Default::default()
-    }
+    })
 }
 fn archive_expectation(archive: &AcquiredContent) -> ExpectedContent {
     let digests = match archive.evidence() {
@@ -154,13 +155,27 @@ pub async fn load_pending_import(
     target: PathBuf,
 ) -> Result<Option<ResumedImport>> {
     let selected_state = state.clone();
+    let selected_target = target.clone();
+    let stat = scope.spawn_blocking(resources(0)?, ResourceRequest::default(), move |cancel| {
+        cancel.check()?;
+        native::record_bytes(&selected_state, Kind::Import, &selected_target)
+    })?;
+    let Some(bytes) = scope
+        .accept(stat.wait().await?)?
+        .transpose()?
+        .into_parts()
+        .0
+    else {
+        return Ok(None);
+    };
+    let selected_state = state.clone();
     let read = scope.spawn_blocking(
-        resources(),
+        resources(bytes)?,
         ResourceRequest {
-            memory_bytes: 8 * store::MAX_RECORD,
+            memory_bytes: native::record_memory(bytes)?,
             ..Default::default()
         },
-        move |cancel| store::read(&selected_state, &target, &cancel),
+        move |cancel| store::read_bounded(&selected_state, &target, bytes, &cancel),
     )?;
     let loaded = scope.accept(read.wait().await?)?.transpose()?;
     let (loaded, permit) = loaded.into_parts();
@@ -236,7 +251,7 @@ pub async fn save_pending_import(
     prior: Option<SavedImportRecord>,
 ) -> Result<SavedImportRecord> {
     let selected = target.clone();
-    let work = scope.spawn_blocking(resources(), ResourceRequest::default(), move |cancel| {
+    let work = scope.spawn_blocking(resources(0)?, ResourceRequest::default(), move |cancel| {
         store::bind(&selected, &cancel)
     })?;
     let (_, binding) = scope
@@ -339,10 +354,15 @@ pub async fn save_pending_import(
     for content in provided.into_values() {
         content_store.publish_verified(scope, content).await?;
     }
-    let work = scope.spawn_blocking(resources(), ResourceRequest::default(), move |cancel| {
-        let _save_guard = save_guard;
-        store::save(&state, &target, &record, prior.as_ref(), &cancel)
-    })?;
+    let bytes = native::encoded_bytes(&record, Kind::Import.maximum())?;
+    let work = scope.spawn_blocking(
+        resources(bytes)?,
+        ResourceRequest::default(),
+        move |cancel| {
+            let _save_guard = save_guard;
+            store::save(&state, &target, &record, prior.as_ref(), &cancel)
+        },
+    )?;
     Ok(scope
         .accept(work.wait().await?)?
         .transpose()?

@@ -1153,7 +1153,7 @@ async fn saved_import_accumulates_exact_verified_associations_across_restarts() 
         let origin = server.url();
         let governor = ResourceGovernor::new(ResourceRequest {
             jobs: 1,
-            memory_bytes: 64 << 20,
+            memory_bytes: 8 << 20,
             scratch_bytes: 1 << 20,
             open_files: 64,
         });

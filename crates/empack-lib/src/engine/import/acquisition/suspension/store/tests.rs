@@ -129,3 +129,35 @@ fn resume_rejects_symlink_targets_and_cleanup_does_not_follow_them() {
     assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"keep");
     assert!(target.is_symlink());
 }
+
+#[test]
+fn record_growth_after_admission_is_rejected_without_mutation() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("project");
+    let state = root.path().join("state");
+    let cancel = Cancellation::default();
+    let record = fixture(&target);
+    let saved = save(&state, &target, &record, None, &cancel).unwrap();
+    let admitted = native::record_bytes(&state, Kind::Import, &target)
+        .unwrap()
+        .unwrap();
+    let mut changed = record;
+    changed.files.insert("another-exact-file".into(), [3; 32]);
+    save(&state, &target, &changed, Some(&saved), &cancel).unwrap();
+    let path = state.join("pending-imports").join(&saved.0.name);
+    let before = fs::read(&path).unwrap();
+    assert!(read_bounded(&state, &target, admitted, &cancel).is_err());
+    assert_eq!(fs::read(&path).unwrap(), before);
+    assert!(!target.exists());
+}
+
+#[test]
+fn serialization_admission_counts_escaped_bytes_and_rejects_overflow() {
+    let root = tempfile::tempdir().unwrap();
+    let mut record = fixture(&root.path().join("project"));
+    record.files.insert("quote\"\\\n日本語".into(), [5; 32]);
+    let bytes = serde_json::to_vec(&record).unwrap().len() as u64;
+    assert_eq!(native::encoded_bytes(&record, bytes).unwrap(), bytes);
+    assert!(native::encoded_bytes(&record, bytes - 1).is_err());
+    assert!(native::record_memory(u64::MAX).is_err());
+}

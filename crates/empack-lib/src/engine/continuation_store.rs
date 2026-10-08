@@ -20,6 +20,38 @@ use std::{
 };
 
 pub(in crate::engine) const MAX_RECORD: u64 = 4 << 20;
+/// Admission scales with actual record bytes, independently of the maximum accepted size.
+pub(in crate::engine) fn record_memory(bytes: u64) -> Result<u64> {
+    bytes
+        .checked_mul(8)
+        .and_then(|bytes| bytes.checked_add(256 << 10))
+        .context("Pending record memory estimate overflow")
+}
+
+/// Measure JSON output without retaining a second encoded copy.
+pub(in crate::engine) fn encoded_bytes(record: &impl Serialize, maximum: u64) -> Result<u64> {
+    struct Counter {
+        bytes: u64,
+        maximum: u64,
+    }
+    impl Write for Counter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            let next = self
+                .bytes
+                .checked_add(bytes.len() as u64)
+                .filter(|next| *next <= self.maximum)
+                .ok_or_else(|| io::Error::other("Pending record exceeds size limit"))?;
+            self.bytes = next;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter { bytes: 0, maximum };
+    serde_json::to_writer(&mut counter, record)?;
+    Ok(counter.bytes)
+}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(in crate::engine) struct Binding {

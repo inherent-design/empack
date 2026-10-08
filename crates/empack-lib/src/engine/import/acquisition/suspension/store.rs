@@ -1,7 +1,9 @@
 //! Import schema over the shared native continuation store.
 use super::*;
 use crate::engine::continuation_store::{self as native, BoundRecord, Kind};
-pub(super) use native::{Binding, MAX_RECORD, bind};
+#[cfg(test)]
+use native::MAX_RECORD;
+pub(super) use native::{Binding, bind};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[derive(Serialize, Deserialize)]
@@ -25,15 +27,22 @@ impl BoundRecord for Record {
         &self.binding
     }
 }
-pub(super) fn read(
+#[cfg(test)]
+fn read(
     state: &Path,
     target: &Path,
     cancel: &Cancellation,
 ) -> Result<Option<(SavedImportRecord, Record)>> {
-    Ok(
-        native::read(state, Kind::Import, target, MAX_RECORD, cancel)?
-            .map(|(saved, record)| (SavedImportRecord(saved), record)),
-    )
+    read_bounded(state, target, MAX_RECORD, cancel)
+}
+pub(super) fn read_bounded(
+    state: &Path,
+    target: &Path,
+    maximum: u64,
+    cancel: &Cancellation,
+) -> Result<Option<(SavedImportRecord, Record)>> {
+    Ok(native::read(state, Kind::Import, target, maximum, cancel)?
+        .map(|(saved, record)| (SavedImportRecord(saved), record)))
 }
 pub(super) fn observe(
     state: &Path,

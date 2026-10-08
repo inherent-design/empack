@@ -1,6 +1,6 @@
 # v0.5 delivery ledger
 
-Candidate implementation: `c9a8159`, 2026-10-08. Final validation is in progress. Target: **v0.5.0-alpha.1**.
+Candidate baseline: `77ec34c`, 2026-10-08. Review corrections and native validation are in progress. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full release validation: curated import/build acceptance, final platform checks and review remain open. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
+new route, not full release validation: final platform checks and review remain open. Curated import/build acceptance passed all seven packs. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
 ## Delivery states
@@ -141,12 +141,19 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Implemented | Explicit `ContinueIndependent` batches | Add/update opt in with `--continue-independent`; resolved groups prepare independently and publish one combined candidate with partial receipts; unresolved identity/evidence still blocks the whole request |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
+| Fixed locally | Review 129: continuation memory admission | Small sync save/load and three-restart import regression pass under 8 MiB; escaped record sizing and changed-size refusal retain bounds |
+| Open | Windows executable acceptance | Native CI reports ConPTY prompt detection failures and a 90-second server fixture timeout; investigation continues |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
 
 Both Review 128 findings reproduced before correction. The 38 affected tests and
-all-target/all-feature Clippy pass after correction. These fixes have not been
-re-reviewed. Per the user's instruction, further Greptile trigger cycles wait until
-known implementation, CLI cutover, test rewrites and old-code removal are complete.
+all-target/all-feature Clippy passed after correction. Review 129 repeated the already
+corrected orphan-candidate finding; its native cleanup regressions still pass. It also
+identified fixed continuation-memory reservations. Both sync and import reproduced
+small-record failures under an 8 MiB allowance. Admission now scales with observed
+record bytes and model data, and reads reject growth beyond their admitted size.
+All 55 affected continuation/document/cleanup tests and all-feature Clippy pass
+after correction. Greptile review began after the known implementation and local
+acceptance completed.
 
 ## Backend release
 
@@ -248,3 +255,10 @@ acceptance result.
 
 Update this ledger in place when behavior changes. Keep a single current routing table,
 a small evidence table and unresolved gates; use Git history for the narrative.
+
+At `77ec34c`, all 1,011 instrumented tests, eight doctests, seven Python contracts,
+all-feature/minimal Clippy and Windows cross-compilation passed. Source-file line
+coverage was 92.77% with the exclusions above. The frozen `c9a8159` executable
+(the same production code) passed all seven curated packs, seven provider probes
+and eleven actual Java runtime probes. Linux and macOS native CI passed; Windows
+strict executable failures remain open. These results do not certify the later review fixes.

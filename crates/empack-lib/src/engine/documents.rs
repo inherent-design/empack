@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod intent;
 mod lock;
+mod sizing;
 
 /// Malformed authored documents are usage failures, distinct from filesystem failures.
 #[derive(Debug, thiserror::Error)]
@@ -173,6 +174,10 @@ impl DocumentCodec {
             intent,
             original: bytes.to_vec(),
         })
+    }
+    /// Reserve codec work from model text and node counts without allocating wire values.
+    pub(crate) fn encoding_memory(&self, project: &ResolvedProject) -> Result<u64> {
+        sizing::encoding_memory(project)
     }
     /// Encode a checked normalized intent. This returns bytes and performs no filesystem write.
     pub fn encode_intent(&self, intent: &ProjectIntent) -> Result<Vec<u8>> {

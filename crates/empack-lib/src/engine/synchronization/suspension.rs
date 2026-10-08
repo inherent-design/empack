@@ -162,10 +162,7 @@ pub async fn load_pending_sync(
     else {
         return Ok(None);
     };
-    let memory = bytes
-        .checked_mul(8)
-        .and_then(|n| n.checked_add(32 << 20))
-        .context("Sync record memory overflow")?;
+    let memory = store::record_memory(bytes)?;
     let selected_state = state.clone();
     let target = context.target.clone();
     let work = scope.spawn_blocking(
@@ -333,10 +330,11 @@ pub async fn save_pending_sync(
         });
     }
     let binding = context.binding;
+    let encoding_memory = DocumentCodec.encoding_memory(&project)?;
     let record = scope.spawn_blocking(
-        resources(64 << 20),
+        resources(encoding_memory),
         ResourceRequest {
-            memory_bytes: 64 << 20,
+            memory_bytes: encoding_memory,
             ..Default::default()
         },
         move |cancel| {
@@ -374,10 +372,10 @@ pub async fn save_pending_sync(
     for file in acquired.into_values() {
         content.publish_verified(scope, file.content).await?;
     }
-    let memory = (record.intent.len() as u64 + record.lock.len() as u64)
-        .checked_mul(8)
-        .and_then(|n| n.checked_add(32 << 20))
-        .context("Sync record memory overflow")?;
+    let memory = store::record_memory(store::encoded_bytes(
+        &*record,
+        Kind::Synchronization.maximum(),
+    )?)?;
     let work = scope.spawn_blocking(
         resources(memory),
         ResourceRequest::default(),
@@ -437,3 +435,6 @@ pub async fn discard_observed_sync(
 pub async fn discard_pending_sync(scope: &mut WorkScope, saved: SavedSyncRecord) -> Result<bool> {
     discard_observed_sync(scope, PendingSyncCleanup(saved.0.into_cleanup())).await
 }
+
+#[cfg(test)]
+mod tests;
