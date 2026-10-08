@@ -30,6 +30,8 @@ policy choices live in [decisions](decisions.md).
 [feature requirements](parity.md) record useful capabilities. Old specifications
 and compatibility guides are removed; Git history retains their evidence.
 
-The first landing establishes a pure semantic core and connects existing file
-workflows to it. Later landings add snapshots, resolution locks, staged execution,
-independent inventory verification and journaled publication. No implementation may claim a guarantee before it passes its acceptance gates.
+The engine now includes the semantic core, snapshots, resolution locks, staged
+execution, inventory verification and journaled publication. Ordinary CLI command
+cutover remains open; consult the current routing table before claiming a feature
+is available through the executable. No implementation may claim a guarantee before
+it passes its acceptance gates.

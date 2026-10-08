@@ -32,8 +32,9 @@ execution. Preparation sees only provider availability and performs no API looku
 The refresh retains every locked byte assertion and placement; changed declarations
 fail, and a restricted file without a locator becomes explicit manual input. Missing
 provider credentials remain preparation input. The build API does not invent a
-provider result or download association. Normal cache selection, durable continuation
-and CLI composition remain completion work. The broader interface below
+provider result or download association. Normal cache selection, execution-time missing-input continuation
+and CLI composition remain completion work. Durable preparation save/resume and its
+native host are implemented; see the current delivery ledger. The broader interface below
 remains the target where the implementation ledger identifies an outstanding API.
 
 `engine::runtime_catalog::RuntimeCatalog` provides read-only official Minecraft and
