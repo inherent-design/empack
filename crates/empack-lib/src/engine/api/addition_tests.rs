@@ -1376,3 +1376,322 @@ async fn approved_addition_caches_staged_bytes_and_unavailable_cache_does_not_bl
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
 }
+
+mod independent_batch {
+    use super::*;
+    use crate::engine::{documents::DocumentCodec, mrpack::tests::explicitly_placed};
+    use empack_core::{model::*, path::InstallDestination};
+    fn named(name: &str) -> ResolvedProject {
+        let source = project(false, false);
+        let mut intent = source.intent().clone();
+        let mut lock = source.lock().clone();
+        let old = DependencyKey::parse("assets").unwrap();
+        let key = DependencyKey::parse(name).unwrap();
+        let root = intent.roots.remove(&old).unwrap();
+        intent.roots.insert(key.clone(), root);
+        let mut dependency = lock.dependencies.remove(&old).unwrap();
+        dependency.identity = ResolvedIdentity::Url(key.clone());
+        dependency.files = NonEmpty::new(
+            dependency
+                .files
+                .into_vec()
+                .into_iter()
+                .map(|mut file| {
+                    file.placements = NonEmpty::new(
+                        file.placements
+                            .into_vec()
+                            .into_iter()
+                            .map(|mut place| {
+                                place.destination = InstallDestination::parse(&format!(
+                                    "resourcepacks/{name}-{}",
+                                    place
+                                        .destination
+                                        .relative()
+                                        .as_str()
+                                        .rsplit('/')
+                                        .next()
+                                        .unwrap()
+                                ))
+                                .unwrap();
+                                place
+                            })
+                            .collect(),
+                    )
+                    .unwrap();
+                    file
+                })
+                .collect(),
+        )
+        .unwrap();
+        lock.dependencies.insert(key.clone(), dependency);
+        lock.coverage = [(key, Coverage::CompleteForSelection)].into();
+        explicitly_placed(intent, lock)
+    }
+    fn item(project: &ResolvedProject) -> DependencyBatchItem {
+        DependencyBatchItem {
+            group: AdditionGroup::from_resolved(project).unwrap(),
+            content: references(project),
+        }
+    }
+    fn broken() -> DependencyBatchItem {
+        let mut request = request(ExistingDependencyPolicy::UpdateSameIdentity);
+        let first = request.content.values_mut().next().unwrap();
+        *first = DependencyContent::Materialized(AcquiredBuildFile {
+            content: verify_stream(
+                &mut b"wrong bytes".as_slice(),
+                &ExpectedContent {
+                    digests: None,
+                    size: None,
+                    accepted_observation: None,
+                },
+                100,
+                SourceEvidencePolicy::Compatibility,
+                InitialObservation::Accepted,
+                &crate::application::process_runtime::Cancellation::default(),
+            )
+            .unwrap(),
+            permissions: FilePermissions {
+                readonly: false,
+                executable: false,
+            },
+        });
+        DependencyBatchItem {
+            group: request.group,
+            content: request.content,
+        }
+    }
+    fn snapshot(root: &Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
+        fn visit(root: &Path, dir: &Path, map: &mut BTreeMap<std::path::PathBuf, Vec<u8>>) {
+            for entry in fs::read_dir(dir).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_dir() {
+                    visit(root, &entry.path(), map);
+                } else {
+                    map.insert(
+                        entry.path().strip_prefix(root).unwrap().to_owned(),
+                        fs::read(entry.path()).unwrap(),
+                    );
+                }
+            }
+        }
+        let mut map = BTreeMap::new();
+        visit(root, root, &mut map);
+        map
+    }
+    #[tokio::test]
+    async fn batch_default_preserves_all_and_partial_publishes_one_coherent_candidate() {
+        for policy in [BatchPolicy::AllRequested, BatchPolicy::ContinueIndependent] {
+            let root = tempfile::tempdir().unwrap();
+            let state = tempfile::tempdir().unwrap();
+            fixture(root.path());
+            let before = snapshot(root.path());
+            let (engine, governor) = engine(state.path().join("state"));
+            let valid = named("new");
+            let batch = || DependencyBatchRequest {
+                source_revision: None,
+                policy,
+                change: DependencyBatchChange::Add(ExistingDependencyPolicy::UpdateSameIdentity),
+                items: NonEmpty::new(vec![broken(), item(&valid)]).unwrap(),
+            };
+            let result = engine.prepare(root.path().to_path_buf(), batch()).await;
+            assert_eq!(snapshot(root.path()), before);
+            if policy == BatchPolicy::AllRequested {
+                assert!(result.is_err());
+            } else {
+                let Preparation::Ready(prepared) = result.unwrap() else {
+                    panic!("unexpected input")
+                };
+                let report = prepared.view().add().unwrap().batch.as_ref().unwrap();
+                assert_eq!(report.successful, [vec![1]]);
+                assert_eq!(report.blocked[0].requests, [0]);
+                // Declining a fully prepared partial candidate remains read-only.
+                drop(prepared);
+                assert_eq!(snapshot(root.path()), before);
+                let prepared = ready(&engine, root.path(), batch()).await;
+                let permission = grant(&prepared);
+                let mut handle = engine
+                    .start(prepared.authorize(permission).unwrap())
+                    .unwrap();
+                let outcome = handle.wait().await;
+                let OperationOutcome::Completed(ExecutionOutcome::PartiallyCompleted {
+                    receipt: ExecutionReceipt::Add(receipt),
+                    cause,
+                }) = &*outcome
+                else {
+                    panic!("expected partial addition")
+                };
+                assert!(cause.downcast_ref::<DependencyBatchIncomplete>().is_some());
+                assert_eq!(receipt.batch.as_ref().unwrap().successful, [vec![1]]);
+                assert_eq!(receipt.project.lock().dependencies.len(), 2);
+                let original = project(false, false);
+                assert_eq!(
+                    receipt.project.lock().dependencies[&DependencyKey::parse("assets").unwrap()],
+                    original.lock().dependencies[&DependencyKey::parse("assets").unwrap()]
+                );
+                for (path, bytes) in &before {
+                    if path != Path::new("empack.yml") && path != Path::new("empack.lock") {
+                        assert_eq!(&fs::read(root.path().join(path)).unwrap(), bytes);
+                    }
+                }
+                assert_eq!(
+                    DocumentCodec
+                        .decode_intent(
+                            &fs::read(root.path().join("empack.yml")).unwrap(),
+                            "published"
+                        )
+                        .unwrap()
+                        .intent()
+                        .roots
+                        .len(),
+                    2
+                );
+                for _ in 0..2 {
+                    let sync = engine
+                        .preview(
+                            root.path().to_path_buf(),
+                            SyncRequest::Recorded {
+                                resolution: None,
+                                evidence: SourceEvidencePolicy::Compatibility,
+                            },
+                        )
+                        .await
+                        .unwrap();
+                    assert!(sync.sync().unwrap().files.changes().is_empty());
+                }
+                engine.release_completed(handle.id());
+                drop((outcome, handle));
+            }
+            engine.shutdown().await;
+            assert_eq!(governor.status().reserved, ResourceRequest::default());
+        }
+    }
+    #[tokio::test]
+    async fn failed_shared_component_blocks_all_its_requests_but_not_an_unrelated_group() {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        let (engine, governor) = engine(state.path().join("state"));
+        let original = project(false, false);
+        let other = named("other");
+        let partial = DependencyBatchRequest {
+            source_revision: None,
+            policy: BatchPolicy::ContinueIndependent,
+            change: DependencyBatchChange::Add(ExistingDependencyPolicy::UpdateSameIdentity),
+            items: NonEmpty::new(vec![broken(), item(&original), item(&other)]).unwrap(),
+        };
+        let prepared = ready(&engine, root.path(), partial).await;
+        let report = prepared.view().add().unwrap().batch.as_ref().unwrap();
+        assert_eq!(report.blocked[0].requests, [0, 1]);
+        assert_eq!(report.successful, [vec![2]]);
+        drop(prepared);
+        let all_failed = DependencyBatchRequest {
+            source_revision: None,
+            policy: BatchPolicy::ContinueIndependent,
+            change: DependencyBatchChange::Add(ExistingDependencyPolicy::UpdateSameIdentity),
+            items: NonEmpty::new(vec![broken(), item(&original)]).unwrap(),
+        };
+        let before = snapshot(root.path());
+        let error = engine
+            .prepare(root.path().to_path_buf(), all_failed)
+            .await
+            .err()
+            .unwrap();
+        assert!(error.downcast_ref::<DependencyBatchIncomplete>().is_some());
+        assert_eq!(snapshot(root.path()), before);
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+    #[tokio::test]
+    async fn partial_update_keeps_failed_intent_and_stale_approval_never_publishes() {
+        for stale in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let state = tempfile::tempdir().unwrap();
+            fixture(root.path());
+            let (engine, governor) = engine(state.path().join("state"));
+            let extra = named("extra");
+            let prepared = ready(
+                &engine,
+                root.path(),
+                AddRequest {
+                    source_revision: None,
+                    group: group_for(&extra),
+                    content: references(&extra),
+                    existing: ExistingDependencyPolicy::RejectExisting,
+                },
+            )
+            .await;
+            let permission = grant(&prepared);
+            let mut handle = engine
+                .start(prepared.authorize(permission).unwrap())
+                .unwrap();
+            let outcome = handle.wait().await;
+            assert!(matches!(
+                &*outcome,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+            ));
+            engine.release_completed(handle.id());
+            drop((outcome, handle));
+            let before = snapshot(root.path());
+            let original = fs::read(root.path().join("empack.yml")).unwrap();
+            let batch = DependencyBatchRequest {
+                source_revision: None,
+                policy: BatchPolicy::ContinueIndependent,
+                change: DependencyBatchChange::Update,
+                items: NonEmpty::new(vec![broken(), item(&extra)]).unwrap(),
+            };
+            let prepared = ready(&engine, root.path(), batch).await;
+            assert_eq!(
+                prepared
+                    .view()
+                    .update()
+                    .unwrap()
+                    .batch
+                    .as_ref()
+                    .unwrap()
+                    .successful,
+                [vec![1]]
+            );
+            if stale {
+                fs::write(
+                    root.path().join("empack.yml"),
+                    [b"# later edit\n".as_slice(), &original].concat(),
+                )
+                .unwrap();
+            }
+            let expected = snapshot(root.path());
+            let permission = grant(&prepared);
+            let mut handle = engine
+                .start(prepared.authorize(permission).unwrap())
+                .unwrap();
+            let outcome = handle.wait().await;
+            if stale {
+                assert!(!matches!(
+                    &*outcome,
+                    OperationOutcome::Completed(
+                        ExecutionOutcome::Completed(_)
+                            | ExecutionOutcome::PartiallyCompleted { .. }
+                    )
+                ));
+                assert_eq!(snapshot(root.path()), expected);
+            } else {
+                let OperationOutcome::Completed(ExecutionOutcome::PartiallyCompleted {
+                    receipt: ExecutionReceipt::Update(receipt),
+                    ..
+                }) = &*outcome
+                else {
+                    panic!("missing update partial receipt")
+                };
+                assert_eq!(receipt.batch.as_ref().unwrap().blocked[0].requests, [0]);
+                assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), original);
+                assert_eq!(snapshot(root.path()), before);
+            }
+            engine.release_completed(handle.id());
+            drop((outcome, handle));
+            engine.shutdown().await;
+            assert_eq!(governor.status().reserved, ResourceRequest::default());
+        }
+    }
+    fn group_for(project: &ResolvedProject) -> AdditionGroup {
+        AdditionGroup::from_resolved(project).unwrap()
+    }
+}

@@ -19,7 +19,7 @@ Changed native objects invalidate the selection before deletion. Newly inserted
 objects are outside its authority. Active verified leases retain private copies.
 Eviction reports removed and retained objects; a later failure returns
 `PartiallyCompleted` with the cause, while a lost worker returns `ExecutionUncertain`.
-This maintenance outcome does not implement independent dependency batches.
+Dependency batches use the same outcome variant with a dependency receipt and typed group report.
 `OperationPreview` carries the operation-specific view. A build view includes exact artifact destinations,
 runtime, missing content, network/tool requirements and the complete requested
 options. It has no conversion into an executable operation. A ready preparation
@@ -1378,5 +1378,21 @@ shared identities, current required dependency chains, previous and proposed des
 and tracked input reads. It uses the native layout's Unicode collision rules, including
 ancestor paths. Component discovery does not authorize execution or prove source evidence.
 
-The component algorithm is implemented and tested; independent execution, partial receipts
-and CLI policy selection are still being connected. AllRequested remains the live default.
+`DependencyBatchRequest` accepts resolved add/update groups with explicit slot content and
+an optional captured document revision. `AllRequested` is the default and prepares one
+combined candidate. `ContinueIndependent` prepares connected components without publishing,
+then recomputes and verifies one combined candidate from the successful components against
+the same document generation. It does not publish successive manifests from a stale base.
+The request is bounded to 128 items and 8,192 file slots (or the lower snapshot limit).
+
+Add/update previews and receipts contain `DependencyBatchReport`: original request indices
+for successful and blocked groups, plus bounded failure diagnostics. Successful partial
+publication returns `PartiallyCompleted` with `DependencyBatchIncomplete`; an entirely
+blocked batch returns that error without a publication candidate. Cancellation and runtime
+admission failures abort preparation, rather than being classified as dependency failures.
+Failed groups retain previous intent, exact selections and files. Stale approval still
+fails through the ordinary publisher. No group can acquire publication authority on its own.
+
+This API requires resolved actions so dependencies and overlaps can be analyzed. Unknown
+source identity or unresolved evidence cannot be treated as proof of independence. CLI policy
+selection is being connected; ordinary CLI batches still use AllRequested.

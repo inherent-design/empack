@@ -136,7 +136,7 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
 | Implemented | Acquisition cache integration | Build/sync/runtime and add/import consumers use verified lookup; approved mutations populate the cache; restricted inputs reuse exact asserted bytes |
 | Implemented | Retained-input reclamation | `clean retained` reclaims empty record categories under save/cleanup coordination; saved and unknown records, active private leases and recovery journals remain protected |
-| Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
+| Cutover | Explicit `ContinueIndependent` batches | Native resolved add/update batches prepare connected groups and publish one combined candidate with partial receipts; CLI selection remains open; failed groups retain prior intent/content |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
@@ -199,6 +199,12 @@ manual-sync lifecycle test and all-target/all-feature Clippy passed. Tests exerc
 preview preservation, pending and unknown records, active save exclusion, record and
 blob changes after preparation, active private leases and unrelated recovery data.
 This is targeted evidence after `e24dfc4`, not a new combined release-validation run.
+
+Dependency batch API: 78 affected addition/cache tests passed, followed by six focused
+component/API tests after tightening alias footprints and moving graph analysis into the
+admitted worker. Coverage includes default refusal, partial addition/update receipts,
+connected failures, declined preparation, stale approval and unchanged subsequent sync.
+CLI policy selection is not included in this evidence.
 
 ## Historical verification evidence
 

@@ -58,8 +58,10 @@ pub use cleanup::{CleanPreview, CleanReceipt, CleanRequest};
 mod recovery;
 pub use addition::{
     AddPreview, AddReceipt, AddRequest, AdoptObservedPreview, AdoptObservedReceipt,
-    AdoptObservedRequest, AdoptionResolution, AdoptionSelection, ExistingDependencyPolicy,
-    ReplacementSelection, UpdatePreview, UpdateReceipt, UpdateRequest,
+    AdoptObservedRequest, AdoptionResolution, AdoptionSelection, BatchPolicy, BlockedBatchGroup,
+    DependencyBatchChange, DependencyBatchIncomplete, DependencyBatchItem, DependencyBatchReport,
+    DependencyBatchRequest, ExistingDependencyPolicy, ReplacementSelection, UpdatePreview,
+    UpdateReceipt, UpdateRequest,
 };
 pub use recovery::{
     RecoverPreview, RecoverRequest, RecoveryAction, RecoveryKind, RecoveryReceipt, RecoveryStatus,
@@ -220,6 +222,7 @@ pub enum Request {
     Initialize(Box<InitializeRequest>),
     Remove(RemoveRequest),
     Add(AddRequest),
+    DependencyBatch(Box<DependencyBatchRequest>),
     Update(UpdateRequest),
     AdoptObserved(AdoptObservedRequest),
     Sync(Box<SyncRequest>),
@@ -258,6 +261,11 @@ impl From<InitializeRequest> for Request {
 impl From<SyncRequest> for Request {
     fn from(request: SyncRequest) -> Self {
         Self::Sync(Box::new(request))
+    }
+}
+impl From<DependencyBatchRequest> for Request {
+    fn from(request: DependencyBatchRequest) -> Self {
+        Self::DependencyBatch(Box::new(request))
     }
 }
 impl From<AddRequest> for Request {
@@ -516,7 +524,7 @@ pub enum ExecutionReceipt {
 /// Accurate publication outcome: a failed preparation and a hot durable journal are distinct.
 pub enum ExecutionOutcome {
     Completed(ExecutionReceipt),
-    /// Host maintenance completed only the effects described in this receipt.
+    /// Only the effects described in this receipt completed; dependency batches retain blocked groups.
     PartiallyCompleted {
         receipt: ExecutionReceipt,
         cause: anyhow::Error,
@@ -700,6 +708,20 @@ impl Engine {
                         )
                         .await?
                         .map(|value| PreparedKind::Update(Box::new(value)))),
+                        Request::DependencyBatch(request) => {
+                            let update = matches!(request.change, DependencyBatchChange::Update);
+                            Ok(
+                                addition::prepare_batch(project, *request, &config, &mut scope)
+                                    .await?
+                                    .map(|value| {
+                                        if update {
+                                            PreparedKind::Update(Box::new(value))
+                                        } else {
+                                            PreparedKind::Add(Box::new(value))
+                                        }
+                                    }),
+                            )
+                        }
                         Request::Add(request) => {
                             Ok(addition::prepare(project, request, &config, &mut scope)
                                 .await?

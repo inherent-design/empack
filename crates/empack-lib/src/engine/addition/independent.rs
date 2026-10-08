@@ -61,11 +61,11 @@ impl<'a> Footprint<'a> {
             result.labels.insert(key);
             result.identities.push(&dependency.identity);
             result.capture_files(dependency)?;
-            if let Some((old_key, old)) = current
+            for (old_key, old) in current
                 .lock()
                 .dependencies
                 .iter()
-                .find(|(old_key, old)| *old_key == key || old.identity == dependency.identity)
+                .filter(|(old_key, old)| *old_key == key || old.identity == dependency.identity)
             {
                 result.labels.insert(old_key);
                 result.capture_files(old)?;

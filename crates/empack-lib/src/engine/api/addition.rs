@@ -1,10 +1,16 @@
 //! Resolved additions use captured plans, explicit replacement and retained engine outcomes.
+mod batch;
 use super::*;
 use crate::engine::{
     addition::{self as native_addition, PreparedAddition},
     mrpack::LockedFileKey,
     publication::{Publisher, RecoveryRequired},
     runtime::WorkScope,
+};
+pub(super) use batch::prepare_batch;
+pub use batch::{
+    BatchPolicy, BlockedBatchGroup, DependencyBatchChange, DependencyBatchIncomplete,
+    DependencyBatchItem, DependencyBatchReport, DependencyBatchRequest,
 };
 use empack_core::{
     addition::AdditionGroup,
@@ -33,6 +39,7 @@ pub struct AddRequest {
 }
 #[derive(Clone)]
 pub struct AddPreview {
+    pub batch: Option<DependencyBatchReport>,
     pub plan: PlanId,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
     pub existing_roots: BTreeSet<DependencyKey>,
@@ -45,6 +52,7 @@ pub struct AddPreview {
     pub references: BTreeSet<LockedFileKey>,
 }
 pub struct AddReceipt {
+    pub batch: Option<DependencyBatchReport>,
     pub plan: PlanId,
     pub publication: PublicationReceipt,
     pub replaced: BTreeMap<DependencyKey, LockedDependency>,
@@ -63,6 +71,7 @@ pub struct UpdateRequest {
 }
 #[derive(Clone)]
 pub struct UpdatePreview {
+    pub batch: Option<DependencyBatchReport>,
     pub plan: PlanId,
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
     pub selected: BTreeSet<DependencyKey>,
@@ -78,12 +87,14 @@ impl From<&AddPreview> for UpdatePreview {
             bindings: value.bindings.clone(),
             selected: value.existing_roots.clone(),
             files: value.files.clone(),
+            batch: value.batch.clone(),
             references: value.references.clone(),
             replacement: value.replacement,
         }
     }
 }
 pub struct UpdateReceipt {
+    pub batch: Option<DependencyBatchReport>,
     pub plan: PlanId,
     pub selected: BTreeSet<DependencyKey>,
     pub publication: PublicationReceipt,
@@ -270,6 +281,7 @@ async fn prepare_change(
         let addition = planned.stage(&cancel)?;
         let files = addition.files().clone();
         let view = AddPreview {
+            batch: None,
             plan: PlanId(
                 NEXT_PLAN
                     .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
@@ -310,7 +322,21 @@ pub(super) async fn run(
     }
     .await;
     Ok(match result {
-        Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Add(Box::new(receipt))),
+        Ok(receipt) => {
+            let partial = receipt
+                .batch
+                .as_ref()
+                .filter(|report| !report.blocked.is_empty())
+                .cloned();
+            let receipt = ExecutionReceipt::Add(Box::new(receipt));
+            match partial {
+                Some(report) => ExecutionOutcome::PartiallyCompleted {
+                    receipt,
+                    cause: DependencyBatchIncomplete(report).into(),
+                },
+                None => ExecutionOutcome::Completed(receipt),
+            }
+        }
         Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
             ExecutionOutcome::RecoveryRequired {
                 operation: error
@@ -335,22 +361,32 @@ pub(super) async fn run_update(
     scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let selected = prepared.view.existing_roots.clone();
+    let convert = |receipt: Box<RetainedOutput<AddReceipt>>| {
+        ExecutionReceipt::Update(Box::new(receipt.map(|value| UpdateReceipt {
+            batch: value.batch,
+            plan: value.plan,
+            selected,
+            publication: value.publication,
+            project: value.project,
+            bindings: value.bindings,
+            references: value.references,
+        })))
+    };
     Ok(match run(prepared, config, cache, scope).await? {
         ExecutionOutcome::Completed(ExecutionReceipt::Add(receipt)) => {
-            ExecutionOutcome::Completed(ExecutionReceipt::Update(Box::new(receipt.map(|value| {
-                UpdateReceipt {
-                    plan: value.plan,
-                    selected,
-                    publication: value.publication,
-                    project: value.project,
-                    bindings: value.bindings,
-                    references: value.references,
-                }
-            }))))
+            ExecutionOutcome::Completed(convert(receipt))
         }
+        ExecutionOutcome::PartiallyCompleted {
+            receipt: ExecutionReceipt::Add(receipt),
+            cause,
+        } => ExecutionOutcome::PartiallyCompleted {
+            receipt: convert(receipt),
+            cause,
+        },
         other => other,
     })
 }
+
 pub(super) async fn run_adoption(
     prepared: RetainedOutput<PreparedAdditionOperation>,
     config: EngineConfig,
@@ -401,6 +437,7 @@ async fn execute(
             .addition
             .publish(&Publisher::open(&config.state_root)?, &cancel)?;
         Ok::<_, anyhow::Error>(AddReceipt {
+            batch: prepared.view.batch,
             plan: prepared.view.plan,
             publication: receipt.publication,
             project: receipt.project,
