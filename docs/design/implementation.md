@@ -117,11 +117,11 @@ re-export. Restricted-import continuation remains open.
 | --- | --- | --- |
 | Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
-| Open verification | Intermittent inherited-pipe warning | Combined cutover and template/runtime checks were clean; subsequent concurrent host subsets reported a retained output pipe despite passing assertions; investigate process retirement before final acceptance |
+| Open verification | Intermittent inherited-pipe warning | Host Nextest upgraded from 0.9.124 to 0.9.148 after identifying its documented macOS capture-pipe fix; 226 affected tests pass without warnings; final combined acceptance remains required |
 | Cutover | Provider-owned world interpretation and live adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and manual-input continuation remain open; automatic layout and accepted-game-version policy changes use explicit revalidation |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
-| Cutover | Ordinary cache integration and cleanup | Cache use does not change source evidence; cleanup preserves leases, recovery and saved requests |
+| Cutover | Remaining acquisition cache integration and cleanup | Ordinary builds reuse verified content; add/import/sync/runtime assets and remaining disposable stores still require wiring |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Cutover | Runtime/CLI composition | Remove migrated handler bypasses and synchronous process bridges where superseded; isolate global display/error state for embedding |
@@ -147,11 +147,23 @@ modules remains open.
 
 ## Verification evidence
 
+Ordinary verified build cache: 226 affected engine/host/configuration/native-command
+cases and all-feature Clippy passed. A stale missing-content fixture first failed
+because its preceding build now populated the cache; it now clears that disposable
+fixture cache before exercising unresolved input. Separate tests prove unchanged
+preview cache snapshots, MD5 evidence retention, corrupt-hint refusal and offline
+Modrinth/CurseForge builds without catalog access. CLI `--cache-dir` and cache cleanup
+share the same selected root. This does not claim other acquisition workflows use it.
+The host runner was upgraded to Nextest 0.9.148; the affected run reported no leak
+warning. The upstream macOS pipe-inheritance fix is a plausible explanation for the
+prior intermittent warnings, not proof that every process path is leak-free.
+
+
 Source-digest cache discovery: 21 store/cleanup tests passed, then three focused
 index tests passed with an equal-length impostor blob added to the negative cases.
 All-feature Clippy passed. Lookup retains original weak/strong assertions; bad hints
 cannot satisfy requests, limits include hints, cleanup preserves unowned files and
-retained leases. Ordinary build/cache wiring remains open.
+retained leases. Add/import/sync and runtime asset reuse remain open.
 
 Explicit new-source adoption: 44 affected CLI/adoption/file-plan tests, eight native
 and executable cases, and all-feature Clippy passed. Real CLI coverage rejects missing

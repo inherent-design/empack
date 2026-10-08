@@ -61,6 +61,11 @@ pub struct AppConfig {
     #[serde(default)]
     pub state_dir: Option<PathBuf>,
 
+    /// Disposable cache root; previews only inspect existing objects
+    #[arg(long, env = "EMPACK_CACHE_DIR", global = true)]
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
+
     /// Maximum admitted engine workers (legacy commands may not use this limit)
     #[arg(short = 'j', long, env = "EMPACK_CPU_JOBS", default_value = defaults::CPU_PARALLELS)]
     #[serde(default = "default_fns::cpu_parallels")]
@@ -133,6 +138,7 @@ impl Default for AppConfig {
         Self {
             workdir: None,
             state_dir: None,
+            cache_dir: None,
             cpu_jobs: default_fns::cpu_parallels(),
             net_timeout: default_fns::net_timeout(),
             modrinth_api_client_id: None,
@@ -166,6 +172,9 @@ impl AppConfig {
     pub fn merge_with(mut self, other: Self) -> Self {
         if other.state_dir.is_some() {
             self.state_dir = other.state_dir;
+        }
+        if other.cache_dir.is_some() {
+            self.cache_dir = other.cache_dir;
         }
         if other.workdir.is_some() {
             self.workdir = other.workdir;

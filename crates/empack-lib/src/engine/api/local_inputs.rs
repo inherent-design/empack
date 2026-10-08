@@ -119,20 +119,7 @@ pub(super) async fn supply(
                 .acquisition
                 .pending
                 .retain(|need| !keys.contains(&need.key));
-            value.view.content = value.acquisition.pending.iter().map(describe).collect();
-            value.view.file_names.retain(|key, _| !keys.contains(key));
-            value.view.unresolved.retain(|key| !keys.contains(key));
-            value.view.needs_network = value.request.outputs.as_slice().iter().any(|output| {
-                matches!(
-                    output.target,
-                    BuildTarget::Client | BuildTarget::Server | BuildTarget::ServerFull
-                )
-            }) || value.acquisition.pending.iter().any(|need| {
-                matches!(
-                    need.source,
-                    BuildContentSource::Download(_) | BuildContentSource::Provider { .. }
-                )
-            });
+            super::build_cache::refresh(&mut value);
             Ok::<_, anyhow::Error>(value)
         })
         .transpose()?;

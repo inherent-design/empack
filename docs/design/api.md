@@ -1211,5 +1211,15 @@ assertion, publishes its verified blob, then publishes digest hints under store
 coordination and capacity limits. A crash between those steps loses discoverability;
 it cannot turn an unverified file into a hit. Hints, canonical blobs and abandoned
 candidates share bounded storage and scoped cleanup. Unknown neighboring files remain
-unowned, and cleanup cannot invalidate already retained private leases. Ordinary build
-wiring is a separate integration obligation.
+unowned, and cleanup cannot invalidate already retained private leases.
+
+`Engine::with_content_cache` attaches a host-selected location without creating it.
+Ordinary build preparation uses read-only lookup after explicit file inputs. Verified
+hits satisfy exact obligations and can remove their network or manual-input requirement.
+Archive members still require their archive permission evidence. Approved execution
+retains verified content before artifact assembly; a failed build can therefore leave
+disposable objects, but cannot publish an incomplete artifact batch. Unavailable or
+full caches do not authorize eviction and do not fail otherwise valid execution.
+Cancellation still stops the operation. Cache handles and copied bytes remain charged
+to the operation's resource allowance. This integration currently covers builds;
+other acquisition callers must not be described as cache-backed until wired and tested.

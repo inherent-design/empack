@@ -16,6 +16,7 @@ pub(super) fn session(root: &Path, dry: bool) -> MockCommandSession {
         .with_config(MockConfigProvider::new(AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),
+            cache_dir: Some("cache".into()),
             yes: true,
             dry_run: dry,
             curseforge_api_client_key: None,
@@ -242,6 +243,7 @@ async fn interactive_search_preserves_selected_identity_without_publishing() {
         .with_config(MockConfigProvider::new(AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),
+            cache_dir: Some("cache".into()),
             yes: false,
             curseforge_api_client_key: None,
             ..Default::default()

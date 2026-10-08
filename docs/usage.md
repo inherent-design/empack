@@ -53,6 +53,14 @@ from disposable caches. Relative selections resolve from the invocation director
 Inspecting missing state creates neither host state nor a project directory. This
 command handles engine journals; it does not reinterpret older interruption markers.
 
+`--cache-dir` / `EMPACK_CACHE_DIR` selects disposable storage; native verified
+content lives in its `content-v1` child. Relative paths resolve from the invocation
+directory. Build preparation can read and verify existing objects without creating
+or changing the cache. Approved builds retain verified bytes for subsequent offline
+builds. Missing, busy or corrupt cache objects leave the original content obligation
+in place. Cache hits preserve the source's original integrity evidence, including
+MD5 compatibility evidence. `clean cache` uses this same selected root.
+
 ## Synchronization and remote content
 
 `empack sync` reconciles authored intent and exact recorded selections. It restores

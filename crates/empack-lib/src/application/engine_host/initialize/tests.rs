@@ -32,6 +32,7 @@ fn session(root: &Path, yes: bool, dry_run: bool) -> MockCommandSession {
         .with_config(MockConfigProvider::new(AppConfig {
             workdir: Some(root.to_path_buf()),
             state_dir: Some(root.join("state")),
+            cache_dir: Some(root.join("cache")),
             yes,
             dry_run,
             ..Default::default()

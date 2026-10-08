@@ -11,6 +11,7 @@ fn session(root: &Path, yes: bool, dry_run: bool) -> MockCommandSession {
         .with_config(MockConfigProvider::new(AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),
+            cache_dir: Some("cache".into()),
             yes,
             dry_run,
             curseforge_api_client_key: None,
@@ -484,6 +485,8 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         ),
         b"verified manual bytes"
     );
+    // Restore an unresolved-content case after the approved build populated its cache.
+    fs::remove_dir_all(root.path().join("cache")).unwrap();
     let after_discovery = snapshot(root.path());
     let missing_root = BuildArgs {
         downloads_dir: Some("missing".into()),

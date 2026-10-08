@@ -378,7 +378,7 @@ async fn pending_provider_content_and_installer_effects_are_explicit() {
     engine.shutdown().await;
 }
 
-fn provider_fixture(root: &Path, curseforge: bool) -> empack_core::model::ExpectedContent {
+pub(super) fn provider_fixture(root: &Path, curseforge: bool) -> empack_core::model::ExpectedContent {
     use empack_core::{identity::ModrinthProjectId, model::*};
     fixture(root);
     let original = project(false, false);

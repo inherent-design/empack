@@ -95,6 +95,7 @@ async fn recovery_dispatch_inspects_previews_declines_and_recovers_native_public
         let status = publisher.inspect_recovery(&root).unwrap().unwrap();
         let config = AppConfig {
             workdir: Some(project.path().to_path_buf()),
+            cache_dir: Some(state.with_file_name("cache")),
             state_dir: Some(state),
             ..Default::default()
         };

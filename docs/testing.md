@@ -13,6 +13,11 @@ mise run smoke
 mise run e2e:strict
 ```
 
+On macOS, use Nextest 0.9.145 or newer. Earlier runners can report sibling test
+capture pipes as leaked when tests start concurrently; this was fixed in
+[Nextest 0.9.145](https://www.nexte.st/changelog/#09145---2026-09-16).
+A current runner does not excuse leaks from empack's own processes.
+
 The library unit suite also runs without `test-utils`:
 
 ```bash

@@ -39,6 +39,19 @@ fn state_root(config: &AppConfig, invocation: &Path) -> Result<PathBuf> {
         .context("Cannot determine durable state directory; set --state-dir")?;
     Ok(directories.data_local_dir().join("operations"))
 }
+fn content_cache_root(config: &AppConfig, invocation: &Path) -> Result<PathBuf> {
+    let base = match &config.cache_dir {
+        Some(path) => {
+            ensure!(
+                !path.as_os_str().is_empty(),
+                "Cache directory cannot be empty"
+            );
+            path.clone()
+        }
+        None => crate::platform::cache::cache_root()?,
+    };
+    Ok(absolute(invocation, &base).join("content-v1"))
+}
 fn governor(config: &AppConfig) -> ResourceGovernor {
     ResourceGovernor::new(ResourceRequest {
         jobs: config.cpu_jobs.max(1) as u64,
@@ -66,7 +79,11 @@ fn engine_with_governor(
         open_files: 8,
         ..Default::default()
     };
-    Engine::new(
+    let cache = crate::engine::content::cache::ContentCache::new(
+        content_cache_root(config, invocation)?,
+        Default::default(),
+    )?;
+    Ok(Engine::new(
         EngineConfig {
             state_root: state_root(config, invocation)?,
             retained_operations: 4,
@@ -95,7 +112,8 @@ fn engine_with_governor(
             },
         },
         governor,
-    )
+    )?
+    .with_content_cache(cache))
 }
 /// Resolve one invocation-relative project selection without changing process cwd.
 fn project_path(session: &dyn Session) -> Result<(PathBuf, PathBuf)> {

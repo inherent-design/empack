@@ -30,6 +30,7 @@ pub enum InitialObservation {
     /// An explicitly selected initial local/manual file may establish an observation.
     Accepted,
 }
+pub mod cache;
 mod pool;
 pub mod store;
 pub use pool::ContentPool;

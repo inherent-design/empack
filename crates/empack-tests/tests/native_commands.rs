@@ -37,6 +37,7 @@ impl Project {
             .with_config(MockConfigProvider::new(AppConfig {
                 workdir: Some("project".into()),
                 state_dir: Some("state".into()),
+                cache_dir: Some("cache".into()),
                 yes,
                 dry_run: dry,
                 curseforge_api_client_key: None,

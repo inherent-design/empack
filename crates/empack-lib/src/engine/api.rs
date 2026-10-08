@@ -590,6 +590,7 @@ pub struct Engine {
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
     content_store: Option<super::content::store::FileContentStore>,
+    content_cache: Option<super::content::cache::ContentCache>,
     preparations: OperationRuntime<()>,
     operations: OperationRuntime<ExecutionOutcome>,
 }
@@ -605,10 +606,17 @@ impl Engine {
             transport: HttpAcquisition::new()?,
             catalog: None,
             content_store: None,
+            content_cache: None,
             preparations: OperationRuntime::new(governor.clone(), config.retained_operations),
             operations: OperationRuntime::new(governor, config.retained_operations),
             config,
         })
+    }
+    /// Select disposable host storage without creating it. Preparation may only read;
+    /// approved execution may retain verified bytes. Cache failure does not grant cleanup.
+    pub fn with_content_cache(mut self, cache: super::content::cache::ContentCache) -> Self {
+        self.content_cache = Some(cache);
+        self
     }
     /// Attach read-only provider resolution for authorized execution. Preparation receives only
     /// its availability description, never the network client or credentials.
@@ -637,6 +645,7 @@ impl Engine {
             .map(|(catalog, _)| catalog.availability())
             .unwrap_or_default();
         let owner = self.owner.clone();
+        let content_cache = self.content_cache.clone();
         let (sender, receiver) = oneshot::channel();
         let mut handle = self
             .preparations
@@ -668,6 +677,7 @@ impl Engine {
                                 *request,
                                 config,
                                 provider_access,
+                                content_cache,
                                 &mut scope,
                             )
                             .await?
@@ -806,6 +816,7 @@ impl Engine {
         let transport = self.transport.clone();
         let catalog = self.catalog.clone();
         let content_store = self.content_store.clone();
+        let content_cache = self.content_cache.clone();
         let owner = self.owner.clone();
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
@@ -841,7 +852,16 @@ impl Engine {
                         PreparedKind::Build(value) => *value,
                         _ => unreachable!(),
                     });
-                    execution::run(prepared, config, transport, catalog, owner, scope).await
+                    execution::run(
+                        prepared,
+                        config,
+                        transport,
+                        catalog,
+                        content_cache,
+                        owner,
+                        scope,
+                    )
+                    .await
                 }
                 PreparedKind::ProjectChange(_) => {
                     let prepared = data.map(|kind| match kind {
@@ -915,6 +935,7 @@ async fn prepare_build(
     mut input: BuildPreparationRequest,
     config: EngineConfig,
     provider_access: ProviderAvailability,
+    cache: Option<super::content::cache::ContentCache>,
     scope: &mut super::runtime::WorkScope,
 ) -> Result<RetainedOutput<PreparedBuild>> {
     let local_files = std::mem::take(&mut input.local_files);
@@ -972,7 +993,8 @@ async fn prepare_build(
         )?;
         scope.accept(work.wait().await?)?.transpose()
     }?;
-    local_inputs::supply(prepared, local_files, transfer, file_limit, scope).await
+    let prepared = local_inputs::supply(prepared, local_files, transfer, file_limit, scope).await?;
+    build_cache::supply(prepared, cache, transfer, scope).await
 }
 fn capture(
     project: PathBuf,
@@ -1191,6 +1213,7 @@ fn capture(
     })
 }
 
+mod build_cache;
 mod local_inputs;
 
 fn build_cleanup(

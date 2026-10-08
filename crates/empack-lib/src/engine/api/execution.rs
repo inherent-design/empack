@@ -19,11 +19,15 @@ pub(super) async fn run(
     config: EngineConfig,
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
+    cache: Option<crate::engine::content::cache::ContentCache>,
     owner: Arc<()>,
     mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
-    let result = execute(prepared, config, transport, catalog, owner, &mut scope).await;
+    let result = execute(
+        prepared, config, transport, catalog, cache, owner, &mut scope,
+    )
+    .await;
     Ok(match result {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -81,6 +85,7 @@ async fn execute(
     config: EngineConfig,
     transport: HttpAcquisition,
     catalog: Option<(ProviderCatalog, CatalogLimits)>,
+    cache: Option<crate::engine::content::cache::ContentCache>,
     owner: Arc<()>,
     scope: &mut WorkScope,
 ) -> Result<ExecutionOutcome> {
@@ -176,6 +181,16 @@ async fn execute(
             },
             prepared_permit,
         ));
+    }
+    if let Some(cache) = cache {
+        let files = acquired
+            .acquired
+            .locked
+            .values()
+            .chain(acquired.acquired.observed.values())
+            .map(|file| file.content.clone())
+            .collect();
+        cache.publish(scope, files).await?;
     }
     let has = |target| {
         request

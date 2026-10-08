@@ -43,7 +43,10 @@ pub async fn clean(session: &dyn Session, targets: &[String]) -> Result<()> {
     let selected = Selection::parse(targets)?;
     let invocation = session.filesystem().current_dir()?;
     let cache = if selected.cache {
-        Some(absolute(&invocation, &crate::platform::cache::cache_root()?).join("content-v1"))
+        Some(content_cache_root(
+            session.config().app_config(),
+            &invocation,
+        )?)
     } else {
         None
     };
