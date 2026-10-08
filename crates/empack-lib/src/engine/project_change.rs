@@ -85,6 +85,12 @@ pub struct PreparedProjectCreation {
     project: ResolvedProject,
 }
 impl PreparedProjectCreation {
+    pub(in crate::engine) fn cache_parts(
+        &mut self,
+    ) -> (&ResolvedProject, &mut crate::engine::staging::FrozenStage) {
+        (&self.project, self.change.stage_mut())
+    }
+
     pub fn plan(&self) -> &FilePlan {
         self.change.plan()
     }
@@ -133,6 +139,12 @@ pub fn prepare_project_creation(
     })
 }
 impl PreparedProjectReplacement {
+    pub(in crate::engine) fn cache_parts(
+        &mut self,
+    ) -> (&ResolvedProject, &mut crate::engine::staging::FrozenStage) {
+        (&self.project, self.change.stage_mut())
+    }
+
     pub fn plan(&self) -> &FilePlan {
         self.change.plan()
     }

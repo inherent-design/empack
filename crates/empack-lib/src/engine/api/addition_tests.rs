@@ -1291,3 +1291,88 @@ async fn bound_addition_rejects_identical_documents_in_another_native_project() 
     assert!(!state.exists());
     engine.shutdown().await;
 }
+
+#[tokio::test]
+async fn approved_addition_caches_staged_bytes_and_unavailable_cache_does_not_block_publication() {
+    use crate::engine::content::{cache::ContentCache, store::ContentStoreLimits};
+    use sha2::Digest;
+    for unavailable in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        for name in ["a.zip", "b.zip", "copy.zip"] {
+            fs::remove_file(root.path().join(format!("pack/resourcepacks/{name}"))).unwrap();
+        }
+        let cache = state.path().join("content");
+        if unavailable {
+            fs::write(&cache, b"unowned").unwrap();
+        }
+        let (engine, governor) = engine(state.path().join("state"));
+        let engine = engine.with_content_cache(
+            ContentCache::new(cache.clone(), ContentStoreLimits::default()).unwrap(),
+        );
+        let preview = ready(
+            &engine,
+            root.path(),
+            request(ExistingDependencyPolicy::UpdateSameIdentity),
+        )
+        .await;
+        drop(preview);
+        assert_eq!(
+            cache.exists(),
+            unavailable,
+            "preparation cannot create disposable state"
+        );
+        let prepared = ready(
+            &engine,
+            root.path(),
+            request(ExistingDependencyPolicy::UpdateSameIdentity),
+        )
+        .await;
+        let permission = grant(&prepared);
+        let mut handle = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        let result = handle.wait().await;
+        match &*result {
+            OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Add(_))) => {}
+            OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+                panic!("{error:#}")
+            }
+            _ => panic!("addition did not complete"),
+        }
+        for name in ["a.zip", "b.zip", "copy.zip"] {
+            assert_eq!(
+                fs::read(root.path().join(format!("pack/resourcepacks/{name}"))).unwrap(),
+                b"payload"
+            );
+        }
+        if unavailable {
+            assert_eq!(fs::read(&cache).unwrap(), b"unowned");
+        } else {
+            let id = empack_core::digest::ExpectedDigest::Sha256(
+                sha2::Sha256::digest(b"payload").into(),
+            );
+            assert_eq!(
+                fs::read(cache.join(format!("{}.blob", id.hex()))).unwrap(),
+                b"payload"
+            );
+            assert_eq!(
+                fs::read_dir(&cache)
+                    .unwrap()
+                    .filter(|entry| entry
+                        .as_ref()
+                        .unwrap()
+                        .path()
+                        .extension()
+                        .is_some_and(|ext| ext == "blob"))
+                    .count(),
+                1
+            );
+        }
+        engine.release_completed(handle.id());
+        drop((result, handle));
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}

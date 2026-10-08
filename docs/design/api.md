@@ -1309,3 +1309,19 @@ Process services return owned asynchronous work on the host Tokio runtime, inclu
 Git author discovery. There is no private process runtime or synchronous output-observer
 bridge. Unix program discovery inspects executable PATH entries without spawning `which`.
 Independent embedded display state remains implementation work.
+
+### Cache insertion for approved mutations
+
+Approved add, update and import operations populate the selected disposable content cache
+from their verified private staging files. They do not reread live project paths or retain
+an unbudgeted copy of every acquired file. One admitted file copy at a time is checked
+against the original source assertions and the staged content address before insertion.
+Files without spare copy capacity can remain uncached. Reference-only records and document-only
+adoption do not manufacture cached payloads.
+
+Preparation has no cache writer. Failed, declined and dry-run preparation leaves cache state
+unchanged. Cache insertion precedes project publication after approval, so a later publication
+failure may leave verified disposable bytes; those bytes do not establish project completion.
+Unavailable stores do not authorize deleting or repairing unrelated paths and do not prevent
+project publication. Cache hits still require verification against each consumer's source
+assertions and integrity policy.

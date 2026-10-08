@@ -292,13 +292,23 @@ async fn prepare_change(
     })?;
     scope.accept(work.wait().await?)?.transpose()
 }
+impl super::mutation_cache::StagedMutation for PreparedAdditionOperation {
+    fn cache_parts(&mut self) -> (&ResolvedProject, &mut crate::engine::staging::FrozenStage) {
+        self.addition.cache_parts()
+    }
+}
 pub(super) async fn run(
     prepared: RetainedOutput<PreparedAdditionOperation>,
     config: EngineConfig,
+    cache: Option<crate::engine::content::cache::ContentCache>,
     mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
-    let result = execute(prepared, config, &mut scope).await;
+    let result = async {
+        let prepared = super::mutation_cache::publish(prepared, cache, &mut scope).await?;
+        execute(prepared, config, &mut scope).await
+    }
+    .await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Add(Box::new(receipt))),
         Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
@@ -321,10 +331,11 @@ pub(super) async fn run(
 pub(super) async fn run_update(
     prepared: RetainedOutput<PreparedAdditionOperation>,
     config: EngineConfig,
+    cache: Option<crate::engine::content::cache::ContentCache>,
     scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let selected = prepared.view.existing_roots.clone();
-    Ok(match run(prepared, config, scope).await? {
+    Ok(match run(prepared, config, cache, scope).await? {
         ExecutionOutcome::Completed(ExecutionReceipt::Add(receipt)) => {
             ExecutionOutcome::Completed(ExecutionReceipt::Update(Box::new(receipt.map(|value| {
                 UpdateReceipt {
@@ -345,7 +356,7 @@ pub(super) async fn run_adoption(
     config: EngineConfig,
     scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
-    Ok(match run(prepared, config, scope).await? {
+    Ok(match run(prepared, config, None, scope).await? {
         ExecutionOutcome::Completed(ExecutionReceipt::Add(receipt)) => ExecutionOutcome::Completed(
             ExecutionReceipt::AdoptObserved(Box::new(receipt.map(|value| AdoptObservedReceipt {
                 plan: value.plan,

@@ -870,7 +870,7 @@ impl Engine {
                         PreparedKind::ProjectChange(value) => *value,
                         _ => unreachable!(),
                     });
-                    project_change::run(prepared, config, scope).await
+                    project_change::run(prepared, config, content_cache, scope).await
                 }
                 PreparedKind::Sync(_) => {
                     let prepared = data.map(|kind| match kind {
@@ -891,14 +891,14 @@ impl Engine {
                         PreparedKind::Update(value) => *value,
                         _ => unreachable!(),
                     });
-                    addition::run_update(prepared, config, scope).await
+                    addition::run_update(prepared, config, content_cache, scope).await
                 }
                 PreparedKind::Add(_) => {
                     let prepared = data.map(|kind| match kind {
                         PreparedKind::Add(value) => *value,
                         _ => unreachable!(),
                     });
-                    addition::run(prepared, config, scope).await
+                    addition::run(prepared, config, content_cache, scope).await
                 }
                 PreparedKind::Remove(_) => {
                     let prepared = data.map(|kind| match kind {
@@ -1222,6 +1222,7 @@ fn capture(
 
 mod build_cache;
 mod local_inputs;
+mod mutation_cache;
 
 fn build_cleanup(
     workspace: &WorkspaceSnapshot,

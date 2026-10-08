@@ -23,6 +23,10 @@ pub struct PreparedRootCreation {
     stage: FrozenStage,
 }
 impl PreparedRootCreation {
+    pub(in crate::engine) fn stage_mut(&mut self) -> &mut FrozenStage {
+        &mut self.stage
+    }
+
     pub(crate) fn from_verified(
         target: NewProjectSnapshot,
         change: VerifiedFileChange,

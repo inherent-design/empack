@@ -133,7 +133,7 @@ re-export. Restricted-import continuation remains open.
 | Cutover | Provider-owned world interpretation and live adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and manual-input continuation remain open; automatic layout and accepted-game-version policy changes use explicit revalidation |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
-| Cutover | Remaining acquisition cache integration and cleanup | Builds and synchronization reuse verified content; runtime assets populate the cache during approved execution; add/import acquisition has read-only lookup, with publication-time insertion and remaining disposable cleanup still open |
+| Cutover | Remaining acquisition cache integration and cleanup | Builds and synchronization reuse verified content; runtime assets populate the cache during approved execution; add/import acquisition has read-only lookup; approved add/update/import operations insert verified staged content; remaining disposable cleanup and restricted-input lookup integration remain open |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
@@ -252,6 +252,7 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Mutation cache publication | Reproduced missing import cache insertion, then passed 71 affected API/host tests and all-feature Clippy | Approved add/update/import reads private verified stages; previews create no cache; unavailable stores preserve project publication; a second import reuses original asserted bytes without payload acquisition |
 | Durable import continuation | 86 affected import/cleanup/CLI tests, three strict live CurseForge cases and all-feature Clippy passed | Source retention, repeated associations, stale facts/targets, missing/corrupt archive bytes, original MD5 evidence, preview and explicit opaque cleanup covered; final combined suite remains open |
 | Native live fixture cutover | Six strict executable cases and all-feature Clippy passed | Three build targets inspect exported bytes; live Modrinth import preserves documents across two syncs and re-export verifies hashes and sizes |
 | `773c4ad` strict baseline | 81 executable cases: 73 passed, eight failed; 31 nonmatching tests excluded | Five stale-fixture failures corrected in the next row; three restricted CurseForge import cases still require durable continuation; no missing-prerequisite skips accepted |

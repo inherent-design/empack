@@ -265,6 +265,10 @@ pub struct VerifiedFileChange {
     base: NativeSnapshot,
 }
 impl VerifiedFileChange {
+    pub(in crate::engine) fn stage_mut(&mut self) -> &mut FrozenStage {
+        &mut self.stage
+    }
+
     pub(super) fn into_parts(self) -> (FilePlan, FrozenStage, NativeSnapshot) {
         (self.plan, self.stage, self.base)
     }

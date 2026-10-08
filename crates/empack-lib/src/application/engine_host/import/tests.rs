@@ -206,6 +206,27 @@ async fn native_import_preserves_layers_and_optional_choices_through_build_and_e
     import(&session(root.path(), true, false), selected, decisions)
         .await
         .unwrap();
+    let cached = root.path().join("cache/content-v1").join(format!(
+        "{}.blob",
+        empack_core::digest::ExpectedDigest::Sha256(sha2::Sha256::digest(b"payload").into()).hex()
+    ));
+    assert_eq!(
+        fs::read(cached).expect("approved imported payload must enter cache"),
+        b"payload"
+    );
+    let mut restored = request(local("source.mrpack"), false);
+    restored.destination = Some("from-cache".into());
+    import(&session(root.path(), true, false), restored, decisions)
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(
+            root.path()
+                .join("project/from-cache/pack/resourcepacks/theme.zip")
+        )
+        .unwrap(),
+        b"payload"
+    );
     let project = root.path().join("project");
     for (layer, expected) in [
         ("common", b"common".as_slice()),

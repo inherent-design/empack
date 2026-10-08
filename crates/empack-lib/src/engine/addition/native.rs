@@ -37,6 +37,12 @@ pub struct AdditionReceipt {
     pub project: ResolvedProject,
 }
 impl PreparedAddition {
+    pub(in crate::engine) fn cache_parts(
+        &mut self,
+    ) -> (&ResolvedProject, &mut crate::engine::staging::FrozenStage) {
+        (&self.candidate.project, self.change.stage_mut())
+    }
+
     pub fn references(&self) -> &BTreeSet<LockedFileKey> {
         &self.references
     }

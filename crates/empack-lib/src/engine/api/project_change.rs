@@ -50,6 +50,19 @@ pub(super) struct PreparedProjectChange {
     pub(super) initialize: bool,
     replacement: NativeProjectChange,
 }
+impl super::mutation_cache::StagedMutation for PreparedProjectChange {
+    fn cache_parts(
+        &mut self,
+    ) -> (
+        &empack_core::model::ResolvedProject,
+        &mut crate::engine::staging::FrozenStage,
+    ) {
+        match &mut self.replacement {
+            NativeProjectChange::Existing(value) => value.cache_parts(),
+            NativeProjectChange::New(value) => value.cache_parts(),
+        }
+    }
+}
 enum NativeProjectChange {
     Existing(PreparedProjectReplacement),
     New(PreparedProjectCreation),
@@ -224,11 +237,16 @@ pub(super) fn summary(plan: &FilePlan) -> Result<ReplacementSummary> {
 pub(super) async fn run(
     prepared: RetainedOutput<PreparedProjectChange>,
     config: EngineConfig,
+    cache: Option<crate::engine::content::cache::ContentCache>,
     mut scope: WorkScope,
 ) -> Result<ExecutionOutcome, RuntimeError> {
     let cancel = scope.cancellation();
     let initialize = prepared.initialize;
-    let result = execute(prepared, config, &mut scope).await;
+    let result = async {
+        let prepared = super::mutation_cache::publish(prepared, cache, &mut scope).await?;
+        execute(prepared, config, &mut scope).await
+    }
+    .await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(if initialize {
             ExecutionReceipt::Initialize(Box::new(receipt))
