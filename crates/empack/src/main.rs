@@ -30,7 +30,6 @@ async fn main() -> std::process::ExitCode {
     }
     empack_lib::terminal::cursor::force_show_cursor();
     empack_lib::terminal::cursor::install_panic_hook();
-    empack_lib::display::clear_error_rendered();
     let cancellation = Cancellation::default();
     let signal_token = cancellation.clone();
     let listener = tokio::spawn(async move {
@@ -53,9 +52,7 @@ async fn main() -> std::process::ExitCode {
         Ok(()) => EmpackExitCode::Success.as_process_exit_code(),
         Err(error) => {
             let code = classify_error(&error);
-            if !empack_lib::display::take_error_rendered() {
-                eprintln!("Error: {error:#}");
-            }
+            eprintln!("Error: {error:#}");
             code.as_process_exit_code()
         }
     }

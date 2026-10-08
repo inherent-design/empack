@@ -761,6 +761,13 @@ Configuration parsing produces `HostConfig` plus field provenance. Define CLI/en
 
 No operation reads global CLI flags. Providers and planners receive explicit per-operation policy. Display/logging state is instance-owned or explicitly shared by the embedding host, not hidden mutable globals.
 
+`Display` owns its terminal capabilities and palette. Live session providers share only
+the display instance and progress manager selected for that session. Error rendering
+happens at the executable boundary from the returned error; a message emitted by
+another session cannot suppress it. Library dispatch installs neither a tracing
+subscriber nor process-wide signal handlers. The executable owns its logger and
+terminal lifecycle.
+
 
 ## 18. End-to-end usage traces
 

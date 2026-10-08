@@ -534,9 +534,9 @@ impl CommandSession {
     pub fn new(app_config: AppConfig) -> Self {
         let terminal_capabilities = TerminalCapabilities::detect_from_config(app_config.color)
             .unwrap_or_else(|_| TerminalCapabilities::minimal());
-        crate::display::Display::init_or_get(terminal_capabilities.clone());
         let multi_progress = Arc::new(MultiProgress::new());
-        let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone());
+        let display_provider = LiveDisplayProvider::new_with_arc(multi_progress.clone())
+            .with_capabilities(terminal_capabilities.clone());
         Self {
             multi_progress,
             display_provider,

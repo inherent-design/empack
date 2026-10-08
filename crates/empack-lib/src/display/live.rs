@@ -11,17 +11,30 @@ use std::sync::Arc;
 /// Live implementation of DisplayProvider that owns display state for command lifecycle
 pub struct LiveDisplayProvider {
     multi_progress: Arc<MultiProgress>,
+    display: Arc<Display>,
 }
 
 impl LiveDisplayProvider {
     pub fn new() -> Self {
         Self {
             multi_progress: Arc::new(MultiProgress::new()),
+            display: Arc::new(Display::default()),
         }
     }
 
+    pub fn with_capabilities(
+        mut self,
+        capabilities: crate::terminal::TerminalCapabilities,
+    ) -> Self {
+        self.display = Arc::new(Display::new(capabilities));
+        self
+    }
+
     pub fn new_with_arc(multi_progress: Arc<MultiProgress>) -> Self {
-        Self { multi_progress }
+        Self {
+            multi_progress,
+            display: Arc::new(Display::default()),
+        }
     }
 }
 
@@ -33,7 +46,9 @@ impl Default for LiveDisplayProvider {
 
 impl DisplayProvider for LiveDisplayProvider {
     fn status(&self) -> Box<dyn StatusProvider> {
-        Box::new(LiveStatusProvider)
+        Box::new(LiveStatusProvider {
+            display: self.display.clone(),
+        })
     }
 
     fn progress(&self) -> Box<dyn ProgressProvider> {
@@ -43,64 +58,68 @@ impl DisplayProvider for LiveDisplayProvider {
     }
 
     fn table(&self) -> Box<dyn StructuredProvider> {
-        Box::new(LiveStructuredProvider)
+        Box::new(LiveStructuredProvider {
+            display: self.display.clone(),
+        })
     }
 }
 
 /// Live implementation of StatusProvider
-struct LiveStatusProvider;
+struct LiveStatusProvider {
+    display: Arc<Display>,
+}
 
 impl StatusProvider for LiveStatusProvider {
     fn checking(&self, task: &str) {
-        Display::status().checking(task);
+        self.display.status().checking(task);
     }
 
     fn success(&self, item: &str, details: &str) {
-        Display::status().success(item, details);
+        self.display.status().success(item, details);
     }
 
     fn error(&self, item: &str, details: &str) {
-        Display::status().error(item, details);
+        self.display.status().error(item, details);
     }
 
     fn warning(&self, message: &str) {
-        Display::status().warning(message);
+        self.display.status().warning(message);
     }
 
     fn info(&self, message: &str) {
-        Display::status().info(message);
+        self.display.status().info(message);
     }
 
     fn message(&self, text: &str) {
-        Display::status().message(text);
+        self.display.status().message(text);
     }
 
     fn emphasis(&self, text: &str) {
-        Display::status().emphasis(text);
+        self.display.status().emphasis(text);
     }
 
     fn subtle(&self, text: &str) {
-        Display::status().subtle(text);
+        self.display.status().subtle(text);
     }
 
     fn list(&self, items: &[&str]) {
-        Display::status().list(items);
+        self.display.status().list(items);
     }
 
     fn complete(&self, task: &str) {
-        Display::status().complete(task);
+        self.display.status().complete(task);
     }
 
     fn tool_check(&self, tool: &str, available: bool, version: &str) {
-        Display::status().tool_check(tool, available, version);
+        self.display.status().tool_check(tool, available, version);
     }
 
     fn section(&self, title: &str) {
-        Display::status().section(title);
+        self.display.status().section(title);
     }
 
     fn step(&self, current: usize, total: usize, description: &str) {
-        Display::status().step(current, total, description);
+        self.display.status().step(current, total, description);
     }
 }
 
@@ -155,11 +174,13 @@ impl MultiProgressProvider for LiveMultiProgressProvider {
 }
 
 /// Live implementation of StructuredProvider
-struct LiveStructuredProvider;
+struct LiveStructuredProvider {
+    display: Arc<Display>,
+}
 
 impl StructuredProvider for LiveStructuredProvider {
     fn table(&self, headers: &[&str], rows: &[Vec<&str>]) {
-        let display = Display::table();
+        let display = self.display.table();
         let mut table = display.table().header(headers);
         for row in rows {
             table = table.row(row);
@@ -168,11 +189,11 @@ impl StructuredProvider for LiveStructuredProvider {
     }
 
     fn list(&self, items: &[&str]) {
-        Display::table().list(items);
+        self.display.table().list(items);
     }
 
     fn properties(&self, pairs: &[(&str, &str)]) {
-        Display::table().pairs(pairs);
+        self.display.table().pairs(pairs);
     }
 }
 

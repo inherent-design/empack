@@ -296,10 +296,10 @@ pub struct MockCommandSession {
 impl MockCommandSession {
     pub fn new() -> Self {
         let capabilities = TerminalCapabilities::minimal();
-        crate::display::Display::init_or_get(capabilities.clone());
         let multi_progress = Arc::new(MultiProgress::new());
         Self {
-            display_provider: LiveDisplayProvider::new_with_arc(multi_progress.clone()),
+            display_provider: LiveDisplayProvider::new_with_arc(multi_progress.clone())
+                .with_capabilities(capabilities.clone()),
             multi_progress,
             terminal_capabilities: capabilities,
             invocation_provider: MockInvocationProvider::new(),

@@ -136,7 +136,7 @@ re-export. Restricted-import continuation remains open.
 | Cutover | Remaining acquisition cache integration and cleanup | Builds and synchronization reuse verified content; runtime assets populate the cache during approved execution; add/import acquisition has read-only lookup, with publication-time insertion and remaining disposable cleanup still open |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
-| Cutover | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; isolate remaining global display/error state for embedding |
+| Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
 
 Both Review 128 findings reproduced before correction. The 38 affected tests and
@@ -252,6 +252,8 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Display ownership | Reproduced first-session terminal policy leakage; 26 affected tests, concurrent in-process display suite, seven library doctests and all-feature Clippy passed | Removed global display/palette initialization and error-suppression flags; executable boundary renders returned errors |
+| `2ea6a3e` combined candidate | `mise run test`: 898 tests and eight doctests passed; 103 opt-in cases excluded | No inherited-pipe warnings; 151.72 seconds; strict live matrix and coverage remain open |
 | Acquisition cache capabilities | 69 affected acquisition/runtime/build/sync tests, expanded negative regression and all-feature Clippy passed | Read-only preparation does not create storage; approved runtime assets retain original assertions; unknown catalogs remain fresh; corrupt bytes, strict MD5 refusal, failed batches and aggregate/per-request limits covered |
 | Synchronization content reuse | 48 affected sync/build-cache/continuation/store tests and all-feature Clippy passed | Reproduced offline restoration failure before wiring shared cache verification; exact pins, two no-op syncs, corrupt equal-length bytes and whole-tree previews covered |
 | Async host and bootstrap retirement | `mise run test`: 897 tests and eight doctests passed; 103 opt-in cases excluded; 30 affected tests, all-feature Clippy and Windows cross-compilation passed | Git lookup uses the host runtime; process cancellation/deadlines remain covered; two Windows test-only warnings remain; strict live matrix and coverage are still open |
