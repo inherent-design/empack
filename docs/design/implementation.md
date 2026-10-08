@@ -252,6 +252,7 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Synchronization content reuse | 48 affected sync/build-cache/continuation/store tests and all-feature Clippy passed | Reproduced offline restoration failure before wiring shared cache verification; exact pins, two no-op syncs, corrupt equal-length bytes and whole-tree previews covered |
 | Async host and bootstrap retirement | `mise run test`: 897 tests and eight doctests passed; 103 opt-in cases excluded; 30 affected tests, all-feature Clippy and Windows cross-compilation passed | Git lookup uses the host runtime; process cancellation/deadlines remain covered; two Windows test-only warnings remain; strict live matrix and coverage are still open |
 | Legacy library retirement candidate | `mise run test`: 921 tests and eight doctests passed; 103 opt-in cases excluded; 15 selected executable cases, all-feature Clippy and Windows cross-compilation passed | Windows retains test-only warnings; removed old implementations and their exclusive suites; native filesystem, identity, publication, cancellation and smoke checks remain; live browser and Modrinth import/build pass; two restricted CurseForge cases remain open |
 | `f322477` combined candidate | `mise run test`: 1,678 tests and eleven doctests passed; 103 opt-in cases excluded | No inherited-pipe warnings; 118.96 seconds; strict live matrix and final coverage remain open |

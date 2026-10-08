@@ -13,6 +13,8 @@ use empack_core::{
     path::PortableRelPath,
 };
 
+mod cache;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AcquisitionKey {
     Locked(LockedFileKey),

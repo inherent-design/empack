@@ -8,6 +8,7 @@ use crate::engine::{
             BuildContentSource,
         },
     },
+    content::{cache::ContentCache, store::ContentStoreLimits},
     mrpack::LockedFileKey,
     providers::CatalogLimits,
 };
@@ -72,6 +73,11 @@ pub(super) async fn publish(
             if !approve(session, "Remote content acquisition")? {
                 return Ok(());
             }
+            let (invocation, _) = project_path(session)?;
+            let cache = ContentCache::new(
+                content_cache_root(session.config().app_config(), &invocation)?,
+                ContentStoreLimits::default(),
+            )?;
             let acquired = scoped(
                 session,
                 governor(session.config().app_config()),
@@ -80,6 +86,8 @@ pub(super) async fn publish(
                         acquired: BuildAcquisitions::default(),
                         pending,
                     }
+                    .acquire_cached(&cache, &mut scope, evidence, services.files.transfer)
+                    .await?
                     .refresh_provider_locators(
                         &services.catalog,
                         &mut scope,
@@ -101,6 +109,19 @@ pub(super) async fn publish(
                         "Synchronization was not published: {} references require supplied content",
                         result.pending.len()
                     );
+                    // Acquisition has explicit approval. Cache publication does not imply that
+                    // the subsequent project publication succeeded or grant it any authority.
+                    cache
+                        .publish(
+                            &mut scope,
+                            result
+                                .acquired
+                                .locked
+                                .values()
+                                .map(|file| file.content.clone())
+                                .collect(),
+                        )
+                        .await?;
                     Ok(result.acquired.locked)
                 },
             )

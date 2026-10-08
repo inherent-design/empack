@@ -510,12 +510,66 @@ async fn materialization_verifies_the_whole_batch_without_updating_pins_or_previ
         fs::read(root.path().join("project/empack.lock")).unwrap(),
         lock
     );
+    // Materialization can restore exact content without consulting its old provider URL.
+    fs::remove_file(root.path().join("project/pack/mods/first.jar")).unwrap();
+    synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services("http://127.0.0.1:9"),
+        RuntimeCatalog::for_loopback_tests("http://127.0.0.1:9"),
+    )
+    .await
+    .expect("verified cache must restore missing materialized content offline");
+    assert_eq!(
+        fs::read(root.path().join("project/pack/mods/first.jar")).unwrap(),
+        b"payload"
+    );
     let published = snapshot(&root.path().join("project"));
     for _ in 0..2 {
         sync(root.path(), "http://127.0.0.1:9", false)
             .await
             .unwrap();
     }
+    assert_eq!(snapshot(&root.path().join("project")), published);
+    // A byte cache is never identity authority, including for equal-length corruption.
+    let cache = root.path().join("cache/content-v1");
+    let blob = fs::read_dir(&cache)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|value| value == "blob"))
+        .unwrap();
+    fs::write(&blob, b"changed").unwrap();
+    fs::remove_file(root.path().join("project/pack/mods/first.jar")).unwrap();
+    let corrupted = snapshot(root.path());
+    synchronize_with_services(
+        &session(root.path(), true),
+        true,
+        services("http://127.0.0.1:9"),
+        RuntimeCatalog::for_loopback_tests("http://127.0.0.1:9"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(root.path()), corrupted);
+    assert!(
+        synchronize_with_services(
+            &session(root.path(), false),
+            true,
+            services("http://127.0.0.1:9"),
+            RuntimeCatalog::for_loopback_tests("http://127.0.0.1:9"),
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(snapshot(root.path()), corrupted);
+    fs::write(&blob, b"payload").unwrap();
+    synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services("http://127.0.0.1:9"),
+        RuntimeCatalog::for_loopback_tests("http://127.0.0.1:9"),
+    )
+    .await
+    .unwrap();
     assert_eq!(snapshot(&root.path().join("project")), published);
     first.assert_async().await;
     second.assert_async().await;

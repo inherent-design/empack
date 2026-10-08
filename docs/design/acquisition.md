@@ -312,3 +312,11 @@ The compiled build acquisition path validates the entire HTTP request inventory
 before transfer and uses one cumulative byte/deadline budget, including alternatives.
 It returns no acquired subset after a failed request. Manual and embedded obligations
 remain explicit pending input.
+
+Synchronization materialization uses the same cache-obligation verifier as builds.
+After explicit acquisition approval, it checks original hashes, size and observations
+before refreshing provider locators. Hits can restore missing placements without a
+provider request. Corrupt or unavailable cache entries remain misses; they cannot
+change pins or authorize different bytes. A complete verified acquisition batch may
+populate disposable storage before the separate project publication decision. Preview
+performs neither acquisition nor cache publication.
