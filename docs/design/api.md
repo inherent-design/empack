@@ -865,9 +865,14 @@ read-only preview and prevent execution.
 Every completed artifact reports its verified byte length. Failed preparation leaves old
 artifacts intact, including when cleanup was requested.
 
-This entry point is compiled but not yet the CLI build dispatcher. Durable continuation,
-download-directory discovery and filename association must be composed before that
-cutover; this host rejects those arguments rather than ignoring them. Existing CLI
+A selected `downloads_dir` is scanned read-only for unresolved obligations. The native
+host matches declared content evidence, collapses duplicate bytes and re-acquires unique
+matches through `Engine::resume_with_local_files`. Different matching contents remain an
+explicit association decision. A filename or extension never establishes identity.
+
+This entry point is compiled but not yet the CLI build dispatcher. Durable continuation
+and CLI association parsing must be composed before that cutover; this host rejects
+those arguments rather than ignoring them. Existing CLI
 workflows remain available through the current dispatcher in the meantime.
 
 ### Native import host
@@ -911,3 +916,21 @@ if cache eviction fails after artifact publication, the error identifies the com
 artifact scope and retains the cache receipt's partial result. The scopes cannot overlap.
 Unknown neighbors and unselected storage remain untouched. This compiled host covers the
 new content store; old CLI cache categories remain on the current dispatcher until cutover.
+
+
+### Read-only download discovery
+
+`engine::acquisition::discovery::discover_downloads` accepts explicit absolute host roots,
+logical acquisition keys with original expectations, source-evidence policy and bounded
+scan limits. It returns admitted candidate observations, not content leases or publication
+authority. Only direct regular children are considered. Root aliases and hard-linked files
+are read once per scan; every inspected file is hashed once against all requirements.
+Unreadable unrelated files, links, special files and oversized candidates are skipped.
+
+All declared digests, size and any accepted observation must agree. Compatibility mode
+can match MD5 evidence; strong-source mode cannot upgrade it. Evidence-free requests
+remain unresolved. Different content IDs matching weaker evidence remain ambiguous;
+identical bytes at several paths yield one suggestion. Entry, total-byte, association and
+deadline exhaustion fail the scan without returning a partial set. Failed and unrelated
+reads consume the byte allowance. Candidate paths never enter project intent, and the
+normal local acquisition step verifies their current bytes again before accepting them.

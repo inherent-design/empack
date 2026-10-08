@@ -1613,3 +1613,22 @@ Those results do not constitute a full rerun of this correction.
 
 The correction passes all 30 affected tests, all-feature Clippy and Windows
 cross-compilation. Windows retains seven existing test-only configuration warnings.
+
+
+## Native download discovery
+
+The native build host now composes bounded download-folder discovery with existing local
+input acquisition and resume. A renamed file can satisfy its declared digest; an unrelated
+file with the expected basename cannot. Discovery makes no project or cache writes, and
+preview or declined execution preserves published content. Durable suspension and explicit
+CLI association parsing remain outstanding; this is not the build dispatcher cutover.
+
+Native fixtures cover one observation per candidate across multiple obligations, duplicate
+roots and content, hard links, unrelated directories and oversized files, symlink/FIFO
+rejection, source-policy differences, all-assertion matching and scan exhaustion. The host
+fixture builds exact manual content from a renamed download, exercises preview/decline,
+and preserves the prior distribution when a selected download root is missing.
+
+All 36 affected tests and all-feature Clippy pass. Windows cross-compilation passes
+with the seven existing test-only warnings. An earlier parallel host test reported an
+inherited-pipe warning; its isolated serial rerun and the final affected run were clean.

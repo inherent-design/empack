@@ -135,11 +135,10 @@ async fn native_build_rejects_unsupported_flags_and_invalid_targets_without_effe
     let root = tempfile::tempdir().unwrap();
     fixture(root.path()).await;
     let before = snapshot(root.path());
-    for variant in ["continue", "downloads", "associate", "unknown-after-all"] {
+    for variant in ["continue", "associate", "unknown-after-all"] {
         let mut options = args();
         match variant {
             "continue" => options.continue_build = true,
-            "downloads" => options.downloads_dir = Some("downloads".into()),
             "associate" => options.associate_downloads.push("a=b".into()),
             _ => options.targets = vec!["all".into(), "typo".into()],
         }
@@ -377,6 +376,41 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         "{error:#}"
     );
     assert_eq!(snapshot(root.path()), before);
+    fs::create_dir(root.path().join("downloads")).unwrap();
+    fs::write(
+        root.path().join("downloads/renamed.bin"),
+        b"verified manual bytes",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("downloads/custom.zip"),
+        b"unrelated download",
+    )
+    .unwrap();
+    let discovered = BuildArgs {
+        downloads_dir: Some("downloads".into()),
+        ..options.clone()
+    };
+    let before_discovery = snapshot(root.path());
+    for (yes, dry) in [(true, true), (false, false)] {
+        run(root.path(), &discovered, yes, dry).await.unwrap();
+        assert_eq!(snapshot(root.path()), before_discovery);
+    }
+    run(root.path(), &discovered, true, false).await.unwrap();
+    assert_eq!(
+        zip_bytes(
+            &project.join("dist/Native Pack-1.0-client-full.zip"),
+            ".minecraft/resourcepacks/custom.zip"
+        ),
+        b"verified manual bytes"
+    );
+    let after_discovery = snapshot(root.path());
+    let missing_root = BuildArgs {
+        downloads_dir: Some("missing".into()),
+        ..options.clone()
+    };
+    assert!(run(root.path(), &missing_root, true, false).await.is_err());
+    assert_eq!(snapshot(root.path()), after_discovery);
     fs::write(root.path().join("manual.bin"), b"verified manual bytes").unwrap();
     let files = || {
         BTreeMap::from([(
@@ -486,7 +520,7 @@ async fn derived_build_choices_reject_changed_intent_before_preparation() {
     .unwrap();
     let before = snapshot(root.path());
     let owner = engine(&host.config_provider.app_config, root.path()).unwrap();
-    let result = build_with_engine(&host, &owner, project, old_request).await;
+    let result = build_with_engine(&host, &owner, project, old_request, None).await;
     owner.shutdown().await;
     assert!(
         result.is_err(),
@@ -511,7 +545,7 @@ async fn derived_build_choices_allow_comment_edits_without_changing_the_output_p
     raw.extend_from_slice(b"\n# A comment changes bytes but not build choices\n");
     fs::write(project.join("empack.yml"), &raw).unwrap();
     let owner = engine(&host.config_provider.app_config, root.path()).unwrap();
-    build_with_engine(&host, &owner, project.clone(), selected)
+    build_with_engine(&host, &owner, project.clone(), selected, None)
         .await
         .unwrap();
     owner.shutdown().await;

@@ -17,6 +17,7 @@ use std::{
 };
 use tokio::{sync::mpsc, time::Instant};
 
+pub mod discovery;
 mod local;
 pub use local::{LocalFileRequest, acquire_local_file};
 

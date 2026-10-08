@@ -213,6 +213,23 @@ pub(super) struct ContentObservation {
     evidence: IntegrityEvidence,
     pub(super) observed: DigestSet,
 }
+impl ContentObservation {
+    pub(super) fn address(&self) -> ContentId {
+        self.address.clone()
+    }
+    pub(super) fn matches(&self, expected: &ExpectedContent) -> bool {
+        (expected.digests.is_some() || expected.accepted_observation.is_some())
+            && expected.size.is_none_or(|size| size == self.bytes)
+            && expected
+                .digests
+                .as_ref()
+                .is_none_or(|digests| digests.check(self.observed.values()).is_ok())
+            && expected
+                .accepted_observation
+                .as_ref()
+                .is_none_or(|id| id == &self.address)
+    }
+}
 pub(super) fn verify_observation(
     input: &mut dyn Read,
     expected: &ExpectedContent,

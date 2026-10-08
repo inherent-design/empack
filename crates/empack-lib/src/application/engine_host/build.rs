@@ -4,6 +4,7 @@ use crate::engine::build::acquisition::AcquisitionKey;
 use crate::{
     application::{BuildArgs, cli::CliArchiveFormat},
     engine::{
+        acquisition::discovery::{DiscoveryLimits, discover_downloads},
         api::{BuildOutput, BuildPreparationRequest, BuildRequest},
         build::BuildAcquisitions,
         content::SourceEvidencePolicy,
@@ -47,8 +48,8 @@ impl Default for BuildDecisions {
 }
 
 /// Build a native v0.5 project. Supplied bytes retain their exact logical slot and evidence.
-/// Durable continuation and directory discovery are separate host services; their CLI flags
-/// are rejected here until those services are composed, never silently discarded.
+/// Selected download roots are scanned without mutation. Durable continuation and explicit
+/// CLI association syntax remain separate host services; unsupported flags fail explicitly.
 pub async fn build(
     session: &dyn Session,
     args: &BuildArgs,
@@ -81,8 +82,8 @@ async fn build_with_inputs(
     files: BTreeMap<AcquisitionKey, PathBuf>,
 ) -> Result<()> {
     ensure!(
-        !args.continue_build && args.downloads_dir.is_none() && args.associate_downloads.is_empty(),
-        "This host requires explicit verified content; durable continuation and download discovery are not connected yet"
+        !args.continue_build && args.associate_downloads.is_empty(),
+        "This host requires explicit verified content; durable continuation and CLI association parsing are not connected yet"
     );
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
@@ -136,7 +137,11 @@ async fn build_with_inputs(
             ..Default::default()
         },
     );
-    let result = build_with_engine(session, &engine, project, request).await;
+    let downloads = args
+        .downloads_dir
+        .as_ref()
+        .map(|path| absolute(&invocation, Path::new(path)));
+    let result = build_with_engine(session, &engine, project, request, downloads).await;
     engine.shutdown().await;
     result
 }
@@ -225,8 +230,51 @@ async fn build_with_engine(
     engine: &Engine,
     project: PathBuf,
     request: BuildPreparationRequest,
+    downloads: Option<PathBuf>,
 ) -> Result<()> {
     let prepared = cancellable(session, engine.prepare(project, request)).await?;
+    let prepared = match (prepared, downloads) {
+        (Preparation::NeedsInput(pending), Some(downloads)) => {
+            let view = pending.view().build().context("Missing build preview")?;
+            let evidence = view.request().evidence;
+            let requirements = view
+                .content
+                .iter()
+                .filter(|need| view.unresolved.contains(&need.key))
+                .map(|need| (need.key.clone(), need.expected.clone()))
+                .collect();
+            let found = initialize::discover(session, move |mut scope| async move {
+                discover_downloads(
+                    &mut scope,
+                    vec![downloads],
+                    requirements,
+                    evidence,
+                    DiscoveryLimits::default(),
+                )
+                .await
+            })
+            .await?;
+            let files = found.unique_files();
+            session.display().status().info(&format!(
+                "Download scan: {} verified associations; {} candidates inspected; {} entries skipped",
+                files.len(), found.inspected_files, found.skipped_files
+            ));
+            if found
+                .matches
+                .values()
+                .any(|candidates| candidates.len() > 1)
+            {
+                session.display().status().warning("Different candidate bytes match an obligation; explicit association is required");
+            }
+            drop(found);
+            if files.is_empty() {
+                Preparation::NeedsInput(pending)
+            } else {
+                cancellable(session, engine.resume_with_local_files(*pending, files)).await?
+            }
+        }
+        (prepared, _) => prepared,
+    };
     let view = match &prepared {
         Preparation::Ready(value) => value.view(),
         Preparation::NeedsInput(value) => value.view(),
