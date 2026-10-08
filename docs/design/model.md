@@ -135,6 +135,18 @@ Reproducible recipe hashes never include an absolute home directory. Publication
 
 ## 5. The semantic project model
 
+Automatic placement is part of satisfaction, not merely an initial folder hint.
+Mods, resource packs and shaders default to `mods`, `resourcepacks` and
+`shaderpacks`; an authored layout overrides those directories. Other kinds require
+an authored directory or explicit placements. An automatic file belongs directly
+in that directory in the common layer. Custom subdirectories, multiple side layers
+and member layouts use explicit placements.
+
+Changing a directory invalidates affected automatic roots without invalidating
+explicit placements. Sync resolves those placement changes, retains valid provider
+pins and original source assertions, and publishes the move through the ordinary
+file plan. An old lock cannot silently claim to satisfy a new automatic directory.
+
 ### 5.1 Four independent state objects
 
 ```rust

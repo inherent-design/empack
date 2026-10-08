@@ -519,3 +519,78 @@ async fn materialization_verifies_the_whole_batch_without_updating_pins_or_previ
     first.assert_async().await;
     second.assert_async().await;
 }
+
+#[tokio::test]
+async fn automatic_layout_changes_move_content_while_explicit_placements_remain_stable() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut intent = project(root.path()).intent().clone();
+    intent.layout.insert(
+        ContentKind::Config,
+        PortableRelPath::parse("config", PathSyntax::ProjectContent).unwrap(),
+    );
+    fs::write(root.path().join("project/settings.toml"), b"settings").unwrap();
+    for (key, placement) in [
+        ("automatic", PlacementIntent::Automatic),
+        ("explicit", placed("config/explicit.toml")),
+    ] {
+        intent.roots.insert(
+            DependencyKey::parse(key).unwrap(),
+            DependencyIntent {
+                source: SourceIntent::Local(
+                    PortableRelPath::parse("settings.toml", PathSyntax::ProjectContent).unwrap(),
+                ),
+                kind: ContentKind::Config,
+                version: VersionIntent::FollowCompatible,
+                placement,
+                requirements: required(),
+            },
+        );
+    }
+    write_intent(root.path(), &intent);
+    sync(root.path(), "http://127.0.0.1:9", false)
+        .await
+        .unwrap();
+    let old = root.path().join("project/pack/config/settings.toml");
+    assert!(old.exists());
+    intent.layout.insert(
+        ContentKind::Config,
+        PortableRelPath::parse("config/nested", PathSyntax::ProjectContent).unwrap(),
+    );
+    write_intent(root.path(), &intent);
+    let before = snapshot(root.path());
+    sync(root.path(), "http://127.0.0.1:9", true).await.unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    sync(root.path(), "http://127.0.0.1:9", false)
+        .await
+        .unwrap();
+    assert!(
+        !old.exists(),
+        "old automatic layout survived changed directory intent"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/nested/settings.toml")).unwrap(),
+        b"settings"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/config/explicit.toml")).unwrap(),
+        b"settings"
+    );
+    let expected = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), expected);
+    intent.layout.remove(&ContentKind::Config);
+    write_intent(root.path(), &intent);
+    let before = snapshot(root.path());
+    assert!(
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .is_err(),
+        "a kind without a default directory needs an explicit placement"
+    );
+    assert_eq!(snapshot(root.path()), before);
+}

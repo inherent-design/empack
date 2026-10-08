@@ -138,7 +138,7 @@ pub(in crate::engine) fn resolve(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::{documents::DocumentCodec, mrpack::tests::project};
+    use crate::engine::mrpack::tests::project;
     use empack_core::{
         model::*,
         path::{InstallDestination, PathSyntax, PortableRelPath},
@@ -168,9 +168,6 @@ mod tests {
         intent
             .roots
             .insert(key("second"), intent.roots[&key("assets")].clone());
-        let decoded = DocumentCodec
-            .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "fixture")
-            .unwrap();
         let mut lock = original.lock().clone();
         let mut dependency = lock.dependencies[&key("assets")].clone();
         dependency.identity = ResolvedIdentity::Url(key("second"));
@@ -190,8 +187,7 @@ mod tests {
         dependency.files = NonEmpty::new(files).unwrap();
         lock.dependencies.insert(key("second"), dependency);
         lock.coverage.insert(key("second"), Coverage::Unknown);
-        lock.intent_revision = decoded.semantic_revision();
-        ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap()
+        crate::engine::mrpack::tests::explicitly_placed(intent, lock)
     }
     #[test]
     fn aliases_titles_and_stems_deduplicate_to_one_logical_selection() {

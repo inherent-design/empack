@@ -344,9 +344,6 @@ pub(in crate::engine) mod tests {
             let project = ProviderProjectId::Modrinth(ModrinthProjectId::parse(id).unwrap());
             let mut root = root.clone();
             root.source = SourceIntent::Provider(project.clone());
-            if roots.contains(label) {
-                intent.roots.insert(key.clone(), root);
-            }
             let mut value = value.clone();
             value.title = format!("Title for {id}");
             value.identity = ResolvedIdentity::Provider(project.clone());
@@ -367,6 +364,22 @@ pub(in crate::engine) mod tests {
                 file.placements = NonEmpty::new(placements).unwrap();
             }
             value.files = NonEmpty::new(files).unwrap();
+            if roots.contains(label) {
+                // This fixture deliberately namespaces files by provider, rather than using
+                // the content kind's automatic directory.
+                root.placement = PlacementIntent::Explicit(
+                    NonEmpty::new(
+                        value
+                            .files
+                            .as_slice()
+                            .iter()
+                            .flat_map(|file| file.placements.as_slice().iter().cloned())
+                            .collect(),
+                    )
+                    .unwrap(),
+                );
+                intent.roots.insert(key.clone(), root);
+            }
             lock.dependencies.insert(key.clone(), value);
             lock.coverage.insert(
                 key,

@@ -7,6 +7,32 @@ use empack_core::{
 };
 use std::io::{Read, Seek};
 
+/// Fixtures with custom destinations/layers must declare those placements as authoring intent.
+pub(in crate::engine) fn explicitly_placed(
+    mut intent: ProjectIntent,
+    mut lock: ResolutionLock,
+) -> ResolvedProject {
+    for (key, root) in &mut intent.roots {
+        root.placement = PlacementIntent::Explicit(
+            NonEmpty::new(
+                lock.dependencies[key]
+                    .files
+                    .as_slice()
+                    .iter()
+                    .flat_map(|file| file.placements.as_slice().iter().cloned())
+                    .collect(),
+            )
+            .unwrap(),
+        );
+    }
+    let codec = crate::engine::documents::DocumentCodec;
+    let decoded = codec
+        .decode_intent(&codec.encode_intent(&intent).unwrap(), "explicit fixture")
+        .unwrap();
+    lock.intent_revision = decoded.semantic_revision();
+    ResolvedProject::validate(intent, lock, decoded.semantic_revision()).unwrap()
+}
+
 fn acquired(mut bytes: &[u8]) -> AcquiredContent {
     verify_stream(
         &mut bytes,
@@ -462,12 +488,7 @@ fn optional_layered_fallback_requires_a_representable_conversion() {
     }
     files[0].placements = NonEmpty::new(placements).unwrap();
     dependency.files = NonEmpty::new(files).unwrap();
-    let project = ResolvedProject::validate(
-        original.intent().clone(),
-        lock.clone(),
-        lock.intent_revision,
-    )
-    .unwrap();
+    let project = explicitly_placed(original.intent().clone(), lock.clone());
     let mut common = source(ContentLayer::Common, b"fallback");
     common.destination = InstallDestination::parse("resourcepacks/a.zip").unwrap();
     let files = BTreeMap::from([(

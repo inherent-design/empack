@@ -119,7 +119,7 @@ re-export. Restricted-import continuation remains open.
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Open verification | Intermittent inherited-pipe warning | Combined cutover and template/runtime checks were clean; subsequent concurrent host subsets reported a retained output pipe despite passing assertions; investigate process retirement before final acceptance |
 | Cutover | Search/identification/adoption frontends and world-member interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
-| Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and changed layout/compatibility-policy semantics need further coverage |
+| Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and changed acceptable-game-version policy need further coverage |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
 | Cutover | Ordinary cache integration and cleanup | Cache use does not change source evidence; cleanup preserves leases, recovery and saved requests |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
@@ -149,6 +149,7 @@ modules remains open.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Automatic layout reconciliation, combined candidate | `mise run test`: 1,644 tests and eleven doctests passed; 101 opt-in cases skipped; all-feature Clippy passed | No inherited-pipe warnings; custom-directory and side-layer fixtures now declare explicit placements; strict live matrix and fresh coverage remain open |
 | Native exit classification | 15 affected host/classifier tests, 12 executable exit tests and all-feature Clippy passed | Reproduced incorrect transfer status; removed v0.4 classifiers and substring heuristics; native download and invalid-target diagnostics retain typed status |
 | Remote synchronization materialization | 41 affected sync/native CLI/smoke cases and all-feature Clippy passed; rebuilt executable passed all 16 offline smoke cases | Bad remote bytes publish nothing; pins and lock bytes stay unchanged; previews do not download; supplied references cannot override local sources |
 | Source lifetime correction | 87 affected add/remove/sync/verification cases and all-feature Clippy passed | Reproduced source deletion before fixing it; moved/removed placements retain shared sources, conflicting replacement fails before publication |

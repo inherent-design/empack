@@ -381,14 +381,8 @@ fn normalize(
         }
         let folder = root
             .and_then(|root| root.folder.as_ref())
-            .or_else(|| intent.layout.get(&selected.kind))
             .map(|path| path.as_str())
-            .or(match selected.kind {
-                ContentKind::Mod => Some("mods"),
-                ContentKind::ResourcePack => Some("resourcepacks"),
-                ContentKind::ShaderPack => Some("shaderpacks"),
-                _ => None,
-            });
+            .or_else(|| intent.content_folder(selected.kind));
         let declared = selected.resolution.files.as_slice();
         let policy = root
             .map(|root| &root.files)

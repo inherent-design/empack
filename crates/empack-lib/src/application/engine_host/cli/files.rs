@@ -97,15 +97,7 @@ pub(super) fn input(
     };
     let folder = current
         .intent()
-        .layout
-        .get(&kind)
-        .map(|folder| folder.as_str())
-        .or(match kind {
-            ContentKind::Mod => Some("mods"),
-            ContentKind::ResourcePack => Some("resourcepacks"),
-            ContentKind::ShaderPack => Some("shaderpacks"),
-            _ => None,
-        })
+        .content_folder(kind)
         .context("This content kind requires a configured destination folder")?;
     let requirements = if matches!(kind, ContentKind::ResourcePack | ContentKind::ShaderPack) {
         Requirements {

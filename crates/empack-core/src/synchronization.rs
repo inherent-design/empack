@@ -34,7 +34,7 @@ pub fn affected_roots(
                 || prior
                     .dependencies
                     .get(key)
-                    .is_none_or(|selected| root.validate_selection(key, selected).is_err()))
+                    .is_none_or(|selected| intent.validate_root_selection(key, selected).is_err()))
             .then_some(key.clone())
         })
         .collect()

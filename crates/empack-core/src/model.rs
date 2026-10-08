@@ -502,6 +502,58 @@ pub struct ResolutionLock {
 }
 
 impl ProjectIntent {
+    /// Resolve a type's automatic directory. Other kinds require an authored folder or placement.
+    pub fn content_folder(&self, kind: ContentKind) -> Option<&str> {
+        self.layout
+            .get(&kind)
+            .map(PortableRelPath::as_str)
+            .or(match kind {
+                ContentKind::Mod => Some("mods"),
+                ContentKind::ResourcePack => Some("resourcepacks"),
+                ContentKind::ShaderPack => Some("shaderpacks"),
+                _ => None,
+            })
+    }
+
+    /// Validate a root against both its explicit request and the project's automatic layout.
+    pub fn validate_root_selection(
+        &self,
+        key: &DependencyKey,
+        selected: &LockedDependency,
+    ) -> Result<(), ModelError> {
+        let root = self
+            .roots
+            .get(key)
+            .ok_or_else(|| invalid("Unknown authoring root"))?;
+        root.validate_selection(key, selected)?;
+        if matches!(root.placement, PlacementIntent::Automatic) {
+            let folder = self.content_folder(root.kind).ok_or_else(|| {
+                invalid("Automatic placement requires a configured content directory")
+            })?;
+            if selected
+                .files
+                .as_slice()
+                .iter()
+                .flat_map(|file| file.placements.as_slice())
+                .any(|placement| {
+                    placement.layer != ContentLayer::Common
+                        || placement
+                            .destination
+                            .relative()
+                            .as_str()
+                            .rsplit_once('/')
+                            .map(|(parent, _)| parent)
+                            != Some(folder)
+                })
+            {
+                return Err(invalid(
+                    "Lock does not satisfy the automatic content directory",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Check source/policy combinations without imposing target-format restrictions.
     pub fn validate(&self) -> Result<(), ModelError> {
         if self.metadata.name.trim().is_empty() || self.metadata.version.trim().is_empty() {
@@ -685,12 +737,12 @@ impl ResolvedProject {
         {
             return Err(invalid("Locked runtime differs from intent"));
         }
-        for (key, dep) in &intent.roots {
+        for key in intent.roots.keys() {
             let selected = lock
                 .dependencies
                 .get(key)
                 .ok_or_else(|| invalid("Lock omits an explicit dependency root"))?;
-            dep.validate_selection(key, selected)?;
+            intent.validate_root_selection(key, selected)?;
         }
         lock.validate_structure()?;
         Ok(Self { intent, lock })

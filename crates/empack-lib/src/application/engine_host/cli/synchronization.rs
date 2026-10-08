@@ -175,13 +175,9 @@ pub(super) async fn synchronize_with_services(
                 .await?;
                 providers.push(provider_input(key, root, selector, None, false)?);
             }
-            SourceIntent::Local(_) | SourceIntent::Url(_) => files.push(direct_input(
-                key,
-                root,
-                old,
-                &project,
-                &source.intent().layout,
-            )?),
+            SourceIntent::Local(_) | SourceIntent::Url(_) => {
+                files.push(direct_input(key, root, old, &project, source.intent())?)
+            }
         }
     }
     let mut limits = ClosureLimits::default();
@@ -407,7 +403,7 @@ fn direct_input(
     root: &DependencyIntent,
     old: Option<&LockedDependency>,
     project: &Path,
-    layout: &BTreeMap<ContentKind, empack_core::path::PortableRelPath>,
+    intent: &ProjectIntent,
 ) -> Result<DirectFileInput> {
     let (source, filename) = match &root.source {
         SourceIntent::Local(path) => (
@@ -439,15 +435,8 @@ fn direct_input(
     let placements = match &root.placement {
         PlacementIntent::Explicit(placements) => placements.clone(),
         PlacementIntent::Automatic => {
-            let folder = layout
-                .get(&root.kind)
-                .map(|path| path.as_str())
-                .or(match root.kind {
-                    ContentKind::Mod => Some("mods"),
-                    ContentKind::ResourcePack => Some("resourcepacks"),
-                    ContentKind::ShaderPack => Some("shaderpacks"),
-                    _ => None,
-                })
+            let folder = intent
+                .content_folder(root.kind)
                 .context("This content kind requires an explicit placement or configured folder")?;
             NonEmpty::new(vec![Placement {
                 destination: InstallDestination::parse(&format!("{folder}/{filename}"))?,

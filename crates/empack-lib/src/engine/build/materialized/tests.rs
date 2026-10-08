@@ -190,9 +190,7 @@ fn disabled_unacquired_optional_overlays_preserve_common_fallback() {
         }
         dependency.files = empack_core::model::NonEmpty::new(files).unwrap();
     }
-    let project =
-        ResolvedProject::validate(base.intent().clone(), lock, base.lock().intent_revision)
-            .unwrap();
+    let project = crate::engine::mrpack::tests::explicitly_placed(base.intent().clone(), lock);
     write_project(root.path(), &project);
     put(root.path(), "pack/resourcepacks/a.zip", b"fallback");
     let workspace = capture(root.path(), host.path());
