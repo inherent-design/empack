@@ -99,6 +99,17 @@ pub struct ProviderFile {
     pub expected: ExpectedContent,
     pub alternatives: Vec<String>,
 }
+impl ProviderFile {
+    /// Keep only locators permitted in durable documents and exported download references.
+    /// Signed execution-only alternatives remain available on the retained provider record.
+    pub(in crate::engine) fn persistent_alternatives(&self) -> Vec<String> {
+        self.alternatives
+            .iter()
+            .filter(|url| super::documents::validate_download_url(url).is_ok())
+            .cloned()
+            .collect()
+    }
+}
 pub struct ProviderResolution {
     pub project: CanonicalProject,
     /// Kinds advertised by this exact selection, distinct from the project-wide union.

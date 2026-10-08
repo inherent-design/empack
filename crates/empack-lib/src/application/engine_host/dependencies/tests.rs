@@ -236,6 +236,49 @@ async fn native_provider_host_preserves_alias_pin_required_content_and_cross_com
         .unwrap();
         assert_eq!(snapshot(&project), before);
     }
+    // Reference export needs neither a provider requery nor payload acquisition when the
+    // original catalog supplied durable origins and complete format evidence.
+    super::super::build(
+        &session(root.path(), true, false),
+        &BuildArgs {
+            targets: vec!["mrpack".into()],
+            ..Default::default()
+        },
+        super::super::BuildDecisions::default(),
+        crate::engine::build::BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(project.join("dist/Dependency Pack-1.0.mrpack")).unwrap(),
+    )
+    .unwrap();
+    let index: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(index["files"].as_array().unwrap().len(), 2);
+    for id in ["Root0001", "Need0001"] {
+        let file = index["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["path"] == format!("mods/{id}.jar"))
+            .unwrap();
+        assert_eq!(
+            file["downloads"],
+            json!([format!("https://example.invalid/{id}.jar")])
+        );
+        assert_eq!(file["fileSize"], 7);
+        assert_eq!(
+            file["hashes"]["sha1"],
+            "f07e5a815613c5abeddc4b682247a4c42d8a95df"
+        );
+        assert!(
+            archive
+                .by_name(&format!("overrides/mods/{id}.jar"))
+                .is_err()
+        );
+    }
+    drop(archive);
     // Full-client output needs actual payloads. Supply verified fixture bytes rather than
     // allowing synthetic provider IDs to reach the live service during this offline test.
     let mut supplied = BuildAcquisitions::default();

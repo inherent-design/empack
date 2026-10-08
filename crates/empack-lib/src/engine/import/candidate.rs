@@ -231,7 +231,7 @@ impl VerifiedImportContent {
                         );
                     }
                     let slot = FileSlot::parse(&file.filename)?;
-                    // Locators may be signed. Refresh from the exact identity at acquisition time.
+                    // Preserve safe export origins; signed locators stay execution-only.
                     (
                         SourceIntent::Provider(record.pin.project.clone()),
                         ResolvedIdentity::Provider(record.pin.project.clone()),
@@ -239,7 +239,7 @@ impl VerifiedImportContent {
                         AcquisitionSpec::Provider {
                             pin: record.pin.clone(),
                             slot: slot.clone(),
-                            alternatives: vec![],
+                            alternatives: file.persistent_alternatives(),
                         },
                         slot,
                         record.project.title.clone(),

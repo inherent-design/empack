@@ -122,7 +122,12 @@ compatible selection and required-closure expansion share one byte/deadline budg
 `ProviderAdditionOutcome::NeedsInput` retains unresolved closure evidence without
 producing a publishable subset. `Ready` retains provider records, the normalized
 project and `AdditionGroup` for native preparation. It has no payload downloader or
-project writer. Root requirements propagate through required edges; incompatible
+project writer. Normalization retains credential-free HTTPS alternatives accepted by
+the document policy. Signed, authenticated or otherwise nonpersistent locators stay
+on execution-only provider records and can be refreshed by exact identity. Provider
+import uses the same rule. Complete reference evidence permits mrpack export without
+downloading payloads or embedding provider files merely because their URL was discarded.
+Root requirements propagate through required edges; incompatible
 optional choices require an explicit conversion. Default placement follows content
 kind and configured layout; datapacks/worlds require a selected folder when none is
 configured. `ProviderFiles::Placed` preserves per-file destinations and participation

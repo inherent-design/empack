@@ -463,7 +463,7 @@ fn normalize(
                     acquisition: AcquisitionSpec::Provider {
                         pin: selected.resolution.pin.clone(),
                         slot,
-                        alternatives: vec![],
+                        alternatives: file.persistent_alternatives(),
                     },
                     provenance: Provenance {
                         source: "provider-catalog".into(),

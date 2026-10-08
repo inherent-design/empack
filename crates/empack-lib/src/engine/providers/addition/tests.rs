@@ -178,6 +178,18 @@ async fn provider_closure_publishes_canonical_roots_and_preserves_required_conte
     let addition = ready(&outcome);
     assert_eq!(addition.project().intent().roots.len(), 1);
     assert_eq!(addition.project().lock().dependencies.len(), 2);
+    for dependency in addition.project().lock().dependencies.values() {
+        for file in dependency.files.as_slice() {
+            let AcquisitionSpec::Provider { alternatives, .. } = &file.acquisition else {
+                panic!("Expected provider acquisition");
+            };
+            assert_eq!(
+                alternatives,
+                &[format!("https://example.com/{}", file.slot.as_str())],
+                "Safe provider origins must survive normalization for reference export"
+            );
+        }
+    }
     let key = DependencyKey::parse("chosen-alias").unwrap();
     assert_eq!(
         addition.project().lock().required_edges[&key],

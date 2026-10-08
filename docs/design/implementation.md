@@ -1232,3 +1232,19 @@ All 65 affected host, addition, removal and provider tests pass, with all-featur
 and Windows cross-compilation. Two tests reported inherited output pipes in the parallel
 run; both passed without that warning in an isolated serial rerun. The full-suite result
 remains pinned to `486808c`; these checks do not establish final CLI parity.
+
+## Provider reference origins
+
+Provider addition and import now retain download alternatives that satisfy the durable
+document policy. Previously they discarded every locator, including stable public URLs,
+forcing a provider requery and payload acquisition for ordinary reference exports.
+Signed URLs and credential-bearing alternatives remain execution-only; their exact
+provider identities remain available for later acquisition.
+
+The missing-origin regression failed before correction. The composed host workflow now
+also exports an mrpack using only the original reference evidence and inspects its paths,
+download URLs, sizes and hashes. Neither provider payload is embedded. Negative cases
+exclude signed query parameters, user information, HTTP and fragments from durable origins.
+
+All 104 affected provider, import and dependency-host tests pass, with all-feature Clippy
+and Windows cross-compilation. The native mrpack test makes no payload requests.

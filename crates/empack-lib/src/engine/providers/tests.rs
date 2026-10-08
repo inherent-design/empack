@@ -18,6 +18,37 @@ fn mr_version() -> Value {
         "files":[{"filename":"sodium.jar","primary":true,"size":7,"hashes":{"sha1":"11".repeat(20),"sha512":"22".repeat(64)},"url":"https://cdn.modrinth.com/content.jar"}],
         "dependencies":[{"project_id":"P7dR8mSH","version_id":null,"file_name":null,"dependency_type":"required"}]})
 }
+#[test]
+fn provider_export_origins_exclude_execution_only_credentials() {
+    let result = modrinth::selection(
+        modrinth::project(&bytes(&mr_project())).unwrap(),
+        &pin(ProviderKind::Modrinth),
+        &bytes(&mr_version()),
+    )
+    .unwrap();
+    let mut file = result.files.into_vec().remove(0);
+    file.alternatives = vec![
+        "https://cdn.modrinth.com/content.jar".into(),
+        "https://cdn.example.com/file?X-Amz-Signature=fixture-secret".into(),
+        "https://cdn.example.com/file?%61pi_key=fixture-secret".into(),
+        "https://user:fixture-secret@cdn.example.com/file".into(),
+        "http://cdn.example.com/file".into(),
+        "https://cdn.example.com/file#fixture-secret".into(),
+        "https://mirror.example.com/file?version=123".into(),
+    ];
+    assert_eq!(
+        file.persistent_alternatives(),
+        vec![
+            "https://cdn.modrinth.com/content.jar",
+            "https://mirror.example.com/file?version=123",
+        ]
+    );
+    assert_eq!(
+        file.alternatives.len(),
+        7,
+        "Execution alternatives remain intact"
+    );
+}
 fn cf_project() -> Value {
     json!({"data":{"id":394468,"gameId":432,"slug":"sodium","name":"Sodium","classId":6}})
 }
