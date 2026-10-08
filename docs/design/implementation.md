@@ -255,7 +255,11 @@ The affected import, initialization and publication suites passed 93 tests and
 all-target/all-feature Clippy.
 
 At `3987ba6`, default test binaries passed 927 tests (103 opt-in excluded). The strict
-live run passed 75 of 81; six acquisition-deadline failures remain under investigation.
+live run passed 75 of 81; six acquisition-deadline failures occurred with the inherited 30-second default.
+All six passed a diagnostic rerun with an explicit 300-second allowance and two test
+workers. The host default now matches the engine's 300-second phase budget; explicit
+short-deadline tests remain unchanged. The 55 affected configuration/acquisition tests
+and all-feature Clippy pass. A full default-concurrency rerun remains required.
 Doctest compilation overlapped later source changes, so those results are not presented
 as one frozen combined revision.
 

@@ -329,3 +329,11 @@ may be `seeds/settings.toml` while its installation remains `config/settings.tom
 Update preserves that distinction. A flat placement list describes copies of one file;
 use named roles for multiple files. Provider `--file-plan` and world/import workflows
 record these associations automatically.
+
+## Network deadlines
+
+`--net-timeout` (or `EMPACK_NET_TIMEOUT`) defaults to 300 seconds. It bounds each
+catalog or payload acquisition phase cumulatively, including retries and alternate
+locators. It is not a new allowance for each downloaded file. Large packs can require
+a higher explicit value. Cancellation and byte limits still apply throughout the
+phase; the timeout does not allow publication of incomplete content.

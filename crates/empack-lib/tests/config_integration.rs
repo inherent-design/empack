@@ -30,5 +30,5 @@ fn test_config_merging_integration() {
     assert_eq!(merged.color, TerminalCapsDetectIntent::Never);
 
     // Default values should remain for non-overridden fields
-    assert_eq!(merged.net_timeout, 30); // default timeout
+    assert_eq!(merged.net_timeout, 300); // default timeout
 }

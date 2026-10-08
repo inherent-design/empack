@@ -32,7 +32,7 @@ fn assert_same_existing_path(actual: Option<PathBuf>, expected: &Path) {
 fn test_config_loading_defaults() {
     let config = AppConfig::default();
     assert_eq!(config.log_level, 0);
-    assert_eq!(config.net_timeout, 30);
+    assert_eq!(config.net_timeout, 300);
     assert_eq!(config.color, TerminalCapsDetectIntent::Auto);
     assert_eq!(
         config.curseforge_api_client_key,

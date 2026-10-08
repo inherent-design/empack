@@ -8,7 +8,7 @@ use std::path::PathBuf;
 pub mod defaults {
     pub const LOG_LEVEL: &str = "0"; // Error-only logging by default
     pub const LOG_FORMAT: &str = "text";
-    pub const NET_TIMEOUT: &str = "30";
+    pub const NET_TIMEOUT: &str = "300";
     pub const CPU_PARALLELS: &str = "2";
     pub const LOG_OUTPUT: &str = "stderr";
     pub const TTY_CAPS_DETECT_INTENT: &str = "auto";
@@ -71,7 +71,7 @@ pub struct AppConfig {
     #[serde(default = "default_fns::cpu_parallels")]
     pub cpu_jobs: usize,
 
-    /// API timeout in seconds
+    /// Cumulative deadline in seconds for each catalog or payload acquisition phase
     #[arg(short, long, env = "EMPACK_NET_TIMEOUT", default_value = defaults::NET_TIMEOUT)]
     #[serde(default = "default_fns::net_timeout")]
     pub net_timeout: u64,
