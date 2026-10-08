@@ -1143,3 +1143,16 @@ Missing pins fail without publication. All 17 affected host/catalog tests pass,
 including a stalled-response fixture that verifies no later request starts after
 the shared deadline expires.
 All-feature Clippy and Windows cross-compilation also pass for these menu changes.
+
+## Loader discovery fairness
+
+Greptile 105 identified that a stalled early provider could consume the shared discovery
+deadline before a later family was checked. Each lookup now receives a fair share of the
+remaining allowance, reserving time for every uninspected family. The overall deadline
+and retained earlier choices remain binding. An explicit pin filters the evidenced menu.
+
+The regression fails before this correction when NeoForge stalls and Forge has the
+requested historical pin. Independent loopback origins model independent services; a
+single blocking mock server would incorrectly stall every provider. Both deadline tests
+pass after the correction, including all requested origins receiving a lookup. All-feature
+Clippy and Windows cross-compilation also pass on the combined host-work tree.

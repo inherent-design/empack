@@ -141,6 +141,20 @@ impl RuntimeCatalog {
             },
         }
     }
+    #[cfg(test)]
+    pub(crate) fn with_loader_test_origin(mut self, family: LoaderKind, base: &str) -> Self {
+        match family {
+            LoaderKind::Fabric => self.endpoints.fabric = format!("{base}/fabric/"),
+            LoaderKind::Quilt => self.endpoints.quilt = format!("{base}/quilt/"),
+            LoaderKind::Forge => self.endpoints.forge = format!("{base}/forge"),
+            LoaderKind::NeoForge => {
+                self.endpoints.neoforge = format!("{base}/neoforge");
+                self.endpoints.legacy_neoforge = format!("{base}/legacy-neoforge");
+            }
+            LoaderKind::Vanilla => panic!("Vanilla has no loader endpoint"),
+        }
+        self
+    }
     pub fn new(transport: HttpAcquisition) -> Self {
         Self {
             transport,

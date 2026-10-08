@@ -239,19 +239,22 @@ async fn compatible_loader(
             .checked_add(limits.transfer.deadline)
             .context("Loader discovery deadline overflow")?;
         let mut choices = Vec::new();
-        for family in [
+        let families = [
             LoaderKind::NeoForge,
             LoaderKind::Fabric,
             LoaderKind::Forge,
             LoaderKind::Quilt,
-        ] {
+        ];
+        for (index, family) in families.into_iter().enumerate() {
             scope.cancellation().check()?;
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             let versions = if remaining.is_zero() {
                 Err(crate::engine::acquisition::TransferError::Deadline.into())
             } else {
                 let mut request_limits = limits;
-                request_limits.transfer.deadline = remaining;
+                // Reserve a fair share for every uninspected family. A stalled early
+                // service cannot spend the allowance intended for later providers.
+                request_limits.transfer.deadline = remaining / (families.len() - index) as u32;
                 catalog
                     .loaders(&mut scope, game.clone(), family, request_limits)
                     .await
@@ -352,7 +355,7 @@ fn metadata(session: &dyn Session, args: &InitArgs, selected: &Path) -> Result<P
 }
 
 /// The owned discovery runtime is drained on success, failure, and host interruption.
-async fn discover<T, F, Fut>(session: &dyn Session, work: F) -> Result<T>
+pub(super) async fn discover<T, F, Fut>(session: &dyn Session, work: F) -> Result<T>
 where
     T: Send + 'static,
     F: FnOnce(WorkScope) -> Fut + Send + 'static,

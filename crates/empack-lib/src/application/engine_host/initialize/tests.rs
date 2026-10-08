@@ -517,7 +517,8 @@ async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family
         .with_body(r#"{"versions":["21.1.1"]}"#)
         .create_async()
         .await;
-    let fabric = server
+    let mut fabric_server = mockito::Server::new_async().await;
+    let fabric = fabric_server
         .mock("GET", "/fabric/1.21.1")
         .with_status(200)
         .with_chunked_body(|writer| {
@@ -526,20 +527,29 @@ async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family
         })
         .create_async()
         .await;
-    let mut skipped = Vec::new();
-    for path in ["/forge", "/quilt/1.21.1"] {
-        skipped.push(
-            server
+    let mut catalog = RuntimeCatalog::for_loopback_tests(&server.url())
+        .with_loader_test_origin(LoaderKind::Fabric, &fabric_server.url());
+    let mut later = Vec::new();
+    let mut other_servers = Vec::new();
+    for (path, family) in [
+        ("/forge", LoaderKind::Forge),
+        ("/quilt/1.21.1", LoaderKind::Quilt),
+    ] {
+        let mut other = mockito::Server::new_async().await;
+        catalog = catalog.with_loader_test_origin(family, &other.url());
+        later.push(
+            other
                 .mock("GET", path)
                 .with_status(200)
                 .with_chunked_body(|writer| {
                     std::thread::sleep(Duration::from_millis(300));
                     writer.write_all(b"{}")
                 })
-                .expect(0)
+                .expect(1)
                 .create_async()
                 .await,
         );
+        other_servers.push(other);
     }
     let root = tempfile::tempdir().unwrap();
     let host = session(root.path(), false, false)
@@ -548,7 +558,7 @@ async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family
     limits.transfer.deadline = Duration::from_millis(150);
     let (family, choices) = compatible_loader(
         &host,
-        RuntimeCatalog::for_loopback_tests(&server.url()),
+        catalog,
         GameVersion::parse("1.21.1").unwrap(),
         None,
         limits,
@@ -568,7 +578,70 @@ async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family
     );
     neo.assert_async().await;
     fabric.assert_async().await;
-    for response in skipped {
+    for response in later {
+        response.assert_async().await;
+    }
+    assert!(snapshot(root.path()).is_empty());
+}
+
+#[tokio::test]
+async fn slow_earlier_provider_cannot_starve_a_later_family_matching_the_pin() {
+    let mut server = mockito::Server::new_async().await;
+    let mut stalled = mockito::Server::new_async().await;
+    let slow = stalled
+        .mock("GET", "/neoforge")
+        .with_status(200)
+        .with_chunked_body(|writer| {
+            std::thread::sleep(Duration::from_millis(500));
+            writer.write_all(b"{}")
+        })
+        .create_async()
+        .await;
+    let fabric = server
+        .mock("GET", "/fabric/1.7.10")
+        .with_status(200)
+        .with_body("[]")
+        .create_async()
+        .await;
+    let forge = server
+        .mock("GET", "/forge")
+        .with_status(200)
+        .with_body(r#"{"1.7.10":["1.7.10-10.13.4.1614-1.7.10"]}"#)
+        .create_async()
+        .await;
+    let quilt = server
+        .mock("GET", "/quilt/1.7.10")
+        .with_status(200)
+        .with_body("[]")
+        .create_async()
+        .await;
+    let root = tempfile::tempdir().unwrap();
+    let host = session(root.path(), false, false)
+        .with_interactive(MockInteractiveProvider::new().queue_select(0));
+    let mut limits = RuntimeCatalogLimits::default();
+    limits.transfer.deadline = Duration::from_millis(200);
+    let (family, versions) = compatible_loader(
+        &host,
+        RuntimeCatalog::for_loopback_tests(&server.url())
+            .with_loader_test_origin(LoaderKind::NeoForge, &stalled.url()),
+        GameVersion::parse("1.7.10").unwrap(),
+        Some(LoaderVersion::parse("10.13.4.1614").unwrap()),
+        limits,
+    )
+    .await
+    .unwrap();
+    assert_eq!(family, LoaderKind::Forge);
+    assert_eq!(
+        versions
+            .unwrap()
+            .resolve(None)
+            .unwrap()
+            .loader_version
+            .unwrap()
+            .as_str(),
+        "10.13.4.1614"
+    );
+    for response in [slow, fabric, forge, quilt] {
         response.assert_async().await;
     }
     assert!(snapshot(root.path()).is_empty());
