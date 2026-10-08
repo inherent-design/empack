@@ -70,6 +70,16 @@ verify, retains new verified inputs, then presents the resulting build plan for 
 stops the wait. Dry runs and declined prompts do not wait or save state. Scans share a
 cumulative byte allowance; unrelated files cannot reset it on each poll.
 
+`build --open-downloads` opens public provider pages for unresolved exact selections,
+after continuation is approved and saved. It can be combined with `--wait-downloads`.
+`--yes` alone never opens a browser. Preview and declined plans have no desktop effect.
+Pages are resolved through the provider's canonical project and exact-file ownership;
+installer messages, manifest instructions and signed download locators are not browser
+commands. Each selection opens once per invocation, with a limit of 16 pages. If a
+provider cannot supply a verified page, the saved build remains available for explicit
+file association. The desktop application has its own lifetime; only its launcher is
+subject to empack's timeout and cancellation.
+
 ## Synchronization and remote content
 
 `empack sync` reconciles authored intent and exact recorded selections. It restores

@@ -75,6 +75,7 @@ pub async fn build_with_local_files(
     .await
 }
 mod assistance;
+mod browser;
 
 #[derive(Debug, thiserror::Error)]
 #[error(
@@ -149,6 +150,7 @@ async fn build_with_inputs(
         request,
         downloads,
         args.wait_downloads,
+        args.open_downloads,
     )
     .await;
     engine.shutdown().await;
@@ -218,8 +220,15 @@ pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<(
             .downloads_dir
             .as_ref()
             .map(|path| absolute(&invocation, Path::new(path)));
-        let (published, cleaned) =
-            assistance::finish(session, &engine, prepared, downloads, args.wait_downloads).await?;
+        let (published, cleaned) = assistance::finish(
+            session,
+            &engine,
+            prepared,
+            downloads,
+            args.wait_downloads,
+            args.open_downloads,
+        )
+        .await?;
         if published && !cleaned {
             cancellable(session, engine.discard_saved_build(resumed.saved))
                 .await
@@ -372,11 +381,19 @@ async fn build_with_engine(
     request: BuildPreparationRequest,
     downloads: Option<PathBuf>,
     wait_seconds: Option<u64>,
+    open_downloads: bool,
 ) -> Result<()> {
     let prepared = cancellable(session, engine.prepare(project, request)).await?;
-    assistance::finish(session, engine, prepared, downloads, wait_seconds)
-        .await
-        .map(|_| ())
+    assistance::finish(
+        session,
+        engine,
+        prepared,
+        downloads,
+        wait_seconds,
+        open_downloads,
+    )
+    .await
+    .map(|_| ())
 }
 async fn finish_once(
     session: &dyn Session,

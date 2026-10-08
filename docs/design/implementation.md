@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: provider-owned worlds, browser assistance and remaining library retirement
+new route, not full feature completion: provider-owned worlds, independent batches and remaining library retirement
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
@@ -34,7 +34,7 @@ a passing review and line coverage do not change that state by themselves.
 | Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption and explicit new source groups:** verified document-only acceptance of observed bytes and exact pins | Broaden live provider/member parity |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
 | Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Broaden runtime, search and multi-file placement matrices; manual acquisition continuation |
-| Build / continue | **CLI wired:** native build, saved recipe continuation and bounded download waiting | Browser assistance and live target/runtime matrix; execution-time missing inputs retain resumable state |
+| Build / continue | **CLI wired:** native build, saved recipe continuation and bounded download waiting | Broaden live target/runtime and platform desktop matrix; execution-time missing inputs retain resumable state |
 | Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores; explicit stale/invalid build-recipe cleanup is wired |
 | Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
 | Requirements / version | Host inspection; no managed-tool bootstrap | Capability-specific live prerequisites |
@@ -146,6 +146,16 @@ The unused legacy removal planner, slug-based dependency graph and obsolete mock
 modules remains open.
 
 ## Verification evidence
+
+Browser assistance: nine affected provider/build/launcher tests, ten native executable
+interactive/restricted cases and all-feature Clippy passed. The live Modrinth case
+resolves the exact Faithful resource-pack selection, invokes a fixture desktop opener,
+verifies the renamed supplied bytes and completes the saved build. Preview and decline
+have no desktop effects. Native PTY initialization now checks actual text/confirmation
+prompts and resulting documents; the old fake-packwiz/browser/Java scaffolds and an
+obsolete permanently ignored interactive fixture are deleted. The first PTY run exposed
+a mismatched test prompt label; the corrected native prompt checks both pass.
+
 
 Bounded download waiting: 41 affected CLI/build/continuation tests, six executable
 restricted-build cases and all-feature Clippy passed. Real subprocess cases cover

@@ -231,6 +231,10 @@ pub struct BuildArgs {
     #[arg(long, env = "EMPACK_DOWNLOADS_DIR")]
     pub downloads_dir: Option<String>,
 
+    /// Open verified provider pages for missing files after saving continuation
+    #[arg(long)]
+    pub open_downloads: bool,
+
     /// Wait for verified downloads, then present a fresh build plan
     #[arg(long, value_name = "SECONDS", requires = "downloads_dir", value_parser = clap::value_parser!(u64).range(1..=3600))]
     pub wait_downloads: Option<u64>,

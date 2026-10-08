@@ -1238,3 +1238,17 @@ normal discovery, resume, preview and approval paths, with one cumulative scan-b
 allowance and a fixed wait deadline. Metadata inspection and cancellation drain their
 owned work before returning; the deadline does not promise preemption of arbitrary
 blocking filesystem calls.
+
+
+### Explicit browser assistance
+
+`ContentRequirement` exposes an optional exact provider pin alongside its logical
+slot and source assertions. `ProviderCatalog::download_page` verifies that selection's
+ownership and derives an HTTPS page on the provider's fixed public origin, using
+validated slug segments and content kind. It cannot launch a process. The CLI invokes
+its desktop handoff only for `--open-downloads`, after approved continuation storage.
+Repeated or newly discovered obligations share the same per-invocation page set and
+page limit. A missing API capability leaves an actionable manual-input obligation;
+it does not authorize guessed URLs. Browser handoff uses null standard streams and a
+bounded launcher wait. The requested desktop application is deliberately outside
+installer process-tree ownership, so finishing empack does not terminate the browser.

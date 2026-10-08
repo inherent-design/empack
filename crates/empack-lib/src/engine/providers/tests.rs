@@ -10,10 +10,10 @@ use empack_core::{
 };
 use serde_json::{Value, json};
 
-fn mr_project() -> Value {
+pub(super) fn mr_project() -> Value {
     json!({"id":"AANobbMI","slug":"sodium","title":"Sodium","project_type":"mod","client_side":"required","server_side":"unsupported","loaders":["fabric"]})
 }
-fn mr_version() -> Value {
+pub(super) fn mr_version() -> Value {
     json!({"id":"abcdefgh","project_id":"AANobbMI","game_versions":["1.20.1"],"loaders":["fabric"],"environment":"client_only",
         "files":[{"filename":"sodium.jar","primary":true,"size":7,"hashes":{"sha1":"11".repeat(20),"sha512":"22".repeat(64)},"url":"https://cdn.modrinth.com/content.jar"}],
         "dependencies":[{"project_id":"P7dR8mSH","version_id":null,"file_name":null,"dependency_type":"required"}]})
@@ -49,14 +49,14 @@ fn provider_export_origins_exclude_execution_only_credentials() {
         "Execution alternatives remain intact"
     );
 }
-fn cf_project() -> Value {
+pub(super) fn cf_project() -> Value {
     json!({"data":{"id":394468,"gameId":432,"slug":"sodium","name":"Sodium","classId":6}})
 }
-fn cf_file() -> Value {
+pub(super) fn cf_file() -> Value {
     json!({"data":{"id":456,"gameId":432,"modId":394468,"fileName":"sodium.jar","fileLength":7,"downloadUrl":null,
         "hashes":[{"value":"33".repeat(16),"algo":2}],"gameVersions":["1.20.1","Fabric"],"dependencies":[{"modId":306612,"relationType":3}]}})
 }
-fn pin(provider: ProviderKind) -> ResolvedPin {
+pub(super) fn pin(provider: ProviderKind) -> ResolvedPin {
     match provider {
         ProviderKind::Modrinth => ResolvedPin {
             project: ProviderProjectId::Modrinth(ModrinthProjectId::parse("AANobbMI").unwrap()),
@@ -68,7 +68,7 @@ fn pin(provider: ProviderKind) -> ResolvedPin {
         },
     }
 }
-fn bytes(value: &Value) -> Vec<u8> {
+pub(super) fn bytes(value: &Value) -> Vec<u8> {
     serde_json::to_vec(value).unwrap()
 }
 fn limits() -> CatalogLimits {

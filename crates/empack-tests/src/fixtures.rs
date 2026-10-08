@@ -3,6 +3,8 @@
 //! This module provides utilities for loading VCR cassettes containing
 //! real API response fixtures captured from Modrinth and CurseForge APIs.
 
+pub mod restricted;
+
 use anyhow::Result;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;

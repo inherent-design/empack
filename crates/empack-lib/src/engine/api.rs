@@ -169,6 +169,8 @@ pub struct ContentRequirement {
     pub key: AcquisitionKey,
     pub expected: ExpectedContent,
     pub kind: ContentRequirementKind,
+    /// Exact public identity for separately authorized provider/browser assistance.
+    pub provider: Option<empack_core::model::ResolvedPin>,
 }
 /// Read-only effect summary. No URLs, content leases, publisher or conversion into approval.
 #[derive(Clone)]
@@ -922,6 +924,11 @@ fn describe(need: &super::build::acquisition::AcquisitionNeed) -> ContentRequire
     ContentRequirement {
         key: need.key.clone(),
         expected: need.expected.clone(),
+        provider: match &need.source {
+            BuildContentSource::Provider { pin, .. } => Some(pin.clone()),
+            BuildContentSource::Manual { pin } => pin.clone(),
+            _ => None,
+        },
         kind: match need.source {
             BuildContentSource::Download(_) => ContentRequirementKind::Download,
             BuildContentSource::Provider { .. } => ContentRequirementKind::ProviderLookup,
