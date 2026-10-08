@@ -553,11 +553,22 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
             json!({"data":{"id":123,"gameId":432,"classId":6,"slug":"fixture","name":"Fixture"}})
                 .to_string(),
         )
-        .expect(2)
+        .expect(5)
         .create_async()
         .await;
-    let metadata_file = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"fixture.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).expect(2).create_async().await;
+    let metadata_file = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"fixture.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).expect(5).create_async().await;
     let original = super::super::tests::snapshot(root.path());
+    let preview = import_with_services(
+        &session(root.path(), true, true),
+        request(local("source.mrpack"), false),
+        |_| panic!("restricted content must stop before conversion"),
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        HttpAcquisition::for_loopback_tests(),
+        ImportLimits::default(),
+    )
+    .await;
+    assert!(preview.is_err());
+    assert_eq!(super::super::tests::snapshot(root.path()), original);
     let result = import_with_services(
         &session(root.path(), true, false),
         request(local("source.mrpack"), false),
@@ -570,7 +581,22 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     assert!(
         format!("{:#}", result.unwrap_err()).contains("content obligations need explicit input")
     );
-    assert_eq!(super::super::tests::snapshot(root.path()), original);
+    assert!(!root.path().join("project").exists());
+    let records = || {
+        fs::read_dir(root.path().join("state/pending-imports"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|value| value == "json"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(records().len(), 1);
+    let saved_path = records().pop().unwrap();
+    let pending_tree = super::super::tests::snapshot(root.path());
+    super::super::clean(&session(root.path(), true, true), &["import".into()])
+        .await
+        .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), pending_tree);
+    fs::remove_file(root.path().join("source.mrpack")).unwrap();
     let identity = ProviderProjectId::CurseForge(CurseForgeProjectId::parse("123").unwrap());
     let pin = ResolvedPin {
         selection: identity.parse_pin("456").unwrap(),
@@ -580,7 +606,47 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         pin,
         filename: "fixture.jar".into(),
     };
-    let mut selected = request(local("source.mrpack"), false);
+    let before_resume = super::super::tests::snapshot(root.path());
+    let preview = import_with_services(
+        &session(root.path(), true, true),
+        request(ImportSource::Saved, false),
+        |_| panic!("pending preview must not convert"),
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        HttpAcquisition::for_loopback_tests(),
+        ImportLimits::default(),
+    )
+    .await;
+    assert!(preview.is_err());
+    assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
+    let mut wrong = request(ImportSource::Saved, false);
+    wrong.supplied.insert(
+        key.clone(),
+        crate::engine::content::verify_stream(
+            &mut b"changed".as_slice(),
+            &ExpectedContent {
+                digests: None,
+                size: None,
+                accepted_observation: None,
+            },
+            7,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::Accepted,
+            &crate::application::process_runtime::Cancellation::default(),
+        )
+        .unwrap(),
+    );
+    let wrong = import_with_services(
+        &session(root.path(), true, false),
+        wrong,
+        |_| panic!("incorrect bytes must not reach conversion"),
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        HttpAcquisition::for_loopback_tests(),
+        ImportLimits::default(),
+    )
+    .await;
+    assert!(wrong.is_err());
+    assert_eq!(super::super::tests::snapshot(root.path()), before_resume);
+    let mut selected = request(ImportSource::Saved, false);
     selected.supplied.insert(
         key.clone(),
         crate::engine::content::verify_stream(
@@ -661,6 +727,23 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         fs::read(root.path().join("project/pack/mods/fixture.jar")).unwrap(),
         b"payload"
     );
+    assert!(
+        records().is_empty(),
+        "successful import conditionally discards its saved record"
+    );
+    // Invalid saved data is never parsed as cleanup authority.
+    fs::write(&saved_path, b"invalid record").unwrap();
+    let before_cleanup = super::super::tests::snapshot(root.path());
+    super::super::clean(&session(root.path(), true, true), &["import".into()])
+        .await
+        .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), before_cleanup);
+    super::super::clean(&session(root.path(), true, false), &["import".into()])
+        .await
+        .unwrap();
+    let mut expected = before_cleanup;
+    expected.remove(&saved_path.strip_prefix(root.path()).unwrap().to_path_buf());
+    assert_eq!(super::super::tests::snapshot(root.path()), expected);
     project.assert_async().await;
     metadata_file.assert_async().await;
 }

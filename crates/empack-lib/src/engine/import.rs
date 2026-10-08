@@ -24,6 +24,10 @@ use std::{
 };
 
 pub(super) mod acquisition;
+pub use acquisition::suspension::{
+    PendingImportCleanup, ResumedImport, SavedImportRecord, discard_observed_import,
+    discard_pending_import, load_pending_import, observe_pending_import, save_pending_import,
+};
 pub use acquisition::{
     ImportContentInput, ImportContentKey, ImportContentLimits, ImportContentOutcome,
     ImportContentPlan, ImportInputReason, ImportLocalFile, VerifiedImportContent,

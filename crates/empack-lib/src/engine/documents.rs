@@ -422,7 +422,7 @@ fn kind(value: &Value) -> Result<ContentKind> {
         _ => bail!("Unknown content kind"),
     }
 }
-fn kind_name(value: ContentKind) -> &'static str {
+pub(in crate::engine) fn kind_name(value: ContentKind) -> &'static str {
     match value {
         ContentKind::Mod => "mod",
         ContentKind::ResourcePack => "resource-pack",

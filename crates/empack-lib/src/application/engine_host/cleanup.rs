@@ -10,6 +10,7 @@ struct Selection {
     artifacts: bool,
     cache: bool,
     continuation: bool,
+    import: bool,
 }
 impl Selection {
     fn parse(targets: &[String]) -> Result<Self> {
@@ -17,19 +18,21 @@ impl Selection {
             artifacts: targets.is_empty(),
             cache: false,
             continuation: false,
+            import: false,
         };
         for target in targets {
             match target.as_str() {
                 "builds" => value.artifacts = true,
                 "cache" => value.cache = true,
                 "continuation" => value.continuation = true,
+                "import" => value.import = true,
                 "all" => {
                     value.artifacts = true;
                     value.cache = true;
                 }
                 _ => {
                     anyhow::bail!(
-                        "Unknown cleanup target {target:?}; choose builds, cache, continuation or all"
+                        "Unknown cleanup target {target:?}; choose builds, cache, continuation, import or all"
                     )
                 }
             }
@@ -135,7 +138,7 @@ async fn clean_selected(
             }
         }
         let saved = if selected.continuation {
-            let saved = cancellable(session, engine.observe_saved_build(project)).await?;
+            let saved = cancellable(session, engine.observe_saved_build(project.clone())).await?;
             session.display().status().info(if saved.is_some() {
                 "Discard this project's saved build recipe; retained content and recovery journals remain"
             } else {
@@ -143,7 +146,17 @@ async fn clean_selected(
             });
             saved
         } else { None };
-        apply_cleanup(session, &engine, plans, saved).await
+        let pending_import = if selected.import {
+            let state = state_root(config, &invocation)?;
+            let observed = scoped(session, governor(config), move |mut scope| async move {
+                crate::engine::import::observe_pending_import(&mut scope, state, project).await
+            }).await?;
+            session.display().status().info(if observed.is_some() {
+                "Discard this destination's saved import; retained content remains"
+            } else { "No saved import to discard" });
+            observed
+        } else { None };
+        apply_cleanup(session, &engine, plans, saved, pending_import).await
     }
     .await;
     engine.shutdown().await;
@@ -154,15 +167,16 @@ async fn apply_cleanup(
     engine: &Engine,
     plans: Vec<(&'static str, PreparedOperation)>,
     saved: Option<SavedBuildRecord>,
+    pending_import: Option<crate::engine::import::PendingImportCleanup>,
 ) -> Result<()> {
-    if plans.is_empty() && saved.is_none() {
+    if plans.is_empty() && saved.is_none() && pending_import.is_none() {
         session
             .display()
             .status()
             .complete("No selected cleanup changes");
         return Ok(());
     }
-    if plans.len() + usize::from(saved.is_some()) > 1 {
+    if plans.len() + usize::from(saved.is_some()) + usize::from(pending_import.is_some()) > 1 {
         session.display().status().info("Selected cleanup scopes are separate operations; completed work is retained if a later operation fails");
     }
     if !approve(session, "Cleanup")? {
@@ -202,6 +216,32 @@ async fn apply_cleanup(
                 )));
             }
         }
+        completed.push("Saved build cleanup");
+    }
+    if let Some(saved) = pending_import {
+        let result = scoped(
+            session,
+            governor(session.config().app_config()),
+            move |mut scope| async move {
+                crate::engine::import::discard_observed_import(&mut scope, saved).await
+            },
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "Import cleanup failed; earlier completed scopes: {}",
+                completed.join(", ")
+            )
+        })?;
+        ensure!(
+            result,
+            "Saved import changed or disappeared; no import record was discarded; earlier completed scopes: {}",
+            completed.join(", ")
+        );
+        session
+            .display()
+            .status()
+            .complete("Discarded saved import");
     }
     Ok(())
 }

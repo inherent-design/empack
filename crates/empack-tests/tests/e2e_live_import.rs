@@ -1,8 +1,6 @@
 use std::time::Instant;
 
-use empack_tests::e2e::{
-    TestProject, assert_dist_artifact_suffix, count_pw_toml_files, empack_cmd, read_project,
-};
+use empack_tests::e2e::{TestProject, assert_dist_artifact_suffix, empack_cmd, read_project};
 
 const LIVE_IMPORTED_MRPACK_BUILD_TIMEOUT_SECS: &str = "600";
 
@@ -16,7 +14,9 @@ fn e2e_init_from_cobblemon_updated() {
 
     let project = TestProject::new();
     let start = Instant::now();
+    let state = project.dir().join("native-state");
     let output = empack_cmd(project.dir())
+        .env("EMPACK_STATE_DIR", &state)
         .args([
             "init",
             "--from",
@@ -28,24 +28,20 @@ fn e2e_init_from_cobblemon_updated() {
         .expect("spawn failed");
     let elapsed = start.elapsed();
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "cobblemon import failed:\nstdout: {stdout}\nstderr: {stderr}",
-    );
-
-    project.assert_exists("cobblemon/empack.yml");
-    project.assert_exists("cobblemon/pack/pack.toml");
-
-    let pw_count = count_pw_toml_files(&project.dir().join("cobblemon/pack"));
-    assert!(
-        pw_count >= 5,
-        "expected at least 5 mod .pw.toml files, found {pw_count}"
-    );
-
+    if !output.status.success() {
+        empack_tests::e2e::assert_pending_import_lifecycle(
+            project.dir(),
+            "cobblemon",
+            &state,
+            &output,
+        );
+        return;
+    }
+    let resolved = read_project(&project.dir().join("cobblemon"));
+    let count = resolved.lock().dependencies.len();
+    assert!(count >= 5, "expected at least five imported declarations");
     eprintln!(
-        "cobblemon import: {:.1}s ({pw_count} mods)",
+        "cobblemon import: {:.1}s ({count} dependencies)",
         elapsed.as_secs_f64()
     );
 }

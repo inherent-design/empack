@@ -279,8 +279,21 @@ async fn restricted_obligations_precede_downloads_and_explicit_bytes_are_reverif
         .start(move |mut scope| async move {
             let result = async {
                 let imported = inspect_source(&mut scope, archive).await?;
-                let plan =
+                let mut plan =
                     ImportContentPlan::resolve(&mut scope, imported, &catalog, limits()).await?;
+                let revision = plan.resume_revision();
+                // Locators are transport facts; slot assertions and source membership are identity.
+                let original = plan.needs[1].source.clone();
+                plan.needs[1].source = ImportedAcquisition::Downloads(vec![
+                    "https://example.invalid/refreshed?signature=private".into(),
+                ]);
+                assert_eq!(plan.resume_revision(), revision);
+                plan.needs[1].source = original;
+                let size = plan.needs[1].expected.size;
+                plan.needs[1].expected.size = Some(999);
+                assert_ne!(plan.resume_revision(), revision);
+                plan.needs[1].expected.size = size;
+                assert_eq!(plan.resume_revision(), revision);
                 let transport = HttpAcquisition::for_loopback_tests();
                 let ImportContentOutcome::NeedsInput {
                     plan,
@@ -1123,4 +1136,160 @@ async fn local_provider_associations_require_exact_identity_and_original_digests
         _ => panic!("import association did not complete"),
     }
     assert_eq!(governed.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn saved_import_accumulates_exact_verified_associations_across_restarts() {
+    use super::suspension::{load_pending_import, save_pending_import};
+    let root = tempfile::tempdir().unwrap();
+    let mut server = Server::new_async().await;
+    provider(&mut server, 123, 456, None).await;
+    provider(&mut server, 124, 457, None).await;
+    for step in 0..3 {
+        let state = root.path().join("state");
+        let target = root.path().join("project");
+        let origin = server.url();
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            memory_bytes: 64 << 20,
+            scratch_bytes: 1 << 20,
+            open_files: 64,
+        });
+        let runtime = OperationRuntime::new(governor.clone(), 1);
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                let result: Result<()> = async {
+                    if step == 1 {
+                        let blob = std::fs::read_dir(state.join("pending-import-content"))?
+                            .map(|entry| entry.unwrap().path())
+                            .find(|path| path.extension().is_some_and(|value| value == "blob"))
+                            .unwrap();
+                        let bytes = std::fs::read(&blob)?;
+                        std::fs::write(&blob, vec![0; bytes.len()])?;
+                        assert!(
+                            load_pending_import(&mut scope, state.clone(), target.clone())
+                                .await
+                                .is_err()
+                        );
+                        std::fs::remove_file(&blob)?;
+                        assert!(
+                            load_pending_import(&mut scope, state.clone(), target.clone())
+                                .await
+                                .is_err()
+                        );
+                        std::fs::write(&blob, bytes)?;
+                    }
+                    let mut resumed = if step == 0 {
+                        None
+                    } else {
+                        Some(
+                            load_pending_import(&mut scope, state.clone(), target.clone())
+                                .await?
+                                .unwrap(),
+                        )
+                    };
+                    let archive = resumed
+                        .as_ref()
+                        .map(|value| value.archive.clone())
+                        .unwrap_or_else(|| source("manifest.json", cf(), &[]));
+                    let imported = inspect_source(&mut scope, archive).await?;
+                    let catalog =
+                        ProviderCatalog::for_loopback_tests(&origin, Some("fixture-key".into()));
+                    let mut plan =
+                        ImportContentPlan::resolve(&mut scope, imported, &catalog, limits())
+                            .await?;
+                    if step == 1 {
+                        let size = plan.needs[0].expected.size;
+                        plan.needs[0].expected.size = Some(999);
+                        assert!(
+                            resumed
+                                .take()
+                                .unwrap()
+                                .restore(
+                                    &mut scope,
+                                    &plan,
+                                    BTreeMap::new(),
+                                    SourceEvidencePolicy::Compatibility
+                                )
+                                .await
+                                .is_err()
+                        );
+                        plan.needs[0].expected.size = size;
+                        resumed = Some(
+                            load_pending_import(&mut scope, state.clone(), target.clone())
+                                .await?
+                                .unwrap(),
+                        );
+                    }
+                    let (mut provided, prior) = if let Some(resumed) = resumed {
+                        let (provided, saved) = resumed
+                            .restore(
+                                &mut scope,
+                                &plan,
+                                BTreeMap::new(),
+                                SourceEvidencePolicy::Compatibility,
+                            )
+                            .await?;
+                        (provided, Some(saved))
+                    } else {
+                        (BTreeMap::new(), None)
+                    };
+                    assert_eq!(provided.len(), usize::from(step == 2));
+                    if step > 0 {
+                        provided.insert(plan.needs[step - 1].key.clone(), observed(b"payload"));
+                    }
+                    match plan
+                        .acquire(
+                            &mut scope,
+                            &HttpAcquisition::for_loopback_tests(),
+                            provided,
+                            SourceEvidencePolicy::Compatibility,
+                        )
+                        .await?
+                    {
+                        ImportContentOutcome::NeedsInput {
+                            plan,
+                            pending,
+                            provided,
+                        } => {
+                            assert!(step < 2);
+                            assert_eq!(pending.len(), 2 - step);
+                            save_pending_import(
+                                &mut scope,
+                                state,
+                                target.clone(),
+                                plan,
+                                provided,
+                                SourceEvidencePolicy::Compatibility,
+                                prior,
+                            )
+                            .await?;
+                        }
+                        ImportContentOutcome::Ready(content) => {
+                            assert_eq!(step, 2);
+                            assert_eq!(content.content().len(), 2);
+                            for file in content.content().values() {
+                                assert!(matches!(
+                                    file.evidence(),
+                                    empack_core::digest::IntegrityEvidence::MatchedExpected { .. }
+                                ));
+                            }
+                        }
+                    }
+                    assert!(!target.exists());
+                    Ok(())
+                }
+                .await;
+                Ok(result)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        runtime.shutdown().await;
+        match &*outcome {
+            OperationOutcome::Completed(Ok(())) => {}
+            OperationOutcome::Completed(Err(error)) => panic!("restart {step}: {error:#}"),
+            _ => panic!("restart {step} did not complete"),
+        }
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
 }

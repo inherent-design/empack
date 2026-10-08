@@ -52,7 +52,28 @@ verifies selected inputs without creating a project or durable host state.
 
 `--import-local-files` is a separate conversion choice: it retains verified downloads
 as authored local files. Supplying `--import-file` alone does not request that conversion.
-Durable restricted-import continuation remains an implementation gap.
+When files need manual acquisition, an approved invocation saves the source archive
+and verified associations in the selected state directory. It leaves the destination
+unchanged and exits unsuccessfully because the import is incomplete. Resume with the
+same destination and any additional exact file associations:
+
+```sh
+empack --yes init --continue ./project \
+  --import-file 'EXACT_SELECTOR=./Downloads/fixture.jar' \
+  --import-optional-default true
+```
+
+Use the exact selector printed by your import. Continuation reads the retained archive,
+resolves provider facts again, verifies supplied and retained bytes, and prepares a new
+publication for approval. It works after the original archive is removed. Changed source
+assertions or destination documents make the saved import stale; refreshed download URLs
+alone do not. Conversion choices and replacement approval must be supplied again.
+
+`init --continue --dry-run ./project` does not update saved state. To abandon an import,
+use `empack --workdir ./project clean import --dry-run`, then repeat with `--yes` to
+discard its record. The destination need not exist. Cleanup also accepts stale or malformed
+records, checks that their bytes have not changed since inspection, and retains source
+content. `clean all` does not discard pending imports.
 
 ## Implemented recovery command
 

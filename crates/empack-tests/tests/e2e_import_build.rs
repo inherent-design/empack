@@ -291,7 +291,9 @@ fn e2e_import_curseforge_and_check_restricted() {
     let zip_path = project.dir().join("cobblemon-updated.zip");
     download_file(download_url, &zip_path);
 
+    let state = project.dir().join("native-state");
     let output = empack_cmd(project.dir())
+        .env("EMPACK_STATE_DIR", &state)
         .args([
             "init",
             "--from",
@@ -305,12 +307,15 @@ fn e2e_import_curseforge_and_check_restricted() {
         .output()
         .expect("failed to spawn empack init --from (CF)");
 
-    assert!(
-        output.status.success(),
-        "empack init --from (CF) failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
+    if !output.status.success() {
+        empack_tests::e2e::assert_pending_import_lifecycle(
+            project.dir(),
+            "cf-imported",
+            &state,
+            &output,
+        );
+        return;
+    }
 
     let pack_dir = project.dir().join("cf-imported");
     assert!(
@@ -318,7 +323,6 @@ fn e2e_import_curseforge_and_check_restricted() {
         "empack.yml not found after CF import"
     );
 
-    let state = project.dir().join("native-state");
     let build_output = empack_cmd(&pack_dir)
         .env("EMPACK_STATE_DIR", &state)
         .args(["--yes", "build", "client-full", "--optional-defaults"])
@@ -363,7 +367,9 @@ fn e2e_import_curseforge_and_check_restricted() {
 #[test]
 fn e2e_init_from_curseforge_url() {
     let project = TestProject::new();
+    let state = project.dir().join("native-state");
     let output = empack_cmd(project.dir())
+        .env("EMPACK_STATE_DIR", &state)
         .args([
             "init",
             "--from",
@@ -377,13 +383,15 @@ fn e2e_init_from_curseforge_url() {
         .output()
         .expect("failed to spawn empack init --from (CF URL)");
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert!(
-        output.status.success(),
-        "empack init --from CF URL failed:\nstdout: {stdout}\nstderr: {stderr}",
-    );
+    if !output.status.success() {
+        empack_tests::e2e::assert_pending_import_lifecycle(
+            project.dir(),
+            "cf-url-imported",
+            &state,
+            &output,
+        );
+        return;
+    }
 
     let pack_dir = project.dir().join("cf-url-imported");
     assert!(

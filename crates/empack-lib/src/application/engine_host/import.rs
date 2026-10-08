@@ -20,6 +20,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 /// Explicit archive selection. Transient download URLs are never formatted or serialized here.
 pub enum ImportSource {
+    Saved,
     Provider {
         selector: ModpackSelector,
         releases: ReleasePolicy,
@@ -92,6 +93,7 @@ pub(super) async fn import_with_services(
         .destination
         .as_ref()
         .map_or(base.clone(), |path| absolute(&base, path));
+    let selected_path = selected.clone();
     let target = match std::fs::symlink_metadata(&selected) {
         Ok(_) => ProjectTarget::Existing(selected),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProjectTarget::New(selected),
@@ -129,8 +131,21 @@ pub(super) async fn import_with_services(
         })
         .collect::<Vec<_>>();
     let evidence = request.evidence;
-    let content = scoped(session, shared.clone(), move |mut scope| async move {
+    let state = state_root(config, &invocation)?;
+    let load_state = state.clone();
+    let load_target = selected_path.clone();
+    let (content, mut saved) = scoped(session, shared.clone(), move |mut scope| async move {
+        let mut resumed = None;
         let archive = match source {
+            ImportSource::Saved => {
+                let saved =
+                    crate::engine::import::load_pending_import(&mut scope, load_state, load_target)
+                        .await?
+                        .context("No saved import exists for this destination")?;
+                let archive = saved.archive.clone();
+                resumed = Some(saved);
+                archive
+            }
             ImportSource::Provider {
                 selector,
                 releases,
@@ -228,19 +243,50 @@ pub(super) async fn import_with_services(
         let supplied = plan
             .acquire_local_files(&mut scope, &local_files, request.supplied, evidence)
             .await?;
-        plan.acquire(&mut scope, &transport, supplied, evidence)
-            .await
+        let (supplied, saved) = if let Some(resumed) = resumed {
+            let (supplied, saved) = resumed
+                .restore(&mut scope, &plan, supplied, evidence)
+                .await?;
+            (supplied, Some(saved))
+        } else {
+            (supplied, None)
+        };
+        Ok((
+            plan.acquire(&mut scope, &transport, supplied, evidence)
+                .await?,
+            saved,
+        ))
     })
     .await?;
     let content = match content {
         ImportContentOutcome::Ready(content) => content,
-        ImportContentOutcome::NeedsInput { pending, .. } => {
+        ImportContentOutcome::NeedsInput {
+            plan,
+            pending,
+            provided,
+        } => {
             for input in &pending {
                 session.display().status().warning(&format!(
                     "Import input {:?}: {:?}",
                     input.key.selector(),
                     input.reason
                 ));
+            }
+            if approve(session, "Save incomplete import")? {
+                scoped(session, shared.clone(), move |mut scope| async move {
+                    crate::engine::import::save_pending_import(
+                        &mut scope,
+                        state,
+                        selected_path,
+                        plan,
+                        provided,
+                        evidence,
+                        saved,
+                    )
+                    .await
+                })
+                .await?;
+                session.display().status().info("Import continuation was saved; use init --continue with the same destination and --import-file SELECTOR=PATH");
             }
             anyhow::bail!(
                 "Import was not published: {} content obligations need explicit input",
@@ -260,7 +306,7 @@ pub(super) async fn import_with_services(
         content.into_candidate(&mut scope, options)
     })
     .await?;
-    let engine = engine_with_governor(config, &invocation, shared)?;
+    let engine = engine_with_governor(config, &invocation, shared.clone())?;
     let result = async {
         let prepared = match cancellable(
             session,
@@ -285,7 +331,10 @@ pub(super) async fn import_with_services(
             view.metadata.name, view.metadata.version, view.runtime.loader
         ));
         show_changes(session, &view.files)?;
-        apply(session, &engine, prepared, "Import", |receipt| {
+        if !approve(session, "Import")? {
+            return Ok(());
+        }
+        execute_approved(session, &engine, prepared, "Import", |receipt| {
             let ExecutionReceipt::Import(receipt) = receipt else {
                 anyhow::bail!("Unexpected import receipt")
             };
@@ -294,7 +343,14 @@ pub(super) async fn import_with_services(
                 receipt.publication.disposition, receipt.publication.changed_files
             ))
         })
-        .await
+        .await?;
+        if let Some(saved) = saved.take() {
+            scoped(session, shared, move |mut scope| async move {
+                crate::engine::import::discard_pending_import(&mut scope, saved).await
+            })
+            .await?;
+        }
+        Ok(())
     }
     .await;
     engine.shutdown().await;

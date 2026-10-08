@@ -552,6 +552,101 @@ pub fn write_local_mrpack(
     )
 }
 
+/// Live restricted imports must retain exact restart state and expose read-only inspection
+/// and explicit cleanup. A generic provider/network failure cannot satisfy this contract.
+pub fn assert_pending_import_lifecycle(
+    workdir: &Path,
+    target: &str,
+    state: &Path,
+    output: &Output,
+) {
+    assert!(!output.status.success());
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        diagnostic.contains("content obligations need explicit input"),
+        "{diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("Import continuation was saved"),
+        "{diagnostic}"
+    );
+    let target_path = workdir.join(target);
+    assert!(
+        !target_path.exists(),
+        "incomplete import must not create its destination"
+    );
+    let records = std::fs::read_dir(state.join("pending-imports"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|value| value == "json"))
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 1);
+    let original = std::fs::read(&records[0]).unwrap();
+    let record: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    assert_eq!(record["schema"], 1);
+    let id = record["archive"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|byte| format!("{:02x}", byte.as_u64().unwrap()))
+        .collect::<String>();
+    let archive = state
+        .join("pending-import-content")
+        .join(format!("{id}.blob"));
+    assert_eq!(
+        std::fs::metadata(&archive).unwrap().len(),
+        record["archive_bytes"].as_u64().unwrap()
+    );
+    let preview = empack_cmd(workdir)
+        .env("EMPACK_STATE_DIR", state)
+        .args(["init", "--continue", "--dry-run", target])
+        .output()
+        .unwrap();
+    assert!(!preview.status.success());
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&preview.stdout),
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert!(
+        diagnostic.contains("content obligations need explicit input"),
+        "{diagnostic}"
+    );
+    assert_eq!(std::fs::read(&records[0]).unwrap(), original);
+    assert!(!target_path.exists());
+    for dry in [true, false] {
+        let mut command = empack_cmd(workdir);
+        command
+            .env("EMPACK_STATE_DIR", state)
+            .arg("--workdir")
+            .arg(&target_path)
+            .args(["--yes", "clean", "import"]);
+        if dry {
+            command.arg("--dry-run");
+        }
+        let cleanup = command.output().unwrap();
+        assert!(
+            cleanup.status.success(),
+            "{}",
+            format_output_for_debug(&cleanup)
+        );
+        if dry {
+            assert_eq!(std::fs::read(&records[0]).unwrap(), original);
+        } else {
+            assert!(!records[0].exists());
+        }
+        assert!(!target_path.exists());
+        assert!(
+            archive.exists(),
+            "explicit record cleanup retains verified source content"
+        );
+    }
+}
+
 #[cfg(test)]
 mod harness_tests {
     use super::*;

@@ -925,7 +925,7 @@ Execution confirmation never supplies those semantic decisions implicitly.
 
 `application::engine_host::import` accepts an `ImportHostRequest` and a decision
 callback over `VerifiedImportContent`. Sources are provider modpack selections, explicit
-native paths or download alternatives. File source variants carry original digest and size assertions; selecting a
+native paths, download alternatives or a saved import for the selected destination. File source variants carry original digest and size assertions; selecting a
 local file does not downgrade a strong-source policy to an accepted observation.
 A provider source can include an explicit `supplied_archive` native path. Its bytes must
 satisfy that exact provider archive's original digest and size, including when no download
@@ -957,12 +957,34 @@ normal import verification and publication.
 The host displays the exact managed replacement plan before the common approval step.
 Preview and declined approval leave project and durable host state unchanged. Provider
 pages use the archive catalog and verify its assertions before inspection. Runtime
-conversion choices and durable import pending-input storage remain integration work.
+conversion choices remain explicit host decisions on each attempt.
 The ordinary CLI import dispatcher uses this host.
+
+### Durable import continuation
+
+`engine::import::save_pending_import` retains the inspected archive and verified exact
+file associations after host approval. `load_pending_import` returns a `ResumedImport`;
+its `restore` method compares the freshly resolved plan before restoring associations.
+Records contain content addresses, original archive evidence, a canonical fact revision,
+and native destination/document bindings. They contain neither authoritative output
+paths nor execution approval. Download URLs are omitted from the fact revision so a
+refreshed signed locator does not change the identity of an exact selection.
+
+The CLI reaches this path through `init --continue`. Retained bytes are reverified against
+the current source assertions and integrity policy. Missing retained files remain pending;
+corrupt retained bytes fail. Supplied files can accumulate across attempts without creating
+a partial project. Successful publication conditionally removes the unchanged saved record.
+Failure, declined approval and preview retain it.
+
+`observe_pending_import` produces an opaque `PendingImportCleanup` handle without parsing
+the record. `discard_observed_import` deletes only those unchanged inspected bytes. This
+allows explicit cleanup of stale or malformed state without trusting its contents. Record
+reads are bounded to 4 MiB; host storage uses native locks and atomic replacement. Retained
+archive/file content lives outside the disposable cache and survives record cleanup.
 
 ### Native cleanup host
 
-`application::engine_host::clean` accepts `builds`, `cache`, `continuation` and `all`; omission selects
+`application::engine_host::clean` accepts `builds`, `cache`, `continuation`, `import` and `all`; omission selects
 artifacts. It validates every target and prepares all selected scopes before one approval.
 Artifacts use native publication without needing valid intent/lock documents. The content
 cache lives under the selected cache root's `content-v1` directory. Opening an absent cache

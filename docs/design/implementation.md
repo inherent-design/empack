@@ -28,14 +28,14 @@ a passing review and line coverage do not change that state by themselves.
 | Workflow | Executable route | Remaining acceptance work |
 | --- | --- | --- |
 | Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix; headless loader/latest choices are now explicit |
-| Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
+| Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Native `init --continue` and `clean import` are wired; broaden live provider/archive matrix |
 | Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Provider-owned world members and broader live provider parity; direct world groups, explicit file plans and provider identification are wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
 | Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption and explicit new source groups:** verified document-only acceptance of observed bytes and exact pins | Broaden live provider/member parity |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
 | Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Broaden runtime, search and multi-file placement matrices; manual acquisition continuation |
 | Build / continue | **CLI wired:** native build, saved recipe continuation and bounded download waiting | Broaden live target/runtime and platform desktop matrix; execution-time missing inputs retain resumable state |
-| Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores; explicit stale/invalid build-recipe cleanup is wired |
+| Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores; explicit stale/invalid build and import cleanup is wired |
 | Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
 | Requirements / version | Host inspection; no managed-tool bootstrap | Capability-specific live prerequisites |
 
@@ -252,6 +252,7 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Durable import continuation | 86 affected import/cleanup/CLI tests, three strict live CurseForge cases and all-feature Clippy passed | Source retention, repeated associations, stale facts/targets, missing/corrupt archive bytes, original MD5 evidence, preview and explicit opaque cleanup covered; final combined suite remains open |
 | Native live fixture cutover | Six strict executable cases and all-feature Clippy passed | Three build targets inspect exported bytes; live Modrinth import preserves documents across two syncs and re-export verifies hashes and sizes |
 | `773c4ad` strict baseline | 81 executable cases: 73 passed, eight failed; 31 nonmatching tests excluded | Five stale-fixture failures corrected in the next row; three restricted CurseForge import cases still require durable continuation; no missing-prerequisite skips accepted |
 | Display ownership | Reproduced first-session terminal policy leakage; 26 affected tests, concurrent in-process display suite, seven library doctests and all-feature Clippy passed | Removed global display/palette initialization and error-suppression flags; executable boundary renders returned errors |

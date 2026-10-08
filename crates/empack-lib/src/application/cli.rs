@@ -116,6 +116,7 @@ impl CliConfig {
 
 /// Arguments for the `init` subcommand.
 #[derive(Args, Debug, Default, Clone)]
+#[command(group(clap::ArgGroup::new("import_origin").args(["from_source", "continue_import"]).multiple(false)))]
 pub struct InitArgs {
     /// Target directory for the modpack project
     #[arg(help = "Directory for the modpack project (created if needed)")]
@@ -188,22 +189,26 @@ pub struct InitArgs {
     #[arg(long = "from", value_name = "SOURCE")]
     pub from_source: Option<String>,
 
+    /// Resume the saved source archive and verified associations for this destination.
+    #[arg(long = "continue", conflicts_with = "from_source")]
+    pub continue_import: bool,
+
     /// Default for optional imported files; participation remains optional.
-    #[arg(long, requires = "from_source", value_name = "BOOL")]
+    #[arg(long, requires = "import_origin", value_name = "BOOL")]
     pub import_optional_default: Option<bool>,
 
     /// Explicitly exclude archive members outside recognized content namespaces.
-    #[arg(long, requires = "from_source")]
+    #[arg(long, requires = "import_origin")]
     pub exclude_auxiliary: bool,
 
     /// Retain imported downloads as local files instead of durable URL references.
-    #[arg(long, requires = "from_source")]
+    #[arg(long, requires = "import_origin")]
     pub import_local_files: bool,
 
     /// Associate a selected file with one exact imported download obligation.
     #[arg(
         long = "import-file",
-        requires = "from_source",
+        requires = "import_origin",
         value_name = "SELECTOR=PATH"
     )]
     pub import_files: Vec<String>,
@@ -397,7 +402,7 @@ pub enum Commands {
     /// Clean build directories
     Clean {
         /// What to clean
-        #[arg(help = "What to clean: builds, cache, continuation, all (builds and cache)")]
+        #[arg(help = "What to clean: builds, cache, continuation, import, all (builds and cache)")]
         targets: Vec<String>,
     },
 }
@@ -519,6 +524,35 @@ mod tests {
             args.import_files,
             ["declared:0=some=file.zip", "declared:1=second.zip"]
         );
+    }
+
+    #[test]
+    fn import_continuation_accepts_decisions_and_excludes_a_new_source() {
+        let cli = Cli::try_parse_from([
+            "empack",
+            "init",
+            "--continue",
+            "--import-file",
+            "exact=file.jar",
+            "--import-optional-default",
+            "false",
+            "--import-local-files",
+            "--exclude-auxiliary",
+            "destination",
+        ])
+        .unwrap();
+        let Some(Commands::Init(args)) = cli.command else {
+            panic!("not initialization")
+        };
+        assert!(args.continue_import);
+        assert_eq!(args.dir.as_deref(), Some("destination"));
+        assert_eq!(args.import_files, ["exact=file.jar"]);
+        assert!(
+            Cli::try_parse_from(["empack", "init", "--continue", "--from", "archive.zip"]).is_err()
+        );
+        for flag in ["--import-local-files", "--exclude-auxiliary"] {
+            assert!(Cli::try_parse_from(["empack", "init", flag]).is_err());
+        }
     }
 
     #[test]
