@@ -592,4 +592,160 @@ mod tests {
             assert_eq!(selected.server, Requirement::Unsupported);
         }
     }
+
+    #[tokio::test]
+    async fn provider_import_preserves_kinds_optional_choices_and_exported_files() {
+        use crate::application::engine_host::{BuildDecisions, build};
+        use crate::engine::{
+            acquisition::HttpAcquisition, build::BuildAcquisitions, import::ImportLimits,
+            mrpack::OptionalConversion, providers::ProviderCatalog,
+        };
+        use serde_json::json;
+        use std::{
+            fs,
+            io::{Read, Write},
+        };
+        let root = tempfile::tempdir().unwrap();
+        let session = super::super::tests::session(root.path(), false);
+        let mut server = mockito::Server::new_async().await;
+        let cases = [
+            (6, ContentKind::Mod, "mods"),
+            (12, ContentKind::ResourcePack, "resourcepacks"),
+            (6552, ContentKind::ShaderPack, "shaderpacks"),
+            (6945, ContentKind::DataPack, "datapacks"),
+        ];
+        let mut references = Vec::new();
+        let mut files = Vec::new();
+        fs::write(root.path().join("renamed.bin"), b"payload").unwrap();
+        for (index, (class, _, _)) in cases.iter().enumerate() {
+            let project = 100 + index;
+            let selection = 200 + index;
+            references.push(json!({"projectID":project,"fileID":selection,"required":false}));
+            server.mock("GET", format!("/mods/{project}").as_str())
+                .with_body(json!({"data":{"id":project,"gameId":432,"classId":class,"slug":format!("fixture-{project}"),"name":"Fixture"}}).to_string())
+                .expect(1).create_async().await;
+            server.mock("GET", format!("/mods/{project}/files/{selection}").as_str())
+                .with_body(json!({"data":{"id":selection,"gameId":432,"modId":project,"fileName":"fixture.zip","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":format!("https://example.invalid/{project}/different.bin"),"gameVersions":["1.21.1"],"dependencies":[]}}).to_string())
+                .expect(1).create_async().await;
+            files.push(ImportLocalFile {
+                selector: format!("provider:curseforge:{project}:{selection}:fixture.zip"),
+                source: "renamed.bin".into(),
+            });
+        }
+        let manifest = serde_json::to_vec(&json!({"manifestVersion":1,"manifestType":"minecraftModpack","name":"Imported","version":"1","files":references,"minecraft":{"version":"1.21.1","modLoaders":[]},"overrides":"overrides"})).unwrap();
+        let path = root.path().join("input.zip");
+        let mut archive = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        archive
+            .start_file("manifest.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive.write_all(&manifest).unwrap();
+        archive.finish().unwrap();
+        let args = InitArgs {
+            import_optional_default: Some(true),
+            datapack_folder: Some("datapacks".into()),
+            ..Default::default()
+        };
+        super::super::super::import::import_with_services(
+            &session,
+            ImportHostRequest {
+                source: ImportSource::Local {
+                    path,
+                    expected: ExpectedContent {
+                        digests: None,
+                        size: None,
+                        accepted_observation: None,
+                    },
+                },
+                destination: None,
+                replacement: ProjectReplacementPolicy::RejectExisting,
+                evidence: SourceEvidencePolicy::Compatibility,
+                supplied: BTreeMap::new(),
+                local_files: files,
+            },
+            |content| decisions(&session, &args, content),
+            ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture".into())),
+            HttpAcquisition::for_loopback_tests(),
+            ImportLimits::default(),
+        )
+        .await
+        .unwrap();
+        let project = super::super::tests::project(root.path());
+        let target = root.path().join("project");
+        let original =
+            ["empack.yml", "empack.lock"].map(|name| fs::read(target.join(name)).unwrap());
+        for (index, (_, kind, folder)) in cases.iter().enumerate() {
+            let key = DependencyKey::parse(&format!("curseforge:{}", 100 + index)).unwrap();
+            let locked = &project.lock().dependencies[&key];
+            assert_eq!(locked.kind, *kind);
+            assert_eq!(
+                locked.selected.as_ref().unwrap().project.to_string(),
+                (100 + index).to_string()
+            );
+            let file = &locked.files.as_slice()[0];
+            let placement = &file.placements.as_slice()[0];
+            assert_eq!(
+                placement.destination.relative().as_str(),
+                format!("{folder}/fixture.zip")
+            );
+            for requirement in [
+                &placement.requirements.client,
+                &placement.requirements.server,
+            ] {
+                let Requirement::Optional(choice) = requirement else {
+                    panic!("optional requirement lost")
+                };
+                assert!(choice.default_enabled);
+            }
+            assert_eq!(
+                file.expected.digests.as_ref().unwrap().values()[0].algorithm(),
+                empack_core::digest::DigestAlgorithm::Md5
+            );
+            assert_eq!(
+                fs::read(target.join(format!("pack/{folder}/fixture.zip"))).unwrap(),
+                b"payload"
+            );
+        }
+        for _ in 0..2 {
+            super::super::synchronize(&session, false).await.unwrap();
+        }
+        build(
+            &session,
+            &crate::application::BuildArgs {
+                targets: vec!["mrpack".into()],
+                ..Default::default()
+            },
+            BuildDecisions {
+                mrpack_optional: OptionalConversion::AcknowledgedMetadataLoss,
+                ..Default::default()
+            },
+            BuildAcquisitions::default(),
+        )
+        .await
+        .unwrap();
+        let mut export =
+            zip::ZipArchive::new(fs::File::open(target.join("dist/Imported-1.mrpack")).unwrap())
+                .unwrap();
+        let mut bytes = Vec::new();
+        export
+            .by_name("modrinth.index.json")
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
+        let index: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let files = index["files"].as_array().unwrap();
+        assert_eq!(files.len(), cases.len());
+        for (_, _, folder) in cases {
+            let file = files
+                .iter()
+                .find(|file| file["path"] == format!("{folder}/fixture.zip"))
+                .unwrap();
+            assert_eq!(file["env"]["client"], "optional");
+            assert_eq!(file["env"]["server"], "optional");
+            assert_eq!(file["fileSize"], 7);
+            assert!(file["hashes"]["sha512"].as_str().is_some());
+        }
+        for (index, name) in ["empack.yml", "empack.lock"].into_iter().enumerate() {
+            assert_eq!(fs::read(target.join(name)).unwrap(), original[index]);
+        }
+    }
 }

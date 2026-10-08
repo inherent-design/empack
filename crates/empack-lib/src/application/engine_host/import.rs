@@ -75,7 +75,7 @@ pub async fn import(
     )
     .await
 }
-async fn import_with_services(
+pub(super) async fn import_with_services(
     session: &dyn Session,
     request: ImportHostRequest,
     decide: impl FnOnce(&VerifiedImportContent) -> Result<ImportCandidateOptions>,

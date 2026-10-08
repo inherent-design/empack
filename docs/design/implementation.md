@@ -242,6 +242,7 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Provider import test retirement | 45 affected native import/CLI/executable cases and all-feature Clippy passed | Replaced old import API fixtures with four-kind provider import, exact file associations, MD5 evidence, optionality, two syncs and mrpack re-export; opaque world ZIP placement is not counted as implemented world support |
 | Explicit import file associations | 58 affected import/CLI tests, three rewritten executable lifecycle cases and all-feature Clippy passed | Original SHA-256/MD5 evidence, optional export, full-client bytes, two syncs, duplicate/ambiguous/provider-qualified selectors and symlink refusal; two old provider-import fixtures remain to port |
 | `9ce7616` combined candidate | `mise run test`: 1,675 tests and eleven doctests passed; 105 opt-in cases excluded | No inherited-pipe warnings; 142.41 seconds; final strict live matrix and coverage remain open |
 | Legacy fixture retirement | 24 fixture/smoke tests and test-crate all-feature Clippy passed | Deleted unused fake packwiz and old continuation helpers; ZIP fixtures use explicit members independent of application archive code |
