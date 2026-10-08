@@ -185,11 +185,9 @@ async fn initialization_host_validates_options_and_interactive_indices_before_pu
         );
         assert!(snapshot(root.path()).is_empty(), "{change}");
     }
-    let mut options = args();
-    options.modloader = None;
     let host = session(root.path(), false, false)
         .with_interactive(MockInteractiveProvider::new().with_select(999));
-    assert!(initialize(&host, &options).await.is_err());
+    assert!(choose_loader(&host, vec![(LoaderKind::Vanilla, None)]).is_err());
     assert!(snapshot(root.path()).is_empty());
     assert!(select_version(&host, "Version", &[]).is_err());
     let host = host.with_interactive(MockInteractiveProvider::new().with_fuzzy_select(999));
@@ -377,4 +375,65 @@ async fn initialization_discovery_preserves_unpinned_intent_and_provider_failure
     games.assert_async().await;
     loaders.assert_async().await;
     failure.assert_async().await;
+}
+
+#[tokio::test]
+async fn historical_initialization_menu_offers_only_catalog_supported_loaders() {
+    let mut server = mockito::Server::new_async().await;
+    let fabric = server
+        .mock("GET", "/fabric/1.7.10")
+        .with_status(200)
+        .with_body("[]")
+        .create_async()
+        .await;
+    let quilt = server
+        .mock("GET", "/quilt/1.7.10")
+        .with_status(403)
+        .create_async()
+        .await;
+    let forge = server
+        .mock("GET", "/forge")
+        .with_status(200)
+        .with_body(r#"{"1.7.10":["1.7.10-10.13.4.1614-1.7.10"]}"#)
+        .create_async()
+        .await;
+    let neo = server
+        .mock("GET", "/neoforge")
+        .with_status(200)
+        .with_body(r#"{"versions":["21.1.1"]}"#)
+        .create_async()
+        .await;
+    let root = tempfile::tempdir().unwrap();
+    let mut options = args();
+    options.modloader = None;
+    options.mc_version = Some("1.7.10".into());
+    let host = session(root.path(), false, false).with_interactive(
+        MockInteractiveProvider::new()
+            .queue_select(1)
+            .queue_fuzzy_select(Some(0))
+            .queue_confirm(true),
+    );
+    initialize_with_catalog(
+        &host,
+        &options,
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap();
+    let resolved = read(&root.path().join("pack"));
+    assert_eq!(resolved.lock().runtime.loader, LoaderKind::Forge);
+    assert_eq!(
+        resolved
+            .lock()
+            .runtime
+            .loader_version
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "10.13.4.1614"
+    );
+    assert!(resolved.intent().runtime.loader_version.is_none());
+    for response in [fabric, quilt, forge, neo] {
+        response.assert_async().await;
+    }
 }

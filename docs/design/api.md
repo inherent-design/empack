@@ -526,7 +526,11 @@ read-only runtime discovery and approved Engine initialization. It retains metad
 explicit loader pins, accepted game versions and datapack-folder choices. Exact
 explicit runtime coordinates can initialize offline; build preparation still verifies
 their executable availability and bytes. Missing runtime choices use bounded official
-catalogs. No failed lookup is replaced with an invented version.
+catalogs. Without an explicit loader family, the host selects Minecraft first and
+offers only families with observed compatible versions, alongside Vanilla. Failed
+family lookups are disclosed and do not become selectable compatibility claims.
+The chosen family reuses its retained catalog. No failed lookup is replaced with
+an invented version.
 
 The host displays native file changes before confirmation. Preview, declined plans
 and invalid options cannot create a project or durable host state. Forced replacement

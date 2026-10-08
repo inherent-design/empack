@@ -1098,3 +1098,16 @@ in an existing reader test; that test passed cleanly in isolation and both subse
 combined runs are clean. All-feature Clippy and Windows cross-compilation pass.
 The latest full-suite evidence remains the 1,868 tests and eleven doctests at
 `9ccb32b`; final combined validation remains a release gate.
+
+## Initialization host validation and review
+
+At `fab68fb`, all 1,888 tests, eleven doctests and 24 executable smoke tests pass.
+Review 103 then exposed loader selection before game selection: the menu could offer
+NeoForge for Minecraft 1.7.10. A deterministic catalog fixture reproduced the failed
+initialization. The host now selects the game first, retains compatible family catalogs
+under one discovery governor and offers only observed choices plus Vanilla. Failed
+family lookups are disclosed without claiming compatibility. Selected versions reuse
+the same retained observation. All 15 affected tests pass; the final historical fixture
+also checks that an unavailable Quilt service does not prevent an evidenced Forge
+selection. All-feature Clippy and Windows cross-compilation pass separately from the
+recorded full-suite snapshot.

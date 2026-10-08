@@ -8,7 +8,7 @@ use crate::{
         initialize::{InitializeCandidate, default_templates},
         project_change::ProjectReplacementPolicy,
         runtime::{OperationRuntime, RetainedOutput, WorkScope},
-        runtime_catalog::{RuntimeCatalog, RuntimeCatalogLimits},
+        runtime_catalog::{LoaderVersions, RuntimeCatalog, RuntimeCatalogLimits},
     },
 };
 use empack_core::{
@@ -48,9 +48,13 @@ async fn initialize_with_catalog(
         }
         Err(error) => return Err(error.into()),
     };
-    let loader = select_loader(session, args)?;
+    let requested_family = args.modloader.as_deref().map(parse_loader).transpose()?;
     ensure!(
-        loader != LoaderKind::Vanilla || args.loader_version.is_none(),
+        !config.yes || requested_family.is_some(),
+        "--yes requires --modloader to be specified"
+    );
+    ensure!(
+        requested_family != Some(LoaderKind::Vanilla) || args.loader_version.is_none(),
         "Vanilla cannot have a loader version"
     );
     let requested_game = args
@@ -107,6 +111,14 @@ async fn initialize_with_catalog(
             }
         }
     };
+    let (loader, available) = match requested_family {
+        Some(loader) => (loader, None),
+        None => compatible_loader(session, catalog.clone(), game.clone(), limits).await?,
+    };
+    ensure!(
+        loader != LoaderKind::Vanilla || requested_loader.is_none(),
+        "Vanilla cannot have a loader version"
+    );
     let requested_loader = requested_loader
         .map(|version| {
             if loader == LoaderKind::Forge {
@@ -119,34 +131,42 @@ async fn initialize_with_catalog(
             }
         })
         .transpose()?;
-    let runtime = if loader == LoaderKind::Vanilla || requested_loader.is_some() {
-        // Exact explicit selections need no catalog lookup. Executable availability and bytes
-        // are verified during build; absence of a lookup is never a fallback version guess.
-        RuntimeResolution {
-            minecraft: game.clone(),
-            loader,
-            loader_version: requested_loader.clone(),
-        }
-    } else {
-        let selected_game = game.clone();
-        let choices = discover(session, move |mut scope| async move {
-            catalog
-                .loaders(&mut scope, selected_game, loader, limits)
-                .await
-        })
-        .await?;
-        if config.yes {
-            choices.resolve(None)?
+    let runtime =
+        if loader == LoaderKind::Vanilla || (requested_loader.is_some() && available.is_none()) {
+            // Exact explicit selections need no catalog lookup. Executable availability and bytes
+            // are verified during build; absence of a lookup is never a fallback version guess.
+            RuntimeResolution {
+                minecraft: game.clone(),
+                loader,
+                loader_version: requested_loader.clone(),
+            }
         } else {
-            let values = choices
-                .versions()
-                .iter()
-                .map(|value| value.as_str().to_owned())
-                .collect::<Vec<_>>();
-            let index = select_version(session, "Loader version", &values)?;
-            choices.resolve(Some(&choices.versions()[index]))?
-        }
-    };
+            let choices = match available {
+                Some(choices) => choices,
+                None => {
+                    let selected_game = game.clone();
+                    discover(session, move |mut scope| async move {
+                        catalog
+                            .loaders(&mut scope, selected_game, loader, limits)
+                            .await
+                    })
+                    .await?
+                }
+            };
+            if requested_loader.is_some() {
+                choices.resolve(requested_loader.as_ref())?
+            } else if config.yes {
+                choices.resolve(None)?
+            } else {
+                let values = choices
+                    .versions()
+                    .iter()
+                    .map(|value| value.as_str().to_owned())
+                    .collect::<Vec<_>>();
+                let index = select_version(session, "Loader version", &values)?;
+                choices.resolve(Some(&choices.versions()[index]))?
+            }
+        };
     let mut seen = std::collections::BTreeSet::new();
     acceptable_versions.retain(|version| version != &game && seen.insert(version.clone()));
     let intent = ProjectIntent {
@@ -187,36 +207,70 @@ fn select_version(session: &dyn Session, prompt: &str, values: &[String]) -> Res
     ensure!(index < values.len(), "Version selection is out of range");
     Ok(index)
 }
-fn select_loader(session: &dyn Session, args: &InitArgs) -> Result<LoaderKind> {
-    let families = [
-        LoaderKind::NeoForge,
-        LoaderKind::Fabric,
-        LoaderKind::Forge,
-        LoaderKind::Quilt,
-        LoaderKind::Vanilla,
-    ];
-    if let Some(value) = args.modloader.as_deref() {
-        return Ok(match value.to_ascii_lowercase().as_str() {
-            "neoforge" => LoaderKind::NeoForge,
-            "fabric" => LoaderKind::Fabric,
-            "forge" => LoaderKind::Forge,
-            "quilt" => LoaderKind::Quilt,
-            "none" | "vanilla" => LoaderKind::Vanilla,
-            _ => anyhow::bail!("Unknown loader: {value}"),
-        });
+fn parse_loader(value: &str) -> Result<LoaderKind> {
+    Ok(match value.to_ascii_lowercase().as_str() {
+        "neoforge" => LoaderKind::NeoForge,
+        "fabric" => LoaderKind::Fabric,
+        "forge" => LoaderKind::Forge,
+        "quilt" => LoaderKind::Quilt,
+        "none" | "vanilla" => LoaderKind::Vanilla,
+        _ => anyhow::bail!("Unknown loader: {value}"),
+    })
+}
+type LoaderChoice = (LoaderKind, Option<RetainedOutput<LoaderVersions>>);
+async fn compatible_loader(
+    session: &dyn Session,
+    catalog: RuntimeCatalog,
+    game: GameVersion,
+    limits: RuntimeCatalogLimits,
+) -> Result<LoaderChoice> {
+    let choices = discover(session, move |mut scope| async move {
+        let mut choices = Vec::new();
+        for family in [
+            LoaderKind::NeoForge,
+            LoaderKind::Fabric,
+            LoaderKind::Forge,
+            LoaderKind::Quilt,
+        ] {
+            scope.cancellation().check()?;
+            let versions = catalog
+                .loaders(&mut scope, game.clone(), family, limits)
+                .await;
+            choices.push((family, versions));
+        }
+        Ok(choices)
+    })
+    .await?;
+    let mut supported = vec![(LoaderKind::Vanilla, None)];
+    for (family, result) in choices {
+        match result {
+            Ok(versions) if !versions.versions().is_empty() => {
+                supported.push((family, Some(versions)))
+            }
+            Ok(_) => {}
+            Err(error) => session.display().status().warning(&format!(
+                "Could not inspect {family:?} compatibility: {error:#}"
+            )),
+        }
     }
-    ensure!(
-        !session.config().app_config().yes,
-        "--yes requires --modloader to be specified"
-    );
-    let index = session.interactive().select(
-        "Mod loader",
-        &["NeoForge", "Fabric", "Forge", "Quilt", "Vanilla"],
-    )?;
-    families
-        .get(index)
-        .copied()
-        .context("Loader selection is out of range")
+    choose_loader(session, supported)
+}
+fn choose_loader(session: &dyn Session, mut supported: Vec<LoaderChoice>) -> Result<LoaderChoice> {
+    let names = supported
+        .iter()
+        .map(|(family, _)| match family {
+            LoaderKind::Vanilla => "Vanilla",
+            LoaderKind::NeoForge => "NeoForge",
+            LoaderKind::Fabric => "Fabric",
+            LoaderKind::Forge => "Forge",
+            LoaderKind::Quilt => "Quilt",
+        })
+        .collect::<Vec<_>>();
+    let index = session
+        .interactive()
+        .select("Compatible mod loader", &names)?;
+    ensure!(index < supported.len(), "Loader selection is out of range");
+    Ok(supported.remove(index))
 }
 fn metadata(session: &dyn Session, args: &InitArgs, selected: &Path) -> Result<PackMetadata> {
     let default_name = selected
@@ -265,11 +319,11 @@ fn metadata(session: &dyn Session, args: &InitArgs, selected: &Path) -> Result<P
 }
 
 /// The owned discovery runtime is drained on success, failure, and host interruption.
-async fn discover<T, F, Fut>(session: &dyn Session, work: F) -> Result<RetainedOutput<T>>
+async fn discover<T, F, Fut>(session: &dyn Session, work: F) -> Result<T>
 where
     T: Send + 'static,
     F: FnOnce(WorkScope) -> Fut + Send + 'static,
-    Fut: Future<Output = Result<RetainedOutput<T>>> + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send + 'static,
 {
     let runtime = OperationRuntime::new(
         ResourceGovernor::new(ResourceRequest {
