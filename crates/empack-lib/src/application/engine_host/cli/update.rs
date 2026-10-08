@@ -6,6 +6,8 @@ use empack_core::model::{
     SourceIntent, VersionIntent,
 };
 
+mod observation;
+
 pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
     update_with_services(session, keys, dependencies::configured_services(session)?).await
 }
@@ -88,37 +90,63 @@ pub(super) async fn adopt_with_services(
             unreachable!("provider input selected above")
         };
         let mut pin = None;
-        for placement in dependency
-            .files
-            .as_slice()
-            .iter()
-            .flat_map(|file| file.placements.as_slice())
-        {
+        let mut identify = Vec::new();
+        for file in dependency.files.as_slice() {
+            let mut described = false;
+            for placement in file.placements.as_slice() {
+                if placement.layer != empack_core::model::ContentLayer::Common {
+                    continue;
+                }
+                let Some(record) = records
+                    .iter()
+                    .find(|record| record.destination == placement.destination)
+                else {
+                    continue;
+                };
+                let observed = record
+                    .provider
+                    .as_ref()
+                    .context("Observed metadata has no provider identity")?;
+                ensure!(
+                    &observed.project == identity,
+                    "Observed metadata names another provider identity"
+                );
+                let selected = observed
+                    .selection
+                    .as_ref()
+                    .context("Observed metadata has no exact provider pin")?;
+                ensure!(
+                    pin.as_ref().is_none_or(|pin| pin == selected),
+                    "Observed files disagree about their provider selection"
+                );
+                pin = Some(selected.clone());
+                described = true;
+            }
+            if !described {
+                let placement = &file.placements.as_slice()[0];
+                let path = crate::engine::layout::ProjectLayout::path(
+                    &empack_core::files::ManagedPath::Content {
+                        layer: placement.layer,
+                        path: placement.destination.relative().clone(),
+                    },
+                )?;
+                identify.push((path, file.slot.clone()));
+            }
+        }
+        if !identify.is_empty() {
+            let identified = observation::identify(
+                session,
+                project.clone(),
+                identity.clone(),
+                identify,
+                &services,
+            )
+            .await?;
             ensure!(
-                placement.layer == empack_core::model::ContentLayer::Common,
-                "Provider adoption requires explicit evidence for side-layer placements"
+                pin.as_ref().is_none_or(|pin| pin == &identified),
+                "Observed metadata and bytes disagree about the provider selection"
             );
-            let record = records
-                .iter()
-                .find(|record| record.destination == placement.destination)
-                .context("Provider adoption requires metadata at every selected destination")?;
-            let observed = record
-                .provider
-                .as_ref()
-                .context("Observed metadata has no provider identity")?;
-            ensure!(
-                &observed.project == identity,
-                "Observed metadata names another provider identity"
-            );
-            let selected = observed
-                .selection
-                .as_ref()
-                .context("Observed metadata has no exact provider pin")?;
-            ensure!(
-                pin.as_ref().is_none_or(|pin| pin == selected),
-                "Observed files disagree about their provider selection"
-            );
-            pin = Some(selected.clone());
+            pin = Some(identified);
         }
         input.pin = pin;
     }

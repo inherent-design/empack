@@ -1145,3 +1145,11 @@ and logical URL identity. Authored digest pins cannot be relaxed by adoption. Fo
 unpinned file, accepted local changes become explicit observations with retained
 provenance; they do not authenticate whatever the URL may serve later. Preview changes
 no durable files, and adoption performs no remote payload acquisition.
+
+Provider adoption uses captured derivative metadata where present. Without metadata,
+including side-layer installations, it identifies bounded observed bytes through the
+declared provider. The result must identify the same canonical project, selected file
+role and one consistent exact pin across members. Unknown, ambiguous, different-project
+and different-role results fail. Every placement verifies again against that exact
+provider selection before document publication. Adoption never queries a latest version
+to guess which bytes are installed.

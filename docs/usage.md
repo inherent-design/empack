@@ -88,12 +88,12 @@ not change its status. Incidental words in a diagnostic or imported metadata do 
 select an exit code.
 
 `empack adopt KEY...` accepts installed changes for tracked local/member files, URL files
-and provider files with common-layer metadata. It verifies bytes before changing the lock and leaves payloads
-untouched. Provider metadata must name the same project and an exact version; adoption
+and provider files in any supported side layer. It verifies bytes before changing the lock and leaves payloads
+untouched. Available provider metadata must name the same project and an exact version. Without
+metadata, provider identification must verify the observed bytes and file role; adoption
 does not choose the newest release or override an authored pin. Use `--dry-run` to inspect
 the proposed document changes. URL adoption keeps its declared origins and side placements without downloading remote
-bytes; authored content pins remain binding. Provider side-layer and untracked adoption
-need further frontend support.
+bytes; authored content pins remain binding. Missing-lock and untracked adoption need further frontend support.
 
 Use `empack clean continuation --dry-run` to inspect saved-build cleanup, then
 `empack clean continuation --yes` to discard that project's recipe. This works for

@@ -1237,3 +1237,138 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
     }
     download.assert_async().await;
 }
+
+#[tokio::test]
+async fn provider_side_adoption_identifies_exact_bytes_and_keeps_every_placement() {
+    use empack_core::{digest::ExpectedDigest, model::*};
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    for id in ["renderer", "Root0001", "Other001"] {
+        let canonical = if id == "Other001" {
+            "Other001"
+        } else {
+            "Root0001"
+        };
+        server.mock("GET", format!("/project/{id}").as_str())
+            .with_body(json!({"id":canonical,"slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string()).create_async().await;
+    }
+    for (pin, bytes, owner) in [
+        ("RootVer1", "original", "Root0001"),
+        ("RootVer2", "changed", "Root0001"),
+        ("OtherVer", "unrelated", "Other001"),
+    ] {
+        let hash = ExpectedDigest::Sha512(Sha512::digest(bytes.as_bytes()).into()).hex();
+        let version = json!({"id":pin,"project_id":owner,"game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":bytes.len(),"hashes":{"sha512":hash},"url":"https://example.invalid/renderer.jar"}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"});
+        server
+            .mock("GET", format!("/version/{pin}").as_str())
+            .with_body(version.to_string())
+            .create_async()
+            .await;
+        server
+            .mock("GET", format!("/version_file/{hash}").as_str())
+            .match_query(mockito::Matcher::Any)
+            .with_body(version.to_string())
+            .create_async()
+            .await;
+    }
+    let latest = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .expect(0)
+        .create_async()
+        .await;
+    let environment = json!({"client":"required","server":"unsupported"});
+    fs::write(
+        root.path().join("files.yml"),
+        json!({"schema":1,"environment":environment,"files":{"renderer.jar":[
+            {"destination":"mods/selected.jar","layer":"client","environment":environment},
+            {"destination":"mods/copied.jar","layer":"client","environment":environment}
+        ]}})
+        .to_string(),
+    )
+    .unwrap();
+    let mut selected = options("renderer");
+    selected.file_plan = Some("files.yml".into());
+    add_with_catalog(
+        &session(root.path(), false),
+        selected,
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+    )
+    .await
+    .unwrap();
+    let recorded = project(root.path());
+    let key = recorded.intent().roots.keys().next().unwrap().clone();
+    let mut intent = recorded.intent().clone();
+    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    fs::write(
+        root.path().join("project/empack.yml"),
+        DocumentCodec.encode_intent(&intent).unwrap(),
+    )
+    .unwrap();
+    synchronize(&session(root.path(), false), false)
+        .await
+        .unwrap();
+    let dir = root.path().join("project/overrides/client/mods");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("selected.jar"), b"changed").unwrap();
+    fs::write(dir.join("copied.jar"), b"changed").unwrap();
+    let services = || dependencies::AdditionServices {
+        catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
+        transport: HttpAcquisition::for_loopback_tests(),
+        files: DirectFileLimits::default(),
+    };
+    let before = super::super::tests::snapshot(root.path());
+    update::adopt_with_services(
+        &session(root.path(), true),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    assert!(super::super::tests::snapshot(root.path()) == before);
+    for (first, second) in [("unrelated", "unrelated"), ("changed", "original")] {
+        fs::write(dir.join("selected.jar"), first).unwrap();
+        fs::write(dir.join("copied.jar"), second).unwrap();
+        let bad = super::super::tests::snapshot(root.path());
+        assert!(
+            update::adopt_with_services(
+                &session(root.path(), false),
+                vec![key.as_str().into()],
+                services()
+            )
+            .await
+            .is_err()
+        );
+        assert!(super::super::tests::snapshot(root.path()) == bad);
+    }
+    fs::write(dir.join("selected.jar"), b"changed").unwrap();
+    fs::write(dir.join("copied.jar"), b"changed").unwrap();
+    update::adopt_with_services(
+        &session(root.path(), false),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    let adopted = project(root.path());
+    assert_eq!(adopted.intent(), &intent);
+    assert_eq!(
+        adopted.lock().dependencies[&key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap())
+    );
+    let after = super::super::tests::snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+    }
+    assert!(super::super::tests::snapshot(&root.path().join("project")) == after);
+    latest.assert_async().await;
+}
