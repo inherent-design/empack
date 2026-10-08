@@ -78,3 +78,11 @@ claim those bytes have verified. Ordinary `sync` after materialization retains t
 installed bytes and does not refresh their versions. Explicit materialization
 currently reacquires remote references; persistent content-store reuse is a
 separate implementation step.
+
+## Exit status
+
+The executable maps typed failures to status codes: success `0`, general failure
+`1`, invalid input or missing authorization `2`, network failure `3`, missing provider
+content `4`, and interruption `130`. Wrapping an error with operation context does
+not change its status. Incidental words in a diagnostic or imported metadata do not
+select an exit code.

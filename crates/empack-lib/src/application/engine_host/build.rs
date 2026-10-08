@@ -282,7 +282,11 @@ fn request(
             "server" => &[BuildTarget::Server],
             "client-full" => &[BuildTarget::ClientFull],
             "server-full" => &[BuildTarget::ServerFull],
-            _ => anyhow::bail!("Unknown build target: {name}"),
+            _ => {
+                return Err(
+                    empack_core::model::ModelError(format!("Unknown build target: {name}")).into(),
+                );
+            }
         };
         for target in selected {
             if !targets.contains(target) {

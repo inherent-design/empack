@@ -239,3 +239,43 @@ fn e2e_interrupt_exits_130() {
     drop(connection);
     assert!(!project.dir().join("pack/mods").exists());
 }
+
+#[test]
+fn e2e_unknown_native_build_target_exits_two() {
+    check(
+        &output(&fixture(), &["build", "not-a-target", "--yes"]),
+        EmpackExitCode::Usage,
+        "Unknown build target",
+    );
+}
+
+#[test]
+fn e2e_native_download_transport_failure_exits_three() {
+    let project = fixture();
+    let before = fs::read(project.dir().join("empack.lock")).unwrap();
+    let result = command(&project)
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("HTTP_PROXY", "http://127.0.0.1:9")
+        .env("ALL_PROXY", "http://127.0.0.1:9")
+        .env("NO_PROXY", "")
+        .env("EMPACK_NET_TIMEOUT", "1")
+        .args([
+            "add",
+            "--yes",
+            "--type",
+            "resourcepack",
+            "https://example.invalid/assets.zip",
+        ])
+        .output()
+        .unwrap();
+    check(&result, EmpackExitCode::Network, "Download");
+    assert_eq!(fs::read(project.dir().join("empack.lock")).unwrap(), before);
+    assert!(
+        empack_lib::engine::documents::DocumentCodec
+            .decode_intent(&fs::read(project.dir().join("empack.yml")).unwrap(), "test")
+            .unwrap()
+            .intent()
+            .roots
+            .is_empty()
+    );
+}

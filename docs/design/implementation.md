@@ -149,6 +149,7 @@ modules remains open.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Native exit classification | 15 affected host/classifier tests, 12 executable exit tests and all-feature Clippy passed | Reproduced incorrect transfer status; removed v0.4 classifiers and substring heuristics; native download and invalid-target diagnostics retain typed status |
 | Remote synchronization materialization | 41 affected sync/native CLI/smoke cases and all-feature Clippy passed; rebuilt executable passed all 16 offline smoke cases | Bad remote bytes publish nothing; pins and lock bytes stay unchanged; previews do not download; supplied references cannot override local sources |
 | Source lifetime correction | 87 affected add/remove/sync/verification cases and all-feature Clippy passed | Reproduced source deletion before fixing it; moved/removed placements retain shared sources, conflicting replacement fails before publication |
 | `3060149` combined candidate | `mise run test`: 1,646 tests and eleven doctests passed; 99 opt-in cases skipped | No inherited-pipe warnings; strict live matrix and final coverage remain open; obsolete graph/mock tests account for the lower count |
