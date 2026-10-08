@@ -377,6 +377,43 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         "{error:#}"
     );
     assert_eq!(snapshot(root.path()), before);
+    fs::write(root.path().join("manual.bin"), b"verified manual bytes").unwrap();
+    let files = || {
+        BTreeMap::from([(
+            AcquisitionKey::Locked(LockedFileKey {
+                dependency: key.clone(),
+                slot: slot.clone(),
+            }),
+            PathBuf::from("manual.bin"),
+        )])
+    };
+    let before = snapshot(root.path());
+    for (yes, dry) in [(true, true), (false, false)] {
+        build_with_local_files(
+            &session(root.path(), yes, dry),
+            &options,
+            BuildDecisions::default(),
+            files(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(snapshot(root.path()), before);
+    }
+    build_with_local_files(
+        &session(root.path(), true, false),
+        &options,
+        BuildDecisions::default(),
+        files(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        zip_bytes(
+            &project.join("dist/Native Pack-1.0-client-full.zip"),
+            ".minecraft/resourcepacks/custom.zip"
+        ),
+        b"verified manual bytes"
+    );
     build(
         &session(root.path(), true, false),
         &options,

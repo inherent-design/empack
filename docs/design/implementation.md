@@ -1557,3 +1557,24 @@ frontend integration work.
 At `4e2a46d`, the frozen combined revision passed all 1,964 default tests and eleven
 doctests without pipe warnings; 124 opt-in tests were skipped. Greptile 122 reports no
 outstanding findings for that revision. These results precede the adoption-host change.
+
+## Explicit local build associations
+
+`BuildPreparationRequest::with_local_files` and `Engine::resume_with_local_files`
+accept absolute host files keyed by captured locked or observed obligations.
+Preparation validates every key before acquisition, retains original assertions and
+source policy, and copies only verified regular files into private admitted content.
+All selected reads share a byte allowance and checked deadline. Source paths never
+enter project documents. The native host resolves these explicit paths against the
+invocation directory through `build_with_local_files`.
+
+Tests cover initial and resumed input, retained bytes after external source changes,
+locked and observed namespaces, offline mrpack/full-client output, preview/decline,
+wrong/missing/relative/directory/symlink inputs, duplicate or unknown slots, stricter
+source evidence, per-file and cumulative limits, expired admission and stale resume.
+Failure retains earlier artifacts and project documents, and resources return to zero.
+The observed URL fixture exports a verified reference with its original client-only
+participation; its test initially expected an embedded member and now checks the actual
+format contract, including the exact generated digest. All 20 affected tests pass cleanly.
+Durable suspension, download discovery and CLI association parsing remain separate work.
+Final all-feature Clippy and Windows cross-compilation also pass for this change.

@@ -1,5 +1,6 @@
 //! Native build host: explicit recipes, visible effects and one approved publication.
 use super::*;
+use crate::engine::build::acquisition::AcquisitionKey;
 use crate::{
     application::{BuildArgs, cli::CliArchiveFormat},
     engine::{
@@ -21,7 +22,7 @@ use empack_core::{
     path::{ArtifactStem, PathSyntax, PortableRelPath},
     projection::BuildTarget,
 };
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 /// Explicit decisions which cannot be inferred from a filename or `--yes`.
 /// Preserve optional participation unless the host supplies reviewed materialization choices.
@@ -53,6 +54,31 @@ pub async fn build(
     args: &BuildArgs,
     decisions: BuildDecisions,
     supplied: BuildAcquisitions,
+) -> Result<()> {
+    build_with_inputs(session, args, decisions, supplied, BTreeMap::new()).await
+}
+/// Explicit file associations use logical obligations; host paths resolve against invocation cwd.
+pub async fn build_with_local_files(
+    session: &dyn Session,
+    args: &BuildArgs,
+    decisions: BuildDecisions,
+    files: BTreeMap<AcquisitionKey, PathBuf>,
+) -> Result<()> {
+    build_with_inputs(
+        session,
+        args,
+        decisions,
+        BuildAcquisitions::default(),
+        files,
+    )
+    .await
+}
+async fn build_with_inputs(
+    session: &dyn Session,
+    args: &BuildArgs,
+    decisions: BuildDecisions,
+    supplied: BuildAcquisitions,
+    files: BTreeMap<AcquisitionKey, PathBuf>,
 ) -> Result<()> {
     ensure!(
         !args.continue_build && args.downloads_dir.is_none() && args.associate_downloads.is_empty(),
@@ -91,6 +117,12 @@ pub async fn build(
     .await?;
     let request = request(intent.intent(), args, decisions)?
         .with_content(supplied)
+        .with_local_files(
+            files
+                .into_iter()
+                .map(|(key, path)| (key, absolute(&invocation, &path)))
+                .collect(),
+        )
         .require_intent(intent.lock().intent_revision);
     drop(intent);
     let catalog = ProviderCatalog::new(

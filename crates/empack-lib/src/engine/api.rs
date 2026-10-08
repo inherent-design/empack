@@ -37,6 +37,7 @@ use empack_core::{
     projection::BuildTarget,
 };
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{
         Arc,
@@ -102,6 +103,7 @@ pub struct BuildRequest {
 pub struct BuildPreparationRequest {
     pub request: BuildRequest,
     pub supplied: BuildAcquisitions,
+    local_files: BTreeMap<AcquisitionKey, PathBuf>,
     prior: Option<Box<PreparationContinuation>>,
     expected_intent: Option<SemanticRevision>,
 }
@@ -110,12 +112,19 @@ impl BuildRequest {
         BuildPreparationRequest {
             request: self,
             supplied,
+            local_files: BTreeMap::new(),
             prior: None,
             expected_intent: None,
         }
     }
 }
 impl BuildPreparationRequest {
+    /// Explicit host files are verified against captured obligations in private preparation.
+    /// Paths must be absolute; they never become durable source or destination authority.
+    pub fn with_local_files(mut self, files: BTreeMap<AcquisitionKey, PathBuf>) -> Self {
+        self.local_files = files;
+        self
+    }
     /// Bind host-derived filenames, target defaults and format choices to the intent that
     /// selected them. This is a precondition, not authority to publish that intent.
     pub fn require_intent(mut self, revision: SemanticRevision) -> Self {
@@ -713,6 +722,23 @@ impl Engine {
         pending: PreparationContinuation,
         supplied: BuildAcquisitions,
     ) -> Result<Preparation> {
+        self.resume_inputs(pending, supplied, BTreeMap::new()).await
+    }
+    /// Resume using explicitly associated host files, retaining prior verified inputs.
+    pub async fn resume_with_local_files(
+        &self,
+        pending: PreparationContinuation,
+        files: BTreeMap<AcquisitionKey, PathBuf>,
+    ) -> Result<Preparation> {
+        self.resume_inputs(pending, BuildAcquisitions::default(), files)
+            .await
+    }
+    async fn resume_inputs(
+        &self,
+        pending: PreparationContinuation,
+        supplied: BuildAcquisitions,
+        local_files: BTreeMap<AcquisitionKey, PathBuf>,
+    ) -> Result<Preparation> {
         ensure!(
             Arc::ptr_eq(&self.owner, &pending.prepared.owner),
             "Continuation belongs to another engine"
@@ -724,6 +750,7 @@ impl Engine {
         let request = BuildPreparationRequest {
             request: build.request.clone(),
             supplied,
+            local_files,
             prior: Some(Box::new(pending)),
             expected_intent: None,
         };
@@ -859,7 +886,10 @@ async fn prepare_build(
     provider_access: ProviderAvailability,
     scope: &mut super::runtime::WorkScope,
 ) -> Result<RetainedOutput<PreparedBuild>> {
-    if let Some(prior) = input.prior.take() {
+    let local_files = std::mem::take(&mut input.local_files);
+    let transfer = config.transfer;
+    let file_limit = config.snapshot.entries;
+    let prepared = if let Some(prior) = input.prior.take() {
         let retained = *prior.prepared.data;
         let held = retained.reserved();
         let required = config.resources.capture;
@@ -910,7 +940,8 @@ async fn prepare_build(
             move |cancel| capture(project, input, None, &config, provider_access, &cancel),
         )?;
         scope.accept(work.wait().await?)?.transpose()
-    }
+    }?;
+    local_inputs::supply(prepared, local_files, transfer, file_limit, scope).await
 }
 fn capture(
     project: PathBuf,
@@ -923,6 +954,7 @@ fn capture(
     let BuildPreparationRequest {
         request,
         mut supplied,
+        local_files: _,
         prior: _,
         expected_intent,
     } = input;
@@ -1078,6 +1110,8 @@ fn capture(
         acquisition,
     })
 }
+
+mod local_inputs;
 
 fn build_cleanup(
     workspace: &WorkspaceSnapshot,

@@ -363,7 +363,7 @@ mod initialize;
 pub use initialize::initialize;
 
 mod build;
-pub use build::{BuildDecisions, build};
+pub use build::{BuildDecisions, build, build_with_local_files};
 
 mod dependencies;
 pub use dependencies::{

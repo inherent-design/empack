@@ -60,11 +60,22 @@ leases in a display-only preview. Supplied keys must match current acquisition
 obligations. Preparation streams those bytes through the unchanged locked/backend
 assertions and evidence policy; unrelated keys and mismatches fail before approval.
 
+`BuildPreparationRequest::with_local_files` associates absolute host files with exact
+locked or observed acquisition keys. Preparation derives assertions from captured
+obligations, verifies regular files into private content under a shared byte/deadline
+allowance, and preserves portable permissions. Missing, repeated or unrequested slots,
+unsafe file kinds, digest mismatches and evidence downgrades fail before approval.
+The host adapter `engine_host::build_with_local_files` resolves selected paths against
+the invocation directory. Paths never enter project documents or authorize copy targets.
+
 A build `Preparation::NeedsInput` retains an in-memory `PreparationContinuation`.
 Its view contains only display data. `Engine::resume` accepts additional verified
 files, revalidates the captured project, retains earlier supplied files and issues a
 new plan. Another engine, changed inputs, a retargeted project selection or duplicate
 supplied keys invalidate the resume. Dropping the continuation releases retained preparation and content resources.
+`Engine::resume_with_local_files` performs the same recapture before reading newly
+associated files. Earlier supplied bytes remain private and usable even when the host
+source later changes or disappears. Every remaining obligation still needs verification.
 This does not persist a continuation or grant publication authority. Explicit grants
 remain required after every obligation is satisfied.
 Resume keeps its previous preparation reservation charged and admits only the extra
