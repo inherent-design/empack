@@ -1,14 +1,14 @@
 # v0.5 delivery ledger
 
-Candidate baseline: `5b3d6c7`, 2026-10-08. A Windows creation-race correction is awaiting native validation. Target: **v0.5.0-alpha.1**.
-This is the current delivery checklist, not a release claim or a completion percentage.
+Tested source: `09c4135`, 2026-10-08. The accepted implementation is complete; verification evidence is recorded below. Target: **v0.5.0-alpha.1**.
+This ledger records the accepted feature scope and its evidence. It does not authorize a release.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
 remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/e0d5083/docs/design/implementation.md).
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full release validation: final platform checks and review remain open. Curated import/build acceptance passed all seven packs. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
+common route for ordinary operations. Curated import/build acceptance passed all seven packs. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
 ## Delivery states
@@ -16,7 +16,7 @@ and executable tests are the source of truth.
 - **CLI wired:** the ordinary executable reaches the engine and has command-level evidence.
 - **Host implemented:** the application adapter composes the engine; dispatcher integration remains.
 - **Engine implemented:** compiled behavior has contract tests; frontend decisions may remain.
-- **Open:** required behavior or acceptance evidence is missing.
+- **Open:** required behavior or acceptance evidence is missing; no accepted implementation item remains in this state.
 
 A command is complete only after its preserved options, failures and recovery paths
 pass executable tests and its replaced mutation path is deleted. Component tests,
@@ -24,19 +24,19 @@ a passing review and line coverage do not change that state by themselves.
 
 ## Command routing and cutover
 
-| Workflow | Executable route | Remaining acceptance work |
+| Workflow | Executable route | Acceptance evidence |
 | --- | --- | --- |
-| Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Live runtime matrix; headless loader/latest choices are now explicit |
-| Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Native `init --continue` and `clean import` are wired; broaden live provider/archive matrix |
-| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Broader live provider/world parity; exact and supplied world archives are wired |
-| Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
-| Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption and explicit new source groups:** verified document-only acceptance of observed bytes and exact pins | Broaden live provider/member parity |
-| Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
-| Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Native `sync --continue` and `clean sync` are wired; broaden runtime, search and multi-file placement matrices |
-| Build / continue | **CLI wired:** native build, saved recipe continuation and bounded download waiting | Broaden live target/runtime and platform desktop matrix; execution-time missing inputs retain resumable state |
+| Initialize / forced replacement | **CLI wired:** native initialization and approved replacement | Native preview/replacement cases, explicit headless loader/latest choices and live catalog/runtime probes |
+| Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Seven curated packs, URL/weak-digest contracts and verified continuation across restarts |
+| Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | Canonical-selector/closure fixtures, live provider probes, exact and supplied world archives |
+| Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Exact-selection, independent-batch, provider-world and companion-role fixtures; changed-file refusal |
+| Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption and explicit new source groups:** verified document-only acceptance of observed bytes and exact pins | Native provider/member, first-lock, side-layer and source-group fixtures |
+| Remove | **CLI wired:** shared exact ownership planner | Alias/title/stem collisions, explicit unknown-evidence policy, demotion and wrong-kind/link refusals |
+| Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Two no-op syncs per curated pack; runtime/layout/search/companion fixtures and exact manual continuation |
+| Build / continue | **CLI wired:** native build, saved recipe continuation and bounded download waiting | Five target families, three archive formats, eleven actual Java runtime probes and executable continuation cases |
 | Clean | **CLI wired:** scoped artifact/cache/retained-input cleanup | Explicit stale/invalid build, import and sync record cleanup; empty record categories permit bounded retained-payload reclamation |
-| Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
-| Requirements / version | Host inspection; no managed-tool bootstrap | Capability-specific live prerequisites |
+| Recover | **CLI wired:** engine recovery | Native subprocess interruption and restart at durable publication boundaries |
+| Requirements / version | Host inspection; no managed-tool bootstrap | Offline executable inspection and capability-specific live prerequisite checks |
 
 The legacy command handler file and the old `empack/` library tree are removed.
 The previous synchronization planner, project-state/config/build/import machinery,
@@ -59,7 +59,7 @@ The eleven mock-command integration files are consolidated into `native_commands
 which exercises loader families, content kinds, format writers, previews, demotion,
 unknown-evidence acknowledgment and failure preservation. Provider alias/pin/closure
 checks remain in the native adapter fixtures; live executable
-parity is still a final gate, not inferred from those fixtures.
+parity includes the strict executable and curated pack runs recorded below.
 
 ## Implemented engine contracts
 
@@ -97,7 +97,8 @@ Direct and provider world interpretation and explicit companion-file plans are w
 Provider-world supplied inputs, changed-version updates and fresh-resolution sync now have
 host tests. The companion-file fixture also edits authored placement decisions, rejects
 an omitted required companion without mutation, verifies preview preservation and two
-subsequent unchanged syncs. Broader live provider acceptance remains a final gate.
+subsequent unchanged syncs. Live provider probes and curated provider-world imports
+complement these deterministic lifecycle cases; neither implies exhaustive provider coverage.
 
 ### Content identification
 
@@ -126,24 +127,24 @@ Native tests cover preview, runtime mismatch, auxiliary refusal, layer bytes and
 re-export. Restricted imports retain exact source bytes and verified associations through
 `init --continue`; `clean import` explicitly discards saved state.
 
-## Open defects and delivery gates
+## Closed implementation and review items
 
-| Priority | Item | Closure evidence |
+| Status | Item | Closure evidence |
 | --- | --- | --- |
 | Verified | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Verified | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Verified | Intermittent inherited-pipe warning | Host Nextest upgraded to 0.9.148; both subsequent combined default runs passed without inherited-pipe warnings |
 | Implemented | Provider-world lifecycle | Native fixtures cover changed-version update, adoption, supplied archives and removal; Boosted FPS now imports its three real provider worlds, syncs twice and builds verified client world members |
 | Implemented | Synchronization resolution and manual acquisition | Authored per-file placements preserve companion roles and optional choices; missing required companions reject publication; exact manual-input continuation, layout and accepted-game-version revalidation are wired |
-| Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
+| Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; strict and curated continuation acceptance passed |
 | Implemented | Acquisition cache integration | Build/sync/runtime and add/import consumers use verified lookup; approved mutations populate the cache; restricted inputs reuse exact asserted bytes |
 | Implemented | Retained-input reclamation | `clean retained` reclaims empty record categories under save/cleanup coordination; saved and unknown records, active private leases and recovery journals remain protected |
 | Implemented | Explicit `ContinueIndependent` batches | Add/update opt in with `--continue-independent`; resolved groups prepare independently and publish one combined candidate with partial receipts; unresolved identity/evidence still blocks the whole request |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
 | Verified | Review 129: continuation memory admission | Small sync save/load and three-restart import regression pass under 8 MiB; escaped record sizing and changed-size refusal retain bounds |
-| Fixed locally | Concurrent Windows storage creation | Native CI exposed error 183 when another process created the private root; creation now tolerates that outcome, then still checks native identity, kind, reparse points and DACL |
-| Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
+| Verified | Concurrent Windows storage creation | Native CI exposed error 183 when another process created the private root; creation now tolerates that outcome, then still checks native identity, kind, reparse points and DACL |
+| Verified | Combined candidate validation | Local 1,017-test run; native platform/import matrix; recorded live probes and Greptile 131 |
 
 Both Review 128 findings reproduced before correction. The 38 affected tests and
 all-target/all-feature Clippy passed after correction. Review 129 repeated the already
@@ -152,8 +153,8 @@ identified fixed continuation-memory reservations. Both sync and import reproduc
 small-record failures under an 8 MiB allowance. Admission now scales with observed
 record bytes and model data, and reads reject growth beyond their admitted size.
 All 55 affected continuation/document/cleanup tests and all-feature Clippy pass
-after correction. Review 130 is green at 5/5 on `5b3d6c7`. The later Windows race correction
-requires its own review and native run.
+after correction. Review 131 is green at 5/5 on `09c4135`, including the later
+Windows creation-race correction.
 
 ## Backend release
 
@@ -171,16 +172,16 @@ old library implementations are deleted.
 
 ## Candidate evidence
 
-Production/test candidate: `5b3d6c7`. Later ledger-only changes do not alter this source snapshot.
+Production/test candidate: `09c4135`. Later ledger-only changes do not alter this source snapshot.
 
 | Check | Observed result |
 | --- | --- |
-| Combined instrumented tests | 1,016/1,016 passed, including 81 strict executable cases; 22 opt-in cases excluded |
+| Combined instrumented tests | 1,017/1,017 passed, including 81 strict executable cases; 22 opt-in cases excluded |
 | Documentation and smoke-driver contracts | Eight doctests and seven Python tests passed |
 | Static checks | All-feature and minimal-feature Clippy, core isolation and Windows cross-compilation passed |
 | Source-file coverage | 92.73% lines; standalone test files, test crate and mock sessions excluded; inline tests remain included |
-| Greptile | Review 130: 5/5 on `5b3d6c7`, no actionable new finding; all threads resolved |
-| Native CI | Linux/macOS passed at `5b3d6c7`; Windows passed both repaired prompt cases and the local-content build, but exposed the independent private-directory creation race |
+| Greptile | Review 131: 5/5 on `09c4135`, no actionable new finding; all threads resolved |
+| Native CI | [Linux, macOS and Windows default/strict suites and all three import-smoke jobs passed](https://github.com/inherent-design/empack/actions/runs/37845100325) |
 | Frozen real-pack acceptance | Seven of seven curated import → sync twice → full-client build workflows passed at `c9a8159`; Boosted FPS includes three provider worlds and Fabulously Optimized exercises manual import continuation |
 | Live provider/runtime probes | Seven provider and eleven actual Java runtime probes passed at `c9a8159`; loader catalog passed at `77ec34c` |
 
@@ -207,7 +208,7 @@ kind, reparse, owner and ACL checks. Existing shared directories remain rejected
 and unchanged. Native regressions exercise repeated creation, shared ACL refusal,
 file-kind refusal and concurrent openers of the same boundary. All 25 affected
 publication/store tests and all-feature Clippy pass locally; Windows cross-compilation
-passes. The Windows-only privacy cases still require the next native run.
+passes. The Windows-only privacy cases and the subsequent strict CLI and CurseForge import/build smoke all passed natively.
 
 The macOS linker emits a nonfatal unwind-table warning. Cross-compilation is not
 native execution evidence. Coverage is measured, not a claim of exhaustive testing.
