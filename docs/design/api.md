@@ -1194,3 +1194,22 @@ normalizer preserves that declared path, individual slot and source provenance. 
 lets update change `pack/config/settings.toml` from `seeds/settings.toml` without
 rewriting authoring intent or turning the destination into the next acquisition source.
 Sources behind unsafe ancestors fail before publication.
+
+
+### Source-digest cache discovery
+
+`FileContentLookup::retain_expected` resolves a bounded digest-to-address hint when
+source assertions do not already contain a SHA-256 address. The hint is a fixed
+32-byte address record selected by a canonical digest filename. It cannot authorize
+content: lookup copies the selected blob into a private lease and checks the complete
+original digest set, size, accepted observation and address. MD5 remains compatibility
+evidence. Missing hints or missing blobs are cache misses; malformed records, unsafe
+objects and failed verification remain distinguishable errors to the owning cache policy.
+
+`FileContentStore::publish_expected` first checks the supplied content against every
+assertion, publishes its verified blob, then publishes digest hints under store
+coordination and capacity limits. A crash between those steps loses discoverability;
+it cannot turn an unverified file into a hit. Hints, canonical blobs and abandoned
+candidates share bounded storage and scoped cleanup. Unknown neighboring files remain
+unowned, and cleanup cannot invalidate already retained private leases. Ordinary build
+wiring is a separate integration obligation.

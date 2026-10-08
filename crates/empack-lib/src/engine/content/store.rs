@@ -14,6 +14,7 @@ use empack_core::{
 use std::{fs::File, path::Path, sync::Arc};
 
 mod cleanup;
+mod index;
 pub use cleanup::{CacheCleanupPlan, CacheCleanupReceipt, CacheObject, CacheObjectKind};
 
 #[derive(Clone, Copy)]
@@ -274,13 +275,14 @@ impl Store {
             let name = entry?.file_name();
             let is_object = name.to_str().and_then(parse_name).is_some();
             let is_candidate = name.to_str().is_some_and(candidate_name);
-            if !is_object && !is_candidate {
+            let is_hint = name.to_str().is_some_and(index::is_hint);
+            if !is_object && !is_candidate && !is_hint {
                 continue;
             }
             let file = native::open_native_file(&self.root, &name)?;
             let length = file.metadata()?.len();
             ensure!(
-                length <= self.limits.file_bytes,
+                length <= if is_hint { 32 } else { self.limits.file_bytes },
                 "Cached object exceeds byte limit"
             );
             count = count.checked_add(1).context("Content count overflow")?;

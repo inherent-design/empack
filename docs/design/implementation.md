@@ -147,6 +147,12 @@ modules remains open.
 
 ## Verification evidence
 
+Source-digest cache discovery: 21 store/cleanup tests passed, then three focused
+index tests passed with an equal-length impostor blob added to the negative cases.
+All-feature Clippy passed. Lookup retains original weak/strong assertions; bad hints
+cannot satisfy requests, limits include hints, cleanup preserves unowned files and
+retained leases. Ordinary build/cache wiring remains open.
+
 Explicit new-source adoption: 44 affected CLI/adoption/file-plan tests, eight native
 and executable cases, and all-feature Clippy passed. Real CLI coverage rejects missing
 payloads, preserves previews, creates/restores locks and requires two unchanged syncs.
@@ -169,9 +175,9 @@ sources. Both targeted runs reported one intermittent inherited-output-pipe warn
 the download-budget case passed clean on rerun, while a provider-world case reported
 it. This remains an open verification gate, not a clean combined-head claim.
 
-Combined `ae3276d`: `mise run test` passed 1,661 tests and eleven doctests;
+Combined `bb2d3ee`: `mise run test` passed 1,666 tests and eleven doctests;
 102 opt-in tests were excluded. No inherited-pipe warning occurred. This includes
-direct world interpretation and tracked URL/provider-side adoption, not final live parity.
+direct worlds, first-lock and new-source adoption, not final live parity.
 
 Demoted local groups: reproduced the multi-file update refusal, then passed the extended
 world lifecycle and two related native update tests. Update and adoption retain the

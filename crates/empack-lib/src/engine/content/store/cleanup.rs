@@ -11,6 +11,7 @@ pub struct CacheObject {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CacheObjectKind {
     Content(ContentId),
+    SourceHint(String),
     AbandonedCandidate(String),
 }
 impl CacheObject {
@@ -18,13 +19,16 @@ impl CacheObject {
     pub fn name(&self) -> String {
         match &self.kind {
             CacheObjectKind::Content(id) => name(id),
-            CacheObjectKind::AbandonedCandidate(name) => name.clone(),
+            CacheObjectKind::AbandonedCandidate(name) | CacheObjectKind::SourceHint(name) => {
+                name.clone()
+            }
         }
     }
 }
 fn object_kind(name: &str) -> Option<CacheObjectKind> {
     parse_name(name)
         .map(CacheObjectKind::Content)
+        .or_else(|| index::is_hint(name).then(|| CacheObjectKind::SourceHint(name.into())))
         .or_else(|| candidate_name(name).then(|| CacheObjectKind::AbandonedCandidate(name.into())))
 }
 #[derive(PartialEq, Eq)]
