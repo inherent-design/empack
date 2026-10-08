@@ -110,7 +110,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
         }
         Commands::Build(args) => engine_host::cli::build(session, &args).await,
         Commands::Clean { targets } => engine_host::clean(session, &targets).await,
-        Commands::Sync {} => engine_host::cli::synchronize(session).await,
+        Commands::Sync { materialize } => engine_host::cli::synchronize(session, materialize).await,
     }
 }
 async fn handle_requirements(session: &dyn Session) -> Result<()> {

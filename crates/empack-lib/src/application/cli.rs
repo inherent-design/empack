@@ -254,7 +254,11 @@ pub enum Commands {
     Init(InitArgs),
 
     /// Reconcile installed content with recorded intent and exact selections
-    Sync {},
+    Sync {
+        /// Acquire and verify all remote references before publishing the complete batch
+        #[arg(long)]
+        materialize: bool,
+    },
 
     /// Refresh selected installed dependencies while retaining intent and pins
     Update {
@@ -521,13 +525,13 @@ mod tests {
     fn commands_surface_metadata_matches_expected_values() {
         assert!(!Commands::Requirements.requires_modpack());
         assert!(!Commands::Version.requires_modpack());
-        assert!(Commands::Sync {}.requires_modpack());
+        assert!(Commands::Sync { materialize: false }.requires_modpack());
         assert!(Commands::Build(BuildArgs::default()).requires_modpack());
         assert_eq!(Commands::Requirements.execution_order(), 0);
         assert_eq!(Commands::Version.execution_order(), 0);
         assert_eq!(Commands::Init(InitArgs::default()).execution_order(), 1);
         assert_eq!(Commands::Clean { targets: vec![] }.execution_order(), 2);
-        assert_eq!(Commands::Sync {}.execution_order(), 5);
+        assert_eq!(Commands::Sync { materialize: false }.execution_order(), 5);
         assert_eq!(
             Commands::Add {
                 mods: vec![],

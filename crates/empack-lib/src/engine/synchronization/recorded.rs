@@ -187,11 +187,19 @@ impl RecordedInputs {
         // Packed content retains one backing; current archive/member readers are short-lived.
         10
     }
-    pub(in crate::engine) fn prepare(
+    pub(in crate::engine) fn prepare_with_references(
         mut self,
         evidence: SourceEvidencePolicy,
+        references: BTreeMap<LockedFileKey, AcquiredBuildFile>,
         cancel: &Cancellation,
     ) -> Result<SynchronizationPreparation> {
+        for (key, acquired) in references {
+            ensure!(
+                matches!(self.content.get(&key), Some(DependencyContent::Reference)),
+                "Acquired synchronization content does not select a recorded remote reference"
+            );
+            self.content.insert(key, acquired.into());
+        }
         let workspace = self.snapshot.workspace();
         let mut pool = ContentPool::new(self.retained_bytes)?;
         for input in self.local {

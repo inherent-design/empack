@@ -99,7 +99,7 @@ async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_pr
     );
     let before = snapshot(&root.path().join("project"));
     for _ in 0..2 {
-        execute_command_with_session(Commands::Sync {}, &selected)
+        execute_command_with_session(Commands::Sync { materialize: false }, &selected)
             .await
             .unwrap();
     }
@@ -142,7 +142,7 @@ async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_pr
         .unwrap();
     assert!(resolved(root.path()).intent().roots.is_empty());
     assert!(!root.path().join("project/pack/mods/fixture.jar").exists());
-    execute_command_with_session(Commands::Sync {}, &selected)
+    execute_command_with_session(Commands::Sync { materialize: false }, &selected)
         .await
         .unwrap();
     execute_command_with_session(

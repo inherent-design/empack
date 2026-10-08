@@ -14,10 +14,13 @@ use empack_core::{
     synchronization::{affected_roots, rebind_prior_aliases, runtime_satisfies},
 };
 use std::collections::BTreeMap;
+mod materialization;
+use materialization::publish;
 
-pub async fn synchronize(session: &dyn Session) -> Result<()> {
+pub async fn synchronize(session: &dyn Session, materialize: bool) -> Result<()> {
     synchronize_with_services(
         session,
+        materialize,
         dependencies::configured_services(session)?,
         RuntimeCatalog::new(HttpAcquisition::new()?),
     )
@@ -26,6 +29,7 @@ pub async fn synchronize(session: &dyn Session) -> Result<()> {
 
 pub(super) async fn synchronize_with_services(
     session: &dyn Session,
+    materialize: bool,
     services: dependencies::AdditionServices,
     runtime_catalog: RuntimeCatalog,
 ) -> Result<()> {
@@ -81,13 +85,13 @@ pub(super) async fn synchronize_with_services(
     let (source, prior) = &*captured;
     if let Some(prior) = prior {
         match SynchronizationCandidate::prepare(source, prior) {
-            Ok(_) => {
-                return dependencies::synchronize(
+            Ok(candidate) => {
+                return publish(
                     session,
-                    SyncRequest::Recorded {
-                        resolution: None,
-                        evidence: SourceEvidencePolicy::Compatibility,
-                    },
+                    candidate.project().clone(),
+                    None,
+                    materialize,
+                    services,
                 )
                 .await;
             }
@@ -185,6 +189,11 @@ pub(super) async fn synchronize_with_services(
         Duration::from_secs(session.config().app_config().net_timeout);
     let source = source.clone();
     let prior = prior.clone();
+    let acquisition_services = dependencies::AdditionServices {
+        catalog: services.catalog.clone(),
+        transport: services.transport.clone(),
+        files: services.files,
+    };
     let resolved = scoped(session, governor(session.config().app_config()), move |mut scope| async move {
         let provider = if providers.is_empty() { None } else {
             match services.catalog.resolve_addition(&mut scope, &baseline, NonEmpty::new(providers)?, ReleasePolicy::PreferStable, limits).await? {
@@ -227,12 +236,12 @@ pub(super) async fn synchronize_with_services(
         })?;
         scope.accept(worker.wait().await?)?.transpose()
     }).await?;
-    dependencies::synchronize(
+    publish(
         session,
-        SyncRequest::Recorded {
-            resolution: Some((*resolved).clone()),
-            evidence: SourceEvidencePolicy::Compatibility,
-        },
+        (*resolved).clone(),
+        Some((*resolved).clone()),
+        materialize,
+        acquisition_services,
     )
     .await
 }

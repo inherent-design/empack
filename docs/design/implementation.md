@@ -34,7 +34,7 @@ a passing review and line coverage do not change that state by themselves.
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
 | Adopt observed content | **CLI wired for tracked local files:** verified document-only acceptance of changed bytes | Provider/URL observation selection and new untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
-| Sync | **CLI wired:** recorded selections and fresh resolution for missing/unsatisfied roots | Optional remote materialization; broaden runtime, search and multi-file placement matrices |
+| Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Broaden runtime, search and multi-file placement matrices; manual acquisition continuation |
 | Build / continue | **CLI wired:** native build and saved recipe continuation | Browser assistance, execution-time missing-input retention, live target/runtime matrix |
 | Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores and explicit stale/invalid-record cleanup |
 | Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
@@ -119,7 +119,7 @@ re-export. Restricted-import continuation remains open.
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Open verification | Intermittent inherited-pipe warning | Combined cutover and template/runtime checks were clean; subsequent concurrent host subsets reported a retained output pipe despite passing assertions; investigate process retirement before final acceptance |
 | Cutover | Search/identification/adoption frontends and world-member interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
-| Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution is wired; optional materialization, multi-file decisions and changed layout/compatibility-policy semantics need further coverage |
+| Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and changed layout/compatibility-policy semantics need further coverage |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
 | Cutover | Ordinary cache integration and cleanup | Cache use does not change source evidence; cleanup preserves leases, recovery and saved requests |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
@@ -149,6 +149,7 @@ modules remains open.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Remote synchronization materialization | 41 affected sync/native CLI/smoke cases and all-feature Clippy passed; rebuilt executable passed all 16 offline smoke cases | Bad remote bytes publish nothing; pins and lock bytes stay unchanged; previews do not download; supplied references cannot override local sources |
 | Source lifetime correction | 87 affected add/remove/sync/verification cases and all-feature Clippy passed | Reproduced source deletion before fixing it; moved/removed placements retain shared sources, conflicting replacement fails before publication |
 | `3060149` combined candidate | `mise run test`: 1,646 tests and eleven doctests passed; 99 opt-in cases skipped | No inherited-pipe warnings; strict live matrix and final coverage remain open; obsolete graph/mock tests account for the lower count |
 | `f30e6e1` combined candidate | 1,677 default tests and eleven doctests passed; no inherited-pipe warnings | Strict E2E baseline: 25 passed, 50 failed; failures include stale v0.4 fixtures and known workflow gaps |

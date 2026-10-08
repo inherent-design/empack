@@ -353,7 +353,14 @@ Missing archives try captured installed placements until original assertions ver
 paths, corrupt members and stronger-evidence policy failures prevent the whole publication.
 Captured sources remain publication preconditions, so an edit after approval invalidates it.
 `SyncPreview` lists selected records, lock rebinding and the replacement plan;
-`SyncReceipt` retains the coherent published project. Either request variant
+`SyncReceipt` retains the coherent published project.
+`SyncRequest::AcquiredReferences` combines captured local/member sources with externally
+verified remote content. Unknown keys and local-source overrides are rejected. The host
+binds the supplied content to the inspected resolution; native preparation rechecks
+that resolution and every byte assertion. `sync --materialize` uses this route after
+explicit acquisition approval, then displays the final native file plan before publication.
+Remote acquisition failures publish no project subset. Dry-run reports obligations
+without downloading their payloads. Any request variant
 can carry a fresh `resolution` candidate for changed or missing intent. The planner preserves valid
 exact selections, rejects unrelated upgrades/deletions and requires new records to
 belong to the changed roots' required closure. Known retained dependents remain binding.

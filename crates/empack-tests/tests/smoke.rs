@@ -187,6 +187,15 @@ fn smoke_native_lifecycle_preserves_exact_files_across_sync_build_remove() {
         .success();
     assert_eq!(read_project(&project).intent().roots.len(), 1);
     let before = project_snapshot(&project);
+    command(&project)
+        .args(["sync", "--materialize", "--dry-run"])
+        .assert()
+        .success();
+    assert_eq!(project_snapshot(&project), before);
+    command(&project)
+        .args(["sync", "--materialize", "--yes"])
+        .assert()
+        .success();
     for _ in 0..2 {
         command(&project).args(["sync", "--yes"]).assert().success();
     }

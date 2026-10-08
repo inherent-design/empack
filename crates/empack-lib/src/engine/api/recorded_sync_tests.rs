@@ -497,3 +497,65 @@ async fn recorded_local_sync_does_not_reserve_an_unused_archive_parser() {
     engine.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn acquired_references_cannot_override_captured_local_sources_or_unknown_slots() {
+    use crate::engine::{
+        content::{InitialObservation, verify_stream},
+        mrpack::{AcquiredBuildFile, LockedFileKey},
+    };
+    for unknown in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let project = source_project(root.path(), false, false);
+        let (key, dependency) = project.lock().dependencies.first_key_value().unwrap();
+        let file = &dependency.files.as_slice()[0];
+        let content = verify_stream(
+            &mut b"payload".as_slice(),
+            &file.expected,
+            100,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::RequireEvidence,
+            &crate::application::process_runtime::Cancellation::default(),
+        )
+        .unwrap();
+        let supplied = BTreeMap::from([(
+            LockedFileKey {
+                dependency: if unknown {
+                    DependencyKey::parse("unknown").unwrap()
+                } else {
+                    key.clone()
+                },
+                slot: file.slot.clone(),
+            },
+            AcquiredBuildFile {
+                content,
+                permissions: empack_core::files::FilePermissions {
+                    readonly: false,
+                    executable: false,
+                },
+            },
+        )]);
+        let before = files(root.path());
+        let (engine, governor) = engine(state.path().join("state"));
+        let error = engine
+            .preview(
+                root.path().to_path_buf(),
+                SyncRequest::AcquiredReferences {
+                    resolution: None,
+                    evidence: SourceEvidencePolicy::Compatibility,
+                    content: supplied,
+                },
+            )
+            .await
+            .err()
+            .expect("invalid reference accepted");
+        assert!(
+            format!("{error:#}").contains("recorded remote reference"),
+            "{error:#}"
+        );
+        assert_eq!(files(root.path()), before);
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}

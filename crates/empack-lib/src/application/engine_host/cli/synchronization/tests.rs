@@ -35,6 +35,7 @@ fn services(base: &str) -> dependencies::AdditionServices {
 async fn sync(root: &Path, base: &str, dry: bool) -> Result<()> {
     synchronize_with_services(
         &session(root, dry),
+        false,
         services(base),
         RuntimeCatalog::for_loopback_tests(base),
     )
@@ -389,4 +390,132 @@ async fn moved_or_removed_placement_cannot_delete_a_retained_acquisition_source(
         }
         assert_eq!(snapshot(&root.path().join("project")), before);
     }
+}
+
+#[tokio::test]
+async fn materialization_verifies_the_whole_batch_without_updating_pins_or_preview_downloads() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    let mut intent = project(root.path()).intent().clone();
+    let mut original_versions = Vec::new();
+    for (id, version, key, filename) in [
+        ("Root0001", "RootVer1", "first", "first.jar"),
+        ("Root0002", "RootVer2", "second", "second.jar"),
+    ] {
+        server
+            .mock("GET", format!("/project/{id}").as_str())
+            .with_body(
+                json!({"id":id,"slug":key,"title":key,"project_type":"mod","loaders":["fabric"]})
+                    .to_string(),
+            )
+            .create_async()
+            .await;
+        original_versions.push(server.mock("GET", format!("/version/{version}").as_str()).with_body(json!({
+            "id":version,"project_id":id,"game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":filename,"primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":format!("https://example.invalid/{filename}")}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        }).to_string()).create_async().await);
+        intent.roots.insert(
+            DependencyKey::parse(key).unwrap(),
+            DependencyIntent {
+                source: SourceIntent::Provider(ProviderProjectId::Modrinth(
+                    ModrinthProjectId::parse(id).unwrap(),
+                )),
+                kind: ContentKind::Mod,
+                version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+                    ModrinthVersionId::parse(version).unwrap(),
+                )),
+                placement: PlacementIntent::Automatic,
+                requirements: required(),
+            },
+        );
+    }
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    let lock = fs::read(root.path().join("project/empack.lock")).unwrap();
+    for original in original_versions {
+        original.remove_async().await;
+    }
+    for (id, version, filename) in [
+        ("Root0001", "RootVer1", "first.jar"),
+        ("Root0002", "RootVer2", "second.jar"),
+    ] {
+        server.mock("GET", format!("/version/{version}").as_str()).with_body(json!({
+            "id":version,"project_id":id,"game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":filename,"primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":format!("{}/{filename}",server.url())}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        }).to_string()).expect(2).create_async().await;
+    }
+    let before = snapshot(root.path());
+    synchronize_with_services(
+        &session(root.path(), true),
+        true,
+        services(&server.url()),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    let first = server
+        .mock("GET", "/first.jar")
+        .with_body("payload")
+        .expect(2)
+        .create_async()
+        .await;
+    let bad = server
+        .mock("GET", "/second.jar")
+        .with_body("changed")
+        .expect(1)
+        .create_async()
+        .await;
+    let error = synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services(&server.url()),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("digest"), "{error:#}");
+    assert_eq!(
+        snapshot(root.path()),
+        before,
+        "failed acquisition must publish nothing"
+    );
+    bad.assert_async().await;
+    bad.remove_async().await;
+    let second = server
+        .mock("GET", "/second.jar")
+        .with_body("payload")
+        .expect(1)
+        .create_async()
+        .await;
+    synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services(&server.url()),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap();
+    for name in ["first.jar", "second.jar"] {
+        assert_eq!(
+            fs::read(root.path().join(format!("project/pack/mods/{name}"))).unwrap(),
+            b"payload"
+        );
+    }
+    assert_eq!(
+        fs::read(root.path().join("project/empack.lock")).unwrap(),
+        lock
+    );
+    let published = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), published);
+    first.assert_async().await;
+    second.assert_async().await;
 }

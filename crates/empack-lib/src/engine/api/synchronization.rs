@@ -19,6 +19,13 @@ pub enum SyncRequest {
         resolution: Option<ResolvedProject>,
         content: DependencyContents,
     },
+    /// Combine captured local/member sources with externally verified remote bytes.
+    /// These bytes cannot replace a local source or an unselected slot.
+    AcquiredReferences {
+        resolution: Option<ResolvedProject>,
+        evidence: SourceEvidencePolicy,
+        content: BTreeMap<LockedFileKey, crate::engine::mrpack::AcquiredBuildFile>,
+    },
     /// Restore captured local/member sources and preserve exact deferred references.
     /// Changed semantic intent still requires explicit fresh resolution.
     Recorded {
@@ -55,7 +62,22 @@ pub(super) async fn prepare(
         anyhow::bail!("Synchronization requires an existing project")
     };
     ensure!(project.is_absolute(), "Project selection must be absolute");
+    let (request, acquired) = match request {
+        SyncRequest::AcquiredReferences {
+            resolution,
+            evidence,
+            content,
+        } => (
+            SyncRequest::Recorded {
+                resolution,
+                evidence,
+            },
+            content,
+        ),
+        request => (request, BTreeMap::new()),
+    };
     let planned = match request {
+        SyncRequest::AcquiredReferences { .. } => unreachable!("normalized above"),
         SyncRequest::Supplied {
             resolution,
             content,
@@ -129,7 +151,7 @@ pub(super) async fn prepare(
             retained.open_files = retained.open_files.max(inputs.open_files());
             let work = scope.spawn_blocking(work_resources, retained, move |cancel| {
                 let (inputs, _reservation) = inputs.into_parts();
-                inputs.prepare(evidence, &cancel)
+                inputs.prepare_with_references(evidence, acquired, &cancel)
             })?;
             scope.accept(work.wait().await?)?.transpose()?
         }

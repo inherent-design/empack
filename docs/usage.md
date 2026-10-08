@@ -52,3 +52,29 @@ default is the platform application-data directory's `operations` child, separat
 from disposable caches. Relative selections resolve from the invocation directory.
 Inspecting missing state creates neither host state nor a project directory. This
 command handles engine journals; it does not reinterpret older interruption markers.
+
+## Synchronization and remote content
+
+`empack sync` reconciles authored intent and exact recorded selections. It restores
+local and archive-member content, resolves unsatisfied roots, and retains remote
+references without downloading their payloads. It does not remove installations
+merely because they are absent from the explicit-root manifest.
+
+`empack sync --materialize` also acquires every remote reference. The host displays
+these obligations and requires confirmation or `--yes` before acquisition. Provider
+lookup uses the exact recorded pin and file role; refreshed locators cannot replace
+original digest or size assertions. After verification, the native engine previews
+and publishes the complete file change. Failed downloads or unresolved manual
+references publish nothing. Local sources still use captured filesystem evidence.
+
+```sh
+empack --dry-run sync --materialize
+empack --yes sync --materialize
+```
+
+The materialization preview performs no remote payload downloads. It reports
+acquisition obligations alongside the recorded synchronization plan; it does not
+claim those bytes have verified. Ordinary `sync` after materialization retains the
+installed bytes and does not refresh their versions. Explicit materialization
+currently reacquires remote references; persistent content-store reuse is a
+separate implementation step.

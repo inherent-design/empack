@@ -186,7 +186,9 @@ async fn slug_id_and_url_persist_one_canonical_identity_and_sync_twice_without_c
         );
         let before = super::super::tests::snapshot(&root.path().join("project"));
         for _ in 0..2 {
-            synchronize(&session(root.path(), false)).await.unwrap();
+            synchronize(&session(root.path(), false), false)
+                .await
+                .unwrap();
         }
         assert_eq!(
             super::super::tests::snapshot(&root.path().join("project")),
@@ -371,7 +373,9 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
         ));
         let before = super::super::tests::snapshot(&root.path().join("project"));
         for _ in 0..2 {
-            synchronize(&session(root.path(), false)).await.unwrap();
+            synchronize(&session(root.path(), false), false)
+                .await
+                .unwrap();
         }
         assert_eq!(
             super::super::tests::snapshot(&root.path().join("project")),
