@@ -487,6 +487,9 @@ pub struct RuntimeResolution {
 /// Exact resolution is independent of raw source revisions and operation journals.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolutionLock {
+    /// Additional accepted game versions used to resolve authoring roots, in preference order.
+    /// This records selection policy, not a compatibility claim about untracked installations.
+    pub acceptable_versions: Vec<GameVersion>,
     /// Semantic intent revision this lock resolves.
     pub intent_revision: SemanticRevision,
     /// Resolver implementation/version identity.
@@ -736,6 +739,11 @@ impl ResolvedProject {
                 && lock.runtime.loader_version != intent.runtime.loader_version)
         {
             return Err(invalid("Locked runtime differs from intent"));
+        }
+        if lock.acceptable_versions != intent.runtime.acceptable_versions {
+            return Err(invalid(
+                "Lock resolves another accepted game-version policy",
+            ));
         }
         for key in intent.roots.keys() {
             let selected = lock

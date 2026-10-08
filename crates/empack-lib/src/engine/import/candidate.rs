@@ -398,6 +398,7 @@ impl VerifiedImportContent {
         let intent_bytes = codec.encode_intent(&intent)?;
         let decoded = codec.decode_intent(&intent_bytes, "import candidate")?;
         let lock = ResolutionLock {
+            acceptable_versions: decoded.intent().runtime.acceptable_versions.clone(),
             intent_revision: decoded.semantic_revision(),
             resolver: "empack-import-v0.5".into(),
             coverage: dependencies

@@ -456,29 +456,8 @@ fn check_selection(
     kind: ContentKind,
     request: &ClosureRequest,
 ) -> Result<()> {
-    ensure!(
-        selected.kinds.as_slice().contains(&kind),
-        CatalogError::ContentKindMismatch
-    );
-    ensure!(
-        request
-            .game_versions
-            .as_slice()
-            .iter()
-            .any(|game| selected.game_versions.iter().any(|v| v == game.as_str()))
-            && compatible::loader_matches(
-                selected,
-                &CompatibleRequest {
-                    project: selected.pin.project.clone(),
-                    kind,
-                    game_versions: request.game_versions.clone(),
-                    loader: request.loader,
-                    releases: request.releases
-                }
-            ),
-        CatalogError::NoCompatibleSelection
-    );
-    Ok(())
+    selected.verify_compatibility(kind, &request.game_versions, request.loader)
 }
+
 #[cfg(test)]
 mod tests;

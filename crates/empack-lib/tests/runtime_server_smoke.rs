@@ -128,6 +128,7 @@ async fn package_runtime(
     let resolved = ResolvedProject::validate(
         intent,
         ResolutionLock {
+            acceptable_versions: Vec::new(),
             intent_revision: revision,
             resolver: "runtime-smoke".into(),
             dependencies: Default::default(),

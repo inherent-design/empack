@@ -55,6 +55,7 @@ fn resolution(source: &DecodedIntent) -> ResolutionLock {
     })
     .collect();
     ResolutionLock {
+        acceptable_versions: source.intent().runtime.acceptable_versions.clone(),
         intent_revision: source.semantic_revision(),
         resolver: "test-resolver.v1".into(),
         dependencies: BTreeMap::from([(

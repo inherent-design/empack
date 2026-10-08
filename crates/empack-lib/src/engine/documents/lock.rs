@@ -171,6 +171,7 @@ pub(super) fn decode(value: &Value) -> Result<ResolutionLock> {
         &[
             "schema",
             "intent-revision",
+            "acceptable-versions",
             "resolver",
             "dependencies",
             "required-edges",
@@ -185,6 +186,10 @@ pub(super) fn decode(value: &Value) -> Result<ResolutionLock> {
     let runtime = required(value, "runtime")?;
     fields(runtime, &["minecraft", "loader", "loader-version"])?;
     Ok(ResolutionLock {
+        acceptable_versions: string_list(required(value, "acceptable-versions")?)?
+            .iter()
+            .map(|value| GameVersion::parse(value))
+            .collect::<std::result::Result<_, _>>()?,
         intent_revision: SemanticRevision(hash32(required(value, "intent-revision")?)?),
         resolver: label(required(value, "resolver")?)?.into(),
         dependencies: object(required(value, "dependencies")?)?
@@ -237,7 +242,7 @@ pub(super) fn encode(lock: &ResolutionLock) -> Value {
         let files: Vec<_> = dep.files.as_slice().iter().map(|file| json!({"slot":file.slot.as_str(),"provenance":{"source":file.provenance.source,"location":file.provenance.location,"declared-digests":file.provenance.declared_digests.as_ref().map(digests),"conversions":file.provenance.conversions},"acquisition":acquisition_value(&file.acquisition),"expected":{"digests":file.expected.digests.as_ref().map(digests),"size":file.expected.size,"accepted-observation":file.expected.accepted_observation.as_ref().map(|id|hex32(*id.bytes()))},"placements":file.placements.as_slice().iter().map(placement_value).collect::<Vec<_>>()})).collect();
         (key.as_str(),json!({"title":dep.title,"content":kind_name(dep.kind),"identity":identity,"selection":dep.selected.as_ref().map(resolved_pin_value),"files":files}))
     }).collect();
-    json!({"schema":LOCK_SCHEMA,"intent-revision":hex32(lock.intent_revision.0),"resolver":lock.resolver,"dependencies":dependencies,
+    json!({"schema":LOCK_SCHEMA,"acceptable-versions":lock.acceptable_versions.iter().map(GameVersion::as_str).collect::<Vec<_>>(),"intent-revision":hex32(lock.intent_revision.0),"resolver":lock.resolver,"dependencies":dependencies,
         "required-edges":lock.required_edges.iter().map(|(key,values)|(key.as_str(),values.iter().map(DependencyKey::as_str).collect::<Vec<_>>())).collect::<BTreeMap<_,_>>(),
         "coverage":lock.coverage.iter().map(|(key,value)|(key.as_str(),match value {Coverage::CompleteForSelection=>"complete",Coverage::Partial=>"partial",Coverage::Unknown=>"unknown"})).collect::<BTreeMap<_,_>>(),
         "runtime":{"minecraft":lock.runtime.minecraft.as_str(),"loader":loader_name(lock.runtime.loader),"loader-version":lock.runtime.loader_version.as_ref().map(LoaderVersion::as_str)}})

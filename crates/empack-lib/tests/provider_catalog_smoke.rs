@@ -177,6 +177,7 @@ async fn publish_with_refreshed_locator(
     let key = DependencyKey::parse("resources")?;
     let slot = FileSlot::parse("primary")?;
     let lock = ResolutionLock {
+        acceptable_versions: intent.intent().runtime.acceptable_versions.clone(),
         intent_revision: intent.semantic_revision(),
         resolver: "provider-smoke".into(),
         runtime: RuntimeResolution {

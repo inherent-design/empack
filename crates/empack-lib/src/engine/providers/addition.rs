@@ -526,6 +526,7 @@ fn normalize(
     Ok(ResolvedProject::validate(
         intent,
         ResolutionLock {
+            acceptable_versions: source.intent().runtime.acceptable_versions.clone(),
             intent_revision: source.semantic_revision(),
             resolver: "empack-provider-addition-v0.5".into(),
             dependencies,

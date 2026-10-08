@@ -113,6 +113,7 @@ pub(in crate::engine) fn project(weak: bool, optional: bool) -> ResolvedProject 
     })
     .collect();
     let lock = ResolutionLock {
+        acceptable_versions: intent.intent().runtime.acceptable_versions.clone(),
         intent_revision: intent.semantic_revision(),
         resolver: "fixture.v1".into(),
         dependencies: BTreeMap::from([(

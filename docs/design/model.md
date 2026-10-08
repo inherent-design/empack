@@ -147,6 +147,14 @@ explicit placements. Sync resolves those placement changes, retains valid provid
 pins and original source assertions, and publishes the move through the ordinary
 file plan. An old lock cannot silently claim to satisfy a new automatic directory.
 
+The lock also records the ordered additional accepted game versions used to resolve
+roots (`acceptable-versions` in its document). This is resolution context, not proof
+that unrelated retained installations support every listed version. A changed policy
+requires provider-root revalidation. Keep an existing pin when it still satisfies the
+new environment; choose a new compatible selection only for an unpinned root whose
+old selection no longer qualifies. An incompatible explicit pin fails without
+publication. Lookup failures are errors, not evidence of incompatibility.
+
 ### 5.1 Four independent state objects
 
 ```rust
@@ -164,6 +172,7 @@ pub struct ResolutionLock {
     pub schema: SchemaVersion,
     pub intent_revision: SemanticRevision,
     pub resolver: ResolverIdentity,
+    pub acceptable_versions: Vec<GameVersion>,
     pub dependencies: BTreeMap<DependencyKey, LockedDependency>,
     pub dependency_evidence: DependencyEvidence,
     pub runtime: RuntimeResolution,

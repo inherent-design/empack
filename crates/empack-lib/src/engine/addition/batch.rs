@@ -93,6 +93,11 @@ impl ResolvedAdditionBatch {
                         let mut intent = current.intent().clone();
                         intent.roots.clear();
                         let mut lock = ResolutionLock {
+                            acceptable_versions: current
+                                .intent()
+                                .runtime
+                                .acceptable_versions
+                                .clone(),
                             intent_revision: current.lock().intent_revision,
                             resolver: "empack-batch-addition-v0.5".into(),
                             dependencies: BTreeMap::new(),

@@ -151,15 +151,47 @@ pub(super) async fn synchronize_with_services(
             .as_ref()
             .and_then(|prior| prior.dependencies.get(key));
         match &root.source {
-            SourceIntent::Provider(id) => providers.push(provider_input(
-                key,
-                root,
-                ProjectSelector::canonical(id.clone()),
-                old,
-                previous.as_ref().is_some_and(|prior| {
+            SourceIntent::Provider(id) => {
+                let same_context = previous.as_ref().is_some_and(|prior| {
                     runtime_satisfies(&source.intent().runtime, &prior.runtime)
-                }),
-            )?),
+                        && prior.acceptable_versions == source.intent().runtime.acceptable_versions
+                });
+                let mut input = provider_input(
+                    key,
+                    root,
+                    ProjectSelector::canonical(id.clone()),
+                    old,
+                    same_context,
+                )?;
+                // A policy edit calls for revalidation, not an implicit update of a still-valid pin.
+                if input.pin.is_none()
+                    && !same_context
+                    && let Some(pin) = old
+                        .filter(|old| old.kind == root.kind)
+                        .and_then(|old| old.selected.as_ref())
+                        .filter(|pin| &pin.project == id)
+                {
+                    let catalog = services.catalog.clone();
+                    let pin = pin.clone();
+                    let runtime = source.intent().runtime.clone();
+                    let kind = root.kind;
+                    let limits = crate::engine::providers::CatalogLimits {
+                        deadline: Duration::from_secs(session.config().app_config().net_timeout),
+                        ..Default::default()
+                    };
+                    input.pin = initialize::discover(session, move |mut scope| async move {
+                        let selected = catalog.resolve_exact(&mut scope, pin.clone(), limits).await?;
+                        let mut games = vec![runtime.minecraft];
+                        games.extend(runtime.acceptable_versions);
+                        match selected.verify_compatibility(kind, &NonEmpty::new(games)?, runtime.loader) {
+                            Ok(()) => Ok(Some(pin.selection)),
+                            Err(error) if matches!(error.downcast_ref::<crate::engine::providers::CatalogError>(), Some(crate::engine::providers::CatalogError::NoCompatibleSelection)) => Ok(None),
+                            Err(error) => Err(error),
+                        }
+                    }).await?;
+                }
+                providers.push(input);
+            }
             SourceIntent::Search {
                 query,
                 providers: preference,
@@ -203,9 +235,11 @@ pub(super) async fn synchronize_with_services(
         let worker = scope.spawn_blocking(ResourceRequest { jobs: 1, memory_bytes: 64 << 20, ..Default::default() }, ResourceRequest { memory_bytes: 64 << 20, ..Default::default() }, move |cancel| {
         cancel.check()?;
         let mut lock = previous.unwrap_or_else(|| ResolutionLock {
+            acceptable_versions: source.intent().runtime.acceptable_versions.clone(),
             intent_revision: source.semantic_revision(), resolver: "empack-synchronization-v0.5".into(),
             dependencies: BTreeMap::new(), required_edges: BTreeMap::new(), coverage: BTreeMap::new(), runtime: runtime.clone(),
         });
+        lock.acceptable_versions = source.intent().runtime.acceptable_versions.clone();
         lock.runtime = runtime;
         lock.intent_revision = source.semantic_revision();
         let mut seen = BTreeSet::new();
@@ -307,6 +341,7 @@ fn resolver_context(
         )?
         .semantic_revision();
     let mut lock = prior.cloned().unwrap_or_else(|| ResolutionLock {
+        acceptable_versions: source.intent().runtime.acceptable_versions.clone(),
         intent_revision: revision,
         resolver: "empack-synchronization-v0.5".into(),
         dependencies: BTreeMap::new(),
@@ -338,6 +373,7 @@ fn resolver_context(
     for edges in lock.required_edges.values_mut() {
         edges.retain(|key| !replaced.contains(key));
     }
+    lock.acceptable_versions = source.intent().runtime.acceptable_versions.clone();
     lock.runtime = runtime.clone();
     lock.intent_revision = revision;
     Ok(ResolvedProject::validate(intent, lock, revision)?)

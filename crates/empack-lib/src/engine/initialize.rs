@@ -31,12 +31,12 @@ impl InitializeCandidate {
             "Initialization cannot omit dependency resolution"
         );
         let bytes = DocumentCodec.encode_intent(&intent)?;
-        let revision = DocumentCodec
-            .decode_intent(&bytes, "initialization")?
-            .semantic_revision();
+        let decoded = DocumentCodec.decode_intent(&bytes, "initialization")?;
+        let revision = decoded.semantic_revision();
         let project = ResolvedProject::validate(
             intent,
             ResolutionLock {
+                acceptable_versions: decoded.intent().runtime.acceptable_versions.clone(),
                 intent_revision: revision,
                 resolver: "empack-initialize-v0.5".into(),
                 dependencies: BTreeMap::new(),

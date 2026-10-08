@@ -594,3 +594,101 @@ async fn automatic_layout_changes_move_content_while_explicit_placements_remain_
     );
     assert_eq!(snapshot(root.path()), before);
 }
+
+#[tokio::test]
+async fn removing_an_accepted_game_version_requires_fresh_provider_resolution() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    server.mock("GET", "/project/Root0001")
+        .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+        .create_async().await;
+    let record = |version: &str, game: &str| {
+        json!({
+            "id":version,"project_id":"Root0001","game_versions":[game],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(b"payload").into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        })
+    };
+    server
+        .mock("GET", "/version/RootVer1")
+        .with_body(record("RootVer1", "1.20.1").to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/version/RootVer2")
+        .with_body(record("RootVer2", "1.21.1").to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let compatible = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!([record("RootVer2", "1.21.1")]).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+    let mut intent = project(root.path()).intent().clone();
+    intent
+        .runtime
+        .acceptable_versions
+        .push(GameVersion::parse("1.20.1").unwrap());
+    let key = DependencyKey::parse("renderer").unwrap();
+    intent.roots.insert(
+        key.clone(),
+        DependencyIntent {
+            source: SourceIntent::Provider(ProviderProjectId::Modrinth(
+                ModrinthProjectId::parse("Root0001").unwrap(),
+            )),
+            kind: ContentKind::Mod,
+            version: VersionIntent::Exact(PinSelector::ModrinthVersion(
+                ModrinthVersionId::parse("RootVer1").unwrap(),
+            )),
+            placement: PlacementIntent::Automatic,
+            requirements: required(),
+        },
+    );
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    intent.runtime.acceptable_versions.clear();
+    write_intent(root.path(), &intent);
+    let pinned = snapshot(root.path());
+    assert!(
+        sync(root.path(), &server.url(), false).await.is_err(),
+        "a now-incompatible explicit pin cannot be silently replaced"
+    );
+    assert_eq!(snapshot(root.path()), pinned);
+    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    assert_eq!(
+        project(root.path()).lock().dependencies[&key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap()),
+        "sync retained a pin only compatible with the removed game-version policy"
+    );
+    let retained = project(root.path()).lock().dependencies.clone();
+    intent
+        .runtime
+        .acceptable_versions
+        .push(GameVersion::parse("1.19.2").unwrap());
+    write_intent(root.path(), &intent);
+    sync(root.path(), &server.url(), false).await.unwrap();
+    assert_eq!(
+        project(root.path()).lock().dependencies,
+        retained,
+        "a policy expansion must revalidate and retain a still-compatible selection"
+    );
+    let before = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), before);
+    compatible.assert_async().await;
+}

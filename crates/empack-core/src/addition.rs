@@ -79,7 +79,7 @@ pub enum AdditionError {
     UpdateMissing(DependencyKey),
     /// The proposed closure includes an unjustified selection.
     UnrequestedSelection(DependencyKey),
-    /// Dependency resolution used another game or loader runtime.
+    /// Dependency resolution used another runtime or accepted game-version policy.
     RuntimeMismatch,
     /// A proposed label belongs to another identity, or two requests map to one label.
     OccupiedKey(DependencyKey),
@@ -100,7 +100,7 @@ impl fmt::Display for AdditionError {
             Self::MissingReplacementRoot(key) => write!(f, "Replacement requires an explicit root for {}", key.as_str()),
             Self::EmptyRequest => f.write_str("Addition requires an explicit dependency root"),
             Self::UnrequestedSelection(key) => write!(f, "Unrequested installation in addition: {}", key.as_str()),
-            Self::RuntimeMismatch => f.write_str("Addition was resolved for a different runtime"),
+            Self::RuntimeMismatch => f.write_str("Addition was resolved for a different runtime or compatibility policy"),
             Self::OccupiedKey(key) => write!(f, "Dependency label already names another selection: {}", key.as_str()),
             Self::InvalidLogicalIdentity(key) => write!(f, "File identity differs from logical key: {}", key.as_str()),
             Self::RetainedSelectionConflict(key) => write!(f, "Required selection conflicts with retained content: {}; resolve its update explicitly", key.as_str()),
@@ -160,7 +160,9 @@ impl AdditionPlan {
         current: &ResolvedProject,
         group: &AdditionGroup,
     ) -> Result<Self, AdditionError> {
-        if current.lock().runtime != group.lock.runtime {
+        if current.lock().runtime != group.lock.runtime
+            || current.lock().acceptable_versions != group.lock.acceptable_versions
+        {
             return Err(AdditionError::RuntimeMismatch);
         }
         let mut bindings = BTreeMap::new();

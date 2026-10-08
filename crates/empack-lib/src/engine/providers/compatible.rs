@@ -54,6 +54,40 @@ pub struct CompatibleSelection {
     pub published_at: String,
     pub matched_game: GameVersion,
 }
+impl ProviderResolution {
+    /// Check an exact selection's kind, game and loader against an authored environment.
+    /// Explicit pins need not follow the release-channel preference used for new selection.
+    pub fn verify_compatibility(
+        &self,
+        kind: ContentKind,
+        games: &NonEmpty<GameVersion>,
+        loader: LoaderKind,
+    ) -> Result<()> {
+        ensure!(
+            self.kinds.as_slice().contains(&kind),
+            CatalogError::ContentKindMismatch
+        );
+        ensure!(
+            games.as_slice().iter().any(|game| self
+                .game_versions
+                .iter()
+                .any(|value| value == game.as_str()))
+                && loader_matches(
+                    self,
+                    &CompatibleRequest {
+                        project: self.pin.project.clone(),
+                        kind,
+                        game_versions: games.clone(),
+                        loader,
+                        releases: ReleasePolicy::PreferStable
+                    }
+                ),
+            CatalogError::NoCompatibleSelection
+        );
+        Ok(())
+    }
+}
+
 struct Candidate {
     selected: CompatibleSelection,
     rank: (u8, usize, std::cmp::Reverse<OffsetDateTime>, ResolvedPin),

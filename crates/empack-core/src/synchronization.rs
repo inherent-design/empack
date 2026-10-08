@@ -29,7 +29,14 @@ pub fn affected_roots(
         .filter_map(|(key, root)| {
             let search_changed = matches!(root.source, SourceIntent::Search { .. })
                 && prior.intent_revision != revision;
+            let compatibility_changed = prior.acceptable_versions
+                != intent.runtime.acceptable_versions
+                && matches!(
+                    root.source,
+                    SourceIntent::Provider(_) | SourceIntent::Search { .. }
+                );
             (runtime_changed
+                || compatibility_changed
                 || search_changed
                 || prior
                     .dependencies

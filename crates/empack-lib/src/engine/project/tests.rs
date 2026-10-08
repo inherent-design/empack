@@ -74,6 +74,7 @@ fn build_capture_binds_local_sources_outside_managed_namespaces_and_acquires_rea
         .unwrap(),
     };
     let lock = ResolutionLock {
+        acceptable_versions: decoded.intent().runtime.acceptable_versions.clone(),
         intent_revision: decoded.semantic_revision(),
         resolver: "fixture.v1".into(),
         dependencies: BTreeMap::from([(
