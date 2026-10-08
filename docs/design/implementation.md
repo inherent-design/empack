@@ -92,6 +92,13 @@ Inspection has no publisher. Import preparation requires explicit decisions for
 representations that cannot be preserved automatically.
 [Import tests](../../crates/empack-lib/src/engine/import/tests.rs).
 
+The CLI import adapter now maps local archives, HTTPS downloads and provider pack
+pages into that pipeline. It preserves paths, environment layers and runtime pins;
+additional accepted game versions remain explicit intent. Optional defaults,
+auxiliary-member exclusion and download-to-local conversion have explicit flags.
+Native tests cover preview, runtime mismatch, auxiliary refusal, layer bytes and
+re-export. Dispatcher wiring and restricted-import continuation remain open.
+
 ## Open defects and delivery gates
 
 | Priority | Item | Closure evidence |

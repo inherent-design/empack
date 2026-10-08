@@ -236,6 +236,7 @@ fn fixture_decisions(content: &VerifiedImportContent) -> anyhow::Result<ImportCa
             description: source.metadata.summary.clone(),
         },
         loader: None,
+        acceptable_versions: vec![],
         layout: BTreeMap::new(),
         files,
         distribution: DistributionIntent {

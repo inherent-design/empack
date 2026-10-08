@@ -10,7 +10,7 @@ use serde_json::json;
 use sha2::{Digest, Sha512};
 use std::fs;
 
-fn session(root: &Path, dry: bool) -> MockCommandSession {
+pub(super) fn session(root: &Path, dry: bool) -> MockCommandSession {
     MockCommandSession::new()
         .with_filesystem(MockFileSystemProvider::new().with_current_dir(root.into()))
         .with_config(MockConfigProvider::new(AppConfig {
@@ -49,7 +49,7 @@ fn options(value: &str) -> AddOptions {
         file_id: None,
     }
 }
-fn project(root: &Path) -> ResolvedProject {
+pub(super) fn project(root: &Path) -> ResolvedProject {
     let intent = DocumentCodec
         .decode_intent(&fs::read(root.join("project/empack.yml")).unwrap(), "test")
         .unwrap();

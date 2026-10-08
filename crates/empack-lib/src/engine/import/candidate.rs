@@ -32,6 +32,8 @@ pub struct ImportCandidateOptions {
     pub metadata: PackMetadata,
     /// Index into the source loader declarations. None selects the sole/primary loader or vanilla.
     pub loader: Option<usize>,
+    /// Additional explicitly accepted game versions; imported exact selections remain unchanged.
+    pub acceptable_versions: Vec<GameVersion>,
     pub layout: BTreeMap<ContentKind, PortableRelPath>,
     pub distribution: DistributionIntent,
     /// Exactly one decision for each acquired file. One provider's files share one logical key.
@@ -90,7 +92,7 @@ impl VerifiedImportContent {
             metadata: options.metadata,
             runtime: RuntimeIntent {
                 minecraft: runtime.minecraft.clone(),
-                acceptable_versions: vec![],
+                acceptable_versions: options.acceptable_versions,
                 loader: runtime.loader,
                 loader_version: runtime.loader_version.clone(),
             },

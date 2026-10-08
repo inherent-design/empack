@@ -943,6 +943,7 @@ async fn imported(governor: ResourceGovernor) -> crate::engine::import::ImportCa
                             description: None,
                         },
                         loader: None,
+                        acceptable_versions: vec![],
                         layout: BTreeMap::new(),
                         exclude_auxiliary_members: false,
                         distribution: DistributionIntent {

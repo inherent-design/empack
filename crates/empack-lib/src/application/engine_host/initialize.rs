@@ -216,7 +216,7 @@ fn select_version(session: &dyn Session, prompt: &str, values: &[String]) -> Res
     ensure!(index < values.len(), "Version selection is out of range");
     Ok(index)
 }
-fn parse_loader(value: &str) -> Result<LoaderKind> {
+pub(super) fn parse_loader(value: &str) -> Result<LoaderKind> {
     Ok(match value.to_ascii_lowercase().as_str() {
         "neoforge" => LoaderKind::NeoForge,
         "fabric" => LoaderKind::Fabric,

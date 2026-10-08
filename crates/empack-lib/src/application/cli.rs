@@ -167,6 +167,18 @@ pub struct InitArgs {
     /// Import modpack from a source (file path or URL)
     #[arg(long = "from", value_name = "SOURCE")]
     pub from_source: Option<String>,
+
+    /// Default for optional imported files; participation remains optional.
+    #[arg(long, requires = "from_source", value_name = "BOOL")]
+    pub import_optional_default: Option<bool>,
+
+    /// Explicitly exclude archive members outside recognized content namespaces.
+    #[arg(long, requires = "from_source")]
+    pub exclude_auxiliary: bool,
+
+    /// Retain imported downloads as local files instead of durable URL references.
+    #[arg(long, requires = "from_source")]
+    pub import_local_files: bool,
 }
 
 /// Arguments for the `build` subcommand.

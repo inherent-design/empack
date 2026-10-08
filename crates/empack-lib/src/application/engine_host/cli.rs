@@ -24,6 +24,8 @@ use empack_core::{
 use std::{collections::BTreeSet, sync::Arc};
 
 mod files;
+mod import;
+pub use import::initialize;
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.
 pub struct AddOptions {

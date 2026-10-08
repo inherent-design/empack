@@ -139,6 +139,7 @@ fn decisions(content: &VerifiedImportContent) -> Result<ImportCandidateOptions> 
             description: None,
         },
         loader: None,
+        acceptable_versions: vec![],
         layout: BTreeMap::new(),
         distribution: DistributionIntent {
             targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
@@ -607,6 +608,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
                     description: None,
                 },
                 loader: None,
+                acceptable_versions: vec![],
                 layout: BTreeMap::new(),
                 distribution: DistributionIntent {
                     targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
