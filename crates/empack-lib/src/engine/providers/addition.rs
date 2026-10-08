@@ -498,14 +498,14 @@ fn normalize(
                     placement: if root.folder.is_some()
                         || !matches!(root.files, ProviderFiles::Primary)
                     {
-                        PlacementIntent::Explicit(NonEmpty::new(
+                        PlacementIntent::ByFile(
                             dependency
                                 .files
                                 .as_slice()
                                 .iter()
-                                .flat_map(|file| file.placements.as_slice().iter().cloned())
+                                .map(|file| (file.slot.clone(), file.placements.clone()))
                                 .collect(),
-                        )?)
+                        )
                     } else {
                         PlacementIntent::Automatic
                     },

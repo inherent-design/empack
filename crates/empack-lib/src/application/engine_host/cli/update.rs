@@ -240,14 +240,14 @@ fn selections(
                         kind: selected.kind,
                         version: VersionIntent::FollowCompatible,
                         requirements: requirements.clone(),
-                        placement: PlacementIntent::Explicit(NonEmpty::new(
+                        placement: PlacementIntent::ByFile(
                             selected
                                 .files
                                 .as_slice()
                                 .iter()
-                                .flat_map(|file| file.placements.as_slice().iter().cloned())
+                                .map(|file| (file.slot.clone(), file.placements.clone()))
                                 .collect(),
-                        )?),
+                        ),
                     })
                 } else {
                     None
@@ -274,17 +274,19 @@ fn selections(
                     "Multi-file content requires an explicit member update: {value}"
                 );
                 let source = match root.map(|root| &root.source) {
-                    Some(SourceIntent::Local(path)) => {
-                        DirectFileSource::Local(project.join(path.as_str()))
-                    }
+                    Some(SourceIntent::Local(path)) => DirectFileSource::TrackedLocal {
+                        path: project.join(path.as_str()),
+                        source: path.clone(),
+                    },
                     Some(SourceIntent::Url(urls)) => DirectFileSource::Download {
                         origins: urls.clone(),
                         alternatives: urls.clone(),
                     },
                     _ => match &primary.acquisition {
-                        AcquisitionSpec::Local(path) => {
-                            DirectFileSource::Local(project.join(path.as_str()))
-                        }
+                        AcquisitionSpec::Local(path) => DirectFileSource::TrackedLocal {
+                            path: project.join(path.as_str()),
+                            source: path.clone(),
+                        },
                         AcquisitionSpec::Url(urls) => DirectFileSource::Download {
                             origins: urls.clone(),
                             alternatives: urls.clone(),
@@ -305,7 +307,7 @@ fn selections(
                     _ => FileEvidence::AcceptObserved,
                 };
                 inputs.push(AddHostInput::File(DirectFileInput {
-                    member: None,
+                    role: crate::engine::addition::FileInputRole::Named(primary.slot.clone()),
                     key,
                     title: selected.title.clone(),
                     source,

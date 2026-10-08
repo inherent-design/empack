@@ -112,7 +112,7 @@ pub(super) fn input(
         .and_then(|stem| stem.to_str())
         .context("Dependency needs a file stem")?;
     Ok(DirectFileInput {
-        member: None,
+        role: crate::engine::addition::FileInputRole::Primary,
         key: DependencyKey::parse(key)?,
         title: filename.clone(),
         source,

@@ -399,7 +399,16 @@ fn shared_override_placements_survive_both_wire_documents() {
         },
     ])
     .unwrap();
-    dep.placement = PlacementIntent::Explicit(placements.clone());
+    dep.placement = PlacementIntent::ByFile(BTreeMap::from([
+        (
+            FileSlot::parse("main").unwrap(),
+            NonEmpty::new(vec![placements.as_slice()[0].clone()]).unwrap(),
+        ),
+        (
+            FileSlot::parse("extra").unwrap(),
+            NonEmpty::new(vec![placements.as_slice()[1].clone()]).unwrap(),
+        ),
+    ]));
     let encoded = DocumentCodec.encode_intent(&source).unwrap();
     let decoded = DocumentCodec
         .decode_intent(&encoded, "override.yml")
@@ -471,7 +480,10 @@ fn local_member_sources_have_explicit_nonempty_coverage_and_individual_evidence(
         .unwrap();
     dependency["source"] = json!({"kind":"local-files","members":{"level.dat":"pack/saves/world/level.dat","region":"pack/saves/world/region/r.0.0.mca"}});
     dependency["version"] = json!({"mode":"follow-compatible"});
-    dependency["placement"] = json!([{"destination":"saves/world/level.dat","layer":"common","environment":{"client":"required","server":"unsupported"}}]);
+    dependency["placement"] = json!({"files":{
+        "level.dat":[{"destination":"saves/world/level.dat","layer":"common","environment":{"client":"required","server":"unsupported"}}],
+        "region":[{"destination":"saves/world/region/r.0.0.mca","layer":"common","environment":{"client":"required","server":"unsupported"}}]
+    }});
     let bytes = serde_json::to_vec(&value).unwrap();
     let decoded = DocumentCodec.decode_intent(&bytes, "members").unwrap();
     let roundtrip = DocumentCodec
@@ -503,6 +515,62 @@ fn local_member_sources_have_explicit_nonempty_coverage_and_individual_evidence(
                 .decode_intent(&serde_json::to_vec(&invalid).unwrap(), mode)
                 .is_err(),
             "{mode}"
+        );
+    }
+}
+
+#[test]
+fn named_file_placements_preserve_role_assignment_not_only_the_destination_union() {
+    let original = decoded();
+    let mut lock = resolution(&original);
+    let mut intent = original.intent().clone();
+    let files = lock.dependencies.values().next().unwrap().files.as_slice();
+    intent.roots.values_mut().next().unwrap().placement = PlacementIntent::ByFile(
+        files
+            .iter()
+            .map(|file| (file.slot.clone(), file.placements.clone()))
+            .collect(),
+    );
+    let encoded = DocumentCodec.encode_intent(&intent).unwrap();
+    let source = DocumentCodec
+        .decode_intent(&encoded, "named roles")
+        .unwrap();
+    assert_eq!(source.intent(), &intent);
+    lock.intent_revision = source.semantic_revision();
+    let project = validate(&source, lock.clone()).unwrap();
+    assert_eq!(
+        DocumentCodec
+            .decode_lock(
+                &DocumentCodec.encode_lock(&project).unwrap(),
+                &source,
+                "lock"
+            )
+            .unwrap()
+            .lock(),
+        &lock
+    );
+    let dependency = lock.dependencies.values_mut().next().unwrap();
+    let mut swapped = dependency.files.as_slice().to_vec();
+    let first = swapped[0].placements.clone();
+    swapped[0].placements = swapped[1].placements.clone();
+    swapped[1].placements = first;
+    dependency.files = NonEmpty::new(swapped).unwrap();
+    assert!(
+        validate(&source, lock).is_err(),
+        "same destinations cannot authorize different member assignments"
+    );
+    for invalid in [
+        json!({"files":{}}),
+        json!({"files":{"main":[]}}),
+        json!({"files":{}, "unexpected":true}),
+    ] {
+        let mut wire: Value =
+            serde_saphyr::from_str(std::str::from_utf8(&encoded).unwrap()).unwrap();
+        wire["dependencies"]["renderer alias"]["placement"] = invalid;
+        assert!(
+            DocumentCodec
+                .decode_intent(&serde_json::to_vec(&wire).unwrap(), "invalid roles")
+                .is_err()
         );
     }
 }

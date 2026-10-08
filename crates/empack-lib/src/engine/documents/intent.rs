@@ -163,6 +163,24 @@ fn dependency(value: &Value) -> Result<DependencyIntent> {
     let places = required(value, "placement")?;
     let placement = if places == "automatic" {
         PlacementIntent::Automatic
+    } else if places.is_object() {
+        fields(places, &["files"])?;
+        PlacementIntent::ByFile(
+            object(required(places, "files")?)?
+                .iter()
+                .map(|(slot, values)| {
+                    Ok((
+                        FileSlot::parse(slot)?,
+                        NonEmpty::new(
+                            array(values)?
+                                .iter()
+                                .map(placement)
+                                .collect::<Result<_>>()?,
+                        )?,
+                    ))
+                })
+                .collect::<Result<_>>()?,
+        )
     } else {
         PlacementIntent::Explicit(NonEmpty::new(
             array(places)?
@@ -189,7 +207,7 @@ pub(super) fn encode(intent: &ProjectIntent) -> Value {
             SourceIntent::LocalFiles(members) => json!({"kind":"local-files","members":members.iter().map(|(slot,path)|(slot.as_str(),path.as_str())).collect::<BTreeMap<_,_>>() }),
         };
         let version = match &dep.version { VersionIntent::FollowCompatible => json!({"mode":"follow-compatible"}), VersionIntent::Exact(pin) => json!({"mode":"exact","pin":pin_value(pin)}), VersionIntent::ContentPinned(expected) => json!({"mode":"content-pinned","digests":digests(expected)}) };
-        let placement = match &dep.placement { PlacementIntent::Automatic => json!("automatic"), PlacementIntent::Explicit(values) => json!(values.as_slice().iter().map(placement_value).collect::<Vec<_>>()) };
+        let placement = match &dep.placement { PlacementIntent::Automatic => json!("automatic"), PlacementIntent::Explicit(values) => json!(values.as_slice().iter().map(placement_value).collect::<Vec<_>>()), PlacementIntent::ByFile(files) => json!({"files": files.iter().map(|(slot, places)| (slot.as_str(), places.as_slice().iter().map(placement_value).collect::<Vec<_>>())).collect::<BTreeMap<_,_>>()}) };
         (key.as_str(), json!({"source":source,"content":kind_name(dep.kind),"version":version,"placement":placement,"environment":requirements_value(&dep.requirements)}))
     }).collect();
     json!({"schema":INTENT_SCHEMA,

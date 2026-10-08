@@ -135,7 +135,7 @@ pub(super) async fn expand(
             })
             .collect::<Result<Vec<_>>>()?;
         files.push(AcquiredFileInput {
-            member: Some(FileSlot::parse(relative.as_str())?),
+            role: super::FileInputRole::Member(FileSlot::parse(relative.as_str())?),
             key: input.key.clone(),
             title: input.title.clone(),
             kind: ContentKind::World,

@@ -43,7 +43,7 @@ fn input(file: AcquiredBuildFile, local: bool) -> AcquiredFileInput {
         server: Requirement::Unsupported,
     };
     AcquiredFileInput {
-        member: None,
+        role: crate::engine::addition::FileInputRole::Primary,
         key: DependencyKey::parse("assets-alias").unwrap(),
         title: "Assets".into(),
         kind: ContentKind::ResourcePack,

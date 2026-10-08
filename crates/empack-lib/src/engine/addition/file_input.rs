@@ -10,13 +10,15 @@ use crate::engine::{
 };
 use anyhow::{Context, Result, ensure};
 use empack_core::{files::ManagedPath, model::*, requirements::Requirements};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone)]
 pub enum AcquiredFileSource {
     /// The first selected placement becomes the tracked local source. The original host path
     /// does not become a project read/write capability or an absolute path in the manifest.
     Local,
+    /// Preserve an explicit project-relative authoring source.
+    TrackedLocal(empack_core::path::PortableRelPath),
     /// Explicit download-as-local conversion. No transient locator enters durable state.
     DownloadedLocal,
     /// Expanded archive members retain their observed archive identity as provenance.
@@ -34,10 +36,30 @@ pub enum FileEvidence {
     /// Explicit acceptance of these initial bytes, never manufactured source authenticity.
     AcceptObserved,
 }
+/// A standalone file role is distinct from membership in a multi-file local identity.
+#[derive(Clone)]
+pub enum FileInputRole {
+    Primary,
+    Named(FileSlot),
+    Member(FileSlot),
+}
+impl FileInputRole {
+    pub(super) fn member(&self) -> Option<&FileSlot> {
+        match self {
+            Self::Member(slot) => Some(slot),
+            _ => None,
+        }
+    }
+    pub(super) fn slot(&self) -> FileSlot {
+        match self {
+            Self::Primary => FileSlot::parse("primary").expect("static primary role"),
+            Self::Named(slot) | Self::Member(slot) => slot.clone(),
+        }
+    }
+}
 #[derive(Clone)]
 pub struct AcquiredFileInput {
-    /// Stable member slot when this file belongs to a tracked local group.
-    pub member: Option<empack_core::model::FileSlot>,
+    pub role: FileInputRole,
     pub key: DependencyKey,
     pub title: String,
     pub kind: ContentKind,
@@ -96,6 +118,16 @@ impl FileAddition {
                         .context("File input size overflow")?;
                 }
             }
+            let source_bytes = match &input.source {
+                AcquiredFileSource::TrackedLocal(path) => path.as_str().len(),
+                AcquiredFileSource::ArchiveMember { member, .. } => {
+                    member.as_str().len().saturating_add(64)
+                }
+                _ => 0,
+            };
+            bytes = bytes
+                .checked_add(source_bytes)
+                .context("File source size overflow")?;
             memory = memory
                 .checked_add(
                     (bytes as u64)
@@ -109,6 +141,21 @@ impl FileAddition {
             memory_bytes: memory,
             ..Default::default()
         })?;
+        let requested: BTreeSet<_> = inputs.as_slice().iter().map(|input| &input.key).collect();
+        let prior_files: BTreeMap<_, _> = current
+            .lock()
+            .dependencies
+            .iter()
+            .filter(|(key, _)| requested.contains(key))
+            .flat_map(|(key, dependency)| {
+                dependency
+                    .files
+                    .as_slice()
+                    .iter()
+                    .map(move |file| ((key, &file.slot), file))
+            })
+            .collect();
+        drop(requested);
         let mut intent = current.intent().clone();
         intent.roots.clear();
         let mut dependencies = BTreeMap::<DependencyKey, LockedDependency>::new();
@@ -117,7 +164,7 @@ impl FileAddition {
         for input in inputs.into_vec() {
             scope.cancellation().check()?;
             ensure!(
-                input.member.is_some() || !intent.roots.contains_key(&input.key),
+                input.role.member().is_some() || !intent.roots.contains_key(&input.key),
                 "Repeated direct-file logical key"
             );
             let expected = match input.evidence {
@@ -147,9 +194,12 @@ impl FileAddition {
                         .is_none_or(|id| *id == input.file.content.lease().id()),
                 "Acquired file differs from declared content"
             );
-            let refresh_observation = (input.member.is_some()
+            let refresh_observation = (input.role.member().is_some()
                 && matches!(input.source, AcquiredFileSource::Local))
-                || matches!(input.source, AcquiredFileSource::ObservedUrl(_));
+                || matches!(
+                    input.source,
+                    AcquiredFileSource::ObservedUrl(_) | AcquiredFileSource::TrackedLocal(_)
+                );
             let location = match &input.source {
                 AcquiredFileSource::ArchiveMember { archive, member } => Some(format!(
                     "sha256:{}!/{}",
@@ -160,6 +210,7 @@ impl FileAddition {
             };
             let (source, identity, acquisition, provenance) = match input.source {
                 source @ (AcquiredFileSource::Local
+                | AcquiredFileSource::TrackedLocal(_)
                 | AcquiredFileSource::DownloadedLocal
                 | AcquiredFileSource::ArchiveMember { .. }) => {
                     let provenance = match source {
@@ -168,12 +219,15 @@ impl FileAddition {
                         _ => "local-file",
                     };
                     let first = &input.placements.as_slice()[0];
-                    let source = ProjectLayout::path(&ManagedPath::Content {
-                        layer: first.layer,
-                        path: first.destination.relative().clone(),
-                    })?;
+                    let source = match source {
+                        AcquiredFileSource::TrackedLocal(path) => path,
+                        _ => ProjectLayout::path(&ManagedPath::Content {
+                            layer: first.layer,
+                            path: first.destination.relative().clone(),
+                        })?,
+                    };
                     (
-                        match &input.member {
+                        match input.role.member() {
                             Some(slot) => SourceIntent::LocalFiles(BTreeMap::from([(
                                 slot.clone(),
                                 source.clone(),
@@ -187,7 +241,7 @@ impl FileAddition {
                 }
                 AcquiredFileSource::Url(urls) | AcquiredFileSource::ObservedUrl(urls) => {
                     ensure!(
-                        input.member.is_none(),
+                        input.role.member().is_none(),
                         "Member groups require tracked local sources"
                     );
                     (
@@ -201,7 +255,7 @@ impl FileAddition {
             let next_root = DependencyIntent {
                 source,
                 kind: input.kind,
-                version: if input.member.is_some() {
+                version: if input.role.member().is_some() {
                     VersionIntent::FollowCompatible
                 } else {
                     expected
@@ -210,7 +264,15 @@ impl FileAddition {
                         .map(VersionIntent::ContentPinned)
                         .unwrap_or(VersionIntent::FollowCompatible)
                 },
-                placement: PlacementIntent::Explicit(input.placements.clone()),
+                placement: match &input.role {
+                    FileInputRole::Named(slot) | FileInputRole::Member(slot) => {
+                        PlacementIntent::ByFile(BTreeMap::from([(
+                            slot.clone(),
+                            input.placements.clone(),
+                        )]))
+                    }
+                    FileInputRole::Primary => PlacementIntent::Explicit(input.placements.clone()),
+                },
                 requirements: input.requirements,
             };
             if let Some(existing) = intent.roots.get_mut(&input.key) {
@@ -231,43 +293,28 @@ impl FileAddition {
                         "Repeated member slot"
                     );
                 }
-                let (PlacementIntent::Explicit(prior), PlacementIntent::Explicit(next)) =
-                    (&existing.placement, &next_root.placement)
+                let (PlacementIntent::ByFile(prior), PlacementIntent::ByFile(next)) =
+                    (&mut existing.placement, next_root.placement)
                 else {
                     unreachable!()
                 };
-                existing.placement = PlacementIntent::Explicit(NonEmpty::new(
-                    prior
-                        .as_slice()
-                        .iter()
-                        .chain(next.as_slice())
-                        .cloned()
-                        .collect(),
-                )?);
+                for (slot, places) in next {
+                    ensure!(
+                        prior.insert(slot, places).is_none(),
+                        "Repeated member placement role"
+                    );
+                }
             } else {
                 intent.roots.insert(input.key.clone(), next_root);
             }
-            let slot = input.member.clone().unwrap_or(FileSlot::parse("primary")?);
+            let slot = input.role.slot();
             let mut file_provenance = Provenance {
                 source: provenance.into(),
                 location,
                 declared_digests: expected.digests.clone(),
                 conversions: vec![],
             };
-            if refresh_observation
-                && let Some(prior) =
-                    current
-                        .lock()
-                        .dependencies
-                        .get(&input.key)
-                        .and_then(|dependency| {
-                            dependency
-                                .files
-                                .as_slice()
-                                .iter()
-                                .find(|file| file.slot == slot)
-                        })
-            {
+            if refresh_observation && let Some(prior) = prior_files.get(&(&input.key, &slot)) {
                 file_provenance = prior.provenance.clone();
                 if prior.expected != expected {
                     file_provenance.declared_digests = expected.digests.clone();
@@ -294,15 +341,9 @@ impl FileAddition {
                     existing.title == next.title && existing.identity == next.identity,
                     "Member group identity differs"
                 );
-                existing.files = NonEmpty::new(
-                    existing
-                        .files
-                        .as_slice()
-                        .iter()
-                        .chain(next.files.as_slice())
-                        .cloned()
-                        .collect(),
-                )?;
+                for file in next.files.into_vec() {
+                    existing.files.push(file);
+                }
             } else {
                 dependencies.insert(input.key.clone(), next);
             }

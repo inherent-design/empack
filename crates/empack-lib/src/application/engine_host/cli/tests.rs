@@ -8,7 +8,7 @@ use crate::{
 };
 use serde_json::json;
 use sha2::{Digest, Sha512};
-use std::fs;
+use std::{collections::BTreeMap, fs};
 
 pub(super) fn session(root: &Path, dry: bool) -> MockCommandSession {
     MockCommandSession::new()
@@ -1124,7 +1124,7 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
     dependencies::add_with_services(
         &session(root.path(), false),
         NonEmpty::new(vec![AddHostInput::File(DirectFileInput {
-            member: None,
+            role: crate::engine::addition::FileInputRole::Primary,
             key: key.clone(),
             title: "URL config".into(),
             source: DirectFileSource::Download {
@@ -1154,6 +1154,27 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
         .path()
         .join("project/overrides/client/config/custom.txt");
     assert_eq!(fs::read(&payload).unwrap(), b"original");
+    // Imported URL files use their own stable role; adoption must not rename it to primary.
+    let recorded = project(root.path());
+    let mut intent = recorded.intent().clone();
+    let mut lock = recorded.lock().clone();
+    let mut files = lock.dependencies[&key].files.as_slice().to_vec();
+    files[0].slot = FileSlot::parse("imported-content").unwrap();
+    intent.roots.get_mut(&key).unwrap().placement = PlacementIntent::ByFile(BTreeMap::from([(
+        files[0].slot.clone(),
+        files[0].placements.clone(),
+    )]));
+    lock.dependencies.get_mut(&key).unwrap().files = NonEmpty::new(files).unwrap();
+    let wire = DocumentCodec.encode_intent(&intent).unwrap();
+    let source = DocumentCodec.decode_intent(&wire, "imported role").unwrap();
+    lock.intent_revision = source.semantic_revision();
+    let recorded = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+    fs::write(root.path().join("project/empack.yml"), wire).unwrap();
+    fs::write(
+        root.path().join("project/empack.lock"),
+        DocumentCodec.encode_lock(&recorded).unwrap(),
+    )
+    .unwrap();
     let before = project(root.path());
     fs::write(&payload, b"changed locally").unwrap();
     let changed = super::super::tests::snapshot(root.path());
@@ -1176,6 +1197,10 @@ async fn url_adoption_preserves_origins_and_side_placements_without_remote_acqui
     assert_eq!(after.intent(), before.intent());
     let dependency = &after.lock().dependencies[&key];
     assert_eq!(dependency.identity, ResolvedIdentity::Url(key.clone()));
+    assert_eq!(
+        dependency.files.as_slice()[0].slot.as_str(),
+        "imported-content"
+    );
     assert_eq!(
         dependency.files.as_slice()[0].acquisition,
         AcquisitionSpec::Url(origins)

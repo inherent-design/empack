@@ -20,14 +20,11 @@ fn a_placement_change_cannot_replace_original_assertions_for_the_same_provider_f
     let mut lock = current.lock().clone();
     let mut files = lock.dependencies[&key("root")].files.clone().into_vec();
     files[0].placements = placements;
-    intent.roots.get_mut(&key("root")).unwrap().placement = PlacementIntent::Explicit(
-        NonEmpty::new(
-            files
-                .iter()
-                .flat_map(|file| file.placements.as_slice().iter().cloned())
-                .collect(),
-        )
-        .unwrap(),
+    intent.roots.get_mut(&key("root")).unwrap().placement = PlacementIntent::ByFile(
+        files
+            .iter()
+            .map(|file| (file.slot.clone(), file.placements.clone()))
+            .collect(),
     );
     lock.dependencies.get_mut(&key("root")).unwrap().files = NonEmpty::new(files.clone()).unwrap();
     assert!(

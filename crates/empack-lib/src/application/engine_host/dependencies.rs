@@ -204,6 +204,7 @@ async fn change_with_services(
     let state = state_root(config, &invocation)?;
     let mut providers = Vec::new();
     let mut files = Vec::new();
+    let mut tracked_sources = std::collections::BTreeSet::new();
     let mut identify = Vec::new();
     for input in inputs.into_vec() {
         match input {
@@ -225,10 +226,30 @@ async fn change_with_services(
                 });
             }
             AddHostInput::File(mut input) => {
-                if let DirectFileSource::Local(path) | DirectFileSource::ObservedUrl { path, .. } =
-                    &mut input.source
+                if let DirectFileSource::Local(path)
+                | DirectFileSource::ObservedUrl { path, .. }
+                | DirectFileSource::TrackedLocal { path, .. } = &mut input.source
                 {
                     *path = absolute(&invocation, path);
+                }
+                match &input.source {
+                    DirectFileSource::TrackedLocal { path, source } => {
+                        ensure!(
+                            path == &project.join(source.as_str()),
+                            "Tracked source differs from its project-relative declaration"
+                        );
+                        tracked_sources.insert(source.clone());
+                    }
+                    DirectFileSource::ObservedUrl { path, .. } => {
+                        tracked_sources.insert(empack_core::path::PortableRelPath::parse(
+                            path.strip_prefix(&project)
+                                .context("Observed URL source is outside its project")?
+                                .to_str()
+                                .context("Observed URL source is not UTF-8")?,
+                            empack_core::path::PathSyntax::ProjectContent,
+                        )?);
+                    }
+                    _ => {}
                 }
                 files.push(input);
             }
@@ -252,12 +273,13 @@ async fn change_with_services(
                     ..Default::default()
                 },
                 move |cancel| {
-                    ProjectReader::new(RecoveryReader::new(state)).capture(
-                        &selected,
-                        &[],
-                        SnapshotLimits::default(),
-                        &cancel,
-                    )
+                    let workspace = ProjectReader::new(RecoveryReader::new(state)).capture(
+                        &selected, &[], SnapshotLimits::default(), &cancel,
+                    )?;
+                    if !tracked_sources.is_empty() {
+                        workspace.root().capture(&tracked_sources.into_iter().collect::<Vec<_>>(), SnapshotLimits::default(), &cancel)?;
+                    }
+                    Ok::<_, anyhow::Error>(workspace)
                 },
             )?;
             let snapshot = scope.accept(work.wait().await?)?.transpose()?;

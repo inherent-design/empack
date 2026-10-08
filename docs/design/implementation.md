@@ -86,7 +86,8 @@ exercise equivalent slug/ID/URL additions followed by two unchanged syncs, previ
 conflicting pins/providers, deliberate search selection and all-requested direct-file
 failure against native temporary projects. Provider network fixtures exercise the adapter; offline lifecycle tests also
 exercise the executable. Explicit supplied-file provider identification now retains verified bytes through publication.
-World interpretation and companion-file decisions remain open.
+Direct world interpretation and explicit companion-file plans are wired; provider-owned
+world interpretation and broader live companion-file parity remain open.
 
 ### Content identification
 
@@ -146,6 +147,14 @@ The unused legacy removal planner, slug-based dependency graph and obsolete mock
 modules remains open.
 
 ## Verification evidence
+
+Named file roles and tracked sources: 669 affected tests and all-feature Clippy
+passed. A subsequent normalization optimization passed 16 affected tests and
+all-feature Clippy. Regression coverage rejects swapped role destinations, preserves
+independent authoring sources, retains imported URL roles, and refuses symlinked
+sources. Both targeted runs reported one intermittent inherited-output-pipe warning;
+the download-budget case passed clean on rerun, while a provider-world case reported
+it. This remains an open verification gate, not a clean combined-head claim.
 
 Combined `6895f84`: `mise run test` passed 1,659 tests and eleven doctests;
 102 opt-in tests were excluded. No inherited-pipe warning occurred. This includes

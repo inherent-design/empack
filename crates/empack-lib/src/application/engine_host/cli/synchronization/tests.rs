@@ -337,7 +337,7 @@ async fn moved_or_removed_placement_cannot_delete_a_retained_acquisition_source(
                 dependencies::add(
                     &session(root.path(), false),
                     NonEmpty::new(vec![AddHostInput::File(DirectFileInput {
-                        member: None,
+                        role: crate::engine::addition::FileInputRole::Primary,
                         key: key.clone(),
                         title: "settings".into(),
                         source: DirectFileSource::Local(root.path().join("replacement.toml")),
@@ -692,4 +692,109 @@ async fn removing_an_accepted_game_version_requires_fresh_provider_resolution() 
     }
     assert_eq!(snapshot(&root.path().join("project")), before);
     compatible.assert_async().await;
+}
+
+#[tokio::test]
+async fn selected_local_updates_retain_authored_sources_distinct_from_destinations() {
+    for grouped in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        fs::create_dir(root.path().join("project/seeds")).unwrap();
+        fs::write(root.path().join("project/seeds/settings.toml"), b"initial").unwrap();
+        let path =
+            PortableRelPath::parse("seeds/settings.toml", PathSyntax::ProjectContent).unwrap();
+        let key = DependencyKey::parse("settings").unwrap();
+        let mut intent = project(root.path()).intent().clone();
+        intent.roots.insert(
+            key.clone(),
+            DependencyIntent {
+                source: if grouped {
+                    SourceIntent::LocalFiles(BTreeMap::from([(
+                        FileSlot::parse("settings").unwrap(),
+                        path.clone(),
+                    )]))
+                } else {
+                    SourceIntent::Local(path.clone())
+                },
+                kind: ContentKind::Config,
+                version: VersionIntent::FollowCompatible,
+                placement: if grouped {
+                    let PlacementIntent::Explicit(places) = placed("config/settings.toml") else {
+                        unreachable!()
+                    };
+                    PlacementIntent::ByFile(BTreeMap::from([(
+                        FileSlot::parse("settings").unwrap(),
+                        places,
+                    )]))
+                } else {
+                    placed("config/settings.toml")
+                },
+                requirements: required(),
+            },
+        );
+        write_intent(root.path(), &intent);
+        sync(root.path(), "http://127.0.0.1:9", false)
+            .await
+            .unwrap();
+        let original_intent = fs::read(root.path().join("project/empack.yml")).unwrap();
+        fs::write(
+            root.path().join("project/seeds/settings.toml"),
+            b"selected update",
+        )
+        .unwrap();
+        super::super::update::update_with_services(
+            &session(root.path(), false),
+            vec![key.as_str().into()],
+            services("http://127.0.0.1:9"),
+        )
+        .await
+        .unwrap();
+        let after = project(root.path());
+        assert_eq!(after.intent(), &intent);
+        assert_eq!(
+            after.lock().dependencies[&key].files.as_slice()[0].acquisition,
+            AcquisitionSpec::Local(path)
+        );
+        assert_eq!(
+            fs::read(root.path().join("project/empack.yml")).unwrap(),
+            original_intent
+        );
+        assert_eq!(
+            fs::read(root.path().join("project/pack/config/settings.toml")).unwrap(),
+            b"selected update"
+        );
+        let stable = snapshot(&root.path().join("project"));
+        for _ in 0..2 {
+            sync(root.path(), "http://127.0.0.1:9", false)
+                .await
+                .unwrap();
+        }
+        assert!(snapshot(&root.path().join("project")) == stable);
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().unwrap();
+            fs::write(outside.path().join("settings.toml"), b"outside").unwrap();
+            fs::remove_file(root.path().join("project/seeds/settings.toml")).unwrap();
+            fs::remove_dir(root.path().join("project/seeds")).unwrap();
+            std::os::unix::fs::symlink(outside.path(), root.path().join("project/seeds")).unwrap();
+            let documents = fs::read(root.path().join("project/empack.lock")).unwrap();
+            assert!(
+                super::super::update::update_with_services(
+                    &session(root.path(), false),
+                    vec![key.as_str().into()],
+                    services("http://127.0.0.1:9")
+                )
+                .await
+                .is_err()
+            );
+            assert_eq!(
+                fs::read(root.path().join("project/empack.lock")).unwrap(),
+                documents
+            );
+            assert_eq!(
+                fs::read(outside.path().join("settings.toml")).unwrap(),
+                b"outside"
+            );
+        }
+    }
 }

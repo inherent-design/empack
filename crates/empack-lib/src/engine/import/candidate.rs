@@ -341,11 +341,16 @@ impl VerifiedImportContent {
                     root.requirements == decision.requirements,
                     "Provider files disagree on imported participation"
                 );
-                previous.files.push(file);
-                let PlacementIntent::Explicit(placements) = &mut root.placement else {
+                let PlacementIntent::ByFile(placements) = &mut root.placement else {
                     unreachable!()
                 };
-                placements.push(placement);
+                ensure!(
+                    placements
+                        .insert(file.slot.clone(), NonEmpty::new(vec![placement])?)
+                        .is_none(),
+                    "Repeated imported file role"
+                );
+                previous.files.push(file);
             } else {
                 intent.roots.insert(
                     decision.key.clone(),
@@ -353,7 +358,10 @@ impl VerifiedImportContent {
                         source: source_intent,
                         kind: decision.kind,
                         version,
-                        placement: PlacementIntent::Explicit(NonEmpty::new(vec![placement])?),
+                        placement: PlacementIntent::ByFile(BTreeMap::from([(
+                            file.slot.clone(),
+                            NonEmpty::new(vec![placement])?,
+                        )])),
                         requirements: decision.requirements.clone(),
                     },
                 );

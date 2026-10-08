@@ -14,7 +14,9 @@ use empack_core::{
     addition::{AdditionGroup, AdditionPlan, ReplacementSelection},
     model::ResolvedProject,
 };
-pub use file_input::{AcquiredFileInput, AcquiredFileSource, FileAddition, FileEvidence};
+pub use file_input::{
+    AcquiredFileInput, AcquiredFileSource, FileAddition, FileEvidence, FileInputRole,
+};
 pub use native::{AdditionReceipt, PreparedAddition, prepare_addition};
 pub(in crate::engine) use native::{plan_addition, plan_adoption, plan_replacement, plan_update};
 
@@ -373,16 +375,13 @@ pub(in crate::engine) mod tests {
             if roots.contains(label) {
                 // This fixture deliberately namespaces files by provider, rather than using
                 // the content kind's automatic directory.
-                root.placement = PlacementIntent::Explicit(
-                    NonEmpty::new(
-                        value
-                            .files
-                            .as_slice()
-                            .iter()
-                            .flat_map(|file| file.placements.as_slice().iter().cloned())
-                            .collect(),
-                    )
-                    .unwrap(),
+                root.placement = PlacementIntent::ByFile(
+                    value
+                        .files
+                        .as_slice()
+                        .iter()
+                        .map(|file| (file.slot.clone(), file.placements.clone()))
+                        .collect(),
                 );
                 intent.roots.insert(key.clone(), root);
             }

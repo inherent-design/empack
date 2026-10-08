@@ -460,9 +460,10 @@ async fn explicit_file_selection_retains_placement_intent() {
         let (outcome, _) = resolve(&server, vec![selected], limits()).await;
         let project = ready(&outcome).project();
         let root = project.intent().roots.values().next().unwrap();
-        let PlacementIntent::Explicit(placements) = &root.placement else {
-            panic!("explicit selection became automatic")
+        let PlacementIntent::ByFile(files) = &root.placement else {
+            panic!("explicit selection lost file roles")
         };
+        let placements = &files[&FileSlot::parse("project1.jar").unwrap()];
         assert_eq!(
             placements.as_slice(),
             project

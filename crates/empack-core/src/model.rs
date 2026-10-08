@@ -209,6 +209,8 @@ pub enum PlacementIntent {
     Automatic,
     /// Explicit destinations, including multiple placements of the same bytes.
     Explicit(NonEmpty<Placement>),
+    /// Exact named file roles, retaining each member-to-destination association.
+    ByFile(BTreeMap<FileSlot, NonEmpty<Placement>>),
 }
 /// A requested dependency.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,7 +281,30 @@ impl DependencyIntent {
                 return Err(invalid("Lock changed declared source digests"));
             }
         }
-        if let PlacementIntent::Explicit(expected) = &self.placement {
+        if let PlacementIntent::ByFile(expected) = &self.placement {
+            if expected.len() != selected.files.as_slice().len()
+                || selected.files.as_slice().iter().any(|file| {
+                    expected.get(&file.slot).is_none_or(|places| {
+                        places.as_slice().len() != file.placements.as_slice().len()
+                            || places.as_slice().iter().any(|place| {
+                                file.placements
+                                    .as_slice()
+                                    .iter()
+                                    .filter(|actual| *actual == place)
+                                    .count()
+                                    != 1
+                            })
+                    })
+                })
+            {
+                return Err(invalid("Lock changed explicit file roles or placements"));
+            }
+        } else if let PlacementIntent::Explicit(expected) = &self.placement {
+            if selected.files.as_slice().len() != 1 {
+                return Err(invalid(
+                    "Multiple file roles require named placement intent",
+                ));
+            }
             let actual: Vec<_> = selected
                 .files
                 .as_slice()
@@ -611,8 +636,23 @@ impl ProjectIntent {
                         "Tracked members retain individual content assertions",
                     ));
                 }
-                if !matches!(dep.placement, PlacementIntent::Explicit(_)) {
+                if !matches!(dep.placement, PlacementIntent::ByFile(_)) {
                     return Err(invalid("Tracked members require explicit placements"));
+                }
+            }
+            if let PlacementIntent::ByFile(files) = &dep.placement {
+                if files.is_empty() {
+                    return Err(invalid("Explicit file placement map is empty"));
+                }
+                if let SourceIntent::LocalFiles(members) = &dep.source
+                    && !members.keys().eq(files.keys())
+                {
+                    return Err(invalid("Member sources and placement roles disagree"));
+                }
+                for placements in files.values() {
+                    for placement in placements.as_slice() {
+                        validate_placement(placement)?;
+                    }
                 }
             }
             if let PlacementIntent::Explicit(placements) = &dep.placement {

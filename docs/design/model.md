@@ -209,6 +209,12 @@ pub enum VersionIntent {
     ContentPinned(DigestSet),
 }
 
+pub enum PlacementIntent {
+    Automatic,
+    Explicit(NonEmpty<Placement>), // copies of one file
+    ByFile(BTreeMap<FileSlot, NonEmpty<Placement>>),
+}
+
 pub enum ContentKind {
     Mod, ResourcePack, ShaderPack, DataPack, World, Config, OtherFile,
 }
@@ -267,7 +273,11 @@ pub struct ExpectedContent {
 }
 ```
 
-One dependency can have multiple files; identical bytes can have multiple placements. Do not deduplicate placements by `ContentId`. Cache bytes by content identity, but validate ownership and destination separately.
+One dependency can have multiple files; identical bytes can have multiple placements.
+Named placement intent retains each file role and its destinations. Multi-file roots
+use `ByFile`; a flat destination list describes copies of one file and cannot authorize
+reassigning destinations between members. Local member source keys must exactly match
+placement role keys. Source paths and installation paths remain distinct. Do not deduplicate placements by `ContentId`. Cache bytes by content identity, but validate ownership and destination separately.
 
 `DownloadAlternative` describes an allowed origin and locator without serializing credentials. Ephemeral signed URLs belong in the execution context and redacted diagnostics, not a reproducible lock fingerprint. A provider locator can be refreshed while preserving expected file identity.
 

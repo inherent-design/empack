@@ -480,7 +480,6 @@ fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_b
         }
         let mut intent = current.intent().clone();
         let mut lock = current.lock().clone();
-        let mut all_placements = Vec::new();
         let dependency = lock.dependencies.values_mut().next().unwrap();
         let files = dependency
             .files
@@ -498,7 +497,6 @@ fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_b
                             placement.destination =
                                 InstallDestination::parse("resourcepacks/renamed.zip").unwrap();
                         }
-                        all_placements.push(placement.clone());
                         placement
                     })
                     .collect();
@@ -507,8 +505,14 @@ fn changed_placements_publish_as_one_restoration_and_preserve_conflicting_user_b
             })
             .collect();
         dependency.files = NonEmpty::new(files).unwrap();
-        intent.roots.values_mut().next().unwrap().placement =
-            PlacementIntent::Explicit(NonEmpty::new(all_placements).unwrap());
+        intent.roots.values_mut().next().unwrap().placement = PlacementIntent::ByFile(
+            dependency
+                .files
+                .as_slice()
+                .iter()
+                .map(|file| (file.slot.clone(), file.placements.clone()))
+                .collect(),
+        );
         let encoded = DocumentCodec.encode_intent(&intent).unwrap();
         let source = DocumentCodec
             .decode_intent(&encoded, "edited intent")

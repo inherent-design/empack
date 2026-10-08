@@ -13,16 +13,13 @@ pub(in crate::engine) fn explicitly_placed(
     mut lock: ResolutionLock,
 ) -> ResolvedProject {
     for (key, root) in &mut intent.roots {
-        root.placement = PlacementIntent::Explicit(
-            NonEmpty::new(
-                lock.dependencies[key]
-                    .files
-                    .as_slice()
-                    .iter()
-                    .flat_map(|file| file.placements.as_slice().iter().cloned())
-                    .collect(),
-            )
-            .unwrap(),
+        root.placement = PlacementIntent::ByFile(
+            lock.dependencies[key]
+                .files
+                .as_slice()
+                .iter()
+                .map(|file| (file.slot.clone(), file.placements.clone()))
+                .collect(),
         );
     }
     let codec = crate::engine::documents::DocumentCodec;
@@ -407,16 +404,13 @@ fn layered_downloads_preserve_common_and_side_bytes_without_duplicate_references
     }
     dependency.files = NonEmpty::new(files).unwrap();
     let mut intent = original.intent().clone();
-    intent.roots.get_mut(&key).unwrap().placement = PlacementIntent::Explicit(
-        NonEmpty::new(
-            dependency
-                .files
-                .as_slice()
-                .iter()
-                .flat_map(|file| file.placements.as_slice().iter().cloned())
-                .collect(),
-        )
-        .unwrap(),
+    intent.roots.get_mut(&key).unwrap().placement = PlacementIntent::ByFile(
+        dependency
+            .files
+            .as_slice()
+            .iter()
+            .map(|file| (file.slot.clone(), file.placements.clone()))
+            .collect(),
     );
     let decoded = DocumentCodec
         .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "fixture")

@@ -153,3 +153,23 @@ For a direct HTTPS archive, add `--download-as-local` to choose tracked local ow
 The original archive is verified before extraction. This flag does not authorize a
 failed provider lookup to become unidentified content. Provider-owned world addition
 remains unavailable until its member semantics are implemented.
+
+## Named file placement
+
+Multi-file dependencies record each file's placements in `empack.yml`, independently
+of the source path or provider filename used to acquire it:
+
+```yaml
+placement:
+  files:
+    settings:
+      - destination: config/settings.toml
+        layer: common
+        environment: {client: required, server: required}
+```
+
+For a local member group, `settings` must also appear in `source.members`. A source
+may be `seeds/settings.toml` while its installation remains `config/settings.toml`.
+Update preserves that distinction. A flat placement list describes copies of one file;
+use named roles for multiple files. Provider `--file-plan` and world/import workflows
+record these associations automatically.

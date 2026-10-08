@@ -1,5 +1,5 @@
 //! Explicit direct-file selections acquire privately before one dependency publication.
-use super::{AcquiredFileInput, AcquiredFileSource, FileAddition, FileEvidence};
+use super::{AcquiredFileInput, AcquiredFileSource, FileAddition, FileEvidence, FileInputRole};
 use crate::engine::{
     acquisition::{
         DownloadRequest, HttpAcquisition, LocalFileRequest, TransferLimits, acquire_local_file,
@@ -23,6 +23,11 @@ use std::{
 #[derive(Clone)]
 pub enum DirectFileSource {
     Local(PathBuf),
+    /// Existing project source; its authoring path remains independent of installation.
+    TrackedLocal {
+        path: PathBuf,
+        source: empack_core::path::PortableRelPath,
+    },
     /// Observe installed bytes while retaining explicit URL ownership and origin assertions.
     ObservedUrl {
         path: PathBuf,
@@ -46,8 +51,7 @@ pub enum FileKindPolicy {
     AcceptUnrecognized,
 }
 pub struct DirectFileInput {
-    /// Stable member slot when this file belongs to a tracked local group.
-    pub member: Option<empack_core::model::FileSlot>,
+    pub role: FileInputRole,
     pub key: DependencyKey,
     pub title: String,
     pub source: DirectFileSource,
@@ -101,20 +105,26 @@ impl FileAddition {
         for input in inputs.as_slice() {
             scope.cancellation().check()?;
             ensure!(
-                keys.insert((input.key.clone(), input.member.clone())),
+                keys.insert((input.key.clone(), input.role.slot())),
                 "Repeated direct-file logical key"
             );
             ensure!(
                 input.kind != ContentKind::World
-                    || input.member.is_some()
+                    || input.role.member().is_some()
                     || matches!(
                         input.source,
-                        DirectFileSource::Local(_) | DirectFileSource::DownloadAsLocal { .. }
+                        DirectFileSource::Local(_)
+                            | DirectFileSource::TrackedLocal { .. }
+                            | DirectFileSource::DownloadAsLocal { .. }
                     ),
                 "A remote world needs explicit download-as-local interpretation"
             );
             ensure!(
-                input.member.is_none() || matches!(input.source, DirectFileSource::Local(_)),
+                input.role.member().is_none()
+                    || matches!(
+                        input.source,
+                        DirectFileSource::Local(_) | DirectFileSource::TrackedLocal { .. }
+                    ),
                 "Tracked members require local sources"
             );
             let (expected, initial) = expectation(&input.evidence);
@@ -127,7 +137,9 @@ impl FileAddition {
                 }
             }
             match &input.source {
-                DirectFileSource::Local(path) | DirectFileSource::ObservedUrl { path, .. } => {
+                DirectFileSource::Local(path)
+                | DirectFileSource::ObservedUrl { path, .. }
+                | DirectFileSource::TrackedLocal { path, .. } => {
                     ensure!(path.is_absolute(), "Local source must be absolute")
                 }
                 DirectFileSource::Download { alternatives, .. }
@@ -165,43 +177,42 @@ impl FileAddition {
             let (expected, initial) = expectation(&input.evidence);
             let local = matches!(
                 input.source,
-                DirectFileSource::Local(_) | DirectFileSource::ObservedUrl { .. }
+                DirectFileSource::Local(_)
+                    | DirectFileSource::ObservedUrl { .. }
+                    | DirectFileSource::TrackedLocal { .. }
             );
             let (source, file) = match input.source.clone() {
-                DirectFileSource::Local(source) => (
-                    AcquiredFileSource::Local,
-                    acquire_local_file(
-                        scope,
-                        LocalFileRequest {
-                            source,
-                            expected,
-                            maximum: limits
-                                .transfer
-                                .file_bytes
-                                .min(limits.transfer.transfer_bytes.saturating_sub(total)),
-                            evidence: policy,
-                            initial,
-                        },
+                source @ (DirectFileSource::Local(_)
+                | DirectFileSource::TrackedLocal { .. }
+                | DirectFileSource::ObservedUrl { .. }) => {
+                    let (path, normalized) = match source {
+                        DirectFileSource::Local(path) => (path, AcquiredFileSource::Local),
+                        DirectFileSource::TrackedLocal { path, source } => {
+                            (path, AcquiredFileSource::TrackedLocal(source))
+                        }
+                        DirectFileSource::ObservedUrl { path, origins } => {
+                            (path, AcquiredFileSource::ObservedUrl(origins))
+                        }
+                        _ => unreachable!(),
+                    };
+                    (
+                        normalized,
+                        acquire_local_file(
+                            scope,
+                            LocalFileRequest {
+                                source: path,
+                                expected,
+                                maximum: limits
+                                    .transfer
+                                    .file_bytes
+                                    .min(limits.transfer.transfer_bytes.saturating_sub(total)),
+                                evidence: policy,
+                                initial,
+                            },
+                        )
+                        .await?,
                     )
-                    .await?,
-                ),
-                DirectFileSource::ObservedUrl { path, origins } => (
-                    AcquiredFileSource::ObservedUrl(origins),
-                    acquire_local_file(
-                        scope,
-                        LocalFileRequest {
-                            source: path,
-                            expected,
-                            maximum: limits
-                                .transfer
-                                .file_bytes
-                                .min(limits.transfer.transfer_bytes.saturating_sub(total)),
-                            evidence: policy,
-                            initial,
-                        },
-                    )
-                    .await?,
-                ),
+                }
                 source @ (DirectFileSource::Download { .. }
                 | DirectFileSource::DownloadAsLocal { .. }) => (
                     match source {
@@ -230,17 +241,17 @@ impl FileAddition {
                 total <= limits.transfer.transfer_bytes,
                 "Direct-file batch exceeds byte limit"
             );
-            if input.kind == ContentKind::World && input.member.is_none() {
+            if input.kind == ContentKind::World && input.role.member().is_none() {
                 worlds
                     .push(super::world::expand(scope, input, file, limits.archive, policy).await?);
                 continue;
             }
-            if input.member.is_none() {
+            if input.role.member().is_none() {
                 validate_file_kind(scope, &file, input.kind, input.kind_policy, limits.archive)
                     .await?;
             }
             acquired.push(AcquiredFileInput {
-                member: input.member,
+                role: input.role,
                 key: input.key,
                 title: input.title,
                 kind: input.kind,

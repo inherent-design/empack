@@ -251,14 +251,6 @@ pub(super) async fn synchronize_with_services(
             for (key, dependency) in &group.lock().dependencies {
                 ensure!(seen.insert(key.clone()), "Resolved groups overlap a logical dependency");
                 let mut dependency = dependency.clone();
-                // Direct acquisition normalizes host files to their installation; authored sync
-                // instead retains the explicitly declared project-relative acquisition source.
-                if let Some(DependencyIntent { source: SourceIntent::Local(path), .. }) = source.intent().roots.get(key) {
-                    dependency.files = NonEmpty::new(dependency.files.into_vec().into_iter().map(|mut file| { file.acquisition = AcquisitionSpec::Local(path.clone()); file }).collect())?;
-                }
-                if let Some(DependencyIntent { source: SourceIntent::LocalFiles(members), .. }) = source.intent().roots.get(key) {
-                    dependency.files = NonEmpty::new(dependency.files.into_vec().into_iter().map(|mut file| { file.acquisition = AcquisitionSpec::Local(members[&file.slot].clone()); file }).collect())?;
-                }
                 preserve_provider_assertions(lock.dependencies.get(key), &mut dependency)?;
                 lock.dependencies.insert(key.clone(), dependency);
                 lock.coverage.insert(key.clone(), group.lock().coverage[key]);
@@ -406,32 +398,13 @@ fn provider_input(
     };
     let files = match &root.placement {
         PlacementIntent::Automatic => ProviderFiles::Primary,
-        PlacementIntent::Explicit(placements)
-            if old.is_none_or(|old| old.files.as_slice().len() == 1) =>
-        {
-            ProviderFiles::PrimaryPlaced(placements.clone())
-        }
-        PlacementIntent::Explicit(placements) => {
-            let mut named = BTreeMap::<String, Vec<Placement>>::new();
-            for placement in placements.as_slice() {
-                let filename = placement
-                    .destination
-                    .relative()
-                    .components()
-                    .last()
-                    .context("Placement lacks a filename")?;
-                named
-                    .entry(filename.to_owned())
-                    .or_default()
-                    .push(placement.clone());
-            }
-            ProviderFiles::Placed(
-                named
-                    .into_iter()
-                    .map(|(name, placements)| Ok((name, NonEmpty::new(placements)?)))
-                    .collect::<Result<_>>()?,
-            )
-        }
+        PlacementIntent::ByFile(files) => ProviderFiles::Placed(
+            files
+                .iter()
+                .map(|(slot, places)| (slot.as_str().to_owned(), places.clone()))
+                .collect(),
+        ),
+        PlacementIntent::Explicit(placements) => ProviderFiles::PrimaryPlaced(placements.clone()),
     };
     Ok(ProviderAddInput {
         selector,
@@ -453,7 +426,10 @@ fn direct_input(
 ) -> Result<DirectFileInput> {
     let (source, filename) = match &root.source {
         SourceIntent::Local(path) => (
-            DirectFileSource::Local(project.join(path.as_str())),
+            DirectFileSource::TrackedLocal {
+                path: project.join(path.as_str()),
+                source: path.clone(),
+            },
             path.components()
                 .last()
                 .context("Local source lacks filename")?
@@ -479,6 +455,17 @@ fn direct_input(
         _ => unreachable!("direct source matched by caller"),
     };
     let placements = match &root.placement {
+        PlacementIntent::ByFile(files) => {
+            ensure!(
+                files.len() == 1,
+                "A single source requires one explicit file role"
+            );
+            files
+                .values()
+                .next()
+                .context("Missing standalone file role")?
+                .clone()
+        }
         PlacementIntent::Explicit(placements) => placements.clone(),
         PlacementIntent::Automatic => {
             let folder = intent
@@ -514,7 +501,20 @@ fn direct_input(
         VersionIntent::Exact(_) => anyhow::bail!("Direct content cannot use a provider pin"),
     };
     Ok(DirectFileInput {
-        member: None,
+        role: match &root.placement {
+            PlacementIntent::ByFile(files) => crate::engine::addition::FileInputRole::Named(
+                files.keys().next().context("Missing file role")?.clone(),
+            ),
+            _ => old
+                .and_then(|old| {
+                    (old.files.as_slice().len() == 1).then(|| {
+                        crate::engine::addition::FileInputRole::Named(
+                            old.files.as_slice()[0].slot.clone(),
+                        )
+                    })
+                })
+                .unwrap_or(crate::engine::addition::FileInputRole::Primary),
+        },
         key: key.clone(),
         title: old.map_or_else(|| key.as_str().to_owned(), |old| old.title.clone()),
         source,
@@ -537,25 +537,20 @@ pub(super) fn member_inputs(
     let SourceIntent::LocalFiles(members) = &root.source else {
         anyhow::bail!("Expected tracked local members")
     };
-    let PlacementIntent::Explicit(placements) = &root.placement else {
-        anyhow::bail!("Members require explicit placements")
-    };
     members.iter().map(|(slot,path)| {
         let prior = old.and_then(|old| old.files.as_slice().iter().find(|file| &file.slot==slot));
-        let selected: Vec<_> = placements.as_slice().iter().filter(|placement| {
-            crate::engine::layout::ProjectLayout::path(&empack_core::files::ManagedPath::Content {
-                layer:placement.layer, path:placement.destination.relative().clone()
-            }).is_ok_and(|candidate| &candidate==path)
-            || prior.is_some_and(|file| file.placements.as_slice().contains(placement))
-        }).cloned().collect();
+        let selected: Vec<_> = match &root.placement {
+        PlacementIntent::ByFile(files) => files.get(slot).context("Missing explicit member placement")?.as_slice().to_vec(),
+        PlacementIntent::Explicit(_) | PlacementIntent::Automatic => anyhow::bail!("Members require named file placements"),
+        };
         ensure!(!selected.is_empty(), "Member source needs a corresponding explicit placement");
         let evidence=if accept_changes { FileEvidence::AcceptObserved } else {
             prior.filter(|file| matches!(&file.acquisition, AcquisitionSpec::Local(source) if source==path))
                 .map_or(FileEvidence::AcceptObserved, |file|FileEvidence::Declared(file.expected.clone()))
         };
         Ok(DirectFileInput {
-            member:Some(slot.clone()),key:key.clone(),title:old.map_or_else(||key.as_str().to_owned(),|old|old.title.clone()),
-            source:DirectFileSource::Local(project.join(path.as_str())),evidence,kind:root.kind,
+            role:crate::engine::addition::FileInputRole::Member(slot.clone()),key:key.clone(),title:old.map_or_else(||key.as_str().to_owned(),|old|old.title.clone()),
+            source:DirectFileSource::TrackedLocal { path: project.join(path.as_str()), source: path.clone() },evidence,kind:root.kind,
             kind_policy:FileKindPolicy::AcceptUnrecognized,requirements:root.requirements.clone(),placements:NonEmpty::new(selected)?,
         })
     }).collect()

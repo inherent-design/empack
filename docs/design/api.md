@@ -202,7 +202,10 @@ selection, type identification and archive interpretation precede this boundary.
 `FileAddition::acquire` composes bounded local/HTTP acquisition for explicit
 `DirectFileInput` records. Every record declares its logical key, content kind,
 requirements, placements and source-evidence policy. Download alternatives may be
-transient; separately declared credential-free HTTPS origins become durable intent.
+transient; separately declared credential-free HTTPS origins become durable intent. `FileInputRole`
+keeps the default standalone role, an explicitly named standalone role, and membership
+in a local file group distinct. Updates and adoption retain the selected role rather
+than renaming it to the default or inferring it from a destination basename.
 `DirectFileSource::DownloadAsLocal` explicitly publishes verified downloaded bytes
 as a tracked local file at the first placement. No download locator enters the
 documents; provenance records the conversion and retains original digest assertions.
@@ -394,13 +397,14 @@ The CLI exposes `update KEY...` for exact installed logical keys. It derives can
 provider identity and authored pins from the captured project, retains explicit placements,
 and refreshes direct content from its declared source. Unknown or repeated keys fail before
 resolution. It does not authorize replacing externally changed installed bytes.
-`adopt KEY...` accepts verified changes to tracked local files or common-layer provider
-installations through document-only publication. Provider selection comes from the exact
-observed metadata pin, never a latest-version query. Each selected destination must agree
+`adopt KEY...` accepts verified changes to tracked local/member files, URL files and
+provider installations across side layers through document-only publication. Provider
+selection comes from exact observed metadata or verified provider byte identification,
+never a latest-version query. Each selected destination must agree
 about provider identity and pin; the catalog supplies the original byte assertions and
 required closure. Native preparation verifies installed bytes and backend metadata before
-approval. Existing authored pins, placements and root roles remain binding. URL observation,
-side-layer provider evidence and untracked-file adoption still need frontend choices.
+approval. Existing authored pins, placements and root roles remain binding. Missing-lock
+and untracked-file adoption still need frontend choices.
 
 `AdoptObservedRequest` supplies a resolved group describing selected files already
 present in a project. Preparation verifies their original digest, size and
@@ -1109,7 +1113,8 @@ span does not imply detailed timing coverage of every worker or provider request
 `SourceIntent::LocalFiles` maps stable file slots to nonempty, validated project-relative
 source paths. Its lock must cover exactly those slots and local acquisitions. Each
 member retains its own content assertions; a group cannot substitute one digest or
-provider pin for all members. Explicit placements preserve environment and layer.
+provider pin for all members. `PlacementIntent::ByFile` binds each member slot to its
+explicit placements, environment and layer.
 
 Direct world ZIPs require exactly one nonempty `level.dat`. All files must lie under
 its enclosing root; unrelated outer content, multiple worlds, unsafe paths and invalid
@@ -1159,3 +1164,20 @@ and source paths. Selected update/adoption reconstructs a temporary member reque
 from that exact retained inventory. It does not promote the dependency back into intent
 or infer new files from neighboring directories. Non-local retained acquisition kinds
 continue to require their corresponding explicit acquisition contract.
+
+### Named placement and tracked-source contracts
+
+`placement.files` maps exact file slots to their nonempty placement lists. It is emitted
+for explicit provider file plans, imported file groups and interpreted local members.
+The codec rejects empty roles and unknown fields; model validation requires exact
+member coverage and role-to-placement agreement. A flat placement array applies only
+to copies of one file. Provider synchronization uses the recorded file-role map and
+does not reconstruct roles from renamed destination basenames.
+
+`DirectFileSource::TrackedLocal` separates an invocation's absolute acquisition path
+from its declared project-relative source. The host requires their correspondence and
+captures source ancestors through the selected project root before acquisition. The
+normalizer preserves that declared path, individual slot and source provenance. This
+lets update change `pack/config/settings.toml` from `seeds/settings.toml` without
+rewriting authoring intent or turning the destination into the next acquisition source.
+Sources behind unsafe ancestors fail before publication.

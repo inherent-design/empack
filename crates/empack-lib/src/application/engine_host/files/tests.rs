@@ -84,7 +84,7 @@ fn input(
         server: Requirement::Unsupported,
     };
     DirectFileInput {
-        member: None,
+        role: crate::engine::addition::FileInputRole::Primary,
         key: DependencyKey::parse(key).unwrap(),
         title: key.into(),
         source,
