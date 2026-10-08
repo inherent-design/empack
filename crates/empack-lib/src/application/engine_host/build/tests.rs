@@ -1,0 +1,410 @@
+use super::*;
+use crate::application::{
+    InitArgs,
+    session_mocks::{MockCommandSession, MockConfigProvider, MockFileSystemProvider},
+};
+use std::{collections::BTreeMap, fs, io::Read};
+
+fn session(root: &Path, yes: bool, dry_run: bool) -> MockCommandSession {
+    MockCommandSession::new()
+        .with_filesystem(MockFileSystemProvider::new().with_current_dir(root.to_path_buf()))
+        .with_config(MockConfigProvider::new(AppConfig {
+            workdir: Some("project".into()),
+            state_dir: Some("state".into()),
+            yes,
+            dry_run,
+            curseforge_api_client_key: None,
+            ..Default::default()
+        }))
+}
+async fn fixture(root: &Path) {
+    fs::create_dir(root.join("project")).unwrap();
+    initialize(
+        &session(root, true, false),
+        &InitArgs {
+            mc_version: Some("1.21.1".into()),
+            modloader: Some("none".into()),
+            pack_name: Some("Native Pack".into()),
+            pack_version: Some("1.0".into()),
+            author: Some("Tester".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    fs::create_dir_all(root.join("project/pack/config")).unwrap();
+    fs::write(root.join("project/pack/config/example.txt"), b"first").unwrap();
+    fs::write(root.join("project/notes.txt"), b"outside managed changes").unwrap();
+}
+fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    super::super::tests::snapshot(root)
+}
+fn args() -> BuildArgs {
+    BuildArgs {
+        targets: vec!["mrpack".into(), "client-full".into()],
+        ..Default::default()
+    }
+}
+async fn run(root: &Path, args: &BuildArgs, yes: bool, dry: bool) -> Result<()> {
+    build(
+        &session(root, yes, dry),
+        args,
+        BuildDecisions::default(),
+        BuildAcquisitions::default(),
+    )
+    .await
+}
+fn zip_bytes(path: &Path, member: &str) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(fs::File::open(path).unwrap()).unwrap();
+    let mut bytes = vec![];
+    archive
+        .by_name(member)
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    bytes
+}
+#[tokio::test]
+async fn native_build_host_preserves_preview_decline_and_publishes_current_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let before = snapshot(root.path());
+    for (yes, dry) in [(true, true), (false, false)] {
+        run(root.path(), &args(), yes, dry).await.unwrap();
+        assert_eq!(snapshot(root.path()), before);
+    }
+    run(root.path(), &args(), true, false).await.unwrap();
+    let project = root.path().join("project");
+    let mrpack = project.join("dist/Native Pack-1.0.mrpack");
+    let client = project.join("dist/Native Pack-1.0-client-full.zip");
+    assert_eq!(zip_bytes(&mrpack, "overrides/config/example.txt"), b"first");
+    assert_eq!(
+        zip_bytes(&client, ".minecraft/config/example.txt"),
+        b"first"
+    );
+    fs::write(project.join("pack/config/example.txt"), b"current bytes").unwrap();
+    fs::write(project.join("dist/obsolete.zip"), b"old artifact").unwrap();
+    let mut options = args();
+    options.clean = true;
+    let before = snapshot(root.path());
+    run(root.path(), &options, true, true).await.unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    run(root.path(), &options, true, false).await.unwrap();
+    assert!(!project.join("dist/obsolete.zip").exists());
+    assert_eq!(
+        zip_bytes(&mrpack, "overrides/config/example.txt"),
+        b"current bytes"
+    );
+    assert_eq!(
+        zip_bytes(&client, ".minecraft/config/example.txt"),
+        b"current bytes"
+    );
+    assert_eq!(
+        fs::read(project.join("notes.txt")).unwrap(),
+        b"outside managed changes"
+    );
+    assert_eq!(
+        fs::read(project.join("empack.yml")).unwrap(),
+        before[Path::new("project/empack.yml")]
+    );
+    assert_eq!(
+        fs::read(project.join("empack.lock")).unwrap(),
+        before[Path::new("project/empack.lock")]
+    );
+}
+#[tokio::test]
+async fn native_clean_build_keeps_all_prior_artifacts_when_one_recipe_fails() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    run(root.path(), &args(), true, false).await.unwrap();
+    let project = root.path().join("project");
+    fs::write(project.join("dist/obsolete.zip"), b"retain me").unwrap();
+    fs::write(
+        project.join("templates/client/instance.cfg.template"),
+        b"{{missing_required_value}}",
+    )
+    .unwrap();
+    let before = snapshot(&project);
+    let mut options = args();
+    options.clean = true;
+    assert!(run(root.path(), &options, true, false).await.is_err());
+    assert_eq!(snapshot(&project), before);
+}
+#[tokio::test]
+async fn native_build_rejects_unsupported_flags_and_invalid_targets_without_effects() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let before = snapshot(root.path());
+    for variant in ["continue", "downloads", "associate", "unknown-after-all"] {
+        let mut options = args();
+        match variant {
+            "continue" => options.continue_build = true,
+            "downloads" => options.downloads_dir = Some("downloads".into()),
+            "associate" => options.associate_downloads.push("a=b".into()),
+            _ => options.targets = vec!["all".into(), "typo".into()],
+        }
+        assert!(
+            run(root.path(), &options, true, false).await.is_err(),
+            "{variant}"
+        );
+        assert_eq!(snapshot(root.path()), before, "{variant}");
+    }
+}
+#[tokio::test]
+async fn native_build_target_mapping_retains_archives_defaults_and_explicit_decisions() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let project = root.path().join("project");
+    let captured = ProjectReader::new(RecoveryReader::new(root.path().join("state")))
+        .capture(
+            &project,
+            &[],
+            SnapshotLimits::default(),
+            &crate::application::process_runtime::Cancellation::default(),
+        )
+        .unwrap();
+    let intent = captured.require_resolved().unwrap();
+    let choices = BuildDecisions {
+        optional: OptionalPolicy::Resolve {
+            choices: BTreeMap::from([("extra".into(), false)]),
+            use_defaults: true,
+        },
+        mrpack_optional: OptionalConversion::AcknowledgedMetadataLoss,
+        evidence: SourceEvidencePolicy::StrongSourceRequired,
+        interaction: InstallerInteraction::Interactive,
+        ..Default::default()
+    };
+    for (format, extension, archive) in [
+        (CliArchiveFormat::Zip, "zip", DistributionArchive::Zip),
+        (
+            CliArchiveFormat::TarGz,
+            "tar.gz",
+            DistributionArchive::TarGz,
+        ),
+        (
+            CliArchiveFormat::SevenZ,
+            "7z",
+            DistributionArchive::SevenZip,
+        ),
+    ] {
+        let options = BuildArgs {
+            format: Some(format),
+            targets: vec!["client-full".into(), "client-full".into(), "mrpack".into()],
+            ..Default::default()
+        };
+        let built = request(intent.intent(), &options, choices.clone()).unwrap();
+        assert_eq!(built.outputs.as_slice().len(), 2);
+        assert_eq!(
+            built.outputs.as_slice()[0].artifact.as_str(),
+            format!("Native Pack-1.0-client-full.{extension}")
+        );
+        assert_eq!(
+            built.outputs.as_slice()[1].artifact.as_str(),
+            "Native Pack-1.0.mrpack"
+        );
+        assert_eq!(built.archive, archive);
+        assert_eq!(built.optional, choices.optional);
+        assert_eq!(built.mrpack_optional, choices.mrpack_optional);
+        assert_eq!(built.evidence, choices.evidence);
+        assert_eq!(built.interaction, choices.interaction);
+    }
+    assert_eq!(
+        request(
+            intent.intent(),
+            &BuildArgs::default(),
+            BuildDecisions::default()
+        )
+        .unwrap()
+        .outputs
+        .as_slice()
+        .len(),
+        5
+    );
+    let mut selected = intent.intent().clone();
+    selected.distribution.archive = DistributionArchive::TarGz;
+    let default = request(&selected, &args(), BuildDecisions::default()).unwrap();
+    assert_eq!(default.archive, DistributionArchive::TarGz);
+    assert!(
+        default.outputs.as_slice()[1]
+            .artifact
+            .as_str()
+            .ends_with(".tar.gz")
+    );
+    let explicit = BuildArgs {
+        format: Some(CliArchiveFormat::Zip),
+        ..args()
+    };
+    assert_eq!(
+        request(&selected, &explicit, BuildDecisions::default())
+            .unwrap()
+            .archive,
+        DistributionArchive::Zip
+    );
+    let mut unsafe_intent = intent.intent().clone();
+    for name in ["../escape", "a/b", "C:drive", "a\\b"] {
+        unsafe_intent.metadata.name = name.into();
+        assert!(request(&unsafe_intent, &args(), BuildDecisions::default()).is_err());
+    }
+}
+
+#[tokio::test]
+async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_complete_it() {
+    use crate::application::process_runtime::Cancellation;
+    use crate::engine::{
+        content::{InitialObservation, verify_stream},
+        documents::DocumentCodec,
+        mrpack::{AcquiredBuildFile, LockedFileKey},
+    };
+    use empack_core::{
+        files::FilePermissions,
+        model::*,
+        path::InstallDestination,
+        requirements::{Requirement, Requirements},
+    };
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let project = root.path().join("project");
+    let decoded = DocumentCodec
+        .decode_intent(&fs::read(project.join("empack.yml")).unwrap(), "test")
+        .unwrap();
+    let resolved = DocumentCodec
+        .decode_lock(
+            &fs::read(project.join("empack.lock")).unwrap(),
+            &decoded,
+            "test",
+        )
+        .unwrap();
+    let mut intent = resolved.intent().clone();
+    let mut lock = resolved.lock().clone();
+    let key = DependencyKey::parse("manual-assets").unwrap();
+    let identity = empack_core::identity::ProviderProjectId::Modrinth(
+        empack_core::identity::ModrinthProjectId::parse("Assets01").unwrap(),
+    );
+    let pin = ResolvedPin {
+        project: identity.clone(),
+        selection: identity.parse_pin("Version1").unwrap(),
+    };
+    let slot = FileSlot::parse("main").unwrap();
+    let requirements = Requirements {
+        client: Requirement::Required,
+        server: Requirement::Unsupported,
+    };
+    let placement = Placement {
+        destination: InstallDestination::parse("resourcepacks/custom.zip").unwrap(),
+        layer: ContentLayer::Common,
+        requirements: requirements.clone(),
+    };
+    let content = verify_stream(
+        &mut &b"verified manual bytes"[..],
+        &ExpectedContent {
+            digests: None,
+            size: None,
+            accepted_observation: None,
+        },
+        100,
+        SourceEvidencePolicy::Compatibility,
+        InitialObservation::Accepted,
+        &Cancellation::default(),
+    )
+    .unwrap();
+    let expected = ExpectedContent {
+        digests: Some(content.observed_digests().clone()),
+        size: Some(21),
+        accepted_observation: None,
+    };
+    intent.roots.insert(
+        key.clone(),
+        DependencyIntent {
+            source: SourceIntent::Provider(identity.clone()),
+            kind: ContentKind::ResourcePack,
+            version: VersionIntent::FollowCompatible,
+            placement: PlacementIntent::Explicit(NonEmpty::new(vec![placement.clone()]).unwrap()),
+            requirements,
+        },
+    );
+    lock.dependencies.insert(
+        key.clone(),
+        LockedDependency {
+            title: "Manual assets".into(),
+            kind: ContentKind::ResourcePack,
+            identity: ResolvedIdentity::Provider(identity),
+            selected: Some(pin.clone()),
+            files: NonEmpty::new(vec![ResolvedFile {
+                slot: slot.clone(),
+                acquisition: AcquisitionSpec::Manual {
+                    pin: Some(pin),
+                    instructions: "Supply exact bytes".into(),
+                },
+                expected: expected.clone(),
+                provenance: Provenance {
+                    source: "test".into(),
+                    location: None,
+                    declared_digests: expected.digests,
+                    conversions: vec![],
+                },
+                placements: NonEmpty::new(vec![placement]).unwrap(),
+            }])
+            .unwrap(),
+        },
+    );
+    lock.coverage
+        .insert(key.clone(), Coverage::CompleteForSelection);
+    let raw = DocumentCodec.encode_intent(&intent).unwrap();
+    let revision = DocumentCodec
+        .decode_intent(&raw, "test")
+        .unwrap()
+        .semantic_revision();
+    lock.intent_revision = revision;
+    let resolved = ResolvedProject::validate(intent, lock, revision).unwrap();
+    fs::write(project.join("empack.yml"), raw).unwrap();
+    fs::write(
+        project.join("empack.lock"),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+    )
+    .unwrap();
+    let options = BuildArgs {
+        targets: vec!["client-full".into()],
+        ..Default::default()
+    };
+    let before = snapshot(root.path());
+    run(root.path(), &options, true, true).await.unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    let error = run(root.path(), &options, true, false).await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("supply the displayed missing content"),
+        "{error:#}"
+    );
+    assert_eq!(snapshot(root.path()), before);
+    build(
+        &session(root.path(), true, false),
+        &options,
+        BuildDecisions::default(),
+        BuildAcquisitions {
+            locked: BTreeMap::from([(
+                LockedFileKey {
+                    dependency: key,
+                    slot,
+                },
+                AcquiredBuildFile {
+                    content,
+                    permissions: FilePermissions {
+                        readonly: false,
+                        executable: false,
+                    },
+                },
+            )]),
+            observed: BTreeMap::new(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        zip_bytes(
+            &project.join("dist/Native Pack-1.0-client-full.zip"),
+            ".minecraft/resourcepacks/custom.zip"
+        ),
+        b"verified manual bytes"
+    );
+}

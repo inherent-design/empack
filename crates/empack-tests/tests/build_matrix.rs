@@ -603,7 +603,7 @@ async fn test_build_forge_server_sevenz_archive() -> Result<()> {
     let result = execute_command_with_session(
         Commands::Build(BuildArgs {
             targets: vec!["server".to_string()],
-            format: empack_lib::application::cli::CliArchiveFormat::SevenZ,
+            format: Some(empack_lib::application::cli::CliArchiveFormat::SevenZ),
             ..Default::default()
         }),
         &session,
@@ -769,7 +769,7 @@ async fn test_build_fabric_client_tar_gz_archive() -> Result<()> {
     let result = execute_command_with_session(
         Commands::Build(BuildArgs {
             targets: vec!["client".to_string()],
-            format: empack_lib::application::cli::CliArchiveFormat::TarGz,
+            format: Some(empack_lib::application::cli::CliArchiveFormat::TarGz),
             ..Default::default()
         }),
         &session,

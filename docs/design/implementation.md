@@ -1156,3 +1156,30 @@ requested historical pin. Independent loopback origins model independent service
 single blocking mock server would incorrectly stall every provider. Both deadline tests
 pass after the correction, including all requested origins receiving a lookup. All-feature
 Clippy and Windows cross-compilation also pass on the combined host-work tree.
+
+## Native build host
+
+`application::engine_host::build` now composes native document reads, recipe selection,
+provider capability wiring, engine preparation, effect display, approval and owned
+execution. It preserves requested target order, validates every explicit target, uses
+project defaults when none are selected and distinguishes an absent archive override
+from an explicit ZIP selection. Build decisions carry optional choices, accepted format
+conversions, template options, source-evidence policy and installer interaction explicitly.
+
+The host displays missing content without publishing. Exact supplied manual bytes can
+complete the same requested distributions. Preview and declined approval retain project
+and host files. Clean builds publish verified replacements and obsolete removals together;
+a failing recipe leaves every previous artifact intact. Native fixtures inspect mrpack
+and full-client payloads after changing source bytes without a version bump.
+
+All 138 affected host, CLI, build and engine API tests pass, together with all-feature
+Clippy and Windows cross-compilation. The initial manual-content fixture incorrectly
+paired URL intent with manual provider acquisition; the corrected fixture carries its
+canonical provider identity and exact selection. No production validation was weakened.
+The last full-suite result remains the earlier initialization-host revision until a fresh
+combined run completes.
+
+This is a compiled host, not yet the CLI build dispatcher. Durable continuation,
+download scanning/association and the remaining command hosts are still required for
+coherent cutover. Unsupported continuation arguments fail explicitly at this boundary;
+the existing dispatcher retains those features while their replacement is completed.

@@ -90,7 +90,7 @@ pub async fn execute_command_with_session(command: Commands, session: &dyn Sessi
     match command {
         Commands::Recover { action, operation } => {
             super::engine_host::recover(session, action, operation).await
-        },
+        }
         Commands::Requirements => handle_requirements(session).await,
         Commands::Version => handle_version(session).await,
         Commands::Init(args) => handle_init(session, &args).await,
@@ -3231,7 +3231,10 @@ async fn handle_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
         return Ok(());
     }
 
-    let archive_format = args.format.to_archive_format();
+    let archive_format = args
+        .format
+        .unwrap_or(super::cli::CliArchiveFormat::Zip)
+        .to_archive_format();
 
     // Clean if requested (after dry-run check to prevent side effects during preview)
     if args.clean {

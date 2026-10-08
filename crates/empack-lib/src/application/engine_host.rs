@@ -88,6 +88,18 @@ fn engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
         ResourceGovernor::new(limits),
     )
 }
+/// Resolve one invocation-relative project selection without changing process cwd.
+fn project_path(session: &dyn Session) -> Result<(PathBuf, PathBuf)> {
+    let invocation = session.filesystem().current_dir()?;
+    let selected = session
+        .config()
+        .app_config()
+        .workdir
+        .as_deref()
+        .unwrap_or(&invocation);
+    Ok((invocation.clone(), absolute(&invocation, selected)))
+}
+
 /// Dropping a preparation future cancels its owned workers; the outer host always drains shutdown.
 async fn cancellable<T>(session: &dyn Session, work: impl Future<Output = Result<T>>) -> Result<T> {
     tokio::pin!(work);
@@ -324,3 +336,6 @@ mod tests;
 
 mod initialize;
 pub use initialize::initialize;
+
+mod build;
+pub use build::{BuildDecisions, build};

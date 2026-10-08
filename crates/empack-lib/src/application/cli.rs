@@ -170,7 +170,7 @@ pub struct InitArgs {
 }
 
 /// Arguments for the `build` subcommand.
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct BuildArgs {
     /// Build targets to execute
     #[arg(
@@ -191,14 +191,9 @@ pub struct BuildArgs {
     #[arg(short, long, help = "Clean build directories before building")]
     pub clean: bool,
 
-    /// Archive format for distribution packages
-    #[arg(
-        long,
-        value_enum,
-        default_value = "zip",
-        conflicts_with = "continue_build"
-    )]
-    pub format: CliArchiveFormat,
+    /// Archive format override (otherwise use the project preference)
+    #[arg(long, value_enum, conflicts_with = "continue_build")]
+    pub format: Option<CliArchiveFormat>,
 
     /// Directory to scan for manually downloaded restricted mods
     #[arg(long, env = "EMPACK_DOWNLOADS_DIR")]
@@ -211,19 +206,6 @@ pub struct BuildArgs {
         requires = "continue_build"
     )]
     pub associate_downloads: Vec<String>,
-}
-
-impl Default for BuildArgs {
-    fn default() -> Self {
-        Self {
-            targets: Vec::new(),
-            continue_build: false,
-            clean: false,
-            format: CliArchiveFormat::Zip,
-            downloads_dir: None,
-            associate_downloads: Vec::new(),
-        }
-    }
 }
 
 /// Available empack commands
@@ -516,8 +498,34 @@ mod tests {
         assert!(args.targets.is_empty());
         assert!(!args.continue_build);
         assert!(!args.clean);
-        assert_eq!(args.format, CliArchiveFormat::Zip);
+        assert_eq!(args.format, None);
         assert_eq!(args.downloads_dir, None);
+    }
+
+    #[test]
+    fn build_archive_override_distinguishes_absence_from_explicit_zip() {
+        for (arguments, expected) in [
+            (vec!["empack", "build", "client-full"], None),
+            (
+                vec!["empack", "build", "client-full", "--format", "zip"],
+                Some(CliArchiveFormat::Zip),
+            ),
+            (
+                vec!["empack", "build", "client-full", "--format", "tar.gz"],
+                Some(CliArchiveFormat::TarGz),
+            ),
+            (
+                vec!["empack", "build", "client-full", "--format", "7z"],
+                Some(CliArchiveFormat::SevenZ),
+            ),
+        ] {
+            let cli = Cli::try_parse_from(arguments).unwrap();
+            let Some(Commands::Build(args)) = cli.command else {
+                panic!("Expected build command")
+            };
+            assert_eq!(args.format, expected);
+        }
+        assert!(Cli::try_parse_from(["empack", "build", "--continue", "--format", "zip"]).is_err());
     }
 
     #[test]

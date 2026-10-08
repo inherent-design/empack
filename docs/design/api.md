@@ -700,3 +700,25 @@ NonEmpty<ProviderKind>, IdentificationLimits)` returns `Identification::Unknown`
 `IdentifiedSelection` values with the observed content ID, complete provider
 resolution and all matching filenames. Names identify roles within that exact
 selection; they are not installation destinations. Provider failures remain errors.
+
+### Native build host
+
+`application::engine_host::build` accepts parsed build arguments, `BuildDecisions`
+and verified `BuildAcquisitions`. It resolves the invocation-relative project without
+changing process cwd, reads coherent documents through the native reader, and prepares
+all requested outputs through the engine. Empty target selection uses project defaults;
+explicit targets are validated and deduplicated. An omitted archive override uses the
+project preference. Portable name/version components determine artifact filenames.
+
+The host displays runtime, destinations, optional-content policy, evidence policy,
+network/tool requirements and obsolete-artifact removals before shared approval.
+`--yes` does not resolve optional choices or accept conversion loss. Those decisions
+remain explicit typed input. Supplied manual files retain exact logical slots and
+source assertions. Missing obligations appear in read-only preview and prevent execution.
+Every completed artifact reports its verified byte length. Failed preparation leaves old
+artifacts intact, including when cleanup was requested.
+
+This entry point is compiled but not yet the CLI build dispatcher. Durable continuation,
+download-directory discovery and filename association must be composed before that
+cutover; this host rejects those arguments rather than ignoring them. Existing CLI
+workflows remain available through the current dispatcher in the meantime.
