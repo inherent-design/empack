@@ -32,7 +32,7 @@ impl ProcessOutput {
     /// Returns the most informative error text on failure.
     ///
     /// Prefers stderr; falls back to stdout when stderr is empty.
-    /// Some tools (notably packwiz) write error messages to stdout.
+    /// Some tools write error messages to stdout.
     pub fn error_output(&self) -> &str {
         let stderr = self.stderr.trim();
         if stderr.is_empty() {
@@ -96,7 +96,7 @@ pub trait Session {
 }
 
 /// Default timeout for child process execution (5 minutes).
-/// Prevents indefinite hangs from packwiz or java processes.
+/// Bounds child exit and inherited output-pipe lifetimes.
 const DEFAULT_PROCESS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 fn process_timeout() -> std::time::Duration {
