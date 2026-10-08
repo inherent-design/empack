@@ -358,19 +358,19 @@ pub(super) fn prepare_server_archive(
     }
     let properties = path("server.properties")?;
     if let std::collections::btree_map::Entry::Vacant(entry) = files.entry(properties) {
-        let metadata = &game.project().intent().metadata;
-        let mut renderer = crate::empack::templates::TemplateEngine::new();
-        renderer.set_pack_variables(
-            &metadata.name,
-            metadata.author.as_deref().unwrap_or_default(),
-            runtime.runtime().minecraft.as_str(),
-            &metadata.version,
-        );
-        entry.insert(generated(
-            renderer.render_template("server.properties")?.as_bytes(),
-            false,
+        let bytes = crate::engine::templates::render_default(
+            game.project(),
+            if bootstrap.is_some() {
+                BuildTarget::Server
+            } else {
+                BuildTarget::ServerFull
+            },
+            include_str!("../../../templates/server/server.properties.template"),
+            [],
+            options.limits.file_bytes,
             cancel,
-        )?);
+        )?;
+        entry.insert(generated(&bytes, false, cancel)?);
     }
     let mut collisions = CollisionIndex::default();
     let mut inventory = BTreeMap::new();

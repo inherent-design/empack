@@ -116,7 +116,7 @@ re-export. Restricted-import continuation remains open.
 | --- | --- | --- |
 | Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
-| Next | Full-suite inherited-pipe warning | Isolate `engine::templates::tests::template_failures_never_return_partial_outputs_or_modify_project`; determine cause or retain the unresolved warning in evidence |
+| Retested clean | Earlier inherited-pipe warning | The combined native cutover suite and subsequent template/runtime subset completed without the warning |
 | Cutover | Search/identification/adoption frontends and world-member interpretation | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
 | Cutover | Fresh sync and optional materialization | Changed intent resolves correctly; ordinary sync retains exact selections; repeated sync is a no-op |
 | Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
@@ -139,7 +139,9 @@ Modrinth environment defects reproduced and were corrected before release. Fork
 CI, race tests, vet, module installation and executable offline smoke passed. All six
 published platform archives match their release checksums; the macOS ARM64 release
 binary passes the same offline batch smoke. Ordinary native CLI commands no longer
-require this executable. Retirement of unused compatibility modules remains open.
+require this executable. Native builds now own embedded-template rendering and pure Forge coordinate interpretation.
+The unused legacy removal planner is deleted. Retirement of the remaining compatibility
+modules remains open.
 
 ## Verification evidence
 

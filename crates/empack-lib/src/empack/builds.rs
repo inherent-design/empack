@@ -5,9 +5,9 @@ use crate::application::session::execute_process_with_live_issues;
 use crate::empack::PackwizInstaller;
 use crate::empack::content::OverrideSide;
 use crate::empack::templates::TemplateEngine;
-use crate::empack::versions::{
-    canonicalize_forge_loader_version, parse_version, uses_forge_style_neoforge_coordinate,
-    uses_legacy_forge_coordinate,
+use crate::empack::versions::uses_forge_style_neoforge_coordinate;
+use crate::engine::runtime_versions::{
+    canonicalize_forge_loader_version, parse_version, uses_legacy_forge_coordinate,
 };
 use crate::primitives::*;
 #[cfg(test)]

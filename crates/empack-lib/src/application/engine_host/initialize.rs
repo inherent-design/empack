@@ -131,10 +131,12 @@ async fn initialize_with_catalog(
     let requested_loader = requested_loader
         .map(|version| {
             if loader == LoaderKind::Forge {
-                LoaderVersion::parse(&crate::empack::versions::canonicalize_forge_loader_version(
-                    game.as_str(),
-                    version.as_str(),
-                ))
+                LoaderVersion::parse(
+                    &crate::engine::runtime_versions::canonicalize_forge_loader_version(
+                        game.as_str(),
+                        version.as_str(),
+                    ),
+                )
             } else {
                 Ok(version)
             }

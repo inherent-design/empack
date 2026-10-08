@@ -70,7 +70,7 @@ impl LoaderVersions {
             .map(|value| {
                 if self.loader == LoaderKind::Forge {
                     LoaderVersion::parse(
-                        &crate::empack::versions::canonicalize_forge_loader_version(
+                        &crate::engine::runtime_versions::canonicalize_forge_loader_version(
                             self.game.as_str(),
                             value.as_str(),
                         ),
@@ -357,13 +357,16 @@ fn parse_loaders(
                 "Forge catalog exceeds entry limit"
             );
             let all = values.get(game.as_str()).cloned().unwrap_or_default();
-            crate::empack::versions::filter_forge_versions_by_minecraft(&all, game.as_str())?
-                .into_iter()
-                .map(|version| {
-                    let stable = !version.contains('-');
-                    (version, stable)
-                })
-                .collect()
+            crate::engine::runtime_versions::filter_forge_versions_by_minecraft(
+                &all,
+                game.as_str(),
+            )?
+            .into_iter()
+            .map(|version| {
+                let stable = !version.contains('-');
+                (version, stable)
+            })
+            .collect()
         }
         LoaderKind::NeoForge => {
             let values: NeoVersions = serde_json::from_reader(content.lease().open())?;
@@ -372,7 +375,7 @@ fn parse_loaders(
                 "NeoForge catalog exceeds entry limit"
             );
             let matched = if game.as_str() == "1.20.1" {
-                crate::empack::versions::filter_forge_versions_by_minecraft(
+                crate::engine::runtime_versions::filter_forge_versions_by_minecraft(
                     &values.versions,
                     game.as_str(),
                 )?

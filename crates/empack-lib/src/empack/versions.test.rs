@@ -1,4 +1,3 @@
-use semver::Version;
 use serde_json;
 
 #[cfg(feature = "test-utils")]
@@ -60,38 +59,6 @@ fn test_modloader_enum() {
 }
 
 #[test]
-fn test_parse_version() {
-    assert_eq!(parse_version("1.20"), Some(Version::new(1, 20, 0)));
-    assert_eq!(parse_version("1.20.4"), Some(Version::new(1, 20, 4)));
-    assert_eq!(parse_version("not-a-version"), None);
-    assert!(parse_version("1.20.1") < parse_version("1.20.2"));
-}
-
-#[test]
-fn test_sort_versions_desc_multi_digit() {
-    let mut versions = vec![
-        "21.1.7".to_string(),
-        "21.1.69".to_string(),
-        "21.1.8".to_string(),
-    ];
-
-    sort_versions_desc(&mut versions);
-    assert_eq!(versions, vec!["21.1.69", "21.1.8", "21.1.7"]);
-}
-
-#[test]
-fn test_sort_versions_desc_prerelease() {
-    let mut versions = vec![
-        "21.1.67-beta".to_string(),
-        "21.1.67".to_string(),
-        "21.1.69".to_string(),
-    ];
-
-    sort_versions_desc(&mut versions);
-    assert_eq!(versions, vec!["21.1.69", "21.1.67", "21.1.67-beta"]);
-}
-
-#[test]
 fn test_filter_neoforge_versions() {
     // Sample NeoForge versions (realistic subset from actual API)
     let all_versions = vec![
@@ -111,27 +78,49 @@ fn test_filter_neoforge_versions() {
 
     // Test filtering for MC 1.21
     let filtered_21 = filter_neoforge_versions_by_minecraft(&all_versions, "1.21").unwrap();
-    assert_eq!(filtered_21.len(), 2, "Should find 2 stable versions for MC 1.21");
+    assert_eq!(
+        filtered_21.len(),
+        2,
+        "Should find 2 stable versions for MC 1.21"
+    );
     assert!(filtered_21.contains(&"21.0.167".to_string()));
     assert!(filtered_21.contains(&"21.0.166".to_string()));
-    assert!(!filtered_21.contains(&"21.0.165-beta".to_string()), "Should exclude beta versions when stable exist");
+    assert!(
+        !filtered_21.contains(&"21.0.165-beta".to_string()),
+        "Should exclude beta versions when stable exist"
+    );
 
     // Test filtering for MC 1.21.1
     let filtered_21_1 = filter_neoforge_versions_by_minecraft(&all_versions, "1.21.1").unwrap();
-    assert_eq!(filtered_21_1.len(), 2, "Should find 2 stable versions for MC 1.21.1");
+    assert_eq!(
+        filtered_21_1.len(),
+        2,
+        "Should find 2 stable versions for MC 1.21.1"
+    );
     assert!(filtered_21_1.contains(&"21.1.69".to_string()));
     assert!(filtered_21_1.contains(&"21.1.68".to_string()));
-    assert!(!filtered_21_1.contains(&"21.1.67-beta".to_string()), "Should exclude beta versions when stable exist");
+    assert!(
+        !filtered_21_1.contains(&"21.1.67-beta".to_string()),
+        "Should exclude beta versions when stable exist"
+    );
 
     // Test filtering for MC 1.20.4
     let filtered_20_4 = filter_neoforge_versions_by_minecraft(&all_versions, "1.20.4").unwrap();
-    assert_eq!(filtered_20_4.len(), 2, "Should find 2 stable versions for MC 1.20.4");
+    assert_eq!(
+        filtered_20_4.len(),
+        2,
+        "Should find 2 stable versions for MC 1.20.4"
+    );
     assert!(filtered_20_4.contains(&"20.4.167".to_string()));
     assert!(filtered_20_4.contains(&"20.4.166".to_string()));
 
     // Test filtering for MC 1.20.2
     let filtered_20_2 = filter_neoforge_versions_by_minecraft(&all_versions, "1.20.2").unwrap();
-    assert_eq!(filtered_20_2.len(), 2, "Should find 2 stable versions for MC 1.20.2");
+    assert_eq!(
+        filtered_20_2.len(),
+        2,
+        "Should find 2 stable versions for MC 1.20.2"
+    );
     assert!(filtered_20_2.contains(&"20.2.93".to_string()));
     assert!(filtered_20_2.contains(&"20.2.92".to_string()));
 
@@ -141,15 +130,21 @@ fn test_filter_neoforge_versions() {
 
     // Test MC 1.20.1 (NeoForge doesn't support - no 20.1.x versions exist)
     let filtered_20_1 = filter_neoforge_versions_by_minecraft(&all_versions, "1.20.1").unwrap();
-    assert_eq!(filtered_20_1.len(), 0, "Should return empty for MC 1.20.1 (no 20.1.x versions exist)");
+    assert_eq!(
+        filtered_20_1.len(),
+        0,
+        "Should return empty for MC 1.20.1 (no 20.1.x versions exist)"
+    );
 
     // Test beta-only scenario
-    let beta_only_versions = vec![
-        "21.10.64-beta".to_string(),
-        "21.10.63-beta".to_string(),
-    ];
-    let filtered_beta = filter_neoforge_versions_by_minecraft(&beta_only_versions, "1.21.10").unwrap();
-    assert_eq!(filtered_beta.len(), 2, "Should include beta versions if no stable exist");
+    let beta_only_versions = vec!["21.10.64-beta".to_string(), "21.10.63-beta".to_string()];
+    let filtered_beta =
+        filter_neoforge_versions_by_minecraft(&beta_only_versions, "1.21.10").unwrap();
+    assert_eq!(
+        filtered_beta.len(),
+        2,
+        "Should include beta versions if no stable exist"
+    );
     assert!(filtered_beta.contains(&"21.10.64-beta".to_string()));
 
     // Test dynamic algorithm handles new MC versions not hardcoded
@@ -159,10 +154,17 @@ fn test_filter_neoforge_versions() {
         "21.15.3-beta".to_string(),
     ];
     let filtered_new = filter_neoforge_versions_by_minecraft(&new_versions, "1.21.15").unwrap();
-    assert_eq!(filtered_new.len(), 2, "Should dynamically handle new MC versions");
+    assert_eq!(
+        filtered_new.len(),
+        2,
+        "Should dynamically handle new MC versions"
+    );
     assert!(filtered_new.contains(&"21.15.5".to_string()));
     assert!(filtered_new.contains(&"21.15.4".to_string()));
-    assert!(!filtered_new.contains(&"21.15.3-beta".to_string()), "Should exclude beta when stable exist");
+    assert!(
+        !filtered_new.contains(&"21.15.3-beta".to_string()),
+        "Should exclude beta when stable exist"
+    );
 }
 
 #[test]
@@ -174,8 +176,7 @@ fn test_filter_neoforge_versions_supports_post_1x_year_style_scheme() {
         "26.2.0.0-alpha.1+snapshot-1".to_string(),
     ];
 
-    let filtered =
-        filter_neoforge_versions_by_minecraft(&all_versions, "26.1-snapshot-6").unwrap();
+    let filtered = filter_neoforge_versions_by_minecraft(&all_versions, "26.1-snapshot-6").unwrap();
 
     assert_eq!(
         filtered,
@@ -249,16 +250,33 @@ fn test_filter_forge_versions() {
 
     // Test filtering for MC 1.20.1 (should get all 5 versions)
     let filtered_20_1 = filter_forge_versions_by_minecraft(&all_versions, "1.20.1").unwrap();
-    assert_eq!(filtered_20_1.len(), 5, "Should find all 5 versions for MC 1.20.1");
-    assert!(filtered_20_1.contains(&"47.4.13".to_string()), "Should include latest");
-    assert!(filtered_20_1.contains(&"47.4.10".to_string()), "Should include recommended");
+    assert_eq!(
+        filtered_20_1.len(),
+        5,
+        "Should find all 5 versions for MC 1.20.1"
+    );
+    assert!(
+        filtered_20_1.contains(&"47.4.13".to_string()),
+        "Should include latest"
+    );
+    assert!(
+        filtered_20_1.contains(&"47.4.10".to_string()),
+        "Should include recommended"
+    );
     // Verify newest first (47.4.13 > 47.4.10)
-    assert_eq!(filtered_20_1[0], "47.4.13", "Newest version should be first");
+    assert_eq!(
+        filtered_20_1[0], "47.4.13",
+        "Newest version should be first"
+    );
     assert_eq!(filtered_20_1[4], "47.4.9", "Oldest version should be last");
 
     // Test filtering for MC 1.16.5
     let filtered_16_5 = filter_forge_versions_by_minecraft(&all_versions, "1.16.5").unwrap();
-    assert_eq!(filtered_16_5.len(), 4, "Should find 4 versions for MC 1.16.5");
+    assert_eq!(
+        filtered_16_5.len(),
+        4,
+        "Should find 4 versions for MC 1.16.5"
+    );
     assert!(filtered_16_5.contains(&"36.2.42".to_string()));
     assert!(filtered_16_5.contains(&"36.2.34".to_string()));
     // Verify newest first
@@ -272,7 +290,11 @@ fn test_filter_forge_versions() {
 
     // Test filtering for MC 1.21.1
     let filtered_21_1 = filter_forge_versions_by_minecraft(&all_versions, "1.21.1").unwrap();
-    assert_eq!(filtered_21_1.len(), 3, "Should find 3 versions for MC 1.21.1");
+    assert_eq!(
+        filtered_21_1.len(),
+        3,
+        "Should find 3 versions for MC 1.21.1"
+    );
     assert_eq!(filtered_21_1[0], "52.1.8", "Newest first");
     assert_eq!(filtered_21_1[2], "52.1.0", "Oldest last");
 
@@ -285,13 +307,21 @@ fn test_filter_forge_versions() {
 
     // Test filtering for MC 1.16.4 (larger set - 5 versions)
     let filtered_16_4 = filter_forge_versions_by_minecraft(&all_versions, "1.16.4").unwrap();
-    assert_eq!(filtered_16_4.len(), 5, "Should find 5 versions for MC 1.16.4");
+    assert_eq!(
+        filtered_16_4.len(),
+        5,
+        "Should find 5 versions for MC 1.16.4"
+    );
     assert_eq!(filtered_16_4[0], "35.1.37", "Newest first");
     assert_eq!(filtered_16_4[4], "35.0.0", "Oldest last");
 
     // Test unsupported MC version (not in maven-metadata)
     let filtered_unsupported = filter_forge_versions_by_minecraft(&all_versions, "1.20.5").unwrap();
-    assert_eq!(filtered_unsupported.len(), 0, "Should return empty for MC version not in maven-metadata");
+    assert_eq!(
+        filtered_unsupported.len(),
+        0,
+        "Should return empty for MC version not in maven-metadata"
+    );
 
     // Test deduplication (all_versions shouldn't have duplicates, but verify)
     let dedup_versions = vec![
@@ -299,16 +329,21 @@ fn test_filter_forge_versions() {
         "1.19-41.1.0".to_string(), // Duplicate
     ];
     let filtered_dedup = filter_forge_versions_by_minecraft(&dedup_versions, "1.19").unwrap();
-    assert_eq!(filtered_dedup.len(), 1, "Should deduplicate duplicate version entries");
+    assert_eq!(
+        filtered_dedup.len(),
+        1,
+        "Should deduplicate duplicate version entries"
+    );
     assert_eq!(filtered_dedup[0], "41.1.0");
 
     // Test version normalization (MC "1.21" should also match "1.21.0-" prefix)
-    let norm_versions = vec![
-        "1.21.0-51.0.33".to_string(),
-        "1.21.0-51.0.32".to_string(),
-    ];
+    let norm_versions = vec!["1.21.0-51.0.33".to_string(), "1.21.0-51.0.32".to_string()];
     let filtered_norm = filter_forge_versions_by_minecraft(&norm_versions, "1.21").unwrap();
-    assert_eq!(filtered_norm.len(), 2, "Should normalize MC 1.21 to also match 1.21.0- prefix");
+    assert_eq!(
+        filtered_norm.len(),
+        2,
+        "Should normalize MC 1.21 to also match 1.21.0- prefix"
+    );
     assert!(filtered_norm.contains(&"51.0.33".to_string()));
     assert!(filtered_norm.contains(&"51.0.32".to_string()));
 }
@@ -406,7 +441,8 @@ fn test_minecraft_versions_order_descending() {
         "Last (newest) item becomes first after reverse"
     );
     assert_eq!(
-        versions[versions.len() - 1], "1.7.10",
+        versions[versions.len() - 1],
+        "1.7.10",
         "First (oldest) item becomes last after reverse"
     );
 
@@ -416,7 +452,10 @@ fn test_minecraft_versions_order_descending() {
         assert!(
             parse_version(current).unwrap() >= parse_version(next).unwrap(),
             "Version {} at index {} should be >= next version {} at index {} (not descending)",
-            current, i, next, i + 1
+            current,
+            i,
+            next,
+            i + 1
         );
     }
 }
@@ -435,7 +474,10 @@ fn test_neoforge_versions_preserve_api_order_descending() {
     let filtered = filter_neoforge_versions_by_minecraft(&all_versions, "1.21").unwrap();
 
     assert_eq!(filtered.len(), 2, "Should find 2 stable versions");
-    assert_eq!(filtered[0], "21.0.167", "Newest NeoForge version should be first");
+    assert_eq!(
+        filtered[0], "21.0.167",
+        "Newest NeoForge version should be first"
+    );
     assert_eq!(filtered[1], "21.0.166", "Second newest should be second");
 
     for i in 0..filtered.len() - 1 {
@@ -444,7 +486,9 @@ fn test_neoforge_versions_preserve_api_order_descending() {
         assert!(
             parse_version(current).unwrap() >= parse_version(next).unwrap(),
             "NeoForge version {} at index {} should be >= next version {} (not descending)",
-            current, i, next
+            current,
+            i,
+            next
         );
     }
 }
@@ -513,15 +557,17 @@ fn test_fabric_versions_order_descending() {
     for i in 0..stable_versions.len() - 1 {
         let current = &stable_versions[i];
         let next = &stable_versions[i + 1];
-        let crossing_boundary = (i < beta_start && i + 1 >= beta_start)
-            || (i >= beta_start && i + 1 < beta_start);
+        let crossing_boundary =
+            (i < beta_start && i + 1 >= beta_start) || (i >= beta_start && i + 1 < beta_start);
         if crossing_boundary {
             continue;
         }
         assert!(
             parse_version(current).unwrap() >= parse_version(next).unwrap(),
             "Fabric version {} at index {} should be >= next version {} (not descending)",
-            current, i, next
+            current,
+            i,
+            next
         );
     }
 }
@@ -560,132 +606,9 @@ fn test_is_stable_minecraft_version_edge_cases() {
 // parse_version edge cases
 // ---------------------------------------------------------------------------
 
-#[test]
-fn test_parse_version_two_component() {
-    let v = parse_version("1.21").unwrap();
-    assert_eq!(v, Version::new(1, 21, 0));
-}
-
-#[test]
-fn test_parse_version_three_component() {
-    let v = parse_version("1.20.4").unwrap();
-    assert_eq!(v, Version::new(1, 20, 4));
-}
-
-#[test]
-fn test_parse_version_four_component_forge_legacy() {
-    let v = parse_version("11.14.4.1577");
-    assert!(v.is_some(), "4-component Forge versions should parse");
-    let v = v.unwrap();
-    assert_eq!(v.major, 11);
-    assert_eq!(v.minor, 14);
-    assert_eq!(v.patch, 4);
-}
-
-#[test]
-fn test_canonicalize_forge_loader_version_strips_late_1710_suffix() {
-    assert_eq!(
-        canonicalize_forge_loader_version("1.7.10", "10.13.4.1614-1.7.10"),
-        "10.13.4.1614"
-    );
-    assert_eq!(
-        canonicalize_forge_loader_version("1.7.10", "10.13.2.1291"),
-        "10.13.2.1291"
-    );
-    assert_eq!(
-        canonicalize_forge_loader_version("1.20.1", "47.3.0"),
-        "47.3.0"
-    );
-}
-
-#[test]
-fn test_uses_legacy_forge_coordinate_switches_at_1710_boundary() {
-    assert!(!uses_legacy_forge_coordinate("1.7.10", "10.13.2.1291"));
-    assert!(uses_legacy_forge_coordinate("1.7.10", "10.13.2.1300"));
-    assert!(uses_legacy_forge_coordinate(
-        "1.7.10",
-        "10.13.4.1614-1.7.10"
-    ));
-    assert!(!uses_legacy_forge_coordinate("1.20.1", "47.3.0"));
-}
-
-#[test]
-fn test_parse_version_returns_none_for_garbage() {
-    assert!(parse_version("").is_none());
-    assert!(parse_version("abc").is_none());
-    assert!(parse_version("...").is_none());
-}
-
-#[test]
-fn test_parse_version_with_prerelease() {
-    let v = parse_version("21.1.67-beta");
-    assert!(v.is_some());
-    let v = v.unwrap();
-    assert_eq!(v.major, 21);
-    assert_eq!(v.minor, 1);
-    assert_eq!(v.patch, 67);
-    assert!(!v.pre.is_empty());
-}
-
 // ---------------------------------------------------------------------------
 // sort_versions_desc edge cases
 // ---------------------------------------------------------------------------
-
-#[test]
-fn test_sort_versions_desc_empty() {
-    let mut versions: Vec<String> = vec![];
-    sort_versions_desc(&mut versions);
-    assert!(versions.is_empty());
-}
-
-#[test]
-fn test_sort_versions_desc_single() {
-    let mut versions = vec!["1.0.0".to_string()];
-    sort_versions_desc(&mut versions);
-    assert_eq!(versions, vec!["1.0.0"]);
-}
-
-#[test]
-fn test_sort_versions_desc_unparseable_sorts_to_end() {
-    let mut versions = vec![
-        "invalid".to_string(),
-        "1.0.0".to_string(),
-        "2.0.0".to_string(),
-    ];
-    sort_versions_desc(&mut versions);
-    assert_eq!(versions[0], "2.0.0");
-    assert_eq!(versions[1], "1.0.0");
-    assert_eq!(versions[2], "invalid");
-}
-
-#[test]
-fn test_sort_versions_desc_all_unparseable() {
-    let mut versions = vec![
-        "zzz".to_string(),
-        "aaa".to_string(),
-        "mmm".to_string(),
-    ];
-    sort_versions_desc(&mut versions);
-    assert_eq!(versions, vec!["aaa", "mmm", "zzz"]);
-}
-
-#[test]
-fn test_sort_versions_desc_two_component() {
-    let mut versions = vec![
-        "1.20".to_string(),
-        "1.21".to_string(),
-        "1.19".to_string(),
-    ];
-    sort_versions_desc(&mut versions);
-    assert_eq!(versions, vec!["1.21", "1.20", "1.19"]);
-}
-
-#[test]
-fn test_sort_versions_desc_parseable_before_unparseable() {
-    let mut versions = vec!["1.0.0".to_string(), "invalid".to_string()];
-    sort_versions_desc(&mut versions);
-    assert_eq!(versions, vec!["1.0.0", "invalid"]);
-}
 
 // ---------------------------------------------------------------------------
 // ModLoader conversion
@@ -835,7 +758,11 @@ fn test_fallback_loader_versions_respect_fabric_and_quilt_support_floors() {
 #[test]
 fn test_fallback_loader_versions_unknown_loader() {
     let versions = VersionFetcher::get_fallback_loader_versions("unknown", "1.20.1");
-    assert_eq!(versions, vec!["latest"], "unknown loader should fall back to [\"latest\"]");
+    assert_eq!(
+        versions,
+        vec!["latest"],
+        "unknown loader should fall back to [\"latest\"]"
+    );
 }
 
 #[cfg(feature = "test-utils")]
@@ -850,19 +777,31 @@ async fn test_version_fetcher_uses_fallbacks_when_http_client_is_unavailable() {
         VersionFetcher::get_fallback_minecraft_versions()
     );
     assert_eq!(
-        fetcher.fetch_fabric_loader_versions("1.21.1").await.unwrap(),
+        fetcher
+            .fetch_fabric_loader_versions("1.21.1")
+            .await
+            .unwrap(),
         VersionFetcher::get_fallback_loader_versions("fabric", "1.21.1")
     );
     assert_eq!(
-        fetcher.fetch_neoforge_loader_versions("1.21.1").await.unwrap(),
+        fetcher
+            .fetch_neoforge_loader_versions("1.21.1")
+            .await
+            .unwrap(),
         VersionFetcher::get_fallback_loader_versions("neoforge", "1.21.1")
     );
     assert_eq!(
-        fetcher.fetch_neoforge_loader_versions("1.20.1").await.unwrap(),
+        fetcher
+            .fetch_neoforge_loader_versions("1.20.1")
+            .await
+            .unwrap(),
         VersionFetcher::get_fallback_loader_versions("neoforge", "1.20.1")
     );
     assert_eq!(
-        fetcher.fetch_neoforge_loader_versions("1.19.4").await.unwrap(),
+        fetcher
+            .fetch_neoforge_loader_versions("1.19.4")
+            .await
+            .unwrap(),
         Vec::<String>::new()
     );
     assert_eq!(
@@ -878,7 +817,10 @@ async fn test_version_fetcher_uses_fallbacks_when_http_client_is_unavailable() {
         VersionFetcher::get_fallback_loader_versions("quilt", "1.21.1")
     );
     assert_eq!(
-        fetcher.fetch_fabric_loader_versions("1.13.2").await.unwrap(),
+        fetcher
+            .fetch_fabric_loader_versions("1.13.2")
+            .await
+            .unwrap(),
         Vec::<String>::new()
     );
     assert_eq!(
@@ -930,7 +872,10 @@ async fn test_neoforge_loader_versions_repair_incompatible_cached_family() {
     let filesystem = MockFileSystemProvider::new().with_file(cache_path.clone(), stale_cache);
     let fetcher = VersionFetcher::new(&network, &filesystem).unwrap();
 
-    let repaired = fetcher.fetch_neoforge_loader_versions("1.21.1").await.unwrap();
+    let repaired = fetcher
+        .fetch_neoforge_loader_versions("1.21.1")
+        .await
+        .unwrap();
     let expected = VersionFetcher::get_fallback_loader_versions("neoforge", "1.21.1");
     assert_eq!(repaired, expected);
 
@@ -947,10 +892,13 @@ async fn test_neoforge_loader_versions_repair_incompatible_cached_family() {
 #[tokio::test]
 async fn test_neoforge_loader_versions_repair_empty_result_is_persisted() {
     let network = MockNetworkProvider::new().with_failing_http_client();
-    let legacy_cache_path = crate::platform::cache::legacy_versions_cache_file(
-        "neoforge_loader_1.19.4.json",
-    )
-    .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache").join("neoforge_loader_1.19.4.json"));
+    let legacy_cache_path =
+        crate::platform::cache::legacy_versions_cache_file("neoforge_loader_1.19.4.json")
+            .unwrap_or_else(|_| {
+                std::env::temp_dir()
+                    .join("empack-cache")
+                    .join("neoforge_loader_1.19.4.json")
+            });
     let cache_dir = crate::platform::cache::versions_cache_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("empack-cache").join("versions"));
     let cache_path = cache_dir.join("neoforge_loader_1.19.4.json");
@@ -963,7 +911,10 @@ async fn test_neoforge_loader_versions_repair_empty_result_is_persisted() {
     let filesystem = MockFileSystemProvider::new().with_file(legacy_cache_path, stale_cache);
     let fetcher = VersionFetcher::new(&network, &filesystem).unwrap();
 
-    let repaired = fetcher.fetch_neoforge_loader_versions("1.19.4").await.unwrap();
+    let repaired = fetcher
+        .fetch_neoforge_loader_versions("1.19.4")
+        .await
+        .unwrap();
     assert!(repaired.is_empty());
 
     let repaired_cache = filesystem.files.lock().unwrap();
@@ -983,7 +934,10 @@ async fn test_neoforge_loader_versions_repair_empty_result_is_persisted() {
 fn test_filter_neoforge_invalid_mc_format() {
     let versions = vec!["21.1.69".to_string()];
     let result = filter_neoforge_versions_by_minecraft(&versions, "2.0.0").unwrap();
-    assert!(result.is_empty(), "non-1.X.Y MC version should return empty");
+    assert!(
+        result.is_empty(),
+        "non-1.X.Y MC version should return empty"
+    );
 }
 
 #[test]
@@ -1006,9 +960,7 @@ fn test_filter_forge_empty_versions() {
 
 #[test]
 fn test_filter_forge_mc_version_normalization_21() {
-    let versions = vec![
-        "1.21-51.0.33".to_string(),
-    ];
+    let versions = vec!["1.21-51.0.33".to_string()];
     let result = filter_forge_versions_by_minecraft(&versions, "1.21").unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0], "51.0.33");
@@ -1016,7 +968,13 @@ fn test_filter_forge_mc_version_normalization_21() {
 
 #[test]
 fn test_parse_forge_maven_metadata_rejects_malformed_xml() {
-    let error = parse_forge_maven_metadata("<metadata><versioning><versions><version>1.20.1-47.3.0</versions></versioning></metadata>")
-        .expect_err("mismatched XML elements must not become loader versions");
-    assert!(error.to_string().contains("Failed to parse Forge maven-metadata.xml"));
+    let error = parse_forge_maven_metadata(
+        "<metadata><versioning><versions><version>1.20.1-47.3.0</versions></versioning></metadata>",
+    )
+    .expect_err("mismatched XML elements must not become loader versions");
+    assert!(
+        error
+            .to_string()
+            .contains("Failed to parse Forge maven-metadata.xml")
+    );
 }

@@ -12,7 +12,9 @@
 
 use crate::application::session::{FileSystemProvider, ProcessProvider, Session};
 use crate::empack::state::StateError;
-use crate::empack::versions::{canonicalize_forge_loader_version, uses_legacy_forge_coordinate};
+use crate::engine::runtime_versions::{
+    canonicalize_forge_loader_version, uses_legacy_forge_coordinate,
+};
 use crate::primitives::ProjectPlatform;
 
 /// The pinned backend's online CurseForge routing does not recognize shaders.

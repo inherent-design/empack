@@ -1,7 +1,9 @@
 //! Exact Forge-family installer selection and bounded, independently parsed output contracts.
 //! An installer plan is not a prepared runtime; execution and observed-output checks are separate.
 use super::*;
-use crate::empack::versions::{canonicalize_forge_loader_version, uses_legacy_forge_coordinate};
+use crate::engine::runtime_versions::{
+    canonicalize_forge_loader_version, uses_legacy_forge_coordinate,
+};
 use crate::engine::{acquisition::TransferError, layout::CollisionIndex};
 use empack_core::digest::ExpectedDigest;
 use serde_json::Value;

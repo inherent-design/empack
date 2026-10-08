@@ -279,3 +279,36 @@ fn template_projection_rejects_ambiguous_output_and_stale_input() {
         .is_err()
     );
 }
+
+#[test]
+fn embedded_defaults_share_escaping_and_enforce_output_budget() {
+    let project = project(false, false);
+    let name = "line\nkey=value\\suffix";
+    let source = include_str!("../../../templates/server/server.properties.template");
+    let rendered = render_default(
+        &project,
+        BuildTarget::ServerFull,
+        source,
+        [("NAME".to_owned(), name.to_owned())],
+        4096,
+        &Cancellation::default(),
+    )
+    .unwrap();
+    let rendered = String::from_utf8(rendered).unwrap();
+    assert!(rendered.contains(&format!(
+        "server-name={}\n",
+        encoding::properties_value(name)
+    )));
+    assert!(!rendered.contains("\nkey=value"));
+    assert!(
+        render_default(
+            &project,
+            BuildTarget::ServerFull,
+            source,
+            [],
+            4,
+            &Cancellation::default(),
+        )
+        .is_err()
+    );
+}

@@ -195,54 +195,7 @@ pub fn prepare_templates(
     for path in selected.keys() {
         collisions.insert_file(path)?;
     }
-    let metadata = &project.intent().metadata;
-    let runtime = &project.lock().runtime;
-    let loader = match runtime.loader {
-        LoaderKind::Vanilla => "vanilla",
-        LoaderKind::Fabric => "fabric",
-        LoaderKind::Quilt => "quilt",
-        LoaderKind::Forge => "forge",
-        LoaderKind::NeoForge => "neoforge",
-    };
-    let safe_name: String = metadata
-        .name
-        .to_lowercase()
-        .chars()
-        .map(|ch| if ch.is_alphanumeric() { ch } else { '-' })
-        .collect();
-    let mut values: BTreeMap<String, String> = [
-        (
-            "BOOTSTRAP",
-            if matches!(target, BuildTarget::Client | BuildTarget::Server) {
-                "true"
-            } else {
-                ""
-            }
-            .into(),
-        ),
-        ("BOOTSTRAP_COMMAND", "\"$INST_JAVA\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar -s client pack/pack.toml".into()),
-        ("NAME", metadata.name.clone()),
-        ("VERSION", metadata.version.clone()),
-        ("AUTHOR", metadata.author.clone().unwrap_or_default()),
-        (
-            "DESCRIPTION",
-            metadata.description.clone().unwrap_or_default(),
-        ),
-        ("SAFE_NAME", safe_name),
-        ("MC_VERSION", runtime.minecraft.as_str().to_owned()),
-        ("MODLOADER_NAME", loader.to_owned()),
-        (
-            "MODLOADER_VERSION",
-            runtime
-                .loader_version
-                .as_ref()
-                .map(|value| value.as_str().to_owned())
-                .unwrap_or_default(),
-        ),
-    ]
-    .into_iter()
-    .map(|(key, value)| (key.to_owned(), value))
-    .collect();
+    let mut values = template_values(&project, target);
     values.extend(options.values.clone());
     let mut renderer = handlebars::Handlebars::new();
     renderer.set_strict_mode(true);
@@ -335,6 +288,87 @@ pub fn prepare_templates(
     cancel.check()?;
     Ok(RenderedTemplates { files })
 }
+/// Metadata has one interpretation for user templates and embedded defaults.
+fn template_values(
+    project: &empack_core::model::ResolvedProject,
+    target: BuildTarget,
+) -> BTreeMap<String, String> {
+    let metadata = &project.intent().metadata;
+    let runtime = &project.lock().runtime;
+    let loader = match runtime.loader {
+        LoaderKind::Vanilla => "vanilla",
+        LoaderKind::Fabric => "fabric",
+        LoaderKind::Quilt => "quilt",
+        LoaderKind::Forge => "forge",
+        LoaderKind::NeoForge => "neoforge",
+    };
+    let safe_name: String = metadata
+        .name
+        .to_lowercase()
+        .chars()
+        .map(|ch| if ch.is_alphanumeric() { ch } else { '-' })
+        .collect();
+    let values: BTreeMap<String, String> = [
+        (
+            "BOOTSTRAP",
+            if matches!(target, BuildTarget::Client | BuildTarget::Server) {
+                "true"
+            } else {
+                ""
+            }
+            .into(),
+        ),
+        ("BOOTSTRAP_COMMAND", "\"$INST_JAVA\" -jar packwiz-installer-bootstrap.jar --bootstrap-no-update --bootstrap-main-jar packwiz-installer.jar -s client pack/pack.toml".into()),
+        ("NAME", metadata.name.clone()),
+        ("VERSION", metadata.version.clone()),
+        ("AUTHOR", metadata.author.clone().unwrap_or_default()),
+        (
+            "DESCRIPTION",
+            metadata.description.clone().unwrap_or_default(),
+        ),
+        ("SAFE_NAME", safe_name),
+        ("MC_VERSION", runtime.minecraft.as_str().to_owned()),
+        ("MODLOADER_NAME", loader.to_owned()),
+        (
+            "MODLOADER_VERSION",
+            runtime
+                .loader_version
+                .as_ref()
+                .map(|value| value.as_str().to_owned())
+                .unwrap_or_default(),
+        ),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_owned(), value))
+    .collect();
+    values
+}
+
+pub(super) fn render_default(
+    project: &empack_core::model::ResolvedProject,
+    target: BuildTarget,
+    source: &str,
+    overrides: impl IntoIterator<Item = (String, String)>,
+    maximum: u64,
+    cancel: &Cancellation,
+) -> Result<Vec<u8>> {
+    cancel.check()?;
+    let mut values = template_values(project, target);
+    values.extend(overrides);
+    let mut renderer = handlebars::Handlebars::new();
+    renderer.set_strict_mode(true);
+    renderer.register_escape_fn(handlebars::no_escape);
+    register_helpers(&mut renderer);
+    let mut output = BoundedOutput {
+        bytes: Vec::new(),
+        maximum,
+        cancel,
+    };
+    renderer.render_template_to_write(source, &values, &mut output)?;
+    cancel.check()?;
+    Ok(output.bytes)
+}
+
 struct BoundedOutput<'a> {
     bytes: Vec<u8>,
     maximum: u64,

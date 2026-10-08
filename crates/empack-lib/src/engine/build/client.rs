@@ -126,7 +126,7 @@ fn loader(runtime: &RuntimeResolution) -> Result<Option<(&'static str, String)>>
         .context("Client loader lacks exact version")?
         .as_str();
     let version = if runtime.loader == LoaderKind::Forge {
-        crate::empack::versions::canonicalize_forge_loader_version(
+        crate::engine::runtime_versions::canonicalize_forge_loader_version(
             runtime.minecraft.as_str(),
             version,
         )
@@ -372,23 +372,26 @@ pub(super) fn prepare_client_archive(
     let instance = path("instance.cfg")?;
     let user_configuration = files.contains_key(&instance);
     if !user_configuration {
-        let metadata = &game.project().intent().metadata;
-        let runtime = &game.project().lock().runtime;
-        let mut renderer = crate::empack::templates::TemplateEngine::new();
-        renderer.set_pack_variables(
-            &metadata.name,
-            metadata.author.as_deref().unwrap_or_default(),
-            runtime.minecraft.as_str(),
-            &metadata.version,
-        );
-        renderer.set_variable("BOOTSTRAP", if bootstrap.is_some() { "true" } else { "" });
+        let mut values = BTreeMap::from([(
+            "BOOTSTRAP".to_owned(),
+            if bootstrap.is_some() { "true" } else { "" }.to_owned(),
+        )]);
         if let Some(bootstrap) = bootstrap {
-            renderer.set_variable("BOOTSTRAP_COMMAND", bootstrap.command());
+            values.insert("BOOTSTRAP_COMMAND".to_owned(), bootstrap.command());
         }
-        files.insert(
-            instance,
-            generated(renderer.render_template("instance.cfg")?.as_bytes(), cancel)?,
-        );
+        let bytes = crate::engine::templates::render_default(
+            game.project(),
+            if bootstrap.is_some() {
+                BuildTarget::Client
+            } else {
+                BuildTarget::ClientFull
+            },
+            include_str!("../../../templates/client/instance.cfg.template"),
+            values,
+            options.limits.file_bytes,
+            cancel,
+        )?;
+        files.insert(instance, generated(&bytes, cancel)?);
     }
     let components = path("mmc-pack.json")?;
     if !files.contains_key(&components) {
