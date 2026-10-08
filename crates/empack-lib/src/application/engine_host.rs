@@ -366,7 +366,9 @@ mod build;
 pub use build::{BuildDecisions, build};
 
 mod dependencies;
-pub use dependencies::{AddHostInput, add, add_providers, remove, synchronize, update};
+pub use dependencies::{
+    AddHostInput, add, add_providers, adopt_observed, remove, synchronize, update,
+};
 
 mod cleanup;
 pub use cleanup::clean;

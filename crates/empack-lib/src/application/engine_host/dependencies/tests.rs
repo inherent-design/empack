@@ -977,3 +977,157 @@ async fn native_update_checks_retained_dependents_without_promoting_selected_tra
     .unwrap();
     assert_eq!(snapshot(&project), before);
 }
+
+async fn observed_fixture(root: &Path) -> ResolvedProject {
+    fixture(root).await;
+    let mut server = Server::new_async().await;
+    records(&mut server).await;
+    add(
+        root,
+        &server,
+        vec![input("renderer", Some("my-alias"))],
+        true,
+        false,
+    )
+    .await
+    .unwrap();
+    let project = root.join("project");
+    let proposed = read(&project);
+    fs::create_dir_all(project.join("pack/mods")).unwrap();
+    for id in ["Root0001", "Need0001"] {
+        fs::write(project.join(format!("pack/mods/{id}.jar")), b"payload").unwrap();
+    }
+    fs::remove_file(project.join("empack.lock")).unwrap();
+    proposed
+}
+fn adoption(project: &ResolvedProject) -> AdoptObservedRequest {
+    AdoptObservedRequest {
+        group: empack_core::addition::AdditionGroup::from_resolved(project).unwrap(),
+    }
+}
+#[tokio::test]
+async fn native_adoption_creates_a_lock_without_rewriting_payloads_then_sync_export_remove_converge()
+ {
+    let root = tempfile::tempdir().unwrap();
+    let proposed = observed_fixture(root.path()).await;
+    let project = root.path().join("project");
+    let payload = project.join("pack/mods/Root0001.jar");
+    let modified = fs::metadata(&payload).unwrap().modified().unwrap();
+    let authored = fs::read(project.join("empack.yml")).unwrap();
+    let before = snapshot(root.path());
+    for (yes, dry) in [(true, true), (false, false)] {
+        adopt_observed(&session(root.path(), yes, dry), adoption(&proposed))
+            .await
+            .unwrap();
+        assert_eq!(snapshot(root.path()), before);
+        assert_eq!(
+            fs::metadata(&payload).unwrap().modified().unwrap(),
+            modified
+        );
+    }
+    adopt_observed(&session(root.path(), true, false), adoption(&proposed))
+        .await
+        .unwrap();
+    assert_eq!(fs::read(project.join("empack.yml")).unwrap(), authored);
+    assert_eq!(
+        fs::metadata(&payload).unwrap().modified().unwrap(),
+        modified
+    );
+    let adopted = read(&project);
+    assert_eq!(adopted.intent(), proposed.intent());
+    assert_eq!(adopted.lock().dependencies, proposed.lock().dependencies);
+    assert_eq!(
+        adopted.lock().required_edges,
+        proposed.lock().required_edges
+    );
+    let before = snapshot(&project);
+    adopt_observed(&session(root.path(), true, false), adoption(&proposed))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(&project), before);
+    for _ in 0..2 {
+        synchronize(
+            &session(root.path(), true, false),
+            SyncRequest::Recorded {
+                resolution: None,
+                evidence: SourceEvidencePolicy::Compatibility,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(snapshot(&project), before);
+    }
+    super::super::build(
+        &session(root.path(), true, false),
+        &BuildArgs {
+            targets: vec!["mrpack".into()],
+            ..Default::default()
+        },
+        super::super::BuildDecisions::default(),
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(project.join("dist/Dependency Pack-1.0.mrpack")).unwrap(),
+    )
+    .unwrap();
+    let index: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(index["files"].as_array().unwrap().len(), 2);
+    remove(&session(root.path(), true, false), removal("my-alias"))
+        .await
+        .unwrap();
+    assert!(!payload.exists());
+    assert_eq!(
+        fs::read(project.join("pack/mods/Need0001.jar")).unwrap(),
+        b"payload"
+    );
+    let before = snapshot(&project);
+    synchronize(
+        &session(root.path(), true, false),
+        SyncRequest::Recorded {
+            resolution: None,
+            evidence: SourceEvidencePolicy::Compatibility,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&project), before);
+    assert!(read(&project).intent().roots.is_empty());
+}
+
+#[tokio::test]
+async fn native_adoption_rejects_incomplete_or_incoherent_observations_without_publishing() {
+    let root = tempfile::tempdir().unwrap();
+    let proposed = observed_fixture(root.path()).await;
+    let project = root.path().join("project");
+    let payload = project.join("pack/mods/Root0001.jar");
+    for mode in ["missing", "wrong-bytes", "directory", "invalid-lock"] {
+        match mode {
+            "missing" => fs::remove_file(&payload).unwrap(),
+            "wrong-bytes" => fs::write(&payload, b"changed").unwrap(),
+            "directory" => {
+                fs::remove_file(&payload).unwrap();
+                fs::create_dir(&payload).unwrap();
+            }
+            "invalid-lock" => fs::write(project.join("empack.lock"), b"invalid lock").unwrap(),
+            _ => unreachable!(),
+        }
+        let before = snapshot(root.path());
+        assert!(
+            adopt_observed(&session(root.path(), true, false), adoption(&proposed))
+                .await
+                .is_err(),
+            "{mode}"
+        );
+        assert_eq!(snapshot(root.path()), before, "{mode}");
+        if mode == "directory" {
+            fs::remove_dir(&payload).unwrap();
+        }
+        fs::write(&payload, b"payload").unwrap();
+        if mode == "invalid-lock" {
+            fs::remove_file(project.join("empack.lock")).unwrap();
+        }
+    }
+}

@@ -8,8 +8,8 @@ use crate::{
             ResolvedAdditionBatch,
         },
         api::{
-            AddRequest, ExistingDependencyPolicy, RemoveRequest, Request, SyncRequest,
-            UpdateRequest,
+            AddRequest, AdoptObservedRequest, ExistingDependencyPolicy, RemoveRequest, Request,
+            SyncRequest, UpdateRequest,
         },
         content::SourceEvidencePolicy,
         project::ProjectReader,
@@ -351,6 +351,54 @@ pub(super) fn ready(preparation: Preparation) -> Result<PreparedOperation> {
             anyhow::bail!("Dependency publication still requires content decisions")
         }
     }
+}
+/// Record explicitly described, already present content. The engine verifies every selected
+/// payload and backend owner before offering document changes; this host never installs bytes.
+pub async fn adopt_observed(session: &dyn Session, request: AdoptObservedRequest) -> Result<()> {
+    session.process().check_cancelled()?;
+    let (invocation, project) = project_path(session)?;
+    let engine = engine(session.config().app_config(), &invocation)?;
+    let result = async {
+        for (key, dependency) in request.group.dependencies() {
+            session.display().status().info(&format!(
+                "Adopt {}: {} ({:?}, {:?}, {} files)",
+                key.as_str(),
+                dependency.title,
+                dependency.kind,
+                dependency.identity,
+                dependency.files.as_slice().len()
+            ));
+        }
+        let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
+        let view = prepared
+            .view()
+            .adoption()
+            .context("Missing adoption preview")?;
+        for (requested, canonical) in &view.bindings {
+            if requested != canonical {
+                session.display().status().info(&format!(
+                    "Retain logical key {} for {}",
+                    canonical.as_str(),
+                    requested.as_str()
+                ));
+            }
+        }
+        show_changes(session, &view.files)?;
+        apply(session, &engine, prepared, "Adoption", |receipt| {
+            let ExecutionReceipt::AdoptObserved(receipt) = receipt else {
+                anyhow::bail!("Unexpected adoption receipt");
+            };
+            Ok(format!(
+                "Adopted {} verified dependency bindings; {} managed document changes",
+                receipt.bindings.len(),
+                receipt.publication.changed_files
+            ))
+        })
+        .await
+    }
+    .await;
+    engine.shutdown().await;
+    result
 }
 /// Apply explicit logical selections; unknown dependency evidence requires its own policy.
 pub async fn remove(session: &dyn Session, request: RemoveRequest) -> Result<()> {

@@ -1537,3 +1537,23 @@ evidence, redacted failure and AllRequested publication. After the source server
 stopped, two recorded syncs preserve the tree and mrpack/full-client outputs contain
 the selected bytes. All 22 affected tests, all-feature Clippy and Windows
 cross-compilation pass. CLI representation selection remains integration work.
+
+## Native observed-content adoption
+
+`engine_host::adopt_observed` displays selected identities and document changes, then
+uses shared preview, approval, cancellation and publication. The existing engine
+verifies every selected payload and backend owner; the host does not install bytes.
+A missing lock can be established from an explicit complete group. Missing or changed
+payloads, directory-valued selections and invalid existing locks prevent publication.
+
+The native cross-command fixture verifies preview/decline, raw manifest preservation,
+unchanged payload modification time, first-lock creation, repeated adoption and sync,
+reference export and alias-based removal with retained transitive content. The initial
+fixture omitted the payload directory; that setup error is corrected. All 25 affected
+tests, all-feature Clippy and Windows cross-compilation pass. One parallel pipe warning
+passes cleanly in an isolated serial rerun. CLI construction of the proposed group remains
+frontend integration work.
+
+At `4e2a46d`, the frozen combined revision passed all 1,964 default tests and eleven
+doctests without pipe warnings; 124 opt-in tests were skipped. Greptile 122 reports no
+outstanding findings for that revision. These results precede the adoption-host change.

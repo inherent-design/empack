@@ -393,6 +393,13 @@ retained dependency constraints still bind. Requiring the old bytes would turn t
 operation into sync and prevent adoption of external edits. Indexed metadata keeps
 its metadata role, aliases and extension fields when its digest is refreshed.
 
+`engine_host::adopt_observed` accepts that explicit resolved group, displays selected
+identities and exact document changes, and uses the shared preview/confirmation,
+cancellation and publication flow. It can establish the first lock without a network
+lookup or payload installation. Invalid or missing selected bytes prevent publication;
+an invalid existing lock is never treated as an absent lock. Constructing the proposed
+group from CLI identification and selection remains frontend work.
+
 `AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical
 aliases and rejects conflicts with retained selections. Its `AdditionPlan` exposes
