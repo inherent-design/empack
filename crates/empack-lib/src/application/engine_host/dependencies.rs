@@ -131,52 +131,62 @@ async fn add_with_catalog(
             .await?,
         )?;
         drop(addition);
-        let view = prepared.view().add().context("Missing addition preview")?;
-        for (key, previous) in &view.replaced {
-            session.display().status().info(&format!(
-                "Replace {}: {} ({:?})",
-                key.as_str(),
-                previous.title,
-                previous.identity
-            ));
-        }
-        for unknown in &view.incomplete_evidence {
-            session.display().status().warning(&format!(
-                "Dependency evidence is incomplete for {}",
-                unknown.as_str()
-            ));
-        }
-        for (requested, canonical) in &view.bindings {
-            if requested != canonical {
-                session.display().status().info(&format!(
-                    "Use existing label {} for {}",
-                    canonical.as_str(),
-                    requested.as_str()
-                ));
-            }
-        }
-        session.display().status().info(&format!(
-            "Record {} exact content references; payloads are verified when a build requires them",
-            view.references.len()
-        ));
-        show_changes(session, &view.files)?;
-        apply(session, &engine, prepared, "Addition", |receipt| {
-            let ExecutionReceipt::Add(receipt) = receipt else {
-                anyhow::bail!("Unexpected addition receipt");
-            };
-            Ok(format!(
-                "Recorded {} dependency bindings and {} exact references",
-                receipt.bindings.len(),
-                receipt.references.len()
-            ))
-        })
-        .await
+        publish_addition(session, &engine, prepared).await
     }
     .await;
     engine.shutdown().await;
     result
 }
-fn ready(preparation: Preparation) -> Result<PreparedOperation> {
+pub(super) async fn publish_addition(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+) -> Result<()> {
+    let view = prepared.view().add().context("Missing addition preview")?;
+    for (key, previous) in &view.replaced {
+        session.display().status().info(&format!(
+            "Replace {}: {} ({:?})",
+            key.as_str(),
+            previous.title,
+            previous.identity
+        ));
+    }
+    for unknown in &view.incomplete_evidence {
+        session.display().status().warning(&format!(
+            "Dependency evidence is incomplete for {}",
+            unknown.as_str()
+        ));
+    }
+    for (requested, canonical) in &view.bindings {
+        if requested != canonical {
+            session.display().status().info(&format!(
+                "Use existing label {} for {}",
+                canonical.as_str(),
+                requested.as_str()
+            ));
+        }
+    }
+    if !view.references.is_empty() {
+        session.display().status().info(&format!(
+            "Record {} exact content references; payloads are verified when a build requires them",
+            view.references.len()
+        ));
+    }
+    show_changes(session, &view.files)?;
+    apply(session, engine, prepared, "Addition", |receipt| {
+        let ExecutionReceipt::Add(receipt) = receipt else {
+            anyhow::bail!("Unexpected addition receipt");
+        };
+        Ok(format!(
+            "Recorded {} dependency bindings and {} exact references",
+            receipt.bindings.len(),
+            receipt.references.len()
+        ))
+    })
+    .await
+}
+
+pub(super) fn ready(preparation: Preparation) -> Result<PreparedOperation> {
     match preparation {
         Preparation::Ready(value) => Ok(value),
         Preparation::NeedsInput(_) => {

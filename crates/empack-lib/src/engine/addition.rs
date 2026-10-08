@@ -1,5 +1,7 @@
 //! Bind canonical dependency additions to captured document revisions before native preparation.
+mod direct;
 mod file_input;
+pub use direct::{DirectFileInput, DirectFileLimits, DirectFileSource, FileKindPolicy};
 mod native;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, PreparedDocument};
 use anyhow::Result;

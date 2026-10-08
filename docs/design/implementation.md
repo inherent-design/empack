@@ -1388,3 +1388,24 @@ replacement. This association is separate from manual files inside the archive.
 The combined review corrections and direct-file host pass all 145 affected tests and
 all-feature Clippy. Two parallel tests reported inherited output pipes; isolated evidence
 is recorded with the direct-file host below. Final combined-suite validation remains open.
+
+## Native direct-file addition host
+
+Explicit local and URL files now acquire, normalize and publish through the shared
+addition lifecycle. Original assertions, source permissions, placements and environment
+requirements survive. Transient download locators stay out of intent. ZIP/JAR structure
+and layout checks precede typed addition; unknown layouts require explicit acceptance.
+Every requested file must verify before publication, including mixed local/URL batches.
+
+Six native regressions cover preview/decline, repeated addition, full-client output bytes,
+wrong hashes, aggregate limits, unsafe archive members, unknown JAR acceptance, destination
+collisions, selected source symlinks and concurrent document edits. Two early fixture
+assumptions were corrected: full clients use `.minecraft/`, and explicit local selection
+rejects a linked leaf while canonicalizing the selected parent. No production validation
+was weakened. All 145 affected tests, all-feature Clippy and Windows cross-compilation
+pass. Both parallel inherited-pipe warnings pass cleanly in isolated serial reruns.
+
+The CLI remains on its existing path until coordinated parity verifies. Provider
+identification/representation selection, world archive interpretation, mixed provider/direct
+batches and automatic synchronization still need host composition. This change does not
+claim those features are complete or remove their existing CLI implementations.

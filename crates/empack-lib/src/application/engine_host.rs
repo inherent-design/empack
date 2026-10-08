@@ -399,3 +399,6 @@ where
     runtime.shutdown().await;
     result
 }
+
+mod files;
+pub use files::add_files;

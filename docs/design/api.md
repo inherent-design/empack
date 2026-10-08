@@ -183,6 +183,28 @@ computed addresses do not manufacture independent source authenticity. Direct fi
 retain unknown dependency coverage until identification establishes more. Host file
 selection, type identification and archive interpretation precede this boundary.
 
+`FileAddition::acquire` composes bounded local/HTTP acquisition for explicit
+`DirectFileInput` records. Every record declares its logical key, content kind,
+requirements, placements and source-evidence policy. Download alternatives may be
+transient; separately declared credential-free HTTPS origins become durable intent.
+All HTTP files share one byte/deadline allowance. The overall byte allowance also
+bounds the combined local/downloaded inventory. No successful subset is returned.
+
+Typed ZIP/JAR inputs receive bounded archive structure and layout checks. Recognized
+mod, resource-pack, datapack and shader layouts support the selected kind; unrecognized
+layouts require `FileKindPolicy::AcceptUnrecognized`. These markers do not establish
+game compatibility or provider ownership. Unsafe archive paths remain errors under
+either policy. Configuration and explicitly placed other files remain opaque. World
+archives require member interpretation rather than being installed as an opaque world.
+
+`application::engine_host::add_files` connects these explicit choices to the same
+native addition preview, approval and publication used by provider additions. Host
+paths resolve against the invocation directory. Raw project documents and native root
+identity bind acquisition to publication, so a concurrent edit requires replanning.
+Provider identification/representation selection, world member interpretation and a
+mixed provider/direct CLI batch remain frontend integration work; catalog failures do
+not implicitly authorize unidentified content.
+
 `acquire_local_file` reads an explicitly selected absolute host file into a private
 verified lease. It captures only that regular file, rejects symbolic links and special
 files, checks source identity and content across copying, and preserves portable
