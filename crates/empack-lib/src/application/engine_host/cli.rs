@@ -29,7 +29,7 @@ mod import;
 mod synchronization;
 mod update;
 pub use import::initialize;
-pub use synchronization::synchronize;
+pub use synchronization::{resume as resume_synchronization, synchronize};
 pub use update::{adopt, update};
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.

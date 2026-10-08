@@ -7,6 +7,7 @@ pub mod backend;
 pub mod bootstrap_tools;
 pub mod build;
 pub mod content;
+mod continuation_store;
 pub mod dependency_content;
 pub mod documents;
 

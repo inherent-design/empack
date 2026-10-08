@@ -1,6 +1,6 @@
 # v0.5 delivery ledger
 
-Source baseline: native CLI cutover after `48bfc5d`, 2026-10-08. Target: **v0.5.0-alpha.1**.
+Current baseline: `5fe32bc` plus synchronization continuation, 2026-10-08. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: provider-owned worlds, independent batches and remaining host-service retirement
+new route, not full feature completion: provider-owned worlds, independent batches and remaining acquisition/cleanup integration
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
@@ -33,9 +33,9 @@ a passing review and line coverage do not change that state by themselves.
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
 | Adopt observed content | **CLI wired for tracked local/member files, URL files and providers across side layers, including first-lock adoption and explicit new source groups:** verified document-only acceptance of observed bytes and exact pins | Broaden live provider/member parity |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
-| Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Broaden runtime, search and multi-file placement matrices; manual acquisition continuation |
+| Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Native `sync --continue` and `clean sync` are wired; broaden runtime, search and multi-file placement matrices |
 | Build / continue | **CLI wired:** native build, saved recipe continuation and bounded download waiting | Broaden live target/runtime and platform desktop matrix; execution-time missing inputs retain resumable state |
-| Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores; explicit stale/invalid build and import cleanup is wired |
+| Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores; explicit stale/invalid build, import and sync cleanup is wired |
 | Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
 | Requirements / version | Host inspection; no managed-tool bootstrap | Capability-specific live prerequisites |
 
@@ -121,7 +121,8 @@ auxiliary-member exclusion and download-to-local conversion have explicit flags.
 its source identity or original integrity assertions. Native executable tests cover
 SHA-256 and MD5 imports through two syncs, export, materialized build and removal.
 Native tests cover preview, runtime mismatch, auxiliary refusal, layer bytes and
-re-export. Restricted-import continuation remains open.
+re-export. Restricted imports retain exact source bytes and verified associations through
+`init --continue`; `clean import` explicitly discards saved state.
 
 ## Open defects and delivery gates
 
@@ -131,8 +132,8 @@ re-export. Restricted-import continuation remains open.
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Open verification | Intermittent inherited-pipe warning | Host Nextest upgraded from 0.9.124 to 0.9.148 after identifying its documented macOS capture-pipe fix; 226 affected tests pass without warnings; final combined acceptance remains required |
 | Cutover | Provider-owned world interpretation and live adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
-| Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions and manual-input continuation remain open; automatic layout and accepted-game-version policy changes use explicit revalidation |
-| Cutover | Continuation completion | Browser assistance, execution-time missing-input retention and explicit stale/invalid-state cleanup; previews remain read-only |
+| Cutover | Complete synchronization acquisition and resolution parity | Fresh root/pin/local-source resolution and optional remote materialization are wired; multi-file decisions remain open; manual-input continuation retains exact selections and verified bytes; automatic layout and accepted-game-version policy changes use explicit revalidation |
+| Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
 | Cutover | Remaining acquisition cache integration and cleanup | Builds and synchronization reuse verified content; runtime assets populate the cache during approved execution; add/import acquisition has read-only lookup; approved add/update/import operations insert verified staged content; remaining disposable cleanup and restricted-input lookup integration remain open |
 | Cutover | Explicit `ContinueIndependent` batches | Successful independent groups publish with partial receipts; failed groups retain prior intent/content; AllRequested remains default |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
@@ -158,7 +159,22 @@ The fork remains a separately released tool. The native engine owns project meta
 acquisition, templates and distribution assembly; the executable bootstrap and the
 old library implementations are deleted.
 
-## Verification evidence
+## Latest combined evidence
+
+At `5fe32bc`, the default combined run passed **905 tests and eight doctests**;
+103 opt-in cases were excluded. That run does not establish live/platform acceptance
+of subsequent changes. Synchronization continuation passed 91 affected CLI, executable smoke, import-record,
+cleanup and recorded-sync tests, plus all-target/all-feature Clippy. The executable
+was rebuilt before the final run. Tests cover repeated inputs across restart, wrong
+bytes, symlinks, stale previews, exact cleanup and two unchanged subsequent syncs.
+The cache-admission issue reported against `5fe32bc` remains under investigation: optional
+copy/index admission must not fail authoritative mutation when capacity is exhausted.
+
+## Historical verification evidence
+
+The entries below describe the revision or change named in each entry. Statements of
+remaining work record what was open then; use the routing table and delivery gates above
+for current status. Results from different revisions are not a combined candidate run.
 
 Browser assistance: nine affected provider/build/launcher tests, ten native executable
 interactive/restricted cases and all-feature Clippy passed. The live Modrinth case

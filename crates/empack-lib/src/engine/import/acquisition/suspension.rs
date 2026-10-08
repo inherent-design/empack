@@ -8,23 +8,14 @@ use crate::engine::{
     },
     runtime::RetainedOutput,
 };
-use empack_core::digest::{ContentId, DigestSet, ExpectedDigest, IntegrityEvidence};
+use empack_core::digest::{ContentId, DigestSet, IntegrityEvidence};
 use std::path::PathBuf;
 mod store;
 
 /// Native inspection handle, not a record decoded from editable data.
-pub struct SavedImportRecord {
-    state: PathBuf,
-    name: String,
-    content: [u8; 32],
-    binding: store::Binding,
-}
+pub struct SavedImportRecord(crate::engine::continuation_store::SavedRecord);
 /// Exact native observation used only to discard unchanged host-private state.
-pub struct PendingImportCleanup {
-    state: PathBuf,
-    name: String,
-    content: [u8; 32],
-}
+pub struct PendingImportCleanup(crate::engine::continuation_store::Cleanup);
 /// Inspect without decoding or trusting saved data. Stale records remain explicitly removable.
 pub async fn observe_pending_import(
     scope: &mut WorkScope,
@@ -255,7 +246,7 @@ pub async fn save_pending_import(
         .0;
     if let Some(prior) = &prior {
         ensure!(
-            prior.binding == binding,
+            prior.0.binding == binding,
             "Saved import target changed before extension"
         );
     }
@@ -361,13 +352,5 @@ pub async fn discard_pending_import(
     scope: &mut WorkScope,
     saved: SavedImportRecord,
 ) -> Result<bool> {
-    discard_observed_import(
-        scope,
-        PendingImportCleanup {
-            state: saved.state,
-            name: saved.name,
-            content: saved.content,
-        },
-    )
-    .await
+    discard_observed_import(scope, PendingImportCleanup(saved.0.into_cleanup())).await
 }

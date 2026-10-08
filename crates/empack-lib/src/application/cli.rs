@@ -299,6 +299,16 @@ pub enum Commands {
         /// Acquire and verify all remote references before publishing the complete batch
         #[arg(long)]
         materialize: bool,
+        /// Resume exact saved selections and verified manual downloads
+        #[arg(long = "continue", conflicts_with = "materialize")]
+        continue_sync: bool,
+        /// Associate a local file with the exact dependency/slot printed by sync
+        #[arg(
+            long = "file",
+            value_name = "DEPENDENCY/SLOT=PATH",
+            requires = "continue_sync"
+        )]
+        files: Vec<String>,
     },
 
     /// Refresh selected installed dependencies while retaining intent and pins
@@ -402,7 +412,9 @@ pub enum Commands {
     /// Clean build directories
     Clean {
         /// What to clean
-        #[arg(help = "What to clean: builds, cache, continuation, import, all (builds and cache)")]
+        #[arg(
+            help = "What to clean: builds, cache, continuation, import, sync, all (builds and cache)"
+        )]
         targets: Vec<String>,
     },
 }
@@ -502,6 +514,31 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
+    fn sync_continuation_requires_exact_file_association_mode() {
+        assert!(Cli::try_parse_from(["empack", "sync", "--file", "one/primary=file"]).is_err());
+        assert!(Cli::try_parse_from(["empack", "sync", "--continue", "--materialize"]).is_err());
+        let cli = Cli::try_parse_from([
+            "empack",
+            "sync",
+            "--continue",
+            "--file",
+            "one/primary=some=file",
+        ])
+        .unwrap();
+        let Some(Commands::Sync {
+            materialize,
+            continue_sync,
+            files,
+        }) = cli.command
+        else {
+            panic!("not synchronization");
+        };
+        assert!(continue_sync);
+        assert!(!materialize);
+        assert_eq!(files, ["one/primary=some=file"]);
+    }
+
+    #[test]
     fn import_file_associations_require_an_archive_and_preserve_paths() {
         assert!(
             Cli::try_parse_from(["empack", "init", "--import-file", "declared:0=file"]).is_err()
@@ -576,13 +613,28 @@ mod tests {
     fn commands_surface_metadata_matches_expected_values() {
         assert!(!Commands::Requirements.requires_modpack());
         assert!(!Commands::Version.requires_modpack());
-        assert!(Commands::Sync { materialize: false }.requires_modpack());
+        assert!(
+            Commands::Sync {
+                materialize: false,
+                continue_sync: false,
+                files: vec![]
+            }
+            .requires_modpack()
+        );
         assert!(Commands::Build(BuildArgs::default()).requires_modpack());
         assert_eq!(Commands::Requirements.execution_order(), 0);
         assert_eq!(Commands::Version.execution_order(), 0);
         assert_eq!(Commands::Init(InitArgs::default()).execution_order(), 1);
         assert_eq!(Commands::Clean { targets: vec![] }.execution_order(), 2);
-        assert_eq!(Commands::Sync { materialize: false }.execution_order(), 5);
+        assert_eq!(
+            Commands::Sync {
+                materialize: false,
+                continue_sync: false,
+                files: vec![]
+            }
+            .execution_order(),
+            5
+        );
         assert_eq!(
             Commands::Add {
                 mods: vec![],

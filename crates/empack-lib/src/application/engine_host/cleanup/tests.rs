@@ -187,6 +187,7 @@ async fn later_cleanup_failure_reports_earlier_artifact_publication() {
         ],
         None,
         None,
+        None,
     )
     .await
     .unwrap_err();

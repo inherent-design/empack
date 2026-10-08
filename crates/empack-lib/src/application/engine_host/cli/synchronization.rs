@@ -15,6 +15,7 @@ use empack_core::{
 };
 use std::collections::BTreeMap;
 mod materialization;
+use crate::engine::synchronization::suspension::SyncInputContext;
 use materialization::publish;
 
 pub async fn synchronize(session: &dyn Session, materialize: bool) -> Result<()> {
@@ -23,6 +24,63 @@ pub async fn synchronize(session: &dyn Session, materialize: bool) -> Result<()>
         materialize,
         dependencies::configured_services(session)?,
         RuntimeCatalog::new(HttpAcquisition::new()?),
+    )
+    .await
+}
+
+pub async fn resume(session: &dyn Session, files: Vec<String>) -> Result<()> {
+    resume_with_services(session, files, dependencies::configured_services(session)?).await
+}
+pub(super) async fn resume_with_services(
+    session: &dyn Session,
+    files: Vec<String>,
+    services: dependencies::AdditionServices,
+) -> Result<()> {
+    let (invocation, project) = project_path(session)?;
+    let state = state_root(session.config().app_config(), &invocation)?;
+    let selected_state = state.clone();
+    let transfer = services.files.transfer;
+    let resumed = initialize::discover(session, move |mut scope| async move {
+        let work =
+            scope.spawn_blocking(
+                ResourceRequest {
+                    jobs: 1,
+                    memory_bytes: 64 << 20,
+                    open_files: 16,
+                    ..Default::default()
+                },
+                ResourceRequest::default(),
+                move |cancel| {
+                    let workspace = ProjectReader::new(RecoveryReader::new(selected_state))
+                        .capture(&project, &[], SnapshotLimits::default(), &cancel)?;
+                    SyncInputContext::capture(project, &workspace, &cancel)
+                },
+            )?;
+        let context = (*scope.accept(work.wait().await?)?.transpose()?).clone();
+        crate::engine::synchronization::suspension::load_pending_sync(
+            &mut scope,
+            state,
+            context,
+            SourceEvidencePolicy::Compatibility,
+            transfer,
+        )
+        .await?
+        .context("No saved synchronization exists for this project")
+    })
+    .await?;
+    let context = resumed.context.clone();
+    let project = resumed.project.clone();
+    publish(
+        session,
+        project.clone(),
+        Some(project),
+        true,
+        services,
+        materialization::SyncInputs {
+            context,
+            resumed: Some(resumed),
+            files,
+        },
     )
     .await
 }
@@ -74,16 +132,18 @@ pub(super) async fn synchronize_with_services(
                         &cancel,
                     )?;
                 }
+                let context = SyncInputContext::capture(selected, &workspace, &cancel)?;
                 Ok::<_, anyhow::Error>((
                     workspace.intent().clone(),
                     workspace.prior_lock().cloned(),
+                    context,
                 ))
             },
         )?;
         scope.accept(work.wait().await?)?.transpose()
     })
     .await?;
-    let (source, prior) = &*captured;
+    let (source, prior, context) = &*captured;
     if let Some(prior) = prior {
         match SynchronizationCandidate::prepare(source, prior) {
             Ok(candidate) => {
@@ -93,6 +153,7 @@ pub(super) async fn synchronize_with_services(
                     None,
                     materialize,
                     services,
+                    materialization::SyncInputs::initial(context.clone()),
                 )
                 .await;
             }
@@ -271,6 +332,7 @@ pub(super) async fn synchronize_with_services(
         Some((*resolved).clone()),
         materialize,
         acquisition_services,
+        materialization::SyncInputs::initial(context.clone()),
     )
     .await
 }

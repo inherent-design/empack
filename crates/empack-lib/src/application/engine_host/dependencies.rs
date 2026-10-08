@@ -602,6 +602,12 @@ pub async fn remove(session: &dyn Session, request: RemoveRequest) -> Result<()>
 }
 /// Publish a recorded or explicitly resolved synchronization with complete per-slot decisions.
 pub async fn synchronize(session: &dyn Session, request: SyncRequest) -> Result<()> {
+    synchronize_with_outcome(session, request).await.map(|_| ())
+}
+pub(super) async fn synchronize_with_outcome(
+    session: &dyn Session,
+    request: SyncRequest,
+) -> Result<bool> {
     session.process().check_cancelled()?;
     let (invocation, project) = project_path(session)?;
     let engine = engine(session.config().app_config(), &invocation)?;
@@ -617,7 +623,10 @@ pub async fn synchronize(session: &dyn Session, request: SyncRequest) -> Result<
             view.references.len()
         ));
         show_changes(session, &view.files)?;
-        apply(session, &engine, prepared, "Synchronization", |receipt| {
+        if !approve(session, "Synchronization")? {
+            return Ok(false);
+        }
+        execute_approved(session, &engine, prepared, "Synchronization", |receipt| {
             let ExecutionReceipt::Sync(receipt) = receipt else {
                 anyhow::bail!("Unexpected synchronization receipt");
             };
@@ -627,7 +636,8 @@ pub async fn synchronize(session: &dyn Session, request: SyncRequest) -> Result<
                 receipt.publication.changed_files
             ))
         })
-        .await
+        .await?;
+        Ok(true)
     }
     .await;
     engine.shutdown().await;

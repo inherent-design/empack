@@ -22,6 +22,7 @@ pub enum SyncRequest {
     /// Combine captured local/member sources with externally verified remote bytes.
     /// These bytes cannot replace a local source or an unselected slot.
     AcquiredReferences {
+        source_revision: Option<crate::engine::project::ProjectRevision>,
         resolution: Option<ResolvedProject>,
         evidence: SourceEvidencePolicy,
         content: BTreeMap<LockedFileKey, crate::engine::mrpack::AcquiredBuildFile>,
@@ -62,8 +63,9 @@ pub(super) async fn prepare(
         anyhow::bail!("Synchronization requires an existing project")
     };
     ensure!(project.is_absolute(), "Project selection must be absolute");
-    let (request, acquired) = match request {
+    let (request, acquired, source_revision) = match request {
         SyncRequest::AcquiredReferences {
+            source_revision,
             resolution,
             evidence,
             content,
@@ -73,8 +75,9 @@ pub(super) async fn prepare(
                 evidence,
             },
             content,
+            source_revision,
         ),
-        request => (request, BTreeMap::new()),
+        request => (request, BTreeMap::new(), None),
     };
     let planned = match request {
         SyncRequest::AcquiredReferences { .. } => unreachable!("normalized above"),
@@ -123,6 +126,7 @@ pub(super) async fn prepare(
                             limits,
                             &cancel,
                         )?;
+                    snapshot.require_revision(source_revision)?;
                     let memory = native_sync::recorded::RecordedInputs::metadata_memory(
                         &snapshot,
                         resolution.as_ref(),

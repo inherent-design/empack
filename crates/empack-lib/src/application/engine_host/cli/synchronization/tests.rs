@@ -981,3 +981,200 @@ async fn missing_lock_adoption_verifies_all_authored_roles_without_installing_pa
     }
     assert_eq!(snapshot(&root.path().join("project")), committed);
 }
+
+#[tokio::test]
+async fn restricted_sync_retains_exact_selections_and_files_across_restarts() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let current = project(root.path());
+    let mut intent = current.intent().clone();
+    let mut lock = current.lock().clone();
+    for (key, id, version, bytes) in [
+        ("one", "123", "456", b"first".as_slice()),
+        ("two", "124", "457", b"second".as_slice()),
+    ] {
+        let key = DependencyKey::parse(key).unwrap();
+        let identity = ProviderProjectId::CurseForge(CurseForgeProjectId::parse(id).unwrap());
+        let pin = ResolvedPin {
+            selection: identity.parse_pin(version).unwrap(),
+            project: identity.clone(),
+        };
+        let place = Placement {
+            layer: ContentLayer::Common,
+            destination: InstallDestination::parse(&format!("mods/{}.jar", key.as_str())).unwrap(),
+            requirements: required(),
+        };
+        intent.roots.insert(
+            key.clone(),
+            DependencyIntent {
+                source: SourceIntent::Provider(identity.clone()),
+                kind: ContentKind::Mod,
+                version: VersionIntent::Exact(pin.selection.clone()),
+                placement: PlacementIntent::Explicit(NonEmpty::new(vec![place.clone()]).unwrap()),
+                requirements: required(),
+            },
+        );
+        let digests =
+            DigestSet::new(vec![ExpectedDigest::Sha512(Sha512::digest(bytes).into())]).unwrap();
+        lock.dependencies.insert(
+            key.clone(),
+            LockedDependency {
+                title: key.as_str().into(),
+                kind: ContentKind::Mod,
+                identity: ResolvedIdentity::Provider(identity),
+                selected: Some(pin.clone()),
+                files: NonEmpty::new(vec![ResolvedFile {
+                    slot: FileSlot::parse("primary").unwrap(),
+                    acquisition: AcquisitionSpec::Manual {
+                        pin: Some(pin),
+                        instructions: "Use the provider page".into(),
+                    },
+                    expected: ExpectedContent {
+                        digests: Some(digests.clone()),
+                        size: Some(bytes.len() as u64),
+                        accepted_observation: None,
+                    },
+                    provenance: Provenance {
+                        source: "fixture".into(),
+                        location: None,
+                        declared_digests: Some(digests),
+                        conversions: vec![],
+                    },
+                    placements: NonEmpty::new(vec![place]).unwrap(),
+                }])
+                .unwrap(),
+            },
+        );
+        lock.coverage
+            .insert(key.clone(), Coverage::CompleteForSelection);
+        lock.required_edges.insert(key, BTreeSet::new());
+    }
+    write_intent(root.path(), &intent);
+    let source = DocumentCodec
+        .decode_intent(
+            &fs::read(root.path().join("project/empack.yml")).unwrap(),
+            "fixture",
+        )
+        .unwrap();
+    lock.intent_revision = source.semantic_revision();
+    let resolved = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+    fs::write(
+        root.path().join("project/empack.lock"),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+    )
+    .unwrap();
+    let original = snapshot(&root.path().join("project"));
+    let mut server = mockito::Server::new_async().await;
+    let no_network = server
+        .mock("GET", mockito::Matcher::Any)
+        .expect(0)
+        .create_async()
+        .await;
+    let result = synchronize_with_services(
+        &session(root.path(), false),
+        true,
+        services(&server.url()),
+        RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await;
+    assert!(format!("{:#}", result.unwrap_err()).contains("continuation was saved"));
+    assert_eq!(snapshot(&root.path().join("project")), original);
+    let records = || {
+        fs::read_dir(root.path().join("state/pending-sync"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(records().len(), 1);
+    let before = snapshot(root.path());
+    resume_with_services(&session(root.path(), true), vec![], services(&server.url()))
+        .await
+        .unwrap();
+    assert_eq!(snapshot(root.path()), before);
+    for selected in ["unknown/primary=one.jar", "one/primary=one.jar"] {
+        let before = snapshot(root.path());
+        let files = if selected.starts_with("unknown") {
+            vec![selected.into()]
+        } else {
+            vec![selected.into(), selected.into()]
+        };
+        assert!(
+            resume_with_services(&session(root.path(), false), files, services(&server.url()))
+                .await
+                .is_err()
+        );
+        assert_eq!(snapshot(root.path()), before);
+    }
+    #[cfg(unix)]
+    {
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        fs::write(outside.path(), b"first").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("linked.jar")).unwrap();
+        let before = snapshot(root.path());
+        assert!(
+            resume_with_services(
+                &session(root.path(), false),
+                vec!["one/primary=linked.jar".into()],
+                services(&server.url())
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(snapshot(root.path()), before);
+        assert_eq!(fs::read(outside.path()).unwrap(), b"first");
+        fs::remove_file(root.path().join("linked.jar")).unwrap();
+    }
+    fs::write(root.path().join("one.jar"), b"first").unwrap();
+    let partial = resume_with_services(
+        &session(root.path(), false),
+        vec!["one/primary=one.jar".into()],
+        services(&server.url()),
+    )
+    .await;
+    assert!(format!("{:#}", partial.unwrap_err()).contains("continuation was saved"));
+    assert_eq!(snapshot(&root.path().join("project")), original);
+    fs::remove_file(root.path().join("one.jar")).unwrap();
+    if root.path().join("cache").exists() {
+        fs::remove_dir_all(root.path().join("cache")).unwrap();
+    }
+    fs::write(root.path().join("two.jar"), b"wrong!").unwrap();
+    let before = snapshot(root.path());
+    assert!(
+        resume_with_services(
+            &session(root.path(), false),
+            vec!["two/primary=two.jar".into()],
+            services(&server.url())
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(snapshot(root.path()), before);
+    fs::write(root.path().join("two.jar"), b"second").unwrap();
+    resume_with_services(
+        &session(root.path(), false),
+        vec!["two/primary=two.jar".into()],
+        services(&server.url()),
+    )
+    .await
+    .unwrap();
+    assert!(records().is_empty());
+    assert_eq!(
+        fs::read(root.path().join("project/pack/mods/one.jar")).unwrap(),
+        b"first"
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/mods/two.jar")).unwrap(),
+        b"second"
+    );
+    assert_eq!(
+        project(root.path()).lock().dependencies,
+        resolved.lock().dependencies
+    );
+    let after = snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        sync(root.path(), &server.url(), false).await.unwrap();
+    }
+    assert_eq!(snapshot(&root.path().join("project")), after);
+    no_network.assert_async().await;
+}

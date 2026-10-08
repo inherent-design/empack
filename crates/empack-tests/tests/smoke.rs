@@ -604,3 +604,187 @@ fn smoke_adopt_sources_and_restore_missing_lock_without_installing_files() {
         fs::read(project.dir().join("pack/mods/fixture.jar")).unwrap()
     );
 }
+
+#[test]
+fn smoke_sync_manual_continuation_and_stale_cleanup() {
+    use empack_core::{digest::*, identity::*, model::*, path::*, requirements::*};
+    use empack_lib::engine::documents::DocumentCodec;
+    use std::collections::BTreeSet;
+    let project = initialized();
+    let current = empack_tests::e2e::read_project(project.dir());
+    let mut intent = current.intent().clone();
+    let mut lock = current.lock().clone();
+    for (key, id, version, bytes) in [
+        ("one", "123", "456", b"first".as_slice()),
+        ("two", "124", "457", b"second".as_slice()),
+    ] {
+        let key = DependencyKey::parse(key).unwrap();
+        let identity = ProviderProjectId::CurseForge(CurseForgeProjectId::parse(id).unwrap());
+        let pin = ResolvedPin {
+            selection: identity.parse_pin(version).unwrap(),
+            project: identity.clone(),
+        };
+        let place = Placement {
+            layer: ContentLayer::Common,
+            destination: InstallDestination::parse(&format!("mods/{}.jar", key.as_str())).unwrap(),
+            requirements: Requirements {
+                client: Requirement::Required,
+                server: Requirement::Required,
+            },
+        };
+        intent.roots.insert(
+            key.clone(),
+            DependencyIntent {
+                source: SourceIntent::Provider(identity.clone()),
+                kind: ContentKind::Mod,
+                version: VersionIntent::Exact(pin.selection.clone()),
+                placement: PlacementIntent::Explicit(NonEmpty::new(vec![place.clone()]).unwrap()),
+                requirements: Requirements {
+                    client: Requirement::Required,
+                    server: Requirement::Required,
+                },
+            },
+        );
+        let digests =
+            DigestSet::new(vec![ExpectedDigest::parse("sha512", match bytes { b"first" => "7fdd80dbdded156323d36c459e5fd133a4d888c227320cfb7042be9feb35d7f07201e535697af914e69d6f46b2a88655c86c2371288052ccd4fa92058b01d3fd", b"second" => "9381e9a67aa361751cea90178c094ad6133742163cbd14f146be5c3ee6606d4e8ab4bdd839e7c672baa6eb87e06f59b2d3a68ad0533f2a13ef6c0c5d8769216a", _ => unreachable!() }).unwrap()]).unwrap();
+        lock.dependencies.insert(
+            key.clone(),
+            LockedDependency {
+                title: key.as_str().into(),
+                kind: ContentKind::Mod,
+                identity: ResolvedIdentity::Provider(identity),
+                selected: Some(pin.clone()),
+                files: NonEmpty::new(vec![ResolvedFile {
+                    slot: FileSlot::parse("primary").unwrap(),
+                    acquisition: AcquisitionSpec::Manual {
+                        pin: Some(pin),
+                        instructions: "Use the provider page".into(),
+                    },
+                    expected: ExpectedContent {
+                        digests: Some(digests.clone()),
+                        size: Some(bytes.len() as u64),
+                        accepted_observation: None,
+                    },
+                    provenance: Provenance {
+                        source: "fixture".into(),
+                        location: None,
+                        declared_digests: Some(digests),
+                        conversions: vec![],
+                    },
+                    placements: NonEmpty::new(vec![place]).unwrap(),
+                }])
+                .unwrap(),
+            },
+        );
+        lock.coverage
+            .insert(key.clone(), Coverage::CompleteForSelection);
+        lock.required_edges.insert(key, BTreeSet::new());
+    }
+    fs::write(
+        project.dir().join("empack.yml"),
+        DocumentCodec.encode_intent(&intent).unwrap(),
+    )
+    .unwrap();
+    let source = DocumentCodec
+        .decode_intent(
+            &fs::read(project.dir().join("empack.yml")).unwrap(),
+            "fixture",
+        )
+        .unwrap();
+    lock.intent_revision = source.semantic_revision();
+    let resolved = ResolvedProject::validate(intent, lock, source.semantic_revision()).unwrap();
+    fs::write(
+        project.dir().join("empack.lock"),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+    )
+    .unwrap();
+
+    let original = project_snapshot(&project);
+    command(&project)
+        .args(["sync", "--materialize", "--yes"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    assert_eq!(project_snapshot(&project), original);
+    let pending = snapshot(&project);
+    command(&project)
+        .args(["sync", "--continue", "--dry-run", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&project), pending);
+    fs::write(project.dir().join("first.jar"), b"first").unwrap();
+    command(&project)
+        .args([
+            "sync",
+            "--continue",
+            "--file",
+            "one/primary=first.jar",
+            "--yes",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("continuation was saved"));
+    fs::remove_file(project.dir().join("first.jar")).unwrap();
+    fs::write(project.dir().join("second.jar"), b"second").unwrap();
+    command(&project)
+        .args([
+            "sync",
+            "--continue",
+            "--file",
+            "two/primary=second.jar",
+            "--yes",
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read(project.dir().join("pack/mods/one.jar")).unwrap(),
+        b"first"
+    );
+    assert_eq!(
+        fs::read(project.dir().join("pack/mods/two.jar")).unwrap(),
+        b"second"
+    );
+    let complete = project_snapshot(&project);
+    for _ in 0..2 {
+        command(&project).args(["sync", "--yes"]).assert().success();
+    }
+    assert_eq!(project_snapshot(&project), complete);
+
+    // A stale record is inspected without mutation and removed only by explicit cleanup.
+    let pending_dir = project.dir().join(".host-state/pending-sync");
+    for (path, bytes) in pending.iter().filter(|(path, _)| {
+        path.starts_with(".host-state/pending-sync")
+            && path.extension().is_some_and(|ext| ext == "json")
+    }) {
+        fs::write(project.dir().join(path), bytes).unwrap();
+    }
+    let intent_path = project.dir().join("empack.yml");
+    let mut bytes = fs::read(&intent_path).unwrap();
+    bytes.extend_from_slice(b"\n# changed after capture\n");
+    fs::write(&intent_path, bytes).unwrap();
+    let stale = snapshot(&project);
+    command(&project)
+        .args(["sync", "--continue", "--dry-run", "--yes"])
+        .assert()
+        .failure();
+    command(&project)
+        .args(["clean", "sync", "--dry-run", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(snapshot(&project), stale);
+    command(&project)
+        .args(["clean", "sync", "--yes"])
+        .assert()
+        .success();
+    assert!(!fs::read_dir(pending_dir).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "json")
+    }));
+    assert_eq!(
+        fs::read(project.dir().join("pack/mods/one.jar")).unwrap(),
+        b"first"
+    );
+}

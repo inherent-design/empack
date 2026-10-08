@@ -101,9 +101,16 @@ async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_pr
     );
     let before = snapshot(&root.path().join("project"));
     for _ in 0..2 {
-        execute_command_with_session(Commands::Sync { materialize: false }, &selected)
-            .await
-            .unwrap();
+        execute_command_with_session(
+            Commands::Sync {
+                materialize: false,
+                continue_sync: false,
+                files: vec![],
+            },
+            &selected,
+        )
+        .await
+        .unwrap();
     }
     assert_eq!(snapshot(&root.path().join("project")), before);
     fs::create_dir_all(root.path().join("project/pack/config")).unwrap();
@@ -144,9 +151,16 @@ async fn dispatch_initializes_adds_syncs_builds_removes_and_cleans_one_native_pr
         .unwrap();
     assert!(resolved(root.path()).intent().roots.is_empty());
     assert!(!root.path().join("project/pack/mods/fixture.jar").exists());
-    execute_command_with_session(Commands::Sync { materialize: false }, &selected)
-        .await
-        .unwrap();
+    execute_command_with_session(
+        Commands::Sync {
+            materialize: false,
+            continue_sync: false,
+            files: vec![],
+        },
+        &selected,
+    )
+    .await
+    .unwrap();
     execute_command_with_session(
         Commands::Clean {
             targets: vec!["builds".into()],

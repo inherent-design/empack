@@ -33,12 +33,14 @@ fn stale_import_cannot_resume_but_explicit_cleanup_remains_available() {
                 fs::create_dir(&target).unwrap();
                 fs::write(target.join("empack.yml"), b"original").unwrap();
             }
-            "invalid" => {
-                fs::write(state.join("pending-imports").join(&saved.name), b"invalid").unwrap()
-            }
+            "invalid" => fs::write(
+                state.join("pending-imports").join(&saved.0.name),
+                b"invalid",
+            )
+            .unwrap(),
             _ => unreachable!(),
         }
-        let path = state.join("pending-imports").join(&saved.name);
+        let path = state.join("pending-imports").join(&saved.0.name);
         let before = fs::read(&path).unwrap();
         assert!(read(&state, &target, &cancel).is_err(), "{change}");
         let observed = observe(&state, &target, &cancel).unwrap().unwrap();
@@ -79,7 +81,7 @@ fn extension_and_cleanup_compare_exact_observed_bytes() {
             .len(),
         1
     );
-    fs::remove_file(state.join("pending-imports").join(&extended.name)).unwrap();
+    fs::remove_file(state.join("pending-imports").join(&extended.0.name)).unwrap();
     assert!(save(&state, &target, &next, Some(&extended), &cancel).is_err());
     assert!(!target.exists());
 }
@@ -91,7 +93,7 @@ fn bounded_records_reject_unknown_fields() {
     let cancel = Cancellation::default();
     let record = fixture(&target);
     let saved = save(&state, &target, &record, None, &cancel).unwrap();
-    let path = state.join("pending-imports").join(saved.name);
+    let path = state.join("pending-imports").join(saved.0.name);
     let mut json = serde_json::to_value(&record).unwrap();
     json["destination"] = serde_json::json!("/untrusted");
     fs::write(&path, serde_json::to_vec(&json).unwrap()).unwrap();

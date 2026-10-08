@@ -542,6 +542,7 @@ async fn acquired_references_cannot_override_captured_local_sources_or_unknown_s
             .preview(
                 root.path().to_path_buf(),
                 SyncRequest::AcquiredReferences {
+                    source_revision: None,
                     resolution: None,
                     evidence: SourceEvidencePolicy::Compatibility,
                     content: supplied,

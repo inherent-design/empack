@@ -137,12 +137,27 @@ these obligations and requires confirmation or `--yes` before acquisition. Provi
 lookup uses the exact recorded pin and file role; refreshed locators cannot replace
 original digest or size assertions. After verification, the native engine previews
 and publishes the complete file change. Failed downloads or unresolved manual
-references publish nothing. Local sources still use captured filesystem evidence.
+references publish nothing. Missing manual inputs retain the exact candidate selections
+and any verified supplied bytes outside the disposable cache. Local sources still use
+captured filesystem evidence.
 
 ```sh
 empack --dry-run sync --materialize
 empack --yes sync --materialize
 ```
+
+To supply restricted files, use the exact dependency and file role printed by sync:
+
+```sh
+empack --yes sync --continue --file example/primary=~/Downloads/example.jar
+```
+
+Each supplied file must match the original digest and size assertions. You can supply
+files over several invocations; the project changes only when every obligation verifies
+and publication is approved. Continuation refuses changed intent/lock documents or a
+replaced project directory. `sync --continue --dry-run` leaves the saved record unchanged.
+Use `clean sync --dry-run` to inspect abandonment, then `clean sync --yes` to discard the
+selected record, including stale or invalid records. Ordinary `clean all` retains it.
 
 The materialization preview performs no remote payload downloads. It reports
 acquisition obligations alongside the recorded synchronization plan; it does not

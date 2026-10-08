@@ -984,7 +984,7 @@ archive/file content lives outside the disposable cache and survives record clea
 
 ### Native cleanup host
 
-`application::engine_host::clean` accepts `builds`, `cache`, `continuation`, `import` and `all`; omission selects
+`application::engine_host::clean` accepts `builds`, `cache`, `continuation`, `import`, `sync` and `all`; omission selects
 artifacts. It validates every target and prepares all selected scopes before one approval.
 Artifacts use native publication without needing valid intent/lock documents. The content
 cache lives under the selected cache root's `content-v1` directory. Opening an absent cache
@@ -1137,7 +1137,8 @@ project-relative paths, independently of installation destinations.
 The CLI records remote references and materializes local/member sources. Explicit
 `sync --materialize` also verifies remote payloads before publication. Provider file
 plans carry companion placement choices. Provider-owned world interpretation and
-manual-input continuation remain implementation gates.
+multi-file decision completion remain implementation gates. Manual-input continuation
+is available through `sync --continue --file DEPENDENCY/SLOT=PATH`.
 
 ### Explicit provider file plans
 
@@ -1325,3 +1326,23 @@ failure may leave verified disposable bytes; those bytes do not establish projec
 Unavailable stores do not authorize deleting or repairing unrelated paths and do not prevent
 project publication. Cache hits still require verification against each consumer's source
 assertions and integrity policy.
+
+### Synchronization input retention
+
+`SyncInputContext` binds captured document bytes and native project/parent identity.
+`save_pending_sync` retains the validated candidate intent and exact lock, original
+source assertions, and verified manual inputs under the host state root. Saving requires
+acquisition approval and does not authorize project publication. It refuses a changed
+source binding or competing saved-record update. Retained payloads live outside the
+disposable cache and are verified again on resume.
+
+`load_pending_sync` bounds and admits record decoding before allocation. It rejects
+stale roots/documents, malformed selections and weakened source policy. The record
+supplies candidate facts, never filesystem authority or replayed execution approval.
+`SyncRequest::AcquiredReferences::source_revision` binds final preparation to the source
+capture, including changes made while acquisition ran. The host previews and approves
+the native file plan again; only completed publication removes the observed saved record.
+`clean sync` uses an opaque bounded record observation and conditional deletion, allowing
+explicit cleanup even when the saved model cannot decode. Preview and declined execution
+preserve saved state. Supplied selectors are exact dependency/slot pairs; authored local
+sources cannot be replaced through this association path.
