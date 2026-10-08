@@ -42,7 +42,7 @@ impl PreparedSynchronization {
     pub fn candidate(&self) -> &SynchronizationCandidate {
         &self.candidate
     }
-    pub fn publish(
+    pub(in crate::engine) fn publish(
         self,
         publisher: &Publisher,
         cancel: &Cancellation,

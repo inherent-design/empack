@@ -509,7 +509,8 @@ impl PreparedMrpackBuild {
     pub fn bytes(&self) -> u64 {
         self.publication.bytes
     }
-    pub fn publish(
+    #[cfg(test)]
+    pub(in crate::engine) fn publish(
         self,
         publisher: &super::publication::Publisher,
         cancel: &Cancellation,

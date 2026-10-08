@@ -2,7 +2,7 @@
 use super::*;
 use crate::engine::{
     mrpack::LockedFileKey,
-    publication::{Publisher, RecoveryRequired},
+    publication::Publisher,
     runtime::WorkScope,
     synchronization::{self as native_sync, PreparedSynchronization},
 };
@@ -200,21 +200,7 @@ pub(super) async fn run(
     let result = execute(prepared, config, &mut scope).await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Sync(Box::new(receipt))),
-        Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
-            ExecutionOutcome::RecoveryRequired {
-                operation: error
-                    .downcast_ref::<RecoveryRequired>()
-                    .unwrap()
-                    .operation
-                    .clone(),
-                cause: error,
-            }
-        }
-        Err(error) if error.downcast_ref::<PublicationWorkerFailed>().is_some() => {
-            ExecutionOutcome::ExecutionUncertain(error)
-        }
-        Err(_) if cancel.is_cancelled() => ExecutionOutcome::InterruptedBeforePublication,
-        Err(error) => ExecutionOutcome::FailedBeforePublication(error),
+        Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
 }
 async fn execute(

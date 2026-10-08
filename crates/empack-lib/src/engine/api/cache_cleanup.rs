@@ -144,8 +144,7 @@ pub(super) async fn run(
         Err(error) if error.downcast_ref::<RuntimeError>().is_some() => {
             Ok(ExecutionOutcome::ExecutionUncertain(error))
         }
-        Err(_) if cancel.is_cancelled() => Ok(ExecutionOutcome::InterruptedBeforePublication),
-        Err(error) => Ok(ExecutionOutcome::FailedBeforePublication(error)),
+        Err(error) => Ok(ExecutionOutcome::failed(error, cancel.is_cancelled())),
     }
 }
 

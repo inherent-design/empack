@@ -195,6 +195,18 @@ fn actual_process_crashes_recover_at_every_durable_boundary() {
                 b"old intent"
             );
             assert!(!project.path().join("pack").exists());
+            let directory = publisher.project_state(&root).unwrap();
+            let abandoned: serde_json::Value =
+                serde_json::from_slice(&directory.read("retention.json").unwrap()).unwrap();
+            let abandoned = abandoned["operation"].as_str().unwrap();
+            assert!(directory.exists(abandoned));
+            publisher
+                .publish(&root, prepare(&root), &Cancellation::default())
+                .unwrap();
+            assert!(
+                !directory.exists(abandoned),
+                "pre-intent copies leaked after restart"
+            );
         } else {
             publisher.recover(&root).unwrap();
             assert!(!publisher.recovery_required(&root).unwrap());
@@ -931,4 +943,67 @@ fn concurrent_private_directory_openers_share_one_verified_boundary() {
             .collect::<Vec<_>>()
     });
     assert!(identities.iter().all(|identity| *identity == identities[0]));
+}
+
+#[test]
+fn repeated_publications_reclaim_previous_copies_and_preserve_unknown_neighbors() {
+    let project = tempfile::tempdir().unwrap();
+    fixture(project.path());
+    let state = tempfile::tempdir().unwrap();
+    let publisher = Publisher::open(&state.path().join("private")).unwrap();
+    let root = ProjectReadRoot::open(project.path()).unwrap();
+    let directory = publisher.project_state(&root).unwrap();
+    directory.create_dir("op-unknown").unwrap();
+    directory.write("op-unknown/keep", b"unowned").unwrap();
+    let mut previous = None;
+    for _ in 0..3 {
+        fs::write(project.path().join("empack.yml"), b"old intent").unwrap();
+        let receipt = publisher
+            .publish(&root, prepare(&root), &Cancellation::default())
+            .unwrap();
+        if let Some(previous) = previous {
+            assert!(
+                !directory.exists(previous),
+                "previous recovery copies leaked"
+            );
+        }
+        previous = Some(receipt.operation);
+    }
+    publisher.reclaim_committed(&root).unwrap();
+    assert!(!directory.exists(previous.unwrap()));
+    assert_eq!(directory.read("op-unknown/keep").unwrap(), b"unowned");
+}
+
+#[test]
+fn unexpected_retained_object_blocks_superseding_its_descriptor() {
+    let project = tempfile::tempdir().unwrap();
+    fixture(project.path());
+    let state = tempfile::tempdir().unwrap();
+    let publisher = Publisher::open(&state.path().join("private")).unwrap();
+    let root = ProjectReadRoot::open(project.path()).unwrap();
+    let receipt = publisher
+        .publish(&root, prepare(&root), &Cancellation::default())
+        .unwrap();
+    let directory = publisher.project_state(&root).unwrap();
+    let unknown = format!("{}/unowned", receipt.operation);
+    directory.write(&unknown, b"keep").unwrap();
+    fs::write(project.path().join("empack.yml"), b"old intent").unwrap();
+    assert!(
+        publisher
+            .publish(&root, prepare(&root), &Cancellation::default())
+            .is_err()
+    );
+    assert_eq!(directory.read(&unknown).unwrap(), b"keep");
+    assert_eq!(
+        load_journal(&directory).unwrap().unwrap().operation,
+        receipt.operation
+    );
+    assert_eq!(
+        fs::read(project.path().join("empack.yml")).unwrap(),
+        b"old intent"
+    );
+    directory.remove_file(unknown).unwrap();
+    publisher
+        .publish(&root, prepare(&root), &Cancellation::default())
+        .unwrap();
 }

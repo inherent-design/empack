@@ -6,7 +6,7 @@ use crate::engine::{
         PreparedProjectCreation, PreparedProjectReplacement, ProjectCandidate,
         ProjectReplacementPolicy, prepare_project_creation, prepare_project_replacement,
     },
-    publication::{Publisher, RecoveryRequired},
+    publication::Publisher,
     runtime::WorkScope,
 };
 use empack_core::{
@@ -253,21 +253,7 @@ pub(super) async fn run(
         } else {
             ExecutionReceipt::Import(Box::new(receipt))
         }),
-        Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
-            ExecutionOutcome::RecoveryRequired {
-                operation: error
-                    .downcast_ref::<RecoveryRequired>()
-                    .unwrap()
-                    .operation
-                    .clone(),
-                cause: error,
-            }
-        }
-        Err(error) if error.downcast_ref::<PublicationWorkerFailed>().is_some() => {
-            ExecutionOutcome::ExecutionUncertain(error)
-        }
-        Err(_) if cancel.is_cancelled() => ExecutionOutcome::InterruptedBeforePublication,
-        Err(error) => ExecutionOutcome::FailedBeforePublication(error),
+        Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
 }
 async fn execute(

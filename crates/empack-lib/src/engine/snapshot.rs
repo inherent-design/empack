@@ -164,7 +164,11 @@ impl ProjectReadRoot {
         let current = current.context("Snapshot has no capture groups")?;
         ensure!(
             current.entries == snapshot.entries,
-            "Project inputs changed since preparation"
+            anyhow::Error::new(super::diagnostics::Diagnostic::new(
+                super::diagnostics::DiagnosticCode::StaleSnapshot,
+                super::diagnostics::DiagnosticPhase::Verification
+            ))
+            .context("Project inputs changed since preparation")
         );
         Ok(())
     }

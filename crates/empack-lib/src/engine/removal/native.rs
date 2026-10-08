@@ -57,7 +57,11 @@ impl PreparedRemoval {
     pub fn untracked_evidence(&self) -> &[PortableRelPath] {
         &self.untracked_evidence
     }
-    pub fn publish(self, publisher: &Publisher, cancel: &Cancellation) -> Result<RemovalReceipt> {
+    pub(in crate::engine) fn publish(
+        self,
+        publisher: &Publisher,
+        cancel: &Cancellation,
+    ) -> Result<RemovalReceipt> {
         let publication = publisher.publish(&self.root, self.change, cancel)?;
         Ok(RemovalReceipt {
             publication,

@@ -2,7 +2,7 @@
 use super::*;
 pub use crate::engine::removal::{ObservedRemovalSelection, RemovalSelector};
 use crate::engine::{
-    publication::{Publisher, RecoveryRequired},
+    publication::Publisher,
     removal::{self as native_removal, PreparedRemoval},
     runtime::WorkScope,
 };
@@ -129,21 +129,7 @@ pub(super) async fn run(
     let result = execute(prepared, config, &mut scope).await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Remove(Box::new(receipt))),
-        Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
-            ExecutionOutcome::RecoveryRequired {
-                operation: error
-                    .downcast_ref::<RecoveryRequired>()
-                    .unwrap()
-                    .operation
-                    .clone(),
-                cause: error,
-            }
-        }
-        Err(error) if error.downcast_ref::<PublicationWorkerFailed>().is_some() => {
-            ExecutionOutcome::ExecutionUncertain(error)
-        }
-        Err(_) if cancel.is_cancelled() => ExecutionOutcome::InterruptedBeforePublication,
-        Err(error) => ExecutionOutcome::FailedBeforePublication(error),
+        Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
 }
 async fn execute(

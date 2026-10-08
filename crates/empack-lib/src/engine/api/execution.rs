@@ -6,7 +6,7 @@ use crate::engine::{
         client::{ClientBootstrap, ClientOptions},
         server::{ServerBootstrap, ServerOptions},
     },
-    publication::{Publisher, RecoveryRequired},
+    publication::Publisher,
     runtime::WorkScope,
     server_runtime::{
         PreparedServerRuntime, VanillaServerPlan, installer::InstallerServerPlan,
@@ -30,20 +30,7 @@ pub(super) async fn run(
     .await;
     Ok(match result {
         Ok(outcome) => outcome,
-        Err(error) => {
-            if let Some(recovery) = error.downcast_ref::<RecoveryRequired>() {
-                ExecutionOutcome::RecoveryRequired {
-                    operation: recovery.operation.clone(),
-                    cause: error,
-                }
-            } else if error.downcast_ref::<PublicationWorkerFailed>().is_some() {
-                ExecutionOutcome::ExecutionUncertain(error)
-            } else if cancel.is_cancelled() {
-                ExecutionOutcome::InterruptedBeforePublication
-            } else {
-                ExecutionOutcome::FailedBeforePublication(error)
-            }
-        }
+        Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
 }
 fn pending(

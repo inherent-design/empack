@@ -208,6 +208,7 @@ impl Publisher {
     }
 
     /// Complete retained new-root publication without reacquiring bytes or rerunning tools.
+    #[cfg(test)]
     pub fn recover_new(&self, selected: &Path) -> Result<PublicationReceipt> {
         self.recover_new_checked(selected, None)
     }

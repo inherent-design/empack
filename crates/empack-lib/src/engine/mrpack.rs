@@ -482,6 +482,14 @@ impl MrpackPlan {
         )
     }
 }
+fn unsupported_conversion(object: Option<&str>, message: String) -> anyhow::Error {
+    let mut diagnostic = super::diagnostics::Diagnostic::new(
+        super::diagnostics::DiagnosticCode::UnsupportedConversion,
+        super::diagnostics::DiagnosticPhase::Preparation,
+    );
+    diagnostic.object = object.map(str::to_owned);
+    anyhow::Error::new(diagnostic).context(message)
+}
 fn requirement(
     value: &Requirement,
     policy: OptionalConversion,
@@ -493,8 +501,13 @@ fn requirement(
         Requirement::Optional(choice) => {
             ensure!(
                 policy == OptionalConversion::AcknowledgedMetadataLoss,
-                "Mrpack cannot encode optional choice metadata for {}; conversion needs acknowledgement",
-                choice.key.as_str()
+                unsupported_conversion(
+                    Some(choice.key.as_str()),
+                    format!(
+                        "Mrpack cannot encode optional choice metadata for {}; conversion needs acknowledgement",
+                        choice.key.as_str()
+                    )
+                )
             );
             conversions.insert(format!(
                 "{}: retain optional participation; omit choice key, default and description",
@@ -509,9 +522,7 @@ fn override_prefix(requirements: &Requirements) -> Result<&'static str> {
         (Requirement::Required, Requirement::Required) => "overrides",
         (Requirement::Required, Requirement::Unsupported) => "client-overrides",
         (Requirement::Unsupported, Requirement::Required) => "server-overrides",
-        _ => anyhow::bail!(
-            "Embedded mrpack files cannot express optional participation; select an explicit conversion or a verified download reference"
-        ),
+        _ => return Err(unsupported_conversion(None, "Embedded mrpack files cannot express optional participation; select an explicit conversion or a verified download reference".into())),
     })
 }
 

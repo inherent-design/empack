@@ -17,10 +17,29 @@ There is no arbitrary `DeleteTree(PathBuf)` action. A forced import computes an 
 
 A receipt-producing document update is subject to the same protocol. Success counters are derived from verified published changes, not incremented immediately after a backend invocation.
 
+### Retained recovery data
+
+Under the project publication lock, a new publication validates the preceding
+journal and reclaims its committed operation's explicitly named copies before
+superseding that journal. Uncommitted journals block ordinary publication. The
+latest committed receipt and its recovery copies remain available until the next
+publication; successful repetitions do not accumulate historical copies.
+
+Before writing preimages or candidates, publication persists a separate bounded,
+root-bound preparation descriptor naming its owned operation and files. A retry
+can reclaim copies abandoned before journal intent. If the current journal names
+the same operation, it takes precedence and its recovery data remains protected.
+Unknown neighboring directories are ignored. Unexpected files inside an owned
+operation prevent retirement and descriptor replacement; cleanup never recursively
+deletes them or infers ownership from an `op-` prefix alone.
+
 ### Publisher interface
 
 The engine reacquires the project lock, checks the root binding, hot-journal state, full relevant read set, and granted footprint, then admits publication of the verified candidate. A persisted marker or caller
-boolean cannot substitute for `VerifiedFileChange`.
+boolean cannot substitute for `VerifiedFileChange`. Native publication and staging
+are internal to the library; external callers use `Engine::prepare`, authorization,
+and `Engine::start`. Public receipts and recovery inspection expose evidence, not
+an alternate publication capability.
 
 If the base changed, return a conflict before live mutation. Never silently publish against a new base. A new preparation may reuse retained verified content, but must re-plan and re-authorize any changed effects.
 

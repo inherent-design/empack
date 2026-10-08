@@ -48,6 +48,11 @@ Map ordering is canonical by validated key. Order-sensitive URL alternatives, te
 
 No helper named `normalize` should silently alter content meaning. Prefer `parse_selector`, `canonicalize_provider_identity`, `validate_rel_path`, `resolve_layers`, and `fingerprint_recipe` so callers can see which contract is established.
 
+The public [diagnostic envelope](../../crates/empack-lib/src/engine/diagnostics.rs)
+provides stable codes and optional expected/observed evidence. Classification uses
+typed causes; unclassified failures retain an explicit generic code. Human-readable
+context remains available without becoming the automation contract.
+
 ## Contract tests and failure injection
 
 ### Compile and architecture gates

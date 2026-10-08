@@ -28,13 +28,14 @@ use std::{
 const JOURNAL_SCHEMA: u32 = 4;
 mod creation;
 mod recovery;
+mod retention;
 pub use creation::{PreparedCreationRecovery, PreparedRootCreation};
 pub use recovery::{PreparedRecovery, RecoveryAction, RecoveryKind, RecoveryStatus};
 const JOURNAL_LIMIT: u64 = 16 * 1024 * 1024;
 static NEXT_OPERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Private host state is separate from project data and evictable download caches.
-pub struct Publisher {
+pub(crate) struct Publisher {
     host: Dir,
 }
 /// Read-only journal access for snapshot preparation. It cannot create or recover state.
@@ -263,7 +264,9 @@ impl Publisher {
         if let Some(journal) = load_journal(&state)? {
             validate_journal(&journal, root)?;
             ensure!(journal.committed, "Project requires publication recovery");
+            retention::reclaim(&state, &journal.operation, &journal.retained_files)?;
         }
+        retention::reclaim_preparation(&state, root)?;
         root.revalidate(&base, cancel)?;
         let operation = format!(
             "op-{:x}-{:x}-{:x}",
@@ -271,6 +274,19 @@ impl Publisher {
             std::process::id(),
             NEXT_OPERATION.fetch_add(1, Ordering::Relaxed)
         );
+        let owned_files = plan
+            .changes()
+            .iter()
+            .enumerate()
+            .flat_map(|(index, _)| {
+                [
+                    format!("before-{index}"),
+                    format!("after-{index}"),
+                    format!("restore-{index}"),
+                ]
+            })
+            .collect();
+        retention::record_preparation(&state, root, &operation, owned_files)?;
         state.create_dir(&operation)?;
         let retained = state.open_dir_nofollow(&operation)?;
         private_directory(&retained)?;
@@ -410,6 +426,7 @@ impl Publisher {
     }
 
     /// Roll forward retained verified bytes. Conflicting external edits are never overwritten.
+    #[cfg(test)]
     pub fn recover(&self, root: &ProjectReadRoot) -> Result<PublicationReceipt> {
         self.recover_checked(root, None)
     }
@@ -438,10 +455,12 @@ impl Publisher {
 
     /// Restore only the journal's own applied files; unrelated edits remain conflicts.
     /// The inverse operation is persisted before its first replacement and can itself resume.
+    #[cfg(test)]
     pub fn restore_before_images(&self, root: &ProjectReadRoot) -> Result<PublicationReceipt> {
         self.restore_with_hook(root, &mut |_| Ok(()))
     }
 
+    #[cfg(test)]
     fn restore_with_hook(
         &self,
         root: &ProjectReadRoot,
@@ -547,6 +566,7 @@ impl Publisher {
     }
 
     /// Reclaim only files named by a committed host journal; the durable receipt remains.
+    #[cfg(test)]
     pub fn reclaim_committed(&self, root: &ProjectReadRoot) -> Result<u64> {
         let state = self.project_state(root)?;
         let _lock = lock(&state)?;
@@ -556,34 +576,8 @@ impl Publisher {
             journal.committed,
             "Active recovery data cannot be reclaimed"
         );
-        let retained = match state.open_dir_nofollow(&journal.operation) {
-            Ok(directory) => directory,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-            Err(error) => return Err(error.into()),
-        };
-        native::reject_reparse(&retained.try_clone()?.into_std_file())?;
-        let mut bytes = 0u64;
-        for name in &journal.retained_files {
-            match retained.symlink_metadata(name) {
-                Ok(metadata) => {
-                    ensure!(
-                        metadata.is_file() && !metadata.file_type().is_symlink(),
-                        "Retained journal object is not a file"
-                    );
-                    retained.remove_file(name)?;
-                    bytes = bytes
-                        .checked_add(metadata.len())
-                        .context("Reclaimed byte count overflow")?;
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
-        }
-        sync_directory(&retained)?;
-        drop(retained);
-        // Unexpected objects prevent directory removal; never recursively delete them.
-        state.remove_dir(&journal.operation)?;
-        sync_directory(&state)?;
+        let bytes = retention::reclaim(&state, &journal.operation, &journal.retained_files)?;
+        retention::reclaim_preparation(&state, root)?;
         Ok(bytes)
     }
 
@@ -610,8 +604,11 @@ impl Publisher {
                     fingerprints_match(fingerprint.as_ref(), change.before.as_ref())
                         && current.as_ref().map(|file| Binding::from(file.object))
                             == change.before_object,
-                    "Publication conflict at {}",
-                    change.target
+                    publication_conflict(
+                        &change.target,
+                        change.before.as_ref(),
+                        fingerprint.as_ref()
+                    )
                 );
                 let (parent, leaf) = publication_parent(&root.directory, &path)?;
                 match &change.after {
@@ -864,7 +861,10 @@ fn sync_directory(directory: &Dir) -> Result<()> {
     Ok(())
 }
 fn write_journal(directory: &Dir, journal: &Journal) -> Result<()> {
-    let bytes = serde_json::to_vec(journal)?;
+    write_record(directory, "journal.json", journal)
+}
+fn write_record(directory: &Dir, name: &str, record: &impl Serialize) -> Result<()> {
+    let bytes = serde_json::to_vec(record)?;
     ensure!(
         bytes.len() as u64 <= JOURNAL_LIMIT,
         "Publication journal exceeds byte limit"
@@ -874,7 +874,7 @@ fn write_journal(directory: &Dir, journal: &Journal) -> Result<()> {
         file.write_all(&bytes)?;
         file.sync_all()?;
         drop(file);
-        directory.rename(&temporary, directory, "journal.json")?;
+        directory.rename(&temporary, directory, name)?;
         sync_directory(directory)?;
         Ok(())
     })();
@@ -1022,6 +1022,20 @@ fn current_file(
         &Cancellation::default(),
     )?))
 }
+fn publication_conflict(
+    target: &str,
+    expected: Option<&Fingerprint>,
+    observed: Option<&Fingerprint>,
+) -> anyhow::Error {
+    let mut diagnostic = super::diagnostics::Diagnostic::new(
+        super::diagnostics::DiagnosticCode::PublicationConflict,
+        super::diagnostics::DiagnosticPhase::Publication,
+    );
+    diagnostic.object = Some(target.into());
+    diagnostic.expected = expected.and_then(|value| serde_json::to_string(value).ok());
+    diagnostic.observed = observed.and_then(|value| serde_json::to_string(value).ok());
+    anyhow::Error::new(diagnostic).context(format!("Publication conflict at {target}"))
+}
 fn check_pending(root: &ProjectReadRoot, path: &PortableRelPath, change: &Change) -> Result<()> {
     root.check_binding()?;
     let current = current_file(root, path, change)?;
@@ -1033,8 +1047,14 @@ fn check_pending(root: &ProjectReadRoot, path: &PortableRelPath, change: &Change
                 .as_ref(),
             change.before.as_ref()
         ) && current.as_ref().map(|value| Binding::from(value.object)) == change.before_object,
-        "Publication conflict at {}",
-        change.target
+        publication_conflict(
+            &change.target,
+            change.before.as_ref(),
+            current
+                .as_ref()
+                .map(|file| Fingerprint::from(&content(file)))
+                .as_ref()
+        )
     );
     Ok(())
 }

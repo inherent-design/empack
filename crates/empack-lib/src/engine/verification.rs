@@ -275,10 +275,8 @@ impl VerifiedFileChange {
     pub fn plan(&self) -> &FilePlan {
         &self.plan
     }
-    pub fn base(&self) -> &NativeSnapshot {
-        &self.base
-    }
     /// Consume a candidate only when its complete selected file inventory matches the pure plan.
+    #[cfg(test)]
     pub fn verify(base: NativeSnapshot, plan: FilePlan, stage: FrozenStage) -> Result<Self> {
         let observed = observed_files_for(
             &base,

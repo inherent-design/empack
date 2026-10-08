@@ -29,6 +29,7 @@ pub struct BlockedBatchGroup {
     /// Zero-based original request positions; a component retires as one unit.
     pub requests: Vec<usize>,
     pub cause: String,
+    pub diagnostic: crate::engine::diagnostics::Diagnostic,
 }
 #[derive(Debug, Clone)]
 pub struct DependencyBatchReport {
@@ -165,9 +166,11 @@ pub(in crate::engine::api) async fn prepare_batch(
                 drop(prepared);
             }
             Err(error) => {
-                scope.cancellation().check()?;
+                // Cancellation stops new groups without replacing the failure just observed.
                 // Resource/lifecycle failure is not evidence against a requested dependency.
-                if error.downcast_ref::<RuntimeError>().is_some()
+                if scope.cancellation().is_cancelled()
+                    || error.is::<crate::application::process_runtime::Interrupted>()
+                    || error.downcast_ref::<RuntimeError>().is_some()
                     || request.policy == BatchPolicy::AllRequested
                 {
                     return Err(error);
@@ -175,6 +178,10 @@ pub(in crate::engine::api) async fn prepare_batch(
                 report.blocked.push(BlockedBatchGroup {
                     requests: component,
                     cause: format!("{error:#}").chars().take(8192).collect(),
+                    diagnostic: crate::engine::diagnostics::Diagnostic::from_error(
+                        &error,
+                        crate::engine::diagnostics::DiagnosticPhase::Preparation,
+                    ),
                 });
             }
         }

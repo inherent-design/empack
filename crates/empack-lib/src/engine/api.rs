@@ -1,5 +1,6 @@
 //! Semantic operation lifecycle. Preparation has read-only project authority; only an approved,
 //! engine-bound plan can admit acquisition, trusted tools and verified publication.
+use super::diagnostics::{Diagnostic, DiagnosticCode, DiagnosticPhase};
 use super::{
     acquisition::{HttpAcquisition, TransferLimits},
     artifacts::ArchiveLimits,
@@ -490,20 +491,36 @@ impl PreparedOperation {
     pub fn authorize(self, grant: ExecutionGrant) -> Result<ApprovedOperation> {
         ensure!(
             grant.plan == self.view.plan(),
-            "Execution grant belongs to another plan"
+            anyhow::Error::new(Diagnostic::new(
+                DiagnosticCode::AuthorizationDenied,
+                DiagnosticPhase::Authorization
+            ))
+            .context("Execution grant belongs to another plan")
         );
         ensure!(
             !self.view.needs_network() || grant.network == NetworkPermission::Allow,
-            "Operation requires network authorization"
+            anyhow::Error::new(Diagnostic::new(
+                DiagnosticCode::AuthorizationDenied,
+                DiagnosticPhase::Authorization
+            ))
+            .context("Operation requires network authorization")
         );
         ensure!(
             !self.view.runs_installer() || grant.run_installer,
-            "Operation requires trusted installer authorization"
+            anyhow::Error::new(Diagnostic::new(
+                DiagnosticCode::AuthorizationDenied,
+                DiagnosticPhase::Authorization
+            ))
+            .context("Operation requires trusted installer authorization")
         );
         let replacement = self.view.replacement();
         ensure!(
             grant.replacement == replacement,
-            "Execution grant must acknowledge the exact replacement footprint"
+            anyhow::Error::new(Diagnostic::new(
+                DiagnosticCode::AuthorizationDenied,
+                DiagnosticPhase::Authorization
+            ))
+            .context("Execution grant must acknowledge the exact replacement footprint")
         );
         Ok(ApprovedOperation { prepared: self })
     }
@@ -539,6 +556,42 @@ pub enum ExecutionOutcome {
         operation: String,
         cause: anyhow::Error,
     },
+}
+impl ExecutionOutcome {
+    fn failed(error: anyhow::Error, cancelled: bool) -> Self {
+        if let Some(recovery) = error.downcast_ref::<crate::engine::publication::RecoveryRequired>()
+        {
+            Self::RecoveryRequired {
+                operation: recovery.operation.clone(),
+                cause: error,
+            }
+        } else if error.is::<PublicationWorkerFailed>() {
+            Self::ExecutionUncertain(error)
+        } else if error.is::<crate::application::process_runtime::Interrupted>()
+            || matches!(
+                error.downcast_ref::<RuntimeError>(),
+                Some(
+                    RuntimeError::Cancelled
+                        | RuntimeError::Admission(
+                            crate::engine::resources::AdmissionError::Cancelled
+                        )
+                )
+            )
+            || matches!(
+                error.downcast_ref::<crate::engine::resources::AdmissionError>(),
+                Some(crate::engine::resources::AdmissionError::Cancelled)
+            )
+            || (cancelled
+                && matches!(
+                    error.downcast_ref::<RuntimeError>(),
+                    Some(RuntimeError::StaleResult)
+                ))
+        {
+            Self::InterruptedBeforePublication
+        } else {
+            Self::FailedBeforePublication(error)
+        }
+    }
 }
 /// Missing execution inputs retain their recipe, captured project and verified leases.
 /// Taking the continuation is single-consumer and grants no execution or durable-write authority.
@@ -834,7 +887,11 @@ impl Engine {
     pub fn start(&self, approved: ApprovedOperation) -> Result<OperationHandle<ExecutionOutcome>> {
         ensure!(
             Arc::ptr_eq(&self.owner, &approved.prepared.owner),
-            "Prepared operation belongs to another engine"
+            anyhow::Error::new(Diagnostic::new(
+                DiagnosticCode::AuthorizationDenied,
+                DiagnosticPhase::Authorization
+            ))
+            .context("Prepared operation belongs to another engine")
         );
         let config = self.config.clone();
         let transport = self.transport.clone();

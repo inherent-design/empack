@@ -71,7 +71,8 @@ impl PreparedServerBuild {
     pub fn bytes(&self) -> u64 {
         self.publication.bytes
     }
-    pub fn publish(
+    #[cfg(test)]
+    pub(in crate::engine) fn publish(
         self,
         publisher: &crate::engine::publication::Publisher,
         cancel: &Cancellation,

@@ -1262,3 +1262,28 @@ select this policy only with `--continue-independent`; ordinary CLI batches stil
 AllRequested. `AdditionGroup::root_groups` retains each root's required closure so shared
 selections reconnect during grouping. CLI receipts name logical roots as well as request
 indices and return failure status for partial completion.
+
+## Failure evidence
+
+`ExecutionOutcome::diagnostic()` returns a serializable classification for failed,
+interrupted, uncertain and partially completed outcomes. `Diagnostic::from_error`
+classifies preparation or authorization failures through typed context and causes.
+Codes and phase names have stable kebab-case serialization. Optional object,
+expected and observed values are supplied where the failing boundary establishes
+them; absent fields make no claim about those values. Unknown internal failures use
+`operation-failed`, never classification inferred from message wording.
+
+Digest and size failures include declared and observed values. Snapshot drift,
+authorization denial, unsupported mrpack conversion and publication conflicts have
+dedicated codes. Recovery
+classification comes from the owned outcome and remains independent of the cause:
+a digest or filesystem failure during publication can still require recovery.
+Blocked dependency groups retain their own diagnostic alongside the human-readable
+cause. These envelopes do not serialize arbitrary error chains or download URLs.
+
+Contextual error chains remain available. The CLI retains the original outcome when
+reporting an error, so releasing the runtime registry entry does not erase its typed
+cause. Recovery-required and uncertain publication take precedence over cancellation.
+A concurrent cancellation request does not replace an unrelated integrity, provider
+or filesystem failure with an interruption result. Partial completion retains its
+receipt and reports failure; it does not imply rollback of completed effects.

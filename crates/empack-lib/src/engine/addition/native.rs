@@ -52,7 +52,11 @@ impl PreparedAddition {
     pub fn candidate(&self) -> &AdditionCandidate {
         &self.candidate
     }
-    pub fn publish(self, publisher: &Publisher, cancel: &Cancellation) -> Result<AdditionReceipt> {
+    pub(in crate::engine) fn publish(
+        self,
+        publisher: &Publisher,
+        cancel: &Cancellation,
+    ) -> Result<AdditionReceipt> {
         let publication = publisher.publish(&self.root, self.change, cancel)?;
         Ok(AdditionReceipt {
             publication,

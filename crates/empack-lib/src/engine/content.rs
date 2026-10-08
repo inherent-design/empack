@@ -299,10 +299,17 @@ impl<'a> HashingReader<'a> {
         }
     }
     fn finish(self, expected: &ExpectedContent) -> Result<ContentObservation> {
-        ensure!(
-            expected.size.is_none_or(|size| size == self.count),
-            "Source size differs from expected content"
-        );
+        if let Some(size) = expected.size.filter(|size| *size != self.count) {
+            let mut diagnostic = super::diagnostics::Diagnostic::new(
+                super::diagnostics::DiagnosticCode::SizeMismatch,
+                super::diagnostics::DiagnosticPhase::Verification,
+            );
+            diagnostic.expected = Some(size.to_string());
+            diagnostic.observed = Some(self.count.to_string());
+            return Err(
+                anyhow::Error::new(diagnostic).context("Source size differs from expected content")
+            );
+        }
         let bytes = self.count;
         let address = ContentId::from_sha256(self.sha256.finalize().into());
         let hashes = vec![
@@ -312,7 +319,25 @@ impl<'a> HashingReader<'a> {
             ExpectedDigest::Sha512(self.sha512.finalize().into()),
         ];
         if let Some(digests) = &expected.digests {
-            digests.check(&hashes)?;
+            digests.check(&hashes).map_err(|error| {
+                let mut diagnostic = super::diagnostics::Diagnostic::new(
+                    super::diagnostics::DiagnosticCode::DigestMismatch,
+                    super::diagnostics::DiagnosticPhase::Verification,
+                );
+                if let empack_core::digest::DigestError::Mismatch(algorithm) = &error {
+                    diagnostic.object = Some(algorithm.name().into());
+                    diagnostic.expected = digests
+                        .values()
+                        .iter()
+                        .find(|digest| digest.algorithm() == *algorithm)
+                        .map(|digest| digest.hex());
+                    diagnostic.observed = hashes
+                        .iter()
+                        .find(|digest| digest.algorithm() == *algorithm)
+                        .map(|digest| digest.hex());
+                }
+                anyhow::Error::new(error).context(diagnostic)
+            })?;
         }
         ensure!(
             expected

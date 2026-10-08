@@ -1548,3 +1548,30 @@ async fn clean_build_rejects_symlinked_artifacts_without_touching_outside_bytes(
     );
     engine.shutdown().await;
 }
+
+#[test]
+fn failure_order_preserves_actual_errors_when_cancellation_races() {
+    let error = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+    let outcome = ExecutionOutcome::failed(error, true);
+    assert!(
+        matches!(outcome, ExecutionOutcome::FailedBeforePublication(ref cause) if cause.is::<std::io::Error>())
+    );
+    let error = anyhow::Error::new(crate::application::process_runtime::Interrupted);
+    assert!(matches!(
+        ExecutionOutcome::failed(error, true),
+        ExecutionOutcome::InterruptedBeforePublication
+    ));
+    let error = anyhow::Error::new(crate::application::process_runtime::Interrupted).context(
+        crate::engine::publication::RecoveryRequired {
+            operation: "op-test".into(),
+        },
+    );
+    assert!(matches!(
+        ExecutionOutcome::failed(error, true),
+        ExecutionOutcome::RecoveryRequired { .. }
+    ));
+    assert!(matches!(
+        ExecutionOutcome::failed(PublicationWorkerFailed(RuntimeError::Panicked).into(), true),
+        ExecutionOutcome::ExecutionUncertain(_)
+    ));
+}

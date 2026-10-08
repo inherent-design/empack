@@ -1,7 +1,7 @@
 //! Artifact cleanup owns only the inspected dist namespace and uses ordinary publication.
 use super::*;
 use crate::engine::{
-    publication::{Publisher, RecoveryRequired},
+    publication::Publisher,
     runtime::WorkScope,
     snapshot::ProjectReadRoot,
     staging::MutableStage,
@@ -131,21 +131,7 @@ pub(super) async fn run(
     .await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Clean(Box::new(receipt))),
-        Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
-            ExecutionOutcome::RecoveryRequired {
-                operation: error
-                    .downcast_ref::<RecoveryRequired>()
-                    .unwrap()
-                    .operation
-                    .clone(),
-                cause: error,
-            }
-        }
-        Err(error) if error.downcast_ref::<PublicationWorkerFailed>().is_some() => {
-            ExecutionOutcome::ExecutionUncertain(error)
-        }
-        Err(_) if cancel.is_cancelled() => ExecutionOutcome::InterruptedBeforePublication,
-        Err(error) => ExecutionOutcome::FailedBeforePublication(error),
+        Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
 }
 

@@ -2,7 +2,7 @@
 use super::*;
 pub use crate::engine::publication::{RecoveryAction, RecoveryKind, RecoveryStatus};
 use crate::engine::{
-    publication::{PreparedCreationRecovery, PreparedRecovery, Publisher, RecoveryRequired},
+    publication::{PreparedCreationRecovery, PreparedRecovery, Publisher},
     runtime::WorkScope,
     snapshot::ProjectReadRoot,
 };
@@ -220,20 +220,6 @@ pub(super) async fn run(
     .await;
     Ok(match result {
         Ok(receipt) => ExecutionOutcome::Completed(ExecutionReceipt::Recovery(Box::new(receipt))),
-        Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
-            ExecutionOutcome::RecoveryRequired {
-                operation: error
-                    .downcast_ref::<RecoveryRequired>()
-                    .unwrap()
-                    .operation
-                    .clone(),
-                cause: error,
-            }
-        }
-        Err(error) if error.downcast_ref::<PublicationWorkerFailed>().is_some() => {
-            ExecutionOutcome::ExecutionUncertain(error)
-        }
-        Err(_) if cancel.is_cancelled() => ExecutionOutcome::InterruptedBeforePublication,
-        Err(error) => ExecutionOutcome::FailedBeforePublication(error),
+        Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
 }

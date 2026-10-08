@@ -239,3 +239,25 @@ fn observations_match_leases_without_upgrading_weaker_source_evidence() {
         );
     }
 }
+
+#[test]
+fn verification_errors_expose_expected_and_observed_values() {
+    use crate::engine::diagnostics::{Diagnostic, DiagnosticCode, DiagnosticPhase};
+    let error = acquire(b"changed", &expected()).err().unwrap();
+    let diagnostic = Diagnostic::from_error(&error, DiagnosticPhase::Acquisition);
+    assert_eq!(diagnostic.code, DiagnosticCode::DigestMismatch);
+    assert_eq!(diagnostic.object.as_deref(), Some("md5"));
+    assert_eq!(
+        diagnostic.expected.as_deref(),
+        Some("321c3cf486ed509164edec1e1981fec8")
+    );
+    assert_ne!(diagnostic.expected, diagnostic.observed);
+    assert!(error.is::<empack_core::digest::DigestError>());
+    let mut wrong_size = expected();
+    wrong_size.size = Some(6);
+    let error = acquire(b"payload", &wrong_size).err().unwrap();
+    let diagnostic = Diagnostic::from_error(&error, DiagnosticPhase::Acquisition);
+    assert_eq!(diagnostic.code, DiagnosticCode::SizeMismatch);
+    assert_eq!(diagnostic.expected.as_deref(), Some("6"));
+    assert_eq!(diagnostic.observed.as_deref(), Some("7"));
+}

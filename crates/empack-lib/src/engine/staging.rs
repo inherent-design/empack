@@ -188,6 +188,7 @@ impl MutableStage {
     }
 
     /// Delete one private-stage file. Directories and links cannot become recursive removals.
+    #[cfg(test)]
     pub fn remove(&mut self, path: &PortableRelPath) -> Result<()> {
         self.root.check_binding()?;
         let (parent, leaf) = native::parent(&self.root.directory, path)?;

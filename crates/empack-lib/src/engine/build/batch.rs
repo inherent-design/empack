@@ -90,7 +90,8 @@ impl PreparedBuildBatch {
     pub fn artifacts(&self) -> &[BuiltDistribution] {
         &self.artifacts
     }
-    pub fn publish(
+    #[cfg(test)]
+    pub(in crate::engine) fn publish(
         self,
         publisher: &crate::engine::publication::Publisher,
         cancel: &Cancellation,

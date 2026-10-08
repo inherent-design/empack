@@ -229,3 +229,27 @@ fn recovery_preview_displays_each_managed_path_and_change() {
         assert_eq!(snapshot(host.path()), host_before);
     }
 }
+
+#[test]
+fn reported_execution_failure_retains_typed_source_after_registry_release() {
+    let outcome = std::sync::Arc::new(OperationOutcome::Completed(
+        ExecutionOutcome::FailedBeforePublication(
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied).into(),
+        ),
+    ));
+    let error = retained_failure(outcome.clone(), "Addition was not applied".into());
+    drop(outcome);
+    assert!(error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|cause| cause.kind() == std::io::ErrorKind::PermissionDenied)
+    }));
+    let diagnostic = error
+        .downcast_ref::<crate::engine::diagnostics::Diagnostic>()
+        .unwrap();
+    assert_eq!(
+        diagnostic.recovery,
+        crate::engine::diagnostics::RecoveryClassification::NotPublished
+    );
+    assert!(format!("{error:#}").contains("Addition was not applied"));
+}

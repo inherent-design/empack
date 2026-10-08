@@ -97,7 +97,7 @@ impl PreparedProjectCreation {
     pub fn project(&self) -> &ResolvedProject {
         &self.project
     }
-    pub fn publish(
+    pub(in crate::engine) fn publish(
         self,
         publisher: &Publisher,
         cancel: &Cancellation,
@@ -152,7 +152,7 @@ impl PreparedProjectReplacement {
         &self.project
     }
     /// Trusted host composition supplies publication only after approving this exact candidate.
-    pub fn publish(
+    pub(in crate::engine) fn publish(
         self,
         publisher: &Publisher,
         cancel: &Cancellation,

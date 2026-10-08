@@ -357,36 +357,95 @@ async fn execute_approved(
         | OperationOutcome::Failed(RuntimeError::Cancelled) => {
             Err(super::process_runtime::Interrupted.into())
         }
-        OperationOutcome::Completed(ExecutionOutcome::RecoveryRequired { operation, cause }) => {
-            Err(anyhow::anyhow!(
-                "{label} requires recovery for {operation}; run empack recover: {cause:#}"
+        OperationOutcome::Completed(ExecutionOutcome::RecoveryRequired { operation, .. }) => {
+            Err(retained_failure(
+                outcome.clone(),
+                format!("{label} requires recovery for {operation}; run empack recover"),
             ))
         }
-        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(cause)) => {
-            Err(anyhow::anyhow!("{label} was not applied: {cause:#}"))
-        }
-        OperationOutcome::Completed(ExecutionOutcome::ExecutionUncertain(cause)) => {
-            Err(anyhow::anyhow!(
-                "{label} outcome is uncertain; inspect recovery before retrying: {cause:#}"
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(_)) => Err(
+            retained_failure(outcome.clone(), format!("{label} was not applied")),
+        ),
+        OperationOutcome::Completed(ExecutionOutcome::ExecutionUncertain(_)) => {
+            Err(retained_failure(
+                outcome.clone(),
+                format!("{label} outcome is uncertain; inspect recovery before retrying"),
             ))
         }
-        OperationOutcome::Completed(ExecutionOutcome::PartiallyCompleted { receipt, cause }) => {
+        OperationOutcome::Completed(ExecutionOutcome::PartiallyCompleted { receipt, .. }) => {
             if let Ok(message) = completed(receipt) {
                 session.display().status().warning(&message);
             }
-            Err(anyhow::anyhow!(
-                "{label} completed only part of its displayed effects: {cause:#}"
+            Err(retained_failure(
+                outcome.clone(),
+                format!("{label} completed only part of its displayed effects"),
             ))
         }
         OperationOutcome::Completed(ExecutionOutcome::NeedsInput(requirements)) => {
             build::save_execution_input(session, engine, requirements).await
         }
-        OperationOutcome::Failed(cause) => Err(anyhow::anyhow!(
-            "{label} worker failed; inspect recovery before retrying: {cause}"
+        OperationOutcome::Failed(_) => Err(retained_failure(
+            outcome.clone(),
+            format!("{label} worker failed; inspect recovery before retrying"),
         )),
     };
     engine.release_completed(handle.id());
     result
+}
+
+// The operation registry can release its entry while the reported error still owns
+// the original typed cause and its retained outcome.
+struct RetainedExecutionError {
+    message: String,
+    outcome: std::sync::Arc<OperationOutcome<ExecutionOutcome>>,
+}
+impl std::fmt::Debug for RetainedExecutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RetainedExecutionError")
+            .field(&self.message)
+            .finish()
+    }
+}
+impl std::fmt::Display for RetainedExecutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+impl std::error::Error for RetainedExecutionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &*self.outcome {
+            OperationOutcome::Completed(
+                ExecutionOutcome::FailedBeforePublication(cause)
+                | ExecutionOutcome::ExecutionUncertain(cause)
+                | ExecutionOutcome::RecoveryRequired { cause, .. }
+                | ExecutionOutcome::PartiallyCompleted { cause, .. },
+            ) => Some(cause.as_ref()),
+            OperationOutcome::Failed(cause) => Some(cause),
+            _ => None,
+        }
+    }
+}
+fn retained_failure(
+    outcome: std::sync::Arc<OperationOutcome<ExecutionOutcome>>,
+    message: String,
+) -> anyhow::Error {
+    let diagnostic = match &*outcome {
+        OperationOutcome::Completed(outcome) => outcome.diagnostic(),
+        OperationOutcome::Failed(_) => {
+            use crate::engine::diagnostics::*;
+            let mut diagnostic = Diagnostic::new(
+                DiagnosticCode::ExecutionUncertain,
+                DiagnosticPhase::Execution,
+            );
+            diagnostic.recovery = RecoveryClassification::InspectRecovery;
+            Some(diagnostic)
+        }
+    };
+    let error = anyhow::Error::new(RetainedExecutionError { message, outcome });
+    match diagnostic {
+        Some(diagnostic) => error.context(diagnostic),
+        None => error,
+    }
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use super::*;
 use crate::engine::{
     addition::{self as native_addition, PreparedAddition},
     mrpack::LockedFileKey,
-    publication::{Publisher, RecoveryRequired},
+    publication::Publisher,
     runtime::WorkScope,
 };
 pub(super) use batch::prepare_batch;
@@ -337,21 +337,7 @@ pub(super) async fn run(
                 None => ExecutionOutcome::Completed(receipt),
             }
         }
-        Err(error) if error.downcast_ref::<RecoveryRequired>().is_some() => {
-            ExecutionOutcome::RecoveryRequired {
-                operation: error
-                    .downcast_ref::<RecoveryRequired>()
-                    .unwrap()
-                    .operation
-                    .clone(),
-                cause: error,
-            }
-        }
-        Err(error) if error.downcast_ref::<PublicationWorkerFailed>().is_some() => {
-            ExecutionOutcome::ExecutionUncertain(error)
-        }
-        Err(_) if cancel.is_cancelled() => ExecutionOutcome::InterruptedBeforePublication,
-        Err(error) => ExecutionOutcome::FailedBeforePublication(error),
+        Err(error) => ExecutionOutcome::failed(error, cancel.is_cancelled()),
     })
 }
 pub(super) async fn run_update(
