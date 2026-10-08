@@ -256,12 +256,18 @@ async fn apply(
     label: &str,
     completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
 ) -> Result<()> {
+    if !approve(session, label)? {
+        return Ok(());
+    }
+    execute_approved(session, engine, prepared, label, completed).await
+}
+fn approve(session: &dyn Session, label: &str) -> Result<bool> {
     if session.config().app_config().dry_run {
         session
             .display()
             .status()
             .complete("Dry run complete - no changes applied");
-        return Ok(());
+        return Ok(false);
     }
     if !session.config().app_config().yes
         && !session.interactive().confirm(
@@ -273,8 +279,18 @@ async fn apply(
             .display()
             .status()
             .info(&format!("{label} not applied"));
-        return Ok(());
+        return Ok(false);
     }
+    Ok(true)
+}
+/// The composition root has displayed and approved this exact plan (or a union containing it).
+async fn execute_approved(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+    label: &str,
+    completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
+) -> Result<()> {
     session.process().check_cancelled()?;
     let grant = ExecutionGrant {
         plan: prepared.view().plan(),
@@ -351,6 +367,9 @@ pub use build::{BuildDecisions, build};
 
 mod dependencies;
 pub use dependencies::{add_providers, remove, synchronize};
+
+mod cleanup;
+pub use cleanup::clean;
 
 /// Keep service workers and their retained results under the host's shared admission budget.
 async fn scoped<T, F, Fut>(session: &dyn Session, governor: ResourceGovernor, work: F) -> Result<T>

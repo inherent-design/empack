@@ -747,3 +747,18 @@ This entry point is compiled but not yet the CLI build dispatcher. Durable conti
 download-directory discovery and filename association must be composed before that
 cutover; this host rejects those arguments rather than ignoring them. Existing CLI
 workflows remain available through the current dispatcher in the meantime.
+
+### Native cleanup host
+
+`application::engine_host::clean` accepts `builds`, `cache` and `all`; omission selects
+artifacts. It validates every target and prepares all selected scopes before one approval.
+Artifacts use native publication without needing valid intent/lock documents. The content
+cache lives under the selected cache root's `content-v1` directory. Opening an absent cache
+for inspection does not create it; cache-only cleanup does not require a project.
+
+The host displays artifact paths, logical bytes, cache object IDs and maximum eviction
+bytes. Artifact recovery data remains separate. Combined cleanup is explicitly sequential:
+if cache eviction fails after artifact publication, the error identifies the completed
+artifact scope and retains the cache receipt's partial result. The scopes cannot overlap.
+Unknown neighbors and unselected storage remain untouched. This compiled host covers the
+new content store; old CLI cache categories remain on the current dispatcher until cutover.

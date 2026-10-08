@@ -1248,3 +1248,24 @@ exclude signed query parameters, user information, HTTP and fragments from durab
 
 All 104 affected provider, import and dependency-host tests pass, with all-feature Clippy
 and Windows cross-compilation. The native mrpack test makes no payload requests.
+
+## Native cleanup host
+
+Artifact publication and content-cache eviction now compose through one displayed cleanup
+request and one confirmation. Both scopes are prepared before either starts. Invalid
+targets, unsafe artifact links, malformed cache objects and overlapping storage fail before
+mutation. Artifact cleanup reads no project documents; cache-only cleanup needs no project.
+Absent stores remain absent during preview and execution.
+
+The combined operation preserves the distinction between recoverable artifact publication
+and disposable cache eviction. A later failure reports which earlier scope completed. The
+native regression changes a selected cache object after preparation, verifies that artifact
+cleanup completed, and checks that the independent cache edit remains intact. Other cases
+cover preview/decline, one confirmation, unknown neighbors and outside sentinels.
+
+This compiled host covers the new content store. CLI routing and the remaining disposable
+storage categories stay on the integration ledger; this change does not claim their cutover.
+
+All 54 affected host, cleanup and content-store tests pass, together with all-feature
+Clippy and Windows cross-compilation. Two parallel tests reported inherited output pipes;
+the serial rerun of all 29 cleanup/store tests passed without those warnings.

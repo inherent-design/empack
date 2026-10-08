@@ -130,6 +130,11 @@ impl FileContentLookup {
     }
 }
 impl FileContentStore {
+    /// Open an already initialized host store without creating storage or coordination files.
+    /// Mutation still requires the explicit store capability and an approved operation.
+    pub fn open_existing(path: &Path, limits: ContentStoreLimits) -> Result<Option<Self>> {
+        Ok(FileContentLookup::open_existing(path, limits)?.map(|lookup| Self(lookup.0)))
+    }
     /// The composition root selects host-private storage, never a path from imported metadata.
     pub fn open(path: &Path, limits: ContentStoreLimits) -> Result<Self> {
         let store = open(path, true, limits)?;
