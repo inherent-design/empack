@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::{api::DependencyContent, mrpack::LockedFileKey};
 use crate::{
     application::{
         BuildArgs, InitArgs,
@@ -20,6 +21,7 @@ use empack_core::{
 use mockito::{Matcher, Server};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha512};
+use std::collections::BTreeMap;
 use std::{fs, io::Read};
 
 fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
@@ -433,4 +435,221 @@ async fn incomplete_required_evidence_is_a_decision_without_partial_publication(
         "{error:#}"
     );
     assert_eq!(snapshot(root.path()), before);
+}
+
+fn local_batch_input(source: &str, key: &str, destination: &str) -> AddHostInput {
+    use crate::engine::addition::{FileEvidence, FileKindPolicy};
+    use empack_core::{
+        model::{ContentKind, ContentLayer, Placement},
+        path::InstallDestination,
+    };
+    let requirements = Requirements {
+        client: Requirement::Required,
+        server: Requirement::Unsupported,
+    };
+    AddHostInput::File(DirectFileInput {
+        key: DependencyKey::parse(key).unwrap(),
+        title: "Local settings".into(),
+        source: DirectFileSource::Local(source.into()),
+        evidence: FileEvidence::AcceptObserved,
+        kind: ContentKind::Config,
+        kind_policy: FileKindPolicy::RequireRecognized,
+        requirements: requirements.clone(),
+        placements: NonEmpty::new(vec![Placement {
+            layer: ContentLayer::Client,
+            destination: InstallDestination::parse(destination).unwrap(),
+            requirements,
+        }])
+        .unwrap(),
+    })
+}
+async fn mixed(
+    root: &Path,
+    server: &Server,
+    inputs: Vec<AddHostInput>,
+    yes: bool,
+    dry: bool,
+) -> Result<()> {
+    add_with_services(
+        &session(root, yes, dry),
+        NonEmpty::new(inputs)?,
+        ReleasePolicy::PreferStable,
+        SourceEvidencePolicy::Compatibility,
+        ExistingDependencyPolicy::UpdateSameIdentity,
+        AdditionServices {
+            catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
+            transport: HttpAcquisition::for_loopback_tests(),
+            files: DirectFileLimits::default(),
+        },
+    )
+    .await
+}
+#[tokio::test]
+async fn mixed_addition_uses_one_publication_and_converges_through_sync_and_export() {
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    fs::write(root.path().join("settings.toml"), b"enabled=true").unwrap();
+    let mut server = Server::new_async().await;
+    records(&mut server).await;
+    let inputs = || {
+        vec![
+            AddHostInput::Provider(input("renderer", Some("my-alias"))),
+            local_batch_input("settings.toml", "settings", "config/settings.toml"),
+        ]
+    };
+    let before = snapshot(root.path());
+    for (yes, dry) in [(true, true), (false, false)] {
+        mixed(root.path(), &server, inputs(), yes, dry)
+            .await
+            .unwrap();
+        assert_eq!(snapshot(root.path()), before);
+    }
+    mixed(root.path(), &server, inputs(), true, false)
+        .await
+        .unwrap();
+    let project = root.path().join("project");
+    let installed = read(&project);
+    assert_eq!(installed.intent().roots.len(), 2);
+    assert_eq!(installed.lock().dependencies.len(), 3);
+    assert_eq!(
+        installed.lock().required_edges[&DependencyKey::parse("my-alias").unwrap()].len(),
+        1
+    );
+    assert_eq!(
+        fs::read(project.join("overrides/client/config/settings.toml")).unwrap(),
+        b"enabled=true"
+    );
+    let before = snapshot(&project);
+    mixed(root.path(), &server, inputs(), true, false)
+        .await
+        .unwrap();
+    assert_eq!(snapshot(&project), before);
+    for _ in 0..2 {
+        use crate::{
+            application::process_runtime::Cancellation,
+            engine::{
+                content::{InitialObservation, verify_stream},
+                mrpack::AcquiredBuildFile,
+            },
+        };
+        use empack_core::files::FilePermissions;
+        let mut request = sync_request(&installed);
+        let key = DependencyKey::parse("settings").unwrap();
+        let file = &installed.lock().dependencies[&key].files.as_slice()[0];
+        let content = verify_stream(
+            &mut &b"enabled=true"[..],
+            &file.expected,
+            12,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::RequireEvidence,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        request.content.insert(
+            LockedFileKey {
+                dependency: key,
+                slot: file.slot.clone(),
+            },
+            DependencyContent::Materialized(AcquiredBuildFile {
+                content,
+                permissions: FilePermissions {
+                    readonly: false,
+                    executable: false,
+                },
+            }),
+        );
+        synchronize(&session(root.path(), true, false), request)
+            .await
+            .unwrap();
+        assert_eq!(snapshot(&project), before);
+    }
+    build(
+        &session(root.path(), true, false),
+        &BuildArgs {
+            targets: vec!["mrpack".into()],
+            ..Default::default()
+        },
+        BuildDecisions::default(),
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    let mut archive = zip::ZipArchive::new(
+        fs::File::open(project.join("dist/Dependency Pack-1.0.mrpack")).unwrap(),
+    )
+    .unwrap();
+    let index: Value =
+        serde_json::from_reader(archive.by_name("modrinth.index.json").unwrap()).unwrap();
+    assert_eq!(index["files"].as_array().unwrap().len(), 2);
+    let mut bytes = Vec::new();
+    archive
+        .by_name("client-overrides/config/settings.toml")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"enabled=true");
+}
+#[tokio::test]
+async fn mixed_addition_failures_never_publish_either_successful_subset() {
+    for mode in [
+        "provider",
+        "file",
+        "root-collision",
+        "dependency-collision",
+        "placement-collision",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path()).await;
+        fs::write(root.path().join("settings.toml"), b"settings").unwrap();
+        let mut server = Server::new_async().await;
+        records(&mut server).await;
+        let provider = if mode == "provider" {
+            "absent"
+        } else {
+            "renderer"
+        };
+        let source = if mode == "file" {
+            "missing.toml"
+        } else {
+            "settings.toml"
+        };
+        let key = match mode {
+            "root-collision" => "my-alias",
+            "dependency-collision" => "required-library",
+            _ => "settings",
+        };
+        let mut file = local_batch_input(
+            source,
+            key,
+            if mode == "placement-collision" {
+                "mods/Root0001.jar"
+            } else {
+                "config/settings.toml"
+            },
+        );
+        if mode == "placement-collision"
+            && let AddHostInput::File(input) = &mut file
+        {
+            let mut placement = input.placements.as_slice()[0].clone();
+            placement.layer = empack_core::model::ContentLayer::Common;
+            input.placements = NonEmpty::new(vec![placement]).unwrap();
+        }
+        let before = snapshot(root.path());
+        assert!(
+            mixed(
+                root.path(),
+                &server,
+                vec![
+                    AddHostInput::Provider(input(provider, Some("my-alias"))),
+                    file
+                ],
+                true,
+                false
+            )
+            .await
+            .is_err(),
+            "{mode}"
+        );
+        assert_eq!(snapshot(root.path()), before, "{mode}");
+    }
 }

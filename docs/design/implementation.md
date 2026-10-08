@@ -1427,3 +1427,19 @@ All 40 affected archive/import/direct-file tests pass. The final twelve focused 
 serially without the earlier parallel pipe warning. Final all-feature Clippy and Windows
 cross-compilation also pass.
 The last complete suite remains pinned to `7857098`; this correction has targeted evidence.
+
+## Mixed native addition batches
+
+The native addition host now accepts provider and direct-file requests together. It
+captures the project once, resolves required provider closure, verifies direct files,
+combines compatible logical records and prepares one approved publication. The existing
+provider-only and direct-only entry points use this path. Source reservations survive
+composition; provider references remain distinct from acquired direct bytes.
+
+The composed native regression verifies two explicit roots plus a required dependency,
+preview/decline, exact repeated addition, two no-op synchronizations and mrpack export
+containing both provider references and local bytes. A failure matrix covers unavailable
+providers/files and collisions with explicit roots, required dependencies or placements.
+Every failure preserves the entire project tree. All 59 affected tests, all-feature
+Clippy and Windows cross-compilation pass. CLI input classification and identification decisions remain open; this
+completes native batch composition, not the CLI cutover.

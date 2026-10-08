@@ -16,6 +16,11 @@ pub struct AdditionGroup {
     lock: ResolutionLock,
 }
 impl AdditionGroup {
+    /// Exact requested installations and required closure, for inspection before approval.
+    pub fn dependencies(&self) -> &BTreeMap<DependencyKey, LockedDependency> {
+        &self.lock.dependencies
+    }
+
     /// Extract dependency intent and exact evidence from a coherent resolved request.
     /// Every proposed installation needs an explicit root or a known required path from one.
     pub fn from_resolved(project: &ResolvedProject) -> Result<Self, AdditionError> {

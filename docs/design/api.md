@@ -203,9 +203,22 @@ archives require member interpretation rather than being installed as an opaque 
 native addition preview, approval and publication used by provider additions. Host
 paths resolve against the invocation directory. Raw project documents and native root
 identity bind acquisition to publication, so a concurrent edit requires replanning.
-Provider identification/representation selection, world member interpretation and a
-mixed provider/direct CLI batch remain frontend integration work; catalog failures do
-not implicitly authorize unidentified content.
+Provider identification/representation selection, world member interpretation and
+CLI input selection remain frontend integration work; catalog failures do not implicitly
+authorize unidentified content.
+
+`application::engine_host::add` accepts a nonempty sequence of `AddHostInput::Provider`
+and `AddHostInput::File`. Both use one captured project revision and one resource governor.
+`ResolvedAdditionBatch::combine` consumes their resolved evidence into one inspected
+addition group and complete content inventory. Provider entries remain exact references;
+direct entries retain verified bytes. The evidence policy applies to direct acquisition;
+provider references keep their original assertions for later acquisition policy checks.
+
+Logical collisions and incompatible placements fail before publication. Required provider
+closure remains attached to its roots. A failure in either source prevents publication of
+both; there is one preview and approval, not one mutation per input class. Existing
+`add_providers` and `add_files` entry points use the same composition. `AdditionGroup`
+exposes its exact dependency records for pre-approval inspection without granting mutation.
 
 `acquire_local_file` reads an explicitly selected absolute host file into a private
 verified lease. It captures only that regular file, rejects symbolic links and special
