@@ -773,6 +773,91 @@ async fn provider_file_plan_preserves_companions_destinations_and_optional_choic
             before
         );
     }
+    // Authored per-file decisions use the same resolver during a fresh synchronization.
+    let mut intent = project(root.path()).intent().clone();
+    let key = intent.roots.keys().next().unwrap().clone();
+    let empack_core::model::PlacementIntent::ByFile(roles) =
+        &mut intent.roots.get_mut(&key).unwrap().placement
+    else {
+        panic!("lost file decisions")
+    };
+    let assets = roles
+        .remove(&empack_core::model::FileSlot::parse("assets.zip").unwrap())
+        .unwrap();
+    let write = |intent: &empack_core::model::ProjectIntent| {
+        fs::write(
+            root.path().join("project/empack.yml"),
+            DocumentCodec.encode_intent(intent).unwrap(),
+        )
+        .unwrap()
+    };
+    write(&intent);
+    let services = || dependencies::AdditionServices {
+        catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
+        transport: HttpAcquisition::for_loopback_tests(),
+        files: DirectFileLimits::default(),
+    };
+    let before = super::super::tests::snapshot(root.path());
+    let error = synchronization::synchronize_with_services(
+        &session(root.path(), false),
+        false,
+        services(),
+        crate::engine::runtime_catalog::RuntimeCatalog::for_loopback_tests(&server.url()),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:#}").contains("required companion"));
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    let empack_core::model::PlacementIntent::ByFile(roles) =
+        &mut intent.roots.get_mut(&key).unwrap().placement
+    else {
+        unreachable!()
+    };
+    roles.insert(
+        empack_core::model::FileSlot::parse("assets.zip").unwrap(),
+        assets,
+    );
+    let extra = roles
+        .get_mut(&empack_core::model::FileSlot::parse("extras.zip").unwrap())
+        .unwrap();
+    let mut placement = extra.as_slice()[0].clone();
+    placement.destination =
+        empack_core::path::InstallDestination::parse("resourcepacks/extra-renamed.zip").unwrap();
+    *extra = NonEmpty::new(vec![placement.clone()]).unwrap();
+    write(&intent);
+    let before = super::super::tests::snapshot(root.path());
+    for dry in [true, false] {
+        synchronization::synchronize_with_services(
+            &session(root.path(), dry),
+            false,
+            services(),
+            crate::engine::runtime_catalog::RuntimeCatalog::for_loopback_tests(&server.url()),
+        )
+        .await
+        .unwrap();
+        if dry {
+            assert_eq!(super::super::tests::snapshot(root.path()), before);
+        }
+    }
+    let resolved = project(root.path());
+    assert_eq!(resolved.intent(), &intent);
+    let extra = resolved.lock().dependencies[&key]
+        .files
+        .as_slice()
+        .iter()
+        .find(|file| file.slot.as_str() == "extras.zip")
+        .unwrap();
+    assert_eq!(extra.placements.as_slice(), &[placement]);
+    let stable = super::super::tests::snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        super::super::tests::snapshot(&root.path().join("project")),
+        stable
+    );
 }
 
 #[tokio::test]

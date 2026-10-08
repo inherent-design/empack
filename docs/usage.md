@@ -312,6 +312,12 @@ provider archive, so sync, builds, updates and removal share the same identity.
 
 ## Named file placement
 
+Sync reads those same per-file decisions when intent changes. A required provider
+companion must remain included; correcting the named roles or placements in
+`empack.yml` and rerunning sync is the explicit resolution path. Conflicting exact
+pins or incomplete provider dependency evidence still block publication; confirmation
+does not manufacture missing evidence.
+
 Multi-file dependencies record each file's placements in `empack.yml`, independently
 of the source path or provider filename used to acquire it:
 

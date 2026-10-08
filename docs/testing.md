@@ -55,8 +55,8 @@ The maintained matrix covers vanilla, both Fabric launcher layouts, Quilt,
 Forge 1.7.10/1.12.2/1.16.5/1.20.1 and both early/current NeoForge artifact families.
 A separate case validates six official installer profiles. Ordinary offline runs
 ignore these cases; the explicit task selects every case, limits concurrency to
-two, and fails on unavailable prerequisites or providers. The suite complements
-CLI E2E while command cutover is still pending.
+two, and fails on unavailable prerequisites or providers. The suite complements CLI E2E by checking actual Java launchers and historical
+runtime families through the same native engine.
 
 Run official provider identity and byte verification with:
 

@@ -22,11 +22,11 @@ applicable. Target-only requests become available when their implementations lan
 | Datapack-folder inference and backend options | Preserve | Layout proposal and backend recipe | Inference evidence and explicit override precedence |
 | Browser/download scans/manual association/continue | Preserve | Decisions and acquisition resume | Digest association, stale state remains read-only |
 | Clean builds/cache/all | Preserve with scoped plans | Publisher and cache maintenance | Ownership, leases and recovery data survive unrelated cleanup |
-| Managed/external tooling, process limits | Preserve | Tool resolver and process port | Provenance, bounded probes, descendant retirement |
+| Runtime assets, external installers and process limits | Preserve | Verified runtime acquisition and host process port | Original assertions, bounded execution and descendant retirement; ordinary commands need no packwiz executable |
 | Workdir, CLI/env/dotenv, interactive/headless, logs/exits | Preserve | Host adapters | Current smoke fixtures and stable exit classes |
 | Default best-effort batch publication | Replace | AllRequested policy | No publication if any requested group fails |
 | Explicit independent partial progress | Preserve behind explicit policy | Group planner and partial receipt | Failed groups retain original intent/content |
-| Update/adopt engine requests | New target | Request planner and codec | No CLI support claim before implementation |
+| Update/adopt engine requests | Implemented target | Request planner and codec | Exact selections, observed content verification and command composition |
 | Arbitrary tree deletion and automatic orphan inference | Bug to remove / remain refused | Managed change plan | Only justified managed changes; incomplete evidence retains content |
 
 Each implemented feature must name its contract tests in the implementation ledger.
