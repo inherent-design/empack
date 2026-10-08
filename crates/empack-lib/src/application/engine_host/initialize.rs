@@ -394,31 +394,17 @@ where
     F: FnOnce(WorkScope) -> Fut + Send + 'static,
     Fut: Future<Output = Result<T>> + Send + 'static,
 {
-    let runtime = OperationRuntime::new(
+    scoped(
+        session,
         ResourceGovernor::new(ResourceRequest {
             jobs: 1,
             memory_bytes: 512 << 20,
             scratch_bytes: 32 << 20,
             open_files: 64,
         }),
-        1,
-    );
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    let mut handle = runtime.start(move |scope| async move {
-        let _ = sender.send(work(scope).await);
-        Ok(())
-    })?;
-    let result = cancellable(session, async {
-        match &*handle.wait().await {
-            OperationOutcome::Completed(()) => receiver
-                .await
-                .context("Runtime discovery result was lost")?,
-            OperationOutcome::Failed(error) => Err(error.clone().into()),
-        }
-    })
-    .await;
-    runtime.shutdown().await;
-    result
+        work,
+    )
+    .await
 }
 
 async fn initialize_with_engine(

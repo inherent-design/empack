@@ -25,6 +25,8 @@ pub enum ExistingDependencyPolicy {
 /// Resolved request and explicit per-slot materialization. Provider/local/URL hosts resolve before
 /// this boundary; neither the group nor its references grant project publication authority.
 pub struct AddRequest {
+    /// Bind host resolution to the native document generation from which it was derived.
+    pub source_revision: Option<crate::engine::project::ProjectRevision>,
     pub group: AdditionGroup,
     pub content: DependencyContents,
     pub existing: ExistingDependencyPolicy,
@@ -143,6 +145,7 @@ pub(super) async fn prepare_update(
     prepare_change(
         project,
         AddRequest {
+            source_revision: None,
             group: request.group,
             content: request.content,
             existing: ExistingDependencyPolicy::UpdateSameIdentity,
@@ -162,6 +165,7 @@ pub(super) async fn prepare_adoption(
     prepare_change(
         project,
         AddRequest {
+            source_revision: None,
             group: request.group,
             content: BTreeMap::new(),
             existing: ExistingDependencyPolicy::UpdateSameIdentity,
@@ -196,6 +200,7 @@ async fn prepare_change(
             }
             _ => reader.capture_addition(&project, &request.group, limits, &cancel)?,
         };
+        snapshot.require_revision(request.source_revision)?;
         let planned = match kind {
             DependencyChange::Add => match &request.existing {
                 ExistingDependencyPolicy::ReplaceSelected(selection) => native_addition::plan_replacement(snapshot, &request.group, request.content, selection, &cancel)?,

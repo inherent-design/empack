@@ -1205,3 +1205,30 @@ changed build intent, a valid catalog responding after its former time slice, a 
 early provider and retained earlier results. All 94 affected host, engine API and catalog
 tests pass, including comment-only intent edits, with all-feature Clippy and Windows
 cross-compilation. The full-suite result above remains pinned to `486808c`.
+
+## Native dependency hosts
+
+Selected provider addition now connects catalog resolution to native engine publication.
+Removal and explicit synchronization use the same approval and execution lifecycle. All
+three display their exact changes before mutation. Resolution and publication share resource
+admission; cancellation drains their owned workers. The provider host records references,
+leaving payload verification to an operation that actually needs the bytes.
+
+Addition binds its resolved choices to the native root and original intent/lock documents.
+A concurrent document edit rejects the stale request and preserves the independent edit.
+Identical documents in a different project cannot satisfy that binding. An unresolved
+required edge or any failed requested selection prevents the whole addition from publishing.
+
+The native composed regression initializes a project, adds a pinned root with a required
+dependency, re-adds by equivalent selectors under the existing alias, synchronizes twice,
+builds a full client with verified supplied content, removes the root by title and
+synchronizes again. It inspects actual packaged bytes and retained dependency intent.
+Preview and declined execution leave project and host files unchanged.
+
+These hosts are compiled library entry points. They do not complete CLI search/selection,
+local/URL input composition, automatic sync resolution or dispatcher replacement.
+
+All 65 affected host, addition, removal and provider tests pass, with all-feature Clippy
+and Windows cross-compilation. Two tests reported inherited output pipes in the parallel
+run; both passed without that warning in an isolated serial rerun. The full-suite result
+remains pinned to `486808c`; these checks do not establish final CLI parity.

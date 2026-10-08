@@ -133,6 +133,23 @@ runtime or insufficient participation needs an explicit change. Generated labels
 reserve explicit roots and current records before choosing a disambiguated label.
 CLI selection and local/URL hosts remain separate integration work.
 
+`application::engine_host::add_providers` composes already selected provider requests,
+required-closure resolution, exact reference recording and approved native publication.
+It shares one resource governor across resolution and engine work. `AddRequest::source_revision`
+can bind resolved choices to `WorkspaceSnapshot::revision()`: an opaque read precondition
+containing the native root and both raw document revisions. The host always supplies it;
+changed documents or a different native project require fresh resolution. The value grants
+no write authority and cannot be deserialized as a saved approval.
+
+The host shows canonical identity, existing-label bindings, replacement selections,
+incomplete evidence and native file changes before approval. It records remote references
+without claiming payload acquisition. A failed requested selection or unresolved required
+edge publishes nothing. `engine_host::remove` similarly displays tracked and observed
+selections, removal mode and missing evidence. `engine_host::synchronize` accepts an explicit
+`SyncRequest`; automatic resolution and materialization remain separate inputs. These
+compiled entry points share preview, approval, cancellation, shutdown and receipt handling.
+CLI search/selection and dispatcher cutover remain pending.
+
 `ProviderAddition::acquire_content` accepts one explicit `ProviderContentChoice`
 per locked file: reference, acquisition, or supplied verified bytes. It validates the
 whole decision set before downloading, reuses retained exact catalog records and

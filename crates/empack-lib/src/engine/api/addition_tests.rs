@@ -64,6 +64,7 @@ async fn reference_add_sync_export_and_materialization_keep_distinct_byte_obliga
     }
     let (engine, governor) = engine(state.path().join("state"));
     let make_request = || AddRequest {
+        source_revision: None,
         group: AdditionGroup::from_resolved(&resolved).unwrap(),
         content: references(&resolved),
         existing: ExistingDependencyPolicy::RejectExisting,
@@ -266,6 +267,7 @@ fn request(policy: ExistingDependencyPolicy) -> AddRequest {
         }
     }
     AddRequest {
+        source_revision: None,
         group: AdditionGroup::from_resolved(&project).unwrap(),
         content: crate::engine::dependency_content::materialized(content),
         existing: policy,
@@ -1062,6 +1064,7 @@ async fn selected_identity_replacement_publishes_one_candidate_then_sync_converg
     );
     let (engine, governor) = engine(state.path().join("state"));
     let request = || AddRequest {
+        source_revision: None,
         group: AdditionGroup::from_resolved(&replacement).unwrap(),
         content: crate::engine::dependency_content::materialized(acquired_project(&replacement)),
         existing: ExistingDependencyPolicy::ReplaceSelected(ReplacementSelection {
@@ -1162,6 +1165,7 @@ async fn selected_replacement_refuses_unverified_or_unowned_effects() {
         }
         let (engine, governor) = engine(state.path().join("state"));
         let mut request = AddRequest {
+            source_revision: None,
             group: AdditionGroup::from_resolved(&replacement).unwrap(),
             content: crate::engine::dependency_content::materialized(acquired_project(
                 &replacement,
@@ -1211,4 +1215,37 @@ async fn selected_replacement_refuses_unverified_or_unowned_effects() {
         assert_eq!(governor.status().reserved, ResourceRequest::default());
         engine.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn bound_addition_rejects_identical_documents_in_another_native_project() {
+    use crate::application::process_runtime::Cancellation;
+    let original = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(original.path());
+    fixture(other.path());
+    for document in ["empack.yml", "empack.lock"] {
+        assert_eq!(
+            fs::read(original.path().join(document)).unwrap(),
+            fs::read(other.path().join(document)).unwrap()
+        );
+    }
+    let state = host.path().join("state");
+    let observed = ProjectReader::new(RecoveryReader::new(state.clone()))
+        .capture(
+            original.path(),
+            &[],
+            SnapshotLimits::default(),
+            &Cancellation::default(),
+        )
+        .unwrap();
+    let (engine, _) = engine(state.clone());
+    let mut request = request(ExistingDependencyPolicy::UpdateSameIdentity);
+    request.source_revision = Some(observed.revision());
+    let result = engine.prepare(other.path().to_path_buf(), request).await;
+    assert!(result.is_err());
+    assert!(format!("{:#}", result.err().unwrap()).contains("changed project documents"));
+    assert!(!state.exists());
+    engine.shutdown().await;
 }

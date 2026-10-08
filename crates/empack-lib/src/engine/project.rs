@@ -12,7 +12,7 @@ use anyhow::{Context, Result, ensure};
 use empack_core::{
     digest::ContentId,
     files::FilePermissions,
-    model::{AcquisitionSpec, ExpectedContent, ResolvedProject},
+    model::{AcquisitionSpec, DocumentRevision, ExpectedContent, ResolvedProject},
     path::{PathSyntax, PortableRelPath},
 };
 use std::path::Path;
@@ -163,9 +163,28 @@ pub struct MutationSnapshot {
     workspace: WorkspaceSnapshot,
 }
 impl MutationSnapshot {
+    pub(in crate::engine) fn require_revision(
+        &self,
+        revision: Option<ProjectRevision>,
+    ) -> Result<()> {
+        ensure!(
+            revision.is_none_or(|expected| self.workspace.revision() == expected),
+            "Dependency choices belong to changed project documents; resolve a fresh request"
+        );
+        Ok(())
+    }
     pub(super) fn into_workspace(self) -> WorkspaceSnapshot {
         self.workspace
     }
+}
+
+/// A read precondition for choices derived from one native project's documents.
+/// This value grants no mutation authority and cannot be restored from serialized input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProjectRevision {
+    root: native::ObjectIdentity,
+    intent: DocumentRevision,
+    lock: Option<DocumentRevision>,
 }
 
 pub struct WorkspaceSnapshot {
@@ -175,6 +194,13 @@ pub struct WorkspaceSnapshot {
     prior_lock: Option<DecodedLock>,
 }
 impl WorkspaceSnapshot {
+    pub fn revision(&self) -> ProjectRevision {
+        ProjectRevision {
+            root: self.root.binding,
+            intent: self.intent.raw_revision(),
+            lock: self.prior_lock.as_ref().map(DecodedLock::raw_revision),
+        }
+    }
     pub(super) fn into_native(self) -> (ProjectReadRoot, NativeSnapshot) {
         (self.root, self.native)
     }

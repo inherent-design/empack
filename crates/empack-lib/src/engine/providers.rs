@@ -150,7 +150,7 @@ impl ProviderCatalog {
         }
     }
     #[cfg(test)]
-    pub(in crate::engine) fn for_loopback_tests(origin: &str, key: Option<String>) -> Self {
+    pub(crate) fn for_loopback_tests(origin: &str, key: Option<String>) -> Self {
         Self {
             transport: transport::CatalogTransport::test(origin, key),
         }

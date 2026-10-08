@@ -39,7 +39,22 @@ fn state_root(config: &AppConfig, invocation: &Path) -> Result<PathBuf> {
         .context("Cannot determine durable state directory; set --state-dir")?;
     Ok(directories.data_local_dir().join("operations"))
 }
+fn governor(config: &AppConfig) -> ResourceGovernor {
+    ResourceGovernor::new(ResourceRequest {
+        jobs: config.cpu_jobs.max(1) as u64,
+        memory_bytes: 512 << 20,
+        scratch_bytes: 128 << 30,
+        open_files: 512,
+    })
+}
 fn engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
+    engine_with_governor(config, invocation, governor(config))
+}
+fn engine_with_governor(
+    config: &AppConfig,
+    invocation: &Path,
+    governor: ResourceGovernor,
+) -> Result<Engine> {
     let work = ResourceRequest {
         jobs: 1,
         memory_bytes: 64 << 20,
@@ -50,12 +65,6 @@ fn engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
         memory_bytes: 64 << 20,
         open_files: 8,
         ..Default::default()
-    };
-    let limits = ResourceRequest {
-        jobs: config.cpu_jobs.max(1) as u64,
-        memory_bytes: 512 << 20,
-        scratch_bytes: 128 << 30,
-        open_files: 512,
     };
     Engine::new(
         EngineConfig {
@@ -85,7 +94,7 @@ fn engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
                 output: SnapshotLimits::default(),
             },
         },
-        ResourceGovernor::new(limits),
+        governor,
     )
 }
 /// Resolve one invocation-relative project selection without changing process cwd.
@@ -339,3 +348,32 @@ pub use initialize::initialize;
 
 mod build;
 pub use build::{BuildDecisions, build};
+
+mod dependencies;
+pub use dependencies::{add_providers, remove, synchronize};
+
+/// Keep service workers and their retained results under the host's shared admission budget.
+async fn scoped<T, F, Fut>(session: &dyn Session, governor: ResourceGovernor, work: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(crate::engine::runtime::WorkScope) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T>> + Send + 'static,
+{
+    let runtime = crate::engine::runtime::OperationRuntime::new(governor, 1);
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let mut handle = runtime.start(move |scope| async move {
+        let _ = sender.send(work(scope).await);
+        Ok(())
+    })?;
+    let result = cancellable(session, async {
+        match &*handle.wait().await {
+            OperationOutcome::Completed(()) => {
+                receiver.await.context("Host service result was lost")?
+            }
+            OperationOutcome::Failed(error) => Err(error.clone().into()),
+        }
+    })
+    .await;
+    runtime.shutdown().await;
+    result
+}
