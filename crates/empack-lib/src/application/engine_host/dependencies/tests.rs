@@ -658,6 +658,7 @@ async fn update_mixed(
             transport: HttpAcquisition::for_loopback_tests(),
             files: DirectFileLimits::default(),
         },
+        BatchPolicy::AllRequested,
     )
     .await
 }

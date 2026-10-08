@@ -5,7 +5,7 @@ use crate::{
     engine::{
         acquisition::HttpAcquisition,
         addition::{DirectFileLimits, DirectFileSource},
-        api::ExistingDependencyPolicy,
+        api::{BatchPolicy, ExistingDependencyPolicy},
         content::SourceEvidencePolicy,
         project::ProjectReader,
         providers::{
@@ -30,12 +30,13 @@ mod synchronization;
 mod update;
 pub use import::initialize;
 pub use synchronization::{resume as resume_synchronization, synchronize};
-pub use update::{adopt, update};
+pub use update::{adopt, update, update_with_policy};
 
 /// CLI flags remain input selectors until catalog responses establish canonical identity.
 pub struct AddOptions {
     pub inputs: Vec<String>,
     pub force: bool,
+    pub continue_independent: bool,
     pub platform: Option<SearchPlatform>,
     pub kind: Option<CliProjectType>,
     pub version_id: Option<String>,
@@ -195,7 +196,8 @@ async fn selected_with_catalog(
     operation: InputOperation,
 ) -> Result<()> {
     ensure!(
-        operation != InputOperation::Adopt || (!options.force && !options.download_as_local),
+        operation != InputOperation::Adopt
+            || (!options.force && !options.download_as_local && !options.continue_independent),
         "Adoption cannot force updates or convert downloads to local ownership"
     );
     let pin = options.pin()?;
@@ -335,7 +337,7 @@ async fn selected_with_catalog(
     if operation == InputOperation::Adopt {
         return dependencies::adopt_with_services(session, NonEmpty::new(inputs)?, services).await;
     }
-    dependencies::add_with_services(
+    dependencies::add_batch_with_services(
         session,
         NonEmpty::new(inputs)?,
         ReleasePolicy::PreferStable,
@@ -346,6 +348,11 @@ async fn selected_with_catalog(
             ExistingDependencyPolicy::RejectExisting
         },
         services,
+        if options.continue_independent {
+            BatchPolicy::ContinueIndependent
+        } else {
+            BatchPolicy::AllRequested
+        },
     )
     .await
 }

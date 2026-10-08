@@ -48,6 +48,7 @@ fn add(name: &str) -> Commands {
         file_id: None,
         file_plan: None,
         download_as_local: false,
+        continue_independent: false,
     }
 }
 fn remove(name: &str) -> Commands {
@@ -225,6 +226,7 @@ async fn dispatcher_preview_decline_and_invalid_input_preserve_whole_project() {
             file_id: invalid.5,
             file_plan: None,
             download_as_local: false,
+            continue_independent: false,
         },
         &session(root.path(), true, false),
     )

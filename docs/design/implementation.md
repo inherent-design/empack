@@ -136,7 +136,7 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
 | Implemented | Acquisition cache integration | Build/sync/runtime and add/import consumers use verified lookup; approved mutations populate the cache; restricted inputs reuse exact asserted bytes |
 | Implemented | Retained-input reclamation | `clean retained` reclaims empty record categories under save/cleanup coordination; saved and unknown records, active private leases and recovery journals remain protected |
-| Cutover | Explicit `ContinueIndependent` batches | Native resolved add/update batches prepare connected groups and publish one combined candidate with partial receipts; CLI selection remains open; failed groups retain prior intent/content |
+| Implemented | Explicit `ContinueIndependent` batches | Add/update opt in with `--continue-independent`; resolved groups prepare independently and publish one combined candidate with partial receipts; unresolved identity/evidence still blocks the whole request |
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
@@ -204,7 +204,10 @@ Dependency batch API: 78 affected addition/cache tests passed, followed by six f
 component/API tests after tightening alias footprints and moving graph analysis into the
 admitted worker. Coverage includes default refusal, partial addition/update receipts,
 connected failures, declined preparation, stale approval and unchanged subsequent sync.
-CLI policy selection is not included in this evidence.
+The CLI adapter subsequently passed 26 affected tests, two rebuilt executable partial-batch
+cases and all-target/all-feature Clippy. Executable checks cover default refusal, preview,
+preserved existing content and unowned directories, nonzero partial status, repeated sync
+and an unchanged explicit batch update. Source resolution still precedes grouping.
 
 ## Historical verification evidence
 

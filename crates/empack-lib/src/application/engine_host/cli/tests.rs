@@ -50,6 +50,7 @@ fn options(value: &str) -> AddOptions {
         file_id: None,
         file_plan: None,
         download_as_local: false,
+        continue_independent: false,
     }
 }
 pub(super) fn project(root: &Path) -> ResolvedProject {
@@ -342,6 +343,7 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
             file_id: None,
             file_plan: None,
             download_as_local: false,
+            continue_independent: false,
         };
         let before = super::super::tests::snapshot(root.path());
         let result = add_with_catalog(
@@ -616,6 +618,7 @@ async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() 
         file_id: None,
         file_plan: None,
         download_as_local: false,
+        continue_independent: false,
     };
     let before = super::super::tests::snapshot(root.path());
     add_with_catalog(
@@ -852,6 +855,7 @@ async fn world_archive_members_remain_one_identity_across_commands() {
         file_id: None,
         file_plan: None,
         download_as_local: false,
+        continue_independent: false,
     };
     for bad in [
         vec![
@@ -1101,6 +1105,7 @@ async fn multiple_worlds_and_large_member_updates_share_admission_without_splitt
             file_id: None,
             file_plan: None,
             download_as_local: false,
+            continue_independent: false,
         },
     )
     .await

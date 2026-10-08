@@ -32,6 +32,8 @@ pub struct BlockedBatchGroup {
 }
 #[derive(Debug, Clone)]
 pub struct DependencyBatchReport {
+    /// Logical roots at each original request position.
+    pub requested: Vec<Vec<DependencyKey>>,
     pub policy: BatchPolicy,
     /// Groups actually admitted to the one verified publication candidate.
     pub successful: Vec<Vec<usize>>,
@@ -119,6 +121,12 @@ pub(in crate::engine::api) async fn prepare_batch(
     let captured = scope.accept(capture.wait().await?)?.transpose()?;
     let ((current, revision, components, request), _captured) = captured.into_parts();
     let mut report = DependencyBatchReport {
+        requested: request
+            .items
+            .as_slice()
+            .iter()
+            .map(|item| item.group.roots().keys().cloned().collect())
+            .collect(),
         policy: request.policy,
         successful: vec![],
         blocked: vec![],

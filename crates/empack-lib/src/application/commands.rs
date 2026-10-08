@@ -87,6 +87,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
             file_id,
             file_plan,
             download_as_local,
+            continue_independent,
         } => {
             engine_host::cli::add(
                 session,
@@ -99,11 +100,26 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                     file_id,
                     file_plan,
                     download_as_local,
+                    continue_independent,
                 },
             )
             .await
         }
-        Commands::Update { dependencies } => engine_host::cli::update(session, dependencies).await,
+        Commands::Update {
+            dependencies,
+            continue_independent,
+        } => {
+            engine_host::cli::update_with_policy(
+                session,
+                dependencies,
+                if continue_independent {
+                    crate::engine::api::BatchPolicy::ContinueIndependent
+                } else {
+                    crate::engine::api::BatchPolicy::AllRequested
+                },
+            )
+            .await
+        }
         Commands::Adopt {
             dependencies,
             from,
@@ -135,6 +151,7 @@ async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
                         file_id: selection.file_id,
                         file_plan: selection.file_plan,
                         download_as_local: false,
+                        continue_independent: false,
                     },
                 )
                 .await

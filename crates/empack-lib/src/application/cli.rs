@@ -313,6 +313,9 @@ pub enum Commands {
 
     /// Refresh selected installed dependencies while retaining intent and pins
     Update {
+        /// Publish verified independent groups and report failures without discarding prior content
+        #[arg(long)]
+        continue_independent: bool,
         /// Exact logical keys from empack.yml or empack.lock
         #[arg(required = true)]
         dependencies: Vec<String>,
@@ -335,6 +338,9 @@ pub enum Commands {
 
     /// Add projects to the modpack
     Add {
+        /// Publish verified independent groups after resolution; report blocked groups as failure
+        #[arg(long)]
+        continue_independent: bool,
         /// Mod names, URLs, or project IDs to add
         #[arg(help = "Mod names, URLs, or project IDs")]
         mods: Vec<String>,
@@ -645,6 +651,7 @@ mod tests {
                 file_id: None,
                 file_plan: None,
                 download_as_local: false,
+                continue_independent: false,
             }
             .execution_order(),
             6

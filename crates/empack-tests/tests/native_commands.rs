@@ -115,6 +115,7 @@ fn add(names: &[&str], kind: Option<CliProjectType>) -> Commands {
         file_id: None,
         file_plan: None,
         download_as_local: false,
+        continue_independent: false,
     }
 }
 fn remove(names: &[&str], forget: bool, acknowledge_unknown: bool) -> Commands {
@@ -396,6 +397,7 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     fs::write(project.path().join("pack/mods/fixture.jar"), &bytes)?;
     let changed = project.snapshot();
     let update = || Commands::Update {
+        continue_independent: false,
         dependencies: vec!["fixture".into()],
     };
     // Updating cannot authorize overwriting externally changed source bytes.
@@ -415,6 +417,7 @@ async fn selected_updates_preserve_intent_and_demoted_roles() -> Result<()> {
     assert!(
         project
             .run(Commands::Update {
+                continue_independent: false,
                 dependencies: vec!["fixture".into(), "missing".into()]
             })
             .await

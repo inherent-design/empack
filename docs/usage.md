@@ -30,6 +30,30 @@ and normalized document examples are finalized with the implementation; proposed
 requests must not be advertised as working commands before their tests pass.
 There is no requirement to retain old flags or manifest formats.
 
+## Explicit partial dependency batches
+
+`add --continue-independent` and `update --continue-independent` allow independently
+verified groups to publish together when another resolved group fails preparation.
+The preview names ready and blocked logical roots. Shared identities, required dependency
+chains, overlapping destinations and source reads keep connected requests in one group.
+A blocked group retains its previous intent, exact selections and files.
+
+```sh
+empack --yes add first.jar second.jar --continue-independent
+empack --yes update first second --continue-independent
+```
+
+Partial publication returns a nonzero exit status even though the ready groups were
+published. Inspect the named blocked groups before retrying; do not assume failure means
+nothing changed when this policy was explicitly selected. Without the flag, every requested
+item must verify before anything publishes. Preview and declined approval publish nothing.
+
+The policy applies after source identity and dependency resolution. Missing or ambiguous
+sources and unresolved dependency evidence still stop the whole request: they do not
+establish a safe independent footprint. Network and local acquisition needed for resolution
+must also complete before candidate grouping. The option does not enable partial imports,
+builds or automatic orphan removal.
+
 ## Verified import file associations
 
 `init --from` accepts repeated `--import-file SELECTOR=PATH` arguments for files

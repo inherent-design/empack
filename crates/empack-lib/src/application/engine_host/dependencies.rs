@@ -8,8 +8,9 @@ use crate::{
             ResolvedAdditionBatch,
         },
         api::{
-            AddRequest, AdoptObservedRequest, ExistingDependencyPolicy, RemoveRequest, Request,
-            SyncRequest, UpdateRequest,
+            AddRequest, AdoptObservedRequest, BatchPolicy, DependencyBatchChange,
+            DependencyBatchItem, DependencyBatchRequest, ExistingDependencyPolicy, RemoveRequest,
+            Request, SyncRequest, UpdateRequest,
         },
         content::SourceEvidencePolicy,
         project::ProjectReader,
@@ -131,6 +132,7 @@ pub(super) async fn update_with_services(
         evidence,
         Change::Update,
         services,
+        BatchPolicy::AllRequested,
     )
     .await
 }
@@ -147,6 +149,7 @@ pub(super) async fn adopt_with_services(
         SourceEvidencePolicy::Compatibility,
         Change::Adopt,
         services,
+        BatchPolicy::AllRequested,
     )
     .await
 }
@@ -221,6 +224,46 @@ pub(super) async fn add_with_services(
         evidence,
         Change::Add(existing),
         services,
+        BatchPolicy::AllRequested,
+    )
+    .await
+}
+pub(super) async fn add_batch_with_services(
+    session: &dyn Session,
+    inputs: NonEmpty<AddHostInput>,
+    releases: ReleasePolicy,
+    evidence: SourceEvidencePolicy,
+    existing: ExistingDependencyPolicy,
+    services: AdditionServices,
+    policy: BatchPolicy,
+) -> Result<()> {
+    change_with_services(
+        session,
+        inputs,
+        releases,
+        evidence,
+        Change::Add(existing),
+        services,
+        policy,
+    )
+    .await
+}
+pub(super) async fn update_batch_with_services(
+    session: &dyn Session,
+    inputs: NonEmpty<AddHostInput>,
+    releases: ReleasePolicy,
+    evidence: SourceEvidencePolicy,
+    services: AdditionServices,
+    policy: BatchPolicy,
+) -> Result<()> {
+    change_with_services(
+        session,
+        inputs,
+        releases,
+        evidence,
+        Change::Update,
+        services,
+        policy,
     )
     .await
 }
@@ -231,6 +274,7 @@ async fn change_with_services(
     evidence: SourceEvidencePolicy,
     change: Change,
     services: AdditionServices,
+    batch: BatchPolicy,
 ) -> Result<()> {
     let update = matches!(&change, Change::Update);
     let adopt = matches!(&change, Change::Adopt);
@@ -369,7 +413,21 @@ async fn change_with_services(
                 "Record {}: {} ({:?})", key.as_str(), dependency.title, dependency.identity
             ));
         }
-        let request: Request = match change {
+        let request: Request = if batch == BatchPolicy::ContinueIndependent && !adopt {
+            let items = addition.group().root_groups().into_iter().map(|group| {
+                let content = addition.content().iter().filter(|(key, _)| group.dependencies().contains_key(&key.dependency)).map(|(key, value)| (key.clone(), value.clone())).collect();
+                DependencyBatchItem { group, content }
+            }).collect();
+            DependencyBatchRequest {
+                source_revision: Some(revision), policy: batch, items: NonEmpty::new(items)?,
+                change: match change {
+                    Change::Add(existing) => DependencyBatchChange::Add(existing),
+                    Change::Update => DependencyBatchChange::Update,
+                    Change::Adopt => unreachable!("adoption is not a dependency batch"),
+                },
+            }.into()
+        } else {
+            match change {
             Change::Add(existing) => AddRequest {
                 source_revision: Some(revision), group: addition.group().clone(),
                 content: addition.content().clone(), existing,
@@ -379,6 +437,7 @@ async fn change_with_services(
                 content: addition.content().clone(),
             }.into(),
             Change::Adopt => AdoptObservedRequest { group: addition.group().clone() }.into(),
+        }
         };
         let prepared = ready(cancellable(session, engine.prepare(project, request)).await?)?;
         drop(addition);
@@ -397,6 +456,7 @@ async fn publish_update(
     prepared: PreparedOperation,
 ) -> Result<()> {
     let view = prepared.view().update().context("Missing update preview")?;
+    show_batch(session, view.batch.as_ref());
     for (requested, canonical) in &view.bindings {
         if !view.selected.contains(canonical) {
             continue;
@@ -431,6 +491,7 @@ pub(super) async fn publish_addition(
     prepared: PreparedOperation,
 ) -> Result<()> {
     let view = prepared.view().add().context("Missing addition preview")?;
+    show_batch(session, view.batch.as_ref());
     for (key, previous) in &view.replaced {
         session.display().status().info(&format!(
             "Replace {}: {} ({:?})",
@@ -646,3 +707,30 @@ pub(super) async fn synchronize_with_outcome(
 
 #[cfg(test)]
 mod tests;
+
+fn show_batch(session: &dyn Session, report: Option<&crate::engine::api::DependencyBatchReport>) {
+    let Some(report) = report else {
+        return;
+    };
+    let labels = |indices: &[usize]| {
+        indices
+            .iter()
+            .flat_map(|&index| report.requested[index].iter())
+            .map(|key| key.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    for group in &report.successful {
+        session
+            .display()
+            .status()
+            .info(&format!("Ready independent group: {}", labels(group)));
+    }
+    for group in &report.blocked {
+        session.display().status().warning(&format!(
+            "Preserve blocked group {}: {}",
+            labels(&group.requests),
+            group.cause
+        ));
+    }
+}

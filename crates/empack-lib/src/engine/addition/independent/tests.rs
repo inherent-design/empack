@@ -100,6 +100,19 @@ fn independent_groups_merge_required_closure_and_reject_conflicting_shared_recor
     );
     let merged = AdditionGroup::combine(&empty(), &[&requests[0], &requests[1]]).unwrap();
     assert_eq!(merged.dependencies().len(), 3);
+    let roots = merged.root_groups();
+    assert_eq!(roots.len(), 2);
+    assert_eq!(
+        independent_components(&empty(), &roots).unwrap(),
+        vec![vec![0, 1]]
+    );
+    assert_eq!(
+        AdditionGroup::combine(&empty(), &roots.iter().collect::<Vec<_>>())
+            .unwrap()
+            .dependencies(),
+        merged.dependencies()
+    );
+
     assert!(AdditionPlan::prepare(&empty(), &merged).is_ok());
     let changed = group(&selected("b", "different.zip"));
     assert!(AdditionGroup::combine(&empty(), &[&requests[0], &changed]).is_err());

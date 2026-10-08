@@ -818,3 +818,125 @@ fn smoke_sync_manual_continuation_and_stale_cleanup() {
         b"first"
     );
 }
+
+#[test]
+fn smoke_independent_add_publishes_successes_once_and_reports_preserved_failures() {
+    let project = initialized();
+    jar(&project, "existing.jar");
+    jar(&project, "fresh.jar");
+    command(&project)
+        .args(["add", "existing.jar", "--yes"])
+        .assert()
+        .success();
+    let before = project_snapshot(&project);
+    command(&project)
+        .args(["add", "existing.jar", "fresh.jar", "--yes"])
+        .assert()
+        .failure();
+    assert_eq!(project_snapshot(&project), before);
+    command(&project)
+        .args([
+            "add",
+            "existing.jar",
+            "fresh.jar",
+            "--continue-independent",
+            "--dry-run",
+            "--yes",
+        ])
+        .assert()
+        .success();
+    assert_eq!(project_snapshot(&project), before);
+    command(&project)
+        .args([
+            "add",
+            "existing.jar",
+            "fresh.jar",
+            "--continue-independent",
+            "--yes",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("Dependency batch incomplete"));
+    assert_eq!(read_project(&project).intent().roots.len(), 2);
+    assert_eq!(
+        fs::read(project.dir().join("pack/mods/existing.jar")).unwrap(),
+        before[Path::new("pack/mods/existing.jar")]
+    );
+    assert_eq!(
+        fs::read(project.dir().join("pack/mods/fresh.jar")).unwrap(),
+        fs::read(project.dir().join("fresh.jar")).unwrap()
+    );
+    let after = project_snapshot(&project);
+    for _ in 0..2 {
+        command(&project).args(["sync", "--yes"]).assert().success();
+    }
+    assert_eq!(project_snapshot(&project), after);
+    command(&project)
+        .args([
+            "add",
+            "existing.jar",
+            "fresh.jar",
+            "--continue-independent",
+            "--yes",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(project_snapshot(&project), after);
+    command(&project)
+        .args([
+            "update",
+            "existing",
+            "fresh",
+            "--continue-independent",
+            "--yes",
+        ])
+        .assert()
+        .success();
+    assert_eq!(project_snapshot(&project), after);
+}
+
+#[test]
+fn smoke_independent_add_preserves_unowned_directory_and_installs_unrelated_file() {
+    let project = initialized();
+    jar(&project, "blocked.jar");
+    jar(&project, "ready.jar");
+    let destination = project.dir().join("pack/mods/blocked.jar");
+    fs::create_dir_all(&destination).unwrap();
+    fs::write(destination.join("sentinel"), b"unowned").unwrap();
+    let before = project_snapshot(&project);
+    command(&project)
+        .args([
+            "add",
+            "blocked.jar",
+            "ready.jar",
+            "--continue-independent",
+            "--dry-run",
+            "--yes",
+        ])
+        .assert()
+        .success();
+    assert_eq!(project_snapshot(&project), before);
+    command(&project)
+        .args([
+            "add",
+            "blocked.jar",
+            "ready.jar",
+            "--continue-independent",
+            "--yes",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(fs::read(destination.join("sentinel")).unwrap(), b"unowned");
+    assert_eq!(
+        fs::read(project.dir().join("pack/mods/ready.jar")).unwrap(),
+        fs::read(project.dir().join("ready.jar")).unwrap()
+    );
+    let intent = read_project(&project);
+    assert_eq!(intent.intent().roots.len(), 1);
+    assert!(
+        intent
+            .intent()
+            .roots
+            .contains_key(&empack_core::model::DependencyKey::parse("ready").unwrap())
+    );
+}

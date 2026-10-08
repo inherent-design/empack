@@ -474,7 +474,7 @@ records and acknowledged incomplete evidence, and the receipt retains both.
 `AddPreview` also exposes canonical bindings,
 existing roots, file changes and the exact replacement summary; `AddReceipt` retains
 the resulting project and publication result. Provider/local/URL request resolution,
-and ContinueIndependent integration remain pending.
+and unresolved-input decision handling remain explicit preparation boundaries.
 
 `AddRequest`, `UpdateRequest` and `SyncRequest::Supplied` describe every file slot with
 `DependencyContent::Materialized` or `DependencyContent::Reference`. Omitting a slot
@@ -1394,5 +1394,8 @@ Failed groups retain previous intent, exact selections and files. Stale approval
 fails through the ordinary publisher. No group can acquire publication authority on its own.
 
 This API requires resolved actions so dependencies and overlaps can be analyzed. Unknown
-source identity or unresolved evidence cannot be treated as proof of independence. CLI policy
-selection is being connected; ordinary CLI batches still use AllRequested.
+source identity or unresolved evidence cannot be treated as proof of independence. `add` and `update`
+select this policy only with `--continue-independent`; ordinary CLI batches still use
+AllRequested. `AdditionGroup::root_groups` retains each root's required closure so shared
+selections reconnect during grouping. CLI receipts name logical roots as well as request
+indices and return failure status for partial completion.
