@@ -1025,7 +1025,9 @@ fn capture(
         .pending
         .iter()
         .filter(|need| match &need.source {
-            BuildContentSource::Provider { pin, .. } => !provider_access.supports(&pin.project),
+            BuildContentSource::Provider {
+                pin, alternatives, ..
+            } => alternatives.is_empty() && !provider_access.supports(&pin.project),
             BuildContentSource::Manual { .. } => true,
             BuildContentSource::Embedded { archive, .. } => !matches!(
                 workspace.observations().entries().get(archive),

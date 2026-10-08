@@ -354,9 +354,23 @@ async fn download_batch_verifies_every_requested_file_before_artifact_publicatio
             .await;
         // The test resolver maps stable HTTPS declarations to a local transport fixture.
         for (need, name) in plan.needs.iter_mut().zip(["first", "second"]) {
-            need.source = BuildContentSource::Download(
-                NonEmpty::new(vec![format!("{}/{name}", server.url())]).unwrap(),
-            );
+            let alternatives = vec![format!("{}/{name}", server.url())];
+            need.source = if name == "first" {
+                BuildContentSource::Download(NonEmpty::new(alternatives).unwrap())
+            } else {
+                // A host without a catalog can still use original provider download evidence.
+                let project = empack_core::identity::ProviderProjectId::Modrinth(
+                    empack_core::identity::ModrinthProjectId::parse("AANobbMI").unwrap(),
+                );
+                BuildContentSource::Provider {
+                    pin: ResolvedPin {
+                        selection: project.parse_pin("abcdefgh").unwrap(),
+                        project,
+                    },
+                    slot: empack_core::model::FileSlot::parse("second").unwrap(),
+                    alternatives,
+                }
+            };
         }
         let governor = ResourceGovernor::new(ResourceRequest {
             jobs: 1,
@@ -704,6 +718,7 @@ async fn provider_slots_share_one_exact_resolution_and_keep_their_assertions() {
                     source: BuildContentSource::Provider {
                         pin: pin.clone(),
                         slot,
+                        alternatives: Vec::new(),
                     },
                 }
             })

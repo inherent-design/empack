@@ -432,16 +432,89 @@ fn provider_fixture(root: &Path, curseforge: bool) -> empack_core::model::Expect
 }
 #[tokio::test]
 async fn provider_refresh_executes_only_after_grant_and_preserves_locked_intent() {
-    provider_build_case(false, false).await;
-    provider_build_case(true, false).await;
-    provider_build_case(false, true).await;
+    provider_build_case(false, false, false).await;
+    provider_build_case(true, false, false).await;
+    provider_build_case(false, true, false).await;
 }
-async fn provider_build_case(changed_digest: bool, unavailable: bool) {
+#[tokio::test]
+async fn saved_provider_origin_does_not_disable_exact_refresh_for_materialized_builds() {
+    provider_build_case(false, false, true).await;
+    provider_build_case(true, false, true).await;
+}
+fn saved_provider_origin(root: &Path) {
+    use empack_core::model::{AcquisitionSpec, DependencyKey, ResolvedProject};
+    let intent = DocumentCodec
+        .decode_intent(&fs::read(root.join("empack.yml")).unwrap(), "fixture")
+        .unwrap();
+    let current = DocumentCodec
+        .decode_lock(
+            &fs::read(root.join("empack.lock")).unwrap(),
+            &intent,
+            "fixture",
+        )
+        .unwrap();
+    let mut lock = current.lock().clone();
+    let dependency = lock
+        .dependencies
+        .get_mut(&DependencyKey::parse("assets").unwrap())
+        .unwrap();
+    let mut files = dependency.files.clone().into_vec();
+    let AcquisitionSpec::Provider { alternatives, .. } = &mut files[0].acquisition else {
+        panic!("provider fixture");
+    };
+    *alternatives = vec!["https://127.0.0.1:1/stale-origin".into()];
+    dependency.files = NonEmpty::new(files).unwrap();
+    let current =
+        ResolvedProject::validate(current.intent().clone(), lock, intent.semantic_revision())
+            .unwrap();
+    put(
+        root,
+        "empack.lock",
+        &DocumentCodec.encode_lock(&current).unwrap(),
+    );
+}
+#[tokio::test]
+async fn saved_provider_origins_remain_downloadable_without_catalog_credentials() {
+    for curseforge in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        provider_fixture(root.path(), curseforge);
+        saved_provider_origin(root.path());
+        let before = inventory(root.path());
+        let (engine, governor) = engine(host.path().join("state"));
+        let engine = if curseforge {
+            engine.with_provider_catalog(
+                ProviderCatalog::for_loopback_tests("http://127.0.0.1:1", None),
+                CatalogLimits::default(),
+            )
+        } else {
+            engine
+        };
+        let mut request = request();
+        request.outputs = NonEmpty::new(vec![BuildOutput {
+            target: BuildTarget::ClientFull,
+            artifact: path("client.zip"),
+        }])
+        .unwrap();
+        let prepared = ready(&engine, root.path(), request).await;
+        assert!(prepared.view().build().unwrap().unresolved.is_empty());
+        assert!(prepared.view().build().unwrap().needs_network);
+        drop(prepared);
+        engine.shutdown().await;
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+        assert_eq!(before, inventory(root.path()));
+        assert!(!host.path().join("state").exists());
+    }
+}
+async fn provider_build_case(changed_digest: bool, unavailable: bool, saved_origin: bool) {
     use serde_json::json;
     use std::io::Read;
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
     let expected = provider_fixture(root.path(), false);
+    if saved_origin {
+        saved_provider_origin(root.path());
+    }
     let before = inventory(root.path());
     let mut server = mockito::Server::new_async().await;
     let catalog = ProviderCatalog::for_loopback_tests(&server.url(), None);

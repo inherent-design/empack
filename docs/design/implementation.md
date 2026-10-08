@@ -1269,3 +1269,22 @@ storage categories stay on the integration ledger; this change does not claim th
 All 54 affected host, cleanup and content-store tests pass, together with all-feature
 Clippy and Windows cross-compilation. Two parallel tests reported inherited output pipes;
 the serial rerun of all 29 cleanup/store tests passed without those warnings.
+
+At `ae63534`, the combined revision passed all 1,918 default tests and eleven doctests,
+including executable smoke cases, with no pipe warnings. The 123 opt-in tests were skipped.
+
+## Exact refresh with saved provider origins
+
+Greptile 109 identified that saved origins caused materialized builds to discard their
+provider lookup obligation. The native regression reproduced a failed build when the old
+URL was unavailable and the same exact provider selection had a working replacement.
+
+Materialization now retains the pin, file role and saved origins together. Available
+catalog access refreshes the exact selection before transfer; changed original assertions
+still fail. Hosts without catalog access can use existing download evidence, and a missing
+fresh locator does not remove a previously declared alternative. Complete reference exports
+remain offline. No refreshed locator or changed expectation is written into project intent.
+
+All 41 affected API/acquisition/host tests pass, with all-feature Clippy and Windows
+cross-compilation. The six focused refresh/fallback tests pass serially. One parallel
+host test reported an inherited output pipe; its isolated rerun passed without that warning.

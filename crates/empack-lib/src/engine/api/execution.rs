@@ -78,6 +78,7 @@ async fn execute(
     } else {
         acquired
     };
+    let acquired = acquired.use_saved_provider_alternatives();
     let missing: Vec<_> = acquired
         .pending
         .iter()

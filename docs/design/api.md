@@ -127,6 +127,12 @@ the document policy. Signed, authenticated or otherwise nonpersistent locators s
 on execution-only provider records and can be refreshed by exact identity. Provider
 import uses the same rule. Complete reference evidence permits mrpack export without
 downloading payloads or embedding provider files merely because their URL was discarded.
+When a build needs bytes, a provider obligation retains both its exact identity and saved
+alternatives. Configured catalog access refreshes the locator and checks the original
+assertions before transfer. A host without catalog access can still verify bytes from a
+saved origin; a missing fresh locator also retains that original alternative. Failed
+catalog lookup or changed provider assertions remain errors. Refresh does not rewrite
+the project's lock or turn observed hashes into stronger source evidence.
 Root requirements propagate through required edges; incompatible
 optional choices require an explicit conversion. Default placement follows content
 kind and configured layout; datapacks/worlds require a selected folder when none is

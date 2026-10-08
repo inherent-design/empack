@@ -38,6 +38,8 @@ pub enum BuildContentSource {
     Provider {
         pin: ResolvedPin,
         slot: empack_core::model::FileSlot,
+        /// Original durable origins remain usable when no catalog capability is configured.
+        alternatives: Vec<String>,
     },
     Embedded {
         archive: PortableRelPath,
@@ -111,7 +113,9 @@ impl BuildAcquisitionPlan {
                 )?;
                 ensure!(
                     observed.observed.values().contains(
-                        &empack_core::digest::ExpectedDigest::Sha256(*file.content.lease().id().bytes())
+                        &empack_core::digest::ExpectedDigest::Sha256(
+                            *file.content.lease().id().bytes()
+                        )
                     ),
                     "Supplied build content changed after acquisition"
                 );
@@ -166,10 +170,20 @@ impl BuildAcquisitionResult {
             let resolution = catalog.resolve_exact(scope, pin.clone(), limits).await?;
             for index in indices {
                 let need = &mut self.pending[index];
-                let BuildContentSource::Provider { slot, .. } = &need.source else {
+                let BuildContentSource::Provider {
+                    slot,
+                    alternatives: saved,
+                    ..
+                } = &need.source
+                else {
                     unreachable!("grouped provider obligation")
                 };
-                let alternatives = resolution.download_alternatives(slot, &need.expected)?;
+                let mut alternatives = resolution.download_alternatives(slot, &need.expected)?;
+                // An unavailable current locator does not revoke an already declared origin.
+                // The exact selection and original byte assertions were still validated above.
+                if alternatives.is_empty() {
+                    alternatives.clone_from(saved);
+                }
                 need.source = if alternatives.is_empty() {
                     BuildContentSource::Manual {
                         pin: Some(pin.clone()),
@@ -180,6 +194,21 @@ impl BuildAcquisitionResult {
             }
         }
         Ok(self)
+    }
+
+    /// Use existing download evidence when exact lookup is unavailable to this host. This
+    /// does not change the recorded identity or relax the original byte verification.
+    pub(in crate::engine) fn use_saved_provider_alternatives(mut self) -> Self {
+        for need in &mut self.pending {
+            if let BuildContentSource::Provider { alternatives, .. } = &mut need.source
+                && !alternatives.is_empty()
+            {
+                need.source = BuildContentSource::Download(
+                    NonEmpty::new(std::mem::take(alternatives)).expect("nonempty alternatives"),
+                );
+            }
+        }
+        self
     }
 
     /// Process every captured archive once. Missing source archives remain pending for a new
@@ -265,7 +294,7 @@ impl BuildAcquisitionResult {
         let Self {
             mut acquired,
             pending: needs,
-        } = self;
+        } = self.use_saved_provider_alternatives();
         let mut pending = Vec::new();
         let mut keys = Vec::new();
         let mut requests = Vec::new();
@@ -433,12 +462,10 @@ fn plan_acquisitions(
                     alternatives,
                     pin,
                     slot,
-                } => match NonEmpty::new(alternatives.clone()) {
-                    Ok(urls) => BuildContentSource::Download(urls),
-                    Err(_) => BuildContentSource::Provider {
-                        pin: pin.clone(),
-                        slot: slot.clone(),
-                    },
+                } => BuildContentSource::Provider {
+                    pin: pin.clone(),
+                    slot: slot.clone(),
+                    alternatives: alternatives.clone(),
                 },
                 AcquisitionSpec::Embedded { archive, member } => BuildContentSource::Embedded {
                     archive: archive.clone(),
