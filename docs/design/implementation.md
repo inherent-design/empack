@@ -104,6 +104,16 @@ all-target/all-feature Clippy pass after correction. These fixes have not been
 re-reviewed. Per the user's instruction, further Greptile trigger cycles wait until
 known implementation, CLI cutover, test rewrites and old-code removal are complete.
 
+## Backend release
+
+The existing CLI backend is pinned to packwiz-tx **v0.2.1**, synced with upstream
+main through `ef87d96`. Upstream publishes no release tag through GitHub Releases;
+the fork integration preserves offline metadata and deferred refresh. Two upstream
+Modrinth environment defects reproduced and were corrected before release. Fork
+CI, race tests, vet, module installation and executable offline smoke passed. All six
+published platform archives match their release checksums; the macOS ARM64 release
+binary passes the same offline batch smoke. This does not replace CLI cutover.
+
 ## Verification evidence
 
 | Revision | Executed evidence | Qualification |

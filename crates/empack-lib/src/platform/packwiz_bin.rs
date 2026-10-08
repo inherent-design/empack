@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 /// Semver requirement for compatible packwiz-tx releases.
-pub const PACKWIZ_TX_REQUIREMENT: &str = ">=0.2.0, <0.3.0";
+pub const PACKWIZ_TX_REQUIREMENT: &str = ">=0.2.1, <0.3.0";
 
 /// Pinned version to download when no cached binary exists.
-pub const PACKWIZ_TX_VERSION: &str = "v0.2.0";
+pub const PACKWIZ_TX_VERSION: &str = "v0.2.1";
 
 /// GitHub repository for packwiz-tx releases.
 const PACKWIZ_TX_REPO: &str = "mannie-exe/packwiz-tx";
@@ -171,25 +171,25 @@ where
 
 fn verify_release_checksum(asset: &str, bytes: &[u8]) -> Result<()> {
     use sha2::{Digest, Sha256};
-    // GitHub release asset SHA-256 digests for the pinned v0.2.0 release.
+    // GitHub release asset SHA-256 digests for the pinned v0.2.1 release.
     let expected = match asset {
-        "packwiz-tx_0.2.0_darwin_amd64.tar.gz" => {
-            "2ca0ccf2ee6812d5bb987f5497345fbc029b5bc02ed8d1d6cbaadb32ae691da7"
+        "packwiz-tx_0.2.1_darwin_amd64.tar.gz" => {
+            "f0b4e240ee1dffbcfeb0d35aa98b622f69c95cabd864a8219ad0f6e5da0f1904"
         }
-        "packwiz-tx_0.2.0_darwin_arm64.tar.gz" => {
-            "72e075076014b6980299f2451770354bd4c41fe7a1fddabb9837dbb81028d407"
+        "packwiz-tx_0.2.1_darwin_arm64.tar.gz" => {
+            "99825d304020717beaea7e1fc9d16d5835280805a7990de129e2b884b1d721a0"
         }
-        "packwiz-tx_0.2.0_linux_amd64.tar.gz" => {
-            "c7bc833395f95c77d79b2f93d112ef3df4ee6e724d7d0284956860a17572b4f7"
+        "packwiz-tx_0.2.1_linux_amd64.tar.gz" => {
+            "41389ecaddb4341f8602d4f9daeee4977924fa8f26909c701c783f917ac2a874"
         }
-        "packwiz-tx_0.2.0_linux_arm64.tar.gz" => {
-            "ca622c088c2977ad32777cd523e5e8980976a516f5a9cfd3cd637349ab830bbd"
+        "packwiz-tx_0.2.1_linux_arm64.tar.gz" => {
+            "383c1dba351a7cfee230e05615e3467334aaf0d25025634416dbcc7f7eadc197"
         }
-        "packwiz-tx_0.2.0_windows_amd64.tar.gz" => {
-            "7fb504f30f099d4001e8fb69dd2dd51bc5fcc5ee85a5b035e090e0319c6c20aa"
+        "packwiz-tx_0.2.1_windows_amd64.tar.gz" => {
+            "3c48347c60881015b3967ca93a5fa7728689321cbbf216fe27f65096fb887d96"
         }
-        "packwiz-tx_0.2.0_windows_arm64.tar.gz" => {
-            "2fc1f3b27d7d8268e2f644dd5aece0bd49695ce6e4b6d49b9f043eb1557f3efc"
+        "packwiz-tx_0.2.1_windows_arm64.tar.gz" => {
+            "4821dadce8d31a2b0ce5564e3f56a95dfba28d3f261e24b464189adfdb0671aa"
         }
         _ => anyhow::bail!("No pinned checksum for packwiz asset {asset}"),
     };

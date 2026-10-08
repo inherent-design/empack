@@ -79,7 +79,7 @@ parent. A `.index` component has no implicit meaning. For example, metadata at
 `mods/renderer.jar`. The adapter normalizes relative components and rejects any
 escape from the pack root, absolute/prefixed paths or invalid portable components.
 It never silently strips `.index`. This follows
-[`GetDestFilePath`](https://github.com/mannie-exe/packwiz-tx/blob/v0.2.0/core/mod.go),
+[`GetDestFilePath`](https://github.com/mannie-exe/packwiz-tx/blob/v0.2.1/core/mod.go),
 which the pinned mrpack exporter uses.
 
 ### Derivative digest observations
