@@ -466,7 +466,9 @@ pub(super) fn provider_input(
                 .map(|(slot, places)| (slot.as_str().to_owned(), places.clone()))
                 .collect(),
         ),
-        PlacementIntent::Explicit(placements) => ProviderFiles::PrimaryPlaced(placements.clone()),
+        PlacementIntent::Explicit(placements) | PlacementIntent::ArchiveRoot(placements) => {
+            ProviderFiles::PrimaryPlaced(placements.clone())
+        }
     };
     Ok(ProviderAddInput {
         selector,
@@ -527,6 +529,9 @@ pub(super) fn direct_input(
                 .next()
                 .context("Missing standalone file role")?
                 .clone()
+        }
+        PlacementIntent::ArchiveRoot(_) => {
+            anyhow::bail!("Provider world placement cannot describe a direct file")
         }
         PlacementIntent::Explicit(placements) => placements.clone(),
         PlacementIntent::Automatic => {
@@ -603,7 +608,7 @@ pub(super) fn member_inputs(
         let prior = old.and_then(|old| old.files.as_slice().iter().find(|file| &file.slot==slot));
         let selected: Vec<_> = match &root.placement {
         PlacementIntent::ByFile(files) => files.get(slot).context("Missing explicit member placement")?.as_slice().to_vec(),
-        PlacementIntent::Explicit(_) | PlacementIntent::Automatic => anyhow::bail!("Members require named file placements"),
+        PlacementIntent::ArchiveRoot(_) | PlacementIntent::Explicit(_) | PlacementIntent::Automatic => anyhow::bail!("Tracked local members require named file placements"),
         };
         ensure!(!selected.is_empty(), "Member source needs a corresponding explicit placement");
         let evidence=if accept_changes { FileEvidence::AcceptObserved } else {

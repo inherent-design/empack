@@ -67,6 +67,12 @@ pub(super) async fn publish(
                     AcquisitionSpec::Manual { pin, .. } => {
                         BuildContentSource::Manual { pin: pin.clone() }
                     }
+                    AcquisitionSpec::ProviderArchiveMember { archive, member } => {
+                        BuildContentSource::ProviderArchiveMember {
+                            archive: archive.clone(),
+                            member: member.clone(),
+                        }
+                    }
                     AcquisitionSpec::Local(_) | AcquisitionSpec::Embedded { .. } => continue,
                 };
                 session.display().status().info(&format!(

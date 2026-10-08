@@ -233,6 +233,7 @@ fn rebind(content: AcquiredContent, storage: Arc<Storage>, offset: u64) -> Acqui
     // Only bytes are shared. Weaker source assertions and observed-only status never inherit
     // another logical file's stronger evidence through content-address deduplication.
     AcquiredContent {
+        archive_member: content.archive_member,
         lease: ContentLease(Arc::new(ContentObject {
             backing: ContentBacking::Packed { storage, offset },
             id,

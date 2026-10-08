@@ -1,4 +1,7 @@
 //! Normalized intent and exact resolution, independent of wire formats and I/O.
+mod archive;
+pub use archive::ProviderArchiveSource;
+
 use crate::{
     digest::{ContentId, DigestSet},
     identity::{PinSelector, ProviderProjectId},
@@ -207,6 +210,8 @@ pub enum VersionIntent {
 pub enum PlacementIntent {
     /// Provider/type layout proposes placements during resolution.
     Automatic,
+    /// Base directories for provider-world members, retaining roots across archive updates.
+    ArchiveRoot(NonEmpty<Placement>),
     /// Explicit destinations, including multiple placements of the same bytes.
     Explicit(NonEmpty<Placement>),
     /// Exact named file roles, retaining each member-to-destination association.
@@ -281,7 +286,9 @@ impl DependencyIntent {
                 return Err(invalid("Lock changed declared source digests"));
             }
         }
-        if let PlacementIntent::ByFile(expected) = &self.placement {
+        if let PlacementIntent::ArchiveRoot(roots) = &self.placement {
+            archive::validate_placements(self.kind, roots, selected)?;
+        } else if let PlacementIntent::ByFile(expected) = &self.placement {
             if expected.len() != selected.files.as_slice().len()
                 || selected.files.as_slice().iter().any(|file| {
                     expected.get(&file.slot).is_none_or(|places| {
@@ -431,6 +438,13 @@ pub enum AcquisitionSpec {
         slot: FileSlot,
         /// Stable, credential-free locators.
         alternatives: Vec<String>,
+    },
+    /// One interpreted world member whose archive retains its exact provider identity and evidence.
+    ProviderArchiveMember {
+        /// Original archive selection and source assertions, not member assertions.
+        archive: ProviderArchiveSource,
+        /// Exact regular-file path inside that archive.
+        member: PortableRelPath,
     },
     /// Independent direct-download alternatives.
     Url(NonEmpty<String>),
@@ -655,6 +669,19 @@ impl ProjectIntent {
                     }
                 }
             }
+            if let PlacementIntent::ArchiveRoot(placements) = &dep.placement {
+                if dep.kind != ContentKind::World
+                    || !matches!(
+                        dep.source,
+                        SourceIntent::Provider(_) | SourceIntent::Search { .. }
+                    )
+                {
+                    return Err(invalid("Archive-root placement requires a provider world"));
+                }
+                for placement in placements.as_slice() {
+                    validate_placement(placement)?;
+                }
+            }
             if let PlacementIntent::Explicit(placements) = &dep.placement {
                 for placement in placements.as_slice() {
                     validate_placement(placement)?;
@@ -718,6 +745,7 @@ impl ResolutionLock {
                     "A URL or local identity cannot claim a provider selection",
                 ));
             }
+            archive::validate_members(dependency)?;
             let mut slots = BTreeSet::new();
             for file in dependency.files.as_slice() {
                 if !slots.insert(&file.slot) {

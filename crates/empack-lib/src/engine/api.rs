@@ -948,12 +948,16 @@ fn describe(need: &super::build::acquisition::AcquisitionNeed) -> ContentRequire
         expected: need.expected.clone(),
         provider: match &need.source {
             BuildContentSource::Provider { pin, .. } => Some(pin.clone()),
+            BuildContentSource::ProviderArchiveMember { archive, .. } => Some(archive.pin.clone()),
             BuildContentSource::Manual { pin } => pin.clone(),
             _ => None,
         },
         kind: match need.source {
             BuildContentSource::Download(_) => ContentRequirementKind::Download,
-            BuildContentSource::Provider { .. } => ContentRequirementKind::ProviderLookup,
+            BuildContentSource::Provider { .. }
+            | BuildContentSource::ProviderArchiveMember { .. } => {
+                ContentRequirementKind::ProviderLookup
+            }
             BuildContentSource::Embedded { .. } => ContentRequirementKind::Embedded,
             BuildContentSource::Manual { .. } => ContentRequirementKind::Manual,
         },
@@ -1144,6 +1148,9 @@ fn capture(
             BuildContentSource::Provider {
                 pin, alternatives, ..
             } => alternatives.is_empty() && !provider_access.supports(&pin.project),
+            BuildContentSource::ProviderArchiveMember { archive, .. } => {
+                archive.alternatives.is_empty() && !provider_access.supports(&archive.pin.project)
+            }
             BuildContentSource::Manual { .. } => true,
             BuildContentSource::Embedded { archive, .. } => !matches!(
                 workspace.observations().entries().get(archive),

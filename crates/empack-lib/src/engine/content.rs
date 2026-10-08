@@ -1,10 +1,12 @@
 //! Verified private content leases keep byte ownership separate from source assurance.
+mod archive;
 use super::{
     snapshot::SnapshotLimits,
     staging::{FrozenStage, MutableStage},
 };
 use crate::application::process_runtime::Cancellation;
 use anyhow::{Context, Result, ensure};
+pub(in crate::engine) use archive::ArchiveEvidence;
 use empack_core::{
     digest::{ContentId, DigestAlgorithm, DigestSet, ExpectedDigest, IntegrityEvidence},
     model::ExpectedContent,
@@ -118,6 +120,7 @@ impl Seek for ContentReader {
 /// Constructible only after every expected digest, size and accepted observation matches.
 #[derive(Clone)]
 pub struct AcquiredContent {
+    archive_member: Option<Arc<archive::MemberEvidence>>,
     lease: ContentLease,
     evidence: IntegrityEvidence,
     observed: DigestSet,
@@ -194,6 +197,7 @@ pub fn verify_stream(
         "Quarantined bytes changed during verification"
     );
     Ok(AcquiredContent {
+        archive_member: None,
         lease: ContentLease(Arc::new(ContentObject {
             backing: ContentBacking::Stage {
                 stage: Box::new(Mutex::new(frozen)),

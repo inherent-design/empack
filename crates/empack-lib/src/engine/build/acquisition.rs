@@ -43,6 +43,10 @@ pub enum BuildContentSource {
         /// Original durable origins remain usable when no catalog capability is configured.
         alternatives: Vec<String>,
     },
+    ProviderArchiveMember {
+        archive: empack_core::model::ProviderArchiveSource,
+        member: PortableRelPath,
+    },
     Embedded {
         archive: PortableRelPath,
         member: PortableRelPath,
@@ -105,11 +109,18 @@ impl BuildAcquisitionPlan {
                 AcquisitionKey::Observed(path) => supplied.observed.remove(path),
             };
             if let Some(file) = input {
+                let member_policy = match &need.source {
+                    BuildContentSource::ProviderArchiveMember { archive, member } => {
+                        file.content
+                            .provider_member_policy(archive, member, evidence)?
+                    }
+                    _ => evidence,
+                };
                 let observed = crate::engine::content::verify_observation(
                     &mut file.content.lease().open(),
                     &need.expected,
                     file.content.lease().len(),
-                    evidence,
+                    member_policy,
                     InitialObservation::RequireEvidence,
                     cancel,
                 )?;
@@ -476,6 +487,12 @@ fn plan_acquisitions(
                     slot: slot.clone(),
                     alternatives: alternatives.clone(),
                 },
+                AcquisitionSpec::ProviderArchiveMember { archive, member } => {
+                    BuildContentSource::ProviderArchiveMember {
+                        archive: archive.clone(),
+                        member: member.clone(),
+                    }
+                }
                 AcquisitionSpec::Embedded { archive, member } => BuildContentSource::Embedded {
                     archive: archive.clone(),
                     member: member.clone(),

@@ -244,3 +244,118 @@ fn whole_archive_verification_checks_crc_and_consumes_one_bounded_read_pass() {
     assert!(zip.verify_members(&cancel).is_err());
     assert_eq!(zip.extracted, 0);
 }
+
+#[test]
+fn member_observations_keep_the_original_container_assurance_without_digest_upgrades() {
+    use empack_core::{digest::IntegrityEvidence, identity::*, model::*};
+    use sha2::Digest;
+    let bytes = archive(&[("World/level.dat", b"payload"), ("World/other", b"payload")]);
+    let strong = DigestSet::new(vec![ExpectedDigest::Sha256(
+        sha2::Sha256::digest(&bytes).into(),
+    )])
+    .unwrap();
+    let weak = DigestSet::new(vec![ExpectedDigest::Md5(md5::Md5::digest(&bytes).into())]).unwrap();
+    let cancel = Cancellation::default();
+    for assertions in [strong, weak] {
+        let expected_archive = ExpectedContent {
+            digests: Some(assertions.clone()),
+            size: Some(bytes.len() as u64),
+            accepted_observation: None,
+        };
+        let content = verify_stream(
+            &mut bytes.as_slice(),
+            &expected_archive,
+            bytes.len() as u64,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::RequireEvidence,
+            &cancel,
+        )
+        .unwrap();
+        let mut source =
+            ZipContentSource::open(&content, ArchiveLimits::default(), &cancel).unwrap();
+        let source = &mut source;
+        let expected_member = ExpectedContent {
+            digests: None,
+            size: Some(7),
+            accepted_observation: None,
+        };
+        let strong = assertions.strongest() == empack_core::digest::DigestAlgorithm::Sha256;
+        let result = source.acquire(
+            &path("World/level.dat"),
+            &expected_member,
+            SourceEvidencePolicy::StrongSourceRequired,
+            InitialObservation::Accepted,
+            &cancel,
+        );
+        assert_eq!(result.is_ok(), strong);
+        let member = if strong {
+            result.unwrap().0
+        } else {
+            source
+                .acquire(
+                    &path("World/level.dat"),
+                    &expected_member,
+                    SourceEvidencePolicy::Compatibility,
+                    InitialObservation::Accepted,
+                    &cancel,
+                )
+                .unwrap()
+                .0
+        };
+        assert!(matches!(
+            member.evidence(),
+            IntegrityEvidence::ObservedOnly { .. }
+        ));
+        let source = ProviderArchiveSource {
+            pin: ResolvedPin {
+                project: ProviderProjectId::CurseForge(CurseForgeProjectId::parse("123").unwrap()),
+                selection: PinSelector::CurseForgeFile(CurseForgeFileId::parse("456").unwrap()),
+            },
+            slot: FileSlot::parse("world.zip").unwrap(),
+            expected: expected_archive,
+            alternatives: vec![],
+        };
+        assert_eq!(
+            member
+                .provider_member_policy(
+                    &source,
+                    &path("World/level.dat"),
+                    SourceEvidencePolicy::StrongSourceRequired
+                )
+                .is_ok(),
+            strong
+        );
+        assert!(
+            member
+                .provider_member_policy(
+                    &source,
+                    &path("World/other"),
+                    SourceEvidencePolicy::StrongSourceRequired
+                )
+                .is_err()
+        );
+        // Re-reading the same member bytes does not reconstruct private extraction evidence.
+        let standalone = super::tests::content(b"payload");
+        assert!(
+            standalone
+                .provider_member_policy(
+                    &source,
+                    &path("World/level.dat"),
+                    SourceEvidencePolicy::StrongSourceRequired
+                )
+                .is_err()
+        );
+        let mut pool = crate::engine::content::ContentPool::new(7).unwrap();
+        let retained = pool.insert(member, &cancel).unwrap();
+        assert_eq!(
+            retained
+                .provider_member_policy(
+                    &source,
+                    &path("World/level.dat"),
+                    SourceEvidencePolicy::StrongSourceRequired
+                )
+                .is_ok(),
+            strong
+        );
+    }
+}

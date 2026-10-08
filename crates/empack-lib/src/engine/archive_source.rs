@@ -28,6 +28,7 @@ pub struct ZipContentSource {
     files: BTreeMap<PortableRelPath, ArchiveMember>,
     limits: ArchiveLimits,
     extracted: u64,
+    evidence: Option<super::content::ArchiveEvidence>,
 }
 impl ZipContentSource {
     /// Raw directory checks precede the ZIP library's allocation/name index. All metadata is
@@ -37,12 +38,14 @@ impl ZipContentSource {
         limits: ArchiveLimits,
         cancel: &Cancellation,
     ) -> Result<Self> {
-        Self::from_reader(
+        let mut source = Self::from_reader(
             Box::new(content.lease().open()),
             content.lease().len(),
             limits,
             cancel,
-        )
+        )?;
+        source.evidence = Some(super::content::ArchiveEvidence::captured(content));
+        Ok(source)
     }
     /// Read a captured native archive without duplicating its compressed bytes in scratch.
     /// The owning workflow must retain and revalidate the snapshot before publishing members.
@@ -134,6 +137,7 @@ impl ZipContentSource {
             files,
             limits,
             extracted: 0,
+            evidence: None,
         })
     }
     pub(in crate::engine) fn member(&self, path: &PortableRelPath) -> Option<&ArchiveMember> {
@@ -210,6 +214,12 @@ impl ZipContentSource {
             input: &mut entry,
             count: 0,
         };
+        let policy = self
+            .evidence
+            .as_ref()
+            .map(|evidence| evidence.member_policy(expected, policy))
+            .transpose()?
+            .unwrap_or(policy);
         let result = verify_stream(
             &mut input,
             &ExpectedContent {
@@ -236,7 +246,12 @@ impl ZipContentSource {
             self.extracted <= self.limits.total_bytes,
             "Source archive exceeds actual extraction allowance"
         );
-        Ok((result?, observed.permissions))
+        let content = result?;
+        let content = match &self.evidence {
+            Some(evidence) => evidence.bind(content, member.clone()),
+            None => content,
+        };
+        Ok((content, observed.permissions))
     }
 }
 struct CountedRead<'a> {

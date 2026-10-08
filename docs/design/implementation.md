@@ -1,6 +1,6 @@
 # v0.5 delivery ledger
 
-Current baseline: `a96d2bc` plus unused cache-path retirement, 2026-10-08. Target: **v0.5.0-alpha.1**.
+Combined baseline: `d8b790e`, 2026-10-08. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
@@ -8,8 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: provider-owned worlds, independent batches and remaining resolution decisions
-still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
+new route, not full feature completion: provider-owned worlds and remaining resolution decisions still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
 ## Delivery states
@@ -208,6 +207,18 @@ The CLI adapter subsequently passed 26 affected tests, two rebuilt executable pa
 cases and all-target/all-feature Clippy. Executable checks cover default refusal, preview,
 preserved existing content and unowned directories, nonzero partial status, repeated sync
 and an unchanged explicit batch update. Source resolution still precedes grouping.
+
+Provider world document contracts now distinguish the exact provider archive, its original
+source assertions, extracted member observations and stable destination roots. Private
+extraction evidence binds a member to a verified archive without turning an observed
+member hash into a provider assertion. Codec and extraction tests cover round trips,
+foreign selections, invalid roots, altered member declarations, wrong members and weaker
+archive evidence. This establishes the representation; provider-world acquisition and
+its complete command lifecycle remain open. The representation change passed 38 affected
+model/document/archive tests and all-target/all-feature Clippy.
+
+Combined `d8b790e` validation passed 919 tests and eight doctests, with 103 opt-in cases
+excluded. Live/platform acceptance and fresh coverage remain open.
 
 ## Historical verification evidence
 

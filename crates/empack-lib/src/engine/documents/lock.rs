@@ -32,6 +32,9 @@ fn expected(value: &Value) -> Result<ExpectedContent> {
             .transpose()?,
     })
 }
+fn expected_value(value: &ExpectedContent) -> Value {
+    json!({"digests":value.digests.as_ref().map(digests), "size":value.size, "accepted-observation":value.accepted_observation.as_ref().map(|id| hex32(*id.bytes()))})
+}
 fn acquisition(value: &Value) -> Result<AcquisitionSpec> {
     Ok(match text(required(value, "kind")?)? {
         "provider" => {
@@ -40,6 +43,20 @@ fn acquisition(value: &Value) -> Result<AcquisitionSpec> {
                 pin: resolved_pin(required(value, "pin")?)?,
                 slot: FileSlot::parse(text(required(value, "slot")?)?)?,
                 alternatives: urls(required(value, "downloads")?)?,
+            }
+        }
+        "provider-archive-member" => {
+            fields(value, &["kind", "archive", "member"])?;
+            let source = required(value, "archive")?;
+            fields(source, &["pin", "slot", "expected", "downloads"])?;
+            AcquisitionSpec::ProviderArchiveMember {
+                archive: ProviderArchiveSource {
+                    pin: resolved_pin(required(source, "pin")?)?,
+                    slot: FileSlot::parse(text(required(source, "slot")?)?)?,
+                    expected: expected(required(source, "expected")?)?,
+                    alternatives: urls(required(source, "downloads")?)?,
+                },
+                member: path(required(value, "member")?)?,
             }
         }
         "url" => {
@@ -79,6 +96,9 @@ fn acquisition_value(value: &AcquisitionSpec) -> Value {
             alternatives,
         } => {
             json!({"kind":"provider","pin":resolved_pin_value(pin),"slot":slot.as_str(),"downloads":alternatives})
+        }
+        AcquisitionSpec::ProviderArchiveMember { archive, member } => {
+            json!({"kind":"provider-archive-member", "archive":{"pin":resolved_pin_value(&archive.pin),"slot":archive.slot.as_str(),"expected":expected_value(&archive.expected),"downloads":archive.alternatives}, "member":member.as_str()})
         }
         AcquisitionSpec::Url(values) => json!({"kind":"url","downloads":values.as_slice()}),
         AcquisitionSpec::Local(path) => json!({"kind":"local","path":path.as_str()}),

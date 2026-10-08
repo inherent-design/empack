@@ -574,3 +574,109 @@ fn named_file_placements_preserve_role_assignment_not_only_the_destination_union
         );
     }
 }
+
+#[test]
+fn provider_world_documents_separate_archive_assertions_members_and_destination_roots() {
+    let original = decoded();
+    let mut intent = original.intent().clone();
+    let key = intent.roots.keys().next().unwrap().clone();
+    let root = intent.roots.get_mut(&key).unwrap();
+    root.kind = ContentKind::World;
+    let placement = Placement {
+        destination: InstallDestination::parse("saves/My World").unwrap(),
+        layer: ContentLayer::Common,
+        requirements: root.requirements.clone(),
+    };
+    root.placement = PlacementIntent::ArchiveRoot(NonEmpty::new(vec![placement.clone()]).unwrap());
+    let source = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "world")
+        .unwrap();
+    let mut lock = resolution(&source);
+    let dependency = lock.dependencies.get_mut(&key).unwrap();
+    dependency.kind = ContentKind::World;
+    let archive = ProviderArchiveSource {
+        pin: dependency.selected.clone().unwrap(),
+        slot: FileSlot::parse("world.zip").unwrap(),
+        expected: dependency.files.as_slice()[0].expected.clone(),
+        alternatives: vec!["https://example.com/world.zip".into()],
+    };
+    let mut level = dependency.files.as_slice()[0].clone();
+    level.slot = FileSlot::parse("level.dat").unwrap();
+    level.acquisition = AcquisitionSpec::ProviderArchiveMember {
+        archive,
+        member: PortableRelPath::parse("World/level.dat", PathSyntax::ArchiveMember).unwrap(),
+    };
+    level.expected = ExpectedContent {
+        digests: None,
+        size: Some(7),
+        accepted_observation: Some(ContentId::from_sha256([5; 32])),
+    };
+    level.provenance.declared_digests = None;
+    let mut placed = placement;
+    placed.destination = InstallDestination::parse("saves/My World/level.dat").unwrap();
+    level.placements = NonEmpty::new(vec![placed]).unwrap();
+    dependency.files = NonEmpty::new(vec![level]).unwrap();
+    let resolved = validate(&source, lock.clone()).unwrap();
+    let bytes = DocumentCodec.encode_lock(&resolved).unwrap();
+    let roundtrip = DocumentCodec
+        .decode_lock(&bytes, &source, "world.lock")
+        .unwrap();
+    assert_eq!(roundtrip.lock(), resolved.lock());
+    assert_eq!(roundtrip.intent(), resolved.intent());
+    let value: Value = serde_saphyr::from_slice(&bytes).unwrap();
+    let file = &value["dependencies"][key.as_str()]["files"][0];
+    assert!(file["expected"]["digests"].is_null());
+    assert_eq!(
+        file["acquisition"]["archive"]["expected"]["digests"]["md5"],
+        "321c3cf486ed509164edec1e1981fec8"
+    );
+    for change in [
+        "member-digest",
+        "lost-archive-assertion",
+        "foreign-pin",
+        "wrong-root",
+        "empty-level",
+        "no-level",
+        "declared-member-digest",
+    ] {
+        let mut changed = lock.clone();
+        let dependency = changed.dependencies.get_mut(&key).unwrap();
+        let mut file = dependency.files.as_slice()[0].clone();
+        match change {
+            "member-digest" => {
+                file.expected.digests =
+                    Some(DigestSet::new(vec![ExpectedDigest::Sha256([5; 32])]).unwrap())
+            }
+            "lost-archive-assertion" => {
+                if let AcquisitionSpec::ProviderArchiveMember { archive, .. } =
+                    &mut file.acquisition
+                {
+                    archive.expected.digests = None;
+                }
+            }
+            "foreign-pin" => {
+                if let AcquisitionSpec::ProviderArchiveMember { archive, .. } =
+                    &mut file.acquisition
+                {
+                    archive.pin.selection =
+                        PinSelector::ModrinthVersion(ModrinthVersionId::parse("Another1").unwrap());
+                }
+            }
+            "wrong-root" => {
+                let mut place = file.placements.as_slice()[0].clone();
+                place.destination =
+                    InstallDestination::parse("saves/Other World/level.dat").unwrap();
+                file.placements = NonEmpty::new(vec![place]).unwrap();
+            }
+            "empty-level" => file.expected.size = Some(0),
+            "no-level" => file.slot = FileSlot::parse("other.dat").unwrap(),
+            "declared-member-digest" => {
+                file.provenance.declared_digests =
+                    Some(DigestSet::new(vec![ExpectedDigest::Sha256([5; 32])]).unwrap())
+            }
+            _ => unreachable!(),
+        }
+        dependency.files = NonEmpty::new(vec![file]).unwrap();
+        assert!(validate(&source, changed).is_err(), "{change}");
+    }
+}

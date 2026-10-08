@@ -69,6 +69,12 @@ fn describe_resolution(label: &str, value: &AdoptionResolution, emit: &mut impl 
                 role.as_str(),
                 alternatives
             )),
+            AcquisitionSpec::ProviderArchiveMember { archive, member } => emit(format!(
+                "{label} file {slot}: provider archive {:?}, role {}, member {}",
+                archive.pin,
+                archive.slot.as_str(),
+                member.as_str()
+            )),
             AcquisitionSpec::Url(origins) => emit(format!(
                 "{label} file {slot}: origins {:?}",
                 origins.as_slice()

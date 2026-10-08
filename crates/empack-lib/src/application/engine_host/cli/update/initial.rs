@@ -148,6 +148,9 @@ fn provider_observation(
             }
             Vec::new()
         }
+        PlacementIntent::ArchiveRoot(_) => {
+            anyhow::bail!("Provider world adoption requires its exact archive selection")
+        }
         PlacementIntent::Explicit(places) => vec![(None, places)],
         PlacementIntent::ByFile(files) => files
             .iter()
