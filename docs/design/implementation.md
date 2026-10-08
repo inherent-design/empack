@@ -142,7 +142,7 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Implemented | Initialization scaffolding | Missing ignore files and native CI workflows join the approved file plan; existing files are retained, source changes and unsafe ancestors reject publication |
 | Implemented | Runtime/CLI composition | Legacy handlers, project services and private process bridge are deleted; display capabilities/palettes belong to sessions; executable errors have no global suppression flag |
 | Fixed locally | Review 129: continuation memory admission | Small sync save/load and three-restart import regression pass under 8 MiB; escaped record sizing and changed-size refusal retain bounds |
-| Open | Windows executable acceptance | Native CI reports ConPTY prompt detection failures and a 90-second server fixture timeout; investigation continues |
+| Open | Windows executable acceptance | ConPTY 0.7 supplies the upstream Nextest handle fix; native execution remains required. Server fixture now shares the existing four-minute runtime allowance |
 | Final | Combined candidate validation | Offline CLI lifecycle, native platforms, strict live provider/import/runtime checks, measured coverage and Greptile against recorded revisions |
 
 Both Review 128 findings reproduced before correction. The 38 affected tests and
@@ -262,3 +262,11 @@ coverage was 92.77% with the exclusions above. The frozen `c9a8159` executable
 (the same production code) passed all seven curated packs, seven provider probes
 and eleven actual Java runtime probes. Linux and macOS native CI passed; Windows
 strict executable failures remain open. These results do not certify the later review fixes.
+
+Windows `77ec34c` CI traced prompt refusal to expectrl’s ConPTY 0.5 adapter,
+which does not set `STARTF_USESTDHANDLES`. The test adapter now uses ConPTY 0.7’s
+[upstream correction](https://github.com/zhiburt/conpty/commit/59749cdf5cc0), retaining
+real prompt and decline assertions. It explicitly preserves the child environment
+and quotes Windows arguments. The local-content server fixture now uses the existing
+four-minute allowance: another Fabric server test took 184 seconds on the same runner.
+Windows cross-compilation passes; the next native run must verify both changes.

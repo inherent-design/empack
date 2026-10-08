@@ -26,3 +26,7 @@ zip.workspace = true
 expectrl.workspace = true
 mockito.workspace = true
 predicates.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+# expectrl 0.9 pins ConPTY 0.5, which mishandles redirected Nextest handles
+conpty = "0.7.0"

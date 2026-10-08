@@ -1,6 +1,8 @@
 //! Native prompt and desktop assistance contracts. No fake packwiz or installer output.
 use empack_tests::e2e::{TestProject, assert_project_initialized, empack_cmd};
-use expectrl::{Expect, Regex, Session};
+use expectrl::{Expect, Regex};
+#[path = "support/terminal.rs"]
+mod terminal;
 #[cfg(unix)]
 use std::path::Path;
 use std::{fs, time::Duration};
@@ -17,7 +19,7 @@ fn e2e_init_interactive_responds_to_prompts() {
         "1.21.1",
         "interactive-test",
     ]);
-    let mut terminal = Session::spawn(cmd).unwrap();
+    let mut terminal = terminal::spawn(cmd);
     terminal.set_expect_timeout(Some(Duration::from_secs(20)));
     terminal.expect(Regex("(?i)modpack name")).unwrap();
     terminal.send_line("my-test-pack").unwrap();
@@ -55,7 +57,7 @@ fn e2e_init_interactive_decline_keeps_destination_absent() {
         "1.0",
         "declined",
     ]);
-    let mut terminal = Session::spawn(cmd).unwrap();
+    let mut terminal = terminal::spawn(cmd);
     terminal.set_expect_timeout(Some(Duration::from_secs(20)));
     terminal
         .expect(Regex("(?i)apply this initialization plan"))
@@ -120,7 +122,7 @@ fn e2e_build_browser_preview_and_decline_have_no_desktop_effects() {
     assert!(!host.path().join("opened").exists());
     let mut cmd = browser_command(&project, host.path());
     cmd.args(["build", "mrpack", "--open-downloads"]);
-    let mut terminal = Session::spawn(cmd).unwrap();
+    let mut terminal = terminal::spawn(cmd);
     terminal.set_expect_timeout(Some(Duration::from_secs(20)));
     terminal
         .expect(Regex("(?i)apply this save pending build plan"))

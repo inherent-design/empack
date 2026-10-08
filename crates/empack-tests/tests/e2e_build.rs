@@ -153,7 +153,7 @@ fn e2e_tracked_local_content_survives_fresh_exports_and_light_builds() {
     for target in ["mrpack", "client", "server"] {
         assert_cmd::Command::from_std(project.cmd())
             .args(["--yes", "build", target])
-            .timeout(std::time::Duration::from_secs(90))
+            .timeout(std::time::Duration::from_secs(240))
             .assert()
             .success();
         let suffix = if target == "mrpack" {
