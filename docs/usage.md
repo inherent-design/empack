@@ -98,3 +98,12 @@ Use `empack clean continuation --dry-run` to inspect saved-build cleanup, then
 `empack clean continuation --yes` to discard that project's recipe. This works for
 stale or malformed saved recipes and leaves content-cache objects and recovery journals
 in place. `clean all` keeps pending recipes; request `continuation` explicitly.
+
+## Identify a supplied file
+
+`empack add --platform modrinth ./renamed.zip` identifies the supplied bytes before
+choosing their content type and destination. A unique provider kind supplies the type;
+`--type` is needed for an ambiguous selection and must agree with provider evidence.
+The published file keeps the supplied bytes and exact provider pin. Unknown or ambiguous
+identities fail without changing the project. Omit `--platform` to choose direct-file
+tracking deliberately; direct ZIP inputs still require a type.

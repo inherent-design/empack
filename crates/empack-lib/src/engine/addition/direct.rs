@@ -184,12 +184,47 @@ impl FileAddition {
                 total <= limits.transfer.transfer_bytes,
                 "Direct-file batch exceeds byte limit"
             );
-            if !matches!(input.kind, ContentKind::Config | ContentKind::OtherFile) {
-                let source = file.content.clone();
-                let kind = input.kind;
-                let acceptance = input.kind_policy;
-                let archive = limits.archive;
-                let worker = scope.spawn_blocking(ResourceRequest {
+            validate_file_kind(scope, &file, input.kind, input.kind_policy, limits.archive).await?;
+            acquired.push(AcquiredFileInput {
+                key: input.key,
+                title: input.title,
+                kind: input.kind,
+                source,
+                evidence: input.evidence,
+                requirements: input.requirements,
+                placements: input.placements,
+                file,
+            });
+        }
+        Self::from_acquired(scope, current, NonEmpty::new(acquired)?, policy)
+    }
+}
+fn expectation(evidence: &FileEvidence) -> (ExpectedContent, InitialObservation) {
+    match evidence {
+        FileEvidence::Declared(expected) => (expected.clone(), InitialObservation::RequireEvidence),
+        FileEvidence::AcceptObserved => (
+            ExpectedContent {
+                digests: None,
+                size: None,
+                accepted_observation: None,
+            },
+            InitialObservation::Accepted,
+        ),
+    }
+}
+
+/// Verify a privately acquired file before interpreting it as the selected content kind.
+/// Provider identification determines identity; it does not replace bounded archive checks.
+pub async fn validate_file_kind(
+    scope: &mut WorkScope,
+    file: &AcquiredBuildFile,
+    kind: ContentKind,
+    acceptance: FileKindPolicy,
+    archive: ArchiveLimits,
+) -> Result<()> {
+    if !matches!(kind, ContentKind::Config | ContentKind::OtherFile) {
+        let source = file.content.clone();
+        let worker = scope.spawn_blocking(ResourceRequest {
                     jobs: 1, open_files: 2,
                     memory_bytes: (archive.entries as u64).checked_mul(2048).and_then(|bytes| bytes.checked_add(128 << 10)).context("Archive estimate overflow")?,
                     ..Default::default()
@@ -223,32 +258,7 @@ impl FileAddition {
                         "Archive layout does not match the selected content kind; explicit acceptance is required");
                     Ok::<_, anyhow::Error>(())
                 })?;
-                scope.accept(worker.wait().await?)?.transpose()?;
-            }
-            acquired.push(AcquiredFileInput {
-                key: input.key,
-                title: input.title,
-                kind: input.kind,
-                source,
-                evidence: input.evidence,
-                requirements: input.requirements,
-                placements: input.placements,
-                file,
-            });
-        }
-        Self::from_acquired(scope, current, NonEmpty::new(acquired)?, policy)
+        scope.accept(worker.wait().await?)?.transpose()?;
     }
-}
-fn expectation(evidence: &FileEvidence) -> (ExpectedContent, InitialObservation) {
-    match evidence {
-        FileEvidence::Declared(expected) => (expected.clone(), InitialObservation::RequireEvidence),
-        FileEvidence::AcceptObserved => (
-            ExpectedContent {
-                digests: None,
-                size: None,
-                accepted_observation: None,
-            },
-            InitialObservation::Accepted,
-        ),
-    }
+    Ok(())
 }

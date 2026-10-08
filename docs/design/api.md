@@ -1025,6 +1025,9 @@ orphaned publication candidates consume store capacity as well as canonical cont
 
 `add --platform PROVIDER FILE` acquires and inspects the supplied bytes, verifies their
 provider identity, then resolves that exact provider selection and its required closure.
+Identification precedes kind selection: an unambiguous provider kind supplies the default,
+including for renamed ZIP files. An explicit `--type` must agree with that exact selection.
+Both direct and identified archives use the same bounded member and layout validation.
 The supplied payload remains materialized in the publication batch; it is not replaced by
 a remote reference. Original provider digest and size assertions are checked again before
 publication. Unknown identities, ambiguous matches, multiple matching file roles and

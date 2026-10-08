@@ -82,7 +82,8 @@ pub enum AddHostInput {
     File(DirectFileInput),
     /// Provider identification is explicit; failed discovery cannot become a local fallback.
     IdentifiedFile {
-        file: DirectFileInput,
+        source: DirectFileSource,
+        kind: Option<empack_core::model::ContentKind>,
         providers: NonEmpty<empack_core::model::ProviderKind>,
     },
 }
@@ -207,13 +208,18 @@ async fn change_with_services(
         match input {
             AddHostInput::Provider(input) => providers.push(input),
             AddHostInput::IdentifiedFile {
-                mut file,
+                mut source,
+                kind,
                 providers,
             } => {
-                if let DirectFileSource::Local(path) = &mut file.source {
+                if let DirectFileSource::Local(path) = &mut source {
                     *path = absolute(&invocation, path);
                 }
-                identify.push((file, providers));
+                identify.push(identification::Input {
+                    source,
+                    kind,
+                    providers,
+                });
             }
             AddHostInput::File(mut input) => {
                 if let DirectFileSource::Local(path) = &mut input.source {
@@ -253,7 +259,7 @@ async fn change_with_services(
             let revision = snapshot.revision();
             let current = snapshot.require_resolved()?;
             let supplied = identification::resolve(
-                &mut scope, &current, identify, &mut providers, &services, evidence
+                &mut scope, identify, &mut providers, &services, evidence
             ).await?;
             let provider = if providers.is_empty() {
                 None

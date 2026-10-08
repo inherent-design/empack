@@ -3,7 +3,9 @@ mod batch;
 mod direct;
 pub use batch::ResolvedAdditionBatch;
 mod file_input;
-pub use direct::{DirectFileInput, DirectFileLimits, DirectFileSource, FileKindPolicy};
+pub use direct::{
+    DirectFileInput, DirectFileLimits, DirectFileSource, FileKindPolicy, validate_file_kind,
+};
 mod native;
 use super::documents::{DecodedIntent, DecodedLock, DocumentCodec, PreparedDocument};
 use anyhow::Result;

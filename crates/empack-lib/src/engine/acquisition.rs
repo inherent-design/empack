@@ -182,7 +182,7 @@ impl HttpAcquisition {
         self.acquire_budget(scope, request, &mut budget).await
     }
     /// All downloads share bytes and time; no successful subset escapes a later failure.
-    pub(in crate::engine) async fn acquire_batch(
+    pub async fn acquire_batch(
         &self,
         scope: &mut WorkScope,
         requests: Vec<DownloadRequest>,

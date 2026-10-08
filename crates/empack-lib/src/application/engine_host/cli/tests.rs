@@ -536,3 +536,93 @@ async fn provider_adoption_uses_observed_pin_and_verifies_bytes_without_upgradin
     );
     latest.assert_async().await;
 }
+
+#[tokio::test]
+async fn supplied_provider_zip_discovers_kind_before_requesting_a_type_choice() {
+    use std::io::Write;
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file("pack.mcmeta", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    archive
+        .write_all(br#"{"pack":{"pack_format":34,"description":"assets"}}"#)
+        .unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    fs::write(root.path().join("renamed.zip"), &bytes).unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let version = json!({
+        "id":"AssetVer","project_id":"Assets01","game_versions":["1.21.1"],"loaders":["minecraft"],
+        "files":[{"filename":"assets.zip","primary":true,"size":bytes.len(),"hashes":{"sha512":empack_core::digest::ExpectedDigest::Sha512(Sha512::digest(&bytes).into()).hex()},"url":"https://example.invalid/assets.zip"}],
+        "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+    });
+    server
+        .mock("GET", mockito::Matcher::Regex("^/version_file/.*".into()))
+        .with_body(version.to_string())
+        .create_async()
+        .await;
+    server
+        .mock("GET", "/version/AssetVer")
+        .with_body(version.to_string())
+        .create_async()
+        .await;
+    server.mock("GET", "/project/Assets01").with_body(json!({"id":"Assets01","slug":"assets","title":"Assets","project_type":"resourcepack","loaders":["minecraft"]}).to_string()).create_async().await;
+    let selected = || AddOptions {
+        inputs: vec!["renamed.zip".into()],
+        force: false,
+        platform: Some(SearchPlatform::Modrinth),
+        kind: None,
+        version_id: None,
+        file_id: None,
+    };
+    let before = super::super::tests::snapshot(root.path());
+    add_with_catalog(
+        &session(root.path(), true),
+        selected(),
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+    )
+    .await
+    .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    add_with_catalog(
+        &session(root.path(), false),
+        selected(),
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+    )
+    .await
+    .unwrap();
+    let resolved = project(root.path());
+    let root_entry = resolved.intent().roots.values().next().unwrap();
+    assert_eq!(root_entry.kind, ContentKind::ResourcePack);
+    assert_eq!(root_entry.requirements.server, Requirement::Unsupported);
+    assert_eq!(
+        fs::read(root.path().join("project/pack/resourcepacks/assets.zip")).unwrap(),
+        bytes
+    );
+    let before = super::super::tests::snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        super::super::tests::snapshot(&root.path().join("project")),
+        before
+    );
+    let mut wrong = selected();
+    wrong.kind = Some(CliProjectType::Mod);
+    assert!(
+        add_with_catalog(
+            &session(root.path(), false),
+            wrong,
+            ProviderCatalog::for_loopback_tests(&server.url(), None)
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        super::super::tests::snapshot(&root.path().join("project")),
+        before
+    );
+}
