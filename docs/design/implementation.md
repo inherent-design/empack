@@ -1578,3 +1578,17 @@ participation; its test initially expected an embedded member and now checks the
 format contract, including the exact generated digest. All 20 affected tests pass cleanly.
 Durable suspension, download discovery and CLI association parsing remain separate work.
 Final all-feature Clippy and Windows cross-compilation also pass for this change.
+
+## Adoption confirmation details
+
+Greptile 123 identified that document paths and byte counts did not explain changed
+adopted resolutions. `AdoptObservedPreview.selections` now carries the captured prior
+and verified proposed records for each changed canonical key. The host shows pins,
+file assertions, destinations, participation, required edges and evidence coverage
+before confirmation. New records have no prior selection; unchanged records are omitted.
+Manual instructions and freeform provenance locations stay out of automatic diagnostics.
+
+Native preview tests verify old/new records, first-lock descriptions and repeated no-op
+adoption. A formatter regression checks changed pins, hashes, requirements and edges,
+including omission of a secret-bearing manual locator. All 34 affected tests, all-feature
+Clippy and Windows cross-compilation pass without pipe warnings.

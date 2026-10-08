@@ -410,6 +410,11 @@ cancellation and publication flow. It can establish the first lock without a net
 lookup or payload installation. Invalid or missing selected bytes prevent publication;
 an invalid existing lock is never treated as an absent lock. Constructing the proposed
 group from CLI identification and selection remains frontend work.
+`AdoptObservedPreview.selections` carries captured before/after resolutions for changed
+canonical keys, including pins, file assertions, placements, participation, required edges
+and evidence coverage. First-lock entries have no prior resolution; unchanged entries are
+omitted. The host streams these details before confirmation. Freeform manual instructions
+and provenance locations are not expanded into automatic diagnostics.
 
 `AdditionGroup::from_resolved` extracts a validated, root-reachable dependency request.
 `AdditionCandidate::prepare` binds it to coherent source documents, preserves canonical

@@ -80,6 +80,9 @@ pub(in crate::engine) struct AdditionPreparation {
     references: BTreeSet<LockedFileKey>,
 }
 impl AdditionPreparation {
+    pub(in crate::engine) fn prior_lock(&self) -> Option<&empack_core::model::ResolutionLock> {
+        self.workspace.prior_lock().map(|lock| lock.lock())
+    }
     pub(in crate::engine) fn candidate(&self) -> &AdditionCandidate {
         &self.candidate
     }

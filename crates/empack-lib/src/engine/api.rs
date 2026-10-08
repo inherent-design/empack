@@ -58,8 +58,8 @@ pub use cleanup::{CleanPreview, CleanReceipt, CleanRequest};
 mod recovery;
 pub use addition::{
     AddPreview, AddReceipt, AddRequest, AdoptObservedPreview, AdoptObservedReceipt,
-    AdoptObservedRequest, ExistingDependencyPolicy, ReplacementSelection, UpdatePreview,
-    UpdateReceipt, UpdateRequest,
+    AdoptObservedRequest, AdoptionResolution, AdoptionSelection, ExistingDependencyPolicy,
+    ReplacementSelection, UpdatePreview, UpdateReceipt, UpdateRequest,
 };
 pub use recovery::{
     RecoverPreview, RecoverRequest, RecoveryAction, RecoveryKind, RecoveryReceipt, RecoveryStatus,
@@ -420,7 +420,7 @@ impl PreparedKind {
             Self::Remove(value) => OperationPreview::Remove(value.view.clone()),
             Self::Add(value) => OperationPreview::Add(value.view.clone()),
             Self::Update(value) => OperationPreview::Update((&value.view).into()),
-            Self::AdoptObserved(value) => OperationPreview::AdoptObserved((&value.view).into()),
+            Self::AdoptObserved(value) => OperationPreview::AdoptObserved(value.adoption_preview()),
             Self::Sync(value) => OperationPreview::Sync(value.view.clone()),
             Self::ProjectChange(value) => {
                 if value.initialize {

@@ -23,6 +23,7 @@ use crate::{
 };
 use empack_core::model::NonEmpty;
 use std::sync::Arc;
+mod adoption;
 
 /// Resolve every selected provider root and its required closure, then record exact references.
 /// Search/UI selection and local/direct-file acquisition are separate host inputs. This path
@@ -383,6 +384,7 @@ pub async fn adopt_observed(session: &dyn Session, request: AdoptObservedRequest
                 ));
             }
         }
+        adoption::describe(view, |line| session.display().status().info(&line));
         show_changes(session, &view.files)?;
         apply(session, &engine, prepared, "Adoption", |receipt| {
             let ExecutionReceipt::AdoptObserved(receipt) = receipt else {

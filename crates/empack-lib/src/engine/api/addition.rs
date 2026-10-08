@@ -9,7 +9,7 @@ use crate::engine::{
 use empack_core::{
     addition::AdditionGroup,
     files::{FileChange, FilePlan, ObservedPath},
-    model::{DependencyKey, LockedDependency, ResolvedProject},
+    model::{Coverage, DependencyKey, LockedDependency, ResolutionLock, ResolvedProject},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -103,16 +103,20 @@ pub struct AdoptObservedPreview {
     pub bindings: BTreeMap<DependencyKey, DependencyKey>,
     pub files: FilePlan,
     pub replacement: ReplacementSummary,
+    /// Captured prior resolution and verified proposed resolution for each changed selection.
+    pub selections: Vec<AdoptionSelection>,
 }
-impl From<&AddPreview> for AdoptObservedPreview {
-    fn from(value: &AddPreview) -> Self {
-        Self {
-            plan: value.plan,
-            bindings: value.bindings.clone(),
-            files: value.files.clone(),
-            replacement: value.replacement,
-        }
-    }
+#[derive(Clone, PartialEq, Eq)]
+pub struct AdoptionResolution {
+    pub dependency: LockedDependency,
+    pub required: BTreeSet<DependencyKey>,
+    pub coverage: Coverage,
+}
+#[derive(Clone, PartialEq, Eq)]
+pub struct AdoptionSelection {
+    pub key: DependencyKey,
+    pub before: Option<AdoptionResolution>,
+    pub after: AdoptionResolution,
 }
 pub struct AdoptObservedReceipt {
     pub plan: PlanId,
@@ -129,6 +133,18 @@ enum DependencyChange {
 pub(super) struct PreparedAdditionOperation {
     pub(super) view: AddPreview,
     addition: PreparedAddition,
+    adoption: Vec<AdoptionSelection>,
+}
+impl PreparedAdditionOperation {
+    pub(super) fn adoption_preview(&self) -> AdoptObservedPreview {
+        AdoptObservedPreview {
+            plan: self.view.plan,
+            bindings: self.view.bindings.clone(),
+            files: self.view.files.clone(),
+            replacement: self.view.replacement,
+            selections: self.adoption.clone(),
+        }
+    }
 }
 pub(super) async fn prepare(
     project: ProjectTarget,
@@ -218,6 +234,39 @@ async fn prepare_change(
     let (resources, retained) = project_change::resources(planned.bytes()?, config)?;
     let work = scope.spawn_blocking(resources, retained, move |cancel| {
         let (planned, _reservation) = planned.into_parts();
+        let adoption = if matches!(kind, DependencyChange::Adopt) {
+            let next = planned.candidate().project().lock();
+            planned
+                .candidate()
+                .plan()
+                .bindings()
+                .values()
+                .filter_map(|key| {
+                    let summarize = |lock: &ResolutionLock| {
+                        lock.dependencies
+                            .get(key)
+                            .map(|dependency| AdoptionResolution {
+                                dependency: dependency.clone(),
+                                required: lock.required_edges.get(key).cloned().unwrap_or_default(),
+                                coverage: lock
+                                    .coverage
+                                    .get(key)
+                                    .cloned()
+                                    .unwrap_or(Coverage::Unknown),
+                            })
+                    };
+                    let before = planned.prior_lock().and_then(summarize);
+                    let after = summarize(next).expect("planned binding has a verified dependency");
+                    (before.as_ref() != Some(&after)).then(|| AdoptionSelection {
+                        key: key.clone(),
+                        before,
+                        after,
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let addition = planned.stage(&cancel)?;
         let files = addition.files().clone();
         let view = AddPreview {
@@ -235,7 +284,11 @@ async fn prepare_change(
             replacement: project_change::summary(&files)?,
             files,
         };
-        Ok::<_, anyhow::Error>(PreparedAdditionOperation { view, addition })
+        Ok::<_, anyhow::Error>(PreparedAdditionOperation {
+            view,
+            addition,
+            adoption,
+        })
     })?;
     scope.accept(work.wait().await?)?.transpose()
 }

@@ -827,6 +827,22 @@ async fn adoption_publishes_observed_intent_without_payload_writes_then_sync_ret
         .preview(root.path().to_path_buf(), make_request())
         .await
         .unwrap();
+    let selections = &view.adoption().unwrap().selections;
+    assert_eq!(selections.len(), proposed.lock().dependencies.len());
+    for change in selections {
+        assert_eq!(
+            change.before.as_ref().unwrap().dependency,
+            previous.lock().dependencies[&change.key]
+        );
+        assert_eq!(
+            change.after.dependency,
+            proposed.lock().dependencies[&change.key]
+        );
+        assert_ne!(
+            change.before.as_ref().unwrap().dependency.files,
+            change.after.dependency.files
+        );
+    }
     assert!(
         view.adoption()
             .unwrap()
@@ -939,6 +955,17 @@ async fn adoption_creates_first_lock_without_rewriting_observed_payloads() {
         .preview(root.path().to_path_buf(), request())
         .await
         .unwrap();
+    assert_eq!(
+        view.adoption().unwrap().selections.len(),
+        resolved.lock().dependencies.len()
+    );
+    assert!(
+        view.adoption()
+            .unwrap()
+            .selections
+            .iter()
+            .all(|change| change.before.is_none())
+    );
     assert!(
         view.adoption()
             .unwrap()
@@ -973,6 +1000,16 @@ async fn adoption_creates_first_lock_without_rewriting_observed_payloads() {
     drop((outcome, handle));
     assert_eq!(fs::read(root.path().join("empack.yml")).unwrap(), intent);
     assert_eq!(fs::metadata(&payload).unwrap().modified().unwrap(), before);
+    assert!(
+        engine
+            .preview(root.path().to_path_buf(), request())
+            .await
+            .unwrap()
+            .adoption()
+            .unwrap()
+            .selections
+            .is_empty()
+    );
     for _ in 0..2 {
         let view = engine
             .preview(
