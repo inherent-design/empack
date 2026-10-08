@@ -93,7 +93,12 @@ pub fn prepare_server_build(
     let (archive, candidate) = prepare_server_archive(
         &workspace, artifact, external, options, runtime, bootstrap, cancel,
     )?;
-    let publication = super::prepare_archives_publication(workspace, vec![archive], cancel)?;
+    let publication = super::prepare_archives_publication(
+        workspace,
+        vec![archive],
+        &std::collections::BTreeSet::new(),
+        cancel,
+    )?;
     Ok(PreparedServerBuild {
         publication,
         candidate,

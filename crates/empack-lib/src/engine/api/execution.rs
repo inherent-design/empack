@@ -2,7 +2,7 @@ use super::*;
 use crate::engine::{
     bootstrap_tools::InstallerAssets,
     build::{
-        batch::{DistributionRequest, prepare_build_batch},
+        batch::{DistributionRequest, prepare_build_batch_with_cleanup},
         client::{ClientBootstrap, ClientOptions},
         server::{ServerBootstrap, ServerOptions},
     },
@@ -65,8 +65,7 @@ async fn execute(
             workspace
                 .root()
                 .revalidate(workspace.observations(), &cancel)?;
-            let result = acquisition
-                .acquire_embedded(&workspace, archive, evidence, &cancel)?;
+            let result = acquisition.acquire_embedded(&workspace, archive, evidence, &cancel)?;
             Ok::<_, anyhow::Error>((workspace, result, prepared_permit))
         },
     )?;
@@ -113,92 +112,113 @@ async fn execute(
     } else {
         None
     };
-    let work = scope.spawn_blocking(
-        config.resources.assembly,
-        config.resources.receipt,
-        move |cancel| {
-            // These owners remain charged through assembly and publication, even if the handle drops.
-            let _owners = (prepared_permit, acquired_permit);
-            let mut requests = Vec::new();
-            for output in request.outputs.as_slice() {
-                let artifact = output.artifact.clone();
-                let client_options = || ClientOptions {
-                    archive: request.archive,
-                    optional: request.optional.clone(),
-                    templates: request.templates.clone(),
+    let mut assembly = config.resources.assembly;
+    assembly.scratch_bytes = assembly
+        .scratch_bytes
+        .checked_add(
+            view.cleanup
+                .as_ref()
+                .map_or(0, |cleanup| cleanup.removed_bytes),
+        )
+        .context("Build cleanup recovery storage overflow")?;
+    let work = scope.spawn_blocking(assembly, config.resources.receipt, move |cancel| {
+        // These owners remain charged through assembly and publication, even if the handle drops.
+        let _owners = (prepared_permit, acquired_permit);
+        let mut requests = Vec::new();
+        for output in request.outputs.as_slice() {
+            let artifact = output.artifact.clone();
+            let client_options = || ClientOptions {
+                archive: request.archive,
+                optional: request.optional.clone(),
+                templates: request.templates.clone(),
+                evidence,
+                limits: config.archive,
+            };
+            let server_options = || ServerOptions {
+                archive: request.archive,
+                optional: request.optional.clone(),
+                templates: request.templates.clone(),
+                evidence,
+                limits: config.archive,
+            };
+            requests.push(match output.target {
+                BuildTarget::Mrpack => DistributionRequest::Mrpack {
+                    artifact,
+                    optional: request.mrpack_optional,
                     evidence,
-                    limits: config.archive,
-                };
-                let server_options = || ServerOptions {
-                    archive: request.archive,
-                    optional: request.optional.clone(),
-                    templates: request.templates.clone(),
-                    evidence,
-                    limits: config.archive,
-                };
-                requests.push(match output.target {
-                    BuildTarget::Mrpack => DistributionRequest::Mrpack {
-                        artifact,
-                        optional: request.mrpack_optional,
-                        evidence,
-                    },
-                    BuildTarget::ClientFull => DistributionRequest::ClientFull {
-                        artifact,
-                        options: client_options(),
-                    },
-                    BuildTarget::Client => DistributionRequest::Client {
-                        artifact,
-                        options: client_options(),
-                        bootstrap: ClientBootstrap {
-                            assets: assets
-                                .as_ref()
-                                .context("Missing acquired installer assets")?
-                                .clone(),
-                            interaction: request.interaction,
-                        },
-                    },
-                    BuildTarget::ServerFull => DistributionRequest::ServerFull {
-                        artifact,
-                        options: server_options(),
-                        runtime: runtime
+                },
+                BuildTarget::ClientFull => DistributionRequest::ClientFull {
+                    artifact,
+                    options: client_options(),
+                },
+                BuildTarget::Client => DistributionRequest::Client {
+                    artifact,
+                    options: client_options(),
+                    bootstrap: ClientBootstrap {
+                        assets: assets
                             .as_ref()
-                            .context("Missing prepared server runtime")?
+                            .context("Missing acquired installer assets")?
                             .clone(),
+                        interaction: request.interaction,
                     },
-                    BuildTarget::Server => DistributionRequest::Server {
-                        artifact,
-                        options: server_options(),
-                        runtime: runtime
+                },
+                BuildTarget::ServerFull => DistributionRequest::ServerFull {
+                    artifact,
+                    options: server_options(),
+                    runtime: runtime
+                        .as_ref()
+                        .context("Missing prepared server runtime")?
+                        .clone(),
+                },
+                BuildTarget::Server => DistributionRequest::Server {
+                    artifact,
+                    options: server_options(),
+                    runtime: runtime
+                        .as_ref()
+                        .context("Missing prepared server runtime")?
+                        .clone(),
+                    bootstrap: ServerBootstrap {
+                        assets: assets
                             .as_ref()
-                            .context("Missing prepared server runtime")?
+                            .context("Missing acquired installer assets")?
                             .clone(),
-                        bootstrap: ServerBootstrap {
-                            assets: assets
-                                .as_ref()
-                                .context("Missing acquired installer assets")?
-                                .clone(),
-                            interaction: request.interaction,
-                        },
+                        interaction: request.interaction,
                     },
-                });
-            }
-            let prepared = prepare_build_batch(
-                workspace,
-                NonEmpty::new(requests)?,
-                &acquired.acquired,
-                &cancel,
-            )?;
-            cancel.check()?;
-            // This is the first point with durable host-state and project publication authority.
-            let publisher = Publisher::open(&config.state_root)?;
-            let (publication, artifacts) = prepared.publish_with_evidence(&publisher, &cancel)?;
-            Ok::<_, anyhow::Error>(BuildReceipt {
-                plan: view.plan,
-                publication,
-                artifacts,
+                },
+            });
+        }
+        let removals = view
+            .cleanup
+            .as_ref()
+            .into_iter()
+            .flat_map(|cleanup| cleanup.files.changes())
+            .map(|change| change.target().clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let removed_artifacts = removals
+            .iter()
+            .map(|path| match path {
+                empack_core::files::ManagedPath::Artifact(path) => Ok(path.clone()),
+                _ => anyhow::bail!("Build cleanup escaped the artifact namespace"),
             })
-        },
-    )?;
+            .collect::<Result<std::collections::BTreeSet<_>>>()?;
+        let prepared = prepare_build_batch_with_cleanup(
+            workspace,
+            NonEmpty::new(requests)?,
+            &acquired.acquired,
+            &removals,
+            &cancel,
+        )?;
+        cancel.check()?;
+        // This is the first point with durable host-state and project publication authority.
+        let publisher = Publisher::open(&config.state_root)?;
+        let (publication, artifacts) = prepared.publish_with_evidence(&publisher, &cancel)?;
+        Ok::<_, anyhow::Error>(BuildReceipt {
+            plan: view.plan,
+            publication,
+            artifacts,
+            removed_artifacts,
+        })
+    })?;
     let result = work.wait().await.map_err(PublicationWorkerFailed)?;
     // Cancellation after a completed publication must preserve its committed receipt.
     Ok(ExecutionOutcome::Completed(ExecutionReceipt::Build(

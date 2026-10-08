@@ -549,6 +549,7 @@ fn prepare_archive_publication(
             archive,
             verified: verified.clone(),
         }],
+        &BTreeSet::new(),
         cancel,
     )
 }
@@ -560,6 +561,7 @@ struct ArchiveCandidate {
 fn prepare_archives_publication(
     workspace: WorkspaceSnapshot,
     candidates: Vec<ArchiveCandidate>,
+    removals: &BTreeSet<ManagedPath>,
     cancel: &Cancellation,
 ) -> Result<PreparedArtifact> {
     use super::{
@@ -592,8 +594,11 @@ fn prepare_archives_publication(
             },
         );
     }
-    let observed = observed_artifacts_for(workspace.observations(), desired.keys().cloned())?;
-    let file_plan = plan_files(&observed, &desired, &BTreeSet::new())?;
+    let observed = observed_artifacts_for(
+        workspace.observations(),
+        desired.keys().chain(removals).cloned(),
+    )?;
+    let file_plan = plan_files(&observed, &desired, removals)?;
     let limits = candidate_stage_limits(workspace.observations(), &file_plan)?;
     let mut stage = MutableStage::empty()?;
     // Transfer ownership one candidate at a time. The original file retires at the end of

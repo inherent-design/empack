@@ -1111,3 +1111,23 @@ the same retained observation. All 15 affected tests pass; the final historical 
 also checks that an unavailable Quilt service does not prevent an evidenced Forge
 selection. All-feature Clippy and Windows cross-compilation pass separately from the
 recorded full-suite snapshot.
+
+## Combined build cleanup
+
+The compiled `BuildRequest.clean` closes the preparation gap for the preserved
+clean/build option. It captures all existing artifact files and directory membership,
+previews only obsolete removals and requires their exact acknowledgment. Requested
+outputs remain build replacements. All candidates must verify before cleanup and
+replacement enter one journaled publication. Failed recipes, cancellation, late
+artifacts and edits retain the previous distributions. Cleanup cannot follow links or
+consume a declared source. Old output capture uses the configured archive allowance.
+Recovery before-images receive additional admitted scratch capacity.
+
+Native tests inspect replacement archives and removal receipts, exercise unchanged
+failure outcomes, and interrupt the combined publication before finishing or restoring
+it. The CLI build host still needs to route its existing clean option through this
+request; this capability does not make the old command dispatcher transactional.
+
+All 126 affected build, project, API and host tests pass. A separate combined-publication
+interruption test passes for both finish and restore. All-feature Clippy and Windows
+cross-compilation pass on the combined worktree.

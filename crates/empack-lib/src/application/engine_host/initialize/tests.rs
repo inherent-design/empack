@@ -233,6 +233,7 @@ async fn initialized_project_syncs_twice_and_builds_current_scaffolding_through_
         assert_eq!(snapshot(&project), before);
     }
     let request = BuildRequest {
+        clean: false,
         outputs: NonEmpty::new(vec![
             BuildOutput {
                 target: BuildTarget::Mrpack,

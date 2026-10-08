@@ -219,6 +219,7 @@ async fn package_runtime(
         }),
     )?;
     let request = BuildRequest {
+        clean: false,
         outputs: NonEmpty::new(vec![BuildOutput {
             target: BuildTarget::ServerFull,
             artifact,

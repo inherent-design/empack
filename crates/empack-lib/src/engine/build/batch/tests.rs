@@ -351,3 +351,70 @@ fn server_and_client_candidates_share_publication_and_reject_late_collisions() {
         b"previous server"
     );
 }
+
+#[test]
+fn interrupted_clean_build_finishes_or_restores_the_same_publication() {
+    use crate::engine::publication::{PublicationPoint, tests::interrupt_publication};
+    for restore in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        let external = fixture(root.path());
+        fs::write(root.path().join("dist/aaa-old.zip"), b"obsolete artifact").unwrap();
+        let cancel = Cancellation::default();
+        let snapshot = ProjectReader::new(RecoveryReader::new(host.path().join("private")))
+            .capture_build_selection(
+                root.path(),
+                &[path("pack.mrpack"), path("client.zip")],
+                true,
+                SnapshotLimits::default(),
+                SnapshotLimits::default(),
+                &cancel,
+            )
+            .unwrap();
+        let removals = [ManagedPath::Artifact(path("aaa-old.zip"))]
+            .into_iter()
+            .collect();
+        let batch =
+            prepare_build_batch_with_cleanup(snapshot, requests(), &external, &removals, &cancel)
+                .unwrap();
+        let publisher = Publisher::open(&host.path().join("private")).unwrap();
+        let prepared = batch.publication;
+        assert!(
+            interrupt_publication(
+                &publisher,
+                &prepared.root,
+                prepared.change,
+                PublicationPoint::TargetChanged
+            )
+            .is_err()
+        );
+        assert!(publisher.recovery_required(&prepared.root).unwrap());
+        if restore {
+            publisher.restore_before_images(&prepared.root).unwrap();
+            assert_eq!(
+                fs::read(root.path().join("dist/aaa-old.zip")).unwrap(),
+                b"obsolete artifact"
+            );
+            assert_eq!(
+                fs::read(root.path().join("dist/pack.mrpack")).unwrap(),
+                b"old mrpack"
+            );
+            assert_eq!(
+                fs::read(root.path().join("dist/client.zip")).unwrap(),
+                b"old client"
+            );
+        } else {
+            publisher.recover(&prepared.root).unwrap();
+            assert!(!root.path().join("dist/aaa-old.zip").exists());
+            for artifact in ["pack.mrpack", "client.zip"] {
+                assert!(
+                    zip::ZipArchive::new(
+                        fs::File::open(root.path().join("dist").join(artifact)).unwrap()
+                    )
+                    .is_ok()
+                );
+            }
+        }
+        assert!(!publisher.recovery_required(&prepared.root).unwrap());
+    }
+}

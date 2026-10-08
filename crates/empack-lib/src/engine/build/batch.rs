@@ -117,6 +117,22 @@ pub fn prepare_build_batch(
     external: &BuildAcquisitions,
     cancel: &Cancellation,
 ) -> Result<PreparedBuildBatch> {
+    prepare_build_batch_with_cleanup(
+        workspace,
+        requests,
+        external,
+        &std::collections::BTreeSet::new(),
+        cancel,
+    )
+}
+/// Exact obsolete paths are verified and published with all successful candidates, never first.
+pub(in crate::engine) fn prepare_build_batch_with_cleanup(
+    workspace: WorkspaceSnapshot,
+    requests: NonEmpty<DistributionRequest>,
+    external: &BuildAcquisitions,
+    removals: &std::collections::BTreeSet<ManagedPath>,
+    cancel: &Cancellation,
+) -> Result<PreparedBuildBatch> {
     let mut collisions = CollisionIndex::default();
     for request in requests.as_slice() {
         collisions.insert_file(request.artifact())?;
@@ -251,7 +267,7 @@ pub fn prepare_build_batch(
         artifacts.push(evidence);
         candidates.push(candidate);
     }
-    let publication = prepare_archives_publication(workspace, candidates, cancel)?;
+    let publication = prepare_archives_publication(workspace, candidates, removals, cancel)?;
     Ok(PreparedBuildBatch {
         publication,
         artifacts,

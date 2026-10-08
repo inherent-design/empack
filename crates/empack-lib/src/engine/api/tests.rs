@@ -97,6 +97,7 @@ pub(super) fn fixture(root: &Path) {
 }
 pub(super) fn request() -> BuildRequest {
     BuildRequest {
+        clean: false,
         outputs: NonEmpty::new(vec![
             BuildOutput {
                 target: BuildTarget::Mrpack,
@@ -1169,5 +1170,214 @@ async fn new_import_refuses_racing_destinations_and_build_requires_an_existing_r
     ));
     assert_eq!(fs::read(selected.join("sentinel")).unwrap(), b"unowned");
     assert!(!selected.join("empack.yml").exists());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn clean_build_publishes_verified_replacements_and_exact_obsolete_removals_together() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    put(root.path(), "dist/obsolete/old.zip", b"old artifact");
+    put(root.path(), "notes.txt", b"unrelated");
+    let before = inventory(root.path());
+    let (engine, governor) = engine(host.path().join("state"));
+    let mut request = request();
+    request.clean = true;
+    let view = engine
+        .preview(root.path().to_owned(), request.clone())
+        .await
+        .unwrap();
+    let cleanup = view.build().unwrap().cleanup.as_ref().unwrap();
+    assert_eq!(cleanup.removed_bytes, 12);
+    assert_eq!(cleanup.files.changes().len(), 1);
+    assert_eq!(
+        cleanup.files.changes()[0].target(),
+        &empack_core::files::ManagedPath::Artifact(path("obsolete/old.zip"))
+    );
+    assert!(view.replacement().is_some());
+    assert!(view.build().unwrap().request().clean);
+    assert_eq!(inventory(root.path()), before);
+    assert!(!host.path().join("state").exists());
+    let prepared = ready(&engine, root.path(), request.clone()).await;
+    let unacknowledged = grant(&prepared);
+    assert!(prepared.authorize(unacknowledged).is_err());
+    assert_eq!(inventory(root.path()), before);
+    let prepared = ready(&engine, root.path(), request).await;
+    let mut permission = grant(&prepared);
+    permission.replacement = prepared.view().replacement();
+    let mut handle = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(
+            receipt,
+        ))) => {
+            assert_eq!(receipt.artifacts.len(), 2);
+            assert_eq!(receipt.publication.changed_files, 3);
+            assert_eq!(
+                receipt.removed_artifacts,
+                [path("obsolete/old.zip")].into_iter().collect()
+            );
+        }
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("Clean build did not complete"),
+    }
+    assert!(!root.path().join("dist/obsolete/old.zip").exists());
+    assert_eq!(
+        fs::read(root.path().join("notes.txt")).unwrap(),
+        b"unrelated"
+    );
+    for file in ["result.mrpack", "client.zip"] {
+        assert!(
+            zip::ZipArchive::new(fs::File::open(root.path().join("dist").join(file)).unwrap())
+                .is_ok()
+        );
+    }
+    engine.release_completed(handle.id());
+    drop(outcome);
+    drop(handle);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn clean_build_keeps_every_previous_artifact_on_failure_cancellation_or_stale_membership() {
+    for scenario in ["template", "cancel", "new-artifact", "edited-obsolete"] {
+        let root = tempfile::tempdir().unwrap();
+        let host = tempfile::tempdir().unwrap();
+        fixture(root.path());
+        put(
+            root.path(),
+            "dist/obsolete.zip",
+            b"obsolete but retained until success",
+        );
+        if scenario == "template" {
+            put(
+                root.path(),
+                "templates/client/broken.template",
+                b"{{missing_contract_variable}}",
+            );
+        }
+        let (engine, _) = engine(host.path().join("state"));
+        let mut request = request();
+        request.clean = true;
+        let prepared = ready(&engine, root.path(), request).await;
+        match scenario {
+            "new-artifact" => put(root.path(), "dist/new.zip", b"new unapproved file"),
+            "edited-obsolete" => put(root.path(), "dist/obsolete.zip", b"edited after approval"),
+            _ => {}
+        }
+        let before = inventory(root.path());
+        let mut permission = grant(&prepared);
+        permission.replacement = prepared.view().replacement();
+        let mut handle = engine
+            .start(prepared.authorize(permission).unwrap())
+            .unwrap();
+        if scenario == "cancel" {
+            handle.cancel();
+        }
+        let result = handle.wait().await;
+        assert!(
+            !matches!(
+                &*result,
+                OperationOutcome::Completed(ExecutionOutcome::Completed(_))
+            ),
+            "{scenario}"
+        );
+        assert_eq!(inventory(root.path()), before, "{scenario}");
+        engine.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn clean_build_uses_configured_archive_limits_and_rejects_source_overlap() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let (mut engine, _) = engine(host.path().join("state"));
+    engine.config.archive.compressed_bytes = 10;
+    // Existing output files exceed this configured archive allowance. Source capture has a
+    // larger member allowance, which must not silently replace the archive limit.
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), request())
+            .await
+            .is_err()
+    );
+    engine.config.archive.compressed_bytes = 2 << 20;
+    let source = DocumentCodec
+        .decode_intent(&fs::read(root.path().join("empack.yml")).unwrap(), "test")
+        .unwrap();
+    let current = DocumentCodec
+        .decode_lock(
+            &fs::read(root.path().join("empack.lock")).unwrap(),
+            &source,
+            "test",
+        )
+        .unwrap();
+    let mut intent = current.intent().clone();
+    let mut lock = current.lock().clone();
+    let key = intent.roots.keys().next().unwrap().clone();
+    intent.roots.get_mut(&key).unwrap().source =
+        empack_core::model::SourceIntent::Local(path("dist/source.zip"));
+    let dependency = lock.dependencies.get_mut(&key).unwrap();
+    dependency.identity = empack_core::model::ResolvedIdentity::Local(key);
+    dependency.selected = None;
+    let mut files = dependency.files.clone().into_vec();
+    for file in &mut files {
+        file.acquisition = empack_core::model::AcquisitionSpec::Local(path("dist/source.zip"));
+    }
+    dependency.files = NonEmpty::new(files).unwrap();
+    let bytes = DocumentCodec.encode_intent(&intent).unwrap();
+    lock.intent_revision = DocumentCodec
+        .decode_intent(&bytes, "test")
+        .unwrap()
+        .semantic_revision();
+    let current =
+        empack_core::model::ResolvedProject::validate(intent, lock.clone(), lock.intent_revision)
+            .unwrap();
+    put(root.path(), "empack.yml", &bytes);
+    put(
+        root.path(),
+        "empack.lock",
+        &DocumentCodec.encode_lock(&current).unwrap(),
+    );
+    put(root.path(), "dist/source.zip", b"payload");
+    let mut request = request();
+    request.clean = true;
+    let before = inventory(root.path());
+    let result = engine.prepare(root.path().to_path_buf(), request).await;
+    assert!(result.is_err());
+    assert_eq!(inventory(root.path()), before);
+    engine.shutdown().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn clean_build_rejects_symlinked_artifacts_without_touching_outside_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path());
+    let outside = host.path().join("outside.zip");
+    fs::write(&outside, b"outside").unwrap();
+    std::os::unix::fs::symlink(&outside, root.path().join("dist/linked.zip")).unwrap();
+    let (engine, _) = engine(host.path().join("state"));
+    let mut request = request();
+    request.clean = true;
+    assert!(
+        engine
+            .prepare(root.path().to_path_buf(), request)
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(outside).unwrap(), b"outside");
+    assert_eq!(
+        fs::read(root.path().join("dist/result.mrpack")).unwrap(),
+        b"previous mrpack"
+    );
     engine.shutdown().await;
 }

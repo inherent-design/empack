@@ -46,6 +46,15 @@ Minecraft release and prefer stable loader releases. Explicit historical and
 prerelease selections remain available. A catalog digest identifies the observed
 response, not the executable bytes; build acquisition verifies those separately.
 
+`BuildRequest.clean` captures the complete `dist/` namespace and includes obsolete
+regular files in `BuildPreview.cleanup`. The grant must acknowledge that exact removal
+summary. Every requested artifact is prepared and verified before one publication both
+replaces outputs and removes obsolete files. Failure or cancellation before publication
+retains previous distributions. New files, edits or symlinked artifacts invalidate the
+captured authority. Source paths cannot overlap cleanup. The receipt names every removed
+artifact; interrupted publication uses the same finish/restore recovery as other operations.
+No recursive deletion or separate preliminary clean occurs in this Engine path.
+
 `BuildRequest::with_content` attaches explicit `BuildAcquisitions` without putting
 leases in a display-only preview. Supplied keys must match current acquisition
 obligations. Preparation streams those bytes through the unchanged locked/backend

@@ -270,6 +270,7 @@ async fn publish_with_refreshed_locator(
     )?
     .with_provider_catalog(catalog, CatalogLimits::default());
     let request = BuildRequest {
+        clean: false,
         outputs: NonEmpty::new(vec![BuildOutput {
             target: BuildTarget::ClientFull,
             artifact: PortableRelPath::parse("client.zip", PathSyntax::ArtifactName)?,

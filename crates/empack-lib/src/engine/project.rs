@@ -476,6 +476,18 @@ impl ProjectReader {
         artifact_limits: SnapshotLimits,
         cancel: &Cancellation,
     ) -> Result<WorkspaceSnapshot> {
+        self.capture_build_selection(selected, artifacts, false, limits, artifact_limits, cancel)
+    }
+    /// Cleanup captures the whole artifact namespace and binds its membership to approval.
+    pub(in crate::engine) fn capture_build_selection(
+        &self,
+        selected: &Path,
+        artifacts: &[PortableRelPath],
+        clean: bool,
+        limits: SnapshotLimits,
+        artifact_limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<WorkspaceSnapshot> {
         let rules_path = PortableRelPath::parse("pack/.packwizignore", PathSyntax::ProjectContent)?;
         let documents = self.capture(selected, &[rules_path], limits, cancel)?;
         let rules = read_document(
@@ -531,21 +543,25 @@ impl ProjectReader {
             self.capture_selected(selected, &scopes, limits, Some(&filter), cancel)?;
         // The rule bytes used to select traversal remain exact read-set inputs.
         captured.native = documents.native.merge(captured.native)?;
-        if !artifacts.is_empty() {
+        if clean || !artifacts.is_empty() {
             // A build may observe old outputs, but cannot replace an input under another role.
             // Use portable collision rules too: case aliases must not bypass this on Windows.
             let mut ownership = super::layout::CollisionIndex::default();
             for input in &scopes {
                 ownership.insert_file(input)?;
             }
-            let output_scopes = artifacts
-                .iter()
-                .map(|artifact| {
-                    super::layout::ProjectLayout::path(&empack_core::files::ManagedPath::Artifact(
-                        artifact.clone(),
-                    ))
-                })
-                .collect::<Result<Vec<_>>>()?;
+            let output_scopes = if clean {
+                vec![PortableRelPath::parse("dist", PathSyntax::ProjectContent)?]
+            } else {
+                artifacts
+                    .iter()
+                    .map(|artifact| {
+                        super::layout::ProjectLayout::path(
+                            &empack_core::files::ManagedPath::Artifact(artifact.clone()),
+                        )
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            };
             for output in &output_scopes {
                 ownership
                     .insert_file(output)

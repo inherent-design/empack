@@ -210,8 +210,12 @@ pub fn prepare_client_full_build(
     cancel: &Cancellation,
 ) -> Result<PreparedClientBuild> {
     let candidate = prepare_client_full_archive(&workspace, artifact, external, options, cancel)?;
-    let publication =
-        super::prepare_archives_publication(workspace, vec![candidate.archive], cancel)?;
+    let publication = super::prepare_archives_publication(
+        workspace,
+        vec![candidate.archive],
+        &std::collections::BTreeSet::new(),
+        cancel,
+    )?;
     Ok(PreparedClientBuild {
         publication,
         game: candidate.game,
@@ -253,7 +257,12 @@ pub fn prepare_client_build(
         Some(bootstrap),
         cancel,
     )?;
-    let publication = super::prepare_archives_publication(workspace, vec![built.archive], cancel)?;
+    let publication = super::prepare_archives_publication(
+        workspace,
+        vec![built.archive],
+        &std::collections::BTreeSet::new(),
+        cancel,
+    )?;
     Ok(PreparedClientBuild {
         publication,
         game: built.game,

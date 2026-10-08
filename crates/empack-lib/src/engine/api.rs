@@ -85,6 +85,8 @@ pub struct BuildOutput {
 }
 #[derive(Clone)]
 pub struct BuildRequest {
+    /// Retire other captured dist files only when every requested artifact verifies.
+    pub clean: bool,
     pub outputs: NonEmpty<BuildOutput>,
     pub archive: DistributionArchive,
     pub optional: OptionalPolicy,
@@ -148,6 +150,13 @@ pub struct ContentRequirement {
 }
 /// Read-only effect summary. No URLs, content leases, publisher or conversion into approval.
 #[derive(Clone)]
+pub struct BuildCleanup {
+    /// Exact obsolete artifacts; requested outputs are replaced by their build recipes.
+    pub files: empack_core::files::FilePlan,
+    pub removed_bytes: u64,
+    replacement: ReplacementSummary,
+}
+#[derive(Clone)]
 pub struct BuildPreview {
     pub plan: PlanId,
     pub outputs: Vec<BuildOutput>,
@@ -156,6 +165,7 @@ pub struct BuildPreview {
     pub needs_network: bool,
     pub runs_installer: bool,
     pub unresolved: Vec<AcquisitionKey>,
+    pub cleanup: Option<BuildCleanup>,
     options: BuildRequest,
 }
 impl BuildPreview {
@@ -356,7 +366,7 @@ impl OperationPreview {
             Self::Update(view) => Some(view.replacement),
             Self::AdoptObserved(view) => Some(view.replacement),
             Self::Sync(view) => Some(view.replacement),
-            _ => None,
+            Self::Build(view) => view.cleanup.as_ref().map(|cleanup| cleanup.replacement),
         }
     }
     pub fn needs_network(&self) -> bool {
@@ -494,6 +504,7 @@ pub enum ExecutionOutcome {
 }
 pub struct BuildReceipt {
     pub plan: PlanId,
+    pub removed_artifacts: std::collections::BTreeSet<PortableRelPath>,
     pub publication: PublicationReceipt,
     pub artifacts: Vec<super::build::batch::BuiltDistribution>,
 }
@@ -948,7 +959,26 @@ fn capture(
         .map(|output| output.artifact.clone())
         .collect();
     let workspace = ProjectReader::new(RecoveryReader::new(config.state_root.clone()))
-        .capture_build(&project, &outputs, config.snapshot, cancel)?;
+        .capture_build_selection(
+            &project,
+            &outputs,
+            request.clean,
+            config.snapshot,
+            SnapshotLimits {
+                file_bytes: config.archive.compressed_bytes,
+                total_bytes: config
+                    .snapshot
+                    .total_bytes
+                    .max(config.archive.compressed_bytes),
+                entries: config.snapshot.entries,
+                depth: config.snapshot.depth,
+            },
+            cancel,
+        )?;
+    let cleanup = request
+        .clean
+        .then(|| build_cleanup(&workspace, &outputs))
+        .transpose()?;
     ensure!(
         prior_root.is_none_or(|binding| workspace.root().binding == binding),
         "Continuation project selection changed during capture"
@@ -1016,6 +1046,7 @@ fn capture(
         runs_installer: server
             && matches!(runtime.loader, LoaderKind::Forge | LoaderKind::NeoForge),
         unresolved,
+        cleanup,
         options: request.clone(),
     };
     Ok(PreparedBuild {
@@ -1024,6 +1055,44 @@ fn capture(
         workspace,
         request,
         acquisition,
+    })
+}
+
+fn build_cleanup(
+    workspace: &WorkspaceSnapshot,
+    outputs: &[PortableRelPath],
+) -> Result<BuildCleanup> {
+    use empack_core::files::{FileChange, ManagedPath};
+    use std::collections::{BTreeMap, BTreeSet};
+    let obsolete: BTreeSet<_> = workspace
+        .observations()
+        .entries()
+        .iter()
+        .filter(|(_, observation)| matches!(observation, Observation::File(_)))
+        .filter_map(|(path, _)| path.as_str().strip_prefix("dist/"))
+        .map(|path| PortableRelPath::parse(path, PathSyntax::ProjectContent))
+        .collect::<Result<BTreeSet<_>, _>>()?
+        .into_iter()
+        .filter(|path| !outputs.contains(path))
+        .map(ManagedPath::Artifact)
+        .collect();
+    let observed = super::verification::observed_artifacts_for(
+        workspace.observations(),
+        obsolete.iter().cloned(),
+    )?;
+    let files = super::verification::plan_files(&observed, &BTreeMap::new(), &obsolete)?;
+    let removed_bytes = files.changes().iter().try_fold(0u64, |total, change| {
+        let FileChange::Remove { before, .. } = change else {
+            anyhow::bail!("Build cleanup may only remove artifacts");
+        };
+        total
+            .checked_add(before.bytes)
+            .context("Build cleanup size overflow")
+    })?;
+    Ok(BuildCleanup {
+        replacement: project_change::summary(&files)?,
+        files,
+        removed_bytes,
     })
 }
 
