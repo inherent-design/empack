@@ -967,6 +967,15 @@ normal local acquisition step verifies their current bytes again before acceptin
 
 ### Durable build suspension
 
+A provider lookup during approved execution can reveal missing manual content. The
+`ExecutionOutcome::NeedsInput` value retains an `ExecutionInput`: reported obligations
+plus a single-consumer continuation with the original recipe, captured project and verified
+leases. `take_continuation` transfers that state without transferring execution approval.
+The caller can use the ordinary resume or suspension APIs. Repreparation revalidates input
+and requires a fresh plan grant. Retained native acquisition reservations survive repeated
+input decisions and are reused rather than accumulated. The CLI offers the same explicit
+saved-build decision as preparation-time missing inputs; no artifact is published.
+
 `Engine::suspend_build` consumes a pending build owned by that engine. Calling it is
 an explicit host action authorizing saved state and verified-content publication;
 preview never calls it. The method revalidates captured input, publishes verified leases

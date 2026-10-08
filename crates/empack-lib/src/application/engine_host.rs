@@ -349,10 +349,7 @@ async fn execute_approved(
             ))
         }
         OperationOutcome::Completed(ExecutionOutcome::NeedsInput(requirements)) => {
-            Err(anyhow::anyhow!(
-                "{label} was not published: {} content obligations need input",
-                requirements.len()
-            ))
+            build::save_execution_input(session, engine, requirements).await
         }
         OperationOutcome::Failed(cause) => Err(anyhow::anyhow!(
             "{label} worker failed; inspect recovery before retrying: {cause}"

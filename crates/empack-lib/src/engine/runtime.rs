@@ -547,6 +547,15 @@ impl<T> RetainedOutput<T> {
         self._permit.reserved()
     }
 
+    /// Reassemble an owned value with an already retained reservation. The caller must keep
+    /// the same charged resources alive; this never creates or increases admission.
+    pub(super) fn from_parts(value: T, permit: AdmissionPermit) -> Self {
+        Self {
+            value,
+            _permit: permit,
+        }
+    }
+
     pub(super) fn into_parts(self) -> (T, AdmissionPermit) {
         (self.value, self._permit)
     }

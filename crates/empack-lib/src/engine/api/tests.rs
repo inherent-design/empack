@@ -676,7 +676,7 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     }
     let before = inventory(root.path());
     let mut server = mockito::Server::new_async().await;
-    let (engine, _) = engine(host.path().join("state"));
+    let (engine, governor) = engine(host.path().join("state"));
     let engine = engine.with_provider_catalog(
         ProviderCatalog::for_loopback_tests(&server.url(), None),
         CatalogLimits::default(),
@@ -700,6 +700,7 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     );
     let project = server
         .mock("GET", "/mods/123")
+        .expect(2)
         .with_body(
             json!({"data":{"id":123,"gameId":432,"slug":"assets","name":"Assets","classId":12}})
                 .to_string(),
@@ -722,7 +723,7 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
             _ => None,
         })
         .collect();
-    let metadata = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"assets.zip","fileLength":7,"downloadUrl":null,"hashes":hashes,"gameVersions":["1.20.1"],"dependencies":[]}}).to_string()).create_async().await;
+    let metadata = server.mock("GET", "/mods/123/files/456").expect(2).with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"assets.zip","fileLength":7,"downloadUrl":null,"hashes":hashes,"gameVersions":["1.20.1"],"dependencies":[]}}).to_string()).create_async().await;
     let prepared = ready(&engine, root.path(), request).await;
     let approval = ExecutionGrant {
         network: NetworkPermission::Allow,
@@ -743,9 +744,96 @@ async fn missing_provider_credentials_and_restricted_files_remain_explicit_input
     }
     assert_eq!(before, inventory(root.path()));
     assert!(!host.path().join("state").exists());
+    let OperationOutcome::Completed(ExecutionOutcome::NeedsInput(needs)) = &*outcome else {
+        unreachable!()
+    };
+    let pending = needs.take_continuation().unwrap();
+    assert!(needs.take_continuation().is_none());
+    assert_eq!(pending.build().unwrap().unresolved.len(), 1);
+    let Preparation::Ready(prepared) = engine
+        .resume(
+            pending,
+            super::build_input_tests::supplied("bystander", b"payload"),
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("catalog lookup remains an execution obligation")
+    };
+    assert_ne!(prepared.view().plan(), approval.plan);
+    engine.release_completed(handle.id());
+    drop(outcome);
+    let granted = ExecutionGrant {
+        network: NetworkPermission::Allow,
+        ..grant(&prepared)
+    };
+    let mut handle = engine.start(prepared.authorize(granted).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    let OperationOutcome::Completed(ExecutionOutcome::NeedsInput(needs)) = &*outcome else {
+        panic!("restricted input must remain resumable")
+    };
+    let pending = needs.take_continuation().unwrap();
+    let saved = engine.suspend_build(pending).await.unwrap();
+    assert_eq!(saved.retained_files, 1);
+    assert_eq!(saved.retained_bytes, 7);
+    assert_eq!(saved.pending_files, 1);
+    engine.release_completed(handle.id());
+    drop(outcome);
+    let SavedBuildResume::Prepared(resumed) = engine
+        .resume_saved_build(root.path().to_path_buf())
+        .await
+        .unwrap()
+    else {
+        panic!("saved execution recipe must resume")
+    };
+    let prepared = match resumed.preparation {
+        Preparation::Ready(prepared) => prepared,
+        Preparation::NeedsInput(pending) => pending.prepared,
+    };
+    let Preparation::Ready(prepared) = engine
+        .resume(
+            PreparationContinuation { prepared },
+            super::build_input_tests::supplied("primary", b"payload"),
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("all exact bytes were supplied")
+    };
+    assert!(!prepared.view().needs_network());
+    let approved = grant(&prepared);
+    let mut handle = engine.start(prepared.authorize(approved).unwrap()).unwrap();
+    let outcome = handle.wait().await;
+    match &*outcome {
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Build(
+            receipt,
+        ))) => {
+            assert_eq!(receipt.artifacts.len(), 1);
+        }
+        OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(error)) => {
+            panic!("{error:#}")
+        }
+        _ => panic!("resumed build did not publish"),
+    }
+    let mut archive =
+        zip::ZipArchive::new(fs::File::open(root.path().join("dist/client.zip")).unwrap()).unwrap();
+    for filename in [
+        ".minecraft/resourcepacks/a.zip",
+        ".minecraft/resourcepacks/copy.zip",
+        ".minecraft/resourcepacks/bystander.zip",
+    ] {
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_name(filename).unwrap(), &mut bytes).unwrap();
+        assert_eq!(bytes, b"payload");
+    }
+    assert!(engine.discard_saved_build(resumed.saved).await.unwrap());
     project.assert_async().await;
     metadata.assert_async().await;
+    engine.release_completed(handle.id());
+    drop(outcome);
+    drop(handle);
     engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
 
 #[tokio::test]

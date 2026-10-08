@@ -208,6 +208,7 @@ struct PreparedBuild {
     workspace: WorkspaceSnapshot,
     request: BuildRequest,
     acquisition: BuildAcquisitionResult,
+    acquired_permit: Option<super::resources::AdmissionPermit>,
 }
 pub enum Request {
     Clean(CleanRequest),
@@ -518,7 +519,7 @@ pub enum ExecutionOutcome {
         receipt: ExecutionReceipt,
         cause: anyhow::Error,
     },
-    NeedsInput(Vec<ContentRequirement>),
+    NeedsInput(ExecutionInput),
     FailedBeforePublication(anyhow::Error),
     InterruptedBeforePublication,
     /// A publication worker failed without returning its durable-state classification.
@@ -529,6 +530,30 @@ pub enum ExecutionOutcome {
         cause: anyhow::Error,
     },
 }
+/// Missing execution inputs retain their recipe, captured project and verified leases.
+/// Taking the continuation is single-consumer and grants no execution or durable-write authority.
+pub struct ExecutionInput {
+    requirements: Vec<ContentRequirement>,
+    continuation: std::sync::Mutex<Option<PreparationContinuation>>,
+}
+impl ExecutionInput {
+    pub fn requirements(&self) -> &[ContentRequirement] {
+        &self.requirements
+    }
+    pub fn take_continuation(&self) -> Option<PreparationContinuation> {
+        self.continuation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+    }
+}
+impl std::ops::Deref for ExecutionInput {
+    type Target = [ContentRequirement];
+    fn deref(&self) -> &Self::Target {
+        self.requirements()
+    }
+}
+
 pub struct BuildReceipt {
     pub plan: PlanId,
     pub removed_artifacts: std::collections::BTreeSet<PortableRelPath>,
@@ -781,6 +806,7 @@ impl Engine {
         let transport = self.transport.clone();
         let catalog = self.catalog.clone();
         let content_store = self.content_store.clone();
+        let owner = self.owner.clone();
         Ok(self.operations.start(move |scope| async move {
             let data = *approved.prepared.data;
             match &*data {
@@ -815,7 +841,7 @@ impl Engine {
                         PreparedKind::Build(value) => *value,
                         _ => unreachable!(),
                     });
-                    execution::run(prepared, config, transport, catalog, scope).await
+                    execution::run(prepared, config, transport, catalog, owner, scope).await
                 }
                 PreparedKind::ProjectChange(_) => {
                     let prepared = data.map(|kind| match kind {
@@ -964,6 +990,7 @@ fn capture(
         expected_intent,
     } = input;
     let mut prior_root = None;
+    let mut acquired_permit = None;
     if let Some(prior) = prior {
         ensure!(
             prior.project == project,
@@ -979,6 +1006,7 @@ fn capture(
             "Continuation project selection now refers to another root"
         );
         prior_root = Some(binding);
+        acquired_permit = prior.acquired_permit;
         for (key, file) in prior.acquisition.acquired.locked {
             ensure!(
                 supplied.locked.insert(key, file).is_none(),
@@ -1159,6 +1187,7 @@ fn capture(
         workspace,
         request,
         acquisition,
+        acquired_permit,
     })
 }
 

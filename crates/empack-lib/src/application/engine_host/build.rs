@@ -283,9 +283,10 @@ fn request(
             "client-full" => &[BuildTarget::ClientFull],
             "server-full" => &[BuildTarget::ServerFull],
             _ => {
-                return Err(
-                    empack_core::model::ModelError(format!("Unknown build target: {name}")).into(),
-                );
+                return Err(empack_core::model::ModelError(format!(
+                    "Unknown build target: {name}"
+                ))
+                .into());
             }
         };
         for target in selected {
@@ -501,3 +502,34 @@ async fn finish_build(
 
 #[cfg(test)]
 mod tests;
+
+/// Execution can discover a restricted provider file after the initial approval. Retain it
+/// only through the same explicit pending-build decision used during preparation.
+pub(super) async fn save_execution_input(
+    session: &dyn Session,
+    engine: &Engine,
+    input: &crate::engine::api::ExecutionInput,
+) -> Result<()> {
+    for need in input.requirements() {
+        session.display().status().warning(&format!(
+            "Missing content {}: {:?}",
+            input_selector(&need.key),
+            need.kind
+        ));
+    }
+    if !approve(session, "Save pending build")? {
+        anyhow::bail!("Build was not published; missing-input recipe was not saved");
+    }
+    let pending = input
+        .take_continuation()
+        .context("Build continuation was already taken")?;
+    let saved = cancellable(session, engine.suspend_build(pending)).await?;
+    session.display().status().info(&format!(
+        "Saved pending build with {} verified files; resume with build --continue",
+        saved.retained_files
+    ));
+    anyhow::bail!(
+        "Build was not published: {} content obligations need input; continuation was saved",
+        input.len()
+    )
+}
