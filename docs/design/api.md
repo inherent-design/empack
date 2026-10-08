@@ -742,7 +742,10 @@ number or ID; CurseForge pages may select a file ID. Conflicting selections fail
 Without an explicit version, release policy and publication timestamps determine the
 choice across complete bounded pages. Truncated, overlapping or inconsistent pages
 cannot return an earlier partial result. Server-pack files are excluded from client
-modpack import sources.
+modpack import sources. Automatic selection excludes unsupported archive formats;
+an explicitly selected unsupported version fails. Unselected Modrinth attachments do
+not supply acquisition evidence for the chosen primary archive. Ambiguous primary roles
+and malformed assertions on the selected archive still fail.
 
 File identity, digest and download-origin validation are shared with dependency
 resolution. Modrinth's primary-file/first-file rule follows its
@@ -782,6 +785,9 @@ workflows remain available through the current dispatcher in the meantime.
 callback over `VerifiedImportContent`. Sources are provider modpack selections, explicit
 native paths or download alternatives. File source variants carry original digest and size assertions; selecting a
 local file does not downgrade a strong-source policy to an accepted observation.
+A provider source can include an explicit `supplied_archive` native path. Its bytes must
+satisfy that exact provider archive's original digest and size, including when no download
+URL is available. This association is separate from supplied files inside the archive.
 Native paths resolve from the invocation;
 destination paths resolve from the selected workdir. Remote acquisition enforces the
 compressed archive limit while streaming, before parsing or project preparation.

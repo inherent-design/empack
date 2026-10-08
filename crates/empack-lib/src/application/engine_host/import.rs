@@ -22,6 +22,8 @@ pub enum ImportSource {
     Provider {
         selector: ModpackSelector,
         releases: ReleasePolicy,
+        /// Explicit manual archive selection, verified against this provider's exact assertions.
+        supplied_archive: Option<PathBuf>,
     },
     Local {
         path: PathBuf,
@@ -101,12 +103,25 @@ async fn import_with_services(
             path: absolute(&invocation, &path),
             expected,
         },
+        ImportSource::Provider {
+            selector,
+            releases,
+            supplied_archive,
+        } => ImportSource::Provider {
+            selector,
+            releases,
+            supplied_archive: supplied_archive.map(|path| absolute(&invocation, &path)),
+        },
         value => value,
     };
     let evidence = request.evidence;
     let content = scoped(session, shared.clone(), move |mut scope| async move {
         let archive = match source {
-            ImportSource::Provider { selector, releases } => {
+            ImportSource::Provider {
+                selector,
+                releases,
+                supplied_archive,
+            } => {
                 let selected = catalog
                     .resolve_modpack_archive(
                         &mut scope,
@@ -118,28 +133,43 @@ async fn import_with_services(
                         },
                     )
                     .await?;
-                ensure!(
-                    !selected.file().alternatives.is_empty(),
-                    "Modpack archive {:?} requires explicit manual acquisition",
-                    selected.pin()
-                );
-                transport
-                    .acquire(
+                if let Some(source) = supplied_archive {
+                    acquire_local_file(
                         &mut scope,
-                        DownloadRequest {
-                            alternatives: NonEmpty::new(selected.file().alternatives.clone())?,
+                        LocalFileRequest {
+                            source,
                             expected: selected.file().expected.clone(),
-                            limits: TransferLimits {
-                                file_bytes: inspection.archive.compressed_bytes,
-                                transfer_bytes: inspection.archive.compressed_bytes,
-                                deadline,
-                                ..Default::default()
-                            },
+                            maximum: inspection.archive.compressed_bytes,
                             evidence,
                             initial: InitialObservation::RequireEvidence,
                         },
                     )
                     .await?
+                    .content
+                } else {
+                    ensure!(
+                        !selected.file().alternatives.is_empty(),
+                        "Modpack archive {:?} requires explicit manual acquisition",
+                        selected.pin()
+                    );
+                    transport
+                        .acquire(
+                            &mut scope,
+                            DownloadRequest {
+                                alternatives: NonEmpty::new(selected.file().alternatives.clone())?,
+                                expected: selected.file().expected.clone(),
+                                limits: TransferLimits {
+                                    file_bytes: inspection.archive.compressed_bytes,
+                                    transfer_bytes: inspection.archive.compressed_bytes,
+                                    deadline,
+                                    ..Default::default()
+                                },
+                                evidence,
+                                initial: InitialObservation::RequireEvidence,
+                            },
+                        )
+                        .await?
+                }
             }
             ImportSource::Local { path, expected } => {
                 acquire_local_file(

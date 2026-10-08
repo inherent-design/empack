@@ -1371,3 +1371,20 @@ refinements, all 15 catalog/host tests pass. The live Fabulously Optimized Modri
 probe passes using default limits; it resolves metadata and does not download the archive.
 Final all-feature Clippy and Windows cross-compilation pass. The latest complete suite
 remains the 1,929 tests and eleven doctests at `43a8a3c`.
+
+## Selected archive availability and manual input
+
+Greptile 114's unselected-file and unsupported-format cases both reproduced. Modrinth
+archive selection now validates acquisition evidence for the selected primary role;
+an unrelated attachment cannot block it. Automatic selection skips unsupported archive
+formats while exact unsupported selections fail. Ownership, primary-role ambiguity and
+selected-file digest checks remain mandatory.
+
+Provider imports also accept an explicit native `supplied_archive`. Its bytes are checked
+against the exact catalog digest and size before parsing. Native regressions cover a
+restricted CurseForge archive, missing/wrong supplied bytes, read-only preview and successful
+replacement. This association is separate from manual files inside the archive.
+
+The combined review corrections and direct-file host pass all 145 affected tests and
+all-feature Clippy. Two parallel tests reported inherited output pipes; isolated evidence
+is recorded with the direct-file host below. Final combined-suite validation remains open.

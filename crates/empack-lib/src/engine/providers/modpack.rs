@@ -550,28 +550,23 @@ fn parse_page(
             continue;
         }
         let file = match project {
-            ProviderProjectId::Modrinth(_) => {
-                let files = modrinth::archive_files(&pin, &serde_json::to_vec(&value)?)?;
-                let mut files = files.into_vec();
-                let index = files.iter().position(|file| file.primary).unwrap_or(0);
-                let file = files.remove(index);
-                ensure!(
-                    file.filename.to_ascii_lowercase().ends_with(".mrpack"),
-                    CatalogError::UnsupportedKind
-                );
-                file
-            }
+            ProviderProjectId::Modrinth(_) => modrinth::archive_file(&pin, &value)?,
             ProviderProjectId::CurseForge(_) => {
-                let file = curseforge::archive_file(
-                    &pin,
-                    &serde_json::to_vec(&serde_json::json!({"data":value}))?,
-                )?;
-                ensure!(
-                    file.filename.to_ascii_lowercase().ends_with(".zip"),
-                    CatalogError::UnsupportedKind
-                );
-                file
+                let name = text(&value, "fileName")?;
+                filename(name)?;
+                if name.to_ascii_lowercase().ends_with(".zip") {
+                    Some(curseforge::archive_file(
+                        &pin,
+                        &serde_json::to_vec(&serde_json::json!({"data":value}))?,
+                    )?)
+                } else {
+                    None
+                }
             }
+        };
+        let Some(file) = file else {
+            ensure!(version.is_none(), CatalogError::UnsupportedKind);
+            continue;
         };
         let rank = if version.is_none() && releases == ReleasePolicy::PreferStable {
             channel

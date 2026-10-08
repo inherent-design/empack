@@ -192,6 +192,41 @@ fn version_files(input: Vec<File>) -> Result<NonEmpty<ProviderFile>> {
     }
     Ok(NonEmpty::new(files)?)
 }
-pub(super) fn archive_files(pin: &ResolvedPin, bytes: &[u8]) -> Result<NonEmpty<ProviderFile>> {
-    version_files(checked_version(pin, bytes)?.files)
+/// Select the archive role before validating payload assertions belonging to that role.
+/// Unselected notes/signatures are not dependencies of the chosen archive.
+pub(super) fn archive_file(
+    pin: &ResolvedPin,
+    value: &serde_json::Value,
+) -> Result<Option<ProviderFile>> {
+    let files = value
+        .get("files")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(CatalogError::InvalidRecord)?;
+    ensure!(!files.is_empty(), CatalogError::InvalidRecord);
+    let mut primary = None;
+    for (index, file) in files.iter().enumerate() {
+        let selected = file
+            .get("primary")
+            .and_then(serde_json::Value::as_bool)
+            .ok_or(CatalogError::InvalidRecord)?;
+        if selected {
+            ensure!(
+                primary.replace(index).is_none(),
+                CatalogError::InvalidRecord
+            );
+        }
+    }
+    let selected = &files[primary.unwrap_or(0)];
+    let name = selected
+        .get("filename")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(CatalogError::InvalidRecord)?;
+    filename(name)?;
+    if !name.to_ascii_lowercase().ends_with(".mrpack") {
+        return Ok(None);
+    }
+    let mut selected_version = value.clone();
+    selected_version["files"] = serde_json::json!([selected]);
+    let version = checked_version(pin, &serde_json::to_vec(&selected_version)?)?;
+    Ok(Some(version_files(version.files)?.into_vec().remove(0)))
 }

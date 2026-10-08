@@ -455,3 +455,78 @@ async fn incomplete_or_inconsistent_archive_pages_cannot_publish_an_earlier_choi
         );
     }
 }
+
+#[test]
+fn selected_archive_ignores_unusable_unselected_companion_evidence() {
+    let mut value = mr("Old00001", "release", "2025-01-01T00:00:00Z");
+    value["files"].as_array_mut().unwrap().push(json!({"filename":"notes.txt","primary":false,"size":1,"url":null,"hashes":{"sha512":"unusable"}}));
+    let project = ProviderProjectId::Modrinth(ModrinthProjectId::parse("Pack0001").unwrap());
+    let page = parse_page(
+        &project,
+        None,
+        ReleasePolicy::Any,
+        &serde_json::to_vec(&vec![value]).unwrap(),
+        0,
+        10,
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(page.candidates.len(), 1);
+    assert_eq!(page.candidates[0].file.filename, "pack.mrpack");
+}
+#[test]
+fn latest_archive_selection_skips_unsupported_formats_but_explicit_selection_fails() {
+    for provider in [ProviderKind::Modrinth, ProviderKind::CurseForge] {
+        let (project, good, mut unsupported) = match provider {
+            ProviderKind::Modrinth => (
+                ProviderProjectId::Modrinth(ModrinthProjectId::parse("Pack0001").unwrap()),
+                mr("Old00001", "release", "2025-01-01T00:00:00Z"),
+                mr("New00001", "release", "2026-01-01T00:00:00Z"),
+            ),
+            ProviderKind::CurseForge => (
+                ProviderProjectId::CurseForge(CurseForgeProjectId::parse("1001").unwrap()),
+                cf(2001, 1, "2025-01-01T00:00:00Z"),
+                cf(2002, 1, "2026-01-01T00:00:00Z"),
+            ),
+        };
+        if provider == ProviderKind::Modrinth {
+            unsupported["files"][0]["filename"] = json!("old-format.zip");
+        } else {
+            unsupported["fileName"] = json!("old-format.rar");
+        }
+        let listing = if provider == ProviderKind::Modrinth {
+            json!([unsupported.clone(), good])
+        } else {
+            json!({"data":[unsupported.clone(),good],"pagination":{"index":0,"pageSize":50,"resultCount":2,"totalCount":2}})
+        };
+        let page = parse_page(
+            &project,
+            None,
+            ReleasePolicy::Any,
+            &serde_json::to_vec(&listing).unwrap(),
+            0,
+            10,
+            &Default::default(),
+        )
+        .unwrap();
+        assert_eq!(page.candidates.len(), 1);
+        assert_eq!(page.count, 2);
+        let (pin, exact) = if provider == ProviderKind::Modrinth {
+            ("New00001", unsupported)
+        } else {
+            ("2002", json!({"data":unsupported}))
+        };
+        assert!(
+            parse_page(
+                &project,
+                Some(pin),
+                ReleasePolicy::Any,
+                &serde_json::to_vec(&exact).unwrap(),
+                0,
+                10,
+                &Default::default()
+            )
+            .is_err()
+        );
+    }
+}
