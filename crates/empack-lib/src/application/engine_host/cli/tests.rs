@@ -383,3 +383,156 @@ async fn identified_cli_file_preserves_supplied_bytes_and_rejects_unverified_bat
         );
     }
 }
+
+#[tokio::test]
+async fn provider_adoption_uses_observed_pin_and_verifies_bytes_without_upgrading_or_rewriting_them()
+ {
+    use empack_core::{digest::ExpectedDigest, model::*};
+    let root = tempfile::tempdir().unwrap();
+    fixture(root.path()).await;
+    let mut server = mockito::Server::new_async().await;
+    for id in ["renderer", "Root0001"] {
+        server.mock("GET", format!("/project/{id}").as_str())
+            .with_body(json!({"id":"Root0001","slug":"renderer","title":"Renderer","project_type":"mod","loaders":["fabric"]}).to_string())
+            .create_async().await;
+    }
+    for (pin, bytes) in [("RootVer1", b"payload"), ("RootVer2", b"updated")] {
+        server.mock("GET", format!("/version/{pin}").as_str()).with_body(json!({
+            "id":pin,"project_id":"Root0001","game_versions":["1.21.1"],"loaders":["fabric"],
+            "files":[{"filename":"renderer.jar","primary":true,"size":7,"hashes":{"sha512":ExpectedDigest::Sha512(Sha512::digest(bytes).into()).hex()},"url":"https://example.invalid/renderer.jar"}],
+            "dependencies":[],"date_published":"2026-01-01T00:00:00Z","status":"listed","version_type":"release"
+        }).to_string()).create_async().await;
+    }
+    let latest = server
+        .mock("GET", "/project/Root0001/version")
+        .match_query(mockito::Matcher::Any)
+        .expect(0)
+        .create_async()
+        .await;
+    add_with_catalog(
+        &session(root.path(), false),
+        options("renderer"),
+        ProviderCatalog::for_loopback_tests(&server.url(), None),
+    )
+    .await
+    .unwrap();
+    let recorded = project(root.path());
+    let key = recorded.intent().roots.keys().next().unwrap().clone();
+    let mut intent = recorded.intent().clone();
+    intent.roots.get_mut(&key).unwrap().version = VersionIntent::FollowCompatible;
+    fs::write(
+        root.path().join("project/empack.yml"),
+        DocumentCodec.encode_intent(&intent).unwrap(),
+    )
+    .unwrap();
+    synchronize(&session(root.path(), false), false)
+        .await
+        .unwrap();
+    // Reference-only addition does not install packwiz metadata. Simulate an external
+    // tool selecting a different exact version and materializing its payload.
+    fs::create_dir_all(root.path().join("project/pack/mods")).unwrap();
+    let metadata = root.path().join("project/pack/mods/renderer.pw.toml");
+    let wire = format!(
+        "name='Renderer'\nfilename='renderer.jar'\nside='both'\n[download]\nurl='https://example.invalid/renderer.jar'\nhash-format='sha512'\nhash='{}'\n[update.modrinth]\nmod-id='Root0001'\nversion='RootVer2'\n",
+        ExpectedDigest::Sha512(Sha512::digest(b"updated").into()).hex()
+    );
+    fs::write(&metadata, wire).unwrap();
+    let installed = root.path().join("project/pack/mods/renderer.jar");
+    fs::write(&installed, b"corrupt").unwrap();
+    let services = || dependencies::AdditionServices {
+        catalog: ProviderCatalog::for_loopback_tests(&server.url(), None),
+        transport: HttpAcquisition::for_loopback_tests(),
+        files: DirectFileLimits::default(),
+    };
+    let before = super::super::tests::snapshot(root.path());
+    assert!(
+        update::adopt_with_services(
+            &session(root.path(), false),
+            vec![key.as_str().into()],
+            services()
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    fs::write(&installed, b"updated").unwrap();
+    // A selected installation cannot override an authored exact pin.
+    let intent_path = root.path().join("project/empack.yml");
+    let lock_path = root.path().join("project/empack.lock");
+    let intent_bytes = fs::read(&intent_path).unwrap();
+    let lock_bytes = fs::read(&lock_path).unwrap();
+    fs::write(
+        &intent_path,
+        DocumentCodec.encode_intent(recorded.intent()).unwrap(),
+    )
+    .unwrap();
+    fs::write(&lock_path, DocumentCodec.encode_lock(&recorded).unwrap()).unwrap();
+    let pinned = super::super::tests::snapshot(root.path());
+    assert!(
+        update::adopt_with_services(
+            &session(root.path(), false),
+            vec![key.as_str().into()],
+            services()
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(super::super::tests::snapshot(root.path()), pinned);
+    fs::write(&intent_path, intent_bytes).unwrap();
+    fs::write(&lock_path, lock_bytes).unwrap();
+    let metadata_bytes = fs::read_to_string(&metadata).unwrap();
+    fs::write(&metadata, metadata_bytes.replace("Root0001", "Other001")).unwrap();
+    let foreign = super::super::tests::snapshot(root.path());
+    let error = update::adopt_with_services(
+        &session(root.path(), false),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("another provider identity"));
+    assert_eq!(super::super::tests::snapshot(root.path()), foreign);
+    fs::write(&metadata, metadata_bytes).unwrap();
+    let before = super::super::tests::snapshot(root.path());
+    update::adopt_with_services(
+        &session(root.path(), true),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    update::adopt_with_services(
+        &session(root.path(), false),
+        vec![key.as_str().into()],
+        services(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(fs::read(&installed).unwrap(), b"updated");
+    assert_eq!(
+        fs::read(&metadata).unwrap(),
+        before[metadata.strip_prefix(root.path()).unwrap()]
+    );
+    let adopted = project(root.path());
+    assert_eq!(adopted.intent(), &intent);
+    assert_eq!(
+        adopted.lock().dependencies[&key]
+            .selected
+            .as_ref()
+            .unwrap()
+            .selection,
+        PinSelector::ModrinthVersion(ModrinthVersionId::parse("RootVer2").unwrap())
+    );
+    let before = super::super::tests::snapshot(&root.path().join("project"));
+    for _ in 0..2 {
+        synchronize(&session(root.path(), false), false)
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        super::super::tests::snapshot(&root.path().join("project")),
+        before
+    );
+    latest.assert_async().await;
+}

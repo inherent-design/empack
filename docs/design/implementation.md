@@ -8,8 +8,8 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: identification, worlds, complete adoption
-frontends, fresh resolution, browser assistance and remaining library retirement
+new route, not full feature completion: worlds, complete adoption
+frontends, companion-file choices, browser assistance and remaining library retirement
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
@@ -32,7 +32,7 @@ a passing review and line coverage do not change that state by themselves.
 | Import local/remote packs | **CLI wired:** source classification, verified import and explicit conversion choices | Restricted-input continuation; live provider/archive matrix |
 | Add | **CLI wired:** canonical provider selections, deliberate search and direct file publication | World members and full companion-file choices; explicit provider identification is wired |
 | Update | **CLI wired:** exact logical selection, canonical provider refresh and declared direct sources | Broaden live update/companion-role tests; preserve changed-file refusal |
-| Adopt observed content | **CLI wired for tracked local files:** verified document-only acceptance of changed bytes | Provider/URL observation selection and new untracked groups |
+| Adopt observed content | **CLI wired for tracked local files and common-layer providers:** verified document-only acceptance of observed bytes and exact pins | URL/side-layer evidence, missing-lock selection and new untracked groups |
 | Remove | **CLI wired:** shared exact ownership planner | Broaden executable alias/title/stem tests; explicit unknown-evidence policy and demotion are exposed |
 | Sync | **CLI wired:** recorded selections, fresh resolution for missing/unsatisfied roots and explicit remote materialization | Broaden runtime, search and multi-file placement matrices; manual acquisition continuation |
 | Build / continue | **CLI wired:** native build and saved recipe continuation | Browser assistance, execution-time missing-input retention, live target/runtime matrix |
@@ -154,6 +154,7 @@ modules remains open.
 | Native exit classification | 15 affected host/classifier tests, 12 executable exit tests and all-feature Clippy passed | Reproduced incorrect transfer status; removed v0.4 classifiers and substring heuristics; native download and invalid-target diagnostics retain typed status |
 | Remote synchronization materialization | 41 affected sync/native CLI/smoke cases and all-feature Clippy passed; rebuilt executable passed all 16 offline smoke cases | Bad remote bytes publish nothing; pins and lock bytes stay unchanged; previews do not download; supplied references cannot override local sources |
 | Source lifetime correction | 87 affected add/remove/sync/verification cases and all-feature Clippy passed | Reproduced source deletion before fixing it; moved/removed placements retain shared sources, conflicting replacement fails before publication |
+| Observed provider adoption | 73 affected cases plus a root-role regression passed; all-feature Clippy passed | Reproduced and fixed accidental pinning; negative identity/pin/byte checks and two unchanged syncs; macOS test-linker unwind-size warning |
 | `3060149` combined candidate | `mise run test`: 1,646 tests and eleven doctests passed; 99 opt-in cases skipped | No inherited-pipe warnings; strict live matrix and final coverage remain open; obsolete graph/mock tests account for the lower count |
 | `f30e6e1` combined candidate | 1,677 default tests and eleven doctests passed; no inherited-pipe warnings | Strict E2E baseline: 25 passed, 50 failed; failures include stale v0.4 fixtures and known workflow gaps |
 | Fresh synchronization frontend | 64 affected resolver/sync/CLI/smoke cases passed, including 16 offline executable smoke tests | Missing locks, exact pin changes, retained assertions, source confinement, preview and failed-batch preservation; remote materialization remains open |

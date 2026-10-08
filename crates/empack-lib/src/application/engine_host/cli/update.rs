@@ -9,24 +9,114 @@ use empack_core::model::{
 pub async fn update(session: &dyn Session, keys: Vec<String>) -> Result<()> {
     update_with_services(session, keys, dependencies::configured_services(session)?).await
 }
-/// Accept changed tracked local bytes after a document-only preview. Provider-owned bytes
-/// remain constrained by their original assertions; provider selection drift needs catalog evidence.
+/// Adopt selected installed content. Provider pins come from the observed backend record,
+/// not from a latest-version query; final native preparation verifies the observed bytes.
 pub async fn adopt(session: &dyn Session, keys: Vec<String>) -> Result<()> {
-    let current = current(session).await?;
-    let (_, project) = project_path(session)?;
-    let inputs = selections(&current, &project, keys)?;
+    adopt_with_services(session, keys, dependencies::configured_services(session)?).await
+}
+pub(super) async fn adopt_with_services(
+    session: &dyn Session,
+    keys: Vec<String>,
+    services: dependencies::AdditionServices,
+) -> Result<()> {
+    let (invocation, project) = project_path(session)?;
+    let state = state_root(session.config().app_config(), &invocation)?;
+    let selected = project.clone();
+    let parsed = NonEmpty::new(
+        keys.iter()
+            .map(|key| DependencyKey::parse(key))
+            .collect::<std::result::Result<Vec<_>, _>>()?,
+    )?;
+    let captured = initialize::discover(session, move |mut scope| async move {
+        let worker = scope.spawn_blocking(
+            ResourceRequest {
+                jobs: 1,
+                memory_bytes: 64 << 20,
+                open_files: 16,
+                ..Default::default()
+            },
+            ResourceRequest {
+                memory_bytes: 64 << 20,
+                ..Default::default()
+            },
+            move |cancel| {
+                let snapshot = ProjectReader::new(RecoveryReader::new(state))
+                    .capture_observed_dependencies(
+                        &selected,
+                        &parsed,
+                        SnapshotLimits::default(),
+                        &cancel,
+                    )?;
+                let workspace = snapshot;
+                Ok::<_, anyhow::Error>((
+                    workspace.require_resolved()?,
+                    workspace.backend_files(&cancel)?,
+                ))
+            },
+        )?;
+        scope.accept(worker.wait().await?)?.transpose()
+    })
+    .await?;
+    let (current, records) = &*captured;
+    let mut inputs = selections(current, &project, keys)?.into_vec();
     ensure!(
-        inputs.as_slice().iter().all(|input| matches!(
+        !inputs.iter().any(|input| matches!(
             input,
             AddHostInput::File(DirectFileInput {
-                source: DirectFileSource::Local(_),
+                source: DirectFileSource::Download { .. },
                 ..
             })
         )),
-        "Observed adoption requires tracked local files; provider or URL selection changes need explicit verified evidence"
+        "URL adoption requires explicit verified source declarations"
     );
-    dependencies::adopt_with_services(session, inputs, dependencies::configured_services(session)?)
-        .await
+    for input in &mut inputs {
+        let AddHostInput::Provider(input) = input else {
+            continue;
+        };
+        let key = input
+            .key
+            .as_ref()
+            .context("Adoption requires an exact logical key")?;
+        let dependency = &current.lock().dependencies[key];
+        let ResolvedIdentity::Provider(identity) = &dependency.identity else {
+            unreachable!("provider input selected above")
+        };
+        let mut pin = None;
+        for placement in dependency
+            .files
+            .as_slice()
+            .iter()
+            .flat_map(|file| file.placements.as_slice())
+        {
+            ensure!(
+                placement.layer == empack_core::model::ContentLayer::Common,
+                "Provider adoption requires explicit evidence for side-layer placements"
+            );
+            let record = records
+                .iter()
+                .find(|record| record.destination == placement.destination)
+                .context("Provider adoption requires metadata at every selected destination")?;
+            let observed = record
+                .provider
+                .as_ref()
+                .context("Observed metadata has no provider identity")?;
+            ensure!(
+                &observed.project == identity,
+                "Observed metadata names another provider identity"
+            );
+            let selected = observed
+                .selection
+                .as_ref()
+                .context("Observed metadata has no exact provider pin")?;
+            ensure!(
+                pin.as_ref().is_none_or(|pin| pin == selected),
+                "Observed files disagree about their provider selection"
+            );
+            pin = Some(selected.clone());
+        }
+        input.pin = pin;
+    }
+    dependencies::adopt_with_services(session, NonEmpty::new(inputs)?, services).await
 }
 pub(super) async fn update_with_services(
     session: &dyn Session,

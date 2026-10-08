@@ -113,3 +113,58 @@ fn update_cannot_relax_explicit_pins_or_add_uninstalled_requested_identities() {
         Some(empack_core::addition::AdditionError::UpdateMissing(_))
     ));
 }
+
+#[test]
+fn adoption_preserves_existing_root_roles_and_adds_only_new_roots() {
+    let current = fixture(
+        &[
+            ("root", "Project1", "Version1"),
+            ("dependency", "Project2", "Version1"),
+        ],
+        &["root"],
+        &[("root", "dependency")],
+        true,
+    );
+    let requested = fixture(
+        &[
+            ("root", "Project1", "Version1"),
+            ("dependency", "Project2", "Version2"),
+            ("new", "Project3", "Version1"),
+        ],
+        &["root", "dependency", "new"],
+        &[("root", "dependency")],
+        true,
+    );
+    let source = DocumentCodec
+        .decode_intent(
+            &DocumentCodec.encode_intent(current.intent()).unwrap(),
+            "intent",
+        )
+        .unwrap();
+    let lock = DocumentCodec
+        .decode_prior_lock(&DocumentCodec.encode_lock(&current).unwrap(), "lock")
+        .unwrap();
+    let adopted = AdditionCandidate::prepare_adoption(
+        &source,
+        Some(&lock),
+        &AdditionGroup::from_resolved(&requested).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(adopted.project().intent().roots.len(), 2);
+    assert_eq!(
+        adopted.project().intent().roots[&key("root")],
+        current.intent().roots[&key("root")]
+    );
+    assert!(
+        !adopted
+            .project()
+            .intent()
+            .roots
+            .contains_key(&key("dependency"))
+    );
+    assert_eq!(
+        adopted.project().lock().dependencies[&key("dependency")].selected,
+        requested.lock().dependencies[&key("dependency")].selected
+    );
+    assert!(adopted.project().intent().roots.contains_key(&key("new")));
+}

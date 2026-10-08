@@ -58,7 +58,10 @@ impl AdditionCandidate {
         group: &AdditionGroup,
     ) -> Result<Self> {
         if let Some(lock) = lock {
-            return Self::prepare(source, lock, group);
+            return Self::from_plan(
+                source,
+                AdditionPlan::prepare_adoption(&lock.bind(source)?, group)?,
+            );
         }
         Self::from_plan(
             source,

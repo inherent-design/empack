@@ -751,6 +751,45 @@ impl ProjectReader {
     ) -> Result<MutationSnapshot> {
         self.capture_addition_mode(selected, group, limits, AdditionCapture::Add, cancel)
     }
+    /// Observe selected installed placements and their backend records without comparing them
+    /// with old byte assertions. This nominates adoption inputs; it grants no write authority.
+    pub fn capture_observed_dependencies(
+        &self,
+        selected: &Path,
+        keys: &empack_core::model::NonEmpty<empack_core::model::DependencyKey>,
+        limits: SnapshotLimits,
+        cancel: &Cancellation,
+    ) -> Result<WorkspaceSnapshot> {
+        let pack = PortableRelPath::parse("pack", PathSyntax::ProjectContent)?;
+        let metadata = super::source::CaptureFilter::selected_mutation(&[])?;
+        let documents =
+            self.capture_selected(selected, &[pack], limits, Some(&metadata), cancel)?;
+        let current = documents.require_resolved()?;
+        let mut required = Vec::new();
+        for key in keys.as_slice() {
+            let dependency =
+                current.lock().dependencies.get(key).with_context(|| {
+                    format!("Unknown installed dependency key: {}", key.as_str())
+                })?;
+            for placement in dependency
+                .files
+                .as_slice()
+                .iter()
+                .flat_map(|file| file.placements.as_slice())
+            {
+                required.push(super::layout::ProjectLayout::path(
+                    &empack_core::files::ManagedPath::Content {
+                        layer: placement.layer,
+                        path: placement.destination.relative().clone(),
+                    },
+                )?);
+            }
+        }
+        Ok(self
+            .capture_dependency_paths(selected, documents, required, limits, cancel)?
+            .into_workspace())
+    }
+
     /// Adoption may establish the first lock, after verifying every proposed payload.
     pub fn capture_adoption(
         &self,

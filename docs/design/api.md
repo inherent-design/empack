@@ -394,9 +394,13 @@ The CLI exposes `update KEY...` for exact installed logical keys. It derives can
 provider identity and authored pins from the captured project, retains explicit placements,
 and refreshes direct content from its declared source. Unknown or repeated keys fail before
 resolution. It does not authorize replacing externally changed installed bytes.
-`adopt KEY...` explicitly accepts changed tracked local bytes through the document-only
-adoption workflow. Provider/URL observation selection and untracked-file adoption still
-need their frontend evidence and placement choices.
+`adopt KEY...` accepts verified changes to tracked local files or common-layer provider
+installations through document-only publication. Provider selection comes from the exact
+observed metadata pin, never a latest-version query. Each selected destination must agree
+about provider identity and pin; the catalog supplies the original byte assertions and
+required closure. Native preparation verifies installed bytes and backend metadata before
+approval. Existing authored pins, placements and root roles remain binding. URL observation,
+side-layer provider evidence and untracked-file adoption still need frontend choices.
 
 `AdoptObservedRequest` supplies a resolved group describing selected files already
 present in a project. Preparation verifies their original digest, size and
@@ -409,7 +413,7 @@ only intent, lock and affected index/pack documents may change. Repeated adoptio
 a no-op. A missing lock can be created when the selected group resolves all retained
 authoring roots and runtime requirements. Missing-lock adoption verifies every
 selected placement; an unresolved retained root or a newly occupied lock destination
-blocks publication. Existing authored roots remain unchanged: their source identity,
+blocks publication. Existing authored roots and transitive roles remain unchanged: their source identity,
 pin and placement constrain the proposed resolution. Only newly adopted root keys
 are inserted. A present stale/invalid lock is not treated as absence. CLI
 selection remains integration work.

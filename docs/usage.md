@@ -86,3 +86,10 @@ The executable maps typed failures to status codes: success `0`, general failure
 content `4`, and interruption `130`. Wrapping an error with operation context does
 not change its status. Incidental words in a diagnostic or imported metadata do not
 select an exit code.
+
+`empack adopt KEY...` accepts installed changes for tracked local files and provider files
+with common-layer metadata. It verifies bytes before changing the lock and leaves payloads
+untouched. Provider metadata must name the same project and an exact version; adoption
+does not choose the newest release or override an authored pin. Use `--dry-run` to inspect
+the proposed document changes. URL, side-layer and untracked adoption need further frontend
+support.

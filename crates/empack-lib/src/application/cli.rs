@@ -267,9 +267,9 @@ pub enum Commands {
         dependencies: Vec<String>,
     },
 
-    /// Accept reviewed changes to tracked local bytes without rewriting payloads
+    /// Accept verified installed changes without rewriting payloads
     Adopt {
-        /// Exact logical keys of tracked local files
+        /// Exact logical keys of installed provider or tracked local content
         #[arg(required = true)]
         dependencies: Vec<String>,
     },

@@ -317,6 +317,28 @@ impl AdditionPlan {
         plan.incomplete = incomplete;
         Ok(plan)
     }
+    /// Accept observed selections without changing existing authored constraints or promoting
+    /// retained transitive records. Only previously unknown selected roots enter intent.
+    pub fn prepare_adoption(
+        current: &ResolvedProject,
+        group: &AdditionGroup,
+    ) -> Result<Self, AdditionError> {
+        let mut plan = Self::prepare(current, group)?;
+        plan.intent.roots = current.intent().roots.clone();
+        for (key, root) in &group.roots {
+            let bound = &plan.bindings[key];
+            if !current.lock().dependencies.contains_key(bound) {
+                plan.intent.roots.insert(bound.clone(), root.clone());
+            }
+        }
+        ResolvedProject::validate(
+            plan.intent.clone(),
+            plan.lock.clone(),
+            plan.lock.intent_revision,
+        )
+        .map_err(AdditionError::InvalidProject)?;
+        Ok(plan)
+    }
     /// Prior exact identities and placements explicitly selected for replacement.
     pub fn replaced(&self) -> &BTreeMap<DependencyKey, LockedDependency> {
         &self.replaced
