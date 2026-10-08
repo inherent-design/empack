@@ -79,6 +79,29 @@ pub(super) fn probe(
         _lock: lock,
     }))
 }
+/// Inspect an opaque record for explicit deletion. Parsing is deliberately unnecessary:
+/// malformed or stale recipes remain removable without becoming executable authority.
+pub(super) fn observe(
+    state: &Path,
+    project: &Path,
+    cancel: &Cancellation,
+) -> Result<Option<(String, [u8; 32])>> {
+    let Some(mut selected) = probe(state, project, cancel)? else {
+        return Ok(None);
+    };
+    let (content, bytes) = crate::engine::io::copy_bounded(
+        &mut selected.file,
+        &mut io::sink(),
+        selected.bytes,
+        cancel,
+    )?;
+    ensure!(
+        bytes == selected.bytes,
+        "Pending build record changed during inspection"
+    );
+    selected.root.check_binding()?;
+    Ok(Some((selected.name, content)))
+}
 pub(super) fn read(selected: Selected, cancel: &Cancellation) -> Result<Option<Loaded>> {
     let Selected {
         bytes: maximum,

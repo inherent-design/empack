@@ -93,3 +93,8 @@ untouched. Provider metadata must name the same project and an exact version; ad
 does not choose the newest release or override an authored pin. Use `--dry-run` to inspect
 the proposed document changes. URL, side-layer and untracked adoption need further frontend
 support.
+
+Use `empack clean continuation --dry-run` to inspect saved-build cleanup, then
+`empack clean continuation --yes` to discard that project's recipe. This works for
+stale or malformed saved recipes and leaves content-cache objects and recovery journals
+in place. `clean all` keeps pending recipes; request `continuation` explicitly.

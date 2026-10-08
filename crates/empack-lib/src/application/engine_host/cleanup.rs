@@ -1,7 +1,7 @@
 //! Project artifact cleanup and disposable content eviction have separate receipts.
 use super::*;
 use crate::engine::{
-    api::{CacheCleanRequest, CleanRequest},
+    api::{CacheCleanRequest, CleanRequest, SavedBuildRecord},
     content::store::{ContentStoreLimits, FileContentStore},
 };
 
@@ -9,23 +9,28 @@ use crate::engine::{
 struct Selection {
     artifacts: bool,
     cache: bool,
+    continuation: bool,
 }
 impl Selection {
     fn parse(targets: &[String]) -> Result<Self> {
         let mut value = Self {
             artifacts: targets.is_empty(),
             cache: false,
+            continuation: false,
         };
         for target in targets {
             match target.as_str() {
                 "builds" => value.artifacts = true,
                 "cache" => value.cache = true,
+                "continuation" => value.continuation = true,
                 "all" => {
                     value.artifacts = true;
                     value.cache = true;
                 }
                 _ => {
-                    anyhow::bail!("Unknown cleanup target {target:?}; choose builds, cache or all")
+                    anyhow::bail!(
+                        "Unknown cleanup target {target:?}; choose builds, cache, continuation or all"
+                    )
                 }
             }
         }
@@ -76,7 +81,7 @@ async fn clean_selected(
         let mut plans = Vec::new();
         if selected.artifacts {
             let prepared =
-                match cancellable(session, engine.prepare(project, CleanRequest::Artifacts)).await?
+                match cancellable(session, engine.prepare(project.clone(), CleanRequest::Artifacts)).await?
                 {
                     Preparation::Ready(value) => value,
                     Preparation::NeedsInput(_) => {
@@ -126,7 +131,16 @@ async fn clean_selected(
                     .info("No initialized content cache to clean");
             }
         }
-        apply_cleanup(session, &engine, plans).await
+        let saved = if selected.continuation {
+            let saved = cancellable(session, engine.observe_saved_build(project)).await?;
+            session.display().status().info(if saved.is_some() {
+                "Discard this project's saved build recipe; retained content and recovery journals remain"
+            } else {
+                "No saved build recipe to discard"
+            });
+            saved
+        } else { None };
+        apply_cleanup(session, &engine, plans, saved).await
     }
     .await;
     engine.shutdown().await;
@@ -136,16 +150,17 @@ async fn apply_cleanup(
     session: &dyn Session,
     engine: &Engine,
     plans: Vec<(&'static str, PreparedOperation)>,
+    saved: Option<SavedBuildRecord>,
 ) -> Result<()> {
-    if plans.is_empty() {
+    if plans.is_empty() && saved.is_none() {
         session
             .display()
             .status()
             .complete("No selected cleanup changes");
         return Ok(());
     }
-    if plans.len() > 1 {
-        session.display().status().info("Artifacts and cache are separate operations; completed work is retained if a later operation fails");
+    if plans.len() + usize::from(saved.is_some()) > 1 {
+        session.display().status().info("Selected cleanup scopes are separate operations; completed work is retained if a later operation fails");
     }
     if !approve(session, "Cleanup")? {
         return Ok(());
@@ -165,6 +180,25 @@ async fn apply_cleanup(
                 }
             })?;
         completed.push(label);
+    }
+    if let Some(saved) = saved {
+        let result = cancellable(session, engine.discard_saved_build(saved)).await;
+        match result {
+            Ok(true) => session
+                .display()
+                .status()
+                .complete("Discarded saved build recipe"),
+            Ok(false) => anyhow::bail!(
+                "Saved build record changed or disappeared; no record was discarded; earlier completed scopes: {}",
+                completed.join(", ")
+            ),
+            Err(error) => {
+                return Err(error.context(format!(
+                    "Saved build cleanup failed; earlier completed scopes: {}",
+                    completed.join(", ")
+                )));
+            }
+        }
     }
     Ok(())
 }

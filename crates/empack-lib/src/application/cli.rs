@@ -348,7 +348,7 @@ pub enum Commands {
     /// Clean build directories
     Clean {
         /// What to clean
-        #[arg(help = "What to clean: builds, cache, all")]
+        #[arg(help = "What to clean: builds, cache, continuation, all (builds and cache)")]
         targets: Vec<String>,
     },
 }

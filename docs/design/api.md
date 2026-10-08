@@ -920,13 +920,12 @@ participation or silently redirect source destinations.
 The host displays the exact managed replacement plan before the common approval step.
 Preview and declined approval leave project and durable host state unchanged. Provider
 pages use the archive catalog and verify its assertions before inspection. Runtime
-conversion choices, durable pending-input storage and
-the CLI import dispatcher remain integration work. This entry point does not complete
-those features or remove the current CLI implementation.
+conversion choices and durable import pending-input storage remain integration work.
+The ordinary CLI import dispatcher uses this host.
 
 ### Native cleanup host
 
-`application::engine_host::clean` accepts `builds`, `cache` and `all`; omission selects
+`application::engine_host::clean` accepts `builds`, `cache`, `continuation` and `all`; omission selects
 artifacts. It validates every target and prepares all selected scopes before one approval.
 Artifacts use native publication without needing valid intent/lock documents. The content
 cache lives under the selected cache root's `content-v1` directory. Opening an absent cache
@@ -936,9 +935,17 @@ The host displays artifact paths, logical bytes, cache object IDs and maximum ev
 bytes. Artifact recovery data remains separate. Combined cleanup is explicitly sequential:
 if cache eviction fails after artifact publication, the error identifies the completed
 artifact scope and retains the cache receipt's partial result. The scopes cannot overlap.
-Unknown neighbors and unselected storage remain untouched. This compiled host covers the
-new content store; old CLI cache categories remain on the current dispatcher until cutover.
+Unknown neighbors and unselected storage remain untouched. The ordinary CLI dispatches
+to this host for artifact, content-store and saved-recipe cleanup.
 
+
+`clean continuation` explicitly discards only the selected project's saved build recipe.
+`all` continues to select artifacts and disposable cache, so it does not implicitly erase
+pending work. Cleanup can be combined with other explicit scopes and shares their preview
+and approval. Inspection hashes bounded opaque record bytes without decoding a recipe or
+requiring valid project documents. Malformed and stale recipes remain removable. The
+engine-owned observation binds conditional deletion to that exact record; replacement
+between inspection and execution is refused. Cached payloads and recovery journals remain.
 
 ### Read-only download discovery
 
@@ -984,7 +991,7 @@ a missing cache object leaves the corresponding obligation unresolved, while cor
 bytes fail. Resumed inputs still share the ordinary cumulative acquisition allowance.
 
 A fresh execution grant is required after resume. `ResumedBuild` contains the preparation
-and an opaque `SavedBuildRecord` observation. `Engine::discard_saved_build` is a separate
+and an opaque `SavedBuildRecord` observation. `Engine::observe_saved_build` provides a read-only opaque observation for explicit cleanup, even when a recipe cannot decode or resume. `Engine::discard_saved_build` is a separate
 host action; it deletes only if that exact record still exists. Changed or missing records
 return false. The native continue host invokes cleanup after a verified build receipt;
 preview, decline and failed execution retain the record. No serialized field can reconstruct a native snapshot or approve

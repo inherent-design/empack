@@ -534,3 +534,126 @@ async fn saved_record_inspection_fits_eight_handle_allowance() {
     reader.shutdown().await;
     assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
+
+#[tokio::test]
+async fn explicit_saved_recipe_cleanup_is_read_only_until_approved_and_refuses_changed_records() {
+    use crate::application::{
+        config::AppConfig,
+        engine_host::clean,
+        session_mocks::{MockCommandSession, MockConfigProvider, MockFileSystemProvider},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let state = host.path().join("state");
+    let (owner, governor) = engine(state.clone());
+    assert!(
+        owner
+            .observe_saved_build(root.path().to_path_buf())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(!state.exists());
+    suspend_first(&owner, root.path()).await;
+    let record = records(&state).pop().unwrap();
+    let valid = fs::read(&record).unwrap();
+    let authored = documents(root.path());
+    let session = |dry| {
+        MockCommandSession::new()
+            .with_filesystem(
+                MockFileSystemProvider::new().with_current_dir(host.path().to_path_buf()),
+            )
+            .with_config(MockConfigProvider::new(AppConfig {
+                workdir: Some(root.path().to_path_buf()),
+                state_dir: Some(state.clone()),
+                yes: true,
+                dry_run: dry,
+                ..Default::default()
+            }))
+    };
+    for bytes in [&valid[..], b"invalid recipe".as_slice()] {
+        fs::write(&record, bytes).unwrap();
+        let before = saved_tree(host.path());
+        clean(&session(true), &["continuation".into()])
+            .await
+            .unwrap();
+        assert_eq!(saved_tree(host.path()), before);
+        let observed = owner
+            .observe_saved_build(root.path().to_path_buf())
+            .await
+            .unwrap()
+            .unwrap();
+        fs::write(&record, b"a different pending operation").unwrap();
+        assert!(!owner.discard_saved_build(observed).await.unwrap());
+        assert_eq!(fs::read(&record).unwrap(), b"a different pending operation");
+        fs::write(&record, bytes).unwrap();
+        clean(&session(false), &["continuation".into()])
+            .await
+            .unwrap();
+        assert!(!record.exists());
+        assert_eq!(documents(root.path()), authored);
+    }
+    // Stale recipes do not need the changed documents to decode successfully.
+    fs::write(&record, &valid).unwrap();
+    fs::write(root.path().join("empack.yml"), b"invalid current intent").unwrap();
+    clean(&session(false), &["continuation".into()])
+        .await
+        .unwrap();
+    assert!(!record.exists());
+    assert_eq!(
+        fs::read(root.path().join("empack.yml")).unwrap(),
+        b"invalid current intent"
+    );
+    assert!(state.join("pending-builds/state.lock").exists());
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    owner.shutdown().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn saved_recipe_cleanup_refuses_symlinks_and_cross_engine_observations() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), true);
+    let state = host.path().join("state");
+    let (owner, _) = engine(state.clone());
+    suspend_first(&owner, root.path()).await;
+    let record = records(&state).pop().unwrap();
+    let observed = owner
+        .observe_saved_build(root.path().to_path_buf())
+        .await
+        .unwrap()
+        .unwrap();
+    let (other, _) = engine(state);
+    assert!(other.discard_saved_build(observed).await.is_err());
+    let outside = host.path().join("sentinel");
+    fs::write(&outside, b"outside").unwrap();
+    fs::remove_file(&record).unwrap();
+    std::os::unix::fs::symlink(&outside, &record).unwrap();
+    assert!(
+        owner
+            .observe_saved_build(root.path().to_path_buf())
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read(&outside).unwrap(), b"outside");
+    owner.shutdown().await;
+    other.shutdown().await;
+}
+
+fn saved_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn visit(path: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                visit(&entry.path(), files);
+            } else {
+                files.insert(entry.path(), fs::read(entry.path()).unwrap());
+            }
+        }
+    }
+    let mut files = BTreeMap::new();
+    visit(root, &mut files);
+    files
+}

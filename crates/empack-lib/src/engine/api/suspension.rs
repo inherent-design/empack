@@ -89,6 +89,46 @@ impl Engine {
             .await
             .context("Suspension result was not retained")?
     }
+    /// Read-only cleanup selection. Even an invalid recipe can be selected; its bytes are
+    /// bounded and hashed but never interpreted as a request or an authoritative path.
+    pub async fn observe_saved_build(&self, project: PathBuf) -> Result<Option<SavedBuildRecord>> {
+        ensure!(project.is_absolute(), "Project selection must be absolute");
+        let state = self.config.state_root.clone();
+        let (sender, receiver) = oneshot::channel();
+        let mut handle = self
+            .preparations
+            .start_ephemeral(move |mut scope| async move {
+                let result = async {
+                    let work = scope.spawn_blocking(
+                        record_resources(0)?,
+                        ResourceRequest::default(),
+                        move |cancel| store::observe(&state, &project, &cancel),
+                    )?;
+                    Ok::<_, anyhow::Error>(
+                        scope
+                            .accept(work.wait().await?)?
+                            .transpose()?
+                            .into_parts()
+                            .0,
+                    )
+                }
+                .await;
+                let _ = sender.send(result);
+                Ok(())
+            })?;
+        let outcome = handle.wait().await;
+        if let OperationOutcome::Failed(error) = &*outcome {
+            return Err(error.clone().into());
+        }
+        Ok(receiver
+            .await
+            .context("Saved build inspection result was not retained")??
+            .map(|(name, content)| SavedBuildRecord {
+                owner: self.owner.clone(),
+                name,
+                content,
+            }))
+    }
     /// Explicit host cleanup, conditional on the exact observed record still being present.
     pub async fn discard_saved_build(&self, saved: SavedBuildRecord) -> Result<bool> {
         ensure!(

@@ -184,6 +184,7 @@ async fn later_cleanup_failure_reports_earlier_artifact_publication() {
             ("Artifact cleanup", artifacts),
             ("Content cache cleanup", content),
         ],
+        None,
     )
     .await
     .unwrap_err();
