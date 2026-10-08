@@ -1469,3 +1469,17 @@ The mixed-add → sync twice → export fixture now uses recorded synchronizatio
 constructing its file decisions. All 52 affected tests, all-feature Clippy and Windows cross-compilation pass.
 The preceding `75eb4be` revision passed Greptile 118 with no outstanding findings.
 The last completed full suite remains pinned to `e317773` (1,951 tests and eleven doctests).
+
+
+## Combined synchronization and coverage evidence
+
+The frozen `05ac71f` revision passed all 1,955 default tests and eleven doctests.
+Greptile 119 identified fallback-placement selection and scratch over-reservation cases;
+those require targeted corrections despite the passing suite.
+
+At `75eb4be`, CI coverage executed all 2,047 selected tests successfully, then failed
+merging one corrupt raw profile. A separate instrumented Rust fixture reproduced strict
+merge failure, verified that valid profiles survive mixed input, and verified failure when
+all input is invalid. Coverage now uses that supported merge policy with warnings retained.
+The test command still fails on any failing test. The CI table also reads actual line
+counts and prints the report used for the job summary.

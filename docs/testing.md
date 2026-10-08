@@ -140,3 +140,19 @@ CurseForge `modlist.html` report and records that decision. Unknown auxiliary me
 still fail. Deterministic tests cover forced replacement from a malformed manifest,
 unrelated-file preservation, publication conflicts, cancellation and layered re-export.
 These checks do not yet establish Engine import approval or CLI parity.
+
+
+### Coverage profile collection
+
+`mise run coverage` requires all selected tests to pass, including strict E2E in CI.
+LLVM merges the valid profiles and reports malformed profiles as warnings. A corrupt
+profile from an interrupted process cannot discard the rest of a successful run; a
+collection with no valid profiles still fails. Missing counters contribute no execution
+evidence. This does not enable `--ignore-run-fail`, exclude source files, or lower any
+test requirement. The behavior follows LLVM's documented
+[`--failure-mode=all`](https://llvm.org/docs/CommandGuide/llvm-profdata.html#cmdoption-llvm-profdata-merge-failure-mode).
+
+CI prints one coverage summary in its logs and uses that same report for the job summary.
+The per-file table reports line counts, rather than mixing region counts with line percentages.
+Inline test code remains included in compiler coverage; a percentage is not proof of feature
+completion or a production-only coverage measurement.
