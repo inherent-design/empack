@@ -349,6 +349,21 @@ cannot authorize replacement on its own.
 
 ## Shared project initialization and replacement
 
+The native application initialization host now consumes existing CLI options and session
+interaction, resolves missing runtime choices, and publishes through `InitializeRequest`.
+It preserves explicit pins, accepted versions, datapack layout, default targets and editable
+scaffolding. The test sequence initializes a real directory, synchronizes twice without
+changes, and inspects both mrpack and full-client builds. Separate fixtures verify forced
+preview/decline, approved replacement, invalid choices, stable/prerelease discovery and
+provider failure without publication. This host is compiled and callable; replacing the
+legacy CLI dispatcher remains a coordinated integration gate with the other command hosts.
+
+All 14 affected host/catalog tests pass, including deterministic HTTP discovery and
+native initialization → repeated synchronization → inspected distributions. All-feature
+Clippy and Windows cross-compilation pass. An intermediate combined run reported
+Nextest pipe-leak warnings in two pure catalog tests; the final combined run is clean.
+
+
 `ProjectReader::capture_replacement` binds managed documents and content roots even
 when the prior documents are missing or malformed. It gates recovery, rejects unsafe
 ancestors and captures membership and absence. Captured ignore rules exclude unowned
@@ -997,9 +1012,10 @@ command migration and global-display removal remain separate work.
 
 ## Remaining integration and limits
 
-- Extend the compiled build/import `Engine` lifecycle to the remaining semantic
-  project mutations. Empty-project initialization and new-root import are implemented; all five build recipes and all
-  loader runtime families enter the same approved build driver.
+- Complete command-host composition for the implemented project operations. Build,
+  import, initialization, add/update/adopt, sync, removal, cleanup and recovery have
+  compiled Engine routes. All five build recipes and all loader runtime families
+  enter the approved build driver; shared components alone do not establish CLI parity.
 - Replace command orchestration with the shared lifecycle. Wire manual acquisition,
   provider-locator refresh, continuation and scoped
   clean through the same verified obligations.

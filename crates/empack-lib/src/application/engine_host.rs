@@ -4,8 +4,8 @@ use crate::engine::{
     acquisition::TransferLimits,
     api::{
         Engine, EngineConfig, ExecutionGrant, ExecutionOutcome, ExecutionReceipt,
-        NetworkPermission, OperationResources, Preparation, ProjectTarget, RecoverRequest,
-        RecoveryAction,
+        NetworkPermission, OperationResources, Preparation, PreparedOperation, ProjectTarget,
+        RecoverRequest, RecoveryAction,
     },
     artifacts::ArchiveLimits,
     resources::{ResourceGovernor, ResourceRequest},
@@ -99,7 +99,7 @@ async fn cancellable<T>(session: &dyn Session, work: impl Future<Output = Result
         }
     }
 }
-pub(super) async fn recover(
+pub async fn recover(
     session: &dyn Session,
     action: CliRecoveryAction,
     operation: Option<String>,
@@ -215,6 +215,26 @@ async fn recover_with_engine(
         view.files.changes().len()
     ));
     show_changes(session, &view.files)?;
+    apply(session, engine, prepared, "Recovery", |receipt| {
+        let ExecutionReceipt::Recovery(receipt) = receipt else {
+            anyhow::bail!("Unexpected recovery receipt");
+        };
+        Ok(format!(
+            "Recovery {:?}: {} managed files",
+            receipt.publication.disposition, receipt.publication.changed_files
+        ))
+    })
+    .await
+}
+
+/// Callers display their exact preview before this shared approval and owned execution boundary.
+async fn apply(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: PreparedOperation,
+    label: &str,
+    completed: impl FnOnce(&ExecutionReceipt) -> Result<String>,
+) -> Result<()> {
     if session.config().app_config().dry_run {
         session
             .display()
@@ -223,19 +243,27 @@ async fn recover_with_engine(
         return Ok(());
     }
     if !session.config().app_config().yes
-        && !session
-            .interactive()
-            .confirm("Apply this recovery plan?", false)?
+        && !session.interactive().confirm(
+            &format!("Apply this {} plan?", label.to_ascii_lowercase()),
+            false,
+        )?
     {
-        session.display().status().info("Recovery not applied");
+        session
+            .display()
+            .status()
+            .info(&format!("{label} not applied"));
         return Ok(());
     }
     session.process().check_cancelled()?;
     let grant = ExecutionGrant {
         plan: prepared.view().plan(),
         replacement: prepared.view().replacement(),
-        network: NetworkPermission::Offline,
-        run_installer: false,
+        network: if prepared.view().needs_network() {
+            NetworkPermission::Allow
+        } else {
+            NetworkPermission::Offline
+        },
+        run_installer: prepared.view().runs_installer(),
     };
     let mut handle = engine.start(prepared.authorize(grant)?)?;
     let mut ticks = tokio::time::interval(Duration::from_millis(50));
@@ -249,39 +277,42 @@ async fn recover_with_engine(
         }
     };
     let result = match &*outcome {
-        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Recovery(
-            receipt,
-        ))) => {
-            session.display().status().complete(&format!(
-                "Recovery {:?}: {} managed files",
-                receipt.publication.disposition, receipt.publication.changed_files
-            ));
-            Ok(())
+        OperationOutcome::Completed(ExecutionOutcome::Completed(receipt)) => {
+            completed(receipt).map(|message| session.display().status().complete(&message))
         }
-        OperationOutcome::Completed(ExecutionOutcome::InterruptedBeforePublication) => {
+        OperationOutcome::Completed(ExecutionOutcome::InterruptedBeforePublication)
+        | OperationOutcome::Failed(RuntimeError::Cancelled) => {
             Err(super::process_runtime::Interrupted.into())
         }
         OperationOutcome::Completed(ExecutionOutcome::RecoveryRequired { operation, cause }) => {
             Err(anyhow::anyhow!(
-                "Recovery remains pending for {operation}: {cause:#}"
+                "{label} requires recovery for {operation}; run empack recover: {cause:#}"
             ))
         }
         OperationOutcome::Completed(ExecutionOutcome::FailedBeforePublication(cause)) => {
-            Err(anyhow::anyhow!("Recovery was not applied: {cause:#}"))
+            Err(anyhow::anyhow!("{label} was not applied: {cause:#}"))
         }
         OperationOutcome::Completed(ExecutionOutcome::ExecutionUncertain(cause)) => {
             Err(anyhow::anyhow!(
-                "Recovery outcome is uncertain; inspect recovery before retrying: {cause:#}"
+                "{label} outcome is uncertain; inspect recovery before retrying: {cause:#}"
             ))
         }
-        OperationOutcome::Failed(RuntimeError::Cancelled) => {
-            Err(super::process_runtime::Interrupted.into())
+        OperationOutcome::Completed(ExecutionOutcome::PartiallyCompleted { receipt, cause }) => {
+            if let Ok(message) = completed(receipt) {
+                session.display().status().warning(&message);
+            }
+            Err(anyhow::anyhow!(
+                "{label} completed only part of its displayed effects: {cause:#}"
+            ))
+        }
+        OperationOutcome::Completed(ExecutionOutcome::NeedsInput(requirements)) => {
+            Err(anyhow::anyhow!(
+                "{label} was not published: {} content obligations need input",
+                requirements.len()
+            ))
         }
         OperationOutcome::Failed(cause) => Err(anyhow::anyhow!(
-            "Recovery worker failed; inspect recovery before retrying: {cause}"
-        )),
-        _ => Err(anyhow::anyhow!(
-            "Unexpected recovery outcome; inspect recovery before retrying"
+            "{label} worker failed; inspect recovery before retrying: {cause}"
         )),
     };
     engine.release_completed(handle.id());
@@ -290,3 +321,6 @@ async fn recover_with_engine(
 
 #[cfg(test)]
 mod tests;
+
+mod initialize;
+pub use initialize::initialize;

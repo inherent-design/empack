@@ -519,6 +519,23 @@ Only `assemble` sees all dependencies. `PreparationService` does not receive `Pu
 
 The constructor names are proposed concrete adapters. In implementation, prefer grouped typed configuration objects when a constructor grows too large, but do not introduce `services: Arc<Everything>` to shorten the signature.
 
+### Implemented initialization host
+
+`application::engine_host::initialize` composes parsed `InitArgs`, session interaction,
+read-only runtime discovery and approved Engine initialization. It retains metadata,
+explicit loader pins, accepted game versions and datapack-folder choices. Exact
+explicit runtime coordinates can initialize offline; build preparation still verifies
+their executable availability and bytes. Missing runtime choices use bounded official
+catalogs. No failed lookup is replaced with an invented version.
+
+The host displays native file changes before confirmation. Preview, declined plans
+and invalid options cannot create a project or durable host state. Forced replacement
+requires the displayed footprint and preserves user templates and unrelated files.
+Initialization and recovery share approval, cancellation, shutdown and outcome
+classification. The initialization host currently accepts empty projects; source imports
+have a separate normalization path. CLI dispatch cutover remains pending until the
+other command hosts can consume these documents together.
+
 ### Implemented recovery host
 
 The CLI `recover [inspect|finish|restore]` composes the existing inspection and approved

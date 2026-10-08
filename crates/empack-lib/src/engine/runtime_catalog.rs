@@ -127,6 +127,20 @@ pub struct RuntimeCatalog {
     endpoints: Endpoints,
 }
 impl RuntimeCatalog {
+    #[cfg(test)]
+    pub(crate) fn for_loopback_tests(base: &str) -> Self {
+        Self {
+            transport: HttpAcquisition::for_loopback_tests(),
+            endpoints: Endpoints {
+                games: format!("{base}/games"),
+                fabric: format!("{base}/fabric/"),
+                quilt: format!("{base}/quilt/"),
+                forge: format!("{base}/forge"),
+                neoforge: format!("{base}/neoforge"),
+                legacy_neoforge: format!("{base}/legacy-neoforge"),
+            },
+        }
+    }
     pub fn new(transport: HttpAcquisition) -> Self {
         Self {
             transport,
