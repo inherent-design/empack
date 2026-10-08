@@ -530,6 +530,19 @@ impl<T> Deref for RetainedOutput<T> {
     }
 }
 impl<T> RetainedOutput<T> {
+    /// Release a conservative parsing allowance after the retained shape is known. This
+    /// cannot acquire additional capacity or transfer a live worker's reservation.
+    pub(super) fn shrink_resources(
+        self,
+        retained: ResourceRequest,
+    ) -> Result<Self, AdmissionError> {
+        let Self { value, mut _permit } = self;
+        let smaller = _permit.split(retained)?;
+        Ok(Self {
+            value,
+            _permit: smaller,
+        })
+    }
     pub(super) fn reserved(&self) -> ResourceRequest {
         self._permit.reserved()
     }

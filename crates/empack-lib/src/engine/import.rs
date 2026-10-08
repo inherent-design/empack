@@ -182,11 +182,7 @@ pub async fn inspect_import(
     );
     // Account for parsed strings, archive names and destination indexes as scheduling estimates.
     // The archive reader independently bounds compressed/expanded bytes, entries and depth.
-    let memory = limits
-        .manifest_bytes
-        .checked_mul(16)
-        .and_then(|v| v.checked_add((limits.archive.entries as u64).checked_mul(2048)?))
-        .context("Import memory estimate overflow")?;
+    let memory = import_memory(limits.manifest_bytes, limits.archive.entries)?;
     let retained = ResourceRequest {
         memory_bytes: memory,
         ..Default::default()
@@ -201,7 +197,20 @@ pub async fn inspect_import(
         retained,
         move |cancel| inspect(source, limits, &cancel),
     )?;
-    scope.accept(worker.wait().await?)?.transpose()
+    let inspected = scope.accept(worker.wait().await?)?.transpose()?;
+    let retained = ResourceRequest {
+        memory_bytes: inspected.1,
+        ..Default::default()
+    };
+    Ok(inspected
+        .map(|(project, _)| project)
+        .shrink_resources(retained)?)
+}
+fn import_memory(manifest_bytes: u64, entries: usize) -> Result<u64> {
+    manifest_bytes
+        .checked_mul(16)
+        .and_then(|value| value.checked_add((entries as u64).checked_mul(2048)?))
+        .context("Import memory estimate overflow")
 }
 fn path(value: &str) -> Result<PortableRelPath> {
     Ok(PortableRelPath::parse(value, PathSyntax::ArchiveMember)?)
@@ -216,7 +225,7 @@ fn inspect(
     source: AcquiredContent,
     limits: ImportLimits,
     cancel: &Cancellation,
-) -> Result<ImportedProject> {
+) -> Result<(ImportedProject, u64)> {
     cancel.check()?;
     let mut archive = ZipContentSource::open(&source, limits.archive, cancel)?;
     let members: BTreeMap<_, _> = archive
@@ -344,7 +353,9 @@ fn inspect(
     validate_destinations(&project)?;
     project.auxiliary_members = names.difference(&used).cloned().collect();
     cancel.check()?;
-    Ok(project)
+    // The parser and archive index retire here. Retain an estimate for the actual manifest
+    // and inspected names, rather than both configured maxima throughout acquisition.
+    Ok((project, import_memory(size, members.len())?))
 }
 impl ImportedRequirements {
     fn required() -> Self {

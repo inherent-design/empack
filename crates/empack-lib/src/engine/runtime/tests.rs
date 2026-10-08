@@ -284,3 +284,34 @@ async fn ephemeral_preparations_retire_abandoned_results_and_registry_entries() 
     }
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn retained_output_can_release_unused_allowance_but_cannot_grow_authority() {
+    let (runtime, governor) = runtime::<()>();
+    let observed = governor.clone();
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let worker = scope.spawn(request(), retained(), |_| async { 42 })?;
+            let value = scope.accept(worker.wait().await?)?;
+            let smaller = ResourceRequest {
+                memory_bytes: 4,
+                ..Default::default()
+            };
+            let value = value.shrink_resources(smaller)?;
+            assert_eq!(*value, 42);
+            assert_eq!(observed.status().reserved, smaller);
+            assert!(matches!(
+                value.shrink_resources(retained()),
+                Err(AdmissionError::InvalidTransfer)
+            ));
+            assert_eq!(observed.status().reserved, ResourceRequest::default());
+            Ok(())
+        })
+        .unwrap();
+    assert!(matches!(
+        &*handle.wait().await,
+        OperationOutcome::Completed(())
+    ));
+    runtime.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}

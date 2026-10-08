@@ -56,6 +56,11 @@ pub struct AdmissionPermit { /* owned by actual task until retirement */ }
 
 Admission uses checked arithmetic and accounts for concurrent retained inputs and outputs, not only task count. Reservation estimates help scheduling but cannot guarantee physical RAM usage or allocator success. Actual downloads, decompression, captured output, and file count have separate enforced bounds.
 
+After a parser retires, its retained result may release unused allowance based on the
+observed manifest size and entry count. This transfer can only shrink the reservation.
+Import inspection keeps its configured parsing bounds, then charges the retained model
+for the inspected input so extraction does not also carry unused parser capacity.
+
 Reject an oversized request immediately; do not leave it waiting forever for capacity that can never exist. A busy request may wait with cancellation or return a retryable outcome. Do not cancel a previous usable attempt merely because a replacement failed admission.
 
 Calling `cancel` does not release the permit. Receiving a result also does not necessarily prove worker retirement. Release only when the task and its owned scratch resources have retired or their ownership has explicitly transferred to another charged object. This is the useful contract behind Playground's separate admission and retirement concepts. [P2](https://github.com/mannie-exe/playground/blob/dc6846a/include/runtime/Executor.hpp)

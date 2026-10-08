@@ -1299,3 +1299,16 @@ The regression inspects the acquired bytes and both HTTP requests.
 The combined fallback and import-admission changes pass all 57 affected tests,
 all-feature Clippy and Windows cross-compilation. This is targeted evidence; the
 last complete suite remains the 1,918 tests and eleven doctests at `ae63534`.
+
+## Import inspection retirement
+
+A small archive reproduced an admission failure under the native host's 512 MiB
+budget with default import limits. Inspection retained its maximum parsing allowance
+while extraction requested its own bounded archive index.
+
+Inspection still admits the configured worst case before parsing. After the worker
+retires, its result retains an estimate based on actual manifest bytes and inspected
+names. The transfer cannot grow any resource dimension. The native-budget regression
+verifies extracted bytes and complete reservation retirement; a separate test rejects
+an attempted reservation increase. All 57 affected import/runtime/acquisition tests,
+all-feature Clippy and Windows cross-compilation pass on the combined change.

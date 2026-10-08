@@ -46,6 +46,7 @@ fn inspect_json(name: &str, value: &Value, members: &[(&str, &[u8])]) -> Result<
         ImportLimits::default(),
         &Cancellation::default(),
     )
+    .map(|(project, _)| project)
 }
 #[test]
 fn imports_keep_exact_declarations_layers_and_unknown_optional_defaults() {

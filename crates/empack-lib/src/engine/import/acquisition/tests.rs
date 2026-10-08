@@ -954,3 +954,55 @@ async fn auxiliary_member_exclusion_requires_a_decision_and_survives_empty_impor
         }
     }
 }
+
+#[tokio::test]
+async fn default_import_limits_fit_small_archives_under_the_native_host_budget() {
+    let source = source(
+        "modrinth.index.json",
+        mr(vec![]),
+        &[("overrides/config/value", b"configuration")],
+    );
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 1,
+        memory_bytes: 512 << 20,
+        scratch_bytes: 128 << 30,
+        open_files: 512,
+    });
+    let runtime = OperationRuntime::new(governor.clone(), 1);
+    let mut handle = runtime
+        .start(move |mut scope| async move {
+            let result = async {
+                let imported = inspect_import(&mut scope, source, ImportLimits::default()).await?;
+                let catalog = ProviderCatalog::for_loopback_tests("http://127.0.0.1:1", None);
+                ImportContentPlan::resolve(
+                    &mut scope,
+                    imported,
+                    &catalog,
+                    ImportContentLimits::default(),
+                )
+                .await?
+                .acquire(
+                    &mut scope,
+                    &HttpAcquisition::for_loopback_tests(),
+                    BTreeMap::new(),
+                    SourceEvidencePolicy::Compatibility,
+                )
+                .await
+            }
+            .await;
+            Ok(result)
+        })
+        .unwrap();
+    let outcome = handle.wait().await;
+    runtime.shutdown().await;
+    let content = ready(&outcome);
+    assert_eq!(content.content().len(), 1);
+    assert_eq!(
+        bytes(content.content().values().next().unwrap()),
+        b"configuration"
+    );
+    drop(handle);
+    drop(runtime);
+    drop(outcome);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
