@@ -1,9 +1,7 @@
 //! A retained, bounded ZIP reader for declared embedded content. No filesystem destinations exist here.
 use super::{
-    artifacts::{ArchiveLimits, modes, preflight_zip},
-    content::{
-        AcquiredContent, ContentReader, InitialObservation, SourceEvidencePolicy, verify_stream,
-    },
+    artifacts::{ArchiveLimits, ArchiveRead, modes, preflight_zip},
+    content::{AcquiredContent, InitialObservation, SourceEvidencePolicy, verify_stream},
     layout::CollisionIndex,
 };
 use crate::application::process_runtime::Cancellation;
@@ -24,9 +22,9 @@ pub struct ArchiveMember {
     pub permissions: FilePermissions,
     index: usize,
 }
-/// Owns the source lease through its reader; opening once amortizes metadata checks and I/O.
+/// Retains the source reader; opening once amortizes metadata checks and I/O.
 pub struct ZipContentSource {
-    archive: zip::ZipArchive<ContentReader>,
+    archive: zip::ZipArchive<Box<dyn ArchiveRead + Send>>,
     files: BTreeMap<PortableRelPath, ArchiveMember>,
     limits: ArchiveLimits,
     extracted: u64,
@@ -39,12 +37,40 @@ impl ZipContentSource {
         limits: ArchiveLimits,
         cancel: &Cancellation,
     ) -> Result<Self> {
+        Self::from_reader(
+            Box::new(content.lease().open()),
+            content.lease().len(),
+            limits,
+            cancel,
+        )
+    }
+    /// Read a captured native archive without duplicating its compressed bytes in scratch.
+    /// The owning workflow must retain and revalidate the snapshot before publishing members.
+    pub(in crate::engine) fn open_captured(
+        workspace: &super::project::WorkspaceSnapshot,
+        path: &PortableRelPath,
+        limits: ArchiveLimits,
+        cancel: &Cancellation,
+    ) -> Result<Self> {
+        let (file, expected, _) = workspace.open_observed_input(path, None)?;
+        Self::from_reader(
+            Box::new(file),
+            expected.size.expect("captured size"),
+            limits,
+            cancel,
+        )
+    }
+    fn from_reader(
+        mut reader: Box<dyn ArchiveRead + Send>,
+        bytes: u64,
+        limits: ArchiveLimits,
+        cancel: &Cancellation,
+    ) -> Result<Self> {
         ensure!(
-            content.lease().len() <= limits.compressed_bytes,
+            bytes <= limits.compressed_bytes,
             "Source archive exceeds compressed byte limit"
         );
-        let mut reader = content.lease().open();
-        preflight_zip(&mut reader, content.lease().len(), limits, cancel)?;
+        preflight_zip(&mut reader, bytes, limits, cancel)?;
         reader.rewind()?;
         let mut archive = zip::ZipArchive::new(reader)?;
         ensure!(
@@ -109,6 +135,9 @@ impl ZipContentSource {
             limits,
             extracted: 0,
         })
+    }
+    pub(in crate::engine) fn member(&self, path: &PortableRelPath) -> Option<&ArchiveMember> {
+        self.files.get(path)
     }
     pub fn files(&self) -> impl Iterator<Item = (&PortableRelPath, &ArchiveMember)> {
         self.files.iter()

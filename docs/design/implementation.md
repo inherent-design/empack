@@ -1483,3 +1483,19 @@ merge failure, verified that valid profiles survive mixed input, and verified fa
 all input is invalid. Coverage now uses that supported merge policy with warnings retained.
 The test command still fails on any failing test. The CI table also reads actual line
 counts and prints the report used for the job summary.
+
+
+## Recorded synchronization review corrections
+
+Both Greptile 119 cases reproduced: the first damaged placement hid a valid retained copy,
+and unused compressed archive bytes exceeded scratch admission. Fallback selection now
+verifies each candidate before using it. Captured archive readers preserve native read
+preconditions without copying compressed sources. Bounded metadata inspection measures
+selected member sizes before scratch admission, including members without declared sizes.
+Only selected bytes and the current copy need scratch; local-only sync does not reserve
+an unused archive parser. Shared archive lookups use their existing path index.
+
+The twelve focused regressions pass, including two large archives under a small scratch
+budget, stale native archive inputs and a local-only request under a small memory budget.
+All 58 affected archive/import/build/dependency tests, final all-feature Clippy and Windows
+cross-compilation pass. One parallel test reported inherited pipes; its isolated serial rerun passes cleanly. The full-suite result remains pinned to `05ac71f`.

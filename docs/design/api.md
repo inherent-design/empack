@@ -327,8 +327,10 @@ and embedded members must verify, while provider/URL/manual slots remain deferre
 It neither downloads remote payloads nor selects newer versions. The source read set includes
 only declared files plus managed placements and required metadata, including sources outside
 `pack/`. Acquisition is admitted before creating private content; member readers share bounded
-packed storage and process one source archive at a time. Missing archives may use captured
-installed members only after original assertions verify. Missing local sources, unsafe native
+packed storage and process one source archive at a time. Captured archive readers avoid
+duplicating compressed bytes; scratch admission accounts for selected member bytes and the
+current member copy. Parser memory is reserved only when a captured archive is used.
+Missing archives try captured installed placements until original assertions verify. Missing local sources, unsafe native
 paths, corrupt members and stronger-evidence policy failures prevent the whole publication.
 Captured sources remain publication preconditions, so an edit after approval invalidates it.
 `SyncPreview` lists selected records, lock rebinding and the replacement plan;

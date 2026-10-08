@@ -371,7 +371,7 @@ impl WorkspaceSnapshot {
         )?
         .observed)
     }
-    fn open_observed_input(
+    pub(in crate::engine) fn open_observed_input(
         &self,
         path: &PortableRelPath,
         expected: Option<&ExpectedContent>,

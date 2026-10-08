@@ -196,13 +196,14 @@ async fn recorded_sync_failures_and_stale_sources_never_publish_a_subset() {
         "changed",
         "archive-corruption",
         "late-source-edit",
+        "late-archive-edit",
         "weak-strict",
     ] {
         let root = tempfile::tempdir().unwrap();
         let state = tempfile::tempdir().unwrap();
         source_project(
             root.path(),
-            case == "archive-corruption",
+            matches!(case, "archive-corruption" | "late-archive-edit"),
             case == "weak-strict",
         );
         fs::remove_file(root.path().join("pack/resourcepacks/a.zip")).unwrap();
@@ -241,7 +242,7 @@ async fn recorded_sync_failures_and_stale_sources_never_publish_a_subset() {
         } else {
             recorded()
         };
-        if case == "late-source-edit" {
+        if matches!(case, "late-source-edit" | "late-archive-edit") {
             let Preparation::Ready(prepared) = engine
                 .prepare(root.path().to_path_buf(), request)
                 .await
@@ -250,7 +251,15 @@ async fn recorded_sync_failures_and_stale_sources_never_publish_a_subset() {
                 panic!("ready")
             };
             let permission = grant(&prepared);
-            put(root.path(), "sources/payload", b"changed after preview");
+            put(
+                root.path(),
+                if case == "late-archive-edit" {
+                    "sources/archive.zip"
+                } else {
+                    "sources/payload"
+                },
+                b"changed after preview",
+            );
             let before = files(root.path());
             let mut operation = engine
                 .start(prepared.authorize(permission).unwrap())
@@ -337,4 +346,154 @@ async fn recorded_sync_rejects_linked_source_ancestors() {
         fs::read(outside.path().join("payload")).unwrap(),
         b"payload"
     );
+}
+
+#[tokio::test]
+async fn recorded_sync_uses_a_later_verified_placement() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    source_project(root.path(), true, false);
+    fs::remove_file(root.path().join("sources/archive.zip")).unwrap();
+    put(root.path(), "pack/resourcepacks/a.zip", b"damaged");
+    let before = files(root.path());
+    let (engine, _) = engine(state.path().join("state"));
+    let Preparation::Ready(prepared) = engine
+        .prepare(root.path().to_path_buf(), recorded())
+        .await
+        .unwrap()
+    else {
+        panic!("ready")
+    };
+    assert_eq!(files(root.path()), before);
+    let permission = grant(&prepared);
+    let mut operation = engine
+        .start(prepared.authorize(permission).unwrap())
+        .unwrap();
+    let outcome = operation.wait().await;
+    assert!(matches!(
+        &*outcome,
+        OperationOutcome::Completed(ExecutionOutcome::Completed(ExecutionReceipt::Sync(_)))
+    ));
+    assert_eq!(
+        fs::read(root.path().join("pack/resourcepacks/a.zip")).unwrap(),
+        b"payload"
+    );
+    engine.release_completed(operation.id());
+    drop(outcome);
+    drop(operation);
+    engine.shutdown().await;
+}
+
+#[tokio::test]
+async fn recorded_sync_does_not_reserve_copies_of_unselected_archive_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let resolved = source_project(root.path(), true, false);
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, bytes) in [
+        ("inside/payload", b"payload".to_vec()),
+        ("unselected", vec![1; 512 << 10]),
+    ] {
+        writer
+            .start_file(
+                name,
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(&bytes).unwrap();
+    }
+    put(
+        root.path(),
+        "sources/archive.zip",
+        &writer.finish().unwrap().into_inner(),
+    );
+    fs::copy(
+        root.path().join("sources/archive.zip"),
+        root.path().join("sources/second.zip"),
+    )
+    .unwrap();
+    let mut lock = resolved.lock().clone();
+    let dependency = lock.dependencies.values_mut().next().unwrap();
+    dependency.files = NonEmpty::new(
+        dependency
+            .files
+            .as_slice()
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(index, mut file)| {
+                if index == 1 {
+                    file.acquisition = AcquisitionSpec::Embedded {
+                        archive: super::tests::path("sources/second.zip"),
+                        member: super::tests::path("inside/payload"),
+                    };
+                }
+                file.expected.size = None; // Estimate selected member sizes, not the maximum file allowance.
+                file
+            })
+            .collect(),
+    )
+    .unwrap();
+    let resolved = ResolvedProject::validate(
+        resolved.intent().clone(),
+        lock,
+        resolved.lock().intent_revision,
+    )
+    .unwrap();
+    put(
+        root.path(),
+        "empack.lock",
+        &DocumentCodec.encode_lock(&resolved).unwrap(),
+    );
+    let (original, _) = engine(state.path().join("state"));
+    let mut config = original.config.clone();
+    original.shutdown().await;
+    config.resources.capture.scratch_bytes = 0;
+    config.resources.local_acquisition.scratch_bytes = 0;
+    config.resources.assembly.scratch_bytes = 0;
+    config.resources.acquired.scratch_bytes = 0;
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 128 << 20,
+        scratch_bytes: 128 << 10,
+        open_files: 128,
+    });
+    let engine = Engine::new(config, governor.clone()).unwrap();
+    let before = files(root.path());
+    let preview = engine
+        .preview(root.path().to_path_buf(), recorded())
+        .await
+        .unwrap();
+    assert!(preview.sync().unwrap().files.changes().is_empty());
+    assert_eq!(files(root.path()), before);
+    drop(preview);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+
+#[tokio::test]
+async fn recorded_local_sync_does_not_reserve_an_unused_archive_parser() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    source_project(root.path(), false, false);
+    let (original, _) = engine(state.path().join("state"));
+    let mut config = original.config.clone();
+    original.shutdown().await;
+    config.archive.entries = 100_000;
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: 128 << 20,
+        scratch_bytes: 64 << 20,
+        open_files: 128,
+    });
+    let engine = Engine::new(config, governor.clone()).unwrap();
+    let preview = engine
+        .preview(root.path().to_path_buf(), recorded())
+        .await
+        .unwrap();
+    assert!(preview.sync().unwrap().files.changes().is_empty());
+    drop(preview);
+    engine.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
 }
