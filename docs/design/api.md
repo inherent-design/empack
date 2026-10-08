@@ -758,7 +758,9 @@ workflows remain available through the current dispatcher in the meantime.
 
 `application::engine_host::import` accepts an `ImportHostRequest` and a decision
 callback over `VerifiedImportContent`. Sources are explicit native paths or download
-alternatives with original content assertions. Native paths resolve from the invocation;
+alternatives. Both source variants carry original digest and size assertions; selecting a
+local file does not downgrade a strong-source policy to an accepted observation.
+Native paths resolve from the invocation;
 destination paths resolve from the selected workdir. Remote acquisition enforces the
 compressed archive limit while streaming, before parsing or project preparation.
 

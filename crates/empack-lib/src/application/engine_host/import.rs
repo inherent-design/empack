@@ -19,7 +19,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 /// Explicit archive selection. Transient download URLs are never formatted or serialized here.
 pub enum ImportSource {
-    Local(PathBuf),
+    Local {
+        path: PathBuf,
+        expected: ExpectedContent,
+    },
     Download {
         alternatives: NonEmpty<String>,
         expected: ExpectedContent,
@@ -89,22 +92,21 @@ async fn import_with_services(
     content_limits.transfer.deadline = deadline;
     content_limits.archive = inspection.archive;
     let source = match request.source {
-        ImportSource::Local(path) => ImportSource::Local(absolute(&invocation, &path)),
+        ImportSource::Local { path, expected } => ImportSource::Local {
+            path: absolute(&invocation, &path),
+            expected,
+        },
         value => value,
     };
     let evidence = request.evidence;
     let content = scoped(session, shared.clone(), move |mut scope| async move {
         let archive = match source {
-            ImportSource::Local(source) => {
+            ImportSource::Local { path, expected } => {
                 acquire_local_file(
                     &mut scope,
                     LocalFileRequest {
-                        source,
-                        expected: ExpectedContent {
-                            digests: None,
-                            size: None,
-                            accepted_observation: None,
-                        },
+                        source: path,
+                        expected,
                         maximum: inspection.archive.compressed_bytes,
                         evidence,
                         initial: InitialObservation::Accepted,

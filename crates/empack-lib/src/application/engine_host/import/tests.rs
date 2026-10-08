@@ -58,10 +58,20 @@ fn archive_with_manifest(name: &str, manifest: &[u8], members: &[(&str, &[u8])])
     }
     writer.finish().unwrap().into_inner()
 }
+fn local(path: &str) -> ImportSource {
+    ImportSource::Local {
+        path: path.into(),
+        expected: ExpectedContent {
+            digests: None,
+            size: None,
+            accepted_observation: None,
+        },
+    }
+}
 fn source(root: &Path, bytes: &[u8]) -> ImportSource {
     fs::write(root.join("source.mrpack"), bytes).unwrap();
     // Source path is invocation-relative even when a different workdir is selected.
-    ImportSource::Local("source.mrpack".into())
+    local("source.mrpack")
 }
 fn request(source: ImportSource, replace: bool) -> ImportHostRequest {
     ImportHostRequest {
@@ -308,7 +318,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     assert_eq!(super::super::tests::snapshot(root.path()), before);
     import(
         &session(root.path(), false, false),
-        request(ImportSource::Local("source.mrpack".into()), true),
+        request(local("source.mrpack"), true),
         decisions,
     )
     .await
@@ -321,7 +331,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     assert!(
         import(
             &session(root.path(), true, false),
-            request(ImportSource::Local("source.mrpack".into()), false),
+            request(local("source.mrpack"), false),
             decisions
         )
         .await
@@ -331,7 +341,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     assert!(
         import(
             &session(root.path(), true, false),
-            request(ImportSource::Local("source.mrpack".into()), true),
+            request(local("source.mrpack"), true),
             |_| anyhow::bail!("conversion declined")
         )
         .await
@@ -340,7 +350,7 @@ async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree(
     assert_eq!(super::super::tests::snapshot(root.path()), before);
     import(
         &session(root.path(), true, false),
-        request(ImportSource::Local("source.mrpack".into()), true),
+        request(local("source.mrpack"), true),
         decisions,
     )
     .await
@@ -434,7 +444,7 @@ async fn unsafe_import_source_and_destination_ancestors_preserve_outside_files()
     assert!(
         import(
             &session(root.path(), true, false),
-            request(ImportSource::Local("linked.mrpack".into()), true),
+            request(local("linked.mrpack"), true),
             decisions
         )
         .await
@@ -450,7 +460,7 @@ async fn unsafe_import_source_and_destination_ancestors_preserve_outside_files()
     assert!(
         import(
             &session(root.path(), true, false),
-            request(ImportSource::Local("source.mrpack".into()), true),
+            request(local("source.mrpack"), true),
             decisions
         )
         .await
@@ -547,7 +557,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     let original = super::super::tests::snapshot(root.path());
     let result = import_with_services(
         &session(root.path(), true, false),
-        request(ImportSource::Local("source.mrpack".into()), false),
+        request(local("source.mrpack"), false),
         |_| panic!("restricted content must stop before conversion"),
         ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
         HttpAcquisition::for_loopback_tests(),
@@ -567,7 +577,7 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
         pin,
         filename: "fixture.jar".into(),
     };
-    let mut selected = request(ImportSource::Local("source.mrpack".into()), false);
+    let mut selected = request(local("source.mrpack"), false);
     selected.supplied.insert(
         key.clone(),
         crate::engine::content::verify_stream(
@@ -649,4 +659,48 @@ async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publica
     );
     project.assert_async().await;
     metadata_file.assert_async().await;
+}
+
+#[tokio::test]
+async fn local_archive_can_use_declared_strong_source_evidence() {
+    use empack_core::digest::{DigestSet, ExpectedDigest};
+    let root = tempfile::tempdir().unwrap();
+    let bytes = archive(&[], false);
+    source(root.path(), &bytes);
+    let known_digest = ExpectedDigest::Sha512(sha2::Sha512::digest(&bytes).into());
+    let before = super::super::tests::snapshot(root.path());
+    for mode in ["missing", "weak", "wrong-digest", "wrong-size", "valid"] {
+        let digests = match mode {
+            "missing" => None,
+            "weak" => Some(
+                DigestSet::new(vec![ExpectedDigest::Sha1(
+                    sha1::Sha1::digest(&bytes).into(),
+                )])
+                .unwrap(),
+            ),
+            "wrong-digest" => Some(DigestSet::new(vec![ExpectedDigest::Sha512([0; 64])]).unwrap()),
+            _ => Some(DigestSet::new(vec![known_digest.clone()]).unwrap()),
+        };
+        let input = ImportSource::Local {
+            path: "source.mrpack".into(),
+            expected: ExpectedContent {
+                digests,
+                size: Some(bytes.len() as u64 + u64::from(mode == "wrong-size")),
+                accepted_observation: None,
+            },
+        };
+        let mut selected = request(input, false);
+        selected.evidence = SourceEvidencePolicy::StrongSourceRequired;
+        let result = import(&session(root.path(), true, false), selected, decisions).await;
+        if mode == "valid" {
+            result.unwrap();
+            assert_eq!(
+                read(&root.path().join("project")).intent().metadata.name,
+                "Imported"
+            );
+        } else {
+            assert!(result.is_err(), "{mode} evidence must not authorize import");
+            assert_eq!(super::super::tests::snapshot(root.path()), before);
+        }
+    }
 }

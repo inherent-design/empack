@@ -1334,7 +1334,19 @@ This host accepts explicit archive and representation choices. Provider-page dis
 runtime conversion, durable pending-input storage and CLI selection/cutover remain open.
 The existing CLI is unchanged; this does not claim complete product parity.
 
-The final six host cases, all-feature Clippy and Windows cross-compilation pass.
-The preceding affected run passed 86 other/earlier cases; its remaining new fixture
-was corrected to exercise the documented reference and layer-projection contracts.
-A complete combined rerun remains required.
+At `43a8a3c`, the frozen combined revision passed all 1,929 default tests and eleven
+doctests without pipe warnings; 123 opt-in tests were skipped. The six native host cases,
+all-feature Clippy and Windows cross-compilation also pass.
+
+## Local import source assertions
+
+Greptile 112 identified that local archive selections could not carry independently
+known digests. Strong-source acquisition therefore rejected them before inspection.
+The failure reproduced with a caller-known archive digest. Local and remote source
+variants now both carry `ExpectedContent`; acquisition enforces these assertions
+without changing the selected evidence policy. The regression checks missing, weak,
+wrong-digest and wrong-size evidence against an unchanged native project tree before
+accepting the correct SHA-512 declaration.
+
+All 39 affected import/local-acquisition tests, all-feature Clippy and Windows
+cross-compilation pass. The complete-suite result remains pinned to `43a8a3c`.
