@@ -167,8 +167,11 @@ of subsequent changes. Synchronization continuation passed 91 affected CLI, exec
 cleanup and recorded-sync tests, plus all-target/all-feature Clippy. The executable
 was rebuilt before the final run. Tests cover repeated inputs across restart, wrong
 bytes, symlinks, stale previews, exact cleanup and two unchanged subsequent syncs.
-The cache-admission issue reported against `5fe32bc` remains under investigation: optional
-copy/index admission must not fail authoritative mutation when capacity is exhausted.
+The cache-admission issue reported against `5fe32bc` reproduced with no spare inventory
+memory. Optional inventory/copy/writer capacity exhaustion now skips caching without
+consuming the prepared mutation. Cancellation, closed admission and byte-verification
+failures still fail. The correction passed 49 affected runtime, mutation and store tests
+and all-target/all-feature Clippy; it has not received final combined acceptance.
 
 ## Historical verification evidence
 

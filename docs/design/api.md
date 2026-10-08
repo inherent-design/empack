@@ -1346,3 +1346,9 @@ the native file plan again; only completed publication removes the observed save
 explicit cleanup even when the saved model cannot decode. Preview and declined execution
 preserve saved state. Supplied selectors are exact dependency/slot pairs; authored local
 sources cannot be replaced through this association path.
+
+Optional mutation caching admits its inventory and private copy separately from project
+publication. If job, memory, descriptor or scratch capacity is unavailable, it retains the
+prepared mutation and skips insertion. Worker input ownership transfers only after
+successful admission. Cancellation, closed operation ownership and failed source-byte
+verification remain errors; they are not classified as disposable capacity failures.

@@ -72,7 +72,16 @@ impl ContentCache {
                 cancel.check()?;
                 FileContentStore::open(&cache.root, cache.limits)
             },
-        )?;
+        );
+        let work = match work {
+            Ok(work) => work,
+            Err(error) if error.is_capacity_exhausted() => {
+                scope.cancellation().check()?;
+                tracing::debug!("No spare capacity to open optional cache writer");
+                return Ok(());
+            }
+            Err(error) => return Err(error.into()),
+        };
         let store = scope.accept(work.wait().await?)?;
         scope.cancellation().check()?;
         let store = store.map(Result::ok);

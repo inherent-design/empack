@@ -45,6 +45,16 @@ pub enum RuntimeError {
     IdentifierExhausted,
 }
 
+impl RuntimeError {
+    /// Disposable work may skip exhausted capacity, never cancellation or closed ownership.
+    pub(super) fn is_capacity_exhausted(&self) -> bool {
+        matches!(
+            self,
+            Self::Admission(AdmissionError::Busy { .. } | AdmissionError::TooLarge { .. })
+        )
+    }
+}
+
 pub enum OperationOutcome<T> {
     Completed(T),
     Failed(RuntimeError),
@@ -416,7 +426,22 @@ impl WorkScope {
         T: Send + 'static,
         F: FnOnce(Cancellation) -> T + Send + 'static,
     {
+        self.spawn_blocking_deferred(request, retained, || run)
+    }
+    /// Create the worker only after admission. Callers keep ownership of inputs when
+    /// optional work cannot reserve capacity; no worker starts on a failed reservation.
+    pub(super) fn spawn_blocking_deferred<F, T>(
+        &self,
+        request: ResourceRequest,
+        retained: ResourceRequest,
+        make_worker: impl FnOnce() -> F,
+    ) -> Result<WorkHandle<T>, RuntimeError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Cancellation) -> T + Send + 'static,
+    {
         self.register(request, retained, |cancel, mut permit| {
+            let run = make_worker();
             tokio::task::spawn_blocking(move || {
                 let output_permit = permit.split(retained)?;
                 let value = run(cancel);
