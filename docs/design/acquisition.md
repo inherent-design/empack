@@ -108,8 +108,9 @@ Standalone import/acquisition hosts apply the same configuration explicitly.
 The compiled inspection boundary is documented in [the implementation ledger](implementation.md#normalized-import-inspection).
 Wire semantics follow the [mrpack specification](https://support.modrinth.com/en/articles/8802351-modrinth-modpack-format-mrpack)
 and the [CurseForge export structure](https://support.curseforge.com/support/solutions/articles/9000198500-exporting-a-modpack-for-curseforge-project-submission).
-The interface below describes the target composition; it is not a claim that the
-full prepare/import/publication operation is already exposed.
+The interface below describes the adapter contract. The compiled native import host
+connects explicitly selected archives, verified interpretation and approved publication;
+provider-page source discovery and CLI import selection remain separate integration work.
 
 
 ```rust

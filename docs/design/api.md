@@ -754,6 +754,27 @@ download-directory discovery and filename association must be composed before th
 cutover; this host rejects those arguments rather than ignoring them. Existing CLI
 workflows remain available through the current dispatcher in the meantime.
 
+### Native import host
+
+`application::engine_host::import` accepts an `ImportHostRequest` and a decision
+callback over `VerifiedImportContent`. Sources are explicit native paths or download
+alternatives with original content assertions. Native paths resolve from the invocation;
+destination paths resolve from the selected workdir. Remote acquisition enforces the
+compressed archive limit while streaming, before parsing or project preparation.
+
+Inspection, exact provider resolution, content verification and native publication share
+the host resource budget. Restricted inputs need explicit verified associations. Missing
+input, invalid conversion or any acquisition failure leaves the project unpublished.
+The callback chooses metadata, loader declaration, file representation, placement and
+optional defaults without receiving project write authority. It cannot change declared
+participation or silently redirect source destinations.
+
+The host displays the exact managed replacement plan before the common approval step.
+Preview and declined approval leave project and durable host state unchanged. Provider
+modpack-page discovery, runtime conversion choices, durable pending-input storage and
+the CLI import dispatcher remain integration work. This entry point does not complete
+those features or remove the current CLI implementation.
+
 ### Native cleanup host
 
 `application::engine_host::clean` accepts `builds`, `cache` and `all`; omission selects

@@ -1312,3 +1312,29 @@ names. The transfer cannot grow any resource dimension. The native-budget regres
 verifies extracted bytes and complete reservation retirement; a separate test rejects
 an attempted reservation increase. All 57 affected import/runtime/acquisition tests,
 all-feature Clippy and Windows cross-compilation pass on the combined change.
+
+## Native selected-archive import host
+
+The compiled import host connects selected native files and bounded remote downloads
+to inspection, exact provider resolution, verified content, explicit conversion choices
+and approved project publication. All phases share the normal host resource budget.
+Missing restricted content stops before conversion or publication; supplied associations
+are reverified against the original assertions. Provider CDN credentials follow the same
+fixed-origin policy as engine builds.
+
+Six native host regressions pass. They cover preview/decline, refused and approved forced
+replacement, retained unrelated notes, source/destination symlinks, HTTP byte limits,
+wrong archive digests and a stalled chunked response rejected before EOF. Restricted
+CurseForge content requires explicit supplied bytes and retains MD5 evidence and optional
+participation. The composed import → full-client → mrpack case inspects original common
+bytes, effective client/server layers and optional URL references without rewriting intent.
+Fully shadowed common bytes remain in the project; exports contain the effective side views.
+
+This host accepts explicit archive and representation choices. Provider-page discovery,
+runtime conversion, durable pending-input storage and CLI selection/cutover remain open.
+The existing CLI is unchanged; this does not claim complete product parity.
+
+The final six host cases, all-feature Clippy and Windows cross-compilation pass.
+The preceding affected run passed 86 other/earlier cases; its remaining new fixture
+was corrected to exercise the documented reference and layer-projection contracts.
+A complete combined rerun remains required.

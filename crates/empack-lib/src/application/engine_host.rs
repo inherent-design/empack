@@ -371,6 +371,9 @@ pub use dependencies::{add_providers, remove, synchronize};
 mod cleanup;
 pub use cleanup::clean;
 
+mod import;
+pub use import::{ImportHostRequest, ImportSource, import};
+
 /// Keep service workers and their retained results under the host's shared admission budget.
 async fn scoped<T, F, Fut>(session: &dyn Session, governor: ResourceGovernor, work: F) -> Result<T>
 where

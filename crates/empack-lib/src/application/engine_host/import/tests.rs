@@ -1,0 +1,652 @@
+use super::*;
+use crate::{
+    application::{
+        BuildArgs,
+        session_mocks::{MockCommandSession, MockConfigProvider, MockFileSystemProvider},
+    },
+    engine::{
+        build::BuildAcquisitions,
+        documents::DocumentCodec,
+        import::{ImportFileDecision, ImportPersistence, ImportedRequirement},
+        mrpack::OptionalConversion,
+    },
+};
+use empack_core::{
+    inventory::OptionalPolicy,
+    model::{ContentKind, DependencyKey, DistributionArchive, DistributionIntent, PackMetadata},
+    projection::BuildTarget,
+    requirements::{ChoiceKey, OptionalChoice, Requirement, Requirements},
+};
+use serde_json::{Value, json};
+use sha2::Digest;
+use std::{
+    fs,
+    io::{Cursor, Read, Write},
+};
+
+fn session(root: &Path, yes: bool, dry_run: bool) -> MockCommandSession {
+    MockCommandSession::new()
+        .with_filesystem(MockFileSystemProvider::new().with_current_dir(root.to_path_buf()))
+        .with_config(MockConfigProvider::new(AppConfig {
+            workdir: Some(root.join("project")),
+            state_dir: Some(root.join("state")),
+            yes,
+            dry_run,
+            ..Default::default()
+        }))
+}
+fn archive(members: &[(&str, &[u8])], declared: bool) -> Vec<u8> {
+    let files = if declared {
+        vec![json!({
+            "path":"resourcepacks/theme.zip", "fileSize":7, "downloads":["https://example.com/theme.zip"],
+            "hashes":{"sha512":empack_core::digest::ExpectedDigest::Sha512(sha2::Sha512::digest(b"payload").into()).hex()},
+            "env":{"client":"optional","server":"unsupported"}
+        })]
+    } else {
+        vec![]
+    };
+    let manifest = serde_json::to_vec(&json!({"formatVersion":1,"game":"minecraft","name":"Imported","versionId":"1","files":files,"dependencies":{"minecraft":"1.21.1"}})).unwrap();
+    archive_with_manifest("modrinth.index.json", &manifest, members)
+}
+fn archive_with_manifest(name: &str, manifest: &[u8], members: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, bytes) in std::iter::once((name, manifest)).chain(members.iter().copied()) {
+        writer
+            .start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(bytes).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+fn source(root: &Path, bytes: &[u8]) -> ImportSource {
+    fs::write(root.join("source.mrpack"), bytes).unwrap();
+    // Source path is invocation-relative even when a different workdir is selected.
+    ImportSource::Local("source.mrpack".into())
+}
+fn request(source: ImportSource, replace: bool) -> ImportHostRequest {
+    ImportHostRequest {
+        source,
+        destination: None,
+        replacement: if replace {
+            ProjectReplacementPolicy::ReplaceManagedContent
+        } else {
+            ProjectReplacementPolicy::RejectExisting
+        },
+        evidence: SourceEvidencePolicy::Compatibility,
+        supplied: BTreeMap::new(),
+    }
+}
+fn decisions(content: &VerifiedImportContent) -> Result<ImportCandidateOptions> {
+    let source = content.plan().imported();
+    let files = content
+        .content()
+        .keys()
+        .enumerate()
+        .map(|(index, key)| {
+            let (file, kind) = match key {
+                ImportContentKey::Declared(index) => {
+                    (&source.files[*index], ContentKind::ResourcePack)
+                }
+                ImportContentKey::Override(index) => {
+                    (&source.overrides[*index], ContentKind::Config)
+                }
+                _ => panic!("fixture has no provider references"),
+            };
+            let label = format!("file-{index}");
+            let requirement = |value| match value {
+                ImportedRequirement::Required => Requirement::Required,
+                ImportedRequirement::Unsupported => Requirement::Unsupported,
+                ImportedRequirement::Optional => Requirement::Optional(OptionalChoice {
+                    key: ChoiceKey::parse(&label).unwrap(),
+                    default_enabled: true,
+                    description: Some("Selected by the import fixture".into()),
+                }),
+            };
+            (
+                key.clone(),
+                ImportFileDecision {
+                    key: DependencyKey::parse(&label).unwrap(),
+                    kind,
+                    requirements: Requirements {
+                        client: requirement(file.requirements.client),
+                        server: requirement(file.requirements.server),
+                    },
+                    persistence: if matches!(key, ImportContentKey::Declared(_)) {
+                        ImportPersistence::Url
+                    } else {
+                        ImportPersistence::Local
+                    },
+                    provider_destination: None,
+                },
+            )
+        })
+        .collect();
+    Ok(ImportCandidateOptions {
+        metadata: PackMetadata {
+            name: "Imported".into(),
+            version: "1".into(),
+            author: None,
+            description: None,
+        },
+        loader: None,
+        layout: BTreeMap::new(),
+        distribution: DistributionIntent {
+            targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+            archive: DistributionArchive::Zip,
+        },
+        files,
+        exclude_auxiliary_members: false,
+    })
+}
+fn observed(mut bytes: &[u8]) -> AcquiredContent {
+    let maximum = bytes.len() as u64;
+    crate::engine::content::verify_stream(
+        &mut bytes,
+        &ExpectedContent {
+            digests: None,
+            size: None,
+            accepted_observation: None,
+        },
+        maximum,
+        SourceEvidencePolicy::Compatibility,
+        InitialObservation::Accepted,
+        &crate::application::process_runtime::Cancellation::default(),
+    )
+    .unwrap()
+}
+fn read(root: &Path) -> empack_core::model::ResolvedProject {
+    let intent = DocumentCodec
+        .decode_intent(&fs::read(root.join("empack.yml")).unwrap(), "test")
+        .unwrap();
+    DocumentCodec
+        .decode_lock(
+            &fs::read(root.join("empack.lock")).unwrap(),
+            &intent,
+            "test",
+        )
+        .unwrap()
+}
+fn member(archive: &mut zip::ZipArchive<fs::File>, path: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    archive
+        .by_name(path)
+        .unwrap_or_else(|error| panic!("Missing archive member {path}: {error}"))
+        .read_to_end(&mut bytes)
+        .unwrap();
+    bytes
+}
+#[tokio::test]
+async fn native_import_preserves_layers_and_optional_choices_through_build_and_export() {
+    let root = tempfile::tempdir().unwrap();
+    let bytes = archive(
+        &[
+            ("overrides/config/example.toml", b"common"),
+            ("client-overrides/config/example.toml", b"client"),
+            ("server-overrides/config/example.toml", b"server"),
+        ],
+        true,
+    );
+    let mut selected = request(source(root.path(), &bytes), false);
+    selected
+        .supplied
+        .insert(ImportContentKey::Declared(0), observed(b"payload"));
+    import(&session(root.path(), true, false), selected, decisions)
+        .await
+        .unwrap();
+    let project = root.path().join("project");
+    for (layer, expected) in [
+        ("common", b"common".as_slice()),
+        ("client", b"client"),
+        ("server", b"server"),
+    ] {
+        assert_eq!(
+            fs::read(project.join(format!("overrides/{layer}/config/example.toml"))).unwrap(),
+            expected
+        );
+    }
+    let resolved = read(&project);
+    let optional = resolved
+        .lock()
+        .dependencies
+        .values()
+        .flat_map(|dep| dep.files.as_slice())
+        .flat_map(|file| file.placements.as_slice())
+        .find(|placement| placement.destination.relative().as_str() == "resourcepacks/theme.zip")
+        .unwrap();
+    assert!(matches!(
+        optional.requirements.client,
+        Requirement::Optional(_)
+    ));
+    assert_eq!(optional.requirements.server, Requirement::Unsupported);
+    let decisions = super::super::BuildDecisions {
+        optional: OptionalPolicy::Resolve {
+            choices: BTreeMap::new(),
+            use_defaults: true,
+        },
+        mrpack_optional: OptionalConversion::AcknowledgedMetadataLoss,
+        ..Default::default()
+    };
+    super::super::build(
+        &session(root.path(), true, false),
+        &BuildArgs {
+            targets: vec!["client-full".into()],
+            ..Default::default()
+        },
+        decisions,
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    let mut client = zip::ZipArchive::new(
+        fs::File::open(project.join("dist/Imported-1-client-full.zip")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        member(&mut client, ".minecraft/config/example.toml"),
+        b"client"
+    );
+    assert_eq!(
+        member(&mut client, ".minecraft/resourcepacks/theme.zip"),
+        b"payload"
+    );
+    super::super::build(
+        &session(root.path(), true, false),
+        &BuildArgs {
+            targets: vec!["mrpack".into()],
+            ..Default::default()
+        },
+        super::super::BuildDecisions {
+            mrpack_optional: OptionalConversion::AcknowledgedMetadataLoss,
+            ..Default::default()
+        },
+        BuildAcquisitions::default(),
+    )
+    .await
+    .unwrap();
+    let mut export =
+        zip::ZipArchive::new(fs::File::open(project.join("dist/Imported-1.mrpack")).unwrap())
+            .unwrap();
+    // Both environments replace the common layer, so export contains the two effective
+    // views while the original common bytes remain in the editable project.
+    assert!(export.by_name("overrides/config/example.toml").is_err());
+    for (layer, expected) in [
+        ("client-overrides", b"client".as_slice()),
+        ("server-overrides", b"server"),
+    ] {
+        assert_eq!(
+            member(&mut export, &format!("{layer}/config/example.toml")),
+            expected
+        );
+    }
+    let index: Value = serde_json::from_slice(&member(&mut export, "modrinth.index.json")).unwrap();
+    assert_eq!(index["files"][0]["path"], "resourcepacks/theme.zip");
+    assert_eq!(index["files"][0]["env"]["client"], "optional");
+    assert_eq!(index["files"][0]["env"]["server"], "unsupported");
+    assert_eq!(
+        index["files"][0]["downloads"][0],
+        "https://example.com/theme.zip"
+    );
+    assert_eq!(
+        DocumentCodec.encode_lock(&read(&project)).unwrap(),
+        DocumentCodec.encode_lock(&resolved).unwrap(),
+        "Build conversion must not rewrite imported intent"
+    );
+}
+#[tokio::test]
+async fn import_preview_decline_and_failed_replacement_preserve_the_entire_tree() {
+    let root = tempfile::tempdir().unwrap();
+    let bytes = archive(&[("overrides/config/example.toml", b"new")], false);
+    let input = source(root.path(), &bytes);
+    let before = super::super::tests::snapshot(root.path());
+    import(
+        &session(root.path(), true, true),
+        request(input, true),
+        decisions,
+    )
+    .await
+    .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    import(
+        &session(root.path(), false, false),
+        request(ImportSource::Local("source.mrpack".into()), true),
+        decisions,
+    )
+    .await
+    .unwrap();
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    fs::create_dir_all(root.path().join("project/pack/config")).unwrap();
+    fs::write(root.path().join("project/pack/config/old"), b"old").unwrap();
+    fs::write(root.path().join("project/notes.txt"), b"user notes").unwrap();
+    let before = super::super::tests::snapshot(root.path());
+    assert!(
+        import(
+            &session(root.path(), true, false),
+            request(ImportSource::Local("source.mrpack".into()), false),
+            decisions
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    assert!(
+        import(
+            &session(root.path(), true, false),
+            request(ImportSource::Local("source.mrpack".into()), true),
+            |_| anyhow::bail!("conversion declined")
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(super::super::tests::snapshot(root.path()), before);
+    import(
+        &session(root.path(), true, false),
+        request(ImportSource::Local("source.mrpack".into()), true),
+        decisions,
+    )
+    .await
+    .unwrap();
+    assert!(!root.path().join("project/pack/config/old").exists());
+    assert_eq!(
+        fs::read(root.path().join("project/notes.txt")).unwrap(),
+        b"user notes"
+    );
+}
+
+#[tokio::test]
+async fn remote_archive_acquisition_enforces_bytes_and_source_assertions_before_replacement() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("project/pack")).unwrap();
+    fs::write(root.path().join("project/pack/keep"), b"keep").unwrap();
+    let original = super::super::tests::snapshot(root.path());
+    let mut server = mockito::Server::new_async().await;
+    let bytes = archive(&[("overrides/config/a", b"downloaded")], false);
+    let download = server
+        .mock("GET", "/source")
+        .with_body(bytes.clone())
+        .expect(3)
+        .create_async()
+        .await;
+    for mode in ["limit", "digest", "valid"] {
+        let limits = ImportLimits {
+            archive: ArchiveLimits {
+                compressed_bytes: if mode == "limit" { 16 } else { 4096 },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let expected = ExpectedContent {
+            digests: if mode == "digest" {
+                Some(
+                    empack_core::digest::DigestSet::parse([(
+                        "sha256",
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )])
+                    .unwrap(),
+                )
+            } else {
+                None
+            },
+            size: None,
+            accepted_observation: None,
+        };
+        let result = import_with_services(
+            &session(root.path(), true, false),
+            request(
+                ImportSource::Download {
+                    alternatives: NonEmpty::new(vec![format!("{}/source", server.url())]).unwrap(),
+                    expected,
+                },
+                true,
+            ),
+            decisions,
+            ProviderCatalog::for_loopback_tests(&server.url(), None),
+            HttpAcquisition::for_loopback_tests(),
+            limits,
+        )
+        .await;
+        if mode == "valid" {
+            result.unwrap();
+            assert_eq!(
+                fs::read(root.path().join("project/overrides/common/config/a")).unwrap(),
+                b"downloaded"
+            );
+        } else {
+            assert!(result.is_err(), "{mode} must reject the source archive");
+            assert_eq!(super::super::tests::snapshot(root.path()), original);
+        }
+    }
+    download.assert_async().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unsafe_import_source_and_destination_ancestors_preserve_outside_files() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let bytes = archive(&[("overrides/config/a", b"new")], false);
+    source(root.path(), &bytes);
+    fs::write(outside.path().join("sentinel"), b"outside").unwrap();
+    std::os::unix::fs::symlink(
+        root.path().join("source.mrpack"),
+        root.path().join("linked.mrpack"),
+    )
+    .unwrap();
+    assert!(
+        import(
+            &session(root.path(), true, false),
+            request(ImportSource::Local("linked.mrpack".into()), true),
+            decisions
+        )
+        .await
+        .is_err()
+    );
+    assert!(!root.path().join("project").exists());
+    fs::create_dir_all(root.path().join("project/overrides/common")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path(),
+        root.path().join("project/overrides/common/config"),
+    )
+    .unwrap();
+    assert!(
+        import(
+            &session(root.path(), true, false),
+            request(ImportSource::Local("source.mrpack".into()), true),
+            decisions
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        fs::read(outside.path().join("sentinel")).unwrap(),
+        b"outside"
+    );
+    assert!(!outside.path().join("a").exists());
+    assert!(!root.path().join("state").exists());
+}
+
+#[tokio::test]
+async fn chunked_archive_limit_rejects_without_waiting_for_the_rest_of_the_body() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("project/pack")).unwrap();
+    fs::write(root.path().join("project/pack/keep"), b"keep").unwrap();
+    let original = super::super::tests::snapshot(root.path());
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let worker = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut input = [0; 4096];
+        assert!(stream.read(&mut input).unwrap() > 0);
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n8\r\n12345678\r\n")
+            .unwrap();
+        // No final chunk: rejection must happen before EOF, and retire the connection.
+        stream.read(&mut input)
+    });
+    let result = tokio::time::timeout(
+        Duration::from_secs(4),
+        import_with_services(
+            &session(root.path(), true, false),
+            request(
+                ImportSource::Download {
+                    alternatives: NonEmpty::new(vec![format!("http://{address}/source")]).unwrap(),
+                    expected: ExpectedContent {
+                        digests: None,
+                        size: None,
+                        accepted_observation: None,
+                    },
+                },
+                true,
+            ),
+            |_| panic!("oversized archive must not reach decisions"),
+            ProviderCatalog::for_loopback_tests(&format!("http://{address}"), None),
+            HttpAcquisition::for_loopback_tests(),
+            ImportLimits {
+                archive: ArchiveLimits {
+                    compressed_bytes: 7,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        result.unwrap_err().downcast_ref(),
+        Some(crate::engine::acquisition::TransferError::ByteLimit)
+    ));
+    assert_eq!(worker.join().unwrap().unwrap(), 0);
+    assert_eq!(super::super::tests::snapshot(root.path()), original);
+}
+
+#[tokio::test]
+async fn restricted_curseforge_import_requires_explicit_bytes_before_any_publication() {
+    use empack_core::{
+        identity::{CurseForgeProjectId, ProviderProjectId},
+        model::ResolvedPin,
+        path::InstallDestination,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let manifest = serde_json::to_vec(&json!({"manifestVersion":1,"manifestType":"minecraftModpack","name":"Imported","version":"1","files":[{"projectID":123,"fileID":456,"required":false}],"minecraft":{"version":"1.21.1","modLoaders":[]},"overrides":"overrides"})).unwrap();
+    let bytes = archive_with_manifest("manifest.json", &manifest, &[]);
+    source(root.path(), &bytes);
+    let project = server
+        .mock("GET", "/mods/123")
+        .with_body(
+            json!({"data":{"id":123,"gameId":432,"classId":6,"slug":"fixture","name":"Fixture"}})
+                .to_string(),
+        )
+        .expect(2)
+        .create_async()
+        .await;
+    let metadata_file = server.mock("GET", "/mods/123/files/456").with_body(json!({"data":{"id":456,"gameId":432,"modId":123,"fileName":"fixture.jar","fileLength":7,"hashes":[{"algo":2,"value":"321c3cf486ed509164edec1e1981fec8"}],"downloadUrl":null,"gameVersions":["1.21.1"],"dependencies":[]}}).to_string()).expect(2).create_async().await;
+    let original = super::super::tests::snapshot(root.path());
+    let result = import_with_services(
+        &session(root.path(), true, false),
+        request(ImportSource::Local("source.mrpack".into()), false),
+        |_| panic!("restricted content must stop before conversion"),
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        HttpAcquisition::for_loopback_tests(),
+        ImportLimits::default(),
+    )
+    .await;
+    assert!(
+        format!("{:#}", result.unwrap_err()).contains("content obligations need explicit input")
+    );
+    assert_eq!(super::super::tests::snapshot(root.path()), original);
+    let identity = ProviderProjectId::CurseForge(CurseForgeProjectId::parse("123").unwrap());
+    let pin = ResolvedPin {
+        selection: identity.parse_pin("456").unwrap(),
+        project: identity,
+    };
+    let key = ImportContentKey::Provider {
+        pin,
+        filename: "fixture.jar".into(),
+    };
+    let mut selected = request(ImportSource::Local("source.mrpack".into()), false);
+    selected.supplied.insert(
+        key.clone(),
+        crate::engine::content::verify_stream(
+            &mut b"payload".as_slice(),
+            &ExpectedContent {
+                digests: None,
+                size: None,
+                accepted_observation: None,
+            },
+            7,
+            SourceEvidencePolicy::Compatibility,
+            InitialObservation::Accepted,
+            &crate::application::process_runtime::Cancellation::default(),
+        )
+        .unwrap(),
+    );
+    import_with_services(
+        &session(root.path(), true, false),
+        selected,
+        move |content| {
+            assert_eq!(content.content().len(), 1);
+            let mut options = ImportCandidateOptions {
+                metadata: PackMetadata {
+                    name: "Imported".into(),
+                    version: "1".into(),
+                    author: None,
+                    description: None,
+                },
+                loader: None,
+                layout: BTreeMap::new(),
+                distribution: DistributionIntent {
+                    targets: NonEmpty::new(vec![BuildTarget::Mrpack])?,
+                    archive: DistributionArchive::Zip,
+                },
+                files: BTreeMap::new(),
+                exclude_auxiliary_members: false,
+            };
+            let optional = Requirement::Optional(OptionalChoice {
+                key: ChoiceKey::parse("fixture")?,
+                default_enabled: false,
+                description: Some("Imported optional file".into()),
+            });
+            options.files.insert(
+                key,
+                ImportFileDecision {
+                    key: DependencyKey::parse("fixture")?,
+                    kind: ContentKind::Mod,
+                    requirements: Requirements {
+                        client: optional.clone(),
+                        server: optional,
+                    },
+                    persistence: ImportPersistence::Provider,
+                    provider_destination: Some(InstallDestination::parse("mods/fixture.jar")?),
+                },
+            );
+            Ok(options)
+        },
+        ProviderCatalog::for_loopback_tests(&server.url(), Some("fixture-key".into())),
+        HttpAcquisition::for_loopback_tests(),
+        ImportLimits::default(),
+    )
+    .await
+    .unwrap();
+    let resolved = read(&root.path().join("project"));
+    let file = &resolved.lock().dependencies[&DependencyKey::parse("fixture").unwrap()]
+        .files
+        .as_slice()[0];
+    assert!(matches!(
+        file.placements.as_slice()[0].requirements.client,
+        Requirement::Optional(_)
+    ));
+    assert_eq!(
+        file.expected.digests.as_ref().unwrap().values()[0].algorithm(),
+        empack_core::digest::DigestAlgorithm::Md5
+    );
+    assert_eq!(
+        fs::read(root.path().join("project/pack/mods/fixture.jar")).unwrap(),
+        b"payload"
+    );
+    project.assert_async().await;
+    metadata_file.assert_async().await;
+}
