@@ -1655,3 +1655,25 @@ Before this change, frozen `84f5583` passed 1,978 default tests, eleven doctests
 24 executable smoke tests with no pipe warnings; 124 opt-in tests were skipped. The run
 included a macOS test-binary discovery delay; a sampled process was still at `_dyld_start`
 before Rust entry. Greptile 126 reports no new blocking finding for that revision.
+
+
+## Native save and continue flow
+
+The native host now offers explicit suspension when required content is missing. Preview
+and decline leave state unchanged. Continuation preserves the saved recipe, resolves
+filename or encoded logical-slot associations, verifies supplied bytes, and uses the same
+approval/publication path as a fresh build. Completion removes only the exact inspected
+record; a newer request is retained. Stale source, invalid associations and failed builds
+leave saved state and prior distributions intact. The main CLI dispatcher still awaits its
+coordinated cutover; browser assistance remains separate host work.
+
+Greptile 127 found two admission defects in the first suspension API. Both reproduced:
+small records required a fixed 32 MiB reservation, and a seven-byte retained file could not
+be saved under a ten-byte private-scratch allowance. Metadata admission now scales with the
+request or probed record size. Persistent candidates consume the content store's bounded,
+locked capacity; source leases retain their independent private-scratch accounting. An
+orphaned candidate is included in capacity checks. Native tests verify both small-host
+cases, quota exhaustion, conditional cleanup and the complete host continuation sequence.
+
+All 43 affected tests pass without pipe warnings. Final all-feature Clippy and Windows
+cross-compilation pass; Windows retains its seven existing test-only warnings.

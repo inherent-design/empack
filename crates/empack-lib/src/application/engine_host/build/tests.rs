@@ -366,6 +366,7 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         ..Default::default()
     };
     let before = snapshot(root.path());
+    let project_before = snapshot(&project);
     run(root.path(), &options, true, true).await.unwrap();
     assert_eq!(snapshot(root.path()), before);
     let error = run(root.path(), &options, true, false).await.unwrap_err();
@@ -375,7 +376,25 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
             .contains("supply the displayed missing content"),
         "{error:#}"
     );
-    assert_eq!(snapshot(root.path()), before);
+    assert_eq!(snapshot(&project), project_before);
+    assert!(root.path().join("state/pending-builds").is_dir());
+    let original_intent = fs::read(project.join("empack.yml")).unwrap();
+    fs::write(project.join("empack.yml"), b"invalid changed document: [").unwrap();
+    let stale = snapshot(root.path());
+    for dry in [true, false] {
+        let error = continue_build(
+            &session(root.path(), true, dry),
+            &BuildArgs {
+                continue_build: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("inputs changed"));
+        assert_eq!(snapshot(root.path()), stale);
+    }
+    fs::write(project.join("empack.yml"), original_intent).unwrap();
     fs::create_dir(root.path().join("downloads")).unwrap();
     fs::write(
         root.path().join("downloads/renamed.bin"),
@@ -396,6 +415,67 @@ async fn native_build_missing_content_is_read_only_and_exact_supplied_bytes_comp
         run(root.path(), &discovered, yes, dry).await.unwrap();
         assert_eq!(snapshot(root.path()), before_discovery);
     }
+    let continuing = BuildArgs {
+        continue_build: true,
+        downloads_dir: Some("downloads".into()),
+        ..Default::default()
+    };
+    for (yes, dry) in [(true, true), (false, false)] {
+        continue_build(&session(root.path(), yes, dry), &continuing)
+            .await
+            .unwrap();
+        assert_eq!(snapshot(root.path()), before_discovery);
+    }
+    for values in [
+        vec!["custom.zip=downloads/custom.zip".into()],
+        vec!["unknown=downloads/renamed.bin".into()],
+        vec![
+            "custom.zip=downloads/renamed.bin".into(),
+            "custom.zip=downloads/renamed.bin".into(),
+        ],
+    ] {
+        let invalid = BuildArgs {
+            associate_downloads: values,
+            ..continuing.clone()
+        };
+        assert!(
+            continue_build(&session(root.path(), true, false), &invalid)
+                .await
+                .is_err()
+        );
+        assert_eq!(snapshot(root.path()), before_discovery);
+    }
+    let selected_key = AcquisitionKey::Locked(LockedFileKey {
+        dependency: key.clone(),
+        slot: slot.clone(),
+    });
+    let explicit = BuildArgs {
+        associate_downloads: vec![format!(
+            "{}=downloads/renamed.bin",
+            input_selector(&selected_key)
+        )],
+        downloads_dir: None,
+        ..continuing.clone()
+    };
+    continue_build(&session(root.path(), true, false), &explicit)
+        .await
+        .unwrap();
+    assert!(
+        !fs::read_dir(root.path().join("state/pending-builds"))
+            .unwrap()
+            .any(|entry| entry
+                .unwrap()
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "json"))
+    );
+    let completed = snapshot(root.path());
+    assert!(
+        continue_build(&session(root.path(), true, false), &continuing)
+            .await
+            .is_err()
+    );
+    assert_eq!(snapshot(root.path()), completed);
     run(root.path(), &discovered, true, false).await.unwrap();
     assert_eq!(
         zip_bytes(

@@ -120,6 +120,7 @@ pub(super) async fn supply(
                 .pending
                 .retain(|need| !keys.contains(&need.key));
             value.view.content = value.acquisition.pending.iter().map(describe).collect();
+            value.view.file_names.retain(|key, _| !keys.contains(key));
             value.view.unresolved.retain(|key| !keys.contains(key));
             value.view.needs_network = value.request.outputs.as_slice().iter().any(|output| {
                 matches!(

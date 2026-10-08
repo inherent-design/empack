@@ -289,3 +289,48 @@ async fn verified_cache_hit_needs_no_second_scratch_allocation() {
     assert_eq!(footprint(&path), before);
     runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn persistent_store_capacity_includes_orphaned_publication_candidates() {
+    for capacity in [12, 13] {
+        let host = tempfile::tempdir().unwrap();
+        let path = host.path().join("content");
+        let store = FileContentStore::open(
+            &path,
+            ContentStoreLimits {
+                file_bytes: 7,
+                total_bytes: capacity,
+                entries: 3,
+            },
+        )
+        .unwrap();
+        fs::write(path.join(".empack-candidate-123-456"), b"orphan").unwrap();
+        let content = acquire(b"payload", &expected()).unwrap();
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 1,
+            memory_bytes: 1 << 20,
+            open_files: 8,
+            scratch_bytes: 0,
+        });
+        let runtime = OperationRuntime::new(governor.clone(), 1);
+        let mut handle =
+            runtime
+                .start(move |mut scope| async move {
+                    Ok(store.publish_verified(&mut scope, content).await)
+                })
+                .unwrap();
+        let result = handle.wait().await;
+        let OperationOutcome::Completed(result_value) = &*result else {
+            panic!("cache write did not finish");
+        };
+        assert_eq!(result_value.is_ok(), capacity == 13);
+        assert_eq!(
+            fs::read(path.join(".empack-candidate-123-456")).unwrap(),
+            b"orphan"
+        );
+        runtime.release_completed(handle.id());
+        runtime.shutdown().await;
+        drop((result, handle));
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}

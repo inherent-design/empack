@@ -26,16 +26,33 @@ pub struct SuspendedBuildReceipt {
 pub enum SavedBuildResume {
     Missing,
     Stale,
-    Prepared(Box<Preparation>),
+    Prepared(Box<ResumedBuild>),
 }
-fn record_resources() -> ResourceRequest {
-    ResourceRequest {
+pub struct ResumedBuild {
+    pub preparation: Preparation,
+    pub saved: SavedBuildRecord,
+}
+/// Exact read-only observation, not serialized authority. Deletion is a separate host action.
+pub struct SavedBuildRecord {
+    owner: Arc<()>,
+    name: String,
+    content: [u8; 32],
+}
+fn record_memory(bytes: u64) -> Result<u64> {
+    bytes
+        .checked_mul(8)
+        .and_then(|bytes| bytes.checked_add(256 << 10))
+        .context("Pending record memory estimate overflow")
+}
+fn record_resources(bytes: u64) -> Result<ResourceRequest> {
+    Ok(ResourceRequest {
         jobs: 1,
-        memory_bytes: record::MAX_RECORD * 8,
+        memory_bytes: record_memory(bytes)?,
         open_files: 8,
         ..Default::default()
-    }
+    })
 }
+
 impl Engine {
     /// Explicit host authorization to persist this continuation and verified content. Preview
     /// never calls this method; the saved record contains neither native locators nor approval.
@@ -72,6 +89,43 @@ impl Engine {
             .await
             .context("Suspension result was not retained")?
     }
+    /// Explicit host cleanup, conditional on the exact observed record still being present.
+    pub async fn discard_saved_build(&self, saved: SavedBuildRecord) -> Result<bool> {
+        ensure!(
+            Arc::ptr_eq(&self.owner, &saved.owner),
+            "Saved build observation belongs to another engine"
+        );
+        let state = self.config.state_root.clone();
+        let (sender, receiver) = oneshot::channel();
+        let mut handle = self
+            .preparations
+            .start_ephemeral(move |mut scope| async move {
+                let result = async {
+                    let work = scope.spawn_blocking(
+                        record_resources(0)?,
+                        ResourceRequest::default(),
+                        move |cancel| store::discard(&state, &saved.name, saved.content, &cancel),
+                    )?;
+                    Ok::<_, anyhow::Error>(
+                        scope
+                            .accept(work.wait().await?)?
+                            .transpose()?
+                            .into_parts()
+                            .0,
+                    )
+                }
+                .await;
+                let _ = sender.send(result);
+                Ok(())
+            })?;
+        let outcome = handle.wait().await;
+        if let OperationOutcome::Failed(error) = &*outcome {
+            return Err(error.clone().into());
+        }
+        receiver
+            .await
+            .context("Saved build cleanup result was not retained")?
+    }
     /// Reconstruct a request, compare captured inputs and verify any retained cache content.
     /// The selected project and configured state root come from the host, never from saved data.
     pub async fn resume_saved_build(&self, project: PathBuf) -> Result<SavedBuildResume> {
@@ -84,12 +138,30 @@ impl Engine {
             .start_ephemeral(move |mut scope| async move {
                 let result = async {
                     let work = scope.spawn_blocking(
-                        record_resources(),
+                        record_resources(0)?,
                         ResourceRequest {
-                            memory_bytes: record::MAX_RECORD * 8,
+                            open_files: 8,
                             ..Default::default()
                         },
-                        move |cancel| store::load(&state, &selected, &cancel),
+                        move |cancel| store::probe(&state, &selected, &cancel),
+                    )?;
+                    let selected = scope.accept(work.wait().await?)?.transpose()?;
+                    let Some(bytes) = selected.as_ref().map(|selected| selected.bytes) else {
+                        return Ok(selected.map(|_| None));
+                    };
+                    let work = scope.spawn_blocking(
+                        record_resources(bytes)?,
+                        ResourceRequest {
+                            memory_bytes: record_memory(bytes)?,
+                            ..Default::default()
+                        },
+                        move |cancel| {
+                            let (selected, _guard) = selected.into_parts();
+                            store::read(
+                                selected.context("Selected pending record disappeared")?,
+                                &cancel,
+                            )
+                        },
                     )?;
                     scope.accept(work.wait().await?)?.transpose()
                 }
@@ -110,6 +182,11 @@ impl Engine {
         if !loaded.documents_match {
             return Ok(SavedBuildResume::Stale);
         }
+        let saved = SavedBuildRecord {
+            owner: self.owner.clone(),
+            name: loaded.name.clone(),
+            content: loaded.content,
+        };
         let value = &loaded.record;
         ensure!(
             value.files.len() <= self.config.snapshot.entries,
@@ -161,7 +238,10 @@ impl Engine {
         let prepared = self
             .resume(PreparationContinuation { prepared }, content)
             .await?;
-        Ok(SavedBuildResume::Prepared(Box::new(prepared)))
+        Ok(SavedBuildResume::Prepared(Box::new(ResumedBuild {
+            preparation: prepared,
+            saved,
+        })))
     }
 }
 async fn suspend(
@@ -188,6 +268,13 @@ async fn suspend(
         "Retained build content exceeds byte limit"
     );
     let pending_files = build.acquisition.pending.len();
+    let _metadata = scope.reserve_storage(ResourceRequest {
+        memory_bytes: record_memory(record::estimated_bytes(
+            &build.request,
+            &build.acquisition.acquired,
+        )?)?,
+        ..Default::default()
+    })?;
     let mut record = record::Record {
         schema: 1,
         fingerprint: build.workspace.observations().fingerprint(),
@@ -197,7 +284,7 @@ async fn suspend(
     };
     let state = config.state_root.clone();
     let work = scope.spawn_blocking(
-        record_resources(),
+        record_resources(0)?,
         ResourceRequest::default(),
         move |cancel| {
             cancel.check()?;
@@ -235,7 +322,7 @@ async fn suspend(
     }
     let retained_files = record.files.len();
     let work = scope.spawn_blocking(
-        record_resources(),
+        record_resources(0)?,
         ResourceRequest::default(),
         move |cancel| store::save(&config.state_root, &build.workspace, &record, &cancel),
     )?;
@@ -256,7 +343,7 @@ async fn restore(
 ) -> Result<BuildAcquisitions> {
     let state = config.state_root.clone();
     let work = scope.spawn_blocking(
-        record_resources(),
+        record_resources(0)?,
         ResourceRequest::default(),
         move |cancel| {
             cancel.check()?;

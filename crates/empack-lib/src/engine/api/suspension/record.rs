@@ -252,3 +252,46 @@ impl Recipe {
         })
     }
 }
+
+/// Conservative encoded-size estimate without cloning request strings or file metadata.
+pub(super) fn estimated_bytes(request: &BuildRequest, content: &BuildAcquisitions) -> Result<u64> {
+    fn text(value: &str) -> u64 {
+        value
+            .as_bytes()
+            .iter()
+            .map(|byte| match byte {
+                b'"' | b'\\' => 2,
+                0..=31 => 6,
+                _ => 1,
+            })
+            .sum::<u64>()
+    }
+    let mut total = 4096u64;
+    let mut add = |bytes: u64| -> Result<()> {
+        total = total
+            .checked_add(bytes)
+            .context("Pending recipe size overflow")?;
+        Ok(())
+    };
+    for output in request.outputs.as_slice() {
+        add(text(output.artifact.as_str()) + 64)?;
+    }
+    for path in request.templates.modes.keys() {
+        add(text(path.as_str()) + 64)?;
+    }
+    for (key, value) in &request.templates.values {
+        add(text(key) + text(value) + 32)?;
+    }
+    if let OptionalPolicy::Resolve { choices, .. } = &request.optional {
+        for key in choices.keys() {
+            add(text(key) + 32)?;
+        }
+    }
+    for key in content.locked.keys() {
+        add(text(key.dependency.as_str()) + text(key.slot.as_str()) + 256)?;
+    }
+    for path in content.observed.keys() {
+        add(text(path.as_str()) + 256)?;
+    }
+    Ok(total)
+}

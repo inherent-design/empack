@@ -14,6 +14,8 @@ use std::{
 };
 
 pub(super) struct Loaded {
+    pub name: String,
+    pub content: [u8; 32],
     pub record: record::Record,
     pub documents_match: bool,
 }
@@ -34,7 +36,19 @@ pub(super) fn documents(
     };
     Ok([read("empack.yml")?, read("empack.lock")?])
 }
-pub(super) fn load(state: &Path, project: &Path, cancel: &Cancellation) -> Result<Option<Loaded>> {
+pub(super) struct Selected {
+    pub bytes: u64,
+    root: ProjectReadRoot,
+    name: String,
+    file: File,
+    _directory: Dir,
+    _lock: File,
+}
+pub(super) fn probe(
+    state: &Path,
+    project: &Path,
+    cancel: &Cancellation,
+) -> Result<Option<Selected>> {
     cancel.check()?;
     let selected = ProjectReadRoot::open(project)?;
     let name = format!("{}.json", root_key(&selected)?);
@@ -46,13 +60,40 @@ pub(super) fn load(state: &Path, project: &Path, cancel: &Cancellation) -> Resul
     let lock = native::open_file(&directory, "state.lock")?;
     lock.try_lock_shared()
         .context("Pending build state is busy")?;
-    let mut file = match native::open_file(&directory, &name) {
+    let file = match native::open_file(&directory, &name) {
         Ok(file) => file,
         Err(error) if missing(&error) => return Ok(None),
         Err(error) => return Err(error),
     };
+    let bytes = file.metadata()?.len();
+    ensure!(
+        bytes <= record::MAX_RECORD,
+        "Pending build record exceeds byte limit"
+    );
+    Ok(Some(Selected {
+        bytes,
+        root: selected,
+        name,
+        file,
+        _directory: directory,
+        _lock: lock,
+    }))
+}
+pub(super) fn read(selected: Selected, cancel: &Cancellation) -> Result<Option<Loaded>> {
+    let Selected {
+        bytes: maximum,
+        root: selected,
+        name,
+        mut file,
+        _directory,
+        _lock,
+    } = selected;
     let mut bytes = Vec::new();
-    crate::engine::io::copy_bounded(&mut file, &mut bytes, record::MAX_RECORD, cancel)?;
+    let (content, _) = crate::engine::io::copy_bounded(&mut file, &mut bytes, maximum, cancel)?;
+    ensure!(
+        bytes.len() as u64 == maximum,
+        "Pending build record changed during inspection"
+    );
     selected.check_binding()?;
     let record: record::Record =
         serde_json::from_slice(&bytes).context("Invalid pending build record")?;
@@ -72,6 +113,8 @@ pub(super) fn load(state: &Path, project: &Path, cancel: &Cancellation) -> Resul
     )?;
     let documents_match = documents(&snapshot)? == record.documents;
     Ok(Some(Loaded {
+        name,
+        content,
         record,
         documents_match,
     }))
@@ -166,4 +209,36 @@ impl Write for BoundedWriter<'_> {
     fn flush(&mut self) -> io::Result<()> {
         self.file.flush()
     }
+}
+
+/// The name is retained native inspection data, never a field decoded from the record.
+pub(super) fn discard(
+    state: &Path,
+    name: &str,
+    expected: [u8; 32],
+    cancel: &Cancellation,
+) -> Result<bool> {
+    cancel.check()?;
+    let directory = match open_private_directory(&state.join("pending-builds"), false) {
+        Ok(directory) => directory,
+        Err(error) if missing(&error) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let guard = native::open_file(&directory, "state.lock")?;
+    guard.try_lock().context("Pending build state is busy")?;
+    let mut file = match native::open_file(&directory, name) {
+        Ok(file) => file,
+        Err(error) if missing(&error) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let (actual, _) =
+        crate::engine::io::copy_bounded(&mut file, &mut io::sink(), record::MAX_RECORD, cancel)?;
+    if actual != expected {
+        return Ok(false);
+    }
+    drop(file);
+    cancel.check()?;
+    directory.remove_file(name)?;
+    sync(&directory)?;
+    Ok(true)
 }

@@ -19,8 +19,9 @@ pub use cleanup::{CacheCleanupPlan, CacheCleanupReceipt, CacheObject};
 #[derive(Clone, Copy)]
 pub struct ContentStoreLimits {
     pub file_bytes: u64,
+    /// Durable objects and recognized incomplete publication candidates share this capacity.
     pub total_bytes: u64,
-    /// Maximum canonical content objects; traversal has a separate unknown-neighbor allowance.
+    /// Maximum stored objects/candidates; traversal separately bounds unknown neighbors.
     pub entries: usize,
 }
 impl Default for ContentStoreLimits {
@@ -171,6 +172,8 @@ impl FileContentStore {
         FileContentLookup(self.0.clone())
     }
     /// Only an acquired lease can enter the store; it is hashed again before atomic publication.
+    /// Persistent candidate bytes consume the store's locked capacity, independently of the
+    /// source lease's private-scratch reservation. Failed candidate remnants also consume capacity.
     pub async fn publish_verified(
         &self,
         scope: &mut WorkScope,
@@ -207,7 +210,9 @@ impl FileContentStore {
                 jobs: 1,
                 memory_bytes: 128 << 10,
                 open_files: 5,
-                scratch_bytes: bytes,
+                // The store reserves its own bounded capacity under its exclusive lock.
+                // The source lease already owns private scratch admission.
+                scratch_bytes: 0,
             },
             ResourceRequest::default(),
             move |cancel| store.0.publish(&content, &cancel),
@@ -267,10 +272,21 @@ impl Store {
             cancel.check()?;
             self.check_scan_limit(seen)?;
             let name = entry?.file_name();
-            let Some(value) = name.to_str().and_then(parse_name) else {
+            let is_object = name.to_str().and_then(parse_name).is_some();
+            let is_candidate = name.to_str().is_some_and(|name| {
+                name.strip_prefix(".empack-candidate-")
+                    .and_then(|suffix| suffix.split_once('-'))
+                    .is_some_and(|(process, sequence)| {
+                        !process.is_empty()
+                            && !sequence.is_empty()
+                            && process.bytes().all(|byte| byte.is_ascii_digit())
+                            && sequence.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+            });
+            if !is_object && !is_candidate {
                 continue;
-            };
-            let file = native::open_file(&self.root, &self::name(&value))?;
+            }
+            let file = native::open_native_file(&self.root, &name)?;
             let length = file.metadata()?.len();
             ensure!(
                 length <= self.limits.file_bytes,

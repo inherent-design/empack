@@ -65,7 +65,7 @@ async fn durable_build_resume_reverifies_content_and_requires_fresh_approval() {
     let SavedBuildResume::Prepared(prepared) = resumed else {
         panic!("saved build not prepared")
     };
-    let Preparation::NeedsInput(pending) = *prepared else {
+    let Preparation::NeedsInput(pending) = prepared.preparation else {
         panic!("second input should remain pending")
     };
     assert_eq!(pending.build().unwrap().unresolved.len(), 1);
@@ -173,7 +173,7 @@ async fn missing_or_invalid_cached_content_never_becomes_verified_saved_input() 
             let SavedBuildResume::Prepared(prepared) = result.unwrap() else {
                 panic!("cache miss should remain resumable")
             };
-            let Preparation::NeedsInput(pending) = *prepared else {
+            let Preparation::NeedsInput(pending) = prepared.preparation else {
                 panic!("cache miss cannot complete input")
             };
             assert_eq!(pending.build().unwrap().unresolved.len(), 2);
@@ -377,4 +377,129 @@ async fn saved_record_links_cannot_authorize_outside_reads_or_replacement() {
     assert!(!root.path().join("dist").exists());
     assert_eq!(governor.status().reserved, ResourceRequest::default());
     owner.shutdown().await;
+}
+
+async fn suspend_with_budget(memory: u64, scratch: u64) {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), false);
+    let state = host.path().join("state");
+    let (template, _) = engine(state.clone());
+    let mut config = template.config.clone();
+    template.shutdown().await;
+    config.resources.capture.scratch_bytes = 0;
+    let governor = ResourceGovernor::new(ResourceRequest {
+        jobs: 2,
+        memory_bytes: memory,
+        scratch_bytes: scratch,
+        open_files: 128,
+    });
+    let owner = Engine::new(config.clone(), governor.clone()).unwrap();
+    let mut inputs = supplied("first", b"payload");
+    let mut permit = governor
+        .try_admit(ResourceRequest {
+            scratch_bytes: 7,
+            open_files: 1,
+            ..Default::default()
+        })
+        .unwrap();
+    inputs
+        .locked
+        .values_mut()
+        .next()
+        .unwrap()
+        .content
+        .retain_reservation(&mut permit)
+        .unwrap();
+    drop(permit);
+    let pending = match owner
+        .prepare(root.path().to_path_buf(), request().with_content(inputs))
+        .await
+        .unwrap()
+    {
+        Preparation::NeedsInput(pending) => pending,
+        _ => panic!("second input remains pending"),
+    };
+    let receipt = owner.suspend_build(*pending).await.unwrap();
+    assert_eq!(receipt.retained_bytes, 7);
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+    owner.shutdown().await;
+    let owner = Engine::new(config, governor.clone()).unwrap();
+    let SavedBuildResume::Prepared(prepared) = owner
+        .resume_saved_build(root.path().to_path_buf())
+        .await
+        .unwrap()
+    else {
+        panic!("small record was not resumed");
+    };
+    let Preparation::NeedsInput(pending) = prepared.preparation else {
+        panic!("second input remains pending");
+    };
+    assert_eq!(pending.build().unwrap().unresolved.len(), 1);
+    assert_eq!(governor.status().reserved.scratch_bytes, 7);
+    drop(pending);
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
+}
+#[tokio::test]
+async fn small_suspensions_use_small_record_memory_admission() {
+    suspend_with_budget(24 << 20, 64 << 20).await;
+}
+#[tokio::test]
+async fn suspension_cache_capacity_does_not_double_private_scratch_admission() {
+    suspend_with_budget(128 << 20, 10).await;
+}
+
+#[tokio::test]
+async fn conditional_saved_record_cleanup_preserves_newer_requests() {
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    fixture(root.path(), false);
+    let state = host.path().join("state");
+    let (owner, governor) = engine(state.clone());
+    suspend_first(&owner, root.path()).await;
+    let SavedBuildResume::Prepared(prior) = owner
+        .resume_saved_build(root.path().to_path_buf())
+        .await
+        .unwrap()
+    else {
+        panic!("saved build is missing");
+    };
+    drop(prior.preparation);
+    let mut next = request();
+    let mut outputs = next.outputs.into_vec();
+    outputs[0].artifact =
+        PortableRelPath::parse("alternate.mrpack", PathSyntax::ArtifactName).unwrap();
+    next.outputs = NonEmpty::new(outputs).unwrap();
+    let Preparation::NeedsInput(pending) = owner
+        .prepare(root.path().to_path_buf(), next)
+        .await
+        .unwrap()
+    else {
+        panic!("manual content missing");
+    };
+    assert!(owner.suspend_build(*pending).await.unwrap().replaced);
+    let path = records(&state).pop().unwrap();
+    let changed = fs::read(&path).unwrap();
+    assert!(!owner.discard_saved_build(prior.saved).await.unwrap());
+    assert_eq!(fs::read(&path).unwrap(), changed);
+    let SavedBuildResume::Prepared(current) = owner
+        .resume_saved_build(root.path().to_path_buf())
+        .await
+        .unwrap()
+    else {
+        panic!("newer saved build is missing");
+    };
+    drop(current.preparation);
+    assert!(owner.discard_saved_build(current.saved).await.unwrap());
+    assert!(matches!(
+        owner
+            .resume_saved_build(root.path().to_path_buf())
+            .await
+            .unwrap(),
+        SavedBuildResume::Missing
+    ));
+    assert!(!root.path().join("dist").exists());
+    owner.shutdown().await;
+    assert_eq!(governor.status().reserved, ResourceRequest::default());
 }

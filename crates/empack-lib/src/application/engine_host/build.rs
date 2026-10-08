@@ -126,17 +126,7 @@ async fn build_with_inputs(
         )
         .require_intent(intent.lock().intent_revision);
     drop(intent);
-    let catalog = ProviderCatalog::new(
-        config.curseforge_api_client_key.clone(),
-        Arc::new(HostBudgetRegistry::new()),
-    )?;
-    let engine = engine(config, &invocation)?.with_provider_catalog(
-        catalog,
-        CatalogLimits {
-            deadline: Duration::from_secs(config.net_timeout),
-            ..Default::default()
-        },
-    );
+    let engine = configured_engine(config, &invocation)?;
     let downloads = args
         .downloads_dir
         .as_ref()
@@ -144,6 +134,124 @@ async fn build_with_inputs(
     let result = build_with_engine(session, &engine, project, request, downloads).await;
     engine.shutdown().await;
     result
+}
+
+fn configured_engine(config: &AppConfig, invocation: &Path) -> Result<Engine> {
+    let catalog = ProviderCatalog::new(
+        config.curseforge_api_client_key.clone(),
+        Arc::new(HostBudgetRegistry::new()),
+    )?;
+    let engine = engine(config, invocation)?.with_provider_catalog(
+        catalog,
+        CatalogLimits {
+            deadline: Duration::from_secs(config.net_timeout),
+            ..Default::default()
+        },
+    );
+    Ok(engine)
+}
+
+/// Continue an explicitly saved native build. Saved choices remain intact; new recipe flags
+/// are rejected, and every file association is checked against current captured obligations.
+pub async fn continue_build(session: &dyn Session, args: &BuildArgs) -> Result<()> {
+    ensure!(
+        args.continue_build && args.targets.is_empty() && args.format.is_none() && !args.clean,
+        "Continuation uses its saved recipe; targets, archive overrides and clean require a new build"
+    );
+    session.process().check_cancelled()?;
+    let (invocation, project) = project_path(session)?;
+    let engine = configured_engine(session.config().app_config(), &invocation)?;
+    let result = async {
+        let resumed = match cancellable(session, engine.resume_saved_build(project)).await? {
+            crate::engine::api::SavedBuildResume::Missing => {
+                anyhow::bail!("There is no saved native build for this project")
+            }
+            crate::engine::api::SavedBuildResume::Stale => anyhow::bail!(
+                "Saved build inputs changed; prepare a new build (saved state was retained)"
+            ),
+            crate::engine::api::SavedBuildResume::Prepared(resumed) => *resumed,
+        };
+        let mut prepared = resumed.preparation;
+        if !args.associate_downloads.is_empty() {
+            let view = match &prepared {
+                Preparation::Ready(value) => value.view(),
+                Preparation::NeedsInput(value) => value.view(),
+            };
+            let files = associations(
+                view.build().context("Missing build preview")?,
+                &args.associate_downloads,
+                &invocation,
+            )?;
+            let Preparation::NeedsInput(pending) = prepared else {
+                anyhow::bail!("Explicit files do not match unresolved build input");
+            };
+            prepared =
+                cancellable(session, engine.resume_with_local_files(*pending, files)).await?;
+        }
+        let downloads = args
+            .downloads_dir
+            .as_ref()
+            .map(|path| absolute(&invocation, Path::new(path)));
+        let published = finish_build(session, &engine, prepared, downloads).await?;
+        if published {
+            cancellable(session, engine.discard_saved_build(resumed.saved))
+                .await
+                .context("Build completed, but saved-state cleanup failed")?;
+        }
+        Ok(())
+    }
+    .await;
+    engine.shutdown().await;
+    result
+}
+fn input_selector(key: &AcquisitionKey) -> String {
+    let encode = |value: &str| {
+        percent_encoding::utf8_percent_encode(value, percent_encoding::NON_ALPHANUMERIC).to_string()
+    };
+    match key {
+        AcquisitionKey::Locked(key) => format!(
+            "locked:{}:{}",
+            encode(key.dependency.as_str()),
+            encode(key.slot.as_str())
+        ),
+        AcquisitionKey::Observed(path) => format!("observed:{}", encode(path.as_str())),
+    }
+}
+fn associations(
+    view: &crate::engine::api::BuildPreview,
+    values: &[String],
+    invocation: &Path,
+) -> Result<BTreeMap<AcquisitionKey, PathBuf>> {
+    let mut files = BTreeMap::new();
+    for value in values {
+        let (name, path) = value
+            .split_once('=')
+            .context("Use FILENAME=PATH for each download association")?;
+        ensure!(
+            !name.is_empty() && !path.is_empty(),
+            "Download association needs a filename and source path"
+        );
+        let matches: Vec<_> = view
+            .file_names()
+            .iter()
+            .filter(|(key, names)| {
+                view.unresolved.contains(key)
+                    && (names.contains(name) || input_selector(key) == name)
+            })
+            .map(|(key, _)| key)
+            .collect();
+        ensure!(
+            matches.len() == 1,
+            "Download selector must match exactly one pending obligation; use its displayed locked: or observed: selector when filenames are ambiguous"
+        );
+        ensure!(
+            files
+                .insert(matches[0].clone(), absolute(invocation, Path::new(path)))
+                .is_none(),
+            "Download association repeats an obligation"
+        );
+    }
+    Ok(files)
 }
 
 fn request(
@@ -233,6 +341,16 @@ async fn build_with_engine(
     downloads: Option<PathBuf>,
 ) -> Result<()> {
     let prepared = cancellable(session, engine.prepare(project, request)).await?;
+    finish_build(session, engine, prepared, downloads)
+        .await
+        .map(|_| ())
+}
+async fn finish_build(
+    session: &dyn Session,
+    engine: &Engine,
+    prepared: Preparation,
+    downloads: Option<PathBuf>,
+) -> Result<bool> {
     let prepared = match (prepared, downloads) {
         (Preparation::NeedsInput(pending), Some(downloads)) => {
             let view = pending.view().build().context("Missing build preview")?;
@@ -315,10 +433,12 @@ async fn build_with_engine(
     }
     for input in &view.content {
         // AcquisitionKey contains only logical dependency/slot or observed metadata names.
-        session
-            .display()
-            .status()
-            .info(&format!("content {:?}: {:?}", input.key, input.kind));
+        session.display().status().info(&format!(
+            "content {}: {:?} {:?}",
+            input_selector(&input.key),
+            input.kind,
+            view.file_names().get(&input.key)
+        ));
     }
     if !view.unresolved.is_empty() {
         session.display().status().warning(&format!(
@@ -326,24 +446,32 @@ async fn build_with_engine(
             view.unresolved.len()
         ));
     }
-    if let Preparation::NeedsInput(_) = prepared {
+    if let Preparation::NeedsInput(pending) = prepared {
         if session.config().app_config().dry_run {
             session.display().status().complete(
                 "Dry run complete - missing content remains unresolved; no changes applied",
             );
-            return Ok(());
+            return Ok(false);
         }
+        session.display().status().info("The build remains unpublished; saving retains its recipe and verified files for continuation");
+        if !approve(session, "Save pending build")? {
+            return Ok(false);
+        }
+        let saved = cancellable(session, engine.suspend_build(*pending)).await?;
+        session.display().status().info(&format!("Saved pending build with {} verified files; continue after supplying the missing downloads",saved.retained_files));
         anyhow::bail!(
-            "Build was not published: supply the displayed missing content before approving a new plan"
+            "Build was not published: supply the displayed missing content before approving a new plan; continuation was saved"
         );
     }
     let Preparation::Ready(prepared) = prepared else {
         unreachable!()
     };
+    let mut published = false;
     apply(session, engine, prepared, "Build", |receipt| {
         let ExecutionReceipt::Build(receipt) = receipt else {
             anyhow::bail!("Unexpected build receipt");
         };
+        published = true;
         for artifact in &receipt.artifacts {
             session.display().status().info(&format!(
                 "built dist/{} ({} bytes)",
@@ -357,7 +485,8 @@ async fn build_with_engine(
             receipt.removed_artifacts.len()
         ))
     })
-    .await
+    .await?;
+    Ok(published)
 }
 
 #[cfg(test)]

@@ -870,10 +870,11 @@ host matches declared content evidence, collapses duplicate bytes and re-acquire
 matches through `Engine::resume_with_local_files`. Different matching contents remain an
 explicit association decision. A filename or extension never establishes identity.
 
-This entry point is compiled but not yet the CLI build dispatcher. Durable continuation
-and CLI association parsing must be composed before that cutover; this host rejects
-those arguments rather than ignoring them. Existing CLI
-workflows remain available through the current dispatcher in the meantime.
+Fresh requests enter `build`; saved requests enter the separate `continue_build` host.
+The latter accepts `--continue`, a download root and explicit associations, preserving the
+saved recipe. Recipe overrides require a fresh build. Both entry points are compiled;
+the coordinated CLI dispatcher cutover remains pending. Existing CLI workflows remain
+available through the current dispatcher in the meantime.
 
 ### Native import host
 
@@ -961,7 +962,24 @@ deletes saved state. Cached bytes are checked against the current original expec
 a missing cache object leaves the corresponding obligation unresolved, while corrupted
 bytes fail. Resumed inputs still share the ordinary cumulative acquisition allowance.
 
-A fresh execution grant is required after resume. Successful build publication does not
-implicitly delete the saved record; host completion cleanup and CLI composition remain
-separate integration work. No serialized field can reconstruct a native snapshot or approve
+A fresh execution grant is required after resume. `ResumedBuild` contains the preparation
+and an opaque `SavedBuildRecord` observation. `Engine::discard_saved_build` is a separate
+host action; it deletes only if that exact record still exists. Changed or missing records
+return false. The native continue host invokes cleanup after a verified build receipt;
+preview, decline and failed execution retain the record. No serialized field can reconstruct a native snapshot or approve
 effects. Records and project recovery journals are separate from disposable cached bytes.
+
+
+The native build host offers to save unresolved preparation and returns an incomplete-build
+error after a successful save. `--yes` accepts that host action; dry-run and decline do not
+create state. The continue host resolves `FILENAME=PATH` against captured destination names.
+Ambiguous names require the displayed `locked:KEY:SLOT` or `observed:METADATA` selector;
+components are percent-encoded so arbitrary logical labels remain distinct. Duplicate,
+unknown and mismatched associations fail before publication. Associations are verified
+before automatic discovery fills other pending slots.
+
+Suspension metadata admission scales with an encoded-size estimate; inspection probes a
+record's size before reserving decode memory and bounds the subsequent read to that size.
+The persistent content store accounts for publication candidates under its exclusive
+capacity lock, independently of the retained source's private-scratch reservation. Known
+orphaned publication candidates consume store capacity as well as canonical content objects.

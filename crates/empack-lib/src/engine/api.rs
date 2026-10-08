@@ -189,8 +189,13 @@ pub struct BuildPreview {
     pub unresolved: Vec<AcquisitionKey>,
     pub cleanup: Option<BuildCleanup>,
     options: BuildRequest,
+    file_names: BTreeMap<AcquisitionKey, std::collections::BTreeSet<String>>,
 }
 impl BuildPreview {
+    /// Captured destination basenames are selectors only; original assertions still verify bytes.
+    pub fn file_names(&self) -> &BTreeMap<AcquisitionKey, std::collections::BTreeSet<String>> {
+        &self.file_names
+    }
     /// All requested options, including conversions and template values, for host presentation.
     /// These values are deliberately not included in an automatic Debug rendering.
     pub fn request(&self) -> &BuildRequest {
@@ -1079,6 +1084,51 @@ fn capture(
         .as_slice()
         .iter()
         .any(|output| matches!(output.target, BuildTarget::Server | BuildTarget::Client));
+    let resolved = workspace.require_resolved()?;
+    let records = workspace.backend_files(cancel)?;
+    let mut file_names = BTreeMap::new();
+    for need in &acquisition.pending {
+        let names = match &need.key {
+            AcquisitionKey::Locked(key) => resolved
+                .lock()
+                .dependencies
+                .get(&key.dependency)
+                .and_then(|dependency| {
+                    dependency
+                        .files
+                        .as_slice()
+                        .iter()
+                        .find(|file| file.slot == key.slot)
+                })
+                .context("Build obligation has no locked file")?
+                .placements
+                .as_slice()
+                .iter()
+                .map(|placement| {
+                    placement
+                        .destination
+                        .relative()
+                        .as_str()
+                        .rsplit('/')
+                        .next()
+                        .unwrap()
+                        .to_owned()
+                })
+                .collect(),
+            AcquisitionKey::Observed(path) => std::collections::BTreeSet::from([records
+                .iter()
+                .find(|record| &record.metadata_path == path)
+                .context("Build obligation has no observed metadata")?
+                .destination
+                .relative()
+                .as_str()
+                .rsplit('/')
+                .next()
+                .unwrap()
+                .to_owned()]),
+        };
+        file_names.insert(need.key.clone(), names);
+    }
     let view = BuildPreview {
         plan: PlanId(
             NEXT_PLAN
@@ -1101,6 +1151,7 @@ fn capture(
         unresolved,
         cleanup,
         options: request.clone(),
+        file_names,
     };
     Ok(PreparedBuild {
         project,
@@ -1173,4 +1224,4 @@ mod build_input_tests;
 mod recorded_sync_tests;
 
 mod suspension;
-pub use suspension::{SavedBuildResume, SuspendedBuildReceipt};
+pub use suspension::{ResumedBuild, SavedBuildRecord, SavedBuildResume, SuspendedBuildReceipt};
