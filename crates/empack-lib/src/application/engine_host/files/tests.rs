@@ -210,6 +210,17 @@ async fn direct_files_publish_one_batch_preserve_provenance_and_build_current_by
         before,
         "re-adding exact files preserves documents and bytes"
     );
+    // Exercise the public local-file entry point as well as the injected HTTP fixture.
+    add_files(
+        &session(root.path(), true, false),
+        NonEmpty::new(vec![inputs().remove(0)]).unwrap(),
+        SourceEvidencePolicy::Compatibility,
+        ExistingDependencyPolicy::UpdateSameIdentity,
+    )
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&project), before);
+
     build(
         &session(root.path(), true, false),
         &BuildArgs {

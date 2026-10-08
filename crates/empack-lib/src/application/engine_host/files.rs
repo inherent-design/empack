@@ -2,17 +2,18 @@
 use super::*;
 #[cfg(test)]
 use crate::engine::addition::DirectFileSource;
+use crate::engine::{
+    addition::DirectFileInput, api::ExistingDependencyPolicy, content::SourceEvidencePolicy,
+};
+#[cfg(test)]
 use crate::{
     engine::{
-        acquisition::HttpAcquisition,
-        addition::{DirectFileInput, DirectFileLimits},
-        api::ExistingDependencyPolicy,
-        content::SourceEvidencePolicy,
-        providers::ProviderCatalog,
+        acquisition::HttpAcquisition, addition::DirectFileLimits, providers::ProviderCatalog,
     },
     networking::rate_budget::HostBudgetRegistry,
 };
 use empack_core::model::NonEmpty;
+#[cfg(test)]
 use std::sync::Arc;
 
 /// The caller explicitly chooses a direct representation; catalog errors never imply this choice.
@@ -23,16 +24,22 @@ pub async fn add_files(
     evidence: SourceEvidencePolicy,
     existing: ExistingDependencyPolicy,
 ) -> Result<()> {
-    let config = session.config().app_config();
-    let catalog = ProviderCatalog::new(
-        config.curseforge_api_client_key.clone(),
-        Arc::new(HostBudgetRegistry::new()),
-    )?;
-    let transport = catalog.configure_acquisition(HttpAcquisition::new()?);
-    let mut limits = DirectFileLimits::default();
-    limits.transfer.deadline = Duration::from_secs(config.net_timeout);
-    add_with_transport(session, inputs, evidence, existing, transport, limits).await
+    dependencies::add(
+        session,
+        NonEmpty::new(
+            inputs
+                .into_vec()
+                .into_iter()
+                .map(dependencies::AddHostInput::File)
+                .collect(),
+        )?,
+        crate::engine::providers::ReleasePolicy::PreferStable,
+        evidence,
+        existing,
+    )
+    .await
 }
+#[cfg(test)]
 async fn add_with_transport(
     session: &dyn Session,
     inputs: NonEmpty<DirectFileInput>,

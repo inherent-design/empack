@@ -1443,3 +1443,13 @@ providers/files and collisions with explicit roots, required dependencies or pla
 Every failure preserves the entire project tree. All 59 affected tests, all-feature
 Clippy and Windows cross-compilation pass. CLI input classification and identification decisions remain open; this
 completes native batch composition, not the CLI cutover.
+
+
+## Shared file-add entry point
+
+At `e317773`, the frozen combined revision passed all 1,951 default tests and eleven
+doctests without pipe warnings; 124 opt-in tests were skipped. Greptile 117 reported
+no blocking findings and noted duplicate catalog initialization in the file-only host.
+That entry point now delegates directly to the mixed addition host. Its native regression
+verifies an exact no-op through the public entry point. The focused regression, all-feature
+Clippy and Windows cross-compilation pass after the correction.
