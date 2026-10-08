@@ -25,6 +25,7 @@ pub mod publication;
 pub mod removal;
 pub mod resources;
 pub mod runtime;
+pub mod runtime_catalog;
 pub mod server_runtime;
 pub mod snapshot;
 pub mod source;

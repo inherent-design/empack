@@ -147,6 +147,30 @@ downloadable payload evidence. Each page retains its best candidate and compact 
 admission. Only the final selection survives. This capability is for new or explicitly
 updated resolution; it does not upgrade a valid sync lock or rewrite project intent.
 
+## Runtime discovery
+
+`RuntimeCatalog` uses the official Minecraft, Fabric, Quilt, Forge and NeoForge
+catalogs without a project writer, persistent cache writer or invented fallback.
+Every response has transfer, deadline and entry limits; parsing and retained choices
+remain admitted to the operation. Fabric and Quilt records must name the requested
+game. Forge retains historical coordinate normalization. NeoForge filters exact game
+components and snapshot suffixes while retaining explicit beta choices. Default
+loader selection prefers stable versions; selection order is deterministic.
+
+The [catalog tests](../../crates/empack-lib/src/engine/runtime_catalog/tests.rs)
+exercise response limits, rejected provider responses, coherent defaults, historical
+choices and initialization document roundtrips. All five pass. The explicit
+`mise run smoke:catalog` probe passes against the live official endpoints for all four
+loader families, including Forge 1.7.10 and NeoForge 1.20.1. All-feature Clippy and
+Windows cross-compilation also pass for this worktree. These checks establish the
+service boundary; CLI initialization composition remains unfinished.
+
+Sources: [Minecraft manifest](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json),
+[Fabric Meta](https://github.com/FabricMC/fabric-meta),
+[Quilt Meta](https://meta.quiltmc.org/v3/versions/loader/1.21.1),
+[Forge metadata](https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json),
+and [NeoForge metadata](https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge).
+
 ## Required dependency expansion
 
 `ProviderCatalog::resolve_required_closure` resolves explicit pins first, then follows

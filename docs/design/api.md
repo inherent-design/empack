@@ -36,6 +36,16 @@ provider result or download association. Normal cache selection, durable continu
 and CLI composition remain completion work. The broader interface below
 remains the target where the implementation ledger identifies an outstanding API.
 
+`engine::runtime_catalog::RuntimeCatalog` provides read-only official Minecraft and
+loader choices through owned, bounded HTTP acquisition. `games` returns retained
+`GameVersions`; `loaders` returns retained `LoaderVersions` for one exact game and
+loader family. Their `resolve` methods check requested membership and return an
+exact selection. The host decides whether that selection was explicitly pinned;
+discovery never changes intent or publishes documents. Defaults select the official
+Minecraft release and prefer stable loader releases. Explicit historical and
+prerelease selections remain available. A catalog digest identifies the observed
+response, not the executable bytes; build acquisition verifies those separately.
+
 `BuildRequest::with_content` attaches explicit `BuildAcquisitions` without putting
 leases in a display-only preview. Supplied keys must match current acquisition
 obligations. Preparation streams those bytes through the unchanged locked/backend

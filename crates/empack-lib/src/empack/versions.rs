@@ -400,7 +400,7 @@ fn parse_forge_maven_metadata(xml_content: &str) -> Result<Vec<String>> {
 /// - MC "1.16.4" → All versions starting with "1.16.4-" (e.g., "35.1.37", "35.1.36", ..., "35.0.0")
 /// - MC "1.7.10" → Raw versions until `10.13.2.1291`, then suffixed metadata entries
 ///   starting at `10.13.2.1300-1.7.10` which are normalized back to raw versions here
-fn filter_forge_versions_by_minecraft(
+pub(crate) fn filter_forge_versions_by_minecraft(
     all_versions: &[String],
     mc_version: &str,
 ) -> Result<Vec<String>> {
