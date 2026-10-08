@@ -1094,3 +1094,11 @@ applies to exactly one provider project or identified supplied file. It becomes
 and participation before the shared addition planner checks ownership and collisions.
 File-plan paths are invocation-relative. A file plan is source intent for this request,
 not approval or filesystem mutation authority. Preview remains read-only.
+
+### Command telemetry
+
+The native dispatcher emits an `empack.command` span with a static `command` name
+and a `success`/`failure` outcome. It skips arguments, configuration, selectors,
+paths and error formatting. Chrome traces and OTLP exports cover the same dispatcher;
+exporter failure does not change a completed command's exit status. This command-level
+span does not imply detailed timing coverage of every worker or provider request.

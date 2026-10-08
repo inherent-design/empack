@@ -1,4 +1,4 @@
-use empack_tests::e2e::{TestProject, configure_fake_packwiz, empack_assert_cmd, empack_cmd};
+use empack_tests::e2e::{TestProject, empack_assert_cmd, empack_cmd};
 use predicates::prelude::*;
 
 #[test]
@@ -23,11 +23,11 @@ fn e2e_test_project_creates_tempdir() {
 
 fn telemetry_command(project: &TestProject, profile: &str) -> assert_cmd::Command {
     let mut cmd = project.cmd();
-    configure_fake_packwiz(&mut cmd, project.dir());
+    cmd.env("EMPACK_PACKWIZ_BIN", project.dir().join("missing-backend"));
     cmd.env("EMPACK_PROFILE", profile)
         .env("OTEL_SDK_DISABLED", "false")
         .env("OTEL_TRACES_SAMPLER", "always_on")
-        .arg("sync");
+        .args(["--yes", "sync"]);
     let mut cmd = assert_cmd::Command::from_std(cmd);
     cmd.timeout(std::time::Duration::from_secs(15));
     cmd
@@ -54,7 +54,9 @@ fn verify_chrome_trace(project: &TestProject) -> bool {
         serde_json::from_slice(&std::fs::read(trace.unwrap().path()).unwrap())
             .expect("Chrome trace must be valid JSON after shutdown");
     assert!(
-        events.iter().any(|event| event["name"] == "handle_sync"),
+        events
+            .iter()
+            .any(|event| event["name"] == "empack.command" && event["args"]["command"] == "sync"),
         "trace must contain the executed command span"
     );
     true
@@ -77,7 +79,7 @@ fn e2e_telemetry_otlp_exports_and_exits_when_collector_fails() {
         let request = server
             .mock("POST", "/v1/traces")
             .match_header("content-type", "application/x-protobuf")
-            .match_body(mockito::Matcher::Regex("handle_sync".to_string()))
+            .match_body(mockito::Matcher::Regex("empack.command".to_string()))
             .with_status(status)
             .expect_at_least(1)
             .create();
@@ -96,29 +98,72 @@ fn e2e_telemetry_otlp_exports_and_exits_when_collector_fails() {
     }
 }
 
-/// Verify empack requirements shows packwiz-tx with version and path.
-///
-/// Exercises the managed binary download path: if packwiz-tx is not
-/// cached, empack downloads it from GitHub releases on first use.
+/// Runtime inspection describes native capabilities without installing tooling.
 #[test]
-fn e2e_requirements_shows_packwiz_tx() {
+fn e2e_requirements_describes_native_capabilities_without_bootstrap() {
     let project = TestProject::new();
     let output = empack_cmd(project.dir())
+        .env("EMPACK_PACKWIZ_BIN", project.dir().join("missing-backend"))
         .arg("requirements")
         .output()
         .expect("spawn failed");
     assert!(
         output.status.success(),
-        "empack requirements failed: {}",
-        String::from_utf8_lossy(&output.stderr),
+        "requirements failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("packwiz-tx"),
-        "requirements output should mention packwiz-tx:\n{stdout}",
+        stdout.contains("native engine; no packwiz executable required"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("ZIP, TAR.GZ and 7z"), "{stdout}");
+    assert!(
+        stdout.contains("CurseForge also requires an API key"),
+        "{stdout}"
+    );
+    assert!(!project.dir().join("pack").exists());
+    assert!(!project.dir().join("empack.yml").exists());
+}
+
+#[test]
+fn e2e_telemetry_failed_command_omits_private_selectors() {
+    let project = TestProject::workflow_fixture("failed-trace", "fabric", "1.21.1");
+    let private = "PRIVATE_SELECTOR_MUST_NOT_ENTER_TRACE";
+    let output = project
+        .cmd()
+        .env("EMPACK_PROFILE", "chrome")
+        .args(["--yes", "add", private])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let trace = std::fs::read_dir(project.dir())
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with("trace-") && name.ends_with(".json"))
+        });
+    if !empack_tests::e2e::prerequisite_available(trace.is_some(), "binary lacks telemetry feature")
+    {
+        return;
+    }
+    let raw = std::fs::read_to_string(trace.unwrap().path()).unwrap();
+    assert!(
+        !raw.contains(private),
+        "command tracing leaked the input selector"
+    );
+    let events: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|event| event["name"] == "empack.command" && event["args"]["command"] == "add")
     );
     assert!(
-        stdout.contains(empack_lib::platform::packwiz_bin::PACKWIZ_TX_VERSION),
-        "requirements output should show packwiz-tx version:\n{stdout}",
+        events
+            .iter()
+            .any(|event| event["args"]["outcome"] == "failure")
     );
 }

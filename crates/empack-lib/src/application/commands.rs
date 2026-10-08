@@ -44,7 +44,32 @@ pub async fn execute_command_with_cancellation(
 }
 
 /// Execute one command using the same native engine host as library clients.
+/// Trace only a static command name and outcome, never selectors, paths, config or errors.
+#[tracing::instrument(name = "empack.command", skip_all, fields(command = %command_name(&command), outcome = tracing::field::Empty))]
 pub async fn execute_command_with_session(command: Commands, session: &dyn Session) -> Result<()> {
+    let result = dispatch(command, session).await;
+    tracing::Span::current().record(
+        "outcome",
+        tracing::field::display(if result.is_ok() { "success" } else { "failure" }),
+    );
+    result
+}
+fn command_name(command: &Commands) -> &'static str {
+    match command {
+        Commands::Init(_) => "init",
+        Commands::Add { .. } => "add",
+        Commands::Remove { .. } => "remove",
+        Commands::Update { .. } => "update",
+        Commands::Adopt { .. } => "adopt",
+        Commands::Build(_) => "build",
+        Commands::Clean { .. } => "clean",
+        Commands::Sync { .. } => "sync",
+        Commands::Recover { .. } => "recover",
+        Commands::Requirements => "requirements",
+        Commands::Version => "version",
+    }
+}
+async fn dispatch(command: Commands, session: &dyn Session) -> Result<()> {
     session.process().check_cancelled()?;
     // Preparation captures its own generation. The publisher acquires mutation ownership;
     // a legacy outer lock would deadlock it and make preview unnecessarily mutating.
