@@ -4,7 +4,7 @@ use crate::{
     application::{
         BuildArgs, InitArgs,
         session_mocks::{
-            MockCommandSession, MockConfigProvider, MockFileSystemProvider, MockInteractiveProvider,
+            MockCommandSession, MockConfigProvider, MockInteractiveProvider, MockInvocationProvider,
         },
     },
     engine::documents::DocumentCodec,
@@ -17,7 +17,7 @@ use std::{
 
 fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
     MockCommandSession::new()
-        .with_filesystem(MockFileSystemProvider::new().with_current_dir(root.into()))
+        .with_invocation(MockInvocationProvider::new().with_current_dir(root.into()))
         .with_config(MockConfigProvider::new(crate::application::AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),

@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     application::{
         InitArgs,
-        session_mocks::{MockCommandSession, MockConfigProvider, MockFileSystemProvider},
+        session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
     },
     engine::documents::DocumentCodec,
 };
@@ -12,7 +12,7 @@ use std::{collections::BTreeMap, fs};
 
 pub(super) fn session(root: &Path, dry: bool) -> MockCommandSession {
     MockCommandSession::new()
-        .with_filesystem(MockFileSystemProvider::new().with_current_dir(root.into()))
+        .with_invocation(MockInvocationProvider::new().with_current_dir(root.into()))
         .with_config(MockConfigProvider::new(AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),

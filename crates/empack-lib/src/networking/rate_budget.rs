@@ -373,11 +373,6 @@ impl HostBudgetRegistry {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_budgets(budgets: HashMap<String, Arc<dyn RateBudget>>) -> Self {
-        Self { budgets }
-    }
-
     /// Look up the rate budget for a URL by extracting its host.
     pub fn for_url(&self, url: &str) -> Option<Arc<dyn RateBudget>> {
         let host = extract_host(url)?;

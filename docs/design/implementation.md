@@ -8,7 +8,7 @@ remain in [the preceding ledger](https://github.com/inherent-design/empack/blob/
 
 **Ordinary project commands now dispatch to the v0.5 engine.** The old command
 handlers and their outer mutation lock have been deleted. This establishes the
-new route, not full feature completion: provider-owned worlds, independent batches and remaining library retirement
+new route, not full feature completion: provider-owned worlds, independent batches and remaining host-service retirement
 still require work. The [dispatcher](../../crates/empack-lib/src/application/commands.rs)
 and executable tests are the source of truth.
 
@@ -38,6 +38,13 @@ a passing review and line coverage do not change that state by themselves.
 | Clean | **CLI wired:** scoped artifact/cache cleanup | Remaining disposable stores; explicit stale/invalid build-recipe cleanup is wired |
 | Recover | **CLI wired:** engine recovery | Retain interruption and restart tests through library retirement |
 | Requirements / version | Host inspection; no managed-tool bootstrap | Capability-specific live prerequisites |
+
+The legacy command handler file and the old `empack/` library tree are removed.
+The previous synchronization planner, project-state/config/build/import machinery,
+HTTP cache/manager and mock filesystem/network/backend implementations are deleted.
+`Session` now exposes invocation, configuration, display, interaction and process services.
+Project effects use native engine capabilities in both production and tests.
+The managed legacy tool bootstrap and synchronous Git discovery bridge still need retirement.
 
 The legacy command handler file is replaced. Its tests asserting subprocess arguments,
 legacy YAML/state flags, simulated backend responses and cache-seeded searches are
@@ -242,6 +249,7 @@ contracts; this is not final release validation.
 
 | Revision | Executed evidence | Qualification |
 | --- | --- | --- |
+| Legacy library retirement candidate | `mise run test`: 921 tests and eight doctests passed; 103 opt-in cases excluded; 15 selected executable cases, all-feature Clippy and Windows cross-compilation passed | Windows retains test-only warnings; removed old implementations and their exclusive suites; native filesystem, identity, publication, cancellation and smoke checks remain; live browser and Modrinth import/build pass; two restricted CurseForge cases remain open |
 | `f322477` combined candidate | `mise run test`: 1,678 tests and eleven doctests passed; 103 opt-in cases excluded | No inherited-pipe warnings; 118.96 seconds; strict live matrix and final coverage remain open |
 | CurseForge optional metadata | Twelve import inspection tests, two native executable import/build cases and all-feature Clippy passed | Reproduced blank display-version rejection with a live archive; controls and required runtime identifiers stay invalid; local and live Modrinth import/build pass; restricted CurseForge continuation remains open |
 | Provider import test retirement | 45 affected native import/CLI/executable cases and all-feature Clippy passed | Replaced old import API fixtures with four-kind provider import, exact file associations, MD5 evidence, optionality, two syncs and mrpack re-export; opaque world ZIP placement is not counted as implemented world support |
@@ -307,7 +315,8 @@ an obsolete implementation green.
   Windows reports file synchronization rather than Unix directory synchronization.
 - Unknown dependency evidence does not authorize automatic pruning. Explicit acknowledged
   removal remains distinct from inferred cleanup; known dependents are binding.
-- Shared HTTP-cache snapshots remain disposable and last-writer-wins across processes.
+- Verified content caches are disposable; missing or invalid cache evidence does not
+  replace the source assertion or authorize a project mutation.
 - Untrusted downloaded 7z input is not supported by the current bounded ZIP import path;
   7z output verification reads privately generated candidates.
 - No gameplay certification follows from successful archive or server-launch probes.

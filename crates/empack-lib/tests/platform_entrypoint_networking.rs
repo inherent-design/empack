@@ -1,8 +1,5 @@
 use empack_lib::application::{AppConfig, Commands, cli::CliConfig};
-use empack_lib::networking::{NetworkingConfig, NetworkingError, NetworkingManager};
-use empack_lib::platform::{
-    browser_open_command, config_dir, data_dir, home_dir, system_resources,
-};
+use empack_lib::platform::{browser_open_command, config_dir, data_dir, home_dir};
 use empack_lib::platform::{cache::cache_root, packwiz_bin::resolve_packwiz_binary};
 use empack_lib::run_main_loop;
 use std::ffi::OsString;
@@ -296,41 +293,4 @@ async fn run_main_loop_completes_with_ready_command() {
     )
     .await
     .expect("run main loop");
-}
-
-#[tokio::test]
-async fn networking_manager_resolve_mods_reports_success_and_error() {
-    let manager = NetworkingManager::new(NetworkingConfig {
-        max_jobs: Some(4),
-        trace_requests: true,
-        ..Default::default()
-    })
-    .await
-    .expect("manager");
-
-    let results = manager
-        .resolve_mods(
-            vec!["alpha".to_string(), "beta".to_string()],
-            |client, mod_id| async move {
-                let _ = client.get("https://example.com");
-                match mod_id.as_str() {
-                    "alpha" => Ok(format!("resolved-{mod_id}")),
-                    "beta" => Err(NetworkingError::RateLimitError {
-                        message: "simulated failure".to_string(),
-                    }),
-                    _ => Ok(mod_id),
-                }
-            },
-        )
-        .await
-        .expect("resolve mods");
-
-    assert_eq!(results.len(), 2);
-    assert_eq!(results[0].as_ref().expect("alpha"), "resolved-alpha");
-    assert!(matches!(
-        results[1],
-        Err(NetworkingError::RateLimitError { .. })
-    ));
-    assert!(manager.client().get("https://example.com").build().is_ok());
-    assert!(system_resources().is_ok());
 }

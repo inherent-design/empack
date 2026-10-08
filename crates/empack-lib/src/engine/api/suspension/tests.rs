@@ -540,7 +540,7 @@ async fn explicit_saved_recipe_cleanup_is_read_only_until_approved_and_refuses_c
     use crate::application::{
         config::AppConfig,
         engine_host::clean,
-        session_mocks::{MockCommandSession, MockConfigProvider, MockFileSystemProvider},
+        session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
     };
     let root = tempfile::tempdir().unwrap();
     let host = tempfile::tempdir().unwrap();
@@ -561,8 +561,8 @@ async fn explicit_saved_recipe_cleanup_is_read_only_until_approved_and_refuses_c
     let authored = documents(root.path());
     let session = |dry| {
         MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new().with_current_dir(host.path().to_path_buf()),
+            .with_invocation(
+                MockInvocationProvider::new().with_current_dir(host.path().to_path_buf()),
             )
             .with_config(MockConfigProvider::new(AppConfig {
                 workdir: Some(root.path().to_path_buf()),

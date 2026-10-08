@@ -34,7 +34,7 @@ async fn initialize_with_catalog(
 ) -> Result<()> {
     ensure!(args.from_source.is_none(), "Use the import host for --from");
     session.process().check_cancelled()?;
-    let invocation = session.filesystem().current_dir()?;
+    let invocation = session.invocation().current_dir()?;
     let config = session.config().app_config();
     let base = absolute(
         &invocation,

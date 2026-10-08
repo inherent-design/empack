@@ -221,7 +221,7 @@ impl AppConfig {
 
     /// Validate the final configuration
     pub fn validate(&mut self) -> Result<(), ConfigError> {
-        // Pre-session fallback: FileSystemProvider does not exist yet at config
+        // Resolve configuration inputs before constructing the command session at config
         // validation time, so std::env::current_dir() is the only option here.
         // Errors are properly typed as ConfigError::CurrentDirError.
         if self.workdir.is_none() {

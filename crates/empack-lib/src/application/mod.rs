@@ -6,7 +6,6 @@ pub mod env;
 pub mod exit;
 pub mod loader;
 pub mod session;
-pub mod sync;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod session_mocks;

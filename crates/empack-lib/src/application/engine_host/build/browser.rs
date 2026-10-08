@@ -90,7 +90,7 @@ async fn launch(session: &dyn Session, page: &DownloadPage, timeout: Duration) -
     let (program, prefix) = crate::platform::browser_open_command();
     let mut command = std::process::Command::new(program);
     command.args(prefix).arg(page.as_str());
-    command.current_dir(session.filesystem().current_dir()?);
+    command.current_dir(session.invocation().current_dir()?);
     initialize::discover(session, move |mut scope| async move {
         let work = scope.spawn(
             ResourceRequest {

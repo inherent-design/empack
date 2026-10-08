@@ -201,7 +201,7 @@ async fn selected_with_catalog(
     let pin = options.pin()?;
     let preferred = provider(options.platform.as_ref(), pin.as_ref());
     let current = current_for(session, operation).await?;
-    let invocation = session.filesystem().current_dir()?;
+    let invocation = session.invocation().current_dir()?;
     let file_plan = match &options.file_plan {
         Some(path) => Some(file_plan::read(session, absolute(&invocation, path)).await?),
         None => None,

@@ -25,7 +25,6 @@
 
 pub mod application;
 pub mod display;
-pub mod empack;
 pub mod engine;
 pub mod logger;
 pub mod networking;
@@ -37,7 +36,6 @@ pub mod testing;
 
 pub use application::{AppConfig, Cli, CliLoad, Commands, EmpackExitCode, execute_command};
 pub use logger::Logger;
-pub use networking::{NetworkingConfig, NetworkingManager};
 pub use platform::SystemResources;
 pub use primitives::{
     ConfigError, LogFormat, LogLevel, LogOutput, LoggerError, TerminalCapsDetectIntent,
@@ -145,10 +143,6 @@ pub(crate) mod test_support {
     impl EnvLock {
         pub fn lock(&'static self) -> Result<EnvLockGuard<'static>, Infallible> {
             Ok(self.inner.blocking_lock())
-        }
-
-        pub async fn lock_async(&'static self) -> EnvLockGuard<'static> {
-            self.inner.lock().await
         }
     }
 

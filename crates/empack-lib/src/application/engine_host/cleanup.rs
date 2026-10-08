@@ -41,7 +41,7 @@ impl Selection {
 /// separate operations; a later failure reports earlier completed work without claiming rollback.
 pub async fn clean(session: &dyn Session, targets: &[String]) -> Result<()> {
     let selected = Selection::parse(targets)?;
-    let invocation = session.filesystem().current_dir()?;
+    let invocation = session.invocation().current_dir()?;
     let cache = if selected.cache {
         Some(content_cache_root(
             session.config().app_config(),

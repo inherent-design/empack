@@ -1265,3 +1265,17 @@ page limit. A missing API capability leaves an actionable manual-input obligatio
 it does not authorize guessed URLs. Browser handoff uses null standard streams and a
 bounded launcher wait. The requested desktop application is deliberately outside
 installer process-tree ownership, so finishing empack does not terminate the browser.
+
+### Native command session
+
+`CommandSession` owns invocation-directory lookup, configuration, terminal interaction,
+display and process services. Construction does not create network clients, load an HTTP
+cache or resolve packwiz. `Session::invocation` exposes only `current_dir`; project
+reads, writes, archives and publication use engine capabilities and native verification.
+Test sessions substitute invocation and interaction decisions while project operations
+still use real temporary filesystems. The old filesystem, network, archive, packwiz and
+project-state provider methods are removed.
+
+The remaining synchronous process facade is used for Git author discovery. Its retirement
+and independent embedded display state remain implementation work; normal engine child
+execution already uses the host Tokio runtime.

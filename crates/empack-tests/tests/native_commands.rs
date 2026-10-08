@@ -6,7 +6,7 @@ use empack_lib::{
         cli::{CliArchiveFormat, CliProjectType},
         commands::execute_command_with_session,
         session_mocks::{
-            MockCommandSession, MockConfigProvider, MockFileSystemProvider, MockInteractiveProvider,
+            MockCommandSession, MockConfigProvider, MockInteractiveProvider, MockInvocationProvider,
         },
     },
     engine::documents::DocumentCodec,
@@ -31,8 +31,8 @@ impl Project {
     }
     fn session(&self, yes: bool, dry: bool) -> MockCommandSession {
         MockCommandSession::new()
-            .with_filesystem(
-                MockFileSystemProvider::new().with_current_dir(self.root.path().into()),
+            .with_invocation(
+                MockInvocationProvider::new().with_current_dir(self.root.path().into()),
             )
             .with_config(MockConfigProvider::new(AppConfig {
                 workdir: Some("project".into()),

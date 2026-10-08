@@ -19,9 +19,7 @@ pub async fn execute_command_with_cancellation(
     cancellation: super::process_runtime::Cancellation,
 ) -> Result<()> {
     // Create command session (owns all ephemeral state)
-    let session = CommandSession::new_async(config.app_config)
-        .await
-        .with_cancellation(cancellation.clone());
+    let session = CommandSession::new(config.app_config).with_cancellation(cancellation.clone());
     cancellation.check()?;
 
     let command = match config.command {

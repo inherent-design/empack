@@ -117,7 +117,7 @@ fn engine_with_governor(
 }
 /// Resolve one invocation-relative project selection without changing process cwd.
 fn project_path(session: &dyn Session) -> Result<(PathBuf, PathBuf)> {
-    let invocation = session.filesystem().current_dir()?;
+    let invocation = session.invocation().current_dir()?;
     let selected = session
         .config()
         .app_config()
@@ -143,7 +143,7 @@ pub async fn recover(
     action: CliRecoveryAction,
     operation: Option<String>,
 ) -> Result<()> {
-    let invocation = session.filesystem().current_dir()?;
+    let invocation = session.invocation().current_dir()?;
     let config = session.config().app_config();
     let selected = config.workdir.as_deref().unwrap_or(&invocation);
     let path = absolute(&invocation, selected);

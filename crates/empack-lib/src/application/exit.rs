@@ -1,4 +1,3 @@
-use crate::networking::NetworkingError;
 use crate::primitives::ConfigError;
 use anyhow::Error;
 use std::process::ExitCode as ProcessExitCode;
@@ -88,9 +87,7 @@ pub fn classify_error(error: &Error) -> EmpackExitCode {
         };
     }
 
-    if find_chain_error::<NetworkingError>(error).is_some()
-        || find_chain_error::<reqwest::Error>(error).is_some()
-    {
+    if find_chain_error::<reqwest::Error>(error).is_some() {
         return EmpackExitCode::Network;
     }
 

@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     application::{
         BuildArgs, InitArgs,
-        session_mocks::{MockCommandSession, MockConfigProvider, MockFileSystemProvider},
+        session_mocks::{MockCommandSession, MockConfigProvider, MockInvocationProvider},
     },
     engine::{
         addition::{FileEvidence, FileKindPolicy},
@@ -25,7 +25,7 @@ use std::{
 
 fn session(root: &Path, yes: bool, dry: bool) -> MockCommandSession {
     MockCommandSession::new()
-        .with_filesystem(MockFileSystemProvider::new().with_current_dir(root.to_path_buf()))
+        .with_invocation(MockInvocationProvider::new().with_current_dir(root.to_path_buf()))
         .with_config(MockConfigProvider::new(AppConfig {
             workdir: Some("project".into()),
             state_dir: Some("state".into()),
