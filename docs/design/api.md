@@ -934,3 +934,34 @@ identical bytes at several paths yield one suggestion. Entry, total-byte, associ
 deadline exhaustion fail the scan without returning a partial set. Failed and unrelated
 reads consume the byte allowance. Candidate paths never enter project intent, and the
 normal local acquisition step verifies their current bytes again before accepting them.
+
+
+### Durable build suspension
+
+`Engine::suspend_build` consumes a pending build owned by that engine. Calling it is
+an explicit host action authorizing saved state and verified-content publication;
+preview never calls it. The method revalidates captured input, publishes verified leases
+to the host's content-addressed `pending-content` store, and atomically replaces the
+project's record in `pending-builds`. These directories live below the configured private
+state root. A failed save can leave reusable verified cache objects, but cannot publish
+project documents or distributions.
+
+The bounded, versioned record stores the build recipe, source-comparison fingerprint,
+logical acquisition keys, content IDs and portable permissions. It contains no execution
+grant, process command or authoritative native source/destination locator. Every build
+choice survives encoding, including optional policy, template modes/values/limits, archive
+format, source-evidence policy and installer interaction. A record is limited to 4 MiB;
+unknown fields, versions and invalid portable paths fail validation.
+
+`Engine::resume_saved_build` accepts a host-selected absolute project path. It returns
+`Missing`, `Stale`, or a fresh `Preparation`. Raw intent/lock changes are classified before
+parsing changed documents. Other captured input changes are checked against a fresh native
+snapshot. Invalid current inputs or malformed records return errors. None of these outcomes
+deletes saved state. Cached bytes are checked against the current original expectations;
+a missing cache object leaves the corresponding obligation unresolved, while corrupted
+bytes fail. Resumed inputs still share the ordinary cumulative acquisition allowance.
+
+A fresh execution grant is required after resume. Successful build publication does not
+implicitly delete the saved record; host completion cleanup and CLI composition remain
+separate integration work. No serialized field can reconstruct a native snapshot or approve
+effects. Records and project recovery journals are separate from disposable cached bytes.

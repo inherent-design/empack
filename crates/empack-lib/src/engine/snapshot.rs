@@ -211,6 +211,58 @@ pub struct NativeSnapshot {
     entries: BTreeMap<PortableRelPath, Observation>,
 }
 impl NativeSnapshot {
+    /// Persisted comparison data only. A matching hash does not reconstruct read authority.
+    pub(super) fn fingerprint(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        fn bytes(hash: &mut Sha256, value: &[u8]) {
+            hash.update((value.len() as u64).to_le_bytes());
+            hash.update(value);
+        }
+        fn object(hash: &mut Sha256, value: ObjectIdentity) {
+            hash.update(value.volume.to_le_bytes());
+            hash.update(value.object.to_le_bytes());
+            match value.created {
+                Some((seconds, nanos)) => {
+                    hash.update([1]);
+                    hash.update(seconds.to_le_bytes());
+                    hash.update(nanos.to_le_bytes());
+                }
+                None => hash.update([0]),
+            }
+        }
+        let mut hash = Sha256::new();
+        hash.update(b"empack-native-inputs-v1");
+        object(&mut hash, self.root);
+        hash.update((self.entries.len() as u64).to_le_bytes());
+        for (path, observed) in &self.entries {
+            bytes(&mut hash, path.as_str().as_bytes());
+            match observed {
+                Observation::Absent => hash.update([0]),
+                Observation::Ancestor(binding) => {
+                    hash.update([1]);
+                    object(&mut hash, binding.0);
+                }
+                Observation::File(file) => {
+                    hash.update([2]);
+                    object(&mut hash, file.object);
+                    hash.update(file.content);
+                    hash.update(file.bytes.to_le_bytes());
+                    hash.update([u8::from(file.readonly)]);
+                    #[cfg(unix)]
+                    hash.update(file.mode.to_le_bytes());
+                }
+                Observation::Directory { members, binding } => {
+                    hash.update([3]);
+                    object(&mut hash, binding.0);
+                    hash.update((members.len() as u64).to_le_bytes());
+                    for member in members {
+                        bytes(&mut hash, member.as_bytes());
+                    }
+                }
+            }
+        }
+        hash.finalize().into()
+    }
     /// Filtered directory membership establishes absence only for included destinations.
     /// A missing ancestor observed directly remains independent evidence of absence.
     pub(super) fn membership_covers(&self, path: &PortableRelPath) -> Result<bool> {
@@ -360,7 +412,8 @@ impl Capture<'_> {
                 self.cancel.check()?;
                 let name = entry?.file_name();
                 if name.to_str().is_some_and(|name| {
-                    self.omitted.contains(&format!("{}/{}", path.as_str(), name))
+                    self.omitted
+                        .contains(&format!("{}/{}", path.as_str(), name))
                 }) {
                     continue;
                 }

@@ -15,7 +15,7 @@ use empack_core::{
 use sha2::Digest;
 use std::{collections::BTreeMap, fs, io::Read, path::Path};
 
-fn fixture(root: &Path, weak: bool) {
+pub(super) fn fixture(root: &Path, weak: bool) {
     let base = crate::engine::mrpack::tests::project(weak, false);
     let identity = ProviderProjectId::Modrinth(ModrinthProjectId::parse("AANobbMI").unwrap());
     let pin = ResolvedPin {
@@ -58,7 +58,7 @@ fn fixture(root: &Path, weak: bool) {
         &DocumentCodec.encode_lock(&resolved).unwrap(),
     );
 }
-fn supplied(slot: &str, bytes: &[u8]) -> BuildAcquisitions {
+pub(super) fn supplied(slot: &str, bytes: &[u8]) -> BuildAcquisitions {
     let content = verify_stream(
         &mut &bytes[..],
         &ExpectedContent {

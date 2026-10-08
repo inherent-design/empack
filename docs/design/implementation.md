@@ -14,8 +14,8 @@ exact and compatible Modrinth/CurseForge selections, offers bounded search choic
 and identifies acquired files by their content. Normalized mrpack and CurseForge
 inspection runs over retained bounded archive sources. Native hosts now compose
 initialization, import, builds, addition, update, adoption, removal, recorded/supplied
-synchronization, cleanup and recovery. Durable continuation, remaining frontend decisions
-and coordinated CLI cutover remain unfinished. Existing
+synchronization, cleanup and recovery. Build suspension now has a durable Engine API; its host composition, remaining frontend
+decisions and coordinated CLI cutover remain unfinished. Existing
 commands retain their fixes and capabilities until their replacements pass parity
 checks. There will be one implementation per operation, not a permanent legacy engine.
 
@@ -1632,3 +1632,26 @@ and preserves the prior distribution when a selected download root is missing.
 All 36 affected tests and all-feature Clippy pass. Windows cross-compilation passes
 with the seven existing test-only warnings. An earlier parallel host test reported an
 inherited-pipe warning; its isolated serial rerun and the final affected run were clean.
+
+
+## Durable build suspension API
+
+`Engine::suspend_build` and `resume_saved_build` persist a bounded recipe and content
+identities in host-private state, then reconstruct a fresh preparation. Source fingerprints
+are comparison data, not native capabilities. Verified content uses the existing addressed
+store; records use an OS lock, synchronized temporary file and atomic replacement. The
+private-directory checks are shared with publication. No saved approval or executable command
+enters the record, and inspection never deletes stale or invalid state.
+
+Seven native/codec regressions cover restart, exact recipe choices, original weak evidence,
+missing/corrupt cache bytes, changed raw documents and source files, malformed slots/schema,
+unsafe output paths, foreign engine ownership, oversized records and symlinked saved state.
+The restart test supplies the remaining file through ordinary resume and publishes both
+mrpack and full-client outputs only after a fresh grant. All 66 affected tests, all-feature
+Clippy and Windows cross-compilation pass. One parallel inherited-pipe warning passes
+cleanly in an isolated serial rerun. Host save/continue composition remains the next step.
+
+Before this change, frozen `84f5583` passed 1,978 default tests, eleven doctests and
+24 executable smoke tests with no pipe warnings; 124 opt-in tests were skipped. The run
+included a macOS test-binary discovery delay; a sampled process was still at `_dyld_start`
+before Rust entry. Greptile 126 reports no new blocking finding for that revision.

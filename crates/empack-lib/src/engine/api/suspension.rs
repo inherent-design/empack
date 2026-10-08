@@ -1,0 +1,329 @@
+//! Explicit durable suspension; saved data re-enters normal preparation and fresh approval.
+use super::*;
+use crate::{
+    application::process_runtime::Cancellation,
+    engine::{
+        content::{
+            InitialObservation,
+            store::{CachedFileRequest, ContentStoreLimits, FileContentLookup, FileContentStore},
+        },
+        mrpack::AcquiredBuildFile,
+        runtime::WorkScope,
+    },
+};
+use empack_core::{digest::ExpectedDigest, files::FilePermissions};
+use std::collections::BTreeSet;
+mod record;
+mod store;
+
+pub struct SuspendedBuildReceipt {
+    pub retained_files: usize,
+    pub retained_bytes: u64,
+    pub pending_files: usize,
+    pub replaced: bool,
+}
+/// No record is removed during inspection. Prepared output still needs an execution grant.
+pub enum SavedBuildResume {
+    Missing,
+    Stale,
+    Prepared(Box<Preparation>),
+}
+fn record_resources() -> ResourceRequest {
+    ResourceRequest {
+        jobs: 1,
+        memory_bytes: record::MAX_RECORD * 8,
+        open_files: 8,
+        ..Default::default()
+    }
+}
+impl Engine {
+    /// Explicit host authorization to persist this continuation and verified content. Preview
+    /// never calls this method; the saved record contains neither native locators nor approval.
+    pub async fn suspend_build(
+        &self,
+        pending: PreparationContinuation,
+    ) -> Result<SuspendedBuildReceipt> {
+        ensure!(
+            Arc::ptr_eq(&self.owner, &pending.prepared.owner),
+            "Continuation belongs to another engine"
+        );
+        ensure!(
+            matches!(&**pending.prepared.data, PreparedKind::Build(_)),
+            "Continuation is not a build preparation"
+        );
+        let retained = (*pending.prepared.data).map(|kind| match kind {
+            PreparedKind::Build(build) => *build,
+            _ => unreachable!(),
+        });
+        let config = self.config.clone();
+        let (sender, receiver) = oneshot::channel();
+        let mut handle = self
+            .preparations
+            .start_ephemeral(move |mut scope| async move {
+                let result = suspend(retained, config, &mut scope).await;
+                let _ = sender.send(result);
+                Ok(())
+            })?;
+        let outcome = handle.wait().await;
+        if let OperationOutcome::Failed(error) = &*outcome {
+            return Err(error.clone().into());
+        }
+        receiver
+            .await
+            .context("Suspension result was not retained")?
+    }
+    /// Reconstruct a request, compare captured inputs and verify any retained cache content.
+    /// The selected project and configured state root come from the host, never from saved data.
+    pub async fn resume_saved_build(&self, project: PathBuf) -> Result<SavedBuildResume> {
+        ensure!(project.is_absolute(), "Project selection must be absolute");
+        let state = self.config.state_root.clone();
+        let selected = project.clone();
+        let (sender, receiver) = oneshot::channel();
+        let mut handle = self
+            .preparations
+            .start_ephemeral(move |mut scope| async move {
+                let result = async {
+                    let work = scope.spawn_blocking(
+                        record_resources(),
+                        ResourceRequest {
+                            memory_bytes: record::MAX_RECORD * 8,
+                            ..Default::default()
+                        },
+                        move |cancel| store::load(&state, &selected, &cancel),
+                    )?;
+                    scope.accept(work.wait().await?)?.transpose()
+                }
+                .await;
+                let _ = sender.send(result);
+                Ok(())
+            })?;
+        let outcome = handle.wait().await;
+        if let OperationOutcome::Failed(error) = &*outcome {
+            return Err(error.clone().into());
+        }
+        let record = receiver
+            .await
+            .context("Saved build inspection result was not retained")??;
+        let Some(loaded) = &*record else {
+            return Ok(SavedBuildResume::Missing);
+        };
+        if !loaded.documents_match {
+            return Ok(SavedBuildResume::Stale);
+        }
+        let value = &loaded.record;
+        ensure!(
+            value.files.len() <= self.config.snapshot.entries,
+            "Saved build content count limit exceeded"
+        );
+        let request = value.recipe.parse()?;
+        let prepared = match self.prepare(project, request).await? {
+            Preparation::Ready(prepared) => prepared,
+            Preparation::NeedsInput(pending) => pending.prepared,
+        };
+        let PreparedKind::Build(build) = &**prepared.data else {
+            unreachable!()
+        };
+        if build.workspace.observations().fingerprint() != value.fingerprint {
+            return Ok(SavedBuildResume::Stale);
+        }
+        let expected: BTreeMap<_, _> = build
+            .acquisition
+            .pending
+            .iter()
+            .map(|need| (need.key.clone(), need.expected.clone()))
+            .collect();
+        let evidence = build.request.evidence;
+        let mut keys = BTreeSet::new();
+        for file in &value.files {
+            let key = file.key.parse()?;
+            ensure!(
+                keys.insert(key.clone()) && expected.contains_key(&key),
+                "Saved content must match distinct current obligations"
+            );
+            file.id()?;
+        }
+        let config = self.config.clone();
+        let (sender, receiver) = oneshot::channel();
+        let mut handle = self
+            .preparations
+            .start_ephemeral(move |mut scope| async move {
+                let result = restore(record, expected, evidence, config, &mut scope).await;
+                let _ = sender.send(result);
+                Ok(())
+            })?;
+        let outcome = handle.wait().await;
+        if let OperationOutcome::Failed(error) = &*outcome {
+            return Err(error.clone().into());
+        }
+        let content = receiver
+            .await
+            .context("Saved build content was not retained")??;
+        let prepared = self
+            .resume(PreparationContinuation { prepared }, content)
+            .await?;
+        Ok(SavedBuildResume::Prepared(Box::new(prepared)))
+    }
+}
+async fn suspend(
+    retained: RetainedOutput<PreparedBuild>,
+    config: EngineConfig,
+    scope: &mut WorkScope,
+) -> Result<SuspendedBuildReceipt> {
+    let work = scope.spawn_blocking(
+        config.resources.capture,
+        ResourceRequest::default(),
+        move |cancel| {
+            retained
+                .workspace
+                .root()
+                .revalidate(retained.workspace.observations(), &cancel)?;
+            Ok::<_, anyhow::Error>(retained)
+        },
+    )?;
+    let (retained, _) = scope.accept(work.wait().await?)?.transpose()?.into_parts();
+    let (build, _retained_permit) = retained.into_parts();
+    let retained_bytes = build.acquisition.acquired.retained_bytes()?;
+    ensure!(
+        retained_bytes <= config.transfer.transfer_bytes,
+        "Retained build content exceeds byte limit"
+    );
+    let pending_files = build.acquisition.pending.len();
+    let mut record = record::Record {
+        schema: 1,
+        fingerprint: build.workspace.observations().fingerprint(),
+        documents: store::documents(build.workspace.observations())?,
+        recipe: record::Recipe::from(&build.request),
+        files: vec![],
+    };
+    let state = config.state_root.clone();
+    let work = scope.spawn_blocking(
+        record_resources(),
+        ResourceRequest::default(),
+        move |cancel| {
+            cancel.check()?;
+            FileContentStore::open(
+                &state.join("pending-content"),
+                ContentStoreLimits::default(),
+            )
+        },
+    )?;
+    let (content_store, _) = scope.accept(work.wait().await?)?.transpose()?.into_parts();
+    let files = build
+        .acquisition
+        .acquired
+        .locked
+        .into_iter()
+        .map(|(key, file)| (AcquisitionKey::Locked(key), file))
+        .chain(
+            build
+                .acquisition
+                .acquired
+                .observed
+                .into_iter()
+                .map(|(path, file)| (AcquisitionKey::Observed(path), file)),
+        );
+    for (key, file) in files {
+        scope.cancellation().check()?;
+        let content = ExpectedDigest::Sha256(*file.content.lease().id().bytes()).hex();
+        record.files.push(record::SavedFile {
+            key: record::Key::from(&key),
+            content,
+            readonly: file.permissions.readonly,
+            executable: file.permissions.executable,
+        });
+        content_store.publish_verified(scope, file.content).await?;
+    }
+    let retained_files = record.files.len();
+    let work = scope.spawn_blocking(
+        record_resources(),
+        ResourceRequest::default(),
+        move |cancel| store::save(&config.state_root, &build.workspace, &record, &cancel),
+    )?;
+    let (replaced, _) = scope.accept(work.wait().await?)?.transpose()?.into_parts();
+    Ok(SuspendedBuildReceipt {
+        retained_files,
+        retained_bytes,
+        pending_files,
+        replaced,
+    })
+}
+async fn restore(
+    record: RetainedOutput<Option<store::Loaded>>,
+    expected: BTreeMap<AcquisitionKey, ExpectedContent>,
+    evidence: SourceEvidencePolicy,
+    config: EngineConfig,
+    scope: &mut WorkScope,
+) -> Result<BuildAcquisitions> {
+    let state = config.state_root.clone();
+    let work = scope.spawn_blocking(
+        record_resources(),
+        ResourceRequest::default(),
+        move |cancel| {
+            cancel.check()?;
+            FileContentLookup::open_existing(
+                &state.join("pending-content"),
+                ContentStoreLimits::default(),
+            )
+        },
+    )?;
+    let (lookup, _) = scope.accept(work.wait().await?)?.transpose()?.into_parts();
+    let mut content = BuildAcquisitions::default();
+    let Some(lookup) = lookup else {
+        return Ok(content);
+    };
+    let mut total = 0u64;
+    for file in &record
+        .as_ref()
+        .context("Missing inspected build record")?
+        .record
+        .files
+    {
+        let key = file.key.parse()?;
+        let content_file = lookup
+            .retain(
+                scope,
+                CachedFileRequest {
+                    id: file.id()?,
+                    expected: expected
+                        .get(&key)
+                        .context("Saved build obligation changed")?
+                        .clone(),
+                    maximum: config
+                        .transfer
+                        .file_bytes
+                        .min(config.transfer.transfer_bytes.saturating_sub(total)),
+                    evidence,
+                    initial: InitialObservation::RequireEvidence,
+                },
+            )
+            .await?;
+        let Some(acquired) = content_file else {
+            continue;
+        };
+        total = total
+            .checked_add(acquired.lease().len())
+            .context("Saved content size overflow")?;
+        ensure!(
+            total <= config.transfer.transfer_bytes,
+            "Saved build content exceeds byte limit"
+        );
+        let file = AcquiredBuildFile {
+            content: acquired,
+            permissions: FilePermissions {
+                readonly: file.readonly,
+                executable: file.executable,
+            },
+        };
+        match key {
+            AcquisitionKey::Locked(key) => {
+                content.locked.insert(key, file);
+            }
+            AcquisitionKey::Observed(path) => {
+                content.observed.insert(path, file);
+            }
+        }
+    }
+    Ok(content)
+}
+#[cfg(test)]
+mod tests;

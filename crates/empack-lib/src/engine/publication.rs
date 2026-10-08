@@ -199,37 +199,9 @@ impl Publisher {
     }
 
     fn open_impl(host_state: &Path, create: bool) -> Result<Self> {
-        if create && !host_state.exists() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                std::fs::DirBuilder::new()
-                    .recursive(true)
-                    .mode(0o700)
-                    .create(host_state)?;
-            }
-            #[cfg(windows)]
-            super::windows_privacy::create(host_state)?;
-        }
-        let metadata = std::fs::symlink_metadata(host_state)?;
-        ensure!(
-            metadata.is_dir() && !metadata.file_type().is_symlink(),
-            "Journal state is not a private directory"
-        );
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            // SAFETY: geteuid has no preconditions or borrowed storage.
-            ensure!(
-                metadata.uid() == unsafe { libc::geteuid() } && metadata.mode() & 0o077 == 0,
-                "Journal state must be owned by this user and private (0700)"
-            );
-        }
-        let host = Dir::open_ambient_dir(host_state, cap_std::ambient_authority())?;
-        native::reject_reparse(&host.try_clone()?.into_std_file())?;
-        #[cfg(windows)]
-        super::windows_privacy::verify(&host)?;
-        Ok(Self { host })
+        Ok(Self {
+            host: open_private_directory(host_state, create)?,
+        })
     }
 
     /// Open already-created private state without creating directories during preview.
@@ -724,7 +696,7 @@ fn candidate_name(journal: &Journal, index: usize) -> String {
     )
 }
 
-fn root_key(root: &ProjectReadRoot) -> Result<String> {
+pub(super) fn root_key(root: &ProjectReadRoot) -> Result<String> {
     binding_key(&root.binding.into())
 }
 fn binding_key(binding: &Binding) -> Result<String> {
@@ -804,14 +776,19 @@ fn preflight_recovery(
             );
         }
     }
-    let omitted = journal.changes.iter().filter_map(|change| {
-        change.sibling.as_ref().map(|sibling| {
-            match change.target.rsplit_once('/') {
-                Some((parent, _)) => format!("{parent}/{sibling}"),
-                None => sibling.clone(),
-            }
+    let omitted = journal
+        .changes
+        .iter()
+        .filter_map(|change| {
+            change
+                .sibling
+                .as_ref()
+                .map(|sibling| match change.target.rsplit_once('/') {
+                    Some((parent, _)) => format!("{parent}/{sibling}"),
+                    None => sibling.clone(),
+                })
         })
-    }).collect();
+        .collect();
     let snapshot = capture_journal_omitting(root, journal, &omitted)?;
     let changing: BTreeSet<_> = journal
         .changes
@@ -1201,3 +1178,38 @@ pub(crate) mod tests;
 
 #[cfg(test)]
 pub(in crate::engine) use creation::interrupted_creation_fixture;
+
+/// Shared host-private storage checks; callers choose the directory, never a persisted record.
+pub(super) fn open_private_directory(host_state: &Path, create: bool) -> Result<Dir> {
+    if create && !host_state.exists() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(host_state)?;
+        }
+        #[cfg(windows)]
+        super::windows_privacy::create(host_state)?;
+    }
+    let metadata = std::fs::symlink_metadata(host_state)?;
+    ensure!(
+        metadata.is_dir() && !metadata.file_type().is_symlink(),
+        "Journal state is not a private directory"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // SAFETY: geteuid has no preconditions or borrowed storage.
+        ensure!(
+            metadata.uid() == unsafe { libc::geteuid() } && metadata.mode() & 0o077 == 0,
+            "Journal state must be owned by this user and private (0700)"
+        );
+    }
+    let host = Dir::open_ambient_dir(host_state, cap_std::ambient_authority())?;
+    native::reject_reparse(&host.try_clone()?.into_std_file())?;
+    #[cfg(windows)]
+    super::windows_privacy::verify(&host)?;
+    Ok(host)
+}

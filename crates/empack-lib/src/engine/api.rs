@@ -1171,3 +1171,6 @@ mod build_input_tests;
 
 #[cfg(test)]
 mod recorded_sync_tests;
+
+mod suspension;
+pub use suspension::{SavedBuildResume, SuspendedBuildReceipt};
