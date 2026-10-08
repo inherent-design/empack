@@ -523,12 +523,21 @@ async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family
         .with_body(r#"{"versions":["21.1.1"]}"#)
         .create_async()
         .await;
+    // Keep slow responses unavailable until discovery returns, rather than racing
+    // a short sleep against an overloaded test host's scheduling latency.
+    let mut releases = Vec::new();
+    let (release, receive) = std::sync::mpsc::channel::<()>();
+    releases.push(release);
+    let receive = std::sync::Mutex::new(receive);
     let mut fabric_server = mockito::Server::new_async().await;
     let fabric = fabric_server
         .mock("GET", "/fabric/1.21.1")
         .with_status(200)
-        .with_chunked_body(|writer| {
-            std::thread::sleep(Duration::from_millis(300));
+        .with_chunked_body(move |writer| {
+            let _ = receive
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10));
             writer.write_all(b"[]")
         })
         .create_async()
@@ -543,12 +552,18 @@ async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family
     ] {
         let mut other = mockito::Server::new_async().await;
         catalog = catalog.with_loader_test_origin(family, &other.url());
+        let (release, receive) = std::sync::mpsc::channel::<()>();
+        releases.push(release);
+        let receive = std::sync::Mutex::new(receive);
         later.push(
             other
                 .mock("GET", path)
                 .with_status(200)
-                .with_chunked_body(|writer| {
-                    std::thread::sleep(Duration::from_millis(300));
+                .with_chunked_body(move |writer| {
+                    let _ = receive
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(10));
                     writer.write_all(b"{}")
                 })
                 .expect(1)
@@ -561,16 +576,17 @@ async fn loader_menu_shares_one_deadline_and_retains_an_earlier_supported_family
     let host = session(root.path(), false, false)
         .with_interactive(MockInteractiveProvider::new().queue_select(1));
     let mut limits = RuntimeCatalogLimits::default();
-    limits.transfer.deadline = Duration::from_millis(150);
-    let (family, choices) = compatible_loader(
+    limits.transfer.deadline = Duration::from_secs(1);
+    let result = compatible_loader(
         &host,
         catalog,
         GameVersion::parse("1.21.1").unwrap(),
         None,
         limits,
     )
-    .await
-    .unwrap();
+    .await;
+    drop(releases);
+    let (family, choices) = result.unwrap();
     assert_eq!(family, LoaderKind::NeoForge);
     assert_eq!(
         choices

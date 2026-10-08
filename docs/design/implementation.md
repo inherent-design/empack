@@ -1,6 +1,6 @@
 # v0.5 delivery ledger
 
-Combined baseline: `b076760`; latest default suite: `b3b17e8`, 2026-10-08. Target: **v0.5.0-alpha.1**.
+Candidate implementation: `c9a8159`, 2026-10-08. Final validation is in progress. Target: **v0.5.0-alpha.1**.
 This is the current delivery checklist, not a release claim or a completion percentage.
 The [design](README.md) defines the target; the [feature requirements](parity.md)
 define the capabilities to preserve. Historical implementation notes and test runs
@@ -133,7 +133,7 @@ re-export. Restricted imports retain exact source bytes and verified association
 | Fixed locally | [Review 128: saved-record handle admission](https://github.com/inherent-design/empack/pull/82#discussion_r4215783750) | Reproduced eight-handle inspection failure; retained descriptors and subsequent read admission now share the allowance; stale-record inspection preserves bytes |
 | Fixed locally | [Review 128: orphaned store candidates](https://github.com/inherent-design/empack/pull/82#discussion_r4215783765) | Reproduced ignored candidates; native cleanup now captures their identities under store coordination, rejects changed candidates and retains unknown/new entries |
 | Verified | Intermittent inherited-pipe warning | Host Nextest upgraded to 0.9.148; both subsequent combined default runs passed without inherited-pipe warnings |
-| Cutover | Broader live world/update/adoption parity | Real CLI tests for every preserved input form, explicit choices and unsupported conversions |
+| Implemented | Provider-world lifecycle | Native fixtures cover changed-version update, adoption, supplied archives and removal; Boosted FPS now imports its three real provider worlds, syncs twice and builds verified client world members |
 | Implemented | Synchronization resolution and manual acquisition | Authored per-file placements preserve companion roles and optional choices; missing required companions reject publication; exact manual-input continuation, layout and accepted-game-version revalidation are wired |
 | Implemented | Continuation interfaces | Build browser/wait assistance, import and sync manual inputs, and explicit stale/invalid-state cleanup are wired; broaden combined live acceptance |
 | Implemented | Acquisition cache integration | Build/sync/runtime and add/import consumers use verified lookup; approved mutations populate the cache; restricted inputs reuse exact asserted bytes |
@@ -173,12 +173,27 @@ tests. Measured source-file line coverage was 92.77% after excluding standalone 
 
 Curated validation then exposed a historical CurseForge manifest without `required`
 and an obsolete smoke driver. The parser regression reproduced before correction;
-13 import tests and Clippy pass with omitted flags treated as required and explicit
-null/type errors rejected. The driver now uses native import continuation, isolated
-state/cache roots, exact supplied inputs, two no-op syncs and verified full-client
-archives. Its six offline contracts pass. At `b3b17e8`, all 929 default Rust tests and eight
-doctests also passed. The new live curated run and final combined acceptance remain
-open; the earlier frozen results do not cover these corrections.
+13 import tests and Clippy passed with omitted flags treated as required and explicit
+null/type errors rejected. The driver now uses native continuation, isolated state/cache
+roots, exact supplied inputs, two no-op syncs and verified full-client archives. Seven
+offline driver contracts pass. Six packs passed the initial diagnostic run; Boosted FPS
+then passed after explicitly selecting `--world-folder saves`, including archive checks
+for interpreted world members. A fresh seven-pack run uses one frozen executable.
+
+The source-capture correction at `16ad95b` preserves Unicode alias checks while avoiding
+normalization of identical or ASCII components. It passed 23 affected tests and Clippy.
+On the same imported Crash Landing project, debug no-op sync took 87.8 seconds before
+and 25.5 seconds after; both preserved intent and lock bytes. These are observed timings,
+not a release-build benchmark.
+
+At `fbefbb3`, all 1,011 instrumented tests passed and source-file line coverage remained
+92.77% with the exclusions above. The separate default run passed 929/930 tests; one
+loader-menu fixture exhausted its 150 ms deadline under concurrent validation load.
+The fixture now holds slow responses until discovery returns and gives immediate responses
+one second of scheduling headroom. All eleven initialization tests pass; the final combined
+rerun remains required. The Windows LF-only template assertion is also corrected with
+explicit LF/CRLF coverage. Neither targeted correction substitutes for native CI.
+
 
 ## Storage ownership inventory
 
