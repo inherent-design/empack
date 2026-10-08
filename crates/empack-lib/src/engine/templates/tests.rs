@@ -285,21 +285,24 @@ fn embedded_defaults_share_escaping_and_enforce_output_budget() {
     let project = project(false, false);
     let name = "line\nkey=value\\suffix";
     let source = include_str!("../../../templates/server/server.properties.template");
-    let rendered = render_default(
-        &project,
-        BuildTarget::ServerFull,
-        source,
-        [("NAME".to_owned(), name.to_owned())],
-        4096,
-        &Cancellation::default(),
-    )
-    .unwrap();
-    let rendered = String::from_utf8(rendered).unwrap();
-    assert!(rendered.contains(&format!(
-        "server-name={}\n",
-        encoding::properties_value(name)
-    )));
-    assert!(!rendered.contains("\nkey=value"));
+    // Both checkout conventions are valid properties documents. Escaping must
+    // keep metadata on one logical line without requiring a host newline style.
+    let lf = source.replace("\r\n", "\n");
+    for source in [lf.clone(), lf.replace('\n', "\r\n")] {
+        let rendered = render_default(
+            &project,
+            BuildTarget::ServerFull,
+            &source,
+            [("NAME".to_owned(), name.to_owned())],
+            4096,
+            &Cancellation::default(),
+        )
+        .unwrap();
+        let rendered = String::from_utf8(rendered).unwrap();
+        let expected = format!("server-name={}", encoding::properties_value(name));
+        assert_eq!(rendered.lines().filter(|line| *line == expected).count(), 1);
+        assert!(!rendered.contains("\nkey=value"));
+    }
     assert!(
         render_default(
             &project,
