@@ -13,6 +13,7 @@ use empack_core::{
     path::PortableRelPath,
 };
 
+mod archives;
 mod cache;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -54,6 +55,12 @@ pub enum BuildContentSource {
     Manual {
         pin: Option<ResolvedPin>,
     },
+}
+impl BuildContentSource {
+    pub(in crate::engine) fn can_download(&self) -> bool {
+        matches!(self, Self::Download(_))
+            || matches!(self, Self::ProviderArchiveMember { archive, .. } if !archive.alternatives.is_empty())
+    }
 }
 pub struct AcquisitionNeed {
     pub key: AcquisitionKey,
@@ -172,9 +179,12 @@ impl BuildAcquisitionResult {
     ) -> Result<Self> {
         let mut groups = BTreeMap::<ResolvedPin, Vec<usize>>::new();
         for (index, need) in self.pending.iter().enumerate() {
-            if let BuildContentSource::Provider { pin, .. } = &need.source
-                && catalog.availability().supports(&pin.project)
-            {
+            let pin = match &need.source {
+                BuildContentSource::Provider { pin, .. } => pin,
+                BuildContentSource::ProviderArchiveMember { archive, .. } => &archive.pin,
+                _ => continue,
+            };
+            if catalog.availability().supports(&pin.project) {
                 groups.entry(pin.clone()).or_default().push(index);
             }
         }
@@ -183,20 +193,26 @@ impl BuildAcquisitionResult {
             let resolution = catalog.resolve_exact(scope, pin.clone(), limits).await?;
             for index in indices {
                 let need = &mut self.pending[index];
-                let BuildContentSource::Provider {
-                    slot,
-                    alternatives: saved,
-                    ..
-                } = &need.source
-                else {
-                    unreachable!("grouped provider obligation")
+                let (slot, expected, saved) = match &need.source {
+                    BuildContentSource::Provider {
+                        slot, alternatives, ..
+                    } => (slot, &need.expected, alternatives),
+                    BuildContentSource::ProviderArchiveMember { archive, .. } => {
+                        (&archive.slot, &archive.expected, &archive.alternatives)
+                    }
+                    _ => unreachable!("grouped provider obligation"),
                 };
-                let mut alternatives = resolution.download_alternatives(slot, &need.expected)?;
+                let mut alternatives = resolution.download_alternatives(slot, expected)?;
                 // Prefer current locators without revoking declared fallback origins. Every
                 // alternative still has to satisfy the exact original byte assertions.
                 alternatives.extend(saved.iter().cloned());
                 let mut seen = BTreeSet::new();
                 alternatives.retain(|url| seen.insert(url.clone()));
+                if let BuildContentSource::ProviderArchiveMember { archive, .. } = &mut need.source
+                {
+                    archive.alternatives = alternatives;
+                    continue;
+                }
                 need.source = if alternatives.is_empty() {
                     BuildContentSource::Manual {
                         pin: Some(pin.clone()),
@@ -304,10 +320,29 @@ impl BuildAcquisitionResult {
         evidence: SourceEvidencePolicy,
         limits: TransferLimits,
     ) -> Result<BuildAcquisitionResult> {
+        self.acquire_http_with_archives(
+            transport,
+            scope,
+            evidence,
+            limits,
+            crate::engine::artifacts::ArchiveLimits::default(),
+        )
+        .await
+    }
+
+    pub async fn acquire_http_with_archives(
+        self,
+        transport: &HttpAcquisition,
+        scope: &mut WorkScope,
+        evidence: SourceEvidencePolicy,
+        limits: TransferLimits,
+        archive_limits: crate::engine::artifacts::ArchiveLimits,
+    ) -> Result<BuildAcquisitionResult> {
         let Self {
             mut acquired,
             pending: needs,
         } = self.use_saved_provider_alternatives();
+        let retained_before = acquired.retained_bytes()?;
         let limits = TransferLimits {
             transfer_bytes: limits
                 .transfer_bytes
@@ -318,6 +353,8 @@ impl BuildAcquisitionResult {
         let mut pending = Vec::new();
         let mut keys = Vec::new();
         let mut requests = Vec::new();
+        let mut archives =
+            BTreeMap::<(ResolvedPin, empack_core::model::FileSlot), Vec<AcquisitionNeed>>::new();
         for need in needs {
             match need.source {
                 BuildContentSource::Download(alternatives) => {
@@ -330,12 +367,38 @@ impl BuildAcquisitionResult {
                         initial: InitialObservation::RequireEvidence,
                     });
                 }
+                BuildContentSource::ProviderArchiveMember { ref archive, .. }
+                    if !archive.alternatives.is_empty() =>
+                {
+                    archives
+                        .entry((archive.pin.clone(), archive.slot.clone()))
+                        .or_default()
+                        .push(need);
+                }
                 _ => pending.push(need),
             }
         }
+        let direct_count = requests.len();
+        for needs in archives.values() {
+            let BuildContentSource::ProviderArchiveMember { archive, .. } = &needs[0].source else {
+                unreachable!()
+            };
+            ensure!(needs.iter().all(|need| matches!(&need.source, BuildContentSource::ProviderArchiveMember { archive: other, .. } if archive == other)), "World members disagree about their source archive");
+            requests.push(DownloadRequest {
+                alternatives: NonEmpty::new(archive.alternatives.clone())?,
+                expected: archive.expected.clone(),
+                limits: TransferLimits {
+                    file_bytes: limits.file_bytes.min(archive_limits.compressed_bytes),
+                    ..limits
+                },
+                evidence,
+                initial: InitialObservation::RequireEvidence,
+            });
+        }
         if !requests.is_empty() {
             let content = transport.acquire_batch(scope, requests, limits).await?;
-            for (key, content) in keys.into_iter().zip(content) {
+            let mut content = content.into_iter();
+            for (key, content) in keys.into_iter().zip(content.by_ref().take(direct_count)) {
                 insert_acquired(
                     &mut acquired,
                     key,
@@ -347,6 +410,38 @@ impl BuildAcquisitionResult {
                         },
                     },
                 )?;
+            }
+            if !archives.is_empty() {
+                let remaining = limits
+                    .transfer_bytes
+                    .checked_sub(acquired.retained_bytes()? - retained_before)
+                    .context("Retained world content exceeds byte limit")?;
+                let mut pool = ContentPool::owned(scope, remaining).await?;
+                let mut expanded = 0u64;
+                for (needs, archive) in archives.into_values().zip(content) {
+                    let maximum = remaining
+                        .checked_sub(expanded)
+                        .context("World expansion exceeds byte limit")?;
+                    let files = archives::extract(
+                        scope,
+                        archive,
+                        needs,
+                        evidence,
+                        crate::engine::artifacts::ArchiveLimits {
+                            total_bytes: archive_limits.total_bytes.min(maximum),
+                            file_bytes: archive_limits.file_bytes.min(limits.file_bytes),
+                            ..archive_limits
+                        },
+                        &mut pool,
+                    )
+                    .await?;
+                    for (key, file) in files {
+                        expanded = expanded
+                            .checked_add(file.content.lease().len())
+                            .context("World expansion size overflow")?;
+                        insert_acquired(&mut acquired, key, file)?;
+                    }
+                }
             }
         }
         Ok(BuildAcquisitionResult { acquired, pending })
@@ -374,13 +469,21 @@ pub fn plan_build_acquisitions(
     mode: BuildMaterialization,
     cancel: &Cancellation,
 ) -> Result<BuildAcquisitionPlan> {
-    plan_acquisitions(workspace, external, mode, None, cancel)
+    plan_acquisitions(
+        workspace,
+        external,
+        mode,
+        None,
+        SourceEvidencePolicy::Compatibility,
+        cancel,
+    )
 }
 fn plan_acquisitions(
     workspace: &WorkspaceSnapshot,
     external: &BuildAcquisitions,
     mode: BuildMaterialization,
     selected: Option<&BTreeSet<AcquisitionKey>>,
+    evidence: SourceEvidencePolicy,
     cancel: &Cancellation,
 ) -> Result<BuildAcquisitionPlan> {
     let project = workspace.require_resolved()?;
@@ -458,6 +561,21 @@ fn plan_acquisitions(
                         path: placement.destination.relative().clone(),
                     })?,
                 )?;
+            }
+            if let AcquisitionSpec::ProviderArchiveMember { archive, member } = &file.acquisition
+                && evidence == SourceEvidencePolicy::StrongSourceRequired
+            {
+                crate::engine::content::validate_expectation(
+                    &archive.expected,
+                    u64::MAX,
+                    evidence,
+                    InitialObservation::RequireEvidence,
+                )?;
+                present = external.locked.get(&key).is_some_and(|file| {
+                    file.content
+                        .provider_member_policy(archive, member, evidence)
+                        .is_ok()
+                });
             }
             if present {
                 continue;

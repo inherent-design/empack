@@ -20,22 +20,39 @@ pub fn plan_target_build_acquisitions(
             matches!(optional, OptionalPolicy::Preserve),
             "Mrpack preserves optional choices"
         );
-        return plan_build_acquisitions(
+        return plan_acquisitions(
             workspace,
             external,
             BuildMaterialization::ReferenceArchive,
+            None,
+            evidence,
             cancel,
         );
     }
     let references = matches!(target, BuildTarget::Client | BuildTarget::Server);
     let (selected, keys) = select_game_inputs(workspace, external, target, optional, cancel)?;
     let mut needed = BTreeSet::new();
+    let project = workspace.require_resolved()?;
     for entry in selected.entries() {
         if let Some(key) = keys.get(&entry.owner) {
             let expected = match &entry.representation {
                 Representation::Unacquired { expected }
                 | Representation::Download { expected, .. } => expected,
                 Representation::Embedded { .. } => continue,
+            };
+            let expected = if let AcquisitionKey::Locked(key) = key {
+                let file = project.lock().dependencies[&key.dependency]
+                    .files
+                    .as_slice()
+                    .iter()
+                    .find(|file| file.slot == key.slot)
+                    .context("Selected build file is missing")?;
+                match &file.acquisition {
+                    AcquisitionSpec::ProviderArchiveMember { archive, .. } => &archive.expected,
+                    _ => expected,
+                }
+            } else {
+                expected
             };
             if evidence == SourceEvidencePolicy::StrongSourceRequired {
                 ensure!(
@@ -59,6 +76,7 @@ pub fn plan_target_build_acquisitions(
         external,
         BuildMaterialization::AllContent,
         Some(&needed),
+        evidence,
         cancel,
     )?;
     if references {

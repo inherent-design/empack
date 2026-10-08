@@ -702,7 +702,7 @@ async fn provider_slots_share_one_exact_resolution_and_keep_their_assertions() {
     let selection = server.mock("GET", "/version/abcdefgh")
         .with_body(json!({"id":"abcdefgh","project_id":"AANobbMI","files":files,"game_versions":["1.20.1"],"loaders":["minecraft"],"dependencies":[]}).to_string())
         .expect(1).create_async().await;
-    let plan = BuildAcquisitionResult {
+    let mut plan = BuildAcquisitionResult {
         acquired: BuildAcquisitions::default(),
         pending: ["first.zip", "second.zip"]
             .iter()
@@ -724,6 +724,28 @@ async fn provider_slots_share_one_exact_resolution_and_keep_their_assertions() {
             })
             .collect(),
     };
+    let member_expected = ExpectedContent {
+        digests: None,
+        size: Some(3),
+        accepted_observation: Some(empack_core::digest::ContentId::from_sha256([7; 32])),
+    };
+    plan.pending.push(AcquisitionNeed {
+        key: AcquisitionKey::Locked(LockedFileKey {
+            dependency: DependencyKey::parse("world").unwrap(),
+            slot: FileSlot::parse("level.dat").unwrap(),
+        }),
+        reason: AcquisitionReason::MaterializedTarget,
+        expected: member_expected.clone(),
+        source: BuildContentSource::ProviderArchiveMember {
+            archive: empack_core::model::ProviderArchiveSource {
+                pin,
+                slot: FileSlot::parse("first.zip").unwrap(),
+                expected: expected.clone(),
+                alternatives: vec![],
+            },
+            member: path("World/level.dat"),
+        },
+    });
     let governor = ResourceGovernor::new(ResourceRequest {
         jobs: 1,
         memory_bytes: 1 << 20,
@@ -756,6 +778,10 @@ async fn provider_slots_share_one_exact_resolution_and_keep_their_assertions() {
             matches!(&need.source, BuildContentSource::Download(urls) if urls.as_slice()==[format!("https://example.com/{name}")])
         );
     }
+    assert_eq!(result.pending[2].expected, member_expected);
+    assert!(
+        matches!(&result.pending[2].source,BuildContentSource::ProviderArchiveMember {archive,..} if archive.expected==expected && archive.alternatives==["https://example.com/first.zip"])
+    );
     project.assert_async().await;
     selection.assert_async().await;
     runtime.shutdown().await;
@@ -1071,4 +1097,303 @@ async fn retained_build_inputs_reduce_the_http_batch_allowance() {
         drop((handle, outcome));
         assert_eq!(governor.status().reserved, ResourceRequest::default());
     }
+}
+
+#[tokio::test]
+async fn provider_archive_acquisition_shares_one_download_and_verifies_every_member() {
+    use empack_core::{
+        digest::{ContentId, ExpectedDigest},
+        identity::{ModrinthProjectId, ProviderProjectId},
+        model::{FileSlot, ProviderArchiveSource},
+    };
+    use sha2::Digest;
+    use std::io::{Cursor, Write};
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for name in ["World/level.dat", "World/region/r.0.0.mca"] {
+        zip.start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"payload").unwrap();
+    }
+    let bytes = zip.finish().unwrap().into_inner();
+    for failure in [
+        None,
+        Some("archive"),
+        Some("member"),
+        Some("limit"),
+        Some("weak"),
+    ] {
+        let mut server = mockito::Server::new_async().await;
+        let download = server
+            .mock("GET", "/world.zip")
+            .with_body(bytes.clone())
+            .expect(1)
+            .create_async()
+            .await;
+        let id = ProviderProjectId::Modrinth(ModrinthProjectId::parse("AANobbMI").unwrap());
+        let pin = ResolvedPin {
+            selection: id.parse_pin("abcdefgh").unwrap(),
+            project: id,
+        };
+        let digest = if failure == Some("weak") {
+            ExpectedDigest::Md5(md5::Md5::digest(&bytes).into())
+        } else {
+            ExpectedDigest::Sha256(if failure == Some("archive") {
+                [0; 32]
+            } else {
+                sha2::Sha256::digest(&bytes).into()
+            })
+        };
+        let archive = ProviderArchiveSource {
+            pin,
+            slot: FileSlot::parse("world.zip").unwrap(),
+            expected: ExpectedContent {
+                digests: Some(DigestSet::new(vec![digest]).unwrap()),
+                size: Some(bytes.len() as u64),
+                accepted_observation: None,
+            },
+            alternatives: vec![format!("{}/world.zip", server.url())],
+        };
+        let recorded_archive = archive.clone();
+        let needs = ["level.dat", "region/r.0.0.mca"]
+            .into_iter()
+            .map(|name| AcquisitionNeed {
+                key: AcquisitionKey::Locked(LockedFileKey {
+                    dependency: empack_core::model::DependencyKey::parse("world").unwrap(),
+                    slot: FileSlot::parse(name).unwrap(),
+                }),
+                reason: AcquisitionReason::MaterializedTarget,
+                expected: ExpectedContent {
+                    digests: None,
+                    size: Some(7),
+                    accepted_observation: Some(ContentId::from_sha256(
+                        if failure == Some("member") && name != "level.dat" {
+                            [0; 32]
+                        } else {
+                            sha2::Sha256::digest(b"payload").into()
+                        },
+                    )),
+                },
+                source: BuildContentSource::ProviderArchiveMember {
+                    archive: archive.clone(),
+                    member: path(&format!("World/{name}")),
+                },
+            })
+            .collect();
+        let governor = ResourceGovernor::new(ResourceRequest {
+            jobs: 2,
+            memory_bytes: 8 << 20,
+            scratch_bytes: 1 << 20,
+            open_files: 32,
+        });
+        let runtime = OperationRuntime::new(governor.clone(), 2);
+        let mut handle = runtime
+            .start(move |mut scope| async move {
+                Ok(BuildAcquisitionPlan { needs }
+                    .begin()
+                    .acquire_http_with_archives(
+                        &HttpAcquisition::for_loopback_tests(),
+                        &mut scope,
+                        SourceEvidencePolicy::StrongSourceRequired,
+                        TransferLimits {
+                            file_bytes: 1 << 20,
+                            transfer_bytes: 1 << 20,
+                            ..Default::default()
+                        },
+                        crate::engine::artifacts::ArchiveLimits {
+                            entries: 16,
+                            total_bytes: if failure == Some("limit") { 10 } else { 64 },
+                            ..Default::default()
+                        },
+                    )
+                    .await)
+            })
+            .unwrap();
+        let outcome = handle.wait().await;
+        runtime.shutdown().await;
+        match &*outcome {
+            OperationOutcome::Completed(Ok(result)) if failure.is_none() => {
+                assert!(result.pending.is_empty());
+                assert_eq!(result.acquired.locked.len(), 2);
+                for file in result.acquired.locked.values() {
+                    assert_eq!(file.content.lease().len(), 7);
+                    assert!(matches!(
+                        file.content.evidence(),
+                        empack_core::digest::IntegrityEvidence::ObservedOnly { .. }
+                    ));
+                }
+                verify_world_build(recorded_archive, &result.acquired);
+            }
+            OperationOutcome::Completed(Err(_)) if failure.is_some() => {}
+            other => panic!(
+                "Unexpected archive result for {failure:?}: {}",
+                matches!(other, OperationOutcome::Completed(Ok(_)))
+            ),
+        }
+        if failure == Some("weak") {
+            assert!(!download.matched_async().await);
+        } else {
+            download.assert_async().await;
+        }
+        drop(outcome);
+        drop(handle);
+        drop(runtime);
+        assert_eq!(governor.status().reserved, ResourceRequest::default());
+    }
+}
+
+fn verify_world_build(
+    mut archive: empack_core::model::ProviderArchiveSource,
+    acquired: &BuildAcquisitions,
+) {
+    use empack_core::{
+        inventory::OptionalPolicy, model::*, path::InstallDestination, projection::BuildTarget,
+    };
+    let base = project(false, false);
+    let mut intent = base.intent().clone();
+    let mut root_intent = intent.roots.values().next().unwrap().clone();
+    let key = DependencyKey::parse("world").unwrap();
+    let requirements = root_intent.requirements.clone();
+    root_intent.kind = ContentKind::World;
+    root_intent.source = SourceIntent::Provider(archive.pin.project.clone());
+    root_intent.version = VersionIntent::Exact(archive.pin.selection.clone());
+    root_intent.placement = PlacementIntent::ArchiveRoot(
+        NonEmpty::new(vec![Placement {
+            layer: ContentLayer::Common,
+            requirements: requirements.clone(),
+            destination: InstallDestination::parse("saves/MyWorld").unwrap(),
+        }])
+        .unwrap(),
+    );
+    intent.roots = BTreeMap::from([(key.clone(), root_intent)]);
+    archive.alternatives = vec!["https://example.com/world.zip".into()];
+    let files = acquired
+        .locked
+        .iter()
+        .map(|(key, file)| ResolvedFile {
+            slot: key.slot.clone(),
+            expected: ExpectedContent {
+                digests: None,
+                size: Some(file.content.lease().len()),
+                accepted_observation: Some(file.content.lease().id()),
+            },
+            acquisition: AcquisitionSpec::ProviderArchiveMember {
+                archive: archive.clone(),
+                member: path(&format!("World/{}", key.slot.as_str())),
+            },
+            provenance: Provenance {
+                source: "provider-archive".into(),
+                location: None,
+                declared_digests: None,
+                conversions: vec![],
+            },
+            placements: NonEmpty::new(vec![Placement {
+                layer: ContentLayer::Common,
+                requirements: requirements.clone(),
+                destination: InstallDestination::parse(&format!(
+                    "saves/MyWorld/{}",
+                    key.slot.as_str()
+                ))
+                .unwrap(),
+            }])
+            .unwrap(),
+        })
+        .collect();
+    let revision = DocumentCodec
+        .decode_intent(&DocumentCodec.encode_intent(&intent).unwrap(), "world")
+        .unwrap()
+        .semantic_revision();
+    let mut lock = base.lock().clone();
+    lock.intent_revision = revision;
+    lock.dependencies = BTreeMap::from([(
+        key.clone(),
+        LockedDependency {
+            title: "World".into(),
+            kind: ContentKind::World,
+            identity: ResolvedIdentity::Provider(archive.pin.project.clone()),
+            selected: Some(archive.pin),
+            files: NonEmpty::new(files).unwrap(),
+        },
+    )]);
+    lock.coverage = BTreeMap::from([(key, empack_core::model::Coverage::CompleteForSelection)]);
+    lock.required_edges.clear();
+    let project = ResolvedProject::validate(intent, lock, revision).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let host = tempfile::tempdir().unwrap();
+    write_project(root.path(), &project);
+    fs::create_dir_all(root.path().join("pack/saves/MyWorld/region")).unwrap();
+    for name in ["level.dat", "region/r.0.0.mca"] {
+        fs::write(
+            root.path().join("pack/saves/MyWorld").join(name),
+            b"payload",
+        )
+        .unwrap();
+    }
+    let cancel = Cancellation::default();
+    let workspace = capture(root.path(), host.path());
+    for target in [BuildTarget::Mrpack, BuildTarget::ClientFull] {
+        assert_eq!(
+            plan_target_build_acquisitions(
+                &workspace,
+                &BuildAcquisitions::default(),
+                target,
+                &OptionalPolicy::Preserve,
+                SourceEvidencePolicy::StrongSourceRequired,
+                &cancel
+            )
+            .unwrap()
+            .needs()
+            .len(),
+            2
+        );
+        assert!(
+            plan_target_build_acquisitions(
+                &workspace,
+                acquired,
+                target,
+                &OptionalPolicy::Preserve,
+                SourceEvidencePolicy::StrongSourceRequired,
+                &cancel
+            )
+            .unwrap()
+            .needs()
+            .is_empty()
+        );
+    }
+    assert!(
+        prepare_mrpack_build(
+            capture(root.path(), host.path()),
+            path("result.mrpack"),
+            &BuildAcquisitions::default(),
+            SourceEvidencePolicy::StrongSourceRequired,
+            OptionalConversion::RejectMetadataLoss,
+            &cancel
+        )
+        .is_err()
+    );
+    let prepared = prepare_mrpack_build(
+        workspace,
+        path("result.mrpack"),
+        acquired,
+        SourceEvidencePolicy::StrongSourceRequired,
+        OptionalConversion::RejectMetadataLoss,
+        &cancel,
+    )
+    .unwrap();
+    prepared
+        .publish(
+            &Publisher::open(&host.path().join("private")).unwrap(),
+            &cancel,
+        )
+        .unwrap();
+    let mut output =
+        zip::ZipArchive::new(fs::File::open(root.path().join("dist/result.mrpack")).unwrap())
+            .unwrap();
+    use std::io::Read;
+    let mut payload = Vec::new();
+    output
+        .by_name("client-overrides/saves/MyWorld/level.dat")
+        .unwrap()
+        .read_to_end(&mut payload)
+        .unwrap();
+    assert_eq!(payload, b"payload");
 }

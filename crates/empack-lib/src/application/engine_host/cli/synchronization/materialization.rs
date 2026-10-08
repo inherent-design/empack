@@ -173,11 +173,12 @@ pub(super) async fn publish(
                             },
                         )
                         .await?
-                        .acquire_http(
+                        .acquire_http_with_archives(
                             &services.transport,
                             &mut scope,
                             evidence,
                             services.files.transfer,
+                            services.files.archive,
                         )
                         .await?;
                     // Acquisition has explicit approval. Cache publication does not imply that

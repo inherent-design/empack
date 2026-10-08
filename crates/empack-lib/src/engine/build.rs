@@ -157,23 +157,33 @@ fn capture_build_content(
                     slot: file.slot.clone(),
                 })
             });
-            if included && evidence == SourceEvidencePolicy::StrongSourceRequired {
-                ensure!(
-                    file.expected
-                        .digests
-                        .as_ref()
-                        .is_some_and(|set| set.values().iter().any(|digest| matches!(
-                            digest.algorithm(),
-                            empack_core::digest::DigestAlgorithm::Sha256
-                                | empack_core::digest::DigestAlgorithm::Sha512
-                        ))),
-                    "Strong-source build policy requires an independent strong declaration"
-                );
-            }
             let file_key = LockedFileKey {
                 dependency: key.clone(),
                 slot: file.slot.clone(),
             };
+            let member_policy =
+                if included && evidence == SourceEvidencePolicy::StrongSourceRequired {
+                    if let AcquisitionSpec::ProviderArchiveMember { archive, member } =
+                        &file.acquisition
+                    {
+                        external
+                            .locked
+                            .get(&file_key)
+                            .context("Strong world build requires its verified source archive")?
+                            .content
+                            .provider_member_policy(archive, member, evidence)?
+                    } else {
+                        crate::engine::content::validate_expectation(
+                            &file.expected,
+                            u64::MAX,
+                            evidence,
+                            crate::engine::content::InitialObservation::RequireEvidence,
+                        )?;
+                        evidence
+                    }
+                } else {
+                    evidence
+                };
             if let AcquisitionSpec::Embedded { archive, .. } = &file.acquisition {
                 occupied.insert(archive.clone());
             }
@@ -204,7 +214,7 @@ fn capture_build_content(
                         let (content, permissions) = workspace.acquire_file(
                             &path,
                             Some(&file.expected),
-                            evidence,
+                            member_policy,
                             cancel,
                         )?;
                         let content = pool.insert(content, cancel)?;

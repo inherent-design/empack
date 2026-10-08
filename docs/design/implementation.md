@@ -217,6 +217,14 @@ archive evidence. This establishes the representation; provider-world acquisitio
 its complete command lifecycle remain open. The representation change passed 38 affected
 model/document/archive tests and all-target/all-feature Clippy.
 
+World-member build acquisition now refreshes the exact archive role, shares one transfer
+among its members and extracts through a bounded reader. Strong-source builds require
+verified archive extraction even when installed member bytes already match their recorded
+observations. Cached member bytes alone do not supply archive permissions or source proof.
+Thirty affected build/acquisition/API tests passed; focused tests also cover one catalog
+lookup, changed source/member bytes, weaker evidence, expansion limits and actual mrpack
+contents. Provider addition and the remaining world lifecycle are still separate work.
+
 Combined `d8b790e` validation passed 919 tests and eight doctests, with 103 opt-in cases
 excluded. Live/platform acceptance and fresh coverage remain open.
 

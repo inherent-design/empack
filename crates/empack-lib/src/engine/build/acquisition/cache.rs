@@ -42,8 +42,12 @@ impl BuildAcquisitionResult {
                 Instant::now() < deadline,
                 "Cache acquisition deadline exceeded"
             );
-            // Embedded members carry archive permissions that a byte cache cannot establish.
-            if matches!(need.source, BuildContentSource::Embedded { .. }) {
+            // Archive members carry permissions and extraction evidence that a byte cache cannot establish.
+            if matches!(
+                need.source,
+                BuildContentSource::Embedded { .. }
+                    | BuildContentSource::ProviderArchiveMember { .. }
+            ) {
                 continue;
             }
             let candidate = lookup

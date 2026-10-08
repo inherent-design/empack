@@ -1229,7 +1229,9 @@ fn capture(
             || acquisition.pending.iter().any(|need| {
                 matches!(
                     need.source,
-                    BuildContentSource::Download(_) | BuildContentSource::Provider { .. }
+                    BuildContentSource::Download(_)
+                        | BuildContentSource::Provider { .. }
+                        | BuildContentSource::ProviderArchiveMember { .. }
                 )
             }),
         runs_installer: server

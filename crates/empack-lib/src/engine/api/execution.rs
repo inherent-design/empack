@@ -55,7 +55,7 @@ fn pending(
         .acquisition
         .pending
         .iter()
-        .filter(|need| !matches!(need.source, BuildContentSource::Download(_)))
+        .filter(|need| !need.source.can_download())
         .map(describe)
         .collect();
     build.view.content = build.acquisition.pending.iter().map(describe).collect();
@@ -63,7 +63,7 @@ fn pending(
         .acquisition
         .pending
         .iter()
-        .filter(|need| !matches!(need.source, BuildContentSource::Download(_)))
+        .filter(|need| !need.source.can_download())
         .map(|need| need.key.clone())
         .collect();
     let data = RetainedOutput::from_parts(PreparedKind::Build(Box::new(build)), permit);
@@ -149,7 +149,7 @@ async fn execute(
     let missing = acquired
         .pending
         .iter()
-        .filter(|need| !matches!(need.source, BuildContentSource::Download(_)))
+        .filter(|need| !need.source.can_download())
         .count();
     if missing != 0 {
         return Ok(pending(
@@ -166,7 +166,7 @@ async fn execute(
         ));
     }
     let acquired = acquired
-        .acquire_http(&transport, scope, evidence, config.transfer)
+        .acquire_http_with_archives(&transport, scope, evidence, config.transfer, config.archive)
         .await?;
     if !acquired.pending.is_empty() {
         return Ok(pending(
